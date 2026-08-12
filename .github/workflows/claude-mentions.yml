@@ -1,0 +1,29 @@
+name: Claude mentions
+
+# Human-directed, ad hoc help — separate from the dependency-aware
+# automation in dispatch-ready-work.yml. Use this to ask Claude a question
+# on an issue/PR, or to hand it a one-off task outside the story graph.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude-mention:
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

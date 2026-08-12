@@ -1,0 +1,98 @@
+name: Dispatch ready work
+
+# Event-driven: an issue closing (a dependency clearing) or a PR merging is
+# what actually unblocks new work, so those are the real triggers. The cron
+# is only a fallback in case an event is ever missed.
+on:
+  issues:
+    types: [closed]
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      max_concurrent:
+        description: "Max issues to claim this run"
+        default: "3"
+
+# Only one dispatcher run claims issues at a time, so two overlapping
+# triggers (e.g. two PRs merging close together) can't both claim the same
+# issue. Queued runs still get their turn afterward.
+concurrency:
+  group: claude-dispatcher
+  cancel-in-progress: false
+
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      contents: read
+    outputs:
+      matrix: ${{ steps.claim.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute ready issues and claim them
+        id: claim
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MAX_CONCURRENT: ${{ github.event.inputs.max_concurrent || '3' }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ready-issues.sh
+          READY=$(./scripts/ready-issues.sh "$MAX_CONCURRENT")
+          echo "Ready this run: $READY"
+
+          CLAIMED="[]"
+          for row in $(echo "$READY" | jq -c '.[]'); do
+            NUM=$(echo "$row" | jq -r '.number')
+            gh issue edit "$NUM" --add-label "status:in-progress"
+            CLAIMED=$(echo "$CLAIMED" | jq -c --argjson r "$row" '. + [$r]')
+          done
+
+          echo "matrix=$CLAIMED" >> "$GITHUB_OUTPUT"
+
+  work:
+    needs: claim
+    if: needs.claim.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 3
+      fail-fast: false
+      matrix:
+        issue: ${{ fromJson(needs.claim.outputs.matrix) }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    concurrency:
+      group: claude-issue-${{ matrix.issue.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: >-
+            ${{ matrix.issue.type == 'test' && '/write-tests' || '/fix-issue' }}
+            ${{ matrix.issue.number }}
+          claude_args: |
+            --max-turns 60
+
+      - name: Update status label
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue edit "${{ matrix.issue.number }}" --remove-label "status:in-progress" || true
+          if [ "${{ job.status }}" = "success" ]; then
+            gh issue edit "${{ matrix.issue.number }}" --add-label "status:in-review"
+          else
+            gh issue edit "${{ matrix.issue.number }}" --add-label "status:needs-attention"
+          fi
