@@ -6,7 +6,7 @@ evidence-grounded feedback plus a class-level diagnostic view, for classes of **
 students**.
 
 The full design is [`docs/agentic-evaluation-harness-for-education.md`](docs/agentic-evaluation-harness-for-education.md)
-(v2.5, ~2,100 lines). This README summarizes what the system is, then documents how this
+(v2.7, ~2,500 lines). This README summarizes what the system is, then documents how this
 repository is built.
 
 ## The problem
@@ -74,8 +74,13 @@ rather than a broad holistic one.
   confident-looking number.
 - **Chance-corrected statistics only.** Raw agreement overstates by 33–41 points; a judge
   advertising 85% agreement is really operating near κ = 0.48.
+- **Judges answer in words, not numbers.** Each criterion offers a small, even-numbered set
+  of bands, each describing what a response *does* ("states the conclusion and cites the
+  mechanism; does not address the boundary case"). Points are derived afterwards, and no
+  numeric scale is ever visible to a judge. Asking "how good is this out of 5?" invites the
+  centre; asking "which of these is true?" is checkable against the cited evidence.
 
-Two failure modes the design specifically defends against, both of which are invisible to
+Four failure modes the design specifically defends against, all of which are invisible to
 the metrics a naive system reports about itself:
 
 - **Common-mode extraction failure** — judges are independent of each other but all consume
@@ -86,11 +91,61 @@ the metrics a naive system reports about itself:
   length detector, improving measured agreement while degrading what's being measured. Every
   rubric revision passes a dual-scoring non-inferiority gate, and the teacher authors the
   change.
+- **Score compression** — raters, human and model alike, avoid the ends of a numeric scale
+  and drift toward the middle. Judges that compress do it *together*, so inter-judge
+  agreement rises and confidence rises with it, while the scores quietly stop
+  discriminating. Defended structurally by the band scale above, since a compressed panel
+  looks excellent on every metric the system reports about itself.
 - **The wrong-test submission** — an answer sheet handed in against the wrong paper. Every
   criterion legitimately finds no evidence, the panel unanimously scores zero, and the
   confidence inversion above does *not* fire because the evidence isn't corrupt, it's
   genuinely absent. A student who did the work correctly gets a confident, high-agreement
   zero. Caught at ingest by a validation ladder, because nothing downstream can catch it.
+
+### How we deal with bias
+
+Bias is the main thing that can go wrong here, and it has one nasty property that shapes
+our whole approach: **when this system goes wrong, its own quality scores go up, not
+down.**
+
+That sounds odd, so it's worth seeing why. Suppose all three grading models start playing
+it safe and giving everything a middling mark. They're now all doing the same thing — so
+they *agree with each other*, and "the graders agree" is exactly what we measure to decide
+whether to trust them. The score on our dashboard improves while the grading gets worse.
+The same thing happens if the models are accidentally shown each other's opinions, or if
+they're all fed the same faulty reading of a student's paper, or if a teacher gets into
+the habit of clicking "accept" without really looking. Every one of these makes us look
+*more* reliable, not less.
+
+So we can't simply ship it and watch the numbers. Waiting for the numbers to drop would
+mean waiting forever. Instead we do three things:
+
+- **Build the problem out, rather than asking the models to behave.** Wherever we can, we
+  make a bias physically impossible instead of writing a rule against it. The graders are
+  never shown a 0–10 scale, so there's no middle of the scale to drift toward — they pick
+  a written description of what the answer actually does. They're never shown each other's
+  marks, because there's nowhere in the system to put them. A rule can be broken; a
+  missing option can't.
+- **Check our work with a ruler the bias can't bend.** We only measure accuracy against a
+  small sample the teacher grades *without seeing what the system said* — because if they
+  can see it, we're measuring agreement with the machine rather than correctness. Any
+  rubric change is checked by a separate model that isn't part of the grading panel, so it
+  doesn't share the same blind spots. And a system that says "I'm confident" doesn't get
+  believed on its own word; we look at whether the graders actually agreed and whether the
+  evidence held up.
+- **When in doubt, ask the teacher — and say so.** The system is built to make its
+  uncertainty visible rather than hide it behind a confident number. Where a shortcut
+  would let it look more certain, it's deliberately built to do the opposite: if all the
+  graders agree but the underlying evidence failed our checks, that counts as *low*
+  confidence, not high, because unanimous agreement about the wrong thing is the most
+  dangerous output we can produce. Anything not reviewed in time stays clearly marked as
+  unreviewed rather than quietly becoming final.
+
+We don't claim to have removed bias. The design names what's left — including the parts we
+can only partly defend, like scanning quality that's worse for students with messier
+handwriting. Being specific about what we haven't solved is part of the approach, not a
+footnote to it: a grading system claiming to be bias-free is making exactly the kind of
+overconfident claim we built all this to avoid.
 
 ## Reference architecture
 

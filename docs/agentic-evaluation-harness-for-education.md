@@ -1,6 +1,8 @@
 # Agentic Evaluation for Education: A Research-Grounded Architecture for a Local, Open-Source Grading Harness
 
-**Version 2.6.** Adds Section 7.7, the ingestion and transcription module: PDF in, structured Markdown out, via a vision-language model, with the validation ladder that catches missing pages and mismatched submissions before they can be scored. Requirements R32 to R37.
+**Version 2.7.** Adds Section 5.10, the scoring scale: judges emit a **behaviourally-anchored band label**, never a number, and the numeric points are derived afterwards by the orchestrator. Closes a central-tendency bias the design was fully exposed to and that none of its metrics could see. Requirements R39 to R44.
+
+**Version 2.6.** Adds Section 7.7, the ingestion and transcription module: PDF in, structured Markdown out, via a vision-language model, with the validation ladder that catches missing pages and mismatched submissions before they can be scored. Requirements R32 to R38.
 
 *A research report for engineers and executives. Prepared for the design of a teacher-facing evaluation harness that runs on open-source models on local hardware, for deployment in schools with limited or no reliable internet connectivity.*
 
@@ -113,6 +115,12 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R36** | **Absent content and blank content are distinguished at ingest. A missing page is an ingestion failure; an intentionally blank answer is a score of zero. Only the latter may reach scoring** | "Empty ≠ zero" (§7.4) applied upstream, where the distinction is still recoverable | §7.7, §7.4 |
 | **R37** | **The transcription model is version-pinned, backend-scoped, and validated on the actual submission medium exactly like a panel member — and it is selected independently of the panel, on transcription quality alone** | It is a model in the scoring path's supply chain, and its output quality bounds every grade; but it makes no judgments, so panel-selection criteria neither qualify nor disqualify it | §6.7, §7.7, §8.2 |
 | **R38** | **Evaluation happens against Markdown, never against a PDF. Every PDF of every artifact kind is converted by the ingestion module; no stage downstream of ingestion ever receives a PDF or a page image, and there is no second path by which a PDF becomes text** | Evidence spans are byte offsets into a text artifact; a judge handed an image has nothing to cite and the whole evidence-citation discipline silently stops applying | §7.7, §7.4 |
+| **R39** | **Judges emit an ordinal band label from a closed, criterion-specific set. Numeric points are derived orchestrator-side from a pinned band→points table. No point value, `max_points`, or numeric scale appears in a judge's prompt or output** | Continuous numeric scales produce central-tendency bias; a judge that never sees a number cannot drift toward the middle of one | §5.10 |
+| **R40** | **Every band carries a behaviourally-anchored descriptor stating what a response in that band does. Band sets are even-numbered so there is no default middle, and binary (met / not met) is the default — graded bands require justification** | "Which of these is true?" is checkable; "how good is this out of five?" is a magnitude judgment, and magnitude judgments attract the centre | §5.10, §5.3 |
+| **R41** | **Panel aggregation happens on the ordinal band scale; the band→points mapping is applied once, after aggregation. Averaging band-derived points is forbidden** | Averaging band numbers reconstructs the continuous scale the bands exist to remove, and lands on values no band describes | §5.10, §7.3 |
+| **R42** | **The judge's response is generated evidence-first: cited spans, then the evidence assessment against the band descriptors, then the band. Enforced by response-schema field order and linted like §8.4's prompt ordering** | Field order is generation order; emitting the verdict first produces a snap judgment followed by a confabulated justification | §5.10, §8.4 |
+| **R43** | **The band set and the band→points mapping are covered by the §6.2 schema lock, version-pinned, and any change passes the §6.5 non-inferiority gate** | Tuning the mapping against teacher scores moves every grade without touching a judge — construct drift by a new route | §5.10, §6.2, §6.5 |
+| **R44** | **The MVVP includes a score-compression check comparing the panel's band distribution against blind gold labels, with its shared-bias blind spot recorded as a known limit** | Compression is invisible to agreement metrics: judges that all compress agree with each other | §2.5, §5.10 |
 
 R9 and R12 deserve emphasis because they are easy to violate accidentally and they interact. **Any design that asks the teacher for significant up-front effort, or that hands back a review queue proportional to class size, has failed at the thing it was built to fix.** This is the reasoning behind treating calibration as a few short elicitation questions rather than a labeling task (Section 6.4), behind harvesting validation data from the teacher's ordinary review actions rather than requesting it (Section 6.8), and behind budgeting the review queue rather than thresholding it (Section 10).
 
@@ -200,6 +208,20 @@ Constraints that make the abstraction real rather than nominal:
 
 The cloud profile is genuinely better on some of these and genuinely worse on others. It is not the offline profile with the constraints relaxed; it is a different set of constraints, and Sections 8.7 and 11 specify the controls each one needs.
 
+### 0.8 The approach to bias: structural prevention, independent measurement, asymmetric confidence
+
+Bias is not one risk in this design; it is the dominant category of risk, and it has a property that determines the entire strategy for handling it. **Every bias this system is exposed to makes the system's own quality numbers look better, not worse.** Judges that compress toward the middle of a scale compress together, so inter-judge agreement rises (§5.10). Judges sharing a contaminated context converge, so agreement rises (§7.2). Judges reading the same corrupted evidence agree unanimously, so confidence rises (§7.4). A teacher rubber-stamping a review produces a label recording that the system was right (§6.8). A rubric optimized toward a teacher's scores while abandoning their standards improves measured agreement precisely as it stops measuring the intended construct (§3.6). In every case the instrument moves the wrong way. A monitoring-based strategy — ship it, watch the dashboard, react when the numbers degrade — is therefore not a weak approach here, it is an actively inverted one, and this is the single most important thing to understand about why the architecture looks the way it does.
+
+Three principles follow, and nearly every design decision in this report is an instance of one of them.
+
+**First, prevent structurally rather than instructing behaviourally.** Where a bias can be made impossible in the data model, it is, because a constraint a component cannot violate is worth more than a rule it is asked to follow. A prompt saying "do not let the rubric weights drift" is a request; a schema in which weights are not a writable field is a guarantee (§6.2). The same move recurs throughout: the judge request schema is a whitelist with no field for another judge's verdict, so cross-contamination is a schema violation rather than a lapse (§7.2); the synthesis result schema has no points field, so narrative composition cannot move a grade (§7.2 Rule 3); judges receive band labels with no numeric scale at all, so there is no scale midpoint to drift toward (§5.10, R39); and response field order is part of the contract, so the verdict cannot be emitted before the evidence that justifies it (R42).
+
+**Second, measure with an instrument the bias cannot reach.** Where prevention is impossible, the measurement must be independent of the thing being measured. Accuracy is computed only from **blind** labels, where the teacher grades without seeing system output, because acceptance labels measure agreement with the machine rather than correctness (§6.8, R20/R21). Agreement is always chance-corrected, since raw percentages overstate by 33 to 41 points (§2.1). Rubric revisions are checked by an **off-panel** model that shares no blind spots with the judges (§6.6), and validated against a held-out set the system is never tuned on. Validation records are scoped to a population and a backend, so a number earned in one context cannot be silently read as applying to another (R23, R30). And escalation triggers on observable signals — disagreement, missing evidence, proximity to a grade boundary — rather than on a model's self-reported confidence, because a model's opinion of its own reliability is exactly the quantity a biased model gets wrong (§7.1).
+
+**Third, make confidence asymmetric, and invert it where a bias would inflate it.** The system's uncertainty is a first-class output rather than something smoothed away. Unanimous agreement on evidence that failed integrity checks yields **low** confidence, not high, which is the confidence calculation running backwards from intuition on purpose (§7.4, R19). Low-confidence transcription routes on whether an error *could change this criterion's score*, not on a document-level quality number (§7.5, R24). Submissions that may belong to a different assessment halt on `uncertain` as well as on `mismatch`, because a binary gate forces a bad trade and the ambiguous cases fall disproportionately on the students already least well served (§7.7, R35). Unreviewed items stay visibly provisional rather than being quietly finalized (R26). The through-line is that the system is built to make its own doubt visible to a human rather than to resolve it in favour of a confident-looking number.
+
+What this approach does not do is claim the biases are eliminated. §11 records what remains, including the ones the design can only partially defend: transcription quality that tracks handwriting and language fluency rather than understanding, an override log that over-represents hard cases, and score compression shared between the panel and the teacher, which a check comparing one against the other cannot see. Naming those is part of the strategy rather than a caveat on it — a system claiming to have solved bias is making the same category of error as one reporting uncorrected agreement percentages.
+
 ---
 
 ## How to read this report
@@ -259,6 +281,10 @@ The paper's practical output is a five-step checklist to run **before** trusting
 3. **Replicate.** Run each judgment at least three times independently and measure self-agreement.
 4. **Cross-validate.** Validate on at least two different assignment types or item styles.
 5. **Audit the paradox.** Whenever test-retest reliability exceeds 0.95, explicitly check position bias before declaring the judge trustworthy.
+
+A sixth step is added here in v2.7, because the five above can all be satisfied by a panel whose scores have quietly stopped discriminating:
+
+6. **Check for compression (R44).** Compare the panel's band distribution per criterion against the blind gold labels' distribution (§6.8). A panel whose mass sits in interior bands where the teacher used the outer ones is exhibiting central-tendency bias, and none of steps 1 to 5 would reveal it — judges that compress together *agree*, which raises every reliability number in the protocol. Section 5.10 specifies the check and states its limit honestly: it detects the panel compressing *more* than the teacher, not both compressing together.
 
 ---
 
@@ -393,6 +419,74 @@ More fundamentally, freely optimizing rubric text against a teacher's scores ris
 
 Per the K-12 GenAI Assessment Graders study. Teachers and students trust and act on specific criterion-level written feedback far more than a bare number. Generate feedback text as a first-class output tied to each criterion.
 
+Note this is about what the *teacher and student* see. It is not a statement about generation order inside a judgment, which §5.10 specifies separately and which is a different concern with a different rationale.
+
+### 5.10 Score in words, anchored in behaviour — never on a numeric scale (new in v2.7)
+
+Every version before 2.7 asked judges for a number on a continuous per-criterion scale: `max_points: 5`, verdicts like `3.5`. That is the exact format that produces **central-tendency bias**, and the design had no defense against it and no way to see it.
+
+#### The bias, and why this system was blind to it
+
+Central tendency is one of the oldest documented rater errors, alongside leniency, severity, and halo. Ask anyone — human or model — "how good is this, 0 to 10?" and they avoid the ends. Nobody feels certain enough to award a 0 or a 10, so judgments pile up in the middle and the effective range of the scale shrinks. The cause is the *question*: "how good?" asks for a vague magnitude, and vague magnitude judgments have no natural stopping point except the middle. For LLM judges specifically, the well-documented symptoms are low score dispersion, clustering on round values, and a pull toward the mid-to-upper range.
+
+Two things made this worse here than in an ordinary rating system.
+
+**The design contradicted itself.** Section 5.3 calls for decomposed, independently-answerable criteria — which implies judgments so narrow there is barely a middle to retreat into. But nothing enforced it. The schema declared `max_points REAL` and the worked exchange contract scored a criterion at `3.5` out of `5`. The stated intent lived in prose and the opposite lived in the schema, and the schema is what runs.
+
+**And the failure is invisible in every metric the system reports about itself.** This is the same shape as §7.4's finding, one level over. If all three judges compress toward the centre, they compress *together* — so inter-judge agreement **rises**, and confidence rises with it. Then agreement is computed against a teacher who, being human, has the same bias, so κ against gold labels also looks respectable. Every number on the dashboard improves while the scores quietly lose the range that made them informative. A rubric that has stopped discriminating between a strong answer and an adequate one is exactly as damaging as §3.6's rubric that has become a length detector, and just as hard to notice.
+
+#### The fix, in the order of how much work each part does
+
+**1. Anchor every band in behaviour, not in magnitude (R40).** This is the main lever, and it matters more than the choice of labels over numbers.
+
+Do not ask "how good is this out of 5." Ask "which of these statements is true of this response," where each option states what a response at that level *does*:
+
+| Band | Descriptor |
+|---|---|
+| `derives_and_justifies` | States the conclusion, cites the governing mechanism, and addresses the boundary case |
+| `derives_only` | States the conclusion and cites the mechanism; does not address the boundary case |
+| `asserts_only` | States the conclusion with no mechanism cited |
+| `absent_or_wrong` | No conclusion stated, or a conclusion contradicted by the cited evidence |
+
+Now the judgment is a **factual match**, and it is checkable against the evidence spans the extractor already localized. There is no way to hedge toward the middle, because the middle bands also carry conditions and asserting them when they are false is simply wrong. This is the same move the whole architecture rests on (§0.3): take something the model would do implicitly as a holistic impression and make it explicit, narrow, and verifiable.
+
+**2. Even-numbered band sets, and binary by default (R40).** A five-band scale still has a middle to retreat to. An even set forces a judgment onto one side or the other. And since §5.3 already requires atomic criteria, **the honest default is two bands — met / not met.** A yes/no question has no centre at all. Graded bands are the exception and should carry a reason: use them where partial credit is genuinely part of the construct being measured, not as the default shape. Four bands is usually the most any atomic criterion needs; six requires justification in the package.
+
+**3. Judges never see a number (R39).** Bands go in, a band label comes out, and the band→points mapping lives entirely orchestrator-side. This is not cosmetic: leaving `max_points: 5` in the request means the model is reasoning against a numeric scale regardless of what it is asked to emit, and the label becomes a thin wrapper over the same biased judgment. The whole of point 3 is load-bearing for points 1 and 2.
+
+**4. Generate evidence first, band last (R42).** Field order in a structured response *is* generation order. The pre-2.7 contract emitted `points` first and `rationale` last, which produces a snap judgment followed by a justification invented to fit it.
+
+The corrected order is `cited_spans` → `evidence_assessment` → `evidence_sufficient` → `band` → `self_confidence`.
+
+Note carefully what this does and does not fix. The band still follows the reasoning, so it is still anchored to it — and that is *desirable*; a verdict that ignored the reasoning preceding it would be worse. What matters is what the reasoning is made of:
+
+- **Free-form evaluative prose** — "a fairly weak answer overall, though it shows some understanding" — is itself a vague magnitude judgment. A band anchored to that has simply inherited the central-tendency problem one step earlier and out of sight, where no schema constraint can reach it.
+- **Evidence-referential prose** — "span 340–402 states the conclusion; no span addresses the boundary case" — is an inventory. A band anchored to that is anchored to facts.
+
+So `evidence_assessment` is specified as an inventory against the band descriptors, not as free commentary. **Point 4 only works because of point 1**; reordering the fields alone would achieve nothing.
+
+#### Aggregation stays on the ordinal scale (R41)
+
+The trap: three judges return bands, the orchestrator maps each to points, averages them, and gets 3.67. That value corresponds to no band, describes no behaviour, and has reconstructed exactly the continuous scale the bands were introduced to remove.
+
+**Aggregate on the band scale, map once, at the end.** The panel's verdict is a band — the median band, with the modal band and the spread recorded — and only that aggregated band is converted to points. Disagreement is measured ordinally, so that adjacent-band disagreement counts for less than distant disagreement; Krippendorff's α already handles ordinal scales (§3.1), which is why §7.3 specifies it rather than a raw agreement count.
+
+The same rule applies upward: per-criterion points aggregate arithmetically into question and test totals as before, because at that level a total genuinely is a sum. It is only the judge-level verdict that must never be averaged.
+
+#### The mapping is part of the instrument, not a knob (R43)
+
+A useful property of deriving points from bands is that the mapping can be revised without re-running a single judgment. That is also its hazard: someone can move every grade in the system by editing a lookup table, and the temptation to tune it until the system's scores match the teacher's is exactly the construct drift §6 exists to prevent — arriving by a route §6 does not currently cover.
+
+So the band set and the band→points mapping are **inside the §6.2 schema lock**, version-pinned with the rubric (§6.7), and any change goes through the §6.5 dual-scoring non-inferiority gate like a rubric revision. Exemplar bands are drawn from the criterion's declared band set rather than being free text, so an anchor always names a band that exists.
+
+#### Detecting what remains (R44)
+
+The measures above reduce compression; they do not prove its absence. Add a **compression check** to the MVVP (§2.5): compare the panel's band distribution per criterion against the blind gold labels' distribution. A panel whose distribution is materially narrower — mass concentrated in interior bands where the teacher used the outer ones — is compressing, and that is a finding about the panel, not about the cohort.
+
+`criterion_stats` already stores `sd_points` and a per-criterion `histogram`, and `package_validation` already stores `expected_sd` and `expected_histogram`. The machinery exists; it is currently pointed only at cross-cohort drift (§9.4) and has never been pointed at the judges themselves.
+
+**State the blind spot plainly, because it is real.** This check compares the panel against a teacher, and the teacher has the same bias — it is a human rater error first, and the models most likely learned it from human-generated text. If panel and teacher compress by similar amounts, the comparison shows good agreement and detects nothing. What this check catches is *relative* compression: the panel compressing **more** than the teacher. Catching absolute compression needs a criterion-referenced anchor instead of a rater-referenced one — verifying that a band's stated conditions are actually met in the cited spans, which the behavioural descriptors of point 1 make possible precisely because they are checkable. Treat that as the stronger check and this one as the cheap continuous monitor.
+
 ---
 
 ## 6. Rubric calibration without re-grading: the guardrail design (new in v2)
@@ -422,6 +516,7 @@ Split possible edits into two categories.
 
 **Forbidden (redefinition):**
 - Changing point weights or cut scores
+- Changing the band set, a band's descriptor, or the band→points mapping (§5.10, R43). Editing that table moves every grade in the system without re-running a judgment, which makes it the cheapest available route to construct drift and the least visible
 - Adding or removing criteria
 - Changing which construct a criterion measures
 - Introducing any surface feature (length, vocabulary level, formatting) as a scoring signal
@@ -663,16 +758,18 @@ That last row of the table matters too. **The system must work with zero teacher
  │              ▼                                                       │
  │   ┌────────────────────────────────┐   ┌──────────────────────────┐  │
  │   │ Aggregation & Confidence        │   │ SYNTHESIS (Rule 3)       │  │
- │   │ • combine panel verdicts        │──>│ L1: per question         │  │
- │   │ • inter-judge agreement signal  │   │ L2: per test, reads only │  │
- │   │   (honest, because judgments    │   │     the L1 syntheses     │  │
- │   │    were independent)            │   │ SCORES NOT WRITABLE      │  │
- │   │ • chance-corrected (§3.1, §5.4) │   │ in either output schema, │  │
- │   │ • INVERTS on evidence-integrity │   │ and no numeric claims in │  │
- │   │   failure: unanimous judges on  │   │ prose either (§10)       │  │
- │   │   bad evidence = LOW confidence │   │                          │  │
- │   │ • scores aggregate arithmetically   └──────────────────────────┘  │
- │   │   up the tree, never via synthesis                                │
+ │   │ • MEDIAN BAND across the panel  │──>│ L1: per question         │  │
+ │   │   (ordinal, never an average -  │   │ L2: per test, reads only │  │
+ │   │    §5.10 R41), then map band    │   │     the L1 syntheses     │  │
+ │   │    -> points ONCE, here         │   │ SCORES NOT WRITABLE      │  │
+ │   │ • ordinal α: adjacent-band      │   │ in either output schema, │  │
+ │   │   disagreement < distant        │   │ and no numeric claims in │  │
+ │   │ • chance-corrected (§3.1, §5.4) │   │ prose either (§10)       │  │
+ │   │ • INVERTS on evidence-integrity │   │                          │  │
+ │   │   failure: unanimous judges on  └──────────────────────────────┘  │
+ │   │   bad evidence = LOW confidence                                   │
+ │   │ • derived points aggregate arithmetically up the tree, never      │
+ │   │   via synthesis. Only the JUDGE-level verdict is never averaged   │
  │   └───────────────┬─────────────────┘                                 │
  │                                                                      │
  │  CHECKPOINT UNIT = (judge, question, criterion) cell, not student    │
@@ -731,7 +828,7 @@ Everything above holds at classroom scale, where a three-judge panel is cheap. A
 
 | Escalation trigger | Kind | Rationale |
 |---|---|---|
-| Score falls in the mid-range of the scale for that criterion | Observable | The physics-exam study (Section 4) found human-AI agreement is strongest at the extremes and weakest for ambiguous partial-credit responses. This is the empirically identified weak point, so it is where the panel earns its cost |
+| Verdict falls in an interior band rather than an extreme one | Observable | The physics-exam study (Section 4) found human-AI agreement is strongest at the extremes and weakest for ambiguous partial-credit responses. This is the empirically identified weak point, so it is where the panel earns its cost. Note this is a *different* fact from §5.10's central-tendency bias, and the two interact: interior verdicts are both genuinely harder and the place a compressing panel over-produces. Escalating them is the right response to either cause, but a rising interior rate is a signal to check §5.10's compression measure, not just to spend more compute |
 | Evidence is absent, unverified, or flagged insufficient | Observable | Extraction problems must not resolve into confident scores (Section 7.4) |
 | Verdict produced without an evidence citation | Observable | Uncited verdicts are already treated as low-confidence (Section 7.3, item 3) |
 | Transcription uncertainty overlaps the criterion's evidence span | Observable | Section 7.5, R24 |
@@ -814,7 +911,7 @@ The fix is a **synthesis pass that reads criterion verdicts and composes the stu
 - **Per question, per submission:** synthesize that question's criterion verdicts into coherent feedback on that question. Small, focused, high quality.
 - **Per test, per submission:** read only the per-question syntheses, not the raw verdicts, and produce the overall narrative.
 
-Both levels stay read-only on scores. **Scores aggregate arithmetically up the tree from the criterion verdicts and never pass through a synthesis step**, so no amount of narrative composition can move a grade.
+Both levels stay read-only on scores. **Points aggregate arithmetically up the tree from the criterion scores and never pass through a synthesis step**, so no amount of narrative composition can move a grade. Note the two different rules that apply at two different levels, since they are easy to conflate: the *judge-level* verdict is a band and is aggregated ordinally, never averaged (§5.10, R41); the *criterion-level* points that result are summed into question and test totals, because at that level a total genuinely is a sum.
 
 This preserves score independence while producing feedback that reads as though one coherent teacher wrote it.
 
@@ -827,10 +924,11 @@ A side benefit worth stating explicitly, because it affects a number the system 
 1. **Criterion-atomic scoring under judgment isolation.** One rubric criterion per judgment, fresh context each time, per Section 7.2. Avoids criterion conflation, cross-submission anchoring, and cross-assignment leakage.
 2. **Order randomization.** Randomize criterion presentation order and which example anchors any few-shot calibration. Targets position bias (Section 2.4). Note that under Rule 1 this randomization is across independent judgments, so it is genuinely independent randomization rather than reshuffling within one conversation.
 3. **Evidence citation required.** Each judge cites the span supporting its verdict per criterion (RULERS). An uncited verdict is treated as lower-confidence downstream, and cited spans are what travel across any declared dependency (Rule 2).
-4. **Chance-corrected aggregation.** On panel disagreement, do not just average. Track inter-judge Cohen's κ or Krippendorff's α as the live confidence signal driving the C-to-D routing decision, rather than a raw "2 of 3 agreed" count.
+4. **Ordinal, chance-corrected aggregation.** The panel's verdict is the **median band**, not an average (§5.10, R41) — averaging judges' band-derived points lands on values that correspond to no band and describes no behaviour, rebuilding the continuous scale the bands exist to remove. Points are derived once, from the aggregated band. Track inter-judge Krippendorff's α **with an ordinal metric**, so adjacent-band disagreement counts for less than distant disagreement, and use that as the live confidence signal driving the C-to-D routing decision rather than a raw "2 of 3 agreed" count.
 5. **Off-panel model reserved for adversarial checks.** Keep at least one installed model *out* of the scoring panel so it can serve as the independent back-translation checker in Section 6.6 without correlated blind spots.
 6. **Synthesis is read-only** with respect to scores (Rule 3).
 7. **Run the MVVP (Section 2.5) per assignment type** before trusting the panel on a live class, and re-run it whenever a panel member changes.
+8. **Scale format is itself a bias control.** Behaviourally-anchored band labels, even-numbered, binary by default, with no numeric scale ever visible to a judge (§5.10). This sits alongside order randomization in item 2: both are structural defenses against a bias that would otherwise be invisible, because a panel that compresses toward the centre compresses *together* and therefore agrees.
 
 ### 7.4 Extraction integrity: the common-mode failure the panel cannot see (new in v2.4, R19)
 
@@ -1508,9 +1606,27 @@ CREATE TABLE criterion (
   question_id        TEXT NOT NULL REFERENCES question,
   ordinal            INTEGER NOT NULL,
   text               TEXT NOT NULL,
-  max_points         REAL NOT NULL,        -- immutable under the §6.2 schema lock
+  max_points         REAL NOT NULL,        -- ceiling for aggregation only; never shown to a judge (R39)
+  band_count         INTEGER NOT NULL      -- even, so there is no default middle (R40)
+                     CHECK (band_count % 2 = 0 AND band_count BETWEEN 2 AND 6),
   evidence_type      TEXT,                 -- RULERS annotation (§1)
   construct_tag      TEXT                  -- what this measures; changing it is a redefinition (§6.2)
+);
+
+-- The scoring scale (§5.10). A judge chooses one of these labels; the orchestrator maps it
+-- to points afterwards. Both the label set and the mapping are inside the §6.2 schema lock
+-- and pass the §6.5 non-inferiority gate when changed (R43), because editing this table
+-- moves every grade in the system without re-running a single judgment.
+CREATE TABLE criterion_band (
+  criterion_id    TEXT NOT NULL REFERENCES criterion,
+  band            TEXT NOT NULL,           -- stable label, e.g. 'derives_and_justifies'
+  ordinal         INTEGER NOT NULL,        -- 0 = lowest; the ordering aggregation uses
+  descriptor      TEXT NOT NULL,           -- what a response in this band DOES (R40).
+                                           -- Behavioural and checkable against cited spans,
+                                           -- never a magnitude phrase like "good" or "3 of 5"
+  points          REAL NOT NULL,           -- orchestrator-side only; never sent to a judge
+  PRIMARY KEY (criterion_id, band),
+  UNIQUE (criterion_id, ordinal)
 );
 
 CREATE TABLE criterion_dependency (        -- §7.2 Rule 2
@@ -1524,11 +1640,12 @@ CREATE TABLE criterion_dependency (        -- §7.2 Rule 2
 CREATE TABLE exemplar (
   exemplar_id        TEXT PRIMARY KEY,
   criterion_id       TEXT NOT NULL REFERENCES criterion,
-  band               TEXT NOT NULL,        -- which score level this anchors
+  band               TEXT NOT NULL,        -- must name a band that exists, not free text (§5.10)
   text               TEXT NOT NULL,
   provenance         TEXT NOT NULL CHECK (provenance IN
                        ('synthetic','paraphrased','real_consented')),
-  ordinal            INTEGER NOT NULL      -- fixed within a batch, randomized across (§8.4)
+  ordinal            INTEGER NOT NULL,     -- fixed within a batch, randomized across (§8.4)
+  FOREIGN KEY (criterion_id, band) REFERENCES criterion_band(criterion_id, band)
 );
 
 CREATE TABLE elicitation_history (         -- provenance for §6.4
@@ -1711,22 +1828,32 @@ CREATE TABLE verdict (
   submission_id TEXT NOT NULL,
   criterion_id  TEXT NOT NULL,
   judge_id      TEXT NOT NULL,
-  points        REAL NOT NULL,
+  band          TEXT NOT NULL,             -- the judge's verdict (§5.10). NOT points: a judge
+                                           -- never emits a number and never sees one (R39)
+  band_ordinal  INTEGER NOT NULL,          -- denormalized for ordinal aggregation (R41)
   self_conf     REAL,
   cited_spans   TEXT,                      -- null = uncited, downgrades confidence (§7.3)
-  rationale     TEXT,
+  evidence_assessment TEXT,                -- inventory against the band descriptors, generated
+                                           -- BEFORE the band (R42), not free commentary
   latency_ms    INTEGER,
   created_at    TEXT NOT NULL
 );
+-- No points column, deliberately. Points exist only after aggregation (R41); storing a
+-- per-judge point value would invite averaging them, which rebuilds the continuous scale
+-- the bands exist to remove.
 CREATE INDEX idx_verdict_agg ON verdict(run_id, submission_id, criterion_id);
 
 CREATE TABLE criterion_score (
   run_id            TEXT NOT NULL,
   submission_id     TEXT NOT NULL,
   criterion_id      TEXT NOT NULL,
-  points            REAL NOT NULL,
+  band              TEXT NOT NULL,         -- median band across the panel (R41)
+  band_spread       INTEGER NOT NULL,      -- ordinal distance low..high band; adjacent
+                                           -- disagreement is weaker evidence than distant
+  points            REAL NOT NULL,         -- DERIVED from band via criterion_band, once,
+                                           -- after aggregation. Never an average of judges
   judge_count       INTEGER NOT NULL,
-  agreement         REAL,                  -- null when judge_count = 1 (§7.1)
+  agreement         REAL,                  -- null when judge_count = 1 (§7.1); ordinal α
   -- Extraction-integrity inputs. Unanimous judges on unverified evidence is
   -- LOW confidence, not high (§7.4); confidence must encode that inversion.
   spans_verified    INTEGER NOT NULL,      -- deterministic offset/text check
@@ -1759,7 +1886,8 @@ CREATE TABLE review_queue (
   est_seconds   INTEGER NOT NULL,
   shown_at      TEXT,
   action        TEXT,                      -- accept|edit|override|skip
-  new_points    REAL,
+  new_band      TEXT,                      -- the teacher edits on the band scale (§5.10)
+  new_points    REAL,                      -- derived from new_band, not entered directly
   acted_at      TEXT,
   PRIMARY KEY (run_id, submission_id, criterion_id)
 );
@@ -1791,9 +1919,14 @@ CREATE TABLE label (                       -- §6.8
   label_type         TEXT NOT NULL CHECK (label_type IN
                        ('accept','edit','override','blind')),
   saw_system_output  INTEGER NOT NULL,     -- 0 only for blind labels
-  system_points      REAL NOT NULL,
-  teacher_points     REAL NOT NULL,
-  agreed             INTEGER NOT NULL,
+  -- Bands, not points, are what agreement is computed over: the scale is ordinal, and
+  -- comparing derived point values would smuggle interval assumptions back in (§5.10, R41).
+  system_band        TEXT NOT NULL,
+  teacher_band       TEXT NOT NULL,        -- the teacher grades on the same band scale
+  band_distance      INTEGER NOT NULL,     -- ordinal gap; feeds ordinal α and the R44 check
+  system_points      REAL NOT NULL,        -- derived, retained for reporting only
+  teacher_points     REAL NOT NULL,        -- derived, retained for reporting only
+  agreed             INTEGER NOT NULL,     -- exact band match
   routing            TEXT NOT NULL,        -- auto|queued; required to de-bias (§6.8)
   origin             TEXT NOT NULL,        -- base|escalation|random_arm|blind_sample
   review_seconds     INTEGER,              -- rushed acceptances are weaker evidence
@@ -1809,12 +1942,19 @@ CREATE TABLE criterion_stats (
   cohort_id        TEXT NOT NULL,
   criterion_id     TEXT NOT NULL,
   n                INTEGER NOT NULL,
-  mean_points      REAL NOT NULL,
-  sd_points        REAL NOT NULL,
-  histogram        TEXT NOT NULL,          -- JSON
+  band_histogram   TEXT NOT NULL,          -- JSON {band: count}; the primary distribution
+  band_entropy     REAL NOT NULL,          -- spread across bands. Collapsing toward interior
+                                           -- bands is the compression signal (R44)
+  interior_rate    REAL NOT NULL,          -- share of verdicts in non-extreme bands. Compare
+                                           -- against the blind-gold interior rate, not to a
+                                           -- fixed threshold: the question is whether the
+                                           -- PANEL is narrower than the teacher (§5.10)
+  mean_points      REAL NOT NULL,          -- derived; reporting only
+  sd_points        REAL NOT NULL,          -- derived; reporting only
+  histogram        TEXT NOT NULL,          -- JSON, over derived points; reporting only
   escalation_rate  REAL NOT NULL,
   override_rate    REAL,                   -- of reviewed items
-  panel_agreement  REAL,                   -- chance-corrected, escalated subset
+  panel_agreement  REAL,                   -- chance-corrected ordinal α, escalated subset
   uncited_rate     REAL NOT NULL,
   PRIMARY KEY (cohort_id, criterion_id)
 );
@@ -1894,8 +2034,18 @@ The wire format between orchestrator and each worker. These are the isolation gu
 {
   "work_id": "sha256:...",
   "criterion": {
-    "criterion_id": "c4", "text": "...", "max_points": 5,
-    "exemplars": [ { "band": "full", "text": "..." }, { "band": "partial", "text": "..." } ]
+    "criterion_id": "c4", "text": "...",
+    // No max_points, no point values, no numeric scale of any kind (R39). A judge that can
+    // see a 0..5 scale reasons on it whatever it is asked to emit, and the label becomes a
+    // thin wrapper over the same centre-seeking judgment.
+    "bands": [                                       // even-numbered, ordered low to high
+      { "band": "absent_or_wrong",      "descriptor": "No conclusion stated, or a conclusion contradicted by the cited evidence" },
+      { "band": "asserts_only",         "descriptor": "States the conclusion with no mechanism cited" },
+      { "band": "derives_only",         "descriptor": "States the conclusion and cites the mechanism; does not address the boundary case" },
+      { "band": "derives_and_justifies","descriptor": "States the conclusion, cites the mechanism, and addresses the boundary case" }
+    ],
+    "exemplars": [ { "band": "derives_and_justifies", "text": "..." },
+                   { "band": "asserts_only",          "text": "..." } ]
   },
   "question": { "prompt_text": "...", "reference_solution": "..." },
   "evidence": { "spans": [ { "start": 340, "end": 402, "text": "..." } ] },
@@ -1910,12 +2060,21 @@ There is deliberately **no field** for: other judges' verdicts, this judge's ver
 // ScoringResult
 {
   "work_id": "sha256:...",
-  "points": 3.5,
-  "self_confidence": 0.62,                           // a feature, not the authority (§7.1)
+  // FIELD ORDER IS GENERATION ORDER AND IS PART OF THE CONTRACT (R42). Evidence first,
+  // verdict last. The pre-2.7 schema emitted the score first and the rationale last, which
+  // is a snap judgment followed by a justification invented to fit it. Lint this the way
+  // §8.4 lints prompt field order.
+  "cited_spans": [ { "start": 340, "end": 402 } ],   // null => confidence downgrade
+  "evidence_assessment": "Span 340-402 states the conclusion and names the mechanism. No span addresses the boundary case.",
+                                                     // An INVENTORY against the band
+                                                     // descriptors, not free commentary.
+                                                     // "a fairly weak answer overall" is a
+                                                     // magnitude judgment and recreates the
+                                                     // centre-seeking bias one step earlier
   "evidence_sufficient": true,                       // §7.4: false => extraction problem,
                                                      //   route for re-extraction, do not score
-  "cited_spans": [ { "start": 340, "end": 402 } ],   // null => confidence downgrade
-  "rationale": "..."
+  "band": "derives_only",                            // one of the declared bands. No number
+  "self_confidence": 0.62                            // a feature, not the authority (§7.1)
 }
 ```
 
@@ -1924,11 +2083,17 @@ There is deliberately **no field** for: other judges' verdicts, this judge's ver
 ```json
 {
   "submission_id": "s231", "criterion_id": "c4",
-  "verdicts": [ { "judge_id": "llama33", "points": 3.5 },
-                { "judge_id": "qwen3",   "points": 4.0 } ],
-  "points": 3.75, "judge_count": 2,
-  "agreement": 0.71, "confidence": 0.58,
-  "routing": "queued", "route_reason": "disagreement"
+  "verdicts": [ { "judge_id": "llama33", "band": "derives_only" },
+                { "judge_id": "qwen3",   "band": "derives_and_justifies" } ],
+  // Aggregation is ORDINAL (R41): median band, spread recorded. Mapping each judge to
+  // points and averaging would have produced 3.75 -- a value that corresponds to no band
+  // and describes no behaviour, rebuilding the continuous scale the bands remove.
+  "band": "derives_only", "band_spread": 1, "judge_count": 2,
+  "points": 3.0,                                     // derived from the aggregated band, once
+  "agreement": 0.71,                                 // ordinal α: adjacent disagreement
+                                                     // counts for less than distant
+  "confidence": 0.58,
+  "routing": "queued", "route_reason": "adjacent_band_disagreement"
 }
 ```
 
@@ -1945,7 +2110,13 @@ There is deliberately **no field** for: other judges' verdicts, this judge's ver
 {
   "submission_id": "s231", "criterion_id": "c4",
   "student_ref": "R-0231",
-  "proposed_points": 3.75, "max_points": 5,
+  // The teacher reviews and edits on the BAND scale, with points shown as the derived
+  // consequence. An override that set points directly would bypass the band descriptors
+  // and produce a label that cannot be compared with a panel verdict (§5.10, R41).
+  "proposed_band": "derives_only",
+  "band_options": [ { "band": "asserts_only",  "descriptor": "..." },
+                    { "band": "derives_only",  "descriptor": "..." } ],
+  "proposed_points": 3.0, "max_points": 5,           // shown to the teacher, never to a judge
   "narrative": "...",
   "evidence_spans": [ { "start": 340, "end": 402, "text": "..." } ],
   "reason": "boundary", "est_seconds": 40,
@@ -2180,6 +2351,10 @@ The policy instead:
 Be explicit at the top of the queue: "You have 30 minutes. These are the 40 highest-value items of 790 flagged. The remaining 750 are scored provisionally and will stay in your queue." Hiding the residual would misrepresent what the system did, and the teacher needs to know it exists when a student queries a grade.
 
 **Batch-level actions matter more than per-item ones at this scale.** If 210 of 350 students missed criterion 3 identically, the teacher should be able to review the pattern once and apply a decision to the group, rather than clicking through 210 near-identical items. Design for the group action first; per-item review is the exception path.
+
+**Score compression is the bias this design was blind to longest.** Central tendency — raters avoiding the ends of a scale — was structurally invited by the pre-2.7 numeric scale, and it is invisible to every metric the system reports: judges that compress toward the middle compress *together*, so inter-judge agreement rises and confidence rises with it, and agreement against a teacher who shares the same human bias still looks respectable. Section 5.10's behaviourally-anchored bands are the structural defense, and R44's compression check is the monitor — but note the monitor's honest limit: it detects the panel compressing *more* than the teacher, not both compressing together. The only defense against the latter is that a band descriptor's conditions are checkable against the cited spans, which is why the descriptors must state what a response *does* and never how good it is.
+
+**There are two distinct ordering rules and they are easy to confuse.** Section 5.10 governs generation order *inside* a judgment — cited spans, then the evidence assessment, then the band — and exists so the verdict is anchored to an evidence inventory rather than to a vague impression. Section 5.9 and the bullet below govern presentation order *to the teacher*. Different concerns, different rationales; neither substitutes for the other.
 
 **Guard the narrative-versus-score ordering.** Section 5.9 recommends showing narrative feedback before the numeric score, which is right. But a synthesis narrative that says "the reasoning here is strong overall" sitting above a score of 2 is functionally a second, competing grade, and a teacher skimming 40 items will anchor on the prose. Synthesis is barred from *writing* scores (Section 7.2 Rule 3); it must also be barred from *implying* them. Prohibit numeric claims and holistic overall-quality verdicts in synthesis output, keep narratives criterion-anchored and evidence-referenced, and test for it: an assertion that generated narrative contains no score-like claims is as checkable as the schema constraint that keeps synthesis out of the score field.
 
