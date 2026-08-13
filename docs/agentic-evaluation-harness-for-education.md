@@ -1,9 +1,5 @@
 # Agentic Evaluation for Education: A Research-Grounded Architecture for a Local, Open-Source Grading Harness
 
-**Version 2.7.** Adds Section 5.10, the scoring scale: judges emit a **behaviourally-anchored band label**, never a number, and the numeric points are derived afterwards by the orchestrator. Closes a central-tendency bias the design was fully exposed to and that none of its metrics could see. Requirements R39 to R44.
-
-**Version 2.6.** Adds Section 7.7, the ingestion and transcription module: PDF in, structured Markdown out, via a vision-language model, with the validation ladder that catches missing pages and mismatched submissions before they can be scored. Requirements R32 to R38.
-
 *A research report for engineers and executives. Prepared for the design of a teacher-facing evaluation harness that runs on open-source models on local hardware, for deployment in schools with limited or no reliable internet connectivity.*
 
 ---
