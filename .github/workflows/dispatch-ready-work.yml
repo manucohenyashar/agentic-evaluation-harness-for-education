@@ -9,7 +9,7 @@ on:
   pull_request:
     types: [closed]
   schedule:
-    - cron: "*/30 * * * *"
+  #  - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       max_concurrent:
