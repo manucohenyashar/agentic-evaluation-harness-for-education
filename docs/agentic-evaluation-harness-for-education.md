@@ -43,7 +43,7 @@ Note carefully what this does and does not rule out, because version 2.4 oversta
 
 **Per-token cost is not a rounding error.** At 23,000 calls per assessment per class, frontier API pricing that is negligible against a US software budget becomes a recurring operating expense that scales with how much teaching you do. A capital purchase of one machine that then grades without marginal cost is a fundamentally different financial proposition. The economics must favor using the system more, not less, and at this scale only local inference does that.
 
-**In the offline school deployment, student work should not leave the school.** Beyond FERPA-style regulatory questions, transmitting minors' work to a foreign commercial cloud is a governance conversation that many education ministries and school leaders will reasonably decline to have. Local execution resolves this architecturally rather than contractually, which is a materially stronger position (Section 11). In the cloud profile that advantage is not available and has to be replaced with explicit contractual and technical controls — zero-retention routing, regional hosting, a data-processing agreement — which §0.7 and Section 11 specify. The important thing is that this is a *profile-level* difference the operator chooses with open eyes, not a property some deployments quietly lose.
+**In the offline school deployment, student work should not leave the school.** Beyond FERPA-style regulatory questions, transmitting minors' work to a foreign commercial cloud is a governance conversation that many education ministries and school leaders will reasonably decline to have. Local execution resolves this architecturally rather than contractually, which is a materially stronger position (Section 12). In the cloud profile that advantage is not available and has to be replaced with explicit contractual and technical controls — zero-retention routing, regional hosting, a data-processing agreement — which §0.7 and Section 12 specify. The important thing is that this is a *profile-level* difference the operator chooses with open eyes, not a property some deployments quietly lose.
 
 **In the offline school deployment, hardware is a single machine, not a cluster.** The realistic unit of deployment is one reasonably-specified computer per school or per program, shared across teachers, running overnight batches rather than interactive sessions. Apple Silicon's unified memory makes a single machine in this class genuinely capable (Section 8.1), and the architecture is portable to comparable non-Apple hardware, but nothing in the edge profile may assume horizontal scale-out. The cloud profile lifts this constraint — it may scale concurrency horizontally — but it may not require doing so, because the same code has to run in the single-machine case.
 
@@ -76,7 +76,7 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R1** | **In the edge profile**, runs to completion fully offline, with no network service in the critical path; in *every* profile, the inference backend is fixed at run start and no run may fail over to a different backend mid-flight | Intermittent connectivity; comparability of scores within a run | §0.7, §8.1, §8.2 |
 | **R2** | Fits on a single machine, with model weights that can be swapped rather than held concurrently | Single-machine deployment | §7.1, §8.1, §8.4 |
 | **R3** | Resumable at fine granularity without redoing completed work, because runs last hours | Run duration, not power | §8.4, §9.4 |
-| **R4** | **In the edge profile**, student work never leaves the machine, including intermediate artifacts. In the cloud profile the equivalent protection is explicit and configured — zero-retention routing, regional hosting, a data-processing agreement — and is surfaced to the operator rather than assumed | Data sovereignty | §0.7, §9.8, §11 |
+| **R4** | **In the edge profile**, student work never leaves the machine, including intermediate artifacts. In the cloud profile the equivalent protection is explicit and configured — zero-retention routing, regional hosting, a data-processing agreement — and is surfaced to the operator rather than assumed | Data sovereignty | §0.7, §9.8, §12 |
 | **R5** | **In the edge profile**, zero marginal cost per assessment after hardware purchase. In the cloud profile, per-run cost is estimated before dispatch and enforced against a configured ceiling | Cost structure at 23k calls/assessment | §0.7, §8.1, §8.3, §8.7 |
 | **R6** | Evaluation quality sufficient to inform real grades, despite non-frontier models | Trust bar | §5, §7.2, §7.3 |
 | **R7** | System uncertainty is visible and routes to the teacher rather than being hidden in a confident-looking number | Trust bar | §5.8, §10 |
@@ -100,10 +100,10 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R25** | **Throughput is demonstrated on target hardware in a full-pipeline acceptance test, not inferred from arithmetic** | R10 is a hypothesis until measured | §8.6 |
 | **R26** | **Unreviewed low-confidence scores are marked provisional and carried forward, never silently finalized or backfilled** | Review budget will run out | §10 |
 | **R27** | **All model access goes through one provider abstraction. Local serving and OpenRouter are interchangeable implementations of it, selected by configuration. No stage of the pipeline may contain a backend-specific code path** | The same code must run offline at a school, in a container in CI, and in a datacenter | §0.7, §8.7 |
-| **R28** | **The full pipeline runs to completion inside a Linux container on non-Apple hardware with every model call served by OpenRouter. This is the development and CI configuration and it is a supported deployment, not a test stub** | The system is built and tested on Windows-hosted containers, not on Macs | §0.7, §8.7, §12 |
+| **R28** | **The full pipeline runs to completion inside a Linux container on non-Apple hardware with every model call served by OpenRouter. This is the development and CI configuration and it is a supported deployment, not a test stub** | The system is built and tested on Windows-hosted containers, not on Macs | §0.7, §8.7, §13 |
 | **R29** | **Cloud hosting is a first-class deployment target: the same harness, the same open-weight models, served through OpenRouter, for programs with connectivity and no capital budget for hardware** | Not every deployment is a disconnected school | §0.7, §8.7, §9.12 |
 | **R30** | **Backend equivalence is measured, never assumed. Every validation record is scoped to the backend, model build, and quantization that produced it, and a conformance suite runs identical fixtures against local and OpenRouter backends** | A 4-bit local quantization and a hosted build of "the same" model are different graders | §0.7, §8.5, §8.7, §9.5 |
-| **R31** | **No real student work is sent to any remote provider outside a deployment explicitly configured and consented for it. Development and CI corpora are synthetic or consented; cloud production runs require zero-retention routing** | Testing must not become an exfiltration path | §0.7, §9.14, §11 |
+| **R31** | **No real student work is sent to any remote provider outside a deployment explicitly configured and consented for it. Development and CI corpora are synthetic or consented; cloud production runs require zero-retention routing** | Testing must not become an exfiltration path | §0.7, §9.14, §12 |
 | **R32** | **Transcription produces one canonical, content-hashed, immutable Markdown artifact per document. Every evidence span is a byte offset into it; re-transcription creates a new version and invalidates dependent work rather than editing in place** | §7.4 verifies span offsets against source bytes; a mutable source makes every stored span a lie | §7.7 |
 | **R33** | **A document arriving as several PDFs is assembled deterministically, with per-page provenance recorded, and duplicate or missing pages are detected rather than silently concatenated** | Multi-file submissions are the norm, not the exception | §7.7 |
 | **R34** | **Every artifact passes structural validation before it can enter Stage C. Validation failures quarantine as ingestion problems and are never expressed as scores** | Extends R13 from OCR confidence to document structure | §7.7, §9.11 |
@@ -133,6 +133,18 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R58** | **Provisional inputs never withhold a grade. The grade is issued with a coverage record, and shown as a range only where unreviewed items could move the student across a boundary. Only a genuinely missing score — an ingestion failure — renders a grade incomplete, and that routes to the operator** | Provisional means labelled, not withheld. An unreviewed grade honestly labelled is the product; a withheld grade is a failure to deliver it | §7.9, §10 |
 | **R59** | **Grade boundaries are a declared object in the package** | §10 ranked review by proximity to a boundary and ReviewItem carried a boundary delta, while nothing defined one — the ranking was not computable | §7.9, §10 |
 | **R60** | **After the setup phase, no stage may block grade delivery on a teacher action. Every remaining teacher touchpoint is an offer, and the cost of skipping it is stated rather than paid in undelivered grades. A run started with zero subsequent teacher input completes, finalizes, and delivers a full set of grades** | The teacher’s time buys calibration once and sampling thereafter. Any per-run gate makes 350 students’ grades hostage to one person’s availability, which is the bottleneck §0.1 exists to remove | §7.9, §6.8, §10 |
+| **R61** | **The teacher-facing console is a read view over the persistence layer plus an enumerable, idempotent control surface. It holds no pipeline state, performs no inference, and no run depends on a browser session remaining open** | An overnight batch must survive a closed laptop; the interface must be replaceable without touching the harness | §11.1, §11.8 |
+| **R62** | **Exactly two interface steps block progress, both in setup. Every other prompt renders a first-class skip control and states the cost of skipping in the same view** | R60 erodes one reasonable-sounding confirmation at a time; an offer whose cost sits on another screen is not an offer | §11.5, §11.6 |
+| **R63** | **Run progress is displayed at (stage, criterion, judge) granularity. No per-student progress indicator is displayed, because none can be populated honestly under the §8.4 execution plan** | A dishonest progress bar is a trust cost paid for a cosmetic gain | §11.5, §10 |
+| **R64** | **Operator quarantine and the teacher review queue are separate surfaces with separate routes and separate counts, even when one person holds both roles** | Quarantine consuming the teacher-minute budget defeats the budgeting R12 rests on | §11.3, §7.7 |
+| **R65** | **The console contains no numeric score entry field. All score edits are band selections, and points are derived by the pinned mapping** | A typed number reintroduces the continuous scale §5.10's bands exist to remove | §11.5, R39 |
+| **R66** | **Every view displaying a grade also displays the package version, rubric version, and backend profile that produced it** | A grade that cannot be traced cannot be defended, and a statistic read across backends is the §3.6 error | §11.5, R30, §6.7 |
+| **R67** | **The console renders with no request to any origin other than its own, and writes no student text to browser storage** | A CDN reference is a blank screen at a disconnected school; browser storage is an unmanaged PII surface outside §9.14's purge | §11.6, R1, R4 |
+| **R68** | **The MVP console binds to loopback and is single-user with no authentication. A `cloud-hosted` deployment MUST NOT expose it until authentication, per-user audit attribution, and transport security exist** | Single-user-on-one-machine is an honest MVP scope; the same code reachable over a network is an unauthenticated student-record system | §11.9, §12 |
+| **R69** | **Finalization does not end the teacher's authority over a grade. Any grade may be amended after finalization; the amendment preserves `finalized_at`, writes a new grade revision, retains the superseded one, and is attributed in the audit record** | §10 rests automatic finalization on "the standing ability to change any grade at any time", and §12 rests accountability on the same sentence. An interface that can only finalize ends its audit trail where the teacher's responsibility starts | §11.5, §7.9, §6.7 |
+| **R70** | **A review window may delay finalization; it may never withhold a grade. Provisional grades are complete, visible and exportable for the whole window, and the window lapses without any teacher action** | §10 offers the window as an option. Implemented as a hold on delivery rather than on finalization, it is R60's gate wearing a timer | §11.5, §10, R60 |
+| **R71** | **Package export cannot emit real student text. The §9.4 exemplar-provenance gate is a reachable screen rather than a silent strip or a hard failure, and the provenance actually exported is written to the validation record** | §9.4 blocks `real_verbatim` at the boundary and requires teacher-approved paraphrase. Stripping silently degrades the receiving school's calibration; shipping silently exports a cohort's work | §11.5, §9.4 |
+| **R72** | **Every teacher touchpoint in §7.9's inventory is either implemented in the interface or rendered as present-and-unavailable, naming the version in which it arrives. No touchpoint is silently absent** | A step the teacher was told about and cannot find reads as one they skipped by accident, and any guide written from §7.9 otherwise describes a different system than the one shipped | §11.2, §11.9, §7.9 |
 
 R9 and R12 deserve emphasis because they are easy to violate accidentally and they interact. **Any design that asks the teacher for significant up-front effort, or that hands back a review queue proportional to class size, has failed at the thing it was built to fix.** This is the reasoning behind treating calibration as a few short elicitation questions rather than a labeling task (Section 6.4), behind harvesting validation data from the teacher's ordinary review actions rather than requesting it (Section 6.8), and behind budgeting the review queue rather than thresholding it (Section 10).
 
@@ -233,7 +245,7 @@ Three principles follow, and nearly every design decision in this report is an i
 
 **Third, make confidence asymmetric, and invert it where a bias would inflate it.** The system's uncertainty is a first-class output rather than something smoothed away. Unanimous agreement on evidence that failed integrity checks yields **low** confidence, not high, which is the confidence calculation running backwards from intuition on purpose (§7.4, R19). Low-confidence transcription routes on whether an error *could change this criterion's score*, not on a document-level quality number (§7.5, R24). Submissions that may belong to a different assessment halt on `uncertain` as well as on `mismatch`, because a binary gate forces a bad trade and the ambiguous cases fall disproportionately on the students already least well served (§7.7, R35). Unreviewed items stay visibly provisional rather than being quietly finalized (R26). The through-line is that the system is built to make its own doubt visible to a human rather than to resolve it in favour of a confident-looking number.
 
-What this approach does not do is claim the biases are eliminated. §11 records what remains, including the ones the design can only partially defend: transcription quality that tracks handwriting and language fluency rather than understanding, an override log that over-represents hard cases, and score compression shared between the panel and the teacher, which a check comparing one against the other cannot see. Naming those is part of the strategy rather than a caveat on it — a system claiming to have solved bias is making the same category of error as one reporting uncorrected agreement percentages.
+What this approach does not do is claim the biases are eliminated. §12 records what remains, including the ones the design can only partially defend: transcription quality that tracks handwriting and language fluency rather than understanding, an override log that over-represents hard cases, and score compression shared between the panel and the teacher, which a check comparing one against the other cannot see. Naming those is part of the strategy rather than a caveat on it — a system claiming to have solved bias is making the same category of error as one reporting uncorrected agreement percentages.
 
 ---
 
@@ -247,7 +259,7 @@ You already know the fundamentals of agentic evaluation: build ground truth, eva
 - The teacher uploads a **batch of student submissions**.
 - The system returns a **per-student evaluation** and a **class-level rollup**, using **open-weight models rather than a paid frontier API** — served either locally on the school's own machine or through **OpenRouter** when the deployment is hosted (Section 0.7). The model family and the pipeline are the same either way; only the provider behind the abstraction changes.
 
-Every statistical term is explained in plain language the first time it appears. A glossary repeats the short versions at the end of Section 3. Section 0 states the problem and the derived requirements (R1 to R31) that the architecture answers; readers who want the motivation and constraints before the research should start there, and readers who only want the design can start at Section 5. **Readers who care about how this is hosted, tested, or deployed to anything other than a Mac should read Section 0.7 and Section 8.7**, which specify the deployment profiles and the OpenRouter path.
+Every statistical term is explained in plain language the first time it appears. A glossary repeats the short versions at the end of Section 3. Section 0 states the problem and the derived requirements (R1 to R68) that the architecture answers; readers who want the motivation and constraints before the research should start there, and readers who only want the design can start at Section 5. **Readers who care about how this is hosted, tested, or deployed to anything other than a Mac should read Section 0.7 and Section 8.7**, which specify the deployment profiles and the OpenRouter path.
 
 ---
 
@@ -1523,7 +1535,7 @@ Section 7.2's Rule 1 has a real cost and it needs planning for. Full isolation m
 
 **Batch by criterion, not by student.** Run every submission in the class for criterion 1 against one warm cache, then move to criterion 2. Batching by student invalidates the criterion-specific portion of the cache on every iteration. This ordering is also the one that makes Rule 1 easy to hold: you are never tempted to reuse a student-level context because you never assemble one. Section 8.4 gives the full loop nesting, including why the judge model rather than the question belongs in the outermost position.
 
-**Earn a reduced panel over time.** Once your accumulated override log (Section 6.8) shows all three judges have agreed on a given criterion 98% of the time across a full semester, that criterion is a candidate for single-judge scoring, with the full panel reserved for contested criteria. This is a genuine optimization but an **earned** one: it requires the accumulated labels to justify it, so it belongs in Phase 3 or later (Section 12), never on day one. Re-open a criterion to the full panel whenever its override rate rises.
+**Earn a reduced panel over time.** Once your accumulated override log (Section 6.8) shows all three judges have agreed on a given criterion 98% of the time across a full semester, that criterion is a candidate for single-judge scoring, with the full panel reserved for contested criteria. This is a genuine optimization but an **earned** one: it requires the accumulated labels to justify it, so it belongs in Phase 3 or later (Section 13), never on day one. Re-open a criterion to the full panel whenever its override rate rises.
 
 What you should *not* do to save compute: reuse context across submissions, collapse multiple criteria into one call, or let judges see each other's verdicts. Each of these buys speed by reintroducing exactly the bias the panel exists to remove, and each does so invisibly, since none of them degrade any metric you are currently watching.
 
@@ -1612,7 +1624,7 @@ The consequence is worth stating because it is a genuine simplification: **once 
 
 SQLite is more than sufficient and gives you crash-safe writes and resumable reads without operational overhead. Do not reach for a vector store; this is keyed lookup, not similarity search. Section 9 specifies this store in full, along with the eight others the harness turns out to need, the work ledger that makes runs resumable, and the rule that keeps the persistence layer from becoming a contamination channel.
 
-**Treat the working store as student PII.** It contains verbatim spans of student work. Put it in the same protected location as the submissions themselves, not in a world-readable temp directory, and wipe it on completion. On local hardware this never leaves the machine, which is the architectural privacy advantage from Section 11, but "never leaves the machine" is not the same as "safe to leave lying in `/tmp`."
+**Treat the working store as student PII.** It contains verbatim spans of student work. Put it in the same protected location as the submissions themselves, not in a world-readable temp directory, and wipe it on completion. On local hardware this never leaves the machine, which is the architectural privacy advantage from Section 12, but "never leaves the machine" is not the same as "safe to leave lying in `/tmp`."
 
 #### Checkpointing and progress reporting change shape
 
@@ -2755,7 +2767,7 @@ Tier C and Tier R hold verbatim student work in several places at once: transcri
 - **Filesystem permissions, not intent.** Harness-user-only directories. Never `/tmp`. Encryption at rest where the platform makes it cheap, which on a Mac it does.
 - **Purge is a resumability boundary.** Once Tier R is gone the run cannot be resumed or re-explained beyond the audit record, so require explicit teacher acceptance first and default to retaining until then.
 
-**On the cloud profile, PII leaves the machine by design, and the controls have to be explicit (R4, R31).** Under `edge-local` this whole section is enforced by the filesystem: student text never crosses a network boundary, and Section 11 can call that a headline feature. Under `cloud-hosted` the same text is in a container's volume and, more consequentially, in the body of every model call. That protection has to be rebuilt out of things that are configured rather than architectural:
+**On the cloud profile, PII leaves the machine by design, and the controls have to be explicit (R4, R31).** Under `edge-local` this whole section is enforced by the filesystem: student text never crosses a network boundary, and Section 12 can call that a headline feature. Under `cloud-hosted` the same text is in a container's volume and, more consequentially, in the body of every model call. That protection has to be rebuilt out of things that are configured rather than architectural:
 
 - **Zero-retention routing is required, not preferred.** Configure the provider so prompts are not retained or used for training, verify it is actually in force for each model in the panel rather than assuming the account-level setting covers everything, and record the setting in `run_metrics` so an audit can show what was in force for a given grade.
 - **Prefer regional routing** where the institution's jurisdiction requires it, and treat inability to constrain routing as a reason not to use a given model in that deployment.
@@ -2895,7 +2907,454 @@ Feedback quality is the output the K-12 research says teachers and students most
 
 ---
 
-## 11. Risks, limits, and governance
+## 11. The console: the MVP user interface (new in v3.3)
+
+Every prior version of this report specified *decisions* — what the teacher must confirm, what they may skip, what the operator triages, what a run reports while it works — and never specified **where those decisions are made**. Sections 7.9 and 10 describe an interface in some detail ("one click, fully informed", "the skip button is first-class", "show the two conflicting student examples side by side") without ever saying that an interface exists or what it is. That is a gap in the design rather than an implementation detail deferred by choice: a harness driven from a command line is a harness no teacher operates, and §0.1's argument collapses if the person it exists to serve cannot reach it.
+
+This section specifies a deliberately small, local, browser-based console: **enough interface to execute the entire test life cycle once, with the first real teacher, and nothing more.**
+
+The scope discipline is the point rather than a compromise. The first version's job is to determine what the second version should be. The failure mode here is not an ugly interface — it is a beautiful one built against guesses, arriving a term late. §0.1's arithmetic argues the same way it does everywhere else in this report: a plain console that delivers 300 grades in the morning beats a polished one that does not exist yet.
+
+### 11.1 What the console is, and the one rule that must not break
+
+> **The console is a read view over the §9 stores plus a small control surface. It holds no pipeline state, performs no inference, and is never in the scoring path.**
+
+Everything the console displays it reads from the persistence layer — the work ledger, `submission`, `criterion_score`, `review_queue`, `submission_grade`, `criterion_stats`. Everything it changes, it changes by writing a row the orchestrator reads on its own schedule: a review action, a control flag, an approved question inventory. It does not hold a run in memory, does not stream tokens, and does not decide anything.
+
+Three consequences follow, and each is a property worth having rather than an architectural nicety:
+
+- **Closing the browser cannot affect a run.** An overnight batch is started in the evening and read in the morning, quite possibly from a different machine on the same LAN, quite possibly after the laptop that started it was shut. A console that owned the run would make a browser tab a single point of failure for 350 grades, which is a strictly worse version of the bottleneck §0.1 exists to remove. This is the console's expression of R14.
+- **The console is disposable.** When the first teacher's feedback says the review queue is wrong, the fix touches a view rather than the harness. That is the reason to keep the seam sharp in v1, when it is nearly free, rather than after the second version has grown into the orchestrator.
+- **§9.1's one-way rule extends to the UI unchanged.** The console reads memory; nothing it writes is visible to a judge at inference time. A "notes on this student" field, or any per-student annotation a later prompt could pick up, would reopen the contamination path §7.2 closes — so the console has no writable field that any scoring prompt reads. Teacher review actions are written *after* scoring and consumed only by aggregation, grading, and the label store.
+
+### 11.2 What the MVP covers, and what it deliberately does not
+
+The MVP console implements **§13's Phase 1 exactly, and nothing from Phase 3 or 4.** Stage B does not exist yet, so no part of the console elicits, revises, or displays a rubric revision.
+
+| Capability | In MVP? | Why |
+|---|---|---|
+| Package setup: upload, question inventory, answer keys | **Yes** | Contains both blocking gates (§7.9). Without it nothing can run |
+| Rubric read-back, decomposability confirmation, grade policy | **Yes** | All three are skippable and all three have defaults, but each materially improves the result for a few minutes of work |
+| Cohort creation, submission upload, ingestion preflight | **Yes** | The run cannot start without submissions, and the validation ladder's output has to go somewhere |
+| Run control: start, monitor, pause, resume | **Yes** | Runs last hours and are resumable (R3, R14); resume must be reachable without a terminal (§9.16) |
+| Operator quarantine | **Yes** | Ingestion failures are the only thing that can block an individual grade (§7.9). Unreachable quarantine means unrecoverable grades |
+| Teacher review queue, budgeted in minutes | **Yes** | §10's central design, and also the validation instrument (§6.8) |
+| Whole-grade sample, blind sample | **Yes** | Blind labels are the only unbiased ground truth (R21) and cannot be retrofitted onto a run that did not collect them |
+| Class rollup and finalization | **Yes** | The rollup is the system's strongest output at n=350 (§10) |
+| Package export / import as a file | **Yes** | R17. It is also how the second cohort costs zero setup |
+| Ambiguity elicitation (Stage B, §6.4) | No | Phase 4. Building its interface before the Phase 3 guardrails exist is the exact ordering §13 warns against |
+| Correcting an answer key after a run, and re-deriving the deterministic scores | **Yes** | §10 routes a suspected wrong key here as one package correction for the whole cohort. Without it the only remedy is 350 review items the queue is forbidden to contain (R54) |
+| Amending a grade after finalization | **Yes** | §10's automation argument rests on "the standing ability to change any grade at any time". A console that can only finalize has made finalization the end of the teacher's authority |
+| Free rubric authoring or editing in the browser | No | The rubric arrives as a PDF like everything else (R38). A general editor is a rubric-revision surface with none of §6's guardrails behind it. What S5 permits is narrower and bounded: correcting the *read-back* of the criteria and bands ingestion proposed, before any scoring exists, inside the §6.2 lock — the same act as correcting the question inventory, not a revision of a rubric already in force |
+| Multi-teacher accounts, roles, permissions | No | §11.9 and R68. One teacher, one machine, loopback only |
+| Longitudinal dashboards across terms | No | Tier D accumulates from run one; reading it can wait until there is something in it |
+| Student-facing views | No | Out of scope for the harness entirely; grades are exported |
+
+Most of those omissions are ordinary deferrals. One is not, and it should be named rather than left to be discovered. **Stage B elicitation is a §7.9 touchpoint, so leaving it out means the MVP does not execute the whole life cycle that §7.9's inventory — and any teacher-facing guide written from it — describes.** §13's ordering is still right: an elicitation interface built before the Phase 3 guardrails exist is precisely the failure that ordering prevents. The resolution is therefore not to build it early but to stop the console implying it is there. Two consequences follow, and both are display rules rather than features:
+
+- **S2 must not sell ambiguity discovery.** The calibration papers are still worth collecting in Phase 1, because they are what Phase 4 runs against and a package that reaches Phase 4 with them already attached costs the teacher nothing at that point. What S2 may not claim is that the system will find where the rubric reads two ways, because in this version it will not. It stores them, and it says so.
+- **The setup wizard shows the step it is not offering.** A teacher who has been told the system will ask them about their own marking will look for that step; an absent step reads as one they skipped by accident. Render it present and unavailable, naming the version it arrives in — the same reasoning that makes every skip control state its cost. An omission the teacher cannot see is one they will assume they caused.
+
+### 11.3 Two surfaces, and why merging them would be a design defect
+
+The console has **two entry points with separate navigation**, and this is a requirement rather than an information-architecture preference. §7.7 is explicit: quarantine triage lands on "the operator's quarantine list, which is the same surface §7.5's transcription triage uses and a *different* surface from the teacher's grade-review queue", because letting rescans consume the teacher-minute budget defeats the budgeting that R9 and R12 rest on.
+
+| | **Teacher console** | **Operator console** |
+|---|---|---|
+| Who | The subject teacher | Whoever scans the papers; often the same person, in a different role and at a different time |
+| Rhythm | Once per run, for a self-chosen number of minutes | During and just after ingestion, until the list is empty |
+| Work | Judgment: is this mark right? | Mechanics: rescan page 3, this is Maya's paper, this is last term's test |
+| Blocks grades? | Never (R60) | Only the specific submissions it names (§7.9) |
+| Queue sizing | Budgeted in minutes, ranked by expected value | Complete list; it is small and every item is actionable |
+
+They may share a browser and a session. They must not share a queue, a badge count, or a notification. If the first teacher is also the operator — which in a small school they will be — the console still asks them to do those two jobs in two places, because the alternative is a 790-item list with three rescans buried in it.
+
+### 11.4 The life cycle as the console expresses it
+
+```
+  ┌── OPERATOR ─────────────────────────────────────────────────────────┐
+  │                                                                      │
+  │   S6 Cohort & upload ──► ingest preflight ──► S8 Quarantine          │
+  │        submissions           V0..V4             rescan / identify /  │
+  │                                 │               wrong-test           │
+  │                                 ▼                                    │
+  │                           S7 Run monitor ◄── resume, pause, cost     │
+  └─────────────────────────────────┼────────────────────────────────────┘
+                                    │
+  ┌── TEACHER ───────────────────────┼───────────────────────────────────┐
+  │                                  │                                   │
+  │  SETUP, once per package         │      EVERY RUN, all optional      │
+  │  ┌───────────────────────┐       │     ┌──────────────────────────┐  │
+  │  │ S2 Upload 4 PDFs      │       └────►│ S9  Review queue         │  │
+  │  │ S3 Question inventory │⛔           │ S10 Whole-grade sample   │  │
+  │  │ S4 Answer keys        │⛔           │ S11 Blind sample         │  │
+  │  │ S5 Rubric read-back   │ skip        │ S12 Class rollup         │  │
+  │  │    Decomposability    │ skip        │     ├► finalize (1 click)│  │
+  │  │    Grade policy       │ skip        │     └► fix an answer key │  │
+  │  │    Review window      │ skip        └──────────────────────────┘  │
+  │  │    Ambiguity (§6.4)   │ ✗ Phase 4                │                │
+  │  └───────────┬───────────┘                          │                │
+  │              │                                      ▼                │
+  │              └──► S1 Packages ──► export / import   S13 Student      │
+  │                     a single file (R17), gated by   detail ─► amend  │
+  │                     exemplar provenance (§9.4)      a finalized grade│
+  └──────────────────────────────────────────────────────────────────────┘
+
+  ⛔ = the only two screens in the entire application that block (R60)
+  ✗  = a §7.9 touchpoint this version does not implement; §11.2 says what
+       that costs and what the wizard must therefore show in its place
+```
+
+### 11.5 The screens
+
+Each screen below names its purpose, what it must show, and which rule it exists to enforce. Layout is indicative; the constraints are the specification.
+
+#### S1 — Packages (home)
+
+The landing surface. One row per Assessment Package, its versions, and the runs made with it.
+
+```
+  Packages                                             [ Import package… ]
+  ────────────────────────────────────────────────────────────────────────
+  Physics Midterm 2026            v3   ready
+     validation: no data for this population            [ Open ] [ Export ]
+     runs: Grade 11A (350, complete) · Grade 11B (in progress, 61%)
+
+  Chemistry Unit 4                v1   setup incomplete — 2 steps remain
+                                                        [ Continue setup ]
+```
+
+Two rules. First, a package never administered to *this* population shows **"no validation data for this population"**, never a figure borrowed from another population — R23 as a display rule, and the one most likely to be violated by a well-meaning summary card. Second, import and export are ordinary file operations, a download and a file picker, because §9.4's portability requirement is satisfied by a USB stick and nothing else may be assumed.
+
+Third — and this is the one place a file operation is not unconditional — **export passes an exemplar provenance gate.** §9.4 blocks `real_verbatim` anchors at the package boundary and permits only `paraphrased` or `synthetic` ones, with the paraphrase approved by the teacher, so export cannot be a bare download without either shipping a cohort's work or silently stripping the anchors that make the package worth reusing. The gate is a screen rather than an error: it lists the exemplars that cannot travel, shows the locally-generated paraphrase of each beside the original for approval or rejection, and writes the file once the list is clear. Rejecting a paraphrase drops that exemplar instead of blocking the export, and the validation record stores which provenance the package was validated with, because §9.4 is explicit that a package validated on real anchors and exported with synthetic ones is not the instrument its statistics describe.
+
+#### S2 — New package: upload
+
+Four upload targets — assessment, reference solution, rubric, and optionally the 10–15 already-marked calibration papers — each accepting **PDF only** (R38) and **several files per logical document** (R33), with the assembled page order shown back before anything is transcribed.
+
+Only the first three are needed to proceed. The calibration papers are marked recommended and the cost of skipping is stated in place — but in this version that cost is **deferred rather than immediate**, and the copy has to say which, because Stage B does not exist yet (§11.2): *"These are stored with the package. A later version uses them to find the places your rubric can be read two ways; this version does not. Uploading them now means that step costs you nothing when it arrives. It grades either way."* Promising ambiguity discovery here is the most tempting copy change on the screen and the one that would make the console misdescribe what it does.
+
+Ingestion runs on upload. The screen reports transcription progress per document, and any V0/V1 failure on a setup artifact surfaces here rather than in the operator queue — a setup artifact has no operator, and the teacher uploading a corrupt rubric PDF is the person who can fix it.
+
+#### S3 — Confirm the question inventory ⛔ **BLOCKS**
+
+What ingestion found, shown for correction:
+
+```
+  I read your test as 5 questions.                     Rubric version: R0
+  ─────────────────────────────────────────────────────────────────────
+   Q1  multiple choice · 4 options                 [ open ] [✓mcq] [both]
+   Q2  multiple choice · 4 options                 [ open ] [✓mcq] [both]
+   Q3  multiple choice · 4 options                 [ open ] [✓mcq] [both]
+   Q4  open response                               [✓open] [ mcq ] [both]
+   Q5  circle an answer, then explain              [ open ] [ mcq ] [✓both]
+
+   + add a question       − remove          [ Confirm — this is my test ]
+```
+
+The first of exactly two gates. The screen must say plainly that it blocks and why: a test the system has misunderstood cannot be marked. Question type here is the *proposal* §7.8 requires the teacher to confirm, and it locks under §6.2 on acceptance.
+
+#### S4 — Answer keys ⛔ **BLOCKS**
+
+One row per MCQ question. There is no default and no skip, because there is no honest guess at which option is correct (§7.9). The screen states what this buys: these questions are then marked by lookup with no model involved, and they never enter the review queue (R54).
+
+#### S5 — The three optional setup cards
+
+Three cards on one screen, each independently skippable, each showing its default in the same view as its skip control. This is R60 rendered: **an offer and its cost of refusal appear together, or it is not an offer.**
+
+```
+  ┌ How I read your rubric ─────────────────────── 5 min ─── [ Skip ] ─┐
+  │ Your line "shows appropriate working, 5 marks" became 4 bands:      │
+  │   Best · Good · Weak · None    with what each one does              │
+  │ Skipping uses your rubric exactly as written.                       │
+  ├ Which lines can be split ────────────────────── 3 min ─── [ Skip ] ─┤
+  │ "Shows appropriate working" — four separate checks, or only         │
+  │ meaningful judged whole?     ( split ) ( keep whole ) ( not sure )  │
+  │ Skipping, or "not sure", keeps the line whole. Whole is always the  │
+  │ safe answer (R49).                                                  │
+  ├ How the final grade is calculated ───────────── 5 min ─── [ Skip ] ─┤
+  │ "Each question's mark is the sum of its rubric lines. Question 4    │
+  │  scores zero if the safety analysis is missing. The total is the    │
+  │  sum of the questions, scaled to 100 and rounded to one decimal.    │
+  │  80 and above is an A…"                                             │
+  │ Skipping adds everything up and reports raw points, no letters.     │
+  │ Worth the 5 minutes: grade boundaries decide which students the     │
+  │ system asks you to look at first.                        [ Edit ]   │
+  ├ When grades finalize ────────────────────────── 1 min ─── [ Skip ] ─┤
+  │ Grades finalize when the run completes.                             │
+  │ Hold them provisional first?   ( none ) ( 24h ) (●48h ) ( 72h )     │
+  │ Skipping finalizes on completion. Nothing waits for you either way. │
+  └─────────────────────────────────────────────────────────────────────┘
+```
+
+The fourth card exists because §10 grants the teacher a review window — "the teacher may configure a review window, say 48 hours, during which grades stay provisional" — and every earlier draft of this section gave them no way to set one, while S12 displayed a countdown that had come from nowhere. It is a single control with a default and a skip, deliberately the smallest card on the screen, and it is worth stating what it is not: **it does not make finalization conditional on the teacher.** The window lapses on its own, the grades finalize on their own, and setting it to 72 hours delays delivery of *final* grades by 72 hours while the provisional ones are visible, exportable, and complete the entire time. A window that withheld grades until it lapsed would be R60's gate wearing a timer.
+
+Three constraints on the grade-policy card specifically. It is built from a **menu of the rules §7.9 enumerates** — weighted sum, gate, drop-lowest, scale, rounding, boundary table — and there is **no free-text formula field and no code field**, because the policy must be showable in plain language and reproducible for an appeal (R57). The plain-language rendering is generated from the stored policy object rather than typed alongside it, so the two cannot diverge. And editing the boundary table after a run has scored is treated like any other §6.2-locked change: it creates a new policy version, and the audit record says which version produced which grade.
+
+#### S6 — Cohort, submissions, and preflight
+
+Create a cohort, attach a roster, upload the batch of submission PDFs, watch ingestion, then start the run.
+
+The preflight summary is the validation ladder's output **per gate**, because "which gate failed" is what tells someone what to actually do:
+
+```
+  Grade 11A — 350 submissions ingested
+  ─────────────────────────────────────────────────────────────────────
+   V0 file integrity      348 pass    2 unreadable        → quarantine
+   V1 page completeness   345 pass    3 missing pages     → quarantine
+   V2 structure           347 pass    1 no answer region for Q4
+   V3 identity            344 pass    4 unmatched to roster
+   V4 assessment match    349 match   1 uncertain         → human decision
+  ─────────────────────────────────────────────────────────────────────
+   341 ready to score · 9 in quarantine
+
+   Backend: edge-local · panel: 3 judges · est. 4h 10m · est. cost —
+                                            [ Start run ] [ Drift check ]
+```
+
+Two behaviours the screen must have. **A high V4 failure rate is one error, not many**: if a large share of submissions fail V4, the screen withholds "start run" and says the assessment itself is probably the wrong version — §7.7's circuit breaker surfaced, rather than 340 triage items generated. And **quarantine never blocks the run**: 341 submissions score while 9 are rescanned, and rescanned submissions join the same run afterwards through the ledger.
+
+On package reuse the drift check is offered here, advisory and skippable, and reports as §9.4 specifies: one screen, "criteria 2 and 7 look different in this cohort, everything else matches."
+
+#### S7 — Run monitor
+
+The screen someone glances at in the evening and again in the morning.
+
+```
+  Grade 11A · run 2026-06-14-01 · running · 2h 41m elapsed
+  ─────────────────────────────────────────────────────────────────────
+  Stage C · scoring         criterion 8 of 12 · judge 2 of 3
+  ████████████████████████████░░░░░░░░░░░  61%   14,102 / 23,140 units
+
+  done 14,102 · in flight 96 · pending 8,914 · quarantined 28
+  escalations so far 6.2% of base units  (this raises the remaining count)
+  estimated completion 05:10 · backend edge-local · transcription pinned
+
+  [ Pause ]    [ Resume ]  ← takes no arguments; safe when nothing is wrong
+```
+
+**There is no per-student progress bar, and this is not an omission.** §10 is explicit: execution is batched by criterion, so no individual student is finished until the final criterion completes, and a per-student bar cannot be populated honestly under this execution plan. Progress reads "criterion 8 of 12, judge 2 of 3" because that is what is true.
+
+Estimated completion comes from observed throughput against remaining units, **adjusted for the escalation rate observed so far**, since escalations add work that was not in the initial count (§9.16). Resume takes no arguments and is safe to press when nothing is wrong. On the `cloud-hosted` profile this screen also carries spend against the configured ceiling, and a run approaching its ceiling pauses rather than silently truncating (R5).
+
+#### S8 — Operator quarantine
+
+The operator's actual work, and the only queue in the system whose target size is zero.
+
+```
+  Quarantine — 9 items
+  ─────────────────────────────────────────────────────────────────────
+  ▸ S-0142  V1   pages 3 and 4 missing from the assembled document
+                 [ Re-upload pages ]  [ View what was received ]
+  ▸ S-0177  V3   name read as "M. Okoye" — 2 roster candidates
+                 ( Maya Okoye )  ( Michael Okonjo )      [ Confirm ]
+  ▸ S-0203  V4   uncertain: answers do not correspond to this test
+                 closest match: Physics Midterm 2025 (proposed, not applied)
+                 [ This is the wrong paper ]  [ It is the right paper ]
+  ▸ S-0219  OCR  Q2 selection mark unreadable — crop shown
+                 [ Open crop ]  [ Re-scan ]
+```
+
+Three rules the screen enforces. It **never auto-reassigns** a mismatched submission; it proposes candidates and a human confirms (R35). It shows the **image crop** for any unreadable mark or described region, because the remedy is a glance rather than a judgment (R54, R46). And an unresolvable item can be closed as *unresolvable*, which marks the affected criteria `criteria_missing` and the grade `incomplete` — an honest incomplete grade with the missing input named, never a zero.
+
+#### S9 — The review queue
+
+The teacher's main screen, and the one §10 says breaks if it is designed at classroom scale.
+
+```
+  Review — Grade 11A                         I have [ 30 ] minutes  [ Go ]
+  ─────────────────────────────────────────────────────────────────────
+  10 of those 30 are reserved for the blind sample (S11) and spent there.
+  These are the 40 highest-value items of 790 flagged, in the other 20.
+  The remaining 750 are scored provisionally and stay in your queue.
+  ─────────────────────────────────────────────────────────────────────
+
+  ▸ GROUP · 210 students · Q3 criterion "identifies the governing law"
+    All 210 show the same pattern: conclusion stated, no law named.
+      3 sample papers side by side ▾
+      Currently: Weak.   Apply to all 210: ( Best )( Good )(●Weak)( None )
+                                    [ Apply to group ]  [ Review singly ]
+
+  ▸ S-0088 · Q4 criterion "deals with the edge case" · could move C → B
+    ── Feedback ──────────────────────────────────────────────────────
+       The response identifies the boundary condition at x = 0 but does
+       not state what happens above it, so the edge case is raised
+       rather than resolved.
+    ── Evidence, quoted from this paper ───────────────────────────────
+       "…at x = 0 the force vanishes, which is the limiting case…"
+    ── Mark ──────────────────────────────────────────────────────────
+       ( Best ) (●Good ) ( Weak ) ( None )      panel: 2 Good, 1 Weak
+                                        [ Accept ] [ Change ] [ Skip ]
+    rubric R0 · edge-local · flagged: panel disagreement + near boundary
+```
+
+The screen's non-negotiable properties, each traceable:
+
+- **Budget, not threshold.** The teacher types minutes; the queue fills that budget by expected value and states the residual in the header (R12, R26). A fixed-percentage flag list is the design this replaces.
+- **Group actions come first.** If 210 students made the same error, that is *one* item at the top of the queue with an apply-to-group control, not 210 items. Per-item review is the exception path (§10).
+- **Narrative first, evidence second, mark third.** §5.9's ordering, and §10's warning applies to the layout: the narrative is criterion-anchored and carries no overall-quality verdict and no number, because a prose verdict above a mark is a second competing grade.
+- **The mark is edited on the band scale.** The controls are band labels. There is **no numeric entry field anywhere in the console**; points are derived from the band by the pinned mapping (R39, §5.10). A teacher who could type "3.5" has reintroduced the continuous scale the bands exist to remove.
+- **Why it was flagged is shown**, in the terms §10 ranks by — disagreement, boundary proximity, transcription overlap, criterion history — never as a bare confidence percentage.
+- **The blind sample's minutes are reserved before anything is ranked, and nothing else's are.** §6.8 requires the blind sample to be carved out of the review budget rather than to compete with it, so the header subtracts it first and says so. What is reserved is **minutes**; the blind items themselves are never rendered on this screen — they are the S11 flow, and invariant 11 depends on that separation holding literally rather than by intention. Two things that look like they belong in this carve-out do not, and are worth naming so they are not reintroduced. §7.1's **random arm** is a fixed share of judgments escalated to the full panel regardless of confidence: it spends compute, never teacher minutes, and produces no review item at all. And there is no spot-check queue of auto-accepted items here, because §6.8 retired that explicitly — a label collected next to a visible system score is an acceptance label, which is the thing the blind sample exists to not be.
+- **Deterministic items are absent.** A cleanly-read MCQ has a correct score by construction and never appears here (R54).
+
+#### S10 — Whole-grade sample · S11 — Blind sample
+
+Two small screens, both offered by default at the end of a run, both skippable, both stating what skipping costs.
+
+The **whole-grade sample** (§7.9) draws 10–15 complete final grades **from the auto-accepted population**, shows them exactly as the student will receive them, and asks only: does this look like a grade you would have given? It catches the class of error a per-criterion queue structurally cannot — every criterion defensible, the total somewhere the teacher would never have put it.
+
+The **blind sample** (R21) is the only screen in the console that deliberately hides system output. The teacher marks 15 random papers with the system's bands and narratives not rendered, and sees the comparison only afterwards. It must be *impossible* to reach the system's marks from inside this flow — unreachable, not merely discouraged — because a label collected after a glance is an acceptance label, and §6.8 requires the two be stored as different `label_type`s and never mixed. Skipping costs exactly one thing, and the screen says so: this run adds no new evidence about the system's accuracy, and the system will report that rather than quoting an older figure.
+
+#### S12 — Class rollup and finalization
+
+The screen §10 calls the system's strongest output at n=350.
+
+```
+  Grade 11A · 350 students · rollup
+  ─────────────────────────────────────────────────────────────────────
+  Per-criterion distribution                     (the reteaching view)
+   Q3 · identifies the governing law
+        Best ▏12   Good ▎38   Weak ███████████ 210   None ▎90
+   Q4 · deals with the edge case
+        Best ███ 96   Good ████ 121   Weak ██ 74   None ██ 59
+   …
+  Multiple choice, reported separately and never merged with the above
+   Q1  68% correct · most-chosen wrong option: (C)                (R53)
+                                              [ This key looks wrong ]
+  ─────────────────────────────────────────────────────────────────────
+  Agreement with you, on the 15 papers you marked blind:
+     the graders and you agreed on 11 of 15 after accounting for
+     chance (κ = 0.63, n = 15 — too few to draw conclusions from)
+     atomic criteria κ = 0.71 · holistic criteria κ = 0.48       (R51)
+  ─────────────────────────────────────────────────────────────────────
+  Criteria that need work before this test is used again
+   Q2 · "explains the trade-off"    the panel could not apply it; scored
+        single-judge and provisional for 291 students   (§7.1 breaker)
+   Q4 · "deals with the edge case"  exhausted the review budget again,
+        as it did in Grade 11B                              (§10, item 5)
+  ─────────────────────────────────────────────────────────────────────
+  41 criteria across 28 students remain unreviewed.
+  3 of those could move a student across a grade boundary.
+                       [ Finalize 350 grades ]    auto-finalizes in 41h
+```
+
+Display rules, all of them load-bearing:
+
+- **No unqualified headline accuracy.** Every agreement figure is chance-corrected, carries its sample size adjacent to it, is scoped to this assignment type and backend, and separates atomic from holistic criteria (R8, R51). "AI accuracy: 94%" must be impossible to produce from this screen.
+- **Deterministic correctness gets its own block**, never merged into any agreement figure (R53).
+- **Finalization is one action for the whole class**, and it names what it covers before it is pressed (§7.9). It is never 350 clicks, and it is **never a gate**: the countdown to automatic finalization is visible, and a teacher who does nothing still has 350 delivered grades (R60).
+- **Coverage is stated rather than hidden**: how many criteria were auto-accepted, reviewed, provisional, and missing.
+- **A skipped blind sample renders as an absence, never as a gap the layout fills.** Where the agreement block sits, the screen says *"no new validation evidence for this administration"* and shows the package's prior record separately, labelled with the cohort, population and backend it came from. §6.8 makes this the precise price of skipping S11; a screen that quietly dropped last term's κ into the same position would charge a different price than the one S11 quoted, and R23's population scoping would be lost at exactly the moment it mattered.
+- **A wrong answer key is corrected here, once, for the whole cohort.** This screen is where a wrong key becomes visible — a deterministic item where the class overwhelmingly chose one non-key option is the signature — and §10 routes that correction to the package rather than into 350 review items the queue is forbidden to contain (R54). The control writes a new key version, re-derives the affected deterministic criteria by lookup, and re-runs the grade policy; nothing goes to the panel, because nothing about it is a judgment (R52). Grades move, and the audit record says which key version produced which grade. It is the one action on this screen that changes scores without a review action, which is exactly why it is a versioned package edit under §6.2 rather than an inline fix.
+- **Criteria the run could not grade well are reported as findings rather than absorbed.** §7.1's escalation circuit breaker marks a criterion `un-gradeable_by_panel` and scores the remainder single-judge and provisional; §10's fifth residual rule asks that criteria which persistently exhaust the review budget surface as a pattern instead of being paid for again every term. Both are teacher-facing rubric findings and neither had a screen. They belong on the rollup rather than on the run monitor because this is the screen the teacher reads and that is the one the operator reads (§11.3). In this version the block is a report and nothing acts on it; when Phase 4 exists, it is the block that feeds it.
+- Export produces grades and feedback in a format the school already uses — CSV for the marks system, one PDF per student for return — and purge of Tiers C and R is offered here, after acceptance, as §9.14 requires.
+
+#### S13 — Student detail
+
+Reachable from anywhere above. Per criterion: narrative, quoted evidence spans highlighted in the transcript, band, confidence flag, and — discreetly, in a footer — the package version, rubric version, and backend profile that produced this grade (§6.7). Where an unreviewed provisional criterion could move this student across a boundary, the grade shows as a **range** rather than a point; where it could not, it shows as the grade (R58).
+
+Evidence spans render as highlights over the canonical Markdown transcript, which is what makes them checkable at all. For a span cited from a **described** region — a diagram, a graph — the description is shown *with its image crop beside it* and marked as a description rather than a quotation (R46), because span verification proves faithful quotation of a description and never fidelity of that description to the drawing.
+
+**The band is editable here, not only inside the queue.** §10 requires the score to be editable in one click wherever it is shown, and §10's automatic-finalization argument rests explicitly on "the standing ability to change any grade at any time" — so a console where edits exist only within a budgeted queue has made the teacher's authority expire when their thirty minutes do, which is a quieter version of the bottleneck R60 removes. The control is the same band selector as S9 and is bound by the same invariant 2. An edit made here writes the same `review_queue` action and emits the same `acceptance` label as one made in the queue, so the label store cannot tell the two apart — and neither can be confused with a blind label, which is the distinction that actually has to survive (R20).
+
+**Amending a finalized grade is a first-class action, and it is not an un-finalize.** Grades finalize on run completion or at window lapse (§10), so by the time a student queries one it is usually already final, and both §7.9 and §12 rest the system's accountability story on the teacher still being able to change it. Amendment therefore leaves `finalized_at` in place, writes a new `submission_grade` revision with the prior one retained, and records who changed what, when, and why in the audit record. What it must not do is silently mutate a delivered grade: the student's copy and the exported CSV were produced from a particular revision, and a dispute three years later is a question about *which* one (§6.7). A console that could only finalize would end its audit trail at the exact moment the teacher's responsibility begins.
+
+### 11.6 Interface invariants
+
+These are testable assertions about the console rather than styling guidance. Each is a rule from elsewhere in this report that has a specific way of being lost in a UI, and each is cheap to assert in a test.
+
+| # | Invariant | From |
+|---|---|---|
+| 1 | Exactly **two** screens block progress, and both are in setup. Every other prompt renders a first-class skip control and its cost of skipping in the same view | R60, §7.9 |
+| 2 | No numeric score entry field exists anywhere. All score edits are band selections | R39, §5.10 |
+| 3 | No per-student progress indicator exists during a run | §10, §8.4 |
+| 4 | Any view showing a grade also shows the package version, rubric version, and backend profile that produced it | R30, §6.7 |
+| 5 | Any agreement statistic renders chance-corrected, with its sample size adjacent, population- and backend-scoped, and atomic and holistic figures never merge | R8, R23, R51 |
+| 6 | Operator quarantine and the teacher review queue have separate routes and separate counts; no quarantine item can appear in the review queue | §7.7, R12 |
+| 7 | Deterministic (MCQ) criteria never appear in the review queue | R54 |
+| 8 | The review queue header states the residual — items flagged, items shown, items left provisional | R26 |
+| 9 | Group actions render above per-item actions whenever a group exists | §10 |
+| 10 | Narrative renders before the mark, and narrative text contains no numeral-bearing or overall-quality claim | §5.9, §10 |
+| 11 | The blind-sample flow has no reachable path to system output before submission | R21, §6.8 |
+| 12 | No student text is written to browser storage — no `localStorage`, no `sessionStorage`, no client-side cache, no service worker | R4, §9.14 |
+| 13 | The page loads with zero requests to any origin but its own: no CDN, no web font, no analytics, no telemetry | R1 |
+| 14 | No console action writes to any field that a scoring prompt reads | R15, §9.1 |
+| 15 | The blind-sample reservation is subtracted from the stated budget before ranking, and no blind-sample or random-arm item is ever rendered in the review queue | §6.8, §7.1, inv. 11 |
+| 16 | Wherever a band is displayed it is displayed as an editable band control. There is no view that shows a grade and cannot change it | §10, R65 |
+| 17 | Finalization does not end editing: an amendment path exists, preserves `finalized_at`, and writes a new grade revision rather than mutating the delivered one | R69, §6.7 |
+| 18 | A configured review window delays finalization and never withholds a grade; provisional grades export normally throughout it | R70, R60 |
+| 19 | Export cannot emit a package with `contains_real_student_text = 1`; the provenance gate is reachable and its outcome is written to the validation record | R71, §9.4 |
+| 20 | With no blind labels collected, the agreement block renders "no new validation evidence for this administration" and never renders a prior administration's figure in that position | R8, R21, R23 |
+| 21 | Every §7.9 touchpoint is either implemented or rendered as present-and-unavailable with the version it arrives in. No touchpoint is silently absent | R72, §11.2 |
+
+Invariants 1, 2, 3 and 7 deserve emphasis because each will be argued against by a reasonable person during the first week of use. A per-student progress bar will be requested and cannot honestly be built. A numeric entry box will feel faster to the teacher and reintroduces the bias §5.10 exists to remove. An extra blocking confirmation will feel safer and is exactly how R60 erodes. Record them as invariants precisely because they will come under pressure.
+
+### 11.7 Technology, and why the simplest option is also the right one
+
+**One process serving server-rendered HTML over loopback, reading the same SQLite files the harness writes, with no build step and no client framework.**
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Server | The harness's own process, or a sibling process on the same machine | Nothing new to install, configure, start on boot, or restart after a crash — the same argument that chose SQLite over Postgres in §9.12 |
+| Rendering | Server-rendered HTML, progressive enhancement only | No npm toolchain in a school staff room; no build step means the console is repairable by whoever is there |
+| Live updates | Polling the ledger every few seconds | The run monitor is the only live surface and it changes on a scale of minutes. Websockets buy nothing here and add a reconnect state machine |
+| Assets | Vendored locally, one stylesheet, no framework | Invariant 13. A CDN reference is a console that renders blank at a school with no internet — the deployment this system exists for |
+| Uploads | Ordinary multipart form posts, streamed straight to the content-addressed blob store | Batches run to hundreds of megabytes of scans; they must not be buffered in memory or staged in the browser |
+| Long work | Never in a request handler. The console writes a control row; the orchestrator picks it up | §11.1. A run that dies when a request times out is not resumable in any useful sense |
+| State | None in the console. Every view is a query | Two browser tabs, or a phone on the same LAN, show the same truth |
+
+What this defers is real and worth naming: no offline-capable client, no optimistic updates, no diagram annotation, no keyboard-driven review flow. The keyboard flow in particular is the most likely thing the first teacher asks for, since 40 review items with accept-and-next on a single key is a materially faster queue — and it is a small addition on top of this architecture rather than a reason to change it.
+
+### 11.8 The control surface
+
+The console's entire write surface to the pipeline is small enough to enumerate, which is the point: anything not on this list is a read.
+
+| Action | Effect | Read by |
+|---|---|---|
+| Approve question inventory | Writes `question` rows and locks them under §6.2 | Package setup |
+| Supply answer keys | Writes `mcq_option.is_correct` | Deterministic evaluator |
+| Accept or correct rubric read-back, decomposability, grade policy | Writes `criterion`, `criterion_band`, `grade_policy`, `grade_boundary`; a change creates a new version. This is correction of the read-back before any scoring exists, inside the §6.2 lock — not the rubric-revision surface §11.2 excludes | Stage A, Stage E |
+| Set the review window | Writes `grade_policy.review_window_hours`; absent means finalize on run completion | Grading, finalization |
+| Start run | Writes a `run` row with status `pending` | Orchestrator |
+| Pause / resume run | Sets `run.status`; leases expire naturally (§9.10) | Orchestrator |
+| Resolve a quarantine item | Updates `submission.ingest_status`, may enqueue re-ingestion units | Ingestion, Stage C |
+| Review action | Writes `review_queue.action`, `new_band`, `acted_at`; emits a `label` with `label_type='acceptance'` | Aggregation, Tier D |
+| Blind-sample submission | Emits a `label` with `label_type='blind'` | Validation only |
+| Correct an answer key after a run | Writes a new `mcq_option.is_correct` version; enqueues deterministic re-evaluation and a grade recompute for the cohort. Never enqueues a panel judgment | Deterministic evaluator, Stage E |
+| Finalize batch | Sets `submission_grade.finalized_at`, writes an `audit_record` | Export |
+| Amend a finalized grade | Writes a new `submission_grade` revision and an `audit_record`; `finalized_at` is preserved and the superseded revision is retained | Export |
+| Approve exemplar paraphrases at export | Writes `exemplar.provenance` and `package.contains_real_student_text` | Package export (§9.4) |
+| Export / import package | Reads or writes a Tier P file | Package catalog |
+| Purge cohort | Deletes Tiers C and R after acceptance, with `VACUUM` | §9.14 |
+
+Two properties follow. Every one of these is **idempotent**, so a double-clicked button, a retried request, or a browser back-navigation cannot corrupt a run (R14, §9.10). And every one writes a row the orchestrator reads on its own schedule, so **the console never blocks on the pipeline and the pipeline never blocks on the console.**
+### 11.9 What the MVP does badly on purpose, and what the first teacher decides
+
+Stating these up front is what makes the next version a response to evidence rather than to taste.
+
+- **No authentication, loopback only (R68).** Correct for one teacher on one machine, and *disqualifying* for the `cloud-hosted` profile. This is the sharpest boundary in the section: the console as specified here is an `edge-local` and `dev-ci` artifact. Exposing it on a hosted instance without authentication would publish an unauthenticated student-record system, and no other control in this report compensates for that.
+- **No concurrency between roles.** Two people working the console at once is untested. In a small school it will not happen; in a district pilot it happens in week one.
+- **The review queue is a list, not a workflow.** No keyboard navigation, no undo beyond re-editing, no memory of where you left off. All three are likely first requests.
+- **No diagram annotation.** A described region shows its crop and its description side by side, and the teacher can accept or override the mark, but cannot mark up the drawing.
+- **Setup is a linear wizard.** Changing one earlier answer means walking the sequence again. Tolerable at once-per-package; irritating the first time a teacher revises a rubric.
+- **English and left-to-right only.** The deployment context of §0.2 makes localisation and RTL a real requirement, and deliberately not a v1 one.
+- **The life cycle this console executes is §7.9's inventory minus one touchpoint.** Ambiguity elicitation is absent for the ordering reason §13 gives, which means a teacher told that the system will ask them about their own marking will look for a step that is not here. The console shows it as unavailable rather than omitting it (§11.2), and collects the calibration papers anyway so Phase 4 costs nothing when it lands — but the honest one-line description of this version is that it grades faithfully against the rubric as written and never tells the teacher where that rubric is ambiguous. Any teacher-facing material written from §7.9 has to say the same, or the product and its documentation describe different systems.
+
+The pilot's job is to answer the questions the design cannot answer from a desk, and they are worth writing down before the first teacher touches it:
+
+1. Does the **minute-budget** framing work, or does the teacher want "show me everything above this risk level"?
+2. Are **group actions** the common case or the rare one?
+3. Is the **band-only** edit control experienced as a constraint or as a relief?
+4. Does the honest **residual message** build trust or alarm?
+5. Does the **operator / teacher split** hold when one person is both?
+6. Do the rollup's **rubric findings** — the criteria the panel could not apply, and the ones that exhaust the budget every term — get read the morning after a run, or is the real moment for them the week before the next administration, on a different screen entirely?
+
+Those five answers are what version 2 of the interface should be built from, and none of them is guessable.
+
+---
+
+## 12. Risks, limits, and governance
 
 - **Mid-range responses are the weak point, not the exception.** Every scoring system here degrades on ambiguous, partial-credit work. Route these to teachers by default rather than treating high confidence as the norm and low confidence as a rare edge case.
 - **Mixed-format reporting can quietly push assessment back toward multiple choice.** Deterministic items agree with the teacher essentially always, cost nothing, and generate no review queue. If the system reports them alongside judged criteria in one figure, its own dashboard makes the multiple-choice half of a paper look like the better-performing half — applying exactly the pressure §0.1 identifies as the problem, from inside the tool built to relieve it. R53 keeps the statistics separate in the schema rather than by convention; the residual risk is presentational, and belongs on the list of things to check whenever the teacher-facing views change.
@@ -2920,7 +3379,7 @@ Feedback quality is the output the K-12 research says teachers and students most
 
 ---
 
-## 12. Implementation sequence
+## 13. Implementation sequence
 
 A suggested build order, front-loading the parts that make everything else safe:
 
@@ -2929,6 +3388,10 @@ A suggested build order, front-loading the parts that make everything else safe:
 This phase is a complete, useful, defensible product. Ship it before anything in Section 6 exists.
 
 The **ingestion module of Section 7.7 is Phase 1** in full, including the validation ladder — not the transcription pass with the gates deferred. The gates are cheap to build and each one prevents a class of wrong grade that no later stage can detect: V4 in particular guards against a confident unanimous zero for a student who answered a different paper, and there is no version of "ship it and add validation later" where those grades are recoverable. The canonical-artifact rules (R32) belong here for the same reason as the content-hash work IDs: retrofitting immutability onto a transcript that verdicts already reference by offset is not a migration, it is an invalidation of everything computed so far.
+
+**The MVP console of Section 11 is Phase 1**, and it is what makes Phase 1 a product rather than a pipeline. Every touchpoint the phase already requires — the two blocking setup gates, quarantine triage, the budgeted review queue, the blind sample, batch finalization — is a screen or it is a command line, and a command line means the teacher §0.1 describes never operates the system at all. Three parts of it are cheap now and expensive later, for the same reason the items above are: the **read-view seam** (R61), because a console that grows into the orchestrator cannot be replaced after the first teacher's feedback arrives, which is the entire purpose of shipping a deliberately small one; the **band-only edit control** (R65), because a numeric entry field silently reintroduces the central-tendency bias §5.10 removes and every label collected through it is contaminated in a way no later fix repairs; and the **blind-sample flow's unreachability of system output** (R67, invariant 11), because a blind label collected next to a visible system verdict is an acceptance label mislabeled, and §6.8's whole validation argument rests on the two being distinguishable. Everything else in Section 11 — the wizard shape, the queue layout, the rollup's presentation — is explicitly disposable and should be built expecting to be replaced.
+
+What does **not** belong in Phase 1 is authentication and multi-user support, and R68 draws that boundary sharply rather than deferring it vaguely: the Phase 1 console is an `edge-local` and `dev-ci` artifact, bound to loopback, and it must not be exposed on a `cloud-hosted` instance until authentication, per-user audit attribution, and transport security exist. That is a shipping gate on the cloud profile, not a backlog item.
 
 **Phase 1.5, prove it on hardware — and prove the backends agree.** Run the Section 8.5 acceptance test before committing to a deployment platform or promising a batch window. This is a gate, not a milestone: a nine-hour result changes the product, and it is far cheaper to discover on 350 synthetic submissions than at a pilot site. Run the Section 8.7 backend conformance suite at the same time, for the same reason and with the same status. Everything up to this point will have been developed and tested on OpenRouter, so this is the first moment anyone finds out whether the local quantizations grade like the builds the whole suite was written against. Both gates are cheap here and expensive after a pilot has student grades in it.
 
@@ -2946,7 +3409,7 @@ The temptation will be to build Phase 4 first, because it demos beautifully. Res
 
 ---
 
-## 13. Source list
+## 14. Source list
 
 **Judge reliability, bias, and validation methodology**
 - Norman, J. D., Rivera, M. U., & Hughes, D. A. (2026). *Reliability without Validity: A Systematic, Large-Scale Evaluation of LLM-as-a-Judge Models Across Agreement, Consistency, and Bias.* UC Berkeley School of Information. arXiv:2606.19544.
