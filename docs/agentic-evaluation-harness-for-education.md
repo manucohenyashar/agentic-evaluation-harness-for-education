@@ -93,7 +93,7 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R18** | **Per-cohort and per-package statistics persist, so a package's validation record compounds with use** | Validation accumulates (§6.8) | §9.7 |
 | **R19** | **No single extraction error may produce unanimous panel agreement without an independent detection path** | Common-mode failure upstream of the panel | §7.4 |
 | **R20** | **Teacher acceptance and independent teacher scoring are stored as different label types; only the latter is treated as ground truth** | Automation bias | §6.8, §9.7 |
-| **R21** | **Every administration includes a small blind sample scored by the teacher without seeing system output** | Unbiased validation | §6.8, §10 |
+| **R21** | **Every administration *offers* a small blind sample scored by the teacher without seeing system output. It is strongly recommended and never blocking: skipping it ships grades normally and stops the validation record advancing, which the system says plainly** | Unbiased validation, without making grade delivery hostage to teacher availability (R60) | §6.8, §10 |
 | **R22** | **The routing policy is itself validated: measured on whether it actually sends errors to the teacher** | Confidence may be miscalibrated | §7.1, §6.8 |
 | **R23** | **Package validation is population-scoped in the schema; there is no global "validated" flag** | Instruments do not transfer unconditionally | §9.5 |
 | **R24** | **Transcription routing is based on whether an OCR error could change the score, not on OCR confidence alone** | OCR error correlates with student characteristics | §7.5 |
@@ -117,6 +117,22 @@ The rest of the report can be read as a response to these. Requirement IDs are r
 | **R42** | **The judge's response is generated evidence-first: cited spans, then the evidence assessment against the band descriptors, then the band. Enforced by response-schema field order and linted like §8.4's prompt ordering** | Field order is generation order; emitting the verdict first produces a snap judgment followed by a confabulated justification | §5.10, §8.4 |
 | **R43** | **The band set and the band→points mapping are covered by the §6.2 schema lock, version-pinned, and any change passes the §6.5 non-inferiority gate** | Tuning the mapping against teacher scores moves every grade without touching a judge — construct drift by a new route | §5.10, §6.2, §6.5 |
 | **R44** | **The MVVP includes a score-compression check comparing the panel's band distribution against blind gold labels, with its shared-bias blind spot recorded as a known limit** | Compression is invisible to agreement metrics: judges that all compress agree with each other | §2.5, §5.10 |
+| **R45** | **Every non-text region is emitted into the Markdown as a structured description dense enough for extraction to localize any fact a criterion could turn on: arrow labels and directions, named points and marked relations, axis labels and intercepts, what each label attaches to, and spatial relations stated explicitly** | Diagrams, graphs and spatially-encoded tables carry the reasoning being assessed, and none of it survives a pass that only lifts characters off the page | 7.7 |
+| **R46** | **A description is descriptive only, never evaluative, and evidence cited from a described region is marked as such, retains its image crop for teacher review, and triggers impact routing** | A verdict smuggled into a description is inherited by every judge and produces unanimity that the integrity gate cannot see; and span verification proves faithful quotation of a description, never fidelity of that description to the drawing | 7.7, 7.4, 7.5 |
+| **R47** | **Struck-through work and handwritten corrections are preserved and marked as retracted or superseding, never silently flattened** | Which version counts is a rubric question, not a transcription question; once crossed out has become not written, nothing downstream can recover the difference | 7.7, R36 |
+| **R48** | **Panel size is always odd — 1, 3 or 5, never 2 or 4 — and escalation moves 1 → 3 without passing through 2. Enforced as a CHECK constraint on `judge_count`** | A median needs a unique middle; every tie-break rule for an even panel is a hidden severity or leniency bias falling exclusively on the judgments that were already the hardest | §5.10, §7.1 |
+| **R49** | **No rubric criterion is decomposed without an explicit, recorded decomposability determination confirmed by the teacher. When the answer is unclear the criterion is preserved as written: decomposition is the intervention, preservation is the null action** | Preserving a weight does not preserve a construct; a configural criterion is redefined by decomposition however the points add up | §5.3, §6.2 |
+| **R50** | **Criteria classified `holistic` are scored as a single judgment against band descriptors, start at full panel depth with no single-judge base, and carry a lower auto-acceptance ceiling** | They are the judgments decomposition could not simplify, routed to the mode a sub-frontier panel is weakest at | §5.3, §7.1 |
+| **R51** | **Agreement statistics are reported separately for atomic and holistic criteria; a package headline figure may never merge them** | They will differ and the holistic ones will be worse; merging produces a number describing neither | §5.3, §9.5 |
+| **R52** | **Evaluation mode is a property of the criterion, not the question: a criterion is `judged` or `deterministic`. Deterministic criteria are scored by lookup against a teacher-supplied answer key and never sent to the panel. Question types (open, mcq, mixed) are proposed at assessment ingestion, confirmed by the teacher, and locked under §6.2** | The key is ground truth by definition, so there is nothing for a judge to be uncertain about. Criterion-level mode is what makes "circle the answer and explain your choice" expressible at all | §7.8 |
+| **R53** | **Deterministic-item correctness never enters any agreement, κ, or grader-quality figure. It is reported separately from the judged portion of the test** | MCQ items agree with the teacher essentially always; merging them inflates the headline with items that involved no judgment, and rewards the format §0.1 exists to stop crowding out constructed response | §7.8, §9.5, §10 |
+| **R54** | **Uncertainty about a multiple-choice item is a transcription problem routed to operator triage, never to the teacher grade-review budget** | The remedy is a rescan or a glance at the crop, not a judgment; mixing them lets smudged bubbles compete with genuine grade disputes for the same thirty minutes | §7.8, §7.5 |
+| **R55** | **An ambiguous, multiple, or unreadable selection mark is surfaced as such and never silently resolved to an option or scored as incorrect** | R36 applied to mark reading: a student who selected correctly in handwriting the scanner could not resolve has not answered wrongly | §7.8 |
+| **R56** | **Every submission receives a complete final grade computed automatically, with no per-student teacher action. Teacher effort scales with the review budget they choose, never with class size** | This is the system’s reason to exist (§0.1). Producing criterion judgments but leaving a human to compile 350 grades reproduces the bottleneck one level up and delivers nothing | §7.9 |
+| **R57** | **The teacher declares a grade policy once — how criteria combine into question scores, questions into a total, and totals into a grade — stored in the package, locked under §6.2, version-pinned, and applied automatically thereafter. It is declarative, never a script** | Combining marks is a professional decision that varies by subject and institution; a hardcoded weighted sum is a policy masquerading as a mechanism. Declarative keeps it approvable in plain language and reproducible for an appeal | §7.9, §6.2 |
+| **R58** | **Provisional inputs never withhold a grade. The grade is issued with a coverage record, and shown as a range only where unreviewed items could move the student across a boundary. Only a genuinely missing score — an ingestion failure — renders a grade incomplete, and that routes to the operator** | Provisional means labelled, not withheld. An unreviewed grade honestly labelled is the product; a withheld grade is a failure to deliver it | §7.9, §10 |
+| **R59** | **Grade boundaries are a declared object in the package** | §10 ranked review by proximity to a boundary and ReviewItem carried a boundary delta, while nothing defined one — the ranking was not computable | §7.9, §10 |
+| **R60** | **After the setup phase, no stage may block grade delivery on a teacher action. Every remaining teacher touchpoint is an offer, and the cost of skipping it is stated rather than paid in undelivered grades. A run started with zero subsequent teacher input completes, finalizes, and delivers a full set of grades** | The teacher’s time buys calibration once and sampling thereafter. Any per-run gate makes 350 students’ grades hostage to one person’s availability, which is the bottleneck §0.1 exists to remove | §7.9, §6.8, §10 |
 
 R9 and R12 deserve emphasis because they are easy to violate accidentally and they interact. **Any design that asks the teacher for significant up-front effort, or that hands back a review queue proportional to class size, has failed at the thing it was built to fix.** This is the reasoning behind treating calibration as a few short elicitation questions rather than a labeling task (Section 6.4), behind harvesting validation data from the teacher's ordinary review actions rather than requesting it (Section 6.8), and behind budgeting the review queue rather than thresholding it (Section 10).
 
@@ -124,6 +140,7 @@ R9 and R12 deserve emphasis because they are easy to violate accidentally and th
 
 Under pressure, the following are not available as optimizations. Each is somewhere a constrained deployment would be tempted to cut, and each cut would be invisible in the metrics the system reports about itself:
 
+- **Automatic grading of the bulk.** Every submission gets a complete final grade without per-student teacher action (R56). Teacher time buys calibration at the front and sampling afterwards; it is never spent compiling grades. Under schedule pressure the tempting cut is to ask the teacher to “just check these few hundred” — that is not a degraded version of this system, it is the absence of it.
 - **The teacher remains accountable for grades.** The system is formative decision support. Section 4's K-12 research is explicit that this is also what teachers and students will accept.
 - **Judgment isolation** (Section 7.2). It is the cheapest place to buy speed and the most damaging place to buy it.
 - **Honest statistics** (Section 3.1, Section 3.5). No inflated agreement numbers, no accuracy claims from eight-sample calibration sets.
@@ -141,7 +158,7 @@ The measure of success is not that the system grades as well as a teacher would 
 
 The rest of this report is about what the research says it takes to get there without the result being untrustworthy.
 
-### 0.7 Deployment profiles: local and cloud are both first-class (new in v2.5)
+### 0.7 Deployment profiles: local and cloud are both first-class 
 
 Everything above describes the hardest deployment — a disconnected school on solar power — and versions 2.0 through 2.4 wrote the architecture as if that were the *only* deployment. That was a mistake, and it is corrected here.
 
@@ -308,7 +325,7 @@ A grader who gives the same wrong score every time is perfectly consistent and c
 
 A judge near the top on one dataset can rank near the bottom on another, because different benchmarks reward different things. Translation: validating your pipeline on essay grading tells you little about lab reports or math proofs. Validate per assignment *type*.
 
-### 3.5 Small samples cannot validate anything (new in v2)
+### 3.5 Small samples cannot validate anything 
 
 This is the correction to version 1's sample-size guidance, and it matters for Stage B.
 
@@ -318,7 +335,7 @@ The practical consequence, developed fully in Section 6.6: **a small calibration
 
 There is also a subtler trap. If you *optimize against* a set that small (which is exactly what a naive reflect-and-revise loop does), you will fit the noise. The optimizer will find whatever incidental pattern separates the high scores from the low ones in those eight papers, and length is usually the easiest one to find. You then get excellent measured agreement on your calibration set and a rubric that has quietly become a length detector. The measured agreement is real; it just is not evidence of anything.
 
-### 3.6 Reliability versus validity, the distinction the whole report turns on (new in v2)
+### 3.6 Reliability versus validity, the distinction the whole report turns on 
 
 Two words that sound like synonyms and are not:
 
@@ -381,9 +398,57 @@ Beyond ground truth, trajectory evaluation, and judging the judge, here is what 
 
 Per AutoSCORE, split "read the essay and grade it" into extract-then-score. This is the educational analogue of evaluating the trajectory: the extraction step *is* the trajectory, made explicit and auditable instead of buried in one opaque call.
 
-### 5.3 Convert every rubric into an explicit atomic checklist before scoring
+### 5.3 Decompose a rubric criterion only when decomposition preserves its construct (revised in v2.9)
 
-Per the physics-exam study and RULERS, analytic checklist rubrics beat holistic paragraph rubrics on both agreement and explainability. Transform whatever the teacher uploads into decomposed, independently-answerable criteria, and score each as its own call. Section 6.2 covers the guardrails that keep this transformation faithful.
+Analytic checklist rubrics beat holistic paragraph rubrics on both agreement and explainability, per the physics-exam study and RULERS, and decomposition helps smaller models most (§0.3). That finding is real and it is why this architecture leans on decomposition everywhere. But versions before 2.9 drew the wrong conclusion from it — that *every* rubric criterion should be converted to an atomic checklist — and defended that with an argument that does not hold.
+
+**First, a distinction that matters, because the objection below lands on one of these and not the other.** Section 5.2's decomposition is a *pipeline* split: extract the evidence, then score against it, rather than doing both in one opaque call. Nothing about the construct changes; the same judgment is made, with its intermediate step made explicit and auditable. That is the AutoSCORE finding and it is unaffected by anything here. Section 5.3's decomposition is a *rubric* split: taking one criterion the teacher wrote and replacing it with several. That one can change what is being measured, and it is the subject of this section.
+
+#### The argument that was wrong
+
+Version 2.2 through 2.8 held that decomposition was inherently safe because it preserves the weight: splitting "shows appropriate work, 5 points" into four sub-checks totalling 5 points was called a clarification under a fixed weight rather than a redefinition (§6.2). **Preserving the weight guarantees the arithmetic. It says nothing about whether the sum of the parts is the thing the teacher was measuring.** Those are different claims, and the design was treating the easy one as evidence for the hard one.
+
+Four ways a faithful-looking decomposition changes the construct:
+
+- **Configural constructs are not conjunctions.** "The argument is coherent" is not "has a thesis" AND "has evidence" AND "has transitions." A response can satisfy every sub-item and still be incoherent, and can violate several while being plainly coherent. The whole is a *configuration* of the parts, not a function of them, and a checklist replaces a gestalt judgment with something a mechanical response can satisfy.
+- **The scoring model changes from compensatory to conjunctive.** A holistic band is usually compensatory: strength in one dimension offsets weakness in another, which is exactly what a human marker does when awarding a band. A weighted checklist is additive-conjunctive. For the same work these produce different scores, and the difference is not random — it systematically penalizes the **unusual but valid** response, which fails checklist items that presumed the expected route while a holistic reader would have awarded full credit. That is a fairness property, not just an accuracy one.
+- **Interactions get credited that the teacher never intended.** "Selects an appropriate method and executes it correctly" split into two items awards half credit for executing an inappropriate method flawlessly. The teacher's intent was near-zero. Splitting created a scoring path that did not previously exist.
+- **Gates disappear.** "A report with no safety analysis fails regardless of everything else" is a threshold, not a weight. Decomposed into weighted items, the gate becomes a deduction and the failing report passes.
+
+#### The decomposability test
+
+Stage A therefore does not decompose by default. It **asks, per criterion, whether decomposition is safe, and records the answer.** The default when the answer is unclear is to leave the teacher's criterion as written: decomposition is the intervention, preservation is the null action, and §1 already establishes that the rubric belongs to the teacher and changing it is not a free engineering action.
+
+Five questions, all answerable against a proposed decomposition:
+
+1. **Completeness.** Could a response satisfy every proposed sub-item and still fail the original criterion as the teacher understands it? If yes, the construct is configural — do not decompose.
+2. **Non-interference.** Could a response fail a sub-item and still deserve full credit on the original? If yes, the checklist will over-penalize valid alternative approaches.
+3. **Independence.** Can each sub-item be judged without knowing the verdict on another? If not, either declare the dependency explicitly (§7.2 Rule 2) or do not split.
+4. **Additivity.** Does the teacher's intended score equal the weighted sum, or does it depend on *which pattern* of items was met? Pattern-dependence means compensatory or configural scoring, not additive.
+5. **Gates.** Is there any sub-item whose failure should zero the criterion regardless of the others? If so the criterion is not additive; it needs a gate rather than a weight.
+
+**The model proposes; the teacher confirms.** This is §6.4's elicitation pattern, and the same time budget applies (R9): the model classifies each criterion with its reasoning, and only criteria it classifies as borderline, or proposes to decompose despite a warning sign, are surfaced for confirmation. A rubric of fifteen criteria should cost the teacher a handful of yes/no answers, not fifteen.
+
+#### Three outcomes, recorded in the package
+
+| Classification | Scoring | When |
+|---|---|---|
+| `atomic` | Decomposed into independently-answerable sub-criteria, each scored as its own judgment | All five questions pass |
+| `atomic_with_gate` | Decomposed, plus one or more sub-items marked as gates: failing a gate forces the parent criterion to its lowest band regardless of the others | Question 5 identifies a threshold |
+| `holistic` | Not decomposed. Scored as a single judgment of the whole criterion against its band descriptors | Any of questions 1, 2 or 4 fails |
+
+The classification is stored on the criterion, is visible in the teacher's rubric review UI, and is **locked under §6.2** — reclassifying a criterion from `holistic` to `atomic` later is a redefinition of what is being measured, not a clarification of it.
+
+#### What "route appropriately" has to mean for holistic criteria
+
+Retaining holistic evaluation is not a free escape hatch, and the design should be honest about why: it routes the judgments we could not decompose — the hardest ones — to the mode this system is weakest at, since §0.3's entire premise is that decomposition is what closes the gap between an 8B model and a frontier one. A holistic criterion is where that premise does not apply. Four consequences follow, and they are requirements rather than suggestions:
+
+- **Full panel by default, never a single-judge base (R50).** §7.1's adaptive depth runs one judge and escalates; holistic criteria start at three. They are the population escalation exists for.
+- **Band descriptors do more work here than anywhere else.** A holistic criterion scored against §5.10's behaviourally-anchored bands is far more defensible than the same criterion scored 0–5, because the judge must still commit to a checkable statement about what the response does. Holistic does not mean unanchored, and a holistic criterion whose bands are vague magnitude phrases has kept every problem decomposition would have solved while adding none of its benefits.
+- **A lower confidence ceiling and higher escalation priority.** Cap auto-acceptance for holistic criteria below the atomic ceiling, and rank them higher in the §10 review queue at equal expected value.
+- **Agreement reported separately, never merged (R51).** A package's headline agreement statistic must not average atomic and holistic criteria together. They will differ, the holistic ones will be worse, and merging them produces a number that describes neither — the same error §2.1 identifies in reporting uncorrected agreement, one level up.
+
+One honest limitation to record with the rest: evidence citation (§7.3 item 3) is weaker for holistic criteria. A judge scoring a whole-criterion gestalt will cite broader spans than one answering a narrow sub-question, which makes §7.4's integrity signal correspondingly less sharp. This is a real cost of preserving the construct, and it is still the right trade — a precise integrity check on the wrong measurement is not an improvement.
 
 ### 5.4 Report the chance-corrected number, always
 
@@ -417,7 +482,7 @@ Per the K-12 GenAI Assessment Graders study. Teachers and students trust and act
 
 Note this is about what the *teacher and student* see. It is not a statement about generation order inside a judgment, which §5.10 specifies separately and which is a different concern with a different rationale.
 
-### 5.10 Score in words, anchored in behaviour — never on a numeric scale (new in v2.7)
+### 5.10 Score in words, anchored in behaviour — never on a numeric scale 
 
 Every version before 2.7 asked judges for a number on a continuous per-criterion scale: `max_points: 5`, verdicts like `3.5`. That is the exact format that produces **central-tendency bias**, and the design had no defense against it and no way to see it.
 
@@ -465,6 +530,14 @@ So `evidence_assessment` is specified as an inventory against the band descripto
 
 The trap: three judges return bands, the orchestrator maps each to points, averages them, and gets 3.67. That value corresponds to no band, describes no behaviour, and has reconstructed exactly the continuous scale the bands were introduced to remove.
 
+**Panel size is always odd (R48).** A median needs a unique middle, and an even panel has none: two judges returning adjacent bands leave the verdict genuinely undefined. Permitted sizes are **1, 3, or 5** — never 2, never 4. In practice the design uses 1 as the adaptive base and 3 on escalation (§7.1); 5 is available but rarely justified, since §7.1 finds diminishing returns beyond 3.
+
+Resist the obvious alternative, which is to keep even panels and add a tie-break rule. Every such rule is a **silent systematic bias**: always taking the lower band is severity bias, always the upper is leniency bias, and either lands exclusively on the cases where the panel was split — which §7.1 identifies as the judgments where human-AI agreement is already weakest, and §5.10 identifies as where compression concentrates. A tie-break would apply a hidden thumb on the scale to precisely the population least able to absorb one. An odd panel makes the question not arise.
+
+Enforce it structurally rather than by convention: `criterion_score.judge_count` carries a CHECK constraint for oddness, so an even panel is a write that fails rather than a verdict that quietly rounds.
+
+**When a panel member fails, restore odd or fall back — never adjudicate between two.** A quarantined or unrecoverable scoring unit can leave three judges as two mid-criterion. Retry to restore the third; if that fails, discard the second verdict and fall back to the base single-judge band, marked provisional (R26). Two verdicts and a coin flip is worse than one verdict honestly labelled as one.
+
 **Aggregate on the band scale, map once, at the end.** The panel's verdict is a band — the median band, with the modal band and the spread recorded — and only that aggregated band is converted to points. Disagreement is measured ordinally, so that adjacent-band disagreement counts for less than distant disagreement; Krippendorff's α already handles ordinal scales (§3.1), which is why §7.3 specifies it rather than a raw agreement count.
 
 The same rule applies upward: per-criterion points aggregate arithmetically into question and test totals as before, because at that level a total genuinely is a sum. It is only the judge-level verdict that must never be averaged.
@@ -485,7 +558,7 @@ The measures above reduce compression; they do not prove its absence. Add a **co
 
 ---
 
-## 6. Rubric calibration without re-grading: the guardrail design (new in v2)
+## 6. Rubric calibration without re-grading: the guardrail design 
 
 This section replaces the naive reflect-and-revise loop. It answers the question directly: **if the teacher graded against rubric R₀ and the system now runs on revised rubric R₁, what makes the teacher's original scores a valid reference?**
 
@@ -505,7 +578,7 @@ So you correlate against the **scores**, not against the rubric document. That i
 Split possible edits into two categories.
 
 **Allowed (clarification):**
-- Decomposing a holistic band into atomic checklist items
+- Decomposing a holistic band into atomic checklist items — **only for a criterion Stage A classified `atomic` or `atomic_with_gate` (§5.3). For a `holistic` criterion this is forbidden, not allowed**
 - Adding operational definitions for vague adjectives ("thorough" becomes what specifically counts as thorough)
 - Adding explicit edge-case handling ("partial credit if the correct formula is stated but the arithmetic fails")
 - Adding evidence-type annotations per criterion (what kind of textual evidence satisfies this)
@@ -515,6 +588,7 @@ Split possible edits into two categories.
 - Changing the band set, a band's descriptor, or the band→points mapping (§5.10, R43). Editing that table moves every grade in the system without re-running a judgment, which makes it the cheapest available route to construct drift and the least visible
 - Adding or removing criteria
 - Changing which construct a criterion measures
+- Reclassifying a criterion scoring model (§5.3): moving a criterion from `holistic` to `atomic` changes what is being measured, not how clearly it is stated
 - Introducing any surface feature (length, vocabulary level, formatting) as a scoring signal
 - **Adding, removing, or altering a criterion dependency** (see Section 7.2, Rule 2)
 
@@ -522,7 +596,7 @@ Implement this as a **schema constraint, not a prompt instruction.** If the revi
 
 The dependency graph belongs inside this lock for the same reason weights do. A criterion dependency is a channel through which one judgment can influence another (Section 7.2), so quietly adding one during calibration is a way to reintroduce exactly the contamination the isolation rules exist to prevent, and it would do so while *improving* measured agreement, which is the signature of construct drift. Dependencies are declared once, by the teacher or by Stage A's decomposition, are visible in the teacher's rubric review UI, and are read-only thereafter.
 
-This is also why the checklist decomposition in Section 5.3 is safe: decomposing "shows appropriate work, 5 points" into four evidenced sub-checks totalling 5 points is a clarification of an existing criterion under a fixed weight, not a redefinition.
+Versions before 2.9 argued here that checklist decomposition is inherently safe, on the grounds that splitting "shows appropriate work, 5 points" into four sub-checks totalling 5 points preserves the weight. That argument does not hold, and Section 5.3 now replaces it. **Preserving the weight guarantees the arithmetic; it says nothing about whether the sum of the parts is what the teacher was measuring.** A configural criterion — one a response can satisfy piece by piece while failing as a whole — is redefined by decomposition however carefully the points add up. Decomposition is therefore conditional on the §5.3 test, and the resulting classification sits inside this lock for the same reason the dependency graph does: set once at Stage A with the teacher confirming, read-only thereafter.
 
 ### 6.3 Guardrail 2: triage every disagreement before revising anything
 
@@ -595,7 +669,7 @@ Real validation comes from somewhere the architecture already has: **the teacher
 
 That is your **operational** validation signal, and it is where much of the Minimum Viable Validation Protocol (Section 2.5) runs. **Stage B feeds the loop. Stage D is the loop.**
 
-#### But teacher acceptance is not ground truth (new in v2.4, R20, R21)
+#### But teacher acceptance is not ground truth 
 
 Version 2.3 of this report called the override log "the validation set." That claim was too strong, and the gap matters more as the system gets better.
 
@@ -610,7 +684,9 @@ So distinguish two label types, and never mix them in a validity claim:
 | **Operational label** | Teacher accepted, edited, or overrode a score they could see | Detecting problem criteria, ranking review, tracking override rates over time |
 | **Gold label** | Teacher scored the item **blind**, with the system's score, rationale, and narrative hidden | Agreement statistics, calibration, drift, subgroup analysis, routing-policy evaluation |
 
-**Every administration should include a small blind sample (R21).** Draw 15 to 25 submissions at random, hide all system output, and have the teacher score those criteria independently before seeing anything. At 350 students this is a rounding error in coverage and roughly 10 to 20 minutes of teacher time, and it should be carved out of the review budget explicitly rather than competing with it, because it is the only unbiased signal the system will ever have. Everything else, however voluminous, is contaminated.
+**Every administration should include a small blind sample (R21) — and it must never gate the grades.** Draw 15 to 25 submissions at random, hide all system output, and have the teacher score those criteria independently before seeing anything.
+
+Be precise about what skipping it costs, because the honest answer is not “nothing” and it is also not “broken grading”. If the teacher skips, **the class is graded and delivered exactly as normal**; what does not happen is that this administration contributes any evidence about accuracy. The package’s validation record simply does not advance, and the system reports that rather than quietly reusing an older figure: *“no new validation evidence for this administration.”* That keeps R8’s honesty requirement and R60’s automation requirement satisfied at the same time — the price of skipping is paid in what the system may claim, never in whether students get their grades. **Blind-grade the judged criteria only.** Asking a teacher to re-answer multiple-choice items against a key they supplied spends the scarcest resource in the system (R9) on items whose correctness was never in question, and produces labels R53 excludes from every statistic anyway. On a mixed paper the blind sample therefore costs less teacher time than the raw criterion count suggests — which is a genuine benefit of mixed formats worth stating, as distinct from the reporting artifact §7.8 warns against. At 350 students this is a rounding error in coverage and roughly 10 to 20 minutes of teacher time, and it should be carved out of the review budget explicitly rather than competing with it, because it is the only unbiased signal the system will ever have. Everything else, however voluminous, is contaminated.
 
 Note also that an *edit* is stronger evidence than an *accept*, since editing requires the teacher to have formed an independent view. Weight accordingly: an override is informative, an acceptance is weak, a blind score is authoritative.
 
@@ -676,7 +752,10 @@ That last row of the table matters too. **The system must work with zero teacher
  │      V4 ASSESSMENT MATCH - is this submission even for this test?    │
  │         mismatch OR uncertain -> human. Never auto-reassign (R35)    │
  │      any failure -> operator quarantine, NEVER a score               │
- │  • Convert R0 -> atomic checklist criteria (§5.3)                    │
+ │  • DECOMPOSABILITY TEST per criterion (§5.3, R49): can this be split  │
+ │    without changing what it measures? Unclear -> do NOT split        │
+ │      atomic | atomic_with_gate | holistic, teacher-confirmed, locked │
+ │      holistic -> full panel, no single-judge base (R50)              │
  │  • Attach an "evidence type" per criterion (RULERS, §1)              │
  │  • SCHEMA LOCK: weights + criterion count immutable downstream (§6.2)│
  └───────────────────────────────┬─────────────────────────────────────┘
@@ -706,6 +785,8 @@ That last row of the table matters too. **The system must work with zero teacher
  │  STAGE C - SCORING   (two sweeps around a working store, §8.4)       │
  │                                                                      │
  │  SWEEP 1: EXTRACTION   batched by (question, criterion)              │
+ │           JUDGED criteria only. Deterministic (MCQ) items skip both  │
+ │           sweeps entirely: key lookup, no model call (§7.8)          │
  │           executed in TOPOLOGICAL ORDER over the dependency graph    │
  │   ┌──────────────────────┐                                           │
  │   │ Extraction Agent     │  localizes rubric-relevant evidence spans │
@@ -791,7 +872,10 @@ That last row of the table matters too. **The system must work with zero teacher
  └───────────────────────────────┬─────────────────────────────────────┘
                                  ▼
  ┌─────────────────────────────────────────────────────────────────────┐
- │  STAGE E - CLASS-LEVEL ROLLUP                                        │
+ │  STAGE E - FINAL GRADES + CLASS-LEVEL ROLLUP                         │
+ │  • Apply the teacher-declared grade policy to EVERY submission       │
+ │    automatically. No per-student teacher action (§7.9, R56)          │
+ │  • Provisional inputs label a grade, never withhold it (R58)         │                                        │
  │  • Per-criterion score distribution across the class                 │
  │  • Chance-corrected agreement, scoped + sample-size qualified        │
  │  • Misconception clusters; flagged low-confidence items              │
@@ -812,7 +896,7 @@ That last row of the table matters too. **The system must work with zero teacher
 The research answers this precisely, and against the "more judges is more reliable" intuition:
 
 - **Do not use ensemble size (repeated calls to one model) as your reliability lever.** Sections 4 and 5.1: no significant accuracy gain, multiplied cost.
-- **Do use model-family diversity.** A panel of **2 to 3 judges from different families** (Llama-family, Qwen-family, an open GPT-family model) captures most of the PoLL benefit at a cost one Mac sustains. Beyond 3, diminishing returns and, at large class sizes, prohibitive cost. See the adaptive-depth revision below.
+- **Do use model-family diversity.** A panel of **3 judges from different families** (odd by requirement, R48) (Llama-family, Qwen-family, an open GPT-family model) captures most of the PoLL benefit at a cost one Mac sustains. Beyond 3, diminishing returns and, at large class sizes, prohibitive cost; 5 is permitted but rarely worth it, and even sizes are not permitted at all because they leave the median undefined (§5.10, R48). See the adaptive-depth revision below.
 - **Spend the savings on decomposition and reasoning effort.** Per Frohn, reasoning effort produced a real if modest gain. Per AutoSCORE, adding an extraction step produced the largest gain of any single architectural change, especially on smaller models. Both beat a fourth same-family judge.
 - **The number that matters most is not AI judges, it is accumulated human labels.** And per Section 6.8, those accumulate for free from Stage D rather than being demanded from the teacher up front. At n=350 they accumulate roughly ten times faster than the classroom-scale assumption, which materially improves the validation regime.
 
@@ -820,7 +904,7 @@ The research answers this precisely, and against the "more judges is more reliab
 
 Everything above holds at classroom scale, where a three-judge panel is cheap. At 350 students it is not: 15 criteria × 350 students × 3 judges is 15,750 scoring judgments, and the third judge costs real hours of wall clock (Section 8.4). A uniform three-judge panel is the single largest cost in the system and it is spent almost entirely on judgments where all three judges will agree anyway.
 
-**Allocate panel depth where the research says disagreement actually lives.** Run one judge on every judgment. Escalate to the full panel only where escalation is warranted:
+**Allocate panel depth where the research says disagreement actually lives.** Run one judge on every judgment, **except on `holistic` criteria, which start at the full panel (R50)** — those are the ones §5.3 could not decompose, and decomposition is what this architecture relies on to make a small model reliable, so they are precisely where a single judge is least trustworthy. Escalate to the full panel only where escalation is warranted. Note the ladder is **1 → 3** and never passes through 2: adding a single second judge would produce an even panel with no unique median, so escalation adds two judges at once (§5.10, R48).
 
 | Escalation trigger | Kind | Rationale |
 |---|---|---|
@@ -847,7 +931,7 @@ The complementary control is a **global escalation ceiling**: if overall escalat
 
 This is a stronger and better-motivated version of the "earned single-judge optimization" in Section 8.3: rather than retiring the panel on criteria that have proven uncontested, it allocates panel depth per *judgment* based on where disagreement is predicted. At n=350 it moves from an optimization to a requirement.
 
-### 7.2 Judgment isolation (new in v2.1)
+### 7.2 Judgment isolation 
 
 Version 2 said to score one criterion per call. That is necessary but not sufficient, and the imprecision matters once this runs inside an agent framework where a "call" can carry conversation history. **The contamination that produces cross-criterion bias comes from shared context between judgments, not from shared processes.** A single long-running agent process that starts each judgment from a clean context is safe. Three separate agent processes passing a conversation history between them are not. Specify the property, not the topology.
 
@@ -926,7 +1010,7 @@ A side benefit worth stating explicitly, because it affects a number the system 
 7. **Run the MVVP (Section 2.5) per assignment type** before trusting the panel on a live class, and re-run it whenever a panel member changes.
 8. **Scale format is itself a bias control.** Behaviourally-anchored band labels, even-numbered, binary by default, with no numeric scale ever visible to a judge (§5.10). This sits alongside order randomization in item 2: both are structural defenses against a bias that would otherwise be invisible, because a panel that compresses toward the centre compresses *together* and therefore agrees.
 
-### 7.4 Extraction integrity: the common-mode failure the panel cannot see (new in v2.4, R19)
+### 7.4 Extraction integrity: the common-mode failure the panel cannot see 
 
 Sections 7.2 and 7.3 make the judges independent of each other. They do not make the judges independent of the **extraction step**, and that is a real hole in the design as written up to v2.3.
 
@@ -958,7 +1042,7 @@ This is deliberately a *detection* channel rather than an escape hatch. Letting 
 
 **The confidence formula must account for this.** Inter-judge agreement can no longer be the sole confidence input, because it is inflated exactly when extraction fails. Confidence combines: panel agreement (where available), span verification results, evidence sufficiency flags, extraction agreement where a second extractor ran, and citation quality. **A unanimous panel operating on unverified or insufficient evidence is a low-confidence result, not a high-confidence one**, and the aggregation step must encode that inversion explicitly, because the naive combination gets it exactly backwards.
 
-### 7.5 Transcription risk: route on impact, not on confidence (new in v2.4, R24)
+### 7.5 Transcription risk: route on impact, not on confidence 
 
 Section 0.2 identifies ingestion as a real subsystem at 350 handwritten submissions. Two properties make it more dangerous than a throughput problem.
 
@@ -966,7 +1050,7 @@ Section 0.2 identifies ingestion as a real subsystem at 350 handwritten submissi
 
 **Confidence is the wrong routing signal.** "OCR confidence is low" is not the question. The question is: **could a plausible transcription error change this criterion's score?** A garbled word in a passage irrelevant to criterion 4 does not matter. A garbled minus sign in the one line criterion 4 evaluates matters entirely. Route on the intersection of transcription uncertainty and the evidence spans a criterion actually depends on, which the harness knows, because extraction already localized them.
 
-This yields a rule with teeth: **if a low-confidence transcription region overlaps the evidence span for a criterion, that criterion cannot be auto-scored**, regardless of how confident the panel is. Everything else proceeds normally, which keeps the routed volume proportional to genuine risk rather than to overall scan quality.
+This yields a rule with teeth: **if a low-confidence transcription region overlaps the evidence span for a criterion, that criterion cannot be auto-scored**, regardless of how confident the panel is. Everything else proceeds normally, which keeps the routed volume proportional to genuine risk rather than to overall scan quality. The same rule extends to **described graphical regions** (§7.7, R46): a description is a model’s account of a drawing, span verification cannot check it against the image, and so a criterion whose evidence lies wholly inside one is a routing candidate on that basis alone.
 
 Ingestion should therefore emit, per submission: the transcript, per-region confidence, layout confidence, detection of equations and diagrams, page completeness, and an overall quality score. Per-region confidence is what makes impact-based routing possible; a single document-level number does not. Section 7.7 specifies the module that produces all of this — the transcription model, the assembly of multi-file submissions, and the validation ladder that runs before any of it reaches scoring.
 
@@ -985,7 +1069,7 @@ Clustering across submissions at ingestion does **not** violate judgment isolati
 
 That design independently validates several recommendations here: teacher-editable rubrics, a mandatory human-override path, and narrative feedback alongside scores. It also illustrates the gaps this architecture closes. A **single judge** inherits that judge's specific biases wholesale, which Section 2.2's finding (no single model is a reliable top performer across task types) makes directly relevant. A **cloud-only, single-provider** design cannot run locally, cannot function without network access, and ties the district's privacy posture to a third party's cloud rather than to hardware the school controls. Note precisely where the criticism lands, since this architecture also supports a hosted deployment (Section 0.7): the objection is to being cloud-*only* and to a single proprietary judge, not to cloud hosting as such. A school on the `cloud-hosted` profile here can move to `edge-local` without changing product, keeps its panel diversity either way, and runs open-weight models it could serve itself. That optionality is the difference, and it is worth more than a categorical refusal to run in a datacenter would be. And its AI-rubric-generation feature has no published construct-validity guardrail of the kind Section 6 specifies, which matters most precisely when a generated or auto-edited rubric is used to justify a grade.
 
-### 7.7 The ingestion and transcription module (new in v2.6)
+### 7.7 The ingestion and transcription module 
 
 Section 7.5 specifies how transcription *risk* is routed. This section specifies the module that produces the transcription in the first place. Every earlier version drew it as one box reading "OCR if needed" while simultaneously calling ingestion a real subsystem (§0.2) and naming it the acceptance-test line most likely to fail (§8.5). That gap is closed here.
 
@@ -1003,7 +1087,7 @@ This is stated as an absolute because a single exception dissolves the guarantee
 
 **Input** is PDFs. Assessments and reference solutions may be typed; **student submissions are predominantly handwritten and scanned**, which is the hard case and the design target. Any of the four artifact kinds may arrive as one PDF or as several.
 
-**Output** is a single **structured Markdown artifact** per logical document, plus a sidecar of per-region metadata. Markdown rather than plain text because the downstream stages need structure the text does not carry: question boundaries so Stage C can address a `(question, criterion)` cell, answer-region boundaries so a criterion's evidence can be localized, and preserved notation for equations and tables. Markdown rather than a rich layout format because evidence spans are byte offsets and a format with hidden state makes offsets unstable.
+**Output** is a single **structured Markdown artifact** per logical document, plus a sidecar of per-region metadata. Markdown rather than plain text because the downstream stages need structure the text does not carry: question boundaries so Stage C can address a `(question, criterion)` cell, answer-region boundaries so a criterion's evidence can be localized, and preserved notation for equations and tables. Non-text content — diagrams, graphs, spatially-encoded tables, struck-through work — is emitted as a structured *description* rather than dropped (R45), which is what lets a criterion be scored against a drawing at all. Markdown rather than a rich layout format because evidence spans are byte offsets and a format with hidden state makes offsets unstable.
 
 ```
  ALL PDFs (1..N)   ──►  rasterize        ──►  transcription       ──►  assembly
@@ -1066,6 +1150,60 @@ Uniformity here is a correctness property, not tidiness. Mixed pages are the com
 
 Record per page whether a text layer was present and, when it was, the measured divergence. "How closely did the model reproduce text we could read exactly" belongs in the audit record, and a reader assessing whether to trust a grade will want it.
 
+#### Graphical regions become descriptions dense enough to score from (R45)
+
+A great deal of what a student submits is not text. Free-body diagrams, geometry constructions, an arrow showing the direction of a force, a plotted graph, a table whose meaning lives in its column alignment, labels connected by leader lines to particular objects, crossed-out working, a correction squeezed in above an earlier line — all of these carry the reasoning a criterion is meant to evaluate, and none of them survive a transcription pass that only lifts characters off the page.
+
+**For every non-text region, the module emits a structured description into the Markdown, and that description must be complete enough that the extraction stage can localize every fact a criterion might turn on.** This is the working definition of "detailed enough": not that a human would recognize the drawing from it, but that no criterion attached to this question could need a fact the description omits. If a criterion asks whether the normal force is drawn perpendicular to the surface, the description has to state the direction of each arrow relative to each surface; a description reading "a free-body diagram with several labelled forces" has thrown away the entire content of the judgment.
+
+What that means per kind of element:
+
+| Element | The description must carry |
+|---|---|
+| Free-body diagram | Every arrow: its label, origin point, direction (angle, or relation to a named surface or axis), and relative magnitude where drawn to scale. The body itself, and which arrows attach to it |
+| Geometry construction | Named points, segments, and angles; which lines are marked congruent, parallel, or perpendicular; auxiliary constructions and what they connect |
+| Graph or plot | Axis labels and units, scale, plotted shape, intercepts, turning points, asymptotes, any marked or annotated coordinates, and whether the curve passes through or merely near the data |
+| Table whose meaning depends on alignment | Emitted as an actual Markdown table. The alignment *is* the relation; flowing it into prose destroys it |
+| Labels and annotations | What each label attaches to, and how the attachment is indicated — leader line, adjacency, arrow, bracket |
+| Spatial relations generally | Above/below, left/right, inside/outside, connected/unconnected, stated explicitly, since the reader of the Markdown has no image |
+| Selection marks on a multiple-choice item | Which option is marked and how — filled bubble, tick, cross, circled letter, letter written in the margin. Multiple marks, marks between options, and erasures are reported as such rather than resolved (§7.8, R55) |
+| Crossed-out working | Marked as struck through, with its content preserved (see below) |
+| Correction written above an earlier line | Marked as superseding, with both the original and the correction preserved |
+
+#### Describe, never evaluate
+
+This is the constraint that keeps the previous one from becoming dangerous, and it deserves stating as forcefully as the extraction-integrity rule it protects.
+
+**A description states what is on the page. It never states whether what is on the page is correct.** "An arrow labelled N originates at the block and points away from the inclined surface, approximately perpendicular to it" is a description. "The student correctly shows the normal force perpendicular to the surface" is a verdict — rendered by the transcription model, outside the isolation boundary, before any judge has seen the work.
+
+Consider what that does to the architecture. Every judge reads the same description (§7.4). A judgment smuggled into it is therefore inherited by the whole panel, which then agrees unanimously — and §7.4's confidence inversion does not fire, because the spans verify and the evidence is present. It is precisely the common-mode failure R19 exists to prevent, arriving through a channel R19 does not watch, introduced by the one component in the system that was never supposed to be making judgments at all (§7.7's separation of the transcription model from the panel).
+
+The discipline is the same one §5.10 applies to band descriptors: **state what it does, not how good it is.** Evaluative vocabulary — correct, valid, appropriate, properly, as expected, should be — has no place in a description, and both the prompt template and the acceptance fixtures should check for it.
+
+#### Retracted and superseded work is preserved, never flattened (R47)
+
+Crossed-out work and corrections are not noise to be cleaned up. They are the difference between a student who did not attempt something and one who attempted it, saw the error, and fixed it — and between work the student is offering for assessment and work they have explicitly withdrawn.
+
+So the Markdown represents them rather than resolving them:
+
+- **Struck-through content is retained and marked as struck through.** A criterion may legitimately need to know that a wrong approach was abandoned; more to the point, a transcription that silently deletes it has made a grading decision about what counts.
+- **A correction written above or beside an earlier line is marked as superseding it**, with both versions present and the relationship stated. Which one a criterion should score against is a rubric question, not a transcription question, and the transcription must not answer it by discarding one of them.
+
+This is R36's absent-versus-blank distinction applied to graphical edits, and it fails the same way when collapsed: once "crossed out" has become "not written," nothing downstream can recover the difference.
+
+#### Described regions are higher-risk evidence, and the system must know it (R46)
+
+There is a gap here that is easy to miss and important to name. §7.4's integrity gate verifies that a cited span's byte offsets resolve to the claimed text in the canonical Markdown. For a described region, **that check proves the judge quoted the description faithfully. It proves nothing about whether the description is faithful to the drawing.** Span verification cannot see the image.
+
+So evidence originating in a described region carries a risk that text evidence does not, and the design treats it accordingly:
+
+- **Regions are marked by kind in the metadata**, so every downstream stage can tell a student's own words from a model's account of a picture, and a judge is told which of its evidence is described rather than transcribed.
+- **The image crop is retained and shown to the teacher** whenever a reviewed criterion's evidence lies in a described region. This is the only point in the pipeline where a human can check description fidelity at all, so it has to be one click, not a hunt through the original PDF.
+- **Described regions feed §7.5's impact routing.** The rule there — a criterion cannot be auto-scored when a low-confidence transcription region overlaps its evidence span — extends to described regions: description is inherently less certain than character recognition, and a criterion whose evidence lies wholly inside a description is a routing candidate on that basis alone.
+- **Second-family description on high-risk criteria only**, mirroring §7.4's second-family extraction. Two independent descriptions of the same crop that disagree on a load-bearing fact is a detectable signal; a single description is unfalsifiable. Reserve it for criteria the risk register marks high, since it doubles the cost of the most expensive part of ingestion.
+
+**Structural completeness has to account for this too.** Gate V2 checks that every question has an answer region; a question answered entirely by a diagram must not be recorded as `absent` merely because it contains no prose. A described region is present content.
+
 #### Assembly: several PDFs into one artifact (R33)
 
 A single logical document routinely arrives as several files — a scanner that splits after N pages, a phone camera producing one PDF per photo batch, a student answering on a continuation sheet handed in separately. Concatenating them in whatever order the filesystem returns is the obvious implementation and it is wrong in a way that produces plausible-looking output: an answer sheet assembled out of order transcribes fine and then fails to match its questions, and the failure surfaces as a low grade rather than as an ingestion error.
@@ -1093,7 +1231,7 @@ Five gates, cheapest first, run before an artifact can enter Stage C. **Every ga
 |---|---|---|
 | **V0 File integrity** | PDF opens, not encrypted, page count > 0, pages not blank or near-blank, resolution above the profile's floor | Quarantine as unreadable; operator rescans. Never proceeds. |
 | **V1 Page completeness** | Assembled page count against expectation; printed page-number sequence continuity; duplicate-page detection; continuation-sheet reconciliation | Quarantine with the specific missing or duplicated pages named |
-| **V2 Structural completeness** | Every question in the assessment has a corresponding answer region in the submission; every question the assessment declares is present in the assessment artifact itself | Route to operator with the specific question IDs. **Absent region ≠ blank answer** (R36) |
+| **V2 Structural completeness** | Every question in the assessment has a corresponding answer region in the submission; every question the assessment declares is present in the assessment artifact itself. For multiple-choice questions, that the region contains a *resolvable* selection (§7.8) | Route to operator with the specific question IDs. **Absent region ≠ blank answer** (R36); an ambiguous or multiple mark is routed, never resolved or scored incorrect (R55) |
 | **V3 Identity** | Student name or ID extracted and matched against the cohort roster | Ambiguous or unmatched routes to triage; never guessed |
 | **V4 Assessment match** | Does this submission actually belong to this assessment? See below | Halt scoring for this submission; route to a human. **Never auto-reassign** (R35) |
 
@@ -1133,11 +1271,184 @@ Two placement consequences:
 - **On `discrete-gpu` and `unified-small` profiles the VLM is its own residency slot** (§8.1). Run the entire ingestion pass for the whole cohort, unload, then load the first judge. This is the same whole-batch-per-model discipline the judge loop already follows, and per-submission interleaving of OCR and scoring would be fatal for the same reason.
 - **Ingestion is fully parallel and has no ordering constraint**, unlike the extraction sweep. Pages are independent, so this stage is the easiest place in the pipeline to saturate available concurrency.
 
+Describing graphical regions is the part of this that varies most. A page of prose emits a few hundred tokens; a page whose answer is a free-body diagram with eight labelled arrows emits substantially more, and a high-risk criterion may warrant a second description from a different family (R46). Budget transcription output per page as a range rather than a constant, and measure it on real submissions in the §8.5 acceptance test — the medium that dominates the cost is the medium the deployment actually receives.
+
 The validation ladder adds a small number of calls per submission for V4's semantic signals and none for V0 to V2, which are deterministic checks. Against the cost of the failure it prevents, that is not a trade-off worth analyzing.
 
 #### Where it sits in the flow
 
 Ingestion runs before Stage A's rubric decomposition for the assessment artifacts, and before the Stage C extraction sweep for submissions. Validation failures never enter Stage C at all: they land in the operator's quarantine list (§9.16), which is the same surface §7.5's transcription triage uses and a different surface from the teacher's grade-review queue. This matters for R9 and R12 — quarantine triage is operator work with a different rhythm, and letting it consume the teacher-minute review budget would defeat the budgeting the whole review design rests on.
+
+### 7.8 Mixed-format tests: deterministic items alongside judged ones (new in v3.0)
+
+Teacher feedback on the design was that real tests are not purely constructed-response. A paper that is mostly open questions will often carry a handful of multiple-choice items, and a system that cannot ingest such a paper is a system the teacher has to work around. This section specifies mixed-format support.
+
+#### The architectural shape: a different evaluator, an identical pipeline
+
+A multiple-choice item has a known correct answer. Its evaluation is a **lookup against a declared answer key**, not a judgment — there is nothing for a panel to be uncertain about, no rubric to interpret, and no construct to preserve. This makes the integration far smaller than it first appears, provided one framing is adopted:
+
+> An MCQ item is a criterion whose **evaluator is a deterministic comparison rather than a panel**. Everything downstream of the verdict is unchanged.
+
+Concretely it slots into the existing model as a binary criterion carrying `evaluation_mode = 'deterministic'` and `scoring_model = 'atomic'` (an MCQ criterion is atomic by construction, so §5.3's decomposability test does not arise), two bands — `correct` and `incorrect` — which is already an even band set with no middle (§5.10, R40), and points derived from the band by the same mapping as everything else. Aggregation, the review queue, the audit record, points summing into question and test totals, package portability: all identical. **The panel is simply not invoked.**
+
+What changes is where the risk lives.
+
+#### How ingestion knows which is which
+
+The transcription module does not classify question types on the fly, and should not: guessing a question's format per submission would mean 350 independent chances to get it wrong, with the error surfacing as a grade rather than as an ingestion problem. The determination is made **once, on the assessment, and is then a lookup**.
+
+**Phase 1 — ingesting the assessment (once per package).** Here there is genuinely nothing to consult, so the module *proposes*. A question carrying an enumerated option list, selectable markers (bubbles, boxes, lettered alternatives), and an instruction like "circle" or "select one" is proposed as `mcq`; a question with a ruled response area and no option list is proposed as `open`; a question with both is proposed as `mixed`. The proposal includes the option set for each MCQ question, since that becomes the `mcq_option` rows.
+
+**The teacher confirms the proposal, and supplies the answer keys.** This is the §6.4 elicitation pattern and the same R9 time budget applies: the module presents its inventory — "Q1–Q3 multiple choice with four options each, Q4 open, Q5 circle-and-explain" — and the teacher corrects it and enters the keys. The system never infers an answer key from the assessment; a key is ground truth and comes from the teacher. Getting this wrong is cheap to fix at setup and expensive to discover at hour two of a batch, which is the same argument §8.4 makes for checking the prefix budget at Stage A.
+
+**Phase 2 — ingesting submissions (every submission thereafter).** The module is **told**. `question_type`, the option set, and the answer regions are already in the package, so transcription is targeted extraction against a known structure rather than open-ended layout analysis: for question 3 it is looking for exactly one of four known markers in a known region, and for question 5 it is looking for a marker *and* a prose region. This is strictly more reliable than classification, and it is what makes gate V2's "does this region contain a resolvable selection" check meaningful — the module knows a selection is supposed to be there.
+
+It also means a **structural disagreement is a finding rather than a silent adaptation**: a submission whose question 3 region contains prose and no markers, when the package says question 3 is multiple choice, is not quietly re-read as an open answer. It is a V2 failure routed to the operator, and at scale a *pattern* of such failures is a V4 signal that this is the wrong paper (§7.7).
+
+#### Questions that are both
+
+"Circle the correct answer and explain your choice" is common enough that it has to work, and it is the reason **evaluation mode is a property of the criterion rather than of the question.** Such a question carries one `deterministic` criterion for the selection and one or more `judged` criteria for the explanation. The panel sees only the judged ones; the selection is a lookup; the points sum into the question total as usual.
+
+One consequence deserves an explicit default, because it is a scoring-model decision that will otherwise get made by accident. **The explanation is judged on its own merits, independent of whether the selection was correct.** A student can select wrongly and reason well, or select correctly by luck and reason badly, and those are different results that a naive coupling would collapse. If a teacher genuinely wants the explanation's credit to be conditional on the selection, that is a declared criterion dependency under §7.2 Rule 2 — visible, teacher-authored, and inside the §6.2 lock — never an implicit behaviour of the mixed question type.
+
+Note also that the judged criteria of a mixed question must not receive the selection as context. Telling a judge "the student chose B, which is correct" before it evaluates the explanation is an anchor, and it is exactly the contamination §7.2's isolation boundary exists to prevent. The deterministic verdict and the judged verdict are computed independently and combined only at aggregation.
+
+#### The risk moves from judgment to transcription
+
+For an open question, the hard problem is whether the judgment is right. For an MCQ item the answer key is right by definition, and **the entire remaining risk is whether we correctly read which option the student selected.** That is the ingestion module's problem (§7.7), not the panel's, and it is a real problem on scanned handwritten papers:
+
+| Situation | Correct handling |
+|---|---|
+| One clear mark | Extract the option, score deterministically |
+| Two or more marks | **Ambiguous** — never pick one, never score as incorrect |
+| A mark erased or crossed out with another added | Apply §7.7's retraction rules (R47): the struck mark is retracted, the remaining one is the answer, and both are preserved |
+| A mark placed between two options | **Ambiguous** — route |
+| A letter written in a margin instead of a bubble filled | Valid selection; the description must capture it (R45) |
+| No mark anywhere | **Blank**, which is a legitimate zero — distinct from a page that is missing, which is not (R36) |
+| Mark present but the region is unreadable | **Absent**, an ingestion failure, not a wrong answer |
+
+The last three rows are R36's distinction — absent, blank, present — applied to mark reading, and they fail the same way if collapsed. **An unresolvable mark is never silently resolved to an option, and never scored as incorrect (R55).** A student who selected the right answer in handwriting the scanner could not resolve has not answered wrongly.
+
+**Ambiguity here is operator work, not teacher work.** "Which option is this mark?" is a transcription question with a rescan or a glance at the crop as its remedy. It belongs in §7.5's transcription triage queue, run before grading, and must not consume the teacher-minute review budget that R9 and R12 exist to protect. Mixing them would make a stack of smudged bubbles compete with genuine grade disputes for the same thirty minutes.
+
+#### The statistical trap, and why it matters beyond hygiene
+
+Deterministic items agree with the teacher essentially always. Folding them into the package's agreement statistics therefore **inflates the headline figure with items that involved no judgment at all** — a test that is 40% multiple choice would report markedly better agreement than a pure constructed-response test of identical quality, purely as an artifact of its format. This is §2.1's inflated-agreement error and R51's don't-merge-holistic-with-atomic error arriving one level up, and the fix is the same: **MCQ correctness is reported separately and never enters any agreement, κ, or quality figure for the judged portion of the test (R53).**
+
+There is a second reason to be strict about this, and it is the more important one. §0.1 identifies the problem this system exists to solve: assessment format degrading to whatever is mechanically gradeable, so that constructed responses stop being assigned at all. If the system's own reporting makes multiple-choice items look better — higher agreement, higher confidence, near-zero cost, no review queue — it applies exactly the pressure §0.1 describes, from inside the tool built to relieve it. Supporting mixed-format papers is right. Letting the dashboard quietly reward the multiple-choice half is not, and separate reporting is what prevents it.
+
+What deterministic items *should* feed is the class-level diagnostic (§10), where they are genuinely strong: exact per-item difficulty, and distractor analysis showing which wrong option the cohort chose, which at n=350 is a sharp signal about a specific misconception. Report that prominently. Just never as evidence about the grader.
+
+#### The rest of the integration
+
+- **Question type is declared in the package** and is part of the schema lock (§6.2): converting an open question to multiple choice, or the reverse, is a redefinition of what is being assessed, not a clarification.
+- **Answer keys are exact and versioned.** Single-select is the default; multi-select and its partial-credit policy (all-or-nothing, or per-option) are declared by the teacher rather than inferred. Negative marking, if used, is declared for the same reason.
+- **Structural validation extends naturally.** Gate V2 checks that every question has an answer region; for MCQ it also checks that the region contains a resolvable selection. Gate V4's assessment-match check gets *stronger* with MCQ present, since option counts and per-question option labelling are a precise structural fingerprint of which paper this is (§7.7).
+- **Throughput improves proportionally.** MCQ items consume no scoring calls and no extraction calls, so a paper with 20% multiple-choice items costs roughly 20% less than §8.4's arithmetic implies. They still cost ingestion, which is where their work is.
+- **The results side of the data model distinguishes the two modes explicitly**, because several invariants stop holding for a deterministic criterion. It produces no `verdict` rows, so its `criterion_score` carries `judge_count = 0` — the odd-panel constraint of R48 admits zero alongside 1, 3 and 5 precisely so this is expressible. Its extracted answer lives in `document_region.selection`, with `selection_state` able to say `ambiguous` or `multiple_marks` rather than being forced into an option (R55). An unresolvable mark sets `state = 'unresolved_selection'` and routes to `'triage'`, the operator queue, not the teacher’s (R54). And `label.evaluation_mode` is what makes R53 enforceable from the data rather than by convention: agreement is computed over blind, judged rows only.
+- **Distractor analysis has its own tables.** `mcq_item_stats` holds the per-option response distribution and `mcq_item_summary` the item difficulty, blank count, and unresolved count. Keeping the unresolved count separate matters: a question with many unreadable marks is a scanning problem, and reading it as a difficult question would send the teacher to reteach something the cohort may have answered correctly.
+- **The rubric-calibration machinery of §6 does not apply.** There is no ambiguity to elicit and no construct to drift; a wrong answer key is a straightforward error the teacher corrects, and the version pin records when it changed.
+
+### 7.9 From criterion scores to a final grade (new in v3.1)
+
+Versions before 3.1 stopped at the criterion score. Roll-up was described in one sentence — "points aggregate arithmetically up the tree" — and there was no object anywhere holding a student's final grade, no way for a teacher to say how their marks should be combined, and no definition of the grade boundaries that §10's review ranking already claimed to use. This section closes that, and it is a correction to the product, not a detail.
+
+#### The principle this rests on
+
+**Every submission receives a complete final grade, computed automatically, with no per-student teacher action (R56).**
+
+This is not an efficiency target; it is the system's reason to exist. §0.1's argument is that at 250 to 350 students the counterfactual is *no substantive feedback at all*, because the arithmetic of marking defeats the teacher. A design that produces criterion-level judgments but leaves a human to compile 350 final grades has reproduced the bottleneck one level up and delivered nothing. **Teacher effort must scale with the review budget they choose (R12), never with class size.**
+
+The corollary is where the teacher's time actually goes, and it should be stated plainly because it inverts the intuition:
+
+> The teacher invests time **once**, at the front, calibrating the instrument on the order of 10 to 15 papers (§6). After that they sample and spot-check. They do not compile grades, and they do not review 350 papers to produce them.
+
+Risk follows from this, and the design accepts it deliberately rather than pretending otherwise. Grades will be issued that no human inspected. The mitigations are everywhere else in this report — evidence citation, the panel, confidence routing, the review queue ranked by what could actually move a grade, the blind sample, the provisional marking of unreviewed items — and none of them is a reason to withhold the grade. **An unreviewed grade, honestly labelled, is the product. A withheld grade is a failure to deliver it.**
+
+#### The teacher declares the process; the system applies it
+
+Combining marks is a professional decision that belongs to the teacher and varies by subject, institution, and assessment. A hardcoded weighted sum is a policy masquerading as a mechanism. So the teacher declares a **grade policy** once, at setup, alongside the rubric — and the system then applies it to every submission without asking again (R57).
+
+**It is declarative, not a script.** A free-text formula field, or embedded code, would be unauditable, impossible to show a teacher in plain language, and impossible to reproduce faithfully three years later when a grade is disputed. Instead the policy is a small vocabulary of composable rules stored as data:
+
+```json
+{
+  "per_question": {
+    "Q1": { "rule": "sum_criteria" },
+    "Q4": { "rule": "sum_criteria",
+            "gate": { "criterion": "c12", "requires_band_at_least": "met",
+                      "else_question_points": 0 } }
+  },
+  "test_total":  { "rule": "sum_questions", "drop_lowest_n": 0 },
+  "scale_to":    100,
+  "rounding":    "half_up_1dp",
+  "boundaries":  [ { "min": 80, "grade": "A" }, { "min": 70, "grade": "B" },
+                   { "min": 60, "grade": "C" }, { "min": 50, "grade": "D" },
+                   { "min":  0, "grade": "F" } ]
+}
+```
+
+**A default policy exists so that even this cannot stall a run.** If the teacher declares nothing, the system uses sum-of-criteria into sum-of-questions, raw points, no boundary table, and shows that in plain language for them to change whenever they like. Declaring a policy is strongly worth the five minutes; not declaring one produces defensible totals rather than no grades. The only setup item that genuinely cannot be defaulted is a multiple-choice answer key — there is no honest guess at which option is correct (§7.8).
+
+The supported rules are deliberately few: sum with weights, a gate (a criterion or question whose failure caps or zeroes its parent), best-*k*-of-*n* or drop-lowest, scaling to a total, a rounding rule, and a boundary table. Anything a teacher needs that this cannot express is a finding worth collecting, not a reason to open the door to arbitrary code.
+
+Three properties follow from keeping it declarative, and each matters:
+
+- **It can be shown back in plain language** for approval: *"Each question is the sum of its parts. Question 4 scores zero if the safety analysis is missing. The total is scaled to 100 and rounded to one decimal. 80 and above is an A."* A teacher can approve that; nobody can approve a formula string.
+- **It is inside the §6.2 schema lock and version-pinned** (§6.7). Editing the boundary table moves every grade in the cohort without re-running a single judgment — the same hazard as editing the band→points mapping (R43), and it gets the same treatment.
+- **It is reproducible.** A grade issued in 2026 can be recomputed exactly, from the same criterion scores under the same policy version, which is what makes it defensible in an appeal.
+
+#### Grade boundaries are now a real object
+
+§10 ranks the review queue partly by *proximity to a grade boundary*, and `ReviewItem` carries a `grade_boundary_delta` — but nothing in the design defined a boundary. That was a dangling reference: the ranking could not actually be computed. Boundaries now live in the grade policy (R59), which makes the review ranking implementable and gives the teacher the one control that most changes which students the system asks them to look at.
+
+#### Provisional inputs never block a grade
+
+This is where an over-cautious reading of R26 would have destroyed the product. Unreviewed low-confidence criteria are marked provisional and carried forward — but **the grade is still computed and still issued.** Provisional means *labelled*, never *withheld*.
+
+Every final grade therefore carries its own coverage record: how many of its criteria were auto-accepted, how many were reviewed by the teacher, how many remain provisional, and — the number that actually matters — whether the provisional ones could move the student across a boundary. Where they could, the student's grade is shown as a range rather than a point until reviewed. Where they could not, the grade is simply the grade, and there is nothing to escalate.
+
+One case genuinely cannot produce a complete grade, and it must not be confused with the above: a criterion with **no score at all**, because a page was missing, a mark was unreadable, or a unit quarantined. That is an ingestion failure, not judgment uncertainty. Such a grade is marked incomplete, the specific missing input is named, and it goes to the **operator** queue as a rescan (§7.5, §7.8) — not to the teacher as a marking decision. These are few, and they are the only legitimate blocker.
+
+Finalization is a **single batch action for the whole class**, and it names what it covers: *"Finalize 350 grades. 41 criteria across 28 students remain unreviewed; 3 of those could move a grade boundary."* One click, fully informed, recorded in the audit trail. Never 350 clicks.
+
+#### Every teacher touchpoint, and whether it blocks (R60)
+
+The automation principle is easy to assert and easy to erode one reasonable-sounding gate at a
+time, so it is recorded here as a checkable inventory rather than a claim. **Two setup items
+block, both once per package. Nothing in the recurring run does.**
+
+| Teacher touchpoint | Phase | Blocks grades? |
+|---|---|---|
+| Confirm the question inventory | Setup, once | **Yes** — a test that has not been defined cannot be marked |
+| Supply multiple-choice answer keys | Setup, once | **Yes** — there is no honest guess at which option is correct (§7.8) |
+| Approve how the rubric was understood | Setup, once | No — defaults to the rubric exactly as written |
+| Confirm decomposability classifications (§5.3) | Setup, once | No — defaults to preserving the criterion whole |
+| Declare the grade policy and boundaries | Setup, once | No — a default sum applies, shown in plain language |
+| Answer ambiguity-elicitation questions (§6.4) | Setup, once, optional | No — Stage B is skippable by design |
+| Mark 10 to 15 calibration papers | Setup, once, optional | No |
+| Work the review queue (§10) | **Every run** | **No** — unreviewed items are provisional, not withheld (R58) |
+| Blind sample (R21) | **Every run** | **No** — skipping costs validation evidence, not grades |
+| Whole-grade sample | **Every run** | **No** |
+| Finalize the batch | **Every run** | **No** — automatic on completion or at window lapse |
+| Drift check on package reuse (§9.4) | Per reuse | No — advisory, per R11 |
+
+The one thing that legitimately stops a *particular* grade after setup is an **ingestion**
+failure — a missing page, an unreadable mark, a submission matched to the wrong paper. Those
+are few, they are named specifically, and they go to whoever handles scanning rather than to
+the teacher (§7.5, §7.7). A rescan is not a marking decision.
+
+**The test to apply to any future change:** could a teacher start a run, do nothing at all, and
+still have every student graded the next morning? If the answer becomes no, the change has
+removed the thing this system is for, whatever else it improved.
+
+#### Sample the grades, not only the criteria
+
+The review queue works at criterion level, and that is the right granularity for finding a mis-scored judgment. It is the wrong granularity for noticing that a student's *overall* result is implausible — every criterion can look defensible while the total lands somewhere a teacher would never have put it, and nothing in a per-criterion queue surfaces that.
+
+This is a **recommendation, not a gate** (R60): grades are already final and delivered whether or not anyone looks. So the recommended practice, and what the interface should offer by default, is a **whole-grade sample**: 10 to 15 complete final grades drawn at random, shown as the student would receive them — total, boundary grade, per-criterion breakdown, and the feedback. The teacher reads them end to end and either recognizes their own standard or does not. It costs a few minutes, it is the fastest check available on whether the instrument as a whole is behaving, and it catches whole classes of error that per-criterion review structurally cannot.
+
+Draw this sample from the auto-accepted population, not the flagged one, for the same reason §6.8's random spot-check arm exists: reviewing only what the system already doubted tells you nothing about what it was confident and wrong about.
 
 ---
 
@@ -1164,9 +1475,9 @@ The architecture already accommodates this, but by accident rather than by contr
 
 | Profile | Memory | Residency policy | Panel |
 |---|---|---|---|
-| `unified-large` | 64GB+ Apple Silicon | May hold 2 models resident; swap the third | Up to 3 judges, larger models |
-| `unified-small` | 32GB Apple Silicon | One model resident at a time | 2 to 3 judges, 30B-class MoE or smaller |
-| `discrete-gpu` | 16 to 24GB VRAM | **Exactly one model in VRAM at a time, weights purged before the next loads** | 2 to 3 judges, 8B-class, quantized |
+| `unified-large` | 64GB+ Apple Silicon | May hold 2 models resident; swap the third | 1 or 3 judges, larger models |
+| `unified-small` | 32GB Apple Silicon | One model resident at a time | 3 judges, 30B-class MoE or smaller |
+| `discrete-gpu` | 16 to 24GB VRAM | **Exactly one model in VRAM at a time, weights purged before the next loads** | 3 judges, 8B-class, quantized |
 
 Under `discrete-gpu` the orchestrator must complete a model's *entire* batch across all questions, criteria, and submissions before unloading it and loading the next family. This is the loop nesting taken to its conclusion, and it is what makes a commodity GPU viable at all. Budget for the swap: two or three load/unload cycles per run is minutes, which is acceptable; per-criterion swapping would be fatal.
 
@@ -1199,7 +1510,7 @@ One specific caution: the Berkeley study found **Qwen 3 8B was the single most p
 Priority order, restated as a budget rule because it is the finding most likely to be misapplied:
 
 1. **Decomposition** (extraction agent plus scoring agent). Largest single accuracy gain in the cited research, and it *helps smaller models most*, which is exactly your constraint.
-2. **Model-family diversity** (2 to 3 judges). Meaningful bias reduction at moderate cost.
+2. **Model-family diversity** (3 judges; panel size is always odd, R48). Meaningful bias reduction at moderate cost.
 3. **Guardrail passes** (dual-scoring, back-translation). Not accuracy improvements, but the difference between a defensible system and an undefensible one. Cheap.
 4. **Reasoning effort** on models that support it. Real but smaller and non-monotonic; test per model rather than assuming more thinking is better.
 5. **Same-model repeated sampling / majority voting.** Last, because the research shows near-zero benefit at the cost of items 2 through 4.
@@ -1216,7 +1527,7 @@ Section 7.2's Rule 1 has a real cost and it needs planning for. Full isolation m
 
 What you should *not* do to save compute: reuse context across submissions, collapse multiple criteria into one call, or let judges see each other's verdicts. Each of these buys speed by reintroducing exactly the bias the panel exists to remove, and each does so invisibly, since none of them degrade any metric you are currently watching.
 
-### 8.4 Execution plan, parallelization, and the working store (new in v2.1)
+### 8.4 Execution plan, parallelization, and the working store 
 
 Judgment isolation (Section 7.2) plus prefix caching (Section 8.3) together determine the execution order. This is not a free choice to be made later by whoever writes the batch loop; the ordering is forced, and getting it wrong costs both throughput and score fairness.
 
@@ -1227,17 +1538,27 @@ The most expensive context switch on a memory-constrained Mac is **swapping mode
 ```
 for judge_model in panel:            # outermost: weights load once per model
   for question in test:              #   caches question text + reference solution
-    for criterion in question:       #     caches criterion definition + exemplars
+    for criterion in judged(question):  #   JUDGED criteria only (§7.8): deterministic
+                                     #     ones never enter either sweep
       parallel for submission in class:   #  only this varies
         score(criterion, submission)      #  independent call, fresh context
 ```
+
+**Deterministic criteria are not in this loop at all (§7.8).** A multiple-choice item is
+scored by a key lookup against the selection the ingestion module already extracted, so it
+generates no extraction call, no scoring call, no panel iteration, and no prefix-cache
+traffic. It is evaluated once per submission in a single pass over the results, at a cost
+indistinguishable from zero against the ~23,000 model calls beside it. This is the whole
+performance argument for treating evaluation mode as a first-class property rather than
+scoring everything through the panel and discarding the redundancy afterwards: the saving
+comes from **never dispatching the work**, not from making it cheap.
 
 Traversed depth-first, this gives a **prefix tree** rather than a flat cache:
 
 | Prefix layer | Shared across | Rough size |
 |---|---|---|
 | System prompt + judge instructions | everything for that model | ~200 tokens |
-| + question text + reference solution | all criteria in that question | ~800 tokens |
+| + question text + reference solution | all judged criteria in that question | ~800 tokens |
 | + criterion definition + exemplars | every submission in the class | ~500 tokens |
 | + extracted evidence + submission text | nothing, unique per call | ~300 tokens |
 
@@ -1271,7 +1592,7 @@ Rule 2 dependencies need criterion 2's extraction artifact available when criter
 
 **Split Stage C into two sweeps:**
 
-- **Sweep 1, extraction.** Batched by (question, criterion), executed in **topological order over the dependency graph**, writing every extracted evidence artifact to the working store. Topological order is required here because criterion 4's *extraction* may itself need criterion 2's extraction ("find the evidence the student presented" precedes "does the conclusion follow from it").
+- **Sweep 1, extraction.** Batched by (question, criterion) over **judged criteria only** — a deterministic criterion has no evidence for a judge to read, so it is absent from both sweeps (§7.8) — executed in **topological order over the dependency graph**, writing every extracted evidence artifact to the working store. Topological order is required here because criterion 4's *extraction* may itself need criterion 2's extraction ("find the evidence the student presented" precedes "does the conclusion follow from it").
 - **Sweep 2, scoring.** Batched by (judge, question, criterion), reading extraction artifacts from the store.
 
 The consequence is worth stating because it is a genuine simplification: **once extraction completes, the store is fully populated, so the scoring sweep has no ordering constraint at all and can be scheduled purely for cache locality and weight-swap avoidance.** The dependency graph binds only the extraction sweep, which is the cheaper of the two (one small model, no panel multiplication).
@@ -1312,8 +1633,9 @@ A five-question assessment with three criteria per question is 15 criteria. For 
 | Stage | Calls |
 |---|---|
 | Ingestion / transcription (1 VLM call per rasterized page, ~4 pages per submission) | ~1,400 |
-| Extraction (1 pass per submission per criterion) | 5,250 |
-| Scoring, uniform 3-judge panel | 15,750 |
+| Multiple-choice items, if any | **0** — deterministic lookup, no extraction and no scoring calls (§7.8) |
+| Extraction (1 pass per submission per **judged** criterion) | 5,250 |
+| Scoring, uniform 3-judge panel over judged criteria | 15,750 |
 | Scoring, adaptive panel at 30% escalation (Section 7.1) | 8,400 |
 | Synthesis L1 (per question) + L2 (per test) | 2,100 |
 | **Total, uniform panel** | **~23,100** |
@@ -1346,7 +1668,7 @@ Combining adaptive panel depth with continuous batching brings a 350-student ass
 
 This execution plan turns the harness into a **high-concurrency, shared-prefix** workload, which is the profile the throughput table above depends on. One caveat worth planning for: sustaining high concurrency costs memory for the KV cache of every in-flight request, and that memory competes with model weights on a unified-memory machine. Concurrency is therefore a tunable to be measured against your model sizes, not maximized blindly. Find the concurrency level where aggregate throughput plateaus on your hardware, and size the panel to leave headroom for it.
 
-### 8.5 The hardware acceptance test (new in v2.4, R25)
+### 8.5 The hardware acceptance test 
 
 Throughput, memory headroom, and OCR viability are empirical properties of a specific hardware and model combination. They are not derivable from the architecture, and shipping on the arithmetic alone risks discovering at a pilot site that the overnight batch takes nine hours.
 
@@ -1355,6 +1677,7 @@ Throughput, memory headroom, and OCR viability are empirical properties of a spe
 **Make this a release gate, not instrumentation.** Before committing to hardware for a deployment, run the full pipeline end to end:
 
 - 350 representative submissions, in the actual medium (handwritten and scanned if that is the deployment reality, not clean typed text)
+- a **mixed-format paper** if the deployment will see one: open questions plus multiple-choice items, so mark-reading is exercised alongside transcription (§7.8). Record the unresolved-mark rate separately from the OCR failure rate — they have different remedies
 - the real OCR stage, not a stub
 - the actual target models at the actual quantization
 - the actual serving stack at the actual concurrency
@@ -1393,7 +1716,7 @@ The OCR line is the one most likely to fail and the one least often tested, beca
 
 **Concrete build recommendation:** use **AutoRubric** as the scoring and aggregation layer, since it already implements most of Section 7.2's bias mitigations, pointed at the R27 provider abstraction rather than at a specific server — **LiteLLM** underneath, resolving to a local **Ollama** or **vLLM-MLX** endpoint under `edge-local` and to **OpenRouter** under `cloud-hosted` and `dev-ci`. Use **Inspect AI** or **DeepEval** as the outer harness that runs the MVVP against accumulated override labels and enforces the Section 6.5 non-inferiority gate as a hard CI check before any rubric revision ships. Because that CI harness runs in a container with no local models, it necessarily runs against OpenRouter, which is exactly the configuration Section 8.7 specifies — and one more reason the provider abstraction has to exist before anything else is built on top of it.
 
-### 8.7 The OpenRouter path: development, CI, and cloud deployment (new in v2.5)
+### 8.7 The OpenRouter path: development, CI, and cloud deployment 
 
 This section specifies the `cloud-hosted` and `dev-ci` profiles of Section 0.7. It is not an appendix describing a fallback. **It describes the configuration in which every automated test of this system runs and in which a substantial share of production deployments will run (R28, R29).** The pipeline is identical to Sections 7 and 8.4 — same isolation rules, same criterion batching, same prompt field ordering, same persistence. What follows is only what differs.
 
@@ -1452,7 +1775,7 @@ The system is developed and tested in a Linux container on a Windows host, with 
 
 ---
 
-## 9. The memory and persistence layer (new in v2.3)
+## 9. The memory and persistence layer 
 
 At 23,000 model calls and multi-hour runs, persistence stops being an implementation detail and becomes the substrate the harness sits on. This section specifies it: what is stored, in what shape, on what infrastructure, with what recovery semantics, and in what format it moves between actors.
 
@@ -1544,7 +1867,10 @@ Enforce it structurally: `contains_real_student_text` in the package metadata, c
 So package reuse should carry a **cheap drift check** rather than assuming transfer:
 
 1. Score a small random sample of the new cohort, 20 to 30 submissions, which at n=350 is a rounding error in compute.
-2. Compare the observed per-criterion score distribution to the distribution recorded in the package.
+2. Compare the observed per-criterion score distribution to the distribution recorded
+   — for **judged** criteria. A shift in a multiple-choice item's correct-rate is a fact
+   about this cohort, not evidence that a rubric failed to transfer, and reading it as
+   drift would flag the one part of the instrument that cannot drift (§7.8) in the package.
 3. Flag criteria where the distributions differ materially. A criterion where the previous cohort averaged 3.8 and this one averages 1.9 is either a genuinely different population or a rubric that does not transfer, and the teacher should be told which criteria to look at before the full run.
 4. Proceed on approval. The check is advisory, not a gate; per R11 the system must still run when the teacher skips it.
 
@@ -1587,13 +1913,56 @@ CREATE TABLE package_version (
   UNIQUE (package_id, version_label)
 );
 
+-- How criterion scores become a final grade (§7.9, R57). Declared by the teacher once, at
+-- setup, applied automatically to every submission thereafter. Declarative rather than a
+-- script so it can be shown back in plain language, locked under §6.2, version-pinned, and
+-- reproduced exactly years later when a grade is disputed.
+CREATE TABLE grade_policy (
+  package_version_id TEXT PRIMARY KEY REFERENCES package_version,
+  per_question       TEXT NOT NULL,        -- JSON: per-question rule + optional gate
+  test_total         TEXT NOT NULL,        -- JSON: sum_questions | best_k_of_n | drop_lowest_n
+  scale_to           REAL,                 -- null = keep raw points
+  rounding           TEXT NOT NULL,        -- e.g. half_up_1dp
+  plain_language     TEXT NOT NULL,        -- the teacher-approved wording of the above. What
+                                           -- was actually approved is this, not the JSON
+  approved_by        TEXT NOT NULL,
+  approved_at        TEXT NOT NULL
+);
+
+-- Grade boundaries. §10 already ranked review by proximity to a boundary and ReviewItem
+-- already carried grade_boundary_delta; before v3.1 nothing defined one, so that ranking
+-- was not computable (R59).
+CREATE TABLE grade_boundary (
+  package_version_id TEXT NOT NULL REFERENCES package_version,
+  min_score          REAL NOT NULL,        -- on the scaled total
+  grade              TEXT NOT NULL,        -- 'A', 'Pass', '4' — whatever the institution uses
+  PRIMARY KEY (package_version_id, min_score)
+);
+
 CREATE TABLE question (
   question_id        TEXT PRIMARY KEY,
   package_version_id TEXT NOT NULL REFERENCES package_version,
   ordinal            INTEGER NOT NULL,
   prompt_text        TEXT NOT NULL,
-  reference_solution TEXT NOT NULL,        -- the "definition of good"
-  max_points         REAL NOT NULL
+  question_type      TEXT NOT NULL         -- open | mcq | mixed (§7.8, R52). "mixed" is
+                     CHECK (question_type IN ('open','mcq','mixed')),  -- "circle the answer AND
+                                           -- explain your choice", which is common. Locked
+                                           -- under §6.2: converting between types is a
+                                           -- redefinition of what is assessed
+  reference_solution TEXT,                 -- the "definition of good" for the judged part;
+                                           -- null only for pure mcq
+  max_points         REAL NOT NULL,
+  CHECK (question_type = 'mcq' OR reference_solution IS NOT NULL)
+);
+
+-- Option set for a multiple-choice question. Needed by ingestion, so it knows what marks to
+-- look for, and by the class rollup, where distractor analysis at n=350 is a sharp signal.
+CREATE TABLE mcq_option (
+  question_id     TEXT NOT NULL REFERENCES question,
+  option_id       TEXT NOT NULL,           -- 'A', 'B', ...
+  ordinal         INTEGER NOT NULL,
+  text            TEXT NOT NULL,
+  PRIMARY KEY (question_id, option_id)
 );
 
 CREATE TABLE criterion (
@@ -1603,10 +1972,28 @@ CREATE TABLE criterion (
   ordinal            INTEGER NOT NULL,
   text               TEXT NOT NULL,
   max_points         REAL NOT NULL,        -- ceiling for aggregation only; never shown to a judge (R39)
+  -- How this criterion is evaluated (§7.8, R52). This is a property of the CRITERION, not
+  -- of the question: a "circle and explain" question carries one deterministic criterion for
+  -- the selection and one or more judged criteria for the explanation.
+  evaluation_mode    TEXT NOT NULL
+                     CHECK (evaluation_mode IN ('judged','deterministic')),
+  answer_key         TEXT,                 -- JSON [option_id,...]; required when deterministic
+  multi_select       INTEGER NOT NULL DEFAULT 0,
+  partial_credit     TEXT,                 -- all_or_nothing | per_option; declared, not inferred
+  scoring_model      TEXT NOT NULL         -- §5.3 decomposability determination (R49).
+                     CHECK (scoring_model IN ('atomic','atomic_with_gate','holistic')),
+                                           -- Locked under §6.2: reclassifying is a
+                                           -- redefinition, not a clarification
+  decomposition_basis TEXT,                -- which of the five §5.3 questions decided it,
+                                           -- and that the teacher confirmed. Null only for
+                                           -- criteria the teacher authored already atomic
+  is_gate            INTEGER NOT NULL DEFAULT 0,  -- sub-criterion whose failure forces the
+                                           -- parent to its lowest band (atomic_with_gate)
   band_count         INTEGER NOT NULL      -- even, so there is no default middle (R40)
                      CHECK (band_count % 2 = 0 AND band_count BETWEEN 2 AND 6),
   evidence_type      TEXT,                 -- RULERS annotation (§1)
-  construct_tag      TEXT                  -- what this measures; changing it is a redefinition (§6.2)
+  construct_tag      TEXT,                 -- what this measures; changing it is a redefinition (§6.2)
+  CHECK (evaluation_mode = 'judged' OR answer_key IS NOT NULL)
 );
 
 -- The scoring scale (§5.10). A judge chooses one of these labels; the orchestrator maps it
@@ -1674,6 +2061,12 @@ CREATE TABLE package_validation (
   criterion_id        TEXT NOT NULL REFERENCES criterion,
   population_scope_id TEXT NOT NULL REFERENCES population_scope,
   backend_profile     TEXT NOT NULL,        -- edge-local | cloud-hosted (R30)
+  -- Judged criteria only. Deterministic (multiple-choice) items never appear here: their
+  -- correctness is not evidence about the grader, and including them would inflate every
+  -- figure in this table (§7.8, R53).
+  scoring_model       TEXT NOT NULL,        -- atomic | atomic_with_gate | holistic (R51).
+                                            -- In the key so a headline figure cannot merge
+                                            -- holistic and atomic agreement (§5.3)
   panel_build_ref     TEXT NOT NULL,        -- hash over the resolved panel: per judge,
                                             -- provider + served build + quantization (§8.7)
   cohorts_used        INTEGER NOT NULL,
@@ -1688,7 +2081,7 @@ CREATE TABLE package_validation (
   expected_histogram  TEXT,
   last_updated        TEXT NOT NULL,
   PRIMARY KEY (package_version_id, criterion_id, population_scope_id,
-               backend_profile, panel_build_ref)
+               backend_profile, panel_build_ref, scoring_model)
 );
 ```
 
@@ -1742,7 +2135,27 @@ CREATE TABLE document_region (
   span_end        INTEGER NOT NULL,
   source_page_seq INTEGER NOT NULL,        -- which assembled page this came from
   ocr_conf        REAL,                    -- per-region; document-level is NOT enough (§7.5)
-  content_state   TEXT NOT NULL            -- present | blank | absent  (R36)
+  region_kind     TEXT NOT NULL            -- R46; selection_mark is an MCQ answer (§7.8)
+                  CHECK (region_kind IN ('transcribed_text','described_graphic',
+                                         'selection_mark')),
+                                           -- Downstream must be able to tell a student's own
+                                           -- words from a model's account of a picture
+  crop_ref        TEXT,                    -- content-addressed image crop; required when
+                                           -- region_kind = described_graphic, because this is
+                                           -- the only way a human can check the description
+  retraction      TEXT                     -- null | struck_through | superseded_by:<region_id>
+                  CHECK (retraction IS NULL OR retraction = 'struck_through'
+                         OR retraction LIKE 'superseded_by:%'),   -- R47
+  -- Selection extraction for multiple-choice regions (§7.8). The markdown carries a
+  -- description; the deterministic evaluator needs a structured value, and needs to be able
+  -- to say "I could not resolve this" without it collapsing into an answer (R55).
+  selection       TEXT,                    -- JSON [option_id,...]; null unless resolved
+  selection_state TEXT                     -- resolved | ambiguous | multiple_marks
+                  CHECK (selection_state IS NULL OR selection_state IN
+                         ('resolved','ambiguous','multiple_marks')),
+  content_state   TEXT NOT NULL            -- present | blank | absent  (R36).
+                                           -- A described_graphic is 'present': a question
+                                           -- answered by a diagram is not an absent answer
                   CHECK (content_state IN ('present','blank','absent')),
   PRIMARY KEY (document_id, region_id)
 );
@@ -1793,7 +2206,10 @@ CREATE TABLE run (
 CREATE TABLE work_unit (
   work_id       TEXT PRIMARY KEY,          -- deterministic hash, §9.10
   run_id        TEXT NOT NULL REFERENCES run,
-  stage         TEXT NOT NULL,             -- extract|score|synth_l1|synth_l2
+  stage         TEXT NOT NULL,             -- extract|score|deterministic|synth_l1|synth_l2
+                                           -- 'deterministic' carries a null judge_id: MCQ
+                                           -- items are in the ledger so a run stays
+                                           -- resumable and idempotent, but no judge runs
   submission_id TEXT NOT NULL,
   criterion_id  TEXT,
   question_id   TEXT,
@@ -1837,6 +2253,9 @@ CREATE TABLE verdict (
 -- No points column, deliberately. Points exist only after aggregation (R41); storing a
 -- per-judge point value would invite averaging them, which rebuilds the continuous scale
 -- the bands exist to remove.
+-- Deterministic criteria (§7.8) produce NO rows in this table: there is no judge and no
+-- verdict, only a lookup. Their criterion_score row carries judge_count = 0, which is why
+-- that column admits 0 alongside the odd panel sizes.
 CREATE INDEX idx_verdict_agg ON verdict(run_id, submission_id, criterion_id);
 
 CREATE TABLE criterion_score (
@@ -1848,8 +2267,11 @@ CREATE TABLE criterion_score (
                                            -- disagreement is weaker evidence than distant
   points            REAL NOT NULL,         -- DERIVED from band via criterion_band, once,
                                            -- after aggregation. Never an average of judges
-  judge_count       INTEGER NOT NULL,
-  agreement         REAL,                  -- null when judge_count = 1 (§7.1); ordinal α
+  judge_count       INTEGER NOT NULL      -- 0 for a deterministic criterion (§7.8); otherwise
+                    CHECK (judge_count = 0        -- 1, 3 or 5. An even panel has no unique
+                           OR judge_count % 2 = 1),  -- median, so it is a failed write rather
+                                           -- than a rounded verdict (R48)
+  agreement         REAL,                  -- null when judge_count is 0 or 1; ordinal α
   -- Extraction-integrity inputs. Unanimous judges on unverified evidence is
   -- LOW confidence, not high (§7.4); confidence must encode that inversion.
   spans_verified    INTEGER NOT NULL,      -- deterministic offset/text check
@@ -1857,10 +2279,46 @@ CREATE TABLE criterion_score (
   sufficiency_flag  INTEGER NOT NULL,      -- any judge said evidence insufficient
   ocr_overlap_risk  INTEGER NOT NULL,      -- §7.5, R24
   confidence        REAL NOT NULL,
-  routing           TEXT NOT NULL,         -- auto|queued|reviewed|provisional
-  state             TEXT NOT NULL          -- final|provisional_unreviewed|ungradeable_by_panel
-                    CHECK (state IN ('final','provisional_unreviewed','ungradeable_by_panel')),
+  routing           TEXT NOT NULL          -- 'triage' is the operator queue, NOT the
+                    CHECK (routing IN ('auto','queued','reviewed',  -- teacher's review
+                                       'provisional','triage')),        -- budget (R54)
+  state             TEXT NOT NULL
+                    CHECK (state IN ('final','provisional_unreviewed',
+                                     'ungradeable_by_panel',
+                                     'unresolved_selection')),  -- §7.8, R55: an unreadable
+                                           -- mark is not a wrong answer
   PRIMARY KEY (run_id, submission_id, criterion_id)
+);
+
+-- THE FINAL GRADE. Before v3.1 the schema stopped at criterion_score and no table held a
+-- student's result (§7.9, R56). One row per submission, produced automatically for every
+-- submission, with no per-student teacher action.
+CREATE TABLE submission_grade (
+  run_id            TEXT NOT NULL,
+  submission_id     TEXT NOT NULL,
+  raw_points        REAL NOT NULL,
+  scaled_score      REAL NOT NULL,
+  grade             TEXT,                  -- from grade_boundary; null if none declared
+  policy_version    TEXT NOT NULL,         -- which grade_policy produced this, for appeals
+  -- Coverage. A grade is issued whichever way these fall; they say what it rests on, and
+  -- provisional inputs never withhold it (R58).
+  criteria_total    INTEGER NOT NULL,
+  criteria_auto     INTEGER NOT NULL,      -- auto-accepted, never seen by a human
+  criteria_reviewed INTEGER NOT NULL,      -- teacher accepted, edited or overrode
+  criteria_provisional INTEGER NOT NULL,   -- scored but unreviewed (R26)
+  criteria_missing  INTEGER NOT NULL,      -- NO score: missing page, unreadable mark,
+                                           -- quarantined unit. The only legitimate blocker
+  boundary_at_risk  INTEGER NOT NULL,      -- could the provisional items move this student
+                                           -- across a boundary? The number that matters
+  score_low         REAL,                  -- when boundary_at_risk, show a range not a point
+  score_high        REAL,
+  state             TEXT NOT NULL
+                    CHECK (state IN ('final','provisional','incomplete')),
+                                           -- incomplete = criteria_missing > 0, an INGESTION
+                                           -- problem routed to the operator, never to the
+                                           -- teacher as a marking decision
+  finalized_at      TEXT,                  -- set by one batch action for the whole class
+  PRIMARY KEY (run_id, submission_id)
 );
 
 CREATE TABLE narrative (
@@ -1899,8 +2357,14 @@ CREATE TABLE audit_record (                -- append-only; never updated or dele
   final_points       REAL NOT NULL,
   decided_by         TEXT NOT NULL,        -- system|teacher
   package_version_id TEXT NOT NULL,        -- exactly which instrument produced this grade
-  panel_config       TEXT NOT NULL,
-  prompt_template_v  TEXT NOT NULL,
+  -- A deterministic grade has no panel and no cited spans; what makes it explicable is the
+  -- key it was checked against and the selection that was read (§7.8). Forcing a panel_config
+  -- onto it would record a fiction in an append-only table.
+  evaluation_mode    TEXT NOT NULL CHECK (evaluation_mode IN ('judged','deterministic')),
+  panel_config       TEXT,                 -- null when deterministic
+  prompt_template_v  TEXT,                 -- null when deterministic
+  answer_key_ref     TEXT,                 -- key + its package version; null when judged
+  selection_read     TEXT,                 -- the option(s) extracted; null when judged
   cited_spans        TEXT,
   recorded_at        TEXT NOT NULL
 );
@@ -1915,6 +2379,10 @@ CREATE TABLE label (                       -- §6.8
   label_type         TEXT NOT NULL CHECK (label_type IN
                        ('accept','edit','override','blind')),
   saw_system_output  INTEGER NOT NULL,     -- 0 only for blind labels
+  -- R53: a teacher overriding a multiple-choice result is telling us the answer key or the
+  -- mark reading was wrong, not that a grader misjudged. Operationally useful, but it is not
+  -- evidence about grader quality, so agreement is computed over judged rows only.
+  evaluation_mode    TEXT NOT NULL CHECK (evaluation_mode IN ('judged','deterministic')),
   -- Bands, not points, are what agreement is computed over: the scale is ordinal, and
   -- comparing derived point values would smuggle interval assumptions back in (§5.10, R41).
   system_band        TEXT NOT NULL,
@@ -1929,7 +2397,7 @@ CREATE TABLE label (                       -- §6.8
   panel_config       TEXT NOT NULL,
   recorded_at        TEXT NOT NULL
 );
--- Agreement statistics computed over label_type='blind' only.
+-- Agreement statistics computed over label_type='blind' AND evaluation_mode='judged' only.
 -- Everything else is an operational signal, not a validity claim.
 CREATE INDEX idx_label_mvvp ON label(assignment_type, criterion_id, recorded_at);
 
@@ -1953,6 +2421,33 @@ CREATE TABLE criterion_stats (
   panel_agreement  REAL,                   -- chance-corrected ordinal α, escalated subset
   uncited_rate     REAL NOT NULL,
   PRIMARY KEY (cohort_id, criterion_id)
+);
+-- For deterministic criteria, band_histogram is the correct/incorrect split and
+-- band_entropy / interior_rate are null: a two-band deterministic scale has no interior
+-- and no compression to measure (§5.10, §7.8).
+
+-- Per-option response distribution for multiple-choice questions. §7.8 calls distractor
+-- analysis one of the strongest class-level outputs at n=350 — which wrong option the cohort
+-- chose is a sharp, specific signal about a misconception — and it needs its own shape,
+-- since criterion_stats is per-band and this is per-option.
+CREATE TABLE mcq_item_stats (
+  cohort_id       TEXT NOT NULL,
+  question_id     TEXT NOT NULL,
+  option_id       TEXT NOT NULL,
+  chosen_count    INTEGER NOT NULL,
+  is_key          INTEGER NOT NULL,        -- denormalized so the rollup needs no join
+  PRIMARY KEY (cohort_id, question_id, option_id)
+);
+CREATE TABLE mcq_item_summary (
+  cohort_id           TEXT NOT NULL,
+  question_id         TEXT NOT NULL,
+  n                   INTEGER NOT NULL,
+  correct_rate        REAL NOT NULL,       -- item difficulty, exact rather than estimated
+  blank_count         INTEGER NOT NULL,    -- answered nothing: a legitimate zero
+  unresolved_count    INTEGER NOT NULL,    -- mark unreadable: NOT a wrong answer (R55).
+                                           -- A high rate here is a scanning problem, and
+                                           -- must never be read as a difficult question
+  PRIMARY KEY (cohort_id, question_id)
 );
 
 -- Operational metrics. Not about students; about whether the harness is healthy.
@@ -2080,11 +2575,14 @@ There is deliberately **no field** for: other judges' verdicts, this judge's ver
 {
   "submission_id": "s231", "criterion_id": "c4",
   "verdicts": [ { "judge_id": "llama33", "band": "derives_only" },
-                { "judge_id": "qwen3",   "band": "derives_and_justifies" } ],
+                { "judge_id": "qwen3",   "band": "derives_and_justifies" },
+                { "judge_id": "gptoss",  "band": "derives_only" } ],
   // Aggregation is ORDINAL (R41): median band, spread recorded. Mapping each judge to
-  // points and averaging would have produced 3.75 -- a value that corresponds to no band
+  // points and averaging would have produced 3.33 -- a value that corresponds to no band
   // and describes no behaviour, rebuilding the continuous scale the bands remove.
-  "band": "derives_only", "band_spread": 1, "judge_count": 2,
+  // judge_count is odd by requirement (R48): a two-judge panel split across adjacent
+  // bands has no unique median, and any tie-break would be a hidden thumb on the scale.
+  "band": "derives_only", "band_spread": 1, "judge_count": 3,
   "points": 3.0,                                     // derived from the aggregated band, once
   "agreement": 0.71,                                 // ordinal α: adjacent disagreement
                                                      // counts for less than distant
@@ -2194,6 +2692,7 @@ Three properties follow:
 | Process crash or operator stop | Lease expiry | Sweeper requeues; resume from ledger |
 | Model server unreachable | Connection error | Backoff, pause run, alert operator; do not fail units |
 | Out of memory on model swap | Allocation error | Reduce concurrency and retry; if persistent, drop to a smaller panel and record it in `panel_config` |
+| Panel left with an even judge count by a failed unit | Oddness check before aggregation | Retry to restore the third judge. If unrecoverable, discard the second verdict and fall back to the base single-judge band, marked provisional. Never adjudicate between two (R48) |
 | Malformed model output | Schema validation fails | Retry up to 3 times; then quarantine and flag the criterion |
 | Unparseable submission | Ingest or extraction failure | Quarantine, route to teacher as an ingestion issue (R13) |
 | PDF unreadable or encrypted (V0) | Ingestion gate | Quarantine; operator rescans. Never scored |
@@ -2294,7 +2793,7 @@ This is unglamorous and it is the difference between a validation record that co
 | C4. Synthesis | verdict, evidence, narrative L1 | narrative | L2 reads L1's earlier output (§7.2 Rule 3) |
 | D. Review | criterion_score, review_queue | review_queue, audit_record, label | Teacher sessions span days; provisional items carry forward (R26) |
 | D2. Blind sample | submissions only | label (type='blind') | The only unbiased ground truth (§6.8, R21) |
-| E. Rollup | criterion_score | criterion_stats | Aggregate view; also feeds the package baseline |
+| E. Grade + Rollup | criterion_score, grade_policy, grade_boundary | **submission_grade**, criterion_stats, mcq_item_stats | Every submission gets a final grade automatically (R56); the aggregate view also feeds the package baseline |
 | Package update | label, criterion_stats | package_validation | This is how a package appreciates with use (§9.2) |
 | Validation | label | label | Accumulates across cohorts and months (§6.8) |
 
@@ -2316,6 +2815,13 @@ Every arrow crossing a time boundary is a persistence dependency, and at n=350 a
 This is the part of the teacher experience that breaks if it is designed at classroom scale. A confidence threshold that flags 15% of judgments produces about 68 review items in a 30-student class and roughly 790 in a 350-student class. The second number is not a queue, it is a second job, and a teacher who opens it once will not open it again.
 
 So the review queue is **budgeted in teacher-minutes, not derived from a threshold.** The teacher says how long they have. The system fills that budget with the highest-value items available and is explicit about what it did not surface.
+
+**Deterministic criteria do not enter this queue.** A multiple-choice item that was read
+cleanly has a correct score by construction; there is nothing for the teacher to adjudicate,
+and admitting it would spend budgeted minutes on the one part of the paper that does not need
+them (R54). The two exceptions are routed elsewhere rather than here: an unresolvable mark is
+an operator triage item (§7.5), and a suspected wrong answer key is a package correction the
+teacher makes once for the whole cohort, not 350 individual reviews.
 
 **Rank by expected value, decision-theoretically.** Uncertainty alone is the wrong ordering, because a highly uncertain judgment on a criterion worth 2% of the grade matters less than a moderately uncertain one on a criterion worth 20%. The ranking quantity is:
 
@@ -2340,8 +2846,8 @@ The policy instead:
 
 1. **Mark provisional.** The system's score stands as the working value, tagged `provisional_unreviewed`, visible as such to the teacher and reflected in what the student sees.
 2. **Carry forward, do not drop.** Provisional items persist in the queue across review sessions. Persistence already supports this (Section 9.6); the queue is not per-sitting.
-3. **Aggregate honestly.** A total grade containing provisional criteria is itself marked provisional. Where the provisional criteria could change a grade boundary, show a range rather than a point.
-4. **Require explicit finalization.** Grades finalize when the teacher accepts the batch, an action that names how many criteria remain unreviewed. The teacher may reasonably decide that 600 low-impact provisional items are fine; that decision should be theirs and recorded, not made by a default.
+3. **Aggregate honestly, and still aggregate.** A total containing provisional criteria is issued, marked provisional, with its coverage recorded (§7.9, R58). Where those criteria could move the student across a boundary, show a range rather than a point. What must not happen is withholding the grade: provisional means labelled, not missing.
+4. **Finalize automatically; let the teacher intervene, never wait for them (R60).** Versions before 3.2 required the teacher to accept the batch before grades finalized, which quietly made every grade in the class hostage to one person having time — a teacher who is ill, or simply busy, would leave 350 students ungraded, which is the exact failure §0.1 describes. Grades therefore finalize **on run completion by default**. The teacher may configure a review window (say 48 hours) during which they stay provisional; when it lapses they finalize on their own. The batch-accept action remains available for a teacher who wants to sign off explicitly, and the audit record notes which path was taken — but it is an option, never a gate. Accountability is exercised through approving the instrument at setup and through the standing ability to change any grade at any time, not through a mandatory click on every run. The teacher may reasonably decide that 600 low-impact provisional items are fine; that decision should be theirs and recorded, not made by a default.
 5. **Escalate on the next administration.** Criteria that persistently exhaust the budget are criteria the escalation policy is over-flagging, or rubric items that need work. Surface the pattern rather than absorbing it every term.
 
 Be explicit at the top of the queue: "You have 30 minutes. These are the 40 highest-value items of 790 flagged. The remaining 750 are scored provisionally and will stay in your queue." Hiding the residual would misrepresent what the system did, and the teacher needs to know it exists when a student queries a grade.
@@ -2362,7 +2868,7 @@ Be explicit at the top of the queue: "You have 30 minutes. These are the 40 high
 
 **What it should never show:** a single unqualified "AI accuracy: 94%." Per Section 2.1 that number is inflated by chance agreement; per Section 2.2 it does not transfer across assignment types; per Section 3.5 it is not even measurable at calibration-set sizes. A defensible dashboard reports the chance-corrected figure, scoped to this assignment type, with its sample size attached.
 
-**Four outputs, four risk profiles, four sets of metrics.** The system produces criterion scores, a total grade, narrative feedback, and a class-level diagnosis. These fail independently and should not share a single quality number. A model can produce well-grounded feedback attached to a slightly wrong score, or a correct score with a misleading explanation, and only separate measurement distinguishes them:
+**Four outputs, four risk profiles, four sets of metrics.** The system produces criterion scores, a total grade, narrative feedback, and a class-level diagnosis. On a mixed-format paper, the criterion-score metrics cover the **judged** items only; deterministic multiple-choice correctness is reported alongside them and never merged into them (§7.8, R53), since an item with a known answer is not evidence about the quality of a grader. These fail independently and should not share a single quality number. A model can produce well-grounded feedback attached to a slightly wrong score, or a correct score with a misleading explanation, and only separate measurement distinguishes them:
 
 | Output | The question | How measured |
 |---|---|---|
@@ -2392,6 +2898,8 @@ Feedback quality is the output the K-12 research says teachers and students most
 ## 11. Risks, limits, and governance
 
 - **Mid-range responses are the weak point, not the exception.** Every scoring system here degrades on ambiguous, partial-credit work. Route these to teachers by default rather than treating high confidence as the norm and low confidence as a rare edge case.
+- **Mixed-format reporting can quietly push assessment back toward multiple choice.** Deterministic items agree with the teacher essentially always, cost nothing, and generate no review queue. If the system reports them alongside judged criteria in one figure, its own dashboard makes the multiple-choice half of a paper look like the better-performing half — applying exactly the pressure §0.1 identifies as the problem, from inside the tool built to relieve it. R53 keeps the statistics separate in the schema rather than by convention; the residual risk is presentational, and belongs on the list of things to check whenever the teacher-facing views change.
+- **Rubric decomposition can change the construct, and the weight arithmetic hides it.** Splitting a criterion into sub-checks that total the same points looks conservative and is not: a configural criterion — coherence of argument, appropriateness of method — can be satisfied piece by piece while failing as a whole, and a compensatory holistic band becomes a conjunctive checklist that systematically penalizes the unusual-but-valid response. Sections 5.3 and 6.2 make decomposition conditional on an explicit test with preservation as the default. The residual risk is that the test is applied by a model and confirmed by a busy teacher, so treat a criterion reclassified from holistic to atomic as a redefinition requiring the same scrutiny as a rubric revision.
 - **Construct drift is the primary risk introduced by rubric revision**, and it is insidious because it *improves* your measured agreement while degrading what you are actually measuring (Section 3.6). The Section 6 guardrails exist specifically because this failure mode is invisible to the metric a naive loop optimizes. If you ship only one guardrail, ship the dual-scoring non-inferiority gate (6.5): it is cheap, automatic, and catches the largest class of failures.
 - **Do not compute agreement statistics from small calibration sets and present them as validation.** Section 3.5. If a stakeholder asks "how accurate is it," the honest early answer is "we do not have enough graded work yet to say, and here is the plan for when we will," not a number derived from eight papers.
 - **Judgment isolation will be the first thing sacrificed under performance pressure**, and its erosion is silent. Reusing context across submissions or collapsing criteria into one call makes the system measurably faster and degrades no metric anyone is watching, while reintroducing halo and anchoring effects and inflating the very inter-judge agreement number the confidence gate depends on (Section 7.2). Treat isolation as an architectural invariant enforced in code, with a test that asserts no verdict from one judgment appears in another's context, rather than as a convention that survives on discipline. Section 8.3 gives the sanctioned ways to buy back the speed, and Section 8.4 gives the execution plan that makes them the default.
@@ -2416,7 +2924,9 @@ Feedback quality is the output the K-12 research says teachers and students most
 
 A suggested build order, front-loading the parts that make everything else safe:
 
-**Phase 1, no calibration at all.** Stage A, C, D, E with rubric R₀ exactly as the teacher wrote it. Three things from the v2.4 review belong here rather than later, because each is cheap now and invalidates accumulated data if added afterwards: **span verification and the required-evidence check** (Section 7.4, near-zero cost, prevents extraction failures becoming low grades), **the blind sample** (Section 6.8, without which Phase 2 accumulates contaminated labels), and **`label_type` on every stored label** (Section 9.7, since retrofitting the distinction onto labels already collected is impossible). Panel of 2 to 3 diverse local models, extraction-then-scoring, confidence routing, full override logging with version pinning. **Judgment isolation (Section 7.2, Rules 1 and 3) and the criterion-batched execution plan (Section 8.4) are Phase 1 requirements, not later hardening steps.** Both are nearly free to build in at the start and expensive to retrofit: isolation because retrofitting means invalidating every label accumulated under the contaminated design, and the execution plan because prompt templates written in the wrong field order have to be rewritten and revalidated. The **persistence layer of Section 9** ships in Phase 1 too, at least Tier 0, the work ledger, the evidence and verdict stores, and the audit record. At 23,000 units per run there is no usable version of this system without resumability, and the content-hash work IDs (Section 9.4) are close to free at the start and painful to retrofit once results exist without them. Dependency *reads* from it (Rule 2) can wait until you hit a subject that needs them, which in practice means multi-part math or physics. **The provider abstraction of Section 0.7 (R27) is also Phase 1, and in build order it is nearly first**: development happens in containers against OpenRouter (R28), so the abstraction is not a portability feature to be added once a second deployment appears — it is the only way the first line of code gets tested at all. Building it later means retrofitting a seam through extraction, scoring, and synthesis simultaneously, and it means the local path and the tested path diverge before there is any suite that would notice. Ship Phase 1 with three provider implementations from the start: local, OpenRouter, and the recorded-fixture provider the fast test tier runs against. This phase is a complete, useful, defensible product. Ship it before anything in Section 6 exists.
+**Phase 1, no calibration at all.** Stage A, C, D, E with rubric R₀ exactly as the teacher wrote it. Three things from the v2.4 review belong here rather than later, because each is cheap now and invalidates accumulated data if added afterwards: **span verification and the required-evidence check** (Section 7.4, near-zero cost, prevents extraction failures becoming low grades), **the blind sample** (Section 6.8, without which Phase 2 accumulates contaminated labels), and **`label_type` on every stored label** (Section 9.7, since retrofitting the distinction onto labels already collected is impossible). Panel of 2 to 3 diverse local models, extraction-then-scoring, confidence routing, full override logging with version pinning. **Judgment isolation (Section 7.2, Rules 1 and 3) and the criterion-batched execution plan (Section 8.4) are Phase 1 requirements, not later hardening steps.** Both are nearly free to build in at the start and expensive to retrofit: isolation because retrofitting means invalidating every label accumulated under the contaminated design, and the execution plan because prompt templates written in the wrong field order have to be rewritten and revalidated. The **persistence layer of Section 9** ships in Phase 1 too, at least Tier 0, the work ledger, the evidence and verdict stores, and the audit record. At 23,000 units per run there is no usable version of this system without resumability, and the content-hash work IDs (Section 9.4) are close to free at the start and painful to retrofit once results exist without them. Dependency *reads* from it (Rule 2) can wait until you hit a subject that needs them, which in practice means multi-part math or physics. **The provider abstraction of Section 0.7 (R27) is also Phase 1, and in build order it is nearly first**: development happens in containers against OpenRouter (R28), so the abstraction is not a portability feature to be added once a second deployment appears — it is the only way the first line of code gets tested at all. Building it later means retrofitting a seam through extraction, scoring, and synthesis simultaneously, and it means the local path and the tested path diverge before there is any suite that would notice. Ship Phase 1 with three provider implementations from the start: local, OpenRouter, and the recorded-fixture provider the fast test tier runs against. **Mixed-format support (§7.8) belongs in Phase 1**, and cheaply: the deterministic evaluator is a lookup, and the schema fields that carry it — `evaluation_mode`, `answer_key`, `selection`, `label.evaluation_mode` — are close to free at the start and painful to retrofit, since labels and audit records written without the distinction cannot be separated afterwards. It is also the difference between a teacher being able to use the system on their actual papers and having to restructure their assessment to fit the tool, which is the failure mode §0.1 is about.
+
+This phase is a complete, useful, defensible product. Ship it before anything in Section 6 exists.
 
 The **ingestion module of Section 7.7 is Phase 1** in full, including the validation ladder — not the transcription pass with the gates deferred. The gates are cheap to build and each one prevents a class of wrong grade that no later stage can detect: V4 in particular guards against a confident unanimous zero for a student who answered a different paper, and there is no version of "ship it and add validation later" where those grades are recoverable. The canonical-artifact rules (R32) belong here for the same reason as the content-hash work IDs: retrofitting immutability onto a transcript that verdicts already reference by offset is not a migration, it is an invalidation of everything computed so far.
 
