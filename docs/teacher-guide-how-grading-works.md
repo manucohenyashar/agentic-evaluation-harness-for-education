@@ -22,7 +22,8 @@ There are only two phases.
   PHASE 1 - SET UP THE TEST (once, about 30-60 minutes of your time)
   You upload:  the test  ·  your model answer  ·  your rubric  ·  10-15 papers you already marked
   You approve: the question list  ·  the answer key for any multiple-choice questions
-  You choose (optional): answer a few questions about your marking, say how the grade is calculated
+  You choose (optional): check how your rubric was read  ·  say how the grade is calculated
+  Not in this version: the questions about your own marking (see Step 5)
                               |
                               v
   PHASE 2 - GRADE THE REST (every time you run the test, 0 minutes required)
@@ -51,9 +52,11 @@ Handwritten and scanned is fine — that is what the system is built for. A docu
 PDF files (a scanner that splits, a continuation sheet handed in separately); the system puts them
 back in order and tells you if a page is missing or was scanned twice.
 
-Those 10–15 already-marked papers are the most valuable thing you give it. They are how the system
-learns *your* standard. It never changes your marks on them. It uses them only to find places where
-your rubric can be read in two different ways.
+Those 10–15 already-marked papers are worth uploading, but be clear about what happens to them in
+**this version: they are stored, and nothing reads them yet.** They are what the marking questions
+in Step 5 will run against when that step arrives, and a set-up that already has them attached
+costs you nothing extra at that point. The system never changes your marks on them, and it never
+uses them to mark anyone else's paper.
 
 ### Step 2 — Approve the question list ⚠️ **This one blocks. Nothing happens until you confirm it.**
 
@@ -85,11 +88,15 @@ It will also ask, for some lines, whether they can be split into smaller checks.
 If you are unsure, say so. The system then keeps the line whole. Keeping it whole is always the
 safe option.
 
-### Step 5 — Answer up to six questions about your own marking (optional, about 5 minutes)
+### Step 5 — Answer up to six questions about your own marking — ⏳ **not in this version**
 
-This is where the system uses the papers you already marked. It does **not** rewrite your rubric to
-match your marks. It finds places where your rubric could be read two ways, and asks you to decide.
-A real example of what you will see:
+You will see this step in the set-up sequence, greyed out and labelled with the release it arrives
+in. It is listed here rather than hidden so that you do not go looking for a step you think you
+skipped by accident. **In this version the system will not tell you where your rubric is ambiguous.**
+
+What it will do when it arrives: use the papers you already marked to find places where your rubric
+could be read two ways, and ask you to decide. It does **not** rewrite your rubric to match your
+marks. A real example of what you will eventually see:
 
 > Your rubric says *"shows appropriate work."*
 > On **Maya's** paper you gave 4 out of 5: she wrote the correct equation but dropped a minus sign.
@@ -102,8 +109,8 @@ A real example of what you will see:
 Whatever you choose becomes the new wording in the rubric. **You are the author of every change.**
 The system only points at the ambiguity; it never decides what is being measured.
 
-There will never be more than six of these questions. If you skip them, the system grades with your
-rubric exactly as written, and it is more cautious about the lines it knows are ambiguous.
+There will never be more than six of these questions. Until this step exists, the system grades with
+your rubric exactly as you wrote it — which is also what happens if you skip the step once it does.
 
 **What the system is never allowed to change:** your marks, your weights, the number of rubric
 lines, or what a line is measuring. Those are locked. It may only make the *wording* clearer.
@@ -197,8 +204,8 @@ your decision to all 210. You never click through 210 near-identical items.
 | Approve how your rubric was read | Set-up, once | No — defaults to your rubric as written |
 | Confirm which rubric lines can be split | Set-up, once | No — defaults to keeping them whole |
 | Describe how the final grade is calculated | Set-up, once | No — defaults to a plain sum |
-| Answer the ambiguity questions | Set-up, once | No |
-| Mark 10–15 calibration papers | Set-up, once | No |
+| Answer the ambiguity questions | ⏳ Not in this version | No |
+| Upload 10–15 papers you already marked | Set-up, once | No — stored for a later version |
 | Work the review queue | Every run | **No** |
 | Blind sample | Every run | **No** |
 | Whole-grade sample | Every run | **No** |
@@ -255,6 +262,10 @@ You can ignore it and run anyway.
 
 ## 9. Honest limits
 
+- **This version grades faithfully against your rubric as written, and never tells you where that
+  rubric is ambiguous.** That is the one thing described in this guide (Step 5) that the current
+  release does not do. It is shown in the set-up sequence as unavailable rather than left out, so
+  you can see it is coming rather than wonder whether you missed it.
 - **Grades will be issued that no human has looked at.** That is the point — the alternative at 300
   students is no feedback at all. Every such grade is labelled as unreviewed, backed by quoted
   evidence, and changeable by you at any time.

@@ -109,6 +109,6 @@ Print every created issue with its number, type, `Traces to:` IDs, and dependenc
 the graph can be sanity-checked before any agent picks anything up. Then say what to run
 next:
 
-- **CI:** nothing — `dispatch-ready-work.yml` picks up ready issues on the next event.
-- **Local:** `/goal every open type:story and type:test issue is closed or needs-attention;
-  stop after 40 turns`, then `/work-backlog`.
+`/goal every open type:story and type:test issue is closed or needs-attention; stop after 40
+turns`, then `/work-backlog`. Nothing picks issues up on its own — work starts when you
+start it.

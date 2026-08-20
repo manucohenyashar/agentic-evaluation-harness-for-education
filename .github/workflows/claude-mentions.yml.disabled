@@ -1,3 +1,12 @@
+# DISABLED — this harness runs locally, not in GitHub Actions.
+#
+# GitHub only parses `.yml`/`.yaml` files in this directory, so the
+# `.disabled` extension keeps this inert while preserving it as reference.
+# Development happens on a developer's machine via `/work-backlog`; GitHub is
+# used only to host the repo and the issue graph. Re-enable by renaming back
+# to `.yml` — but note that doing so needs an `ANTHROPIC_API_KEY` repo secret
+# and will bill API usage rather than a Claude subscription.
+
 name: Claude mentions
 
 # Human-directed, ad hoc help — separate from the dependency-aware

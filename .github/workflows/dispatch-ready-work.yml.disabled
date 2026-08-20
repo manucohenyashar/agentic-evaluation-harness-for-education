@@ -1,15 +1,21 @@
+# DISABLED — this harness runs locally, not in GitHub Actions.
+#
+# GitHub only parses `.yml`/`.yaml` files in this directory, so the
+# `.disabled` extension keeps this inert while preserving it as reference.
+# Development happens on a developer's machine via `/work-backlog`; GitHub is
+# used only to host the repo and the issue graph. Re-enable by renaming back
+# to `.yml` — but note that doing so needs an `ANTHROPIC_API_KEY` repo secret
+# and will bill API usage rather than a Claude subscription.
+
 name: Dispatch ready work
 
 # Event-driven: an issue closing (a dependency clearing) or a PR merging is
-# what actually unblocks new work, so those are the real triggers. The cron
-# is only a fallback in case an event is ever missed.
+# what actually unblocks new work, so those are the real triggers.
 on:
   issues:
     types: [closed]
   pull_request:
     types: [closed]
-  schedule:
-  #  - cron: "*/30 * * * *"
   workflow_dispatch:
     inputs:
       max_concurrent:

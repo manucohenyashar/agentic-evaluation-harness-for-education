@@ -32,8 +32,9 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 ## Issues
 
-- `type:story` → `/fix-issue`; `type:test` → `/write-tests`. `status:*` labels are set by
-  automation — don't set them by hand while it's running.
+- `type:story` → `/fix-issue`; `type:test` → `/write-tests`. `status:*` labels are the claim
+  mechanism and are set by `/work-backlog` as it picks up and releases each issue — set them
+  by hand only when you're working an issue outside that skill.
 - Dependencies are one literal line: `Depends on: #12, #34` — that exact wording,
   `#`-prefixed **numbers**. Omit the line when there are none; never `Depends on: none` or a
   story title. `scripts/ready-issues.sh` parses it.
@@ -61,6 +62,9 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
   verification gate. Set it once this project has a real suite.
 - Stage 3 onward needs git and a GitHub remote (PRs, `git diff`, working-tree checks). If
   `git rev-parse` fails here, stop and say so rather than working around it.
+- **All work runs locally.** GitHub hosts the repo and the issue graph; it does not run
+  agents. The workflows under `.github/workflows/` are `.disabled` deliberately — don't
+  re-enable them or add new ones without being asked. `/work-backlog` is the dispatcher.
 
 ## Code conventions
 

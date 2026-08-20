@@ -7,9 +7,9 @@ disable-model-invocation: true
 Find the next ready issue and implement it, then stop — the `/goal` loop (or whoever is
 running this) decides whether to continue.
 
-This is the local/interactive counterpart to `.github/workflows/dispatch-ready-work.yml`.
-Both compute readiness the same way, from the same script, so they can't disagree about
-what's ready.
+This is the dispatcher for this repo. Work runs on your machine — GitHub hosts the repo and
+the issue graph but never picks anything up on its own, so an issue sits ready until this
+skill claims it.
 
 ## 1. Find the ready set
 
@@ -21,11 +21,11 @@ It returns a JSON array of unblocked, unclaimed issues and prints skip reasons t
 read those, since a malformed `Depends on:` line or a `status:needs-attention` label is a
 real finding, not noise.
 
-**Use the script; don't reimplement its logic.** Readiness is defined in exactly one place
-so that the CI path and this path can't drift apart. If the script is missing or `gh`/`jq`
-aren't available, say so and stop rather than approximating it by hand — an approximation
-that treats a blocked issue as ready starts work against an interface that hasn't been
-built yet.
+**Use the script; don't reimplement its logic.** Readiness is defined in exactly one place,
+so a rule change lands everywhere at once. If the script is missing or `gh`/`jq` aren't
+available, say so and stop rather than approximating it by hand — an approximation that
+treats a blocked issue as ready starts work against an interface that hasn't been built
+yet.
 
 If the array is empty, report which it is — the backlog is finished, or it's fully blocked,
 or everything ready is parked on `status:needs-attention` — and stop.

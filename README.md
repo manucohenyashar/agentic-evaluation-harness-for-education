@@ -5,9 +5,13 @@ machine in a disconnected school, or hosted through OpenRouter — and returns p
 evidence-grounded feedback plus a class-level diagnostic view, for classes of **150 to 350
 students**.
 
-The full design is [`docs/agentic-evaluation-harness-for-education.md`](docs/agentic-evaluation-harness-for-education.md)
-(v2.7, ~2,500 lines). This README summarizes what the system is, then documents how this
-repository is built.
+| Document | What it is |
+|---|---|
+| [`docs/agentic-evaluation-harness-for-education.md`](docs/agentic-evaluation-harness-for-education.md) | The full design, v3.3.1, ~3,460 lines. The source of truth |
+| [`docs/design-history.md`](docs/design-history.md) | What each version changed and why |
+| [`docs/teacher-guide-how-grading-works.md`](docs/teacher-guide-how-grading-works.md) | The same system explained for a teacher, no technical knowledge assumed |
+
+This README summarizes what the system is, then documents how this repository is built.
 
 ## The problem
 
@@ -79,6 +83,19 @@ rather than a broad holistic one.
   mechanism; does not address the boundary case"). Points are derived afterwards, and no
   numeric scale is ever visible to a judge. Asking "how good is this out of 5?" invites the
   centre; asking "which of these is true?" is checkable against the cited evidence.
+- **Decompose the pipeline always; decompose the *rubric* only when it survives.** Splitting
+  extract-then-score is free — same judgment, made auditable. Splitting one criterion the
+  teacher wrote into several is not: preserving the weight guarantees the arithmetic and says
+  nothing about whether the parts still sum to the thing being measured. "The argument is
+  coherent" is a configuration of its parts, not a conjunction of them, and a checklist
+  version is satisfiable by a response no teacher would call coherent.
+- **Not every item is judged.** Real papers mix multiple-choice with constructed response. An
+  MCQ item is a criterion whose *evaluator is a lookup against a teacher-supplied answer key*
+  — two bands, no panel, no uncertainty — while everything downstream is identical. The risk
+  moves from judgment to transcription: the key is right by definition, so the only question
+  is whether the scan read the right mark. "Circle the answer and explain" carries one
+  deterministic criterion and one judged one, and the judge is never told what the student
+  selected, because that is an anchor.
 
 Four failure modes the design specifically defends against, all of which are invisible to
 the metrics a naive system reports about itself:
@@ -158,14 +175,18 @@ overconfident claim we built all this to avoid.
         several PDFs assemble deterministically; artifact is immutable + content-hashed
         validation ladder: file integrity · missing pages · structure · student identity
                            · does this submission even belong to this test?
-        rubric → atomic criteria, evidence type per criterion
+        rubric → criteria, evidence type + evaluation mode per criterion
+        question inventory: mcq / open / mixed, proposed once → teacher confirms
+                            + supplies answer keys  ⛔ blocking
+        grade policy declared once: per-question rules, gates, scale, boundaries
         schema lock: weights + criterion count immutable downstream
         │
-  B  AMBIGUITY DISCOVERY  (optional, skippable)
+  B  AMBIGUITY DISCOVERY  (optional, skippable — NOT in the MVP, see The console)
         finds underspecified criteria — does NOT validate
         triage → elicit (≤6 questions, teacher authors the answer) → guardrail gate
         │
   C  SCORING — two sweeps around an on-disk working store
+        deterministic criteria → answer-key lookup; panel never invoked
         sweep 1  extraction, batched by (question, criterion), topological order
                  ↓  EVIDENCE INTEGRITY GATE — span offsets verified; empty ≠ zero
         ══════   JUDGMENT ISOLATION BOUNDARY   ═══════════════════════════
@@ -174,12 +195,16 @@ overconfident claim we built all this to avoid.
                  aggregation + inter-judge agreement → read-only synthesis
         │
      CONFIDENCE ROUTING   high → auto-score   low → teacher queue   + random spot-check
+                          deterministic criteria never enter the queue
         │
   D  TEACHER REVIEW  ← the system's primary validation instrument
         narrative feedback first, score secondary and adjustable, evidence citations
         every accept/edit/override logged as a labeled datapoint
         │
-  E  CLASS ROLLUP  per-criterion distributions, misconception clusters, honest statistics
+  E  GRADING & CLASS ROLLUP
+        grade policy applied → every student has a final grade, no per-student action
+        per-criterion distributions, misconception clusters, honest statistics
+        one-click finalization; unreviewed items stay labelled provisional
         │
      LONGITUDINAL VALIDATION STORE — agreement statistics compound across administrations
 ```
@@ -188,6 +213,18 @@ Stage D is the load-bearing one and is not a stopgap to be automated away: it is
 research says makes the system trustworthy, *and* it is the only source of ground truth the
 system has. Teacher acceptance and blind teacher scoring are stored as different label types,
 because acceptance drifts toward rubber-stamping as the system improves.
+
+**Every submission gets a complete final grade with no per-student teacher action.** That is
+a product requirement, not an efficiency target: a system that produces criterion-level
+judgments and leaves a human to compile 350 grades has moved the bottleneck up one level and
+delivered nothing. Teacher effort scales with the review budget they choose, never with class
+size — they calibrate on 10–15 papers once, then sample. How marks combine is a professional
+judgment, so the teacher declares a **grade policy** at setup — per-question rules, gates
+("no credit for Q4 unless c12 reaches *met*"), scaling, rounding, boundaries — stored as
+declarative data rather than a formula field, because a grade disputed three years later has
+to be reproducible and explainable in plain language. The consequence is accepted rather than
+hidden: grades will be issued that no human inspected. **An unreviewed grade, honestly
+labelled, is the product; a withheld grade is a failure to deliver it.**
 
 Supporting all of it is a persistence layer whose governing rule is one-way: **the
 orchestrator reads memory and the judges never do.** A store a judge could query at inference
@@ -198,6 +235,60 @@ restarting from zero is unacceptable.
 A tuned assessment persists as a portable **Assessment Package** — test, calibrated rubric,
 exemplars, panel config, and cumulative validation record in one file that travels between
 schools on a USB stick and appreciates with each use.
+
+## The console
+
+Every version of the design up to v3.3 specified *decisions* — what the teacher confirms,
+what they may skip, what the operator triages — without ever saying where those decisions get
+made. That is a gap rather than a deferred detail: a harness driven from a command line is a
+harness no teacher operates, and the argument for the whole system collapses if the person it
+exists to serve cannot reach it. v3.3 specifies a deliberately small local browser console
+covering the entire life cycle once, for one teacher, and nothing more.
+
+**The governing rule: the console is a read view over the stores plus a small idempotent
+control surface.** It holds no pipeline state, performs no inference, and is never in the
+scoring path. Everything it changes it changes by writing a row the orchestrator picks up on
+its own schedule. Three things follow. Closing the browser cannot affect a run — an overnight
+batch is started in the evening and read in the morning, possibly from a different machine, so
+a browser tab is never a single point of failure for 350 grades. The console is disposable, so
+the first teacher's feedback changes a view rather than the harness. And the persistence
+layer's one-way rule extends to it unchanged: no console field is readable by a judge at
+inference time, because a "notes on this student" box would reopen every contamination path
+the isolation boundary closes.
+
+The parts that are structural rather than cosmetic:
+
+- **Operator and teacher are separate surfaces**, with separate routes and separate counts.
+  Merging them would let page rescans consume the teacher-minute budget the entire review
+  design rests on. In a small school it's the same person — in two roles, at two times.
+- **Exactly two screens block**, both in setup: the question inventory and the answer keys.
+  Everything else renders a first-class skip control that states what skipping costs.
+- **There is no numeric score entry field anywhere.** All score edits are band selections. A
+  typed number would feel faster and would silently reintroduce the central-tendency bias the
+  band scale exists to remove — and every label collected through it would be contaminated in
+  a way no later fix repairs.
+- **No per-student progress bar**, because the execution plan batches by criterion and cannot
+  populate one honestly.
+- **No agreement figure renders without its sample size**, and with no blind labels collected
+  the panel says "no new validation evidence for this administration" rather than showing a
+  previous run's number.
+- **Finalization is not the end of the teacher's authority.** Amending a finalized grade
+  writes a new revision and preserves the original timestamp rather than mutating what was
+  delivered.
+
+Technology is the boring option on purpose: one process serving server-rendered HTML over
+loopback, reading the same SQLite files the harness writes, no build step, no client
+framework, assets vendored locally. A CDN reference is a console that renders blank at a
+school with no internet — the deployment this system exists for.
+
+Two scope statements the design insists on stating rather than letting a reader discover.
+**Ambiguity elicitation is a real touchpoint this version does not implement**; the wizard
+renders it present-and-unavailable with the version it arrives in, because an absent step
+reads as one the teacher skipped by accident. The honest one-line description of the MVP is
+that it grades faithfully against the rubric as written and never tells the teacher where that
+rubric is ambiguous. And the invariants above exist because each will be argued against by a
+reasonable person in week one — a progress bar will be requested, a numeric box will feel
+faster, an extra confirmation will feel safer.
 
 ## Deployment profiles
 
@@ -211,6 +302,14 @@ hosted build is a run whose statistics mean nothing.
 | `cloud-hosted` | Container in a datacenter | **OpenRouter**, same open-weight families | Connected schools, districts, programs without capital budget |
 | `dev-ci` | Linux container on a Windows host | **OpenRouter** | Development and automated tests |
 
+The MVP console cuts across this table and the boundary is sharp rather than a backlog item:
+it has no authentication and binds to loopback, which is correct for one teacher on one
+machine and **disqualifying for `cloud-hosted`**. Exposing it on a hosted instance would
+publish an unauthenticated student-record system, and nothing else in the design compensates
+for that. The console as specified is an `edge-local` and `dev-ci` artifact; the hosted
+profile runs the pipeline but does not get this interface until authentication, per-user audit
+attribution, and transport security exist.
+
 Development and CI run entirely on OpenRouter, which has a consequence the design states
 explicitly: the **local** path becomes the least-exercised one, and it's the path deployed to
 schools with no IT support. A green CI pipeline is no evidence that an overnight batch
@@ -222,12 +321,17 @@ through both backends and reports where they diverge.
 
 # Building it: the Claude Code harness
 
-A `.claude/` + `.github/workflows/` setup that turns the design document above into a
-detailed design, a test plan, and a dependency graph of GitHub issues, then works through
-that graph automatically: dependencies gate what's allowed to start, independent branches
-(including the whole test track) run in parallel, and every issue goes through plan mode →
-implement → verify → adversarial review → PR. Every piece is a documented Claude Code or
-GitHub Actions feature — nothing here is a separate framework to trust.
+A `.claude/` setup that turns the design document above into a detailed design, a test plan,
+and a dependency graph of GitHub issues, then works through that graph: dependencies gate
+what's allowed to start, the graph decides what's eligible next (including the whole test
+track), and every issue goes through plan mode → implement → verify → adversarial review →
+PR. Every piece is a documented Claude Code feature — nothing here is a separate framework
+to trust.
+
+**Everything runs on your machine**, under your Claude Code install and your subscription.
+GitHub is used only to host the repo and the issue graph; it never runs an agent. The
+`.github/workflows/*.disabled` files are a reference implementation of the CI variant, kept
+inert on purpose — see [Why local-only](#why-local-only).
 
 ## The pipeline
 
@@ -334,12 +438,11 @@ ad-hoc work where no skill is running.
 | `.claude/skills/plan-to-issues/` | Stage 3 — design + test plan → dependency-linked issues. The only issue creator |
 | `.claude/skills/fix-issue/` | Stage 4a — implements one `type:story` issue |
 | `.claude/skills/write-tests/` | Stage 4b — implements one `type:test` issue (handles TDD-ahead-of-code) |
-| `.claude/skills/work-backlog/` | Local/interactive: pick the next ready issue, pair with `/goal` |
+| `.claude/skills/work-backlog/` | The dispatcher: pick the next ready issue and implement it, pair with `/goal` |
 | `.claude/agents/reviewer.md` | Adversarial-review subagent used by both implementation skills |
 | `scripts/ready-issues.sh` | Computes which issues are unblocked and unclaimed |
 | `scripts/trace-issues.sh` | Verifies design/test-plan IDs survived into the issues |
-| `.github/workflows/dispatch-ready-work.yml` | Claims ready issues, fans out one agent run per issue |
-| `.github/workflows/claude-mentions.yml` | Ad hoc `@claude` help, separate from the automated backlog |
+| `.github/workflows/*.yml.disabled` | Reference only — the CI variant, kept inert. GitHub never parses these |
 
 ## How the dependency graph works
 
@@ -377,36 +480,217 @@ implementation` field — see `write-tests/SKILL.md`.
    verification gate — deliberately, because a `TEST_CMD` pointing at a suite that doesn't
    exist makes the Stop hook fail every turn that touches a file, and people learn to ignore
    it. Set it as soon as there's a real suite.
-4. Wire the GitHub Action once: run `/install-github-app` from Claude Code in your repo, or
-   follow manual setup — both install the Claude GitHub App and an `ANTHROPIC_API_KEY` (or
-   `CLAUDE_CODE_OAUTH_TOKEN`) secret.
-   [docs → github-actions](https://docs.claude.com/en/docs/claude-code/github-actions)
+4. Authenticate `gh` (`gh auth login`) and make sure `jq` is installed. `plan-to-issues`,
+   `ready-issues.sh`, and `work-backlog` all shell out to them. No repo secrets and no
+   GitHub App are needed — nothing runs in GitHub.
 5. Run the pipeline: `/detailed-design-generator` on your architecture doc, then
    `/create-test-plan docs/design/`, then `/plan-to-issues docs/design/`. Check the printed
-   graph before letting anything pick work up.
-6. Either let CI take it from here (issues closing and PRs merging trigger
-   `dispatch-ready-work.yml` on their own), or run it yourself locally with `/goal` +
-   `/work-backlog`.
+   graph before starting work.
+6. Work the backlog — see [Running it](#running-it) below.
 
-## How the automation avoids stepping on itself
+## Running it
 
-- **Claiming is two-phase.** `dispatch-ready-work.yml` has a `claim` job that computes the
-  ready set and labels each issue `status:in-progress` *before* a second `work` job fans out
-  matrix runs — so the race window is "one small job labeling issues one at a time," not "N
-  parallel jobs each deciding independently what's free."
-- **Only one dispatcher run claims at a time.** The workflow-level
-  `concurrency: group: claude-dispatcher` means if an issue closes and a PR merges in quick
-  succession, the second dispatcher run queues behind the first instead of racing it.
-- **Failures don't get silently retried.** A failed run is labeled
-  `status:needs-attention`, and `ready-issues.sh` skips those — so it surfaces for a human
-  instead of looping on the same failure every 30 minutes.
+```bash
+gh auth login
+```
 
-What it does **not** fully solve: two independent stories claimed in the same run can still
-edit overlapping files and conflict when both PRs land. This is the same tradeoff Anthropic
-calls out for agent teams — size and scope stories so independent ones touch different
-files, and it mostly disappears. Worth designing your `/create-test-plan` §8.2 sizing and
-your story grouping with that in mind, the same way you'd size tickets for two human
-engineers working at once.
+Then the pipeline, and when the issue graph looks right:
+
+```bash
+claude --permission-mode auto
+```
+
+```text
+/goal every open type:story and type:test issue is closed or labeled
+status:needs-attention, or nothing is unblocked; stop after 40 turns
+```
+
+then `/work-backlog`.
+
+Auto mode matters — `/goal` starts turns for you but doesn't approve tool calls, so without
+it you'd confirm every command.
+
+Nothing starts on its own: merging a PR makes the next issues *eligible*, it doesn't
+dispatch them. The loop runs while that session is open, and stops when the condition holds,
+the evaluator judges it impossible, or the turn limit in the goal line is hit.
+
+## Prompt examples
+
+One worked prompt per lifecycle step, in the order you'd actually run them, using this
+repo's own design document as the input.
+
+**Which skills answer to plain English.** Only the first two. `plan-to-issues`, `fix-issue`,
+`write-tests`, and `work-backlog` are `disable-model-invocation: true` — describing what you
+want will *not* start them, because each creates issues or opens PRs and that should be an
+explicit act. Type the slash command.
+
+| Stage | Skill | Invocation |
+|---|---|---|
+| 1. Design → modules + `FR-*`/`NFR-*` | `detailed-design-generator` | slash **or** plain English |
+| 2. Design → `TC-*` test plan | `create-test-plan` | slash **or** plain English |
+| 3. Plan → GitHub issues | `plan-to-issues` | slash only |
+| 4a. One story → PR | `fix-issue` | slash only |
+| 4b. One test issue → PR | `write-tests` | slash only |
+| Loop over the backlog | `work-backlog` | slash only |
+
+### Stage 1 — detailed design
+
+```text
+/detailed-design-generator docs/agentic-evaluation-harness-for-education.md
+```
+
+Equivalent in plain English, since this skill is model-invocable:
+
+```text
+Read docs/agentic-evaluation-harness-for-education.md and break it into an
+engineering-ready detailed design with per-module requirement IDs.
+```
+
+Scope it when the whole design is too much for one pass — the ID scheme is stable, so
+modules can be added incrementally:
+
+```text
+/detailed-design-generator docs/agentic-evaluation-harness-for-education.md — only
+sections 7.7 and 7.8, the ingestion module and the deterministic evaluator
+```
+
+### Stage 2 — test plan
+
+```text
+/create-test-plan docs/design/
+```
+
+To deepen a plan that already exists rather than regenerate it:
+
+```text
+/create-test-plan docs/design/ — audit the existing plan for gaps in the ingestion
+validation ladder, especially the wrong-test-submission case. Don't renumber existing TC-* IDs.
+```
+
+### Stage 3 — issues
+
+Run this in plan mode first. It's the only thing in the harness that writes to GitHub, and
+a backlog with the wrong dependency edges is worse than no backlog.
+
+```text
+/plan-to-issues docs/design/
+```
+
+It prints the graph before creating anything. Check it, then verify the chain survived the
+GitHub boundary:
+
+```bash
+./scripts/trace-issues.sh docs/design/
+```
+
+### Stage 4 — implement one issue
+
+A story, and a test issue. The label decides which, not the title:
+
+```text
+/fix-issue 12
+```
+
+```text
+/write-tests 34
+```
+
+Both run plan mode → implement → verify → adversarial review → PR. To hold one to a tighter
+constraint, add it to the prompt — it goes into the plan rather than being applied after
+the fact:
+
+```text
+/fix-issue 12 — the evidence-integrity gate must fail closed. If span offsets don't verify,
+confidence inverts rather than degrading gracefully.
+```
+
+### The loop
+
+`/work-backlog` on its own does exactly one issue and stops — run it bare the first time, so
+you can watch what one issue actually does before handing it the whole graph:
+
+```text
+/work-backlog
+```
+
+To work the backlog unattended, set the goal first. `/goal` is what re-invokes the skill
+after each issue; without it you'd type `/work-backlog` once per issue:
+
+```text
+/goal every open type:story and type:test issue is closed or labeled
+status:needs-attention, or nothing is unblocked; stop after 40 turns
+```
+
+### Review and hard calls
+
+The `reviewer` subagent runs automatically inside both implementation skills. Invoke it
+directly to check work that didn't come from an issue:
+
+```text
+Use the reviewer subagent against the current diff, checking it against the acceptance
+criteria in issue #12.
+```
+
+For an ambiguous design decision, a bug that's survived two fix attempts, or right before
+declaring a large task done:
+
+```text
+/advisor opus
+```
+
+### When the backlog stalls
+
+`ready-issues.sh` prints skip reasons to stderr; both common stalls are self-inflicted and
+neither is visible from the issue list alone:
+
+```bash
+./scripts/ready-issues.sh 5
+```
+
+A `status:needs-attention` label means a run failed and a human has to look before it will
+be picked up again. A malformed `Depends on:` line — anything that isn't `Depends on: #12,
+#34` — is skipped rather than guessed at. Fix the issue body, and it's eligible on the next
+call with no other action.
+
+## Why local-only
+
+The harness runs entirely on the developer's machine, on their Claude Code install and
+subscription. GitHub stores the repo and the issue graph and nothing else. That buys three
+things:
+
+- **One place work can start.** Nothing reacts to a push, an issue closing, or a PR merging.
+  The backlog changes state, and a human decides when to pick the next thing up. Half the
+  failure modes of the CI variant are "two things claimed the same issue," and they can't
+  happen when there's one claimant.
+- **Subscription billing, not API billing.** A GitHub Action authenticates with an
+  `ANTHROPIC_API_KEY` repo secret and bills per token. Running locally uses the Claude
+  subscription already on the machine.
+- **Nothing runs on a push to a public repo.** No secret to leak, and no path by which a
+  comment from a stranger spends money.
+
+The `.github/workflows/*.yml.disabled` files preserve the CI variant as reference. GitHub
+only parses `.yml`/`.yaml` in that directory, so the extension is what makes them inert —
+renaming one back to `.yml` is all it takes to re-enable, and it then needs the API-key
+secret above.
+
+## How claiming avoids stepping on itself
+
+- **The claim is a label, held in GitHub.** `/work-backlog` sets `status:in-progress` before
+  it starts and `status:in-review` when the PR is open. Because the claim lives on the issue
+  rather than in the session, a second machine, a second terminal, or a resumed session
+  after a crash all see the same picture.
+- **Readiness is recomputed, never stored.** `ready-issues.sh` derives it fresh from issue
+  state and `Depends on:` lines on every call, so there's no ready/blocked cache to go stale
+  while you were away.
+- **Failures don't get silently retried.** A failed or abandoned issue is labeled
+  `status:needs-attention`, and `ready-issues.sh` skips those — so a `/goal` loop surfaces it
+  for a human instead of picking the same issue up and failing the same way on every
+  iteration.
+
+Working one issue at a time removes the CI variant's main hazard — two stories claimed in
+the same batch editing overlapping files and conflicting when both PRs land. It's still
+worth sizing stories so independent ones touch different files, since that's what would let
+you widen the loop later, but sequential local work doesn't depend on getting it right.
 
 ## Mapping back to Claude Code's own docs
 
@@ -418,22 +702,23 @@ engineers working at once.
 - **Advisor pattern** — `advisorModel` in settings, invoked on ambiguous issues.
   Anthropic-API-only, still experimental.
   [docs → advisor](https://docs.claude.com/en/docs/claude-code/advisor)
-- **Supervisor pattern** — the `claim` → `work` matrix *is* the supervisor for the automated
-  path (one job decides and hands off work). For a single hard story you want split across a
-  frontend/backend/test split interactively, agent teams are still the documented in-session
-  option. [docs → agent-teams](https://docs.claude.com/en/docs/claude-code/agent-teams)
+- **Supervisor pattern** — `/goal` + `/work-backlog` is the supervisor: the goal evaluator
+  decides whether to continue, `work-backlog` decides what's next, and each issue is a fresh
+  turn. For a single hard story you want split across a frontend/backend/test split, agent
+  teams are the documented in-session option.
+  [docs → agent-teams](https://docs.claude.com/en/docs/claude-code/agent-teams)
 - **Test harness integration** — Stop hook + step 3 of both implementation skills.
-- **Git issues → implementation, respecting dependencies** — the resolver script + dispatcher
-  workflow above.
-  [docs → github-actions](https://docs.claude.com/en/docs/claude-code/github-actions)
+- **Git issues → implementation, respecting dependencies** — `ready-issues.sh` +
+  `/work-backlog`.
 
 ## Notes
 
 - `ready-issues.sh` and `trace-issues.sh` are reference logic, not hardened production code.
-  Both need `gh` (authenticated) and `jq`. Test them against your real issue list before
-  trusting them in CI.
+  Both need `gh` (authenticated) and `jq`. Run them against your real issue list and read the
+  output yourself before letting `/goal` drive off them unattended.
 - The `reviewer` subagent has no `Edit` tool on purpose, so it has to report findings rather
   than quietly rewrite the diff itself.
 - A Stop hook's block is capped at 8 consecutive tries by Claude Code itself, so a genuinely
-  broken test suite can't loop forever locally; the CI path bounds the same risk with
-  `--max-turns 60`.
+  broken test suite can't loop the session forever. That cap and the turn limit in your
+  `/goal` line are the two bounds on an unattended run — set the goal's turn limit
+  deliberately, since it's the outer one.
