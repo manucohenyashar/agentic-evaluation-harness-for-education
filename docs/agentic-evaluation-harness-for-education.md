@@ -1935,6 +1935,12 @@ CREATE TABLE grade_policy (
   test_total         TEXT NOT NULL,        -- JSON: sum_questions | best_k_of_n | drop_lowest_n
   scale_to           REAL,                 -- null = keep raw points
   rounding           TEXT NOT NULL,        -- e.g. half_up_1dp
+  -- The review window §10 grants the teacher and §11.5's fourth setup card sets (R70). Null
+  -- means finalize on run completion. It lives here, inside the §6.2 lock and version-pinned
+  -- with the rest of the policy, so changing it after a run creates a new policy version and
+  -- the audit record says which version applied. A window may delay finalization; it may
+  -- never withhold a grade.
+  review_window_hours INTEGER,
   plain_language     TEXT NOT NULL,        -- the teacher-approved wording of the above. What
                                            -- was actually approved is this, not the JSON
   approved_by        TEXT NOT NULL,
@@ -1969,6 +1975,9 @@ CREATE TABLE question (
 
 -- Option set for a multiple-choice question. Needed by ingestion, so it knows what marks to
 -- look for, and by the class rollup, where distractor analysis at n=350 is a sharp signal.
+-- Correctness is deliberately NOT stored here. The answer key lives on criterion.answer_key,
+-- because a key is a property of the criterion the §6.2 lock protects, and two representations
+-- of the same fact drift. mcq_item_stats.is_key is a denormalization computed at rollup.
 CREATE TABLE mcq_option (
   question_id     TEXT NOT NULL REFERENCES question,
   option_id       TEXT NOT NULL,           -- 'A', 'B', ...
@@ -2038,7 +2047,13 @@ CREATE TABLE exemplar (
   band               TEXT NOT NULL,        -- must name a band that exists, not free text (§5.10)
   text               TEXT NOT NULL,
   provenance         TEXT NOT NULL CHECK (provenance IN
-                       ('synthetic','paraphrased','real_consented')),
+                       ('synthetic','paraphrased','real_verbatim')),
+                                           -- Same vocabulary as §9.4's provenance table and
+                                           -- R71's export gate. 'real_verbatim' is what
+                                           -- export blocks, and package.contains_real_student_text
+                                           -- is DERIVED from the presence of one rather than
+                                           -- maintained separately, so the flag and the
+                                           -- exemplars cannot disagree
   ordinal            INTEGER NOT NULL,     -- fixed within a batch, randomized across (§8.4)
   FOREIGN KEY (criterion_id, band) REFERENCES criterion_band(criterion_id, band)
 );
@@ -2308,6 +2323,13 @@ CREATE TABLE criterion_score (
 CREATE TABLE submission_grade (
   run_id            TEXT NOT NULL,
   submission_id     TEXT NOT NULL,
+  -- R69 requires that amending a finalized grade writes a NEW revision and retains the
+  -- superseded one. A two-column key cannot hold two, so the revision is in the key. The
+  -- student's copy and the exported CSV were produced from a particular revision, and a
+  -- dispute three years later is a question about which one (§6.7, §11.5).
+  revision          INTEGER NOT NULL DEFAULT 1,
+  is_current        INTEGER NOT NULL DEFAULT 1,
+  superseded_at     TEXT,                  -- null while is_current = 1
   raw_points        REAL NOT NULL,
   scaled_score      REAL NOT NULL,
   grade             TEXT,                  -- from grade_boundary; null if none declared
@@ -2329,15 +2351,25 @@ CREATE TABLE submission_grade (
                                            -- incomplete = criteria_missing > 0, an INGESTION
                                            -- problem routed to the operator, never to the
                                            -- teacher as a marking decision
-  finalized_at      TEXT,                  -- set by one batch action for the whole class
-  PRIMARY KEY (run_id, submission_id)
+  finalized_at      TEXT,                  -- set by one batch action for the whole class.
+                                           -- PRESERVED across an amendment: amending is not
+                                           -- an un-finalize (R69)
+  PRIMARY KEY (run_id, submission_id, revision)
 );
+-- Exactly one live revision per submission. Reads take the current one unless they are
+-- deliberately reading history.
+CREATE UNIQUE INDEX idx_grade_current ON submission_grade(run_id, submission_id)
+  WHERE is_current = 1;
 
 CREATE TABLE narrative (
   run_id        TEXT NOT NULL,
   submission_id TEXT NOT NULL,
   level         TEXT NOT NULL,             -- l1_question|l2_test
-  question_id   TEXT,
+  -- NOT NULL with the sentinel '__test__' for l2_test rows. SQLite permits NULLs in the
+  -- columns of a non-INTEGER PRIMARY KEY, so a nullable question_id would leave L2 rows
+  -- unconstrained and a retried synthesis unit would insert a duplicate instead of
+  -- conflicting -- which breaks the exactly-once guarantee §9.10 rests on.
+  question_id   TEXT NOT NULL,             -- '__test__' when level = 'l2_test'
   text          TEXT NOT NULL,
   PRIMARY KEY (run_id, submission_id, level, question_id)
 );
@@ -3256,7 +3288,7 @@ Reachable from anywhere above. Per criterion: narrative, quoted evidence spans h
 
 Evidence spans render as highlights over the canonical Markdown transcript, which is what makes them checkable at all. For a span cited from a **described** region — a diagram, a graph — the description is shown *with its image crop beside it* and marked as a description rather than a quotation (R46), because span verification proves faithful quotation of a description and never fidelity of that description to the drawing.
 
-**The band is editable here, not only inside the queue.** §10 requires the score to be editable in one click wherever it is shown, and §10's automatic-finalization argument rests explicitly on "the standing ability to change any grade at any time" — so a console where edits exist only within a budgeted queue has made the teacher's authority expire when their thirty minutes do, which is a quieter version of the bottleneck R60 removes. The control is the same band selector as S9 and is bound by the same invariant 2. An edit made here writes the same `review_queue` action and emits the same `acceptance` label as one made in the queue, so the label store cannot tell the two apart — and neither can be confused with a blind label, which is the distinction that actually has to survive (R20).
+**The band is editable here, not only inside the queue.** §10 requires the score to be editable in one click wherever it is shown, and §10's automatic-finalization argument rests explicitly on "the standing ability to change any grade at any time" — so a console where edits exist only within a budgeted queue has made the teacher's authority expire when their thirty minutes do, which is a quieter version of the bottleneck R60 removes. The control is the same band selector as S9 and is bound by the same invariant 2. An edit made here writes the same `review_queue` action and emits the same operational label — `accept`, `edit` or `override` — as one made in the queue, so the label store cannot tell the two apart — and neither can be confused with a blind label, which is the distinction that actually has to survive (R20).
 
 **Amending a finalized grade is a first-class action, and it is not an un-finalize.** Grades finalize on run completion or at window lapse (§10), so by the time a student queries one it is usually already final, and both §7.9 and §12 rest the system's accountability story on the teacher still being able to change it. Amendment therefore leaves `finalized_at` in place, writes a new `submission_grade` revision with the prior one retained, and records who changed what, when, and why in the audit record. What it must not do is silently mutate a delivered grade: the student's copy and the exported CSV were produced from a particular revision, and a dispute three years later is a question about *which* one (§6.7). A console that could only finalize would end its audit trail at the exact moment the teacher's responsibility begins.
 
@@ -3313,15 +3345,15 @@ The console's entire write surface to the pipeline is small enough to enumerate,
 | Action | Effect | Read by |
 |---|---|---|
 | Approve question inventory | Writes `question` rows and locks them under §6.2 | Package setup |
-| Supply answer keys | Writes `mcq_option.is_correct` | Deterministic evaluator |
+| Supply answer keys | Writes `criterion.answer_key` | Deterministic evaluator |
 | Accept or correct rubric read-back, decomposability, grade policy | Writes `criterion`, `criterion_band`, `grade_policy`, `grade_boundary`; a change creates a new version. This is correction of the read-back before any scoring exists, inside the §6.2 lock — not the rubric-revision surface §11.2 excludes | Stage A, Stage E |
 | Set the review window | Writes `grade_policy.review_window_hours`; absent means finalize on run completion | Grading, finalization |
 | Start run | Writes a `run` row with status `pending` | Orchestrator |
 | Pause / resume run | Sets `run.status`; leases expire naturally (§9.10) | Orchestrator |
 | Resolve a quarantine item | Updates `submission.ingest_status`, may enqueue re-ingestion units | Ingestion, Stage C |
-| Review action | Writes `review_queue.action`, `new_band`, `acted_at`; emits a `label` with `label_type='acceptance'` | Aggregation, Tier D |
+| Review action | Writes `review_queue.action`, `new_band`, `acted_at`; emits a `label` whose `label_type` is `accept`, `edit` or `override` per §9.7's CHECK constraint — never `blind` | Aggregation, Tier D |
 | Blind-sample submission | Emits a `label` with `label_type='blind'` | Validation only |
-| Correct an answer key after a run | Writes a new `mcq_option.is_correct` version; enqueues deterministic re-evaluation and a grade recompute for the cohort. Never enqueues a panel judgment | Deterministic evaluator, Stage E |
+| Correct an answer key after a run | Writes a new `criterion.answer_key` version; enqueues deterministic re-evaluation and a grade recompute for the cohort. Never enqueues a panel judgment | Deterministic evaluator, Stage E |
 | Finalize batch | Sets `submission_grade.finalized_at`, writes an `audit_record` | Export |
 | Amend a finalized grade | Writes a new `submission_grade` revision and an `audit_record`; `finalized_at` is preserved and the superseded revision is retained | Export |
 | Approve exemplar paraphrases at export | Writes `exemplar.provenance` and `package.contains_real_student_text` | Package export (§9.4) |
