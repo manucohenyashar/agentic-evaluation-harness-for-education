@@ -15,25 +15,21 @@ its **Center for International Studies** ("**MIT**"), having a place of business
 **Program:** "Empowering the Teacher," MIT Center for International Studies
 **Agreement No.:** [MIT PO / AGREEMENT NUMBER]
 
----
-
-> **Drafting note — delete before execution.** This is a negotiation draft prepared for the
-> Consultant. It is not legal advice. Both parties should have it reviewed by counsel, and MIT will
-> route it through its Office of the Vice President for Finance / Procurement and, where research
-> collaboration is contemplated, the Technology Licensing Office (TLO). **Article 8 (Intellectual
-> Property) deliberately departs from a work-made-for-hire structure** and is the clause most likely
-> to be negotiated; see Section 8.2 and the recitals for the basis on which that position rests.
 
 ---
 
 ## RECITALS
 
 **A.** Consultant is the sole author of a technical design specification titled *"Agentic Evaluation
-for Education: A Research-Grounded Architecture for a Local, Open-Source Grading Harness"*
-(the "**Design Document**"), which Consultant conceived, authored, and reduced to writing **prior to
-the Effective Date and independently of MIT**, using no MIT funds, facilities, personnel, or
-confidential information. The Design Document, together with the architecture, methods, schemas, and
-know-how it embodies, constitutes Consultant Background IP under Section 8.1.
+for Education: A Research-Grounded Architecture for a Local, Open-Source Grading Harness"*,
+**version 3.3, comprising sections §0 through §14 and requirements R1 through R72, as in effect on the
+Effective Date** (the "**Design Document**"), which Consultant conceived, authored, and reduced to
+writing **prior to the Effective Date and independently of MIT**, using no MIT funds, facilities,
+personnel, or confidential information. The Design Document, together with the architecture, methods,
+schemas, and know-how it embodies, constitutes Consultant Background IP under Section 8.1. Every
+reference in this Agreement to a section (§) or requirement (R) is to that version; Consultant shall
+deliver a copy of it, so identified, at Gate G0, and revisions to it after the Effective Date do not
+alter Schedule A except by Change Order under Section 12.5.
 
 **B.** MIT operates the "Empowering the Teacher" program at its Center for International Studies,
 which seeks to make substantive assessment feasible for teachers in large classes (150–350 students),
@@ -117,15 +113,24 @@ provider abstraction (Design Document R27). No stage of the pipeline shall conta
 backend-specific code path. Satisfaction of this requirement is an Acceptance Criterion at Gate G1
 and is re-tested at every subsequent Gate.
 
-**2.3 Build order.** Consultant shall follow the implementation sequence of Design Document §12,
+**2.3 Build order.** Consultant shall follow the implementation sequence of Design Document §13,
 under which version pinning, judgment isolation, the provider abstraction with backend-scoped
-validation records, the ingestion validation ladder, and the persistence work-ledger are built in
-the first phase rather than retrofitted.
+validation records, the ingestion validation ladder, the persistence work-ledger, and the teacher-facing
+console of §11 are built in the first phase rather than retrofitted.
 
 **2.4 Scope boundary.** The Services do **not** include: creation of curricula or assessment
 content; scanning or digitization of student work; procurement or operation of MIT's network,
 identity, or student information systems; teacher recruitment; IRB/COUHES submissions; or
 translation and localization beyond the language(s) named in Schedule A.
+
+**2.4A Rubric calibration and elicitation are expressly out of scope.** For the avoidance of doubt,
+the Services do **not** include Stage B ambiguity discovery, teacher-authored rubric revision, or any
+rubric-calibration capability of Design Document §6.4, and no Deliverable in Schedule A implements
+them. This follows the Design Document's own ordering, which places elicitation in Phase 4 behind the
+Phase 3 guardrails (§13) and lists it as excluded from the MVP console (§11.2), and which warns
+specifically against building it earlier. The console shall render this touchpoint as
+present-and-unavailable, naming the version in which it arrives, per Design Document R72 and criterion
+A54. Should MIT wish to add this capability, it proceeds by Change Order under Article 12.
 
 **2.5 Personnel.** Emmanuel Cohen-Yashar shall act as technical lead and shall personally perform or
 directly supervise all Services. Consultant may engage subcontractors provided Consultant remains
@@ -155,12 +160,31 @@ obstacle, because the two properties being tested need different corpora:
 - **(b) Throughput, memory ceiling, resumability, thermal sustain, and disk growth** are tested
   against a **scaled corpus** of approximately 350 submissions, assembled by Consultant from the real
   submissions by augmentation — rescanning, re-imaging, permutation, and synthesis in the same
-  medium. Design Document §12 expressly contemplates this, noting that a throughput failure is
+  medium. Design Document §13 expressly contemplates this, noting that a throughput failure is
   "far cheaper to discover on 350 synthetic submissions than at a pilot site."
 
 **A scaled corpus is valid evidence for the Gate G6 metrics in criteria A39–A42 and is not valid
 evidence for any agreement, κ, or grading-quality figure.** Consultant shall state which corpus
 produced each reported figure in every Gate Report, consistent with Section 4.6.
+
+**2.9 The teacher-facing console is in scope.** The Platform includes the browser-based console
+specified at Design Document §11 (requirements R61–R72), delivered at Gate G4 and re-tested at Gate G7.
+The parties record two points about it:
+
+- **(a) It is a Phase 1 component, not an enhancement.** Design Document §13 states that the console
+  "is what makes Phase 1 a product rather than a pipeline," and identifies three of its properties —
+  the read-view seam (R61), the band-only edit control (R65), and the blind sample's unreachability of
+  system output (R67) — as belonging to the same class as version pinning and judgment isolation:
+  nearly free at the start and unrepairable afterwards, because each silently invalidates data
+  accumulated under the wrong design. A run scored through a console with a numeric entry field is a
+  run whose labels carry the central-tendency bias §5.10 exists to remove, and no later fix recovers
+  them.
+- **(b) Its scope is deliberately bounded.** The console implements Design Document §13's Phase 1 and
+  nothing from Phase 3 or Phase 4. It is a single-user, loopback-bound, server-rendered artifact of the
+  `edge-local` and `dev-ci` profiles (R68). Authentication, multi-user accounts, per-user audit
+  attribution, transport security, longitudinal cross-term dashboards, student-facing views, and any
+  `cloud-hosted` exposure of the console are **outside the Services** and proceed, if at all, by Change
+  Order.
 
 ---
 
@@ -177,7 +201,8 @@ Schedule A and Schedule B are **planning estimates, not binding deadlines**, and
 essence** as to any of them. MIT's remedies for delay are those in Section 3.4, and no other.
 
 **3.3 Coordination windows.** Activities requiring MIT personnel, teachers, or Participating School
-staff — Gate G4 setup and elicitation, the Gate G5 pilot, and Gate G7 training and the unassisted run
+staff — Gate G4 setup, rubric read-back, and blind-sample collection, the Gate G5 pilot, and Gate G7
+training and the unassisted run
 — shall be scheduled by agreement with **not less than ten (10) business days' notice**, in blocks,
 at times workable for both parties. Neither party is obliged to be available outside times so agreed.
 
@@ -191,7 +216,7 @@ parties' sole schedule remedy.
 
 **3.5 Feasibility gates are real gates.** Gate **G5** (cloud feasibility pilot) and Gate **G6**
 (hardware acceptance test) are pass/fail engineering gates as contemplated by Design Document §8.5
-and §12 ("Phase 1.5, prove it on hardware"). A failed measurement at G5 or G6 is a finding of the
+and §13 ("Phase 1.5, prove it on hardware"). A failed measurement at G5 or G6 is a finding of the
 engagement, not a breach, and is handled under Section 13.3 and Section 13.4.
 
 ---
@@ -248,6 +273,31 @@ taxes. MIT shall provide its tax-exemption certificate where applicable.
 **5.6 Optional support.** Post-acceptance support, if elected by MIT, is priced in Schedule B
 Section B.4 and is not included in the Fixed Fee.
 
+**5.7 Gate Readiness Certificate — work complete, Gate blocked on MIT.** Gates G5, G6, and G7 cannot
+be tested without an MIT dependency: the real cohort (D4), the MIT-Furnished Equipment (D5), and MIT
+personnel (D6) respectively. Sections 2.7, 3.3, and 7.6(d) extend the *schedule* when those are late.
+This Section addresses *payment*, so that the financing cost of MIT's own institutional processes does
+not fall entirely on Consultant.
+
+**(a)** Where Consultant has completed all work within its control for a Gate, but the Gate cannot be
+submitted for acceptance because a Schedule A dependency D1–D6 remains outstanding, Consultant may
+deliver to MIT a **Gate Readiness Certificate** identifying the Gate, the outstanding dependency, and
+the evidence of completion, including the results of every Acceptance Criterion testable without that
+dependency.
+
+**(b)** If the dependency remains outstanding **thirty (30) days** after delivery of the Certificate,
+Consultant may invoice **fifty percent (50%)** of that Gate's tranche. The balance is payable on
+acceptance of the Gate in the ordinary way under Section 5.3.
+
+**(c)** A Certificate is not an acceptance, does not start the Section 4.2 review period, does not
+waive any Acceptance Criterion, and does not reduce what Consultant must demonstrate when the Gate is
+finally submitted. MIT may dispute a Certificate under Section 5.3, and a Gate later failing its
+Acceptance Criteria is remedied under Section 13.3 as though no Certificate had issued, with any
+amount paid under (b) credited or, on termination, reconciled under Section 14.2(b).
+
+**(d)** This Section does not apply where the dependency is outstanding because of Consultant's own
+act or omission.
+
 ---
 
 ## ARTICLE 6 — EXPENSES AND TRAVEL
@@ -278,7 +328,7 @@ reasons stated here so that Schedule D is understood rather than merely agreed:
   time, not a full cohort. Full-cohort runs occur only at the stress-testing and acceptance points
   (Gates G3, G5, and G6).
 - **(b)** A full 350-submission run consumes on the order of tens of dollars of open-weight
-  inference, and the recorded-fixture provider required by Design Document §12 lets the majority of
+  inference, and the recorded-fixture provider required by Design Document §13 lets the majority of
   the test suite re-run at zero token cost.
 
 Consultant does not require, and MIT is not asked to fund, dedicated cloud compute, managed CI
@@ -444,6 +494,24 @@ and deployment documentation with MIT at each Gate acceptance, in a repository M
 deposit is made under, and is subject to, the license in Section 8.3 and the confidentiality
 obligations of Article 10, and effects no transfer of ownership.
 
+**(a) Purpose.** The deposit exists for continuity, verification of the Deliverables against the
+Acceptance Criteria, and MIT's exercise of the Section 8.3 license. It is not a publication, a
+distribution, or a grant of any right beyond Section 8.3.
+
+**(b) Custody.** The parties shall identify the repository in the Gate G0 project plan. MIT shall hold
+it as a **private** repository, restrict access to MIT personnel with a need to know for a purpose in
+(a), maintain a current list of those persons available to Consultant on request, and not distribute
+the deposited source — including to Participating Schools and academic collaborators — other than
+under a sublicense granted in accordance with Section 8.3(c).
+
+**(c) Trade secret status preserved.** MIT shall treat the deposited source as Consultant Confidential
+Information under Article 10, per Section 8.11(c). The parties acknowledge that Consultant's
+proprietary position rests in part on trade secret protection in the Platform's architecture, schemas,
+prompt formulations, and configurations, and that the deposit under this Section is made in reliance
+on paragraphs (a) and (b). Deposit under this Section does not constitute publication or a loss of
+secrecy, and nothing in this Section obliges Consultant to deposit any Background IP, including its
+development and orchestration harnesses under Section 2.6.
+
 **8.11 AI-assisted generation, and allocation as between the parties.**
 
 **(a)** MIT acknowledges that portions of the Platform may be produced using AI-assisted development
@@ -584,6 +652,16 @@ technically unsound or materially more costly than assumed, Consultant shall not
 written recommendation. Agreed changes to the architecture are recorded by Change Order and reflected
 in the Acceptance Criteria.
 
+**12.5 Revisions to the Design Document.** The Design Document is Consultant Background IP and
+Consultant may revise it at any time for its own purposes. **A revision does not of itself change the
+Services, Schedule A, or the Fixed Fee.** Where a revision adds, removes, or materially alters a
+requirement that the parties wish to reflect in this Agreement, it is adopted by Change Order stating
+the new version, the affected requirement identifiers, the Gate affected, and the price and schedule
+effect, if any. Absent such a Change Order, Schedule A continues to govern by reference to the version
+pinned in Recital A. Neither party may rely on an unadopted revision to expand or contract the scope
+of the Services, and the requirement identifiers in Schedule A retain the meaning they had in the
+pinned version.
+
 ---
 
 ## ARTICLE 13 — WARRANTIES, DISCLAIMERS, AND REMEDIES
@@ -605,7 +683,7 @@ third party; and
 **(d)** the Deliverables will not knowingly contain malicious code.
 
 **13.2 Disclaimer specific to automated assessment.** MIT acknowledges, consistent with Design
-Document §0.5, §7.9, and Article 11 thereof, that:
+Document §0.5, §7.9, and §12 thereof (Risks, limits, and governance), that:
 
 **(a)** the Platform is **formative decision support**. It does not warrant that any grade, score, or
 narrative feedback it produces is correct;
@@ -838,15 +916,17 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 
 **Deliverables**
 1. Project plan with the Gate schedule, dependencies, and MIT responsibilities.
-2. Requirements traceability matrix mapping every requirement R1–R60 to a Gate.
+2. Requirements traceability matrix mapping every requirement R1–R72 to a Gate.
 3. Development environment, repository, and CI pipeline in MIT-accessible form.
 4. Pass-Through account setup per Article 7 and Schedule D.
 5. Synthetic and consented test corpus plan (Section 11.3), including sourcing of real scanned
    handwriting fixtures spanning legible to marginal.
 
 **Acceptance Criteria**
-- A1. Traceability matrix accounts for every requirement R1–R60 with a Gate assignment or an express
-  "out of scope" entry agreed by MIT.
+- A1. Traceability matrix accounts for every requirement **R1–R72** with a Gate assignment or an
+  express "out of scope" entry agreed by MIT. The range is stated to the current version of the Design
+  Document and includes the console requirements R61–R72 (Section 2.9); requirements excluded under
+  Sections 2.4 and 2.4A are carried as express "out of scope" entries rather than omitted.
 - A2. CI pipeline builds and runs in a Linux container with all model calls served by the hosted
   provider (R28).
 - A3. The MIT-held inference (OpenRouter or equivalent) account is operational and accessible to
@@ -859,7 +939,7 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 
 **Deliverables**
 1. Provider abstraction with three interchangeable implementations: hosted (OpenRouter), local, and
-   recorded-fixture (R27, §12).
+   recorded-fixture (R27, §13).
 2. Persistence layer Tier 0 with the work ledger, evidence and verdict stores, and the audit record
    (§9).
 3. Content-hash work identifiers and idempotent re-run (R14, §9.10).
@@ -981,6 +1061,14 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
     provenance enforcement and cumulative, population-scoped validation record
     (R16, R17, R18, R23, §9.4).
 11. Operator surface: quarantine and transcription triage, distinct from the teacher queue.
+12. **The teacher-facing console (§11, R61–R72)** — the surface through which deliverables 1–11 are
+    actually reached. A single, local, browser-based application, server-rendered over loopback,
+    reading the §9 stores directly and writing only rows the orchestrator consumes on its own schedule
+    (§11.7). It comprises the screens of §11.5: packages home with import/export, package upload, the
+    two blocking setup screens (question inventory, answer keys), the three optional setup cards with
+    first-class skip controls, cohort/submission upload and ingestion preflight, run monitor, operator
+    quarantine, the budgeted review queue with group actions, whole-grade and blind sample flows, class
+    rollup and finalization, and student detail. Scope is bounded by Section 2.9(b).
 
 **Acceptance Criteria**
 - A23. Every submission in a full test run receives a complete final grade with **no per-student
@@ -999,6 +1087,43 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 - A29. A package loaded into a population with no validation record displays "no validation data for
   this population," not a figure from elsewhere (R23).
 - A30. The dashboard contains **no unqualified single accuracy percentage** anywhere (R8, §10).
+
+**Acceptance Criteria — console (§11).** *Numbered A48 onward so that the criterion references
+elsewhere in this Agreement remain stable; they are criteria of Gate G4 and are re-tested at G7 under
+A47.* These test the console properties Design Document §13 identifies as unrepairable once data has
+been collected under the wrong design, together with R66, which this Agreement relies on elsewhere.
+The remaining §11 requirements — R63, R64, and R70 — are delivered under deliverable 12 and tested by
+the §11.6 interface-invariant suite; they are not separately gated here because each is already
+reached by an existing criterion (R64 by deliverable 11 with A25, R70 by A26).
+
+- A48. The console holds no pipeline state, performs no inference, and is never in the scoring path
+  (R61). Verified by closing the browser, and terminating the console process, during a run: the run
+  continues and completes unaffected.
+- A49. Exactly two console screens block progress, both in setup, and every other prompt renders a
+  first-class skip control **with its cost of skipping stated in the same view** (R62, §11.6
+  invariant 1). Verified against the §7.9 touchpoint table.
+- A50. **No numeric score entry field exists anywhere in the console.** All score edits are band
+  selections and points are derived by the pinned mapping (R65, R39), verified by test over the full
+  screen set.
+- A51. The console renders with **no request to any origin other than its own**, and writes no student
+  text to browser storage (R67). Verified by request capture on a network-isolated machine.
+- A52. The console binds to loopback only, and a `cloud-hosted` deployment cannot expose it (R68).
+  Verified by an attempted bind on a non-loopback interface failing closed.
+- A53. Package export passes the exemplar provenance gate as a **reachable screen** — neither a silent
+  strip nor a hard failure — and the provenance actually exported is written to the validation record
+  (R71, §9.4).
+- A54. Every teacher touchpoint in the §7.9 inventory is either implemented or rendered
+  **present-and-unavailable naming the version in which it arrives**; none is silently absent (R72).
+  This is how the elicitation capability excluded by Section 2.4A is disclosed to the teacher.
+- A55. A grade may be amended after finalization; the amendment preserves `finalized_at`, writes a new
+  grade revision, retains the superseded one, and is attributed in the audit record (R69). *This
+  criterion exists because Section 13.2(b) of this Agreement warrants that the teacher "retains
+  authority to change any score at any time," which the Platform must actually be able to do.*
+- A56. Every console view displaying a grade also displays the package version, rubric version, and
+  backend profile that produced it (R66, §6.7, R30). *This criterion exists because Section 13.2(e)
+  warrants that validation statistics are population- and backend-scoped and do not transfer across
+  cohorts, backends, or quantizations; R66 is how a teacher can see which of them produced the grade
+  in front of them, and without it that disclosure has no surface.*
 
 ---
 
@@ -1036,8 +1161,39 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 
 > **Note.** A31–A33 and A36 are pass/fail. The statistical figures at A34–A35 are **measured and
 > reported**, not gated on a threshold, because a threshold set before measurement would be a
-> guess. Where MIT wishes to convert a measured figure into a threshold for G7, it does so by Change
-> Order under Section 12.1 after seeing the G5 numbers.
+> guess.
+>
+> **Conversion of measured figures into G7 thresholds.** Measuring without ever gating would leave the
+> Agreement with no quality floor at all: a run that completes, finalizes, and delivers a grade for
+> every student satisfies A31 whatever the quality of the transcription beneath it. Accordingly:
+>
+> **(a)** Within **fifteen (15) business days** of delivery of the Feasibility Report, the parties
+> shall meet and set thresholds, to be tested at Gate G7, for (i) transcription fidelity by legibility
+> band as measured under A9, and (ii) per-criterion chance-corrected agreement as measured under A34.
+>
+> **(b)** **If the parties do not agree within that period, the G7 threshold for each metric defaults
+> to the value measured at G5 less ten percent (10%)**, tested on the same corpus, population scope,
+> assessment type, and backend as the G5 measurement, and reported with sample size attached per
+> Section 4.6.
+>
+> **(b bis) Comparability.** So that a threshold under (a) or (b) is capable of being tested rather
+> than argued about, the Feasibility Report shall state each figure in (a) in a form directly
+> comparable at Gate G7 — transcription fidelity **by the same legibility bands**, and agreement **by
+> the same criteria under the same decomposability classification** — and shall record the corpus,
+> population scope, assessment type, backend, build, and quantization that produced it. The Gate G7
+> test applies the same banding, the same criterion decomposition, and the same backend profile. Where
+> a change agreed between G5 and G7 makes a figure no longer directly comparable, the affected
+> threshold is re-derived by the same method from the first measurement taken on the changed basis,
+> rather than lapsing.
+>
+> **(c)** A default threshold under (b) takes effect without a Change Order and is deemed an
+> Acceptance Criterion of Gate G7 for the purposes of Sections 4.5 and 13.3. Consultant's professional
+> performance is measured against holding the system's own demonstrated G5 performance, not against
+> any figure set before measurement — which is the balance this Note exists to strike.
+>
+> **(d)** Where a threshold set under (a) or (b) is later shown to be unachievable for a reason within
+> Section 13.4 (a hardware, batch-window, or corpus finding rather than a failure of the Services), it
+> is revised under that Section.
 
 ---
 
@@ -1087,16 +1243,20 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 3. Two training sessions: one for MIT program staff and operators, one for participating teachers.
 4. Bill of materials for all third-party and open-source components and model weights, with licenses
    and pinned versions (Section 8.9).
-5. Known-limitations register, drawn from Design Document §11 and from findings at G5 and G6.
+5. Known-limitations register, drawn from Design Document §12 and from findings at G5 and G6,
+   including the §11.9 statement of what the MVP console does badly on purpose.
 6. Handover of all Pass-Through hardware to MIT's custody.
 
 **Acceptance Criteria**
 - A44. **A complete, unassisted end-to-end run performed by MIT personnel on MIT hardware**, from
-  scanned PDFs to delivered grades, with Consultant present only as an observer.
+  scanned PDFs to delivered grades, **driven entirely through the console and without use of a command
+  line**, with Consultant present only as an observer.
 - A45. The zero-touch test (A31) passes on the `edge-local` profile.
 - A46. Documentation is sufficient for MIT personnel to run a new assessment, from package setup to
   grade delivery, without contacting Consultant.
-- A47. All Gate G1–G6 Acceptance Criteria remain satisfied on the final build (no regression).
+- A47. All Gate G1–G6 Acceptance Criteria — **including the console criteria A48–A56** — remain
+  satisfied on the final build (no regression), together with any threshold set or defaulted under the
+  Note to Gate G5.
 
 **On acceptance of G7, the final 10% tranche becomes payable.**
 
@@ -1108,7 +1268,7 @@ predominantly handwritten and scanned, mixed format (open questions plus multipl
 |---|---|---|
 | D1 | MIT-held inference (OpenRouter) account operational, Consultant granted access | G0 |
 | D2 | Real scanned-handwriting fixtures, consented, spanning legible to marginal; may be small | G2 |
-| D3 | Named teacher(s) available for setup, elicitation, and blind sample | G4 |
+| D3 | Named teacher(s) available for setup, rubric read-back, grade-policy declaration, and the blind sample. *Not elicitation, which is out of scope under Section 2.4A* | G4 |
 | D4 | Largest available real cohort (target ≥250 submissions), with consents and COUHES approval as applicable. Consultant assembles the scaled throughput corpus itself under Section 2.8(b) | G5 |
 | D5 | MIT-Furnished Equipment (Section 7.6) delivered to Consultant | G6 |
 | D6 | MIT personnel available for training and the unassisted run | G7 |
@@ -1127,8 +1287,30 @@ from a source of its own choosing (Section 7.6), and Consultant absorbs all loca
 **This is a package price for a delivered result.** It is not derived from an hourly or daily rate,
 and it is not adjustable by reference to time spent or to Consultant's method of production
 (Section 2.6). It reflects the complexity and the value of the delivered system: a validated,
-auditable grading harness that makes constructed-response assessment feasible at 150–350 students per
-class, delivered with a perpetual institutional license (Section 8.3) rather than as work for hire.
+auditable grading harness with its teacher-facing console (Section 2.9), which makes
+constructed-response assessment feasible at 150–350 students per class, delivered with a perpetual
+institutional license (Section 8.3) rather than as work for hire.
+
+**The Fixed Fee is a below-market program price, deliberately set.** The parties record this expressly
+rather than leave it to be inferred, because it bears on how the rates in Section B.4 are to be read:
+
+- **(a)** The Fixed Fee is set at a level intended to be reachable within the budget of a non-profit
+  educational research program, and is materially below what Consultant would quote for the same
+  Schedule A on ordinary commercial terms.
+- **(b)** The consideration for that reduction is the allocation in Article 8. MIT's payment purchases
+  the Services and the perpetual license in Section 8.3; it does not purchase title, which Consultant
+  retains under Section 8.2 together with the commercial rights reserved by Section 8.4. **Price and
+  IP allocation are a single bargain**, and neither is to be revisited without the other.
+- **(c)** **No day rate is implied by, and none may be derived from, the Fixed Fee.** Any calculation
+  dividing the Fixed Fee by a number of days, gates, or deliverables to produce a rate is expressly
+  disclaimed as a basis for pricing any other work, valuing any Deliverable, or assessing any Change
+  Order. The only permitted uses of a gate tranche as a monetary quantity are the pro-rata mechanics
+  of Sections 5.7 and 14.2(b) and the descope deductions of Section B.5, each of which operates on
+  **tranches, not rates**. Where a Section B.5 deduction equals a gate tranche, that equality is a
+  negotiated scope price and is not evidence that the Fixed Fee is divisible into rated units.
+- **(d)** The rates in Section B.4 are Consultant's ordinary commercial rates for incremental work
+  outside Schedule A. They are **not** a valuation basis for the Fixed Fee, and the difference between
+  them is the measure of the concession in (a) rather than evidence of inconsistency.
 
 ## B.2 Payment schedule
 
@@ -1138,7 +1320,7 @@ class, delivered with a perpetual institutional license (Section 8.3) rather tha
 | **G1** | Foundations: provider abstraction, persistence, audit | wk 6 | 10% | $13,500 | $24,300 |
 | **G2** | Ingestion, transcription, validation ladder | wk 12 | 16% | $21,600 | $45,900 |
 | **G3** | Scoring engine: extraction, isolation, panel, routing | wk 18 | 16% | $21,600 | $67,500 |
-| **G4** | Grade policy, teacher/operator surfaces, package | wk 24 | 14% | $18,900 | $86,400 |
+| **G4** | Grade policy, **console**, teacher/operator surfaces, package | wk 24 | 14% | $18,900 | $86,400 |
 | **G5** | **Cloud feasibility pilot** (largest available real cohort) | wk 28 | 14% | $18,900 | $105,300 |
 | **G6** | **Mac deployment + §8.5 hardware acceptance** | wk 32 | 12% | $16,200 | $121,500 |
 | **G7** | **Final acceptance, training, handover** | wk 36 | **10%** | **$13,500** | **$135,000** |
@@ -1164,30 +1346,91 @@ project plan delivered at G0 and are not thereafter binding.
 ## B.4 Rates for change orders, support, and travel
 
 These rates apply **only** to work outside Schedule A. They do not convert the Fixed Fee into a
-time-based engagement.
+time-based engagement, and per Section B.1(c)–(d) they are **not a valuation basis for the Fixed Fee**.
+They are Consultant's ordinary commercial rates; the Fixed Fee is a below-market program price for the
+Schedule A scope only, and work added later is priced at ordinary rates.
 
 | Item | Rate |
 |---|---|
-| Additional work under a Change Order | **US $1,800 per day** (8 hours), or $250 per hour for part-days |
-| Post-acceptance support and maintenance (optional) | **US $7,500 per quarter**, covering up to 3 days per quarter of corrective maintenance, dependency and model-version updates, and remote assistance |
-| Post-acceptance support on demand (alternative to the retainer) | **US $250 per hour**, minimum 4-hour block |
+| Additional work under a Change Order | **US $2,500 per day** (8 hours), or $350 per hour for part-days |
+| Post-acceptance support and maintenance (optional) | **US $9,500 per quarter**, covering up to 4 days per quarter of corrective maintenance, dependency updates, and remote assistance |
+| Model-version migration (re-pin, backend conformance rerun, and re-scoped validation record after a model or quantization is deprecated or replaced) | **US $6,000** per migration, or 2.5 days against the retainer allowance at MIT's election |
+| Post-acceptance support on demand (alternative to the retainer) | **US $350 per hour**, minimum 4-hour block |
 | Travel time beyond one working day each way | 50% of the daily rate |
-| Additional Participating School deployment (beyond the first) | **US $9,000** fixed per site, plus travel |
-| Additional teacher/operator training session | **US $1,500** per session |
+| Additional Participating School deployment (beyond the first) | **US $12,500** fixed per site, plus travel |
+| Additional teacher/operator training session | **US $2,000** per session |
 
-## B.5 Descope option
+**Why model-version migration is priced separately.** Design Document §6.7 pins every model, build,
+and quantization, and R30 scopes every validation record to the backend that produced it. When an
+upstream model is deprecated, the work is not a dependency bump: it is a re-pin, a rerun of the §8.7
+backend conformance suite, and a validation record that must be re-scoped because the figures from the
+previous build do not transfer (Section 13.2(e)). Folding that into a general maintenance allowance
+would understate it for both parties.
 
-If MIT's available budget does not reach the Fixed Fee, the parties shall descope rather than
-discount. The intended cut, in this order, is:
+## B.5 Descope and scope-adjustment options
 
-1. **Gate G4 calibration and elicitation workflow** (Design Document §6.4 ambiguity discovery and
-   teacher-authored rubric revision) — **deduct US $16,000**. Design Document §12 expressly states
-   that the system is "a complete, useful, defensible product" before anything in §6 exists, and that
-   this capability should ship last. The grade policy, review queue, package, and all other G4
-   deliverables remain in scope.
-2. **Gate G7 second training session and the additional-site runbook** — **deduct US $4,000**.
+If MIT's available budget does not reach the Fixed Fee, the parties shall **descope rather than
+discount**, because the Fixed Fee is already a below-market program price under Section B.1 and a
+discount on top of it would price the work below the cost of doing it properly.
 
-Descoping is effected by Change Order under Article 12 before the affected Gate begins.
+Each option below is a genuine reduction in delivered scope, and each states what MIT gives up. They
+are ordered **least damaging first**. Descoping is effected by Change Order under Article 12 **before
+the affected Gate begins**.
+
+### Option 1 — Gate G7 second training session and the additional-site runbook
+**Deduct US $4,000.**
+
+MIT receives one training session rather than two, covering program staff, operators, and teachers
+together, and no runbook for deploying to a second Participating School. What MIT gives up is
+straightforward and recoverable later at the Section B.4 rates.
+
+### Option 2 — the mixed-format deterministic path (§7.8), *only if MIT's assessments contain no selected-response items*
+**Deduct US $7,000.**
+
+Removes Gate G3 deliverable 7 and criteria A21–A22 (R52–R55): the deterministic multiple-choice
+evaluator, answer-key lookup, selection-mark handling, and the separation of deterministic from judged
+items in every statistic. Gate G4's answer-key setup step and the MCQ distractor analysis in the class
+rollup fall away with it, and Schedule A's blocking setup items reduce from two to one.
+
+**This option is available only where MIT confirms in the Change Order that the assessments in the
+Program are wholly constructed-response.** If they are not, this is the wrong cut: Design Document §13
+places mixed-format support in Phase 1 precisely because it "is the difference between a teacher being
+able to use the system on their actual papers and having to restructure their assessment to fit the
+tool," and retrofitting it is expensive because labels and audit records written without the
+`evaluation_mode` distinction cannot be separated afterwards. Schedule A's assumed cohort is mixed
+format; this option contradicts that assumption and should be taken only if the assumption is wrong.
+
+### Option 3 — defer Gate G6, the edge deployment and hardware acceptance test
+**Deduct US $16,200.** *Option of last resort. Prefer deferral to deletion.*
+
+Removes the `edge-local` deployment on Apple Silicon, the §8.5 hardware acceptance test, the §8.7
+backend conformance run, and criteria A37–A43. Criterion A45 (zero-touch on `edge-local`) falls away
+and Gate G7 is accepted on the `cloud-hosted` profile. Dependency D5 is discharged and MIT need furnish
+no equipment.
+
+**What MIT gives up is the program's distinguishing capability.** The Platform would be delivered
+without ever having been demonstrated to run offline, on one machine, with student work never leaving
+it — which is the deployment the Design Document's §0.2 and R1/R4 exist to serve, and the reason the
+architecture is shaped as it is. The parties record that the code path is unchanged either way
+(Section 2.2, R27), so the capability is not removed from the Platform; what is removed is the
+**evidence that it works**, which is precisely what §13 calls "a gate, not a milestone."
+
+Accordingly, where budget rather than intent drives this option, the parties should take it as a
+**deferral**: Gate G6 is removed from this Agreement and offered as a separately-priced engagement at
+**US $18,500**, exercisable by MIT within eighteen (18) months of Gate G7 acceptance at that price.
+That preserves the capability without funding it now, and the price differential reflects the cost of
+returning to the work after the team has moved on.
+
+### If the budget still does not reach
+
+Where Options 1–3 do not close the gap, the parties should adjust **Article 8 rather than Schedule A**,
+because the Fixed Fee and the IP allocation are a single bargain (Section B.1(b)) and scope cuts below
+this point start removing things the Design Document identifies as unrepairable. The available
+adjustments, to be priced by agreement, are narrowings of the license MIT receives — for example
+limiting the Section 8.3(c) sublicensing right to a stated number of named Participating Schools, or
+limiting Section 8.3(b) derivative works to internal use without redistribution. **Consultant will not
+reduce the Fixed Fee against the scope in Schedule A without a corresponding adjustment under this
+paragraph**, and will not descope below Option 3 by discount alone.
 
 ## B.6 Currency and method
 
@@ -1288,7 +1531,7 @@ Consultant funds its own development equipment, cloud usage, CI, and tooling.
 **How the work actually consumes tokens.** Day-to-day development and functional testing run against
 **a handful of submissions at a time** — the teacher-supplied dataset is small, and correctness is
 established on small inputs. Full-cohort runs are reserved for stress testing and acceptance
-measurement at Gates G3, G5, and G6. The recorded-fixture provider (Design Document §12) then lets
+measurement at Gates G3, G5, and G6. The recorded-fixture provider (Design Document §13) then lets
 the majority of the regression suite re-run at **zero** token cost.
 
 | Phase | What is actually run | Indicative cost |
