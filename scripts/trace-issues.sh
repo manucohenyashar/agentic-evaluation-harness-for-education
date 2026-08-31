@@ -69,12 +69,16 @@ ISSUE_IDS=$(echo "$TRACE_LINES" | grep -ohE "$ID_RE" 2>/dev/null | sort -u)
 UNCOVERED=$(comm -23 <(echo "$DOC_IDS") <(echo "${ISSUE_IDS:-}"))
 UNKNOWN=$(comm -13 <(echo "$DOC_IDS") <(echo "${ISSUE_IDS:-}"))
 
+# jq's "^" anchors to the start of the STRING, and its "m" flag means "'.' matches newline"
+# -- not multiline anchors, as in most other flavours. An "^...Goal:" test therefore only ever
+# matched an issue whose Goal was the body's first line, and "^...Traces to:" never matched at
+# all, because the template puts it on line 3. Match an explicit newline instead.
 MISSING_TRACE=$(echo "$WORK_ISSUES" | jq -r '
-  .[] | select((.body // "") | test("(?i)^\\s*\\*{0,2}Traces to:"; "m") | not)
+  .[] | select((.body // "") | test("(?i)(^|\n)\\s*\\*{0,2}Traces to:") | not)
       | "#\(.number) \(.title)"')
 
 MISSING_GOAL=$(echo "$WORK_ISSUES" | jq -r '
-  .[] | select((.body // "") | test("(?i)^\\s*\\*{0,2}Goal:"; "m") | not)
+  .[] | select((.body // "") | test("(?i)(^|\n)\\s*\\*{0,2}Goal:") | not)
       | "#\(.number) \(.title)"')
 
 # A dependency line whose numbers cannot be parsed is worse than no line: readiness logic
