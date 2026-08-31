@@ -39,6 +39,10 @@ class StoreSpy:
 
     writes: list[WriteRecord] = field(default_factory=list)
     queries: list[tuple[str, Any]] = field(default_factory=list)
+    # One store, one blob namespace. `CT-STORE-07` promises `get`/`path` resolve any hash
+    # `put` returned "for the lifetime of the owning tier" — so it must survive being reached
+    # through a second `blobs()` handle, exactly as the real content-addressed directory does.
+    _blob_bytes: dict[str, bytes] = field(default_factory=dict, repr=False)
 
     # -- Store surface (design §3.3) ----------------------------------------------------
     def package(self, package_id: str) -> "TierHandleSpy":
@@ -80,25 +84,36 @@ class TierHandleSpy:
     _spy: StoreSpy
     _tier: str
     _in_transaction: bool = False
+    _buffer: list[WriteRecord] | None = None
 
     def query(self, stmt: Any, **params: Any) -> Sequence[Any]:
         self._spy.queries.append((self._tier, (stmt, params)))
         return []
 
     def enqueue_write(self, unit: Any) -> None:
-        self._spy.writes.append(
-            WriteRecord(
-                tier=self._tier,
-                operation="transaction_write" if self._in_transaction else "enqueue_write",
-                payload=unit,
-                in_transaction=self._in_transaction,
-            )
+        record = WriteRecord(
+            tier=self._tier,
+            operation="transaction_write" if self._in_transaction else "enqueue_write",
+            payload=unit,
+            in_transaction=self._in_transaction,
         )
+        # Inside a transaction the write is held until the body exits cleanly.
+        (self._buffer if self._buffer is not None else self._spy.writes).append(record)
 
     @contextmanager
     def transaction(self) -> Iterator["TierHandleSpy"]:
-        nested = TierHandleSpy(self._spy, self._tier, _in_transaction=True)
+        """Atomic over the whole body (`CT-STORE-03`) — including the failure half.
+
+        A body that raises leaves **nothing** in the write log. Recording writes from an
+        aborted transaction would make "both present or both absent after any crash"
+        untestable: a case asserting nothing was committed would pass vacuously against a
+        spy that had faithfully recorded the rollback.
+        """
+        buffered: list[WriteRecord] = []
+        nested = TierHandleSpy(self._spy, self._tier, _in_transaction=True, _buffer=buffered)
         yield nested
+        # Reached only on a clean exit; an exception propagates and the buffer is dropped.
+        self._spy.writes.extend(buffered)
 
 
 @dataclass
@@ -107,17 +122,20 @@ class BlobStoreSpy:
     one copy) so a caller's dedup expectations hold, but nothing touches disk."""
 
     _spy: StoreSpy
-    _blobs: dict[str, bytes] = field(default_factory=dict)
 
     def put(self, data: bytes) -> str:
         import hashlib
 
         content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
-        self._blobs.setdefault(content_hash, data)
-        self._spy.writes.append(
-            WriteRecord(tier="blobs", operation="blob_put", payload=content_hash)
-        )
+        # Idempotent: identical bytes store one copy, and re-putting them is not a second
+        # write. The real store deduplicates on write (FR-STORE-06), so a spy that counted
+        # two would make a dedup assertion fail against a correct implementation.
+        if content_hash not in self._spy._blob_bytes:
+            self._spy._blob_bytes[content_hash] = data
+            self._spy.writes.append(
+                WriteRecord(tier="blobs", operation="blob_put", payload=content_hash)
+            )
         return content_hash
 
     def get(self, content_hash: str) -> bytes:
-        return self._blobs[content_hash]
+        return self._spy._blob_bytes[content_hash]

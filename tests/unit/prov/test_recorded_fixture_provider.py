@@ -11,13 +11,23 @@ describing a system that does not exist (RISK-37).
 `NotImplementedYet` until it lands. Remove the `writtenahead` marker — not the test — when
 #18 closes.
 
-Interface expectations this test places on #18, so they are visible rather than buried:
-`ModelRef` from `aeh.conf` (design §3.1) and `PromptPayload`, `SamplingParams`, `Completion`,
-`FixtureMissingError`, `RecordedFixtureProvider` from `aeh.prov` (design §3.2). One name is
-*not* in the design: a `record(...)` method for putting a response into the fixture set.
-`FR-PROV-10` fixes the lookup ("keyed by a hash of the fully-assembled request") and §4.4
-says `F-RECORDED` is "regenerated nightly", so a recording path must exist — but the design
-never names it. Raised as a finding on the PR; renaming it is a one-line change here.
+Interface expectations this test places on #18, listed in full so they are visible rather
+than buried — a signature mismatch surfaces as a `TypeError`, not as `require()`'s clean
+`NotImplementedYet`, so #18 should reconcile these deliberately:
+
+| Name | Status in the design |
+|---|---|
+| `ModelRef(role, provider, build_id, quantization)` from `aeh.conf` | defined, design §3.1 |
+| `Completion(text, tokens_in, tokens_out, latency_ms, resolved_build, cached_prefix_tokens, cost)` | defined, design §3.2 |
+| `provider.complete(prompt, model_ref, params)` | defined, design §3.2 |
+| `PromptPayload(fields=...)` | **named but not specified** — the field structure is chosen here |
+| `SamplingParams(temperature=...)` | **named but not specified** |
+| `RecordedFixtureProvider(fixture_dir=...)` | class named in design §3.2; the constructor argument is chosen here, from `HARNESS_FIXTURE_DIR` |
+| `provider.record(prompt, model_ref, params, completion)` | **not in the design at all** |
+
+`record()` is the one genuinely invented name. `FR-PROV-10` fixes the lookup ("keyed by a
+hash of the fully-assembled request") and §4.4 says `F-RECORDED` is "regenerated nightly", so
+a recording path must exist — but nothing names it. Raised as a finding on the PR.
 """
 
 from __future__ import annotations
@@ -103,14 +113,41 @@ def test_tc_prov_13_known_request_returns_fixture_unknown_raises_and_never_conne
     network_guard.assert_no_network()
 
 
-def test_tc_prov_14_one_byte_change_invalidates_the_fixture_key(make_fixture_provider):
-    """TC-PROV-14 — the same logical request with **one byte** changed in the assembled
-    prompt produces a different fixture key and raises `FixtureMissingError`.
 
-    This is the property that makes the whole fast tier trustworthy: §4.2 — "any change to
-    prompt assembly changes the key and fails loudly instead of silently returning a stale
-    answer". A provider keyed on anything coarser than the assembled bytes (the model ref, a
-    logical request id, a normalized prompt) passes TC-PROV-13 and fails here.
+# Each entry mutates the *recorded* request in one way and must produce a fixture miss.
+# The set is chosen to discriminate the key implementations that pass a naive version of
+# this case: a key that lowercases, one that collapses whitespace, one that ignores the
+# model ref, one that ignores sampling params. FR-PROV-10 says "a hash of the
+# fully-assembled request", and each of these is part of that request.
+_KEY_MUTATIONS = [
+    # (id, criterion text, build_id, temperature)
+    ("one_byte_punctuation", "States that friction opposes motion!", None, None),
+    ("whitespace_only", "States that friction  opposes motion.", None, None),
+    ("case_only", "states that friction opposes motion.", None, None),
+    ("model_build", None, "/models/llama-3.3-70b.gguf@sha256:bbbb", None),
+    ("sampling_params", None, None, 0.7),
+]
+
+
+@pytest.mark.parametrize(
+    "mutation", [m[0] for m in _KEY_MUTATIONS], ids=[m[0] for m in _KEY_MUTATIONS]
+)
+def test_tc_prov_14_any_change_to_the_assembled_request_invalidates_the_fixture_key(
+    make_fixture_provider, mutation
+):
+    """TC-PROV-14 — the same logical request, changed in one respect, produces a different
+    fixture key and raises `FixtureMissingError`.
+
+    §4.2 states the property this protects: *"any change to prompt assembly changes the key
+    and fails loudly instead of silently returning a stale answer."* Without it, a prompt
+    change silently reuses an old recording and the whole fast tier keeps passing while
+    describing a system that no longer exists.
+
+    The five mutations are the discriminating set. A single punctuation byte alone is not
+    enough: it survives whitespace collapsing and lowercasing, so a key that normalizes the
+    prompt — or one that omits `model_ref` or `SamplingParams` entirely — passes a
+    one-byte-only version of this case while violating `FR-PROV-10`'s "fully-assembled
+    request". Each mutation below turns exactly one of those implementations red.
 
     Oracle (§5.2): exact exception.
     """
@@ -125,15 +162,11 @@ def test_tc_prov_14_one_byte_change_invalidates_the_fixture_key(make_fixture_pro
         issue=ISSUE,
     )
 
-    model_ref = _judge_ref(ModelRef)
-    params = SamplingParams(temperature=0.0)
+    _, text, build_id, temperature = next(m for m in _KEY_MUTATIONS if m[0] == mutation)
 
-    original_text = "States that friction opposes motion."
-    # Exactly one byte differs: the final period becomes an exclamation mark. Same length,
-    # same words, same field order — nothing a normalizing key would notice.
-    one_byte_changed = original_text[:-1] + "!"
-    assert len(one_byte_changed) == len(original_text)
-    assert sum(a != b for a, b in zip(original_text, one_byte_changed)) == 1
+    baseline_text = "States that friction opposes motion."
+    baseline_ref = _judge_ref(ModelRef)
+    baseline_params = SamplingParams(temperature=0.0)
 
     recorded = Completion(
         text='{"band": "met"}',
@@ -145,16 +178,34 @@ def test_tc_prov_14_one_byte_change_invalidates_the_fixture_key(make_fixture_pro
         cost=None,
     )
     fixture_provider.record(
-        _payload(PromptPayload, original_text), model_ref, params, recorded
+        _payload(PromptPayload, baseline_text), baseline_ref, baseline_params, recorded
     )
 
-    # Sanity: the recorded request itself still resolves, so a failure below is about the
-    # changed byte and not about recording being broken.
-    assert fixture_provider.complete(
-        _payload(PromptPayload, original_text), model_ref, params
-    ) == recorded
+    # Sanity: the recorded request itself still resolves, so a miss below is caused by the
+    # mutation and not by recording being broken.
+    assert (
+        fixture_provider.complete(
+            _payload(PromptPayload, baseline_text), baseline_ref, baseline_params
+        )
+        == recorded
+    )
+
+    mutated_ref = (
+        ModelRef(
+            role=baseline_ref.role,
+            provider=baseline_ref.provider,
+            build_id=build_id,
+            quantization=baseline_ref.quantization,
+        )
+        if build_id is not None
+        else baseline_ref
+    )
+    mutated_params = (
+        SamplingParams(temperature=temperature)
+        if temperature is not None
+        else baseline_params
+    )
+    mutated_payload = _payload(PromptPayload, text if text is not None else baseline_text)
 
     with pytest.raises(FixtureMissingError):
-        fixture_provider.complete(
-            _payload(PromptPayload, one_byte_changed), model_ref, params
-        )
+        fixture_provider.complete(mutated_payload, mutated_ref, mutated_params)

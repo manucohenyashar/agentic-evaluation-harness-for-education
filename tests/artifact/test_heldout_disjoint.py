@@ -18,6 +18,7 @@ not the test — when #2 closes.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -33,11 +34,18 @@ DEV_MANIFEST = Path("fixtures/F-DEV/manifest.json")
 
 
 def _content_hashes(manifest_path: Path, corpus: str) -> set[str]:
-    """Every submission's content hash, from a corpus manifest.
+    """Every submission's content hash, **recomputed from the submission bytes**.
 
     The manifest is the artifact under assertion: `NFR-CONFORM-01` requires the fixture set to
     be content-addressed and version-pinned "so a conformance result names exactly which
     fixtures produced it".
+
+    The declared `content_hash` is verified rather than trusted, because trusting it would
+    reopen the exact leak this case exists to close. If the generator ever salts the hash with
+    the submission id or filename — a natural choice, since a manifest keys by id — then the
+    same bytes copied into `F-DEV` under a new name would carry a *different* declared hash
+    and a disjointness check over declared values would pass. Comparing recomputed digests
+    makes the assertion about content, which is what §4.4 means by "disjoint by content hash".
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     entries = data.get("submissions")
@@ -46,7 +54,25 @@ def _content_hashes(manifest_path: Path, corpus: str) -> set[str]:
             f"{corpus} manifest at {manifest_path} declares no submissions (blocked on "
             f"{ISSUE})."
         )
-    hashes = {entry["content_hash"] for entry in entries}
+
+    corpus_root = manifest_path.parent
+    hashes: set[str] = set()
+    for entry in entries:
+        submission = require_path(
+            corpus_root / entry["path"],
+            f"{corpus} submission {entry.get('id', entry['path'])!r}",
+            issue=ISSUE,
+        )
+        actual = hashlib.sha256(submission.read_bytes()).hexdigest()
+        declared = entry["content_hash"].removeprefix("sha256:")
+        assert actual == declared, (
+            f"{corpus} manifest declares content_hash {declared} for {entry['path']}, but "
+            f"the file hashes to {actual}. The manifest is the content-addressing "
+            f"(NFR-CONFORM-01); if it can disagree with the bytes, every disjointness and "
+            f"provenance claim built on it is unfounded."
+        )
+        hashes.add(actual)
+
     if len(hashes) != len(entries):
         raise AssertionError(
             f"{corpus} contains duplicate submissions by content hash: "

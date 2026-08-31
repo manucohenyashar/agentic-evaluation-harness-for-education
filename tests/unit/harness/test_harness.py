@@ -12,6 +12,7 @@ three `TC-*` cases in this issue, this file tests code that exists now, so it is
 
 from __future__ import annotations
 
+import importlib.util
 import socket
 from datetime import timedelta
 
@@ -23,6 +24,7 @@ from tests.support.impl import (
     FIXTURE_PROVIDER_CLASS,
     NotImplementedYet,
     PROVIDER_MODULE,
+    WRITTEN_AHEAD_BLOCKERS,
     require,
 )
 from tests.support.store_spy import StoreSpy
@@ -78,9 +80,34 @@ def test_guard_stands_down_for_the_live_tier(network_guard):
     assert socket.create_connection is not None  # the real function, unpatched
 
 
+def test_guard_blocks_dns_resolution_of_a_remote_host(network_guard):
+    """A hostname lookup is already egress, and on the air-gapped tier (§4.5 E5) it is exactly
+    what must not happen. Local names still resolve, so nothing that looks up `localhost`
+    during setup is broken by the guard."""
+    with pytest.raises(NetworkAccessError):
+        socket.getaddrinfo("example.invalid", 80)
+
+    assert [a.api for a in network_guard.attempts] == ["socket.getaddrinfo"]
+    assert socket.getaddrinfo("localhost", 80)  # allowed: never leaves the host
+
+
+def test_guard_blocks_udp_which_never_calls_connect(network_guard):
+    """UDP needs no `connect()`, so `sendto` is its own egress path."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        with pytest.raises(NetworkAccessError):
+            sock.sendto(b"ping", ("127.0.0.1", 9))
+    finally:
+        sock.close()
+
+    assert [a.api for a in network_guard.attempts] == ["socket.sendto"]
+
+
 def test_guard_restores_the_socket_module_on_uninstall():
     original_connect = socket.socket.connect
     original_create = socket.create_connection
+
+    original_getaddrinfo = socket.getaddrinfo
 
     guard = SocketGuard()
     guard.install()
@@ -89,6 +116,7 @@ def test_guard_restores_the_socket_module_on_uninstall():
 
     assert socket.socket.connect is original_connect
     assert socket.create_connection is original_create
+    assert socket.getaddrinfo is original_getaddrinfo
     assert guard.installed is False
 
 
@@ -168,26 +196,98 @@ def test_assert_no_writes_is_the_oracle_for_the_writes_nothing_clauses(store_spy
         store_spy.assert_no_writes()
 
 
-def test_blob_spy_is_content_addressed_and_deduplicates(store_spy):
-    """`CT-STORE-07`: identical bytes yield the same hash and store one copy."""
-    blobs = store_spy.blobs()
-    first = blobs.put(b"page raster bytes")
-    second = blobs.put(b"page raster bytes")
+def test_a_transaction_that_raises_leaves_nothing_in_the_write_log(store_spy):
+    """`CT-STORE-03`: a work unit's result and its ledger transition are "both present or both
+    absent after any crash". A spy that recorded writes from an aborted body would make the
+    absent half untestable — a case asserting nothing was committed would pass vacuously."""
+    with pytest.raises(RuntimeError):
+        with store_spy.cohort("c1").transaction() as tx:
+            tx.enqueue_write({"table": "verdict"})
+            raise RuntimeError("crash mid-transaction")
+
+    store_spy.assert_no_writes()
+
+
+def test_blob_spy_is_content_addressed_and_deduplicates_across_handles(store_spy):
+    """`CT-STORE-07`: identical bytes yield the same hash and store one copy, and `get`
+    resolves any hash `put` returned "for the lifetime of the owning tier" — so a second
+    `blobs()` handle sees the same namespace, as the real content-addressed directory does."""
+    first = store_spy.blobs().put(b"page raster bytes")
+    second = store_spy.blobs().put(b"page raster bytes")
 
     assert first == second
     assert first.startswith("sha256:")
-    assert blobs.get(first) == b"page raster bytes"
+    assert store_spy.blobs().get(first) == b"page raster bytes"
+    # Deduplicated on write (FR-STORE-06): one copy, therefore one write.
+    assert len(store_spy.writes) == 1
 
 
 # --- the fast tier's model boundary ---------------------------------------------------------
 
 
-def test_fast_tier_binds_the_recorded_fixture_provider():
+def test_fast_tier_binds_the_recorded_fixture_provider(make_fixture_provider, monkeypatch):
     """§4.2: the fast tier's model boundary is `RecordedFixtureProvider` — a shipped
-    implementation, not a test fake. Asserting the *binding* keeps the wiring honest before
-    the class itself exists (issue #18)."""
-    assert FIXTURE_PROVIDER_CLASS == "RecordedFixtureProvider"
-    assert PROVIDER_MODULE.endswith(".prov")
+    implementation, not a test fake.
+
+    Exercises the real wiring by standing a minimal `aeh.prov` up in `sys.modules` and
+    asserting the factory resolves *that class* and hands it the fixture directory. Asserting
+    the two constants instead would be a tautology — they are assigned those literals two
+    files away — and this is the only non-`writtenahead` coverage of the Goal's third clause,
+    so a tautology here would leave the gate blind to it.
+    """
+    import sys
+    import types
+
+    constructed: dict[str, object] = {}
+
+    class _StubRecordedFixtureProvider:
+        def __init__(self, fixture_dir):
+            constructed["fixture_dir"] = fixture_dir
+
+    package = types.ModuleType("aeh")
+    package.__path__ = []  # type: ignore[attr-defined]
+    module = types.ModuleType(PROVIDER_MODULE)
+    setattr(module, FIXTURE_PROVIDER_CLASS, _StubRecordedFixtureProvider)
+
+    # setitem, not a plain assignment: monkeypatch restores sys.modules at teardown, so the
+    # stub cannot leak into a shuffled neighbour — including the staleness check below, which
+    # would otherwise see #18 as landed.
+    monkeypatch.setitem(sys.modules, "aeh", package)
+    monkeypatch.setitem(sys.modules, PROVIDER_MODULE, module)
+
+    provider = make_fixture_provider()
+
+    assert isinstance(provider, _StubRecordedFixtureProvider)
+    assert constructed["fixture_dir"].is_dir()
+
+
+def test_written_ahead_markers_are_removed_once_their_blocker_lands(repo_root):
+    """The `writtenahead` marker excludes a test from `TEST_CMD` (scripts/test.sh), which is
+    what lets the Stop-hook gate be green while written-ahead tests are correctly red.
+
+    Nothing else notices when a blocking issue closes, so a P0 case could sit outside the gate
+    forever. This assertion is that notice: it fails the moment a blocker resolves and names
+    the file whose marker must come off.
+    """
+    landed = []
+    for issue, (kind, target, test_files) in WRITTEN_AHEAD_BLOCKERS.items():
+        if kind == "module":
+            try:
+                # find_spec raises rather than returning None when the *parent* package is
+                # absent, which is the normal state here until `aeh` exists.
+                resolved = importlib.util.find_spec(target) is not None
+            except ModuleNotFoundError:
+                resolved = False
+        else:
+            resolved = (repo_root / target).exists()
+        if resolved:
+            landed.append(f"{issue} ({target}) -> unmark {', '.join(test_files)}")
+
+    assert not landed, (
+        "these blockers have landed, so their tests must lose the `writtenahead` marker and "
+        "rejoin TEST_CMD — remove the marker, never the test (test plan §8.2):\n  "
+        + "\n  ".join(landed)
+    )
 
 
 def test_require_reports_a_missing_implementation_as_a_stated_failure():

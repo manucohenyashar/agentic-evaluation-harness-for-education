@@ -34,6 +34,29 @@ PROVIDER_MODULE = f"{IMPLEMENTATION_PACKAGE}.prov"
 FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 
 
+# --- what the written-ahead tests are waiting on -----------------------------------------
+# Every test carrying `@pytest.mark.writtenahead` is excluded from TEST_CMD (see
+# scripts/test.sh), which is what lets the Stop-hook gate be green while those tests are
+# correctly red. The risk in that scheme is silence: when the blocking issue closes, nothing
+# says so, and a P0 case can sit outside the gate indefinitely.
+#
+# This registry closes it. `tests/unit/harness/test_harness.py` asserts every blocker is
+# still unresolved, so the moment one lands the gate fails and names the tests to unmark.
+WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    # issue: (kind, target, tests to unmark)
+    "#18": (
+        "module",
+        PROVIDER_MODULE,
+        ("tests/unit/prov/test_recorded_fixture_provider.py",),
+    ),
+    "#2": (
+        "path",
+        "fixtures/F-FROZEN/manifest.json",
+        ("tests/artifact/test_heldout_disjoint.py",),
+    ),
+}
+
+
 class NotImplementedYet(AssertionError):
     """The thing under test has not been built yet.
 

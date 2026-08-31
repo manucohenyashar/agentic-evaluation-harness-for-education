@@ -23,6 +23,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+_LOCAL_HOSTS = {None, "", "localhost", "localhost.localdomain", "127.0.0.1", "::1"}
+
+
+def _is_local(host: Any) -> bool:
+    return isinstance(host, (str, type(None))) and host in _LOCAL_HOSTS
+
+
 class NetworkAccessError(AssertionError):
     """Raised when a guarded test attempts an outbound connection.
 
@@ -56,6 +63,8 @@ class SocketGuard:
             "connect": socket.socket.connect,
             "connect_ex": socket.socket.connect_ex,
             "create_connection": socket.create_connection,
+            "getaddrinfo": socket.getaddrinfo,
+            "sendto": socket.socket.sendto,
         }
 
         guard = self
@@ -69,9 +78,24 @@ class SocketGuard:
         def _create_connection(address, *args, **kwargs):  # noqa: ANN001
             guard._record_and_raise("socket.create_connection", address)
 
+        def _sendto(self_sock, data, *args, **kwargs):  # noqa: ANN001
+            # UDP needs no connect(), so sendto is its own egress path.
+            address = args[-1] if args else kwargs.get("address")
+            guard._record_and_raise("socket.sendto", address)
+
+        def _getaddrinfo(host, port, *args, **kwargs):  # noqa: ANN001
+            # A hostname lookup is already egress: it leaves the machine, and on the
+            # air-gapped tier (§4.5 E5) it is exactly what must not happen. Resolutions
+            # that never leave the host are still allowed through.
+            if _is_local(host):
+                return guard._originals["getaddrinfo"](host, port, *args, **kwargs)
+            guard._record_and_raise("socket.getaddrinfo", (host, port))
+
         socket.socket.connect = _connect          # type: ignore[method-assign]
         socket.socket.connect_ex = _connect_ex    # type: ignore[method-assign]
+        socket.socket.sendto = _sendto            # type: ignore[method-assign]
         socket.create_connection = _create_connection  # type: ignore[assignment]
+        socket.getaddrinfo = _getaddrinfo         # type: ignore[assignment]
         self._installed = True
 
     def uninstall(self) -> None:
@@ -79,7 +103,9 @@ class SocketGuard:
             return
         socket.socket.connect = self._originals["connect"]              # type: ignore[method-assign]
         socket.socket.connect_ex = self._originals["connect_ex"]        # type: ignore[method-assign]
+        socket.socket.sendto = self._originals["sendto"]                # type: ignore[method-assign]
         socket.create_connection = self._originals["create_connection"]  # type: ignore[assignment]
+        socket.getaddrinfo = self._originals["getaddrinfo"]             # type: ignore[assignment]
         self._originals.clear()
         self._installed = False
 
