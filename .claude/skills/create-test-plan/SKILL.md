@@ -1,6 +1,6 @@
 ---
 name: create-test-plan
-description: Turns a detailed design / low-level design document into a comprehensive, traceable test plan - test strategy, risk-weighted coverage, and fully specified test cases across unit, integration (mocked and against real modules), contract, smoke, system/E2E, user acceptance, performance, security, adversarial, fuzz/property-based, resilience, and regression testing, tied to a requirements traceability matrix and an explicit statement of what passing the suite does and does not prove. Use whenever the user has a detailed design, LLD, module spec, architecture doc, or requirements document and wants tests planned for it - triggers include "write a test plan", "how should we test this", "what tests do we need", "test strategy", "QA plan", "verification plan", "make sure this implementation is correct", or asking for test coverage of a design. Also use before implementation starts when the user wants tests specified ahead of code (TDD), and when an existing test plan needs to be deepened or audited for gaps.
+description: Turns a detailed design / low-level design document into a comprehensive, traceable test plan - test strategy, risk-weighted coverage, and fully specified test cases across unit, integration (mocked and against real modules), contract, smoke, system/E2E, user acceptance, performance, security, adversarial, fuzz/property-based, resilience, and regression testing, tied to a requirements traceability matrix and an explicit statement of what passing the suite does and does not prove. Where the design defines module contracts (CT-* clauses), it also produces the contract-verification suite that fails when a module breaks a promise its callers depend on, plus the per-consumer integration tests and blast-radius regression sets derived from them. Use whenever the user has a detailed design, LLD, module spec, architecture doc, or requirements document and wants tests planned for it - triggers include "write a test plan", "how should we test this", "what tests do we need", "test strategy", "QA plan", "verification plan", "test the module contracts", "make sure changes don't break other modules", "make sure this implementation is correct", or asking for test coverage of a design. Also use before implementation starts when the user wants tests specified ahead of code (TDD), and when an existing test plan needs to be deepened or audited for gaps.
 ---
 
 # Create Test Plan
@@ -20,6 +20,23 @@ This skill produces a plan that holds up as an argument. Three properties do tha
   over-testing the trivial ones.
 - **Honest** - it ends by stating what passing does *not* prove. A plan that claims total
   confidence is the one that gets trusted right up until the incident.
+
+A plan built only from `FR-*`/`NFR-*` makes a narrower argument than it appears to. It proves
+each module does its job **today**; it does not prove that a module still keeps the promises its
+callers were built on **tomorrow**. That second claim is what a module contract carries, and where
+the design defines one — `CT-*` clauses, per `/detailed-design-generator` Phase 2b — verifying it is
+part of this skill's job, not an optional extra tier. The distinction runs through every phase below:
+
+| | `FR-*` / `NFR-*` cases | `CT-*` cases |
+|---|---|---|
+| Prove | the module was built right | the module is still safe to depend on |
+| Fail when | the module is wrong | the module is *different* in a way a named consumer relied on |
+| Run | while the module is being built | on every change to that module, forever |
+| Derived from | a requirement | a clause, plus the `Consumers` and `Requires` tables around it |
+
+If the design has no `CT-*` scheme, say so once and plan from the interfaces and invariants
+instead — but check first, because a contract that exists and goes unverified is the most
+expensive kind to have written.
 
 Read the reference files as you reach the phase that needs them, not all at once:
 
@@ -43,6 +60,19 @@ wrong, which is a different reading than the one you'd do to implement it:
 - **Modules** and their IDs, responsibilities, and stated non-responsibilities
 - **Requirements** - every `FR-*` / `NFR-*` (or whatever ID scheme the doc uses; if it has
   none, assign one and say so, because the traceability matrix needs stable handles)
+- **Contract clauses** - every `CT-*`, with three things copied verbatim, because all three
+  become test structure:
+  - the **clause kind** (`surface`, `data`, `behaviour`, `error`, `state`, `perf`, `config`,
+    `observe`, `security`) — it determines the technique, and Phase 3 has a recipe per kind
+  - the **`Consumers`** column — that is the blast radius, already computed. It tells you which
+    integration suites re-run when this module changes, so you never have to guess at it
+  - the **`Requires`** tables — each row is a *specific pair* of modules and a *specific clause*
+    one relies on from the other. Each row is an integration test with its subject already named,
+    which is the rarest thing in test planning and should not be wasted
+- **Non-promise clauses** — clauses stating something is deliberately *not* guaranteed
+  ("iteration order is unspecified", "output is not reproducible", "`None` means not measured").
+  These are the highest-value clauses in the document and the ones a plan skips by reflex.
+  A non-promise is tested by proving **no consumer depends on it** — see Phase 3.
 - **Interfaces** - signatures, endpoints, schemas, status/error codes. These are the
   contracts tests assert against, so copy the actual parameter names and types rather than
   paraphrasing.
@@ -103,6 +133,25 @@ Then allocate depth explicitly, and say so in the plan:
 This register is what makes the plan defensible when someone asks "why so many tests here
 and so few there".
 
+**Contracts make two of these columns cheap and one of them mandatory.**
+
+- **Blast radius stops being a judgement call.** A clause's `Consumers` column is the answer,
+  already computed by the design. Use it literally — "`CT-STORE-02` is consumed by 13 modules" is
+  a better severity input than any adjective. A contract register (if the design has one) ranks
+  the modules by consumer count; the top of that list is where depth goes.
+- **Detectability is usually *bad* for contract violations, which is the whole point.** A broken
+  `FR-*` typically shows up as a failing feature. A broken `CT-*` shows up as a *neighbour*
+  misbehaving, weeks later, in a module nobody changed. Score contract clauses as low-detectability
+  by default and make the plan say why.
+- **Clauses the design flags as safety properties are Critical, not negotiable.** Where the design
+  marks a set of clauses as structural mitigations — the ones whose violation "degrades no metric
+  anyone is watching" — every one of them gets a case at more than one rung plus an explicit
+  regression entry. These are exactly the clauses that a plausible-looking refactor removes and
+  every functional test survives.
+
+Add a `Clause` column to the register where a risk is contract-shaped, so the depth allocation
+points at the clause rather than at the module in general.
+
 ## Phase 2 - Test strategy
 
 Write the strategy *for this system*, deriving each choice from something in the design.
@@ -137,6 +186,28 @@ Decide and justify:
    for release. Exit criteria are pass/fail statements ("100% of P0 cases pass, no open
    Critical or High defects, performance suite meets NFR-*"), not aspirations
    ("adequate coverage").
+9. **Contract-verification policy** - where the design defines `CT-*`, this is its own decision
+   and the one that determines whether the contracts do any work. Four parts:
+   - **Which side runs the clause suite.** Default: the **provider** owns it, and it runs on every
+     change to the provider. A clause suite that lives with the consumer proves the consumer's
+     belief, not the provider's behaviour — which is how a mocked suite stays green while
+     production breaks.
+   - **Where doubles are held to the contract.** Every test double standing in for a module with
+     a contract must pass that module's clause suite. State this as a rule with named suites:
+     the double and the real implementation run the *same* cases. A fake that doesn't honour the
+     contract makes every test above it a fiction, and it is the single most common way a large
+     mocked suite becomes worthless.
+   - **What a `Requires` row becomes.** Each row is one integration case at rung 2+ asserting that
+     the consumer's actual usage matches the clause it names. Say whether these run per-pair or as
+     one suite per provider.
+   - **The blast-radius rule for CI.** Changing module X re-runs X's clause suite plus the
+     integration cases of every module in X's `Consumers` column. Write the rule down as a
+     command, not an intention — if it isn't wired into CI, the contracts are documentation.
+
+   State the compatibility policy the design declares (additive vs breaking) and how the suite
+   enforces it: additive changes leave the clause suite green, breaking changes turn it red, and a
+   red clause suite is a design conversation rather than a test to update. That last sentence is
+   the one to write explicitly, because the default reflex on a red test is to change the test.
 
 ## Phase 3 - Derive the test cases
 
@@ -162,14 +233,60 @@ quantities" - because concrete values are what make a case implementable without
 to the design, and the whole point is that someone (a developer, or `/write-tests`) can
 build this without asking follow-up questions.
 
+### Then walk the contract clauses
+
+Every `CT-*` clause gets **at least one case that fails if the clause is violated**. That sentence
+is the whole specification, and it is stricter than it sounds: a case that passes both before and
+after the promise is broken has verified nothing. For each clause, ask *what would a plausible
+future change do here, and would this case go red?* If the answer is no, the case is testing
+something adjacent to the clause rather than the clause.
+
+Clauses were written as assertions precisely so this step is mechanical. The technique follows from
+the kind — `references/test-design-techniques.md` §13 has the full recipes:
+
+| Kind | The case that catches a violation |
+|---|---|
+| `surface` | Call it as specified; assert the signature and the sync/async character. Include the "does it block until durable" question — that one is invisible in a signature and breaks callers hardest. |
+| `data` | One case per field for type, nullability, unit, and enum domain. Then the distinctions the clause insists on: *empty vs absent*, *null vs zero*, *not-measured vs measured-false*. Collapsing one of those is a real change that no signature check catches. |
+| `behaviour` | Idempotency (call twice, assert one effect), ordering (assert the promised order, and for a non-promise assert the caller tolerates any), purity (same input, same output, no I/O), atomicity (fail mid-operation, assert all-or-nothing). |
+| `error` | One case per named error: provoke it, assert the *type*, assert the retryability the clause claims, and assert the state left behind. The state assertion is the one that gets skipped and the one that matters — "did the failed call leave a partial write". |
+| `state` | Assert what it writes. Then assert what it **does not** write: a negative case proving no other module's rows changed. Write-ownership violations are silent by construction. |
+| `perf` | The bound *at the stated load*, as a threshold, in the environment the clause names. A perf clause without its load figure is untestable — flag it back to the design rather than inventing one. |
+| `config` | Default value, and the externally-visible behaviour change when it moves. If the clause says a key is safe to change at runtime, test that; if it says it is not, test that changing it is refused. |
+| `observe` | The signal is emitted, **under the exact name**, with the promised semantics. Renaming a metric takes a dashboard and an alert with it, and nothing else in the suite notices. |
+| `security` | The negative case: the field never appears, the data never persists, the call never leaves. Assert over the artifact — the assembled payload, the log line, the stored row — not over intent. |
+
+Three case types are specific to contracts and are the reason this section exists:
+
+- **Non-promise cases.** A clause saying something is *not* guaranteed is verified by proving no
+  consumer depends on it. Make the unpromised thing vary — return results in a different order,
+  return different text for identical input, return `None` where a value was allowed — and assert
+  every consumer in the `Consumers` column still behaves correctly. This is the case that keeps a
+  refactor legal, and it is the one nobody writes.
+- **Pairwise `Requires` cases.** One per row: consumer C uses provider P through clause
+  `CT-P-nn`, at rung 2+, against the real P. This is what proves the assumption C was built on is
+  the promise P actually makes. A `Requires` row with no case is an unverified assumption
+  wearing a citation.
+- **Double-conformance cases.** The same clause suite, run against the double. Name the suite once
+  and reference it from both sides rather than writing the cases twice.
+
+Where the design flags clauses as safety properties, those get an adversarial case as well: not
+"does it hold" but "can I construct a plausible change that breaks it while every `FR-*` case stays
+green". If you can, that construction *is* the test.
+
 ## Phase 4 - The cross-cutting suites
 
 Per-requirement cases cover the design's functional claims. These suites cover the things
 that are true of the system as a whole, and they're where most plans thin out. Design each
 one deliberately using `references/test-types-catalog.md`:
 
+- **Contract suites** - one per module with a `CT-*` contract: every clause, run against the real
+  implementation *and* against every double that stands in for it. This suite is the regression
+  spine of the whole plan, so give it its own subsection rather than folding it into integration
+- **Blast-radius regression sets** - per module, the named set of suites that re-run when it
+  changes, taken from its `Consumers` column. This is what turns 300 clauses into a CI rule
 - **Integration against mocks** and **integration against real modules** - both, with the
-  contract tests that keep the mocks honest
+  contract tests that keep the mocks honest, and one case per `Requires` row
 - **Smoke** - the small set that answers "is this build worth testing further", runnable in
   minutes
 - **System / E2E** - the 2-5 user journeys from the design's key flows, no more; E2E tests
@@ -201,14 +318,25 @@ not by walking your test cases, which only proves the tests you wrote are traced
 something. Every requirement needs at least one test case ID or an explicit entry in Known
 Gaps explaining why it can't be tested and what compensates for that.
 
+**Contracts get their own matrix**, because they answer a different question. The RTM asks "was
+what the design asked for built"; the contract matrix asks "what breaks if this module changes",
+and it carries the consumer list so a reader can see the blast radius without cross-referencing.
+Every `CT-*` clause gets a row: clause, kind, verifying case(s), consumers, and the suite the
+consumers' cases live in. A clause with no case is a promise nobody is holding the module to.
+
 Verify mechanically rather than by eye:
 
 ```bash
 python .claude/skills/create-test-plan/scripts/check_traceability.py --design <design-doc-or-dir> --plan <test-plan.md>
 ```
 
-It reports uncovered requirements, orphan test cases, and duplicate IDs, and exits non-zero
-if any gap exists. Run it, fix what it finds, and re-run until clean.
+It reports uncovered requirements **and uncovered contract clauses** separately, plus orphan test
+cases and duplicate IDs, and exits non-zero if any gap exists. Run it, fix what it finds, and
+re-run until clean. Two flags matter when a design uses contracts:
+
+- `--contracts-only` reports just the clause coverage, which is the fast check while writing §6.11
+- `--no-contracts` drops `CT-*` from the requirement set, for a design that has no contract scheme
+  or when you are deliberately deferring the contract suite and have said so in Known Gaps
 
 Assemble the document using `references/test-plan-template.md` and write it to
 `docs/design/test-plan.md`, alongside the design it traces to - this is a working
@@ -223,9 +351,15 @@ it. Before delivering, work through `references/quality-bar.md` and then write t
 final section answering three questions plainly:
 
 1. **What does passing this suite prove?** State it as a claim someone could disagree with.
+   Where contracts exist, this splits in two and both halves should be stated: *these modules do
+   what the design asked*, and *these modules can be changed without breaking the named consumers*.
+   The second claim is only as strong as the clause coverage, so give the figure.
 2. **What does it not prove?** Untested requirements, unreproducible conditions
    (production traffic patterns, real hardware, scale), assumptions baked into the mocks,
-   anything whose oracle is weak.
+   anything whose oracle is weak. Add the contract-specific honest remainder: clauses verified
+   only against a double, `Requires` rows with no rung-2 case, and any dependency edge in the
+   design's graph with no clause behind it — that last one is a module relying on something
+   nobody promised, and it is a design finding as much as a testing gap.
 3. **What's the residual risk, and what compensates?** Canary release, monitoring and
    alerting, feature flag, manual review of the first N runs, rollback plan.
 
@@ -262,6 +396,14 @@ Size each story to one reviewable PR — typically one module at one test level 
 for the extraction module"), listing the TC IDs it covers. A story spanning 40 cases across
 six modules cannot be reviewed in one sitting and will be split by someone with less
 context than you have now.
+
+**Contract suites make good stories and should be scheduled early.** One story per module's clause
+suite, written **ahead of implementation** — mark the column `yes`. A contract is a specification
+that exists before the code, so its suite can be written first, and doing so is what makes the
+contract real rather than aspirational: the module is then built against a red suite that goes
+green, instead of against prose that gets interpreted. Two consequences worth putting in the plan:
+a `yes` story must carry no dependency, and the double-conformance cases belong in the *same* story
+as the clause suite, since they are the same cases pointed at a different implementation.
 
 The last column is the one most easily left implicit and the one that breaks things when it
 is. `/write-tests` behaves differently depending on it — expecting green in one mode and red

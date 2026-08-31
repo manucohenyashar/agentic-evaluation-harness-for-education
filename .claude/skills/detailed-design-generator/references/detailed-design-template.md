@@ -1,6 +1,6 @@
 # Detailed Design Document Template
 
-Use this structure for the Detailed Design document. Keep the ID scheme (`FR-<ModuleID>-##`, `NFR-<ModuleID>-##`) consistent - the test plan and backlog are built by walking these IDs.
+Use this structure for the Detailed Design document. Keep the ID scheme (`FR-<ModuleID>-##`, `NFR-<ModuleID>-##`, `CT-<ModuleID>-##`) consistent - the test plan and backlog are built by walking these IDs.
 
 ## Document header
 
@@ -82,6 +82,28 @@ What gets logged (and at what level), key metrics, tracing, and what conditions 
 **Configuration**
 Externalized config values, environment variables, feature flags, and their defaults.
 
+**Contract** (`CT-<ModuleID>`, v1.0) · Stability: stable | provisional | internal
+
+One sentence naming the boundary: what a caller holds when it holds this module.
+
+| ID | Kind | Clause (assertable) | Consumers |
+|----|------|---------------------|-----------|
+| CT-<ModuleID>-01 | surface | ... | `M-X`, `M-Y` |
+
+Kinds: `surface` · `data` · `behaviour` · `error` · `state` · `perf` · `config` · `observe` · `security`.
+Walk all nine. Each clause is one present-tense assertion about something observable from outside the
+module. Anything the module deliberately does *not* promise but a reader would assume gets a clause
+saying so.
+
+*Requires*
+
+| Depends on | Clauses relied on | What this module assumes |
+|---|---|---|
+| `M-Z` | CT-Z-02, CT-Z-07 | ... |
+
+*Compatibility.* What is additive; what is breaking; what a breaking change obliges. Name the
+canonical test double if consumers have one, and what it must reproduce.
+
 **Open questions / assumptions**
 Anything in this section that wasn't in the HLD and had to be decided or guessed to write the design.
 ```
@@ -102,6 +124,14 @@ Availability target, compliance regime, disaster recovery (RPO/RTO), data retent
 
 ### 4.4 Architecture Decision Records
 One ADR per significant decision the HLD left open. Use the ADR template in `best-practices-checklist.md`.
+
+### 4.5 Contract register
+| Module | Contract | Version | Stability | Clauses | Consumed by |
+One row per module, built from the per-module contract blocks. This is the blast-radius index: a
+change to a module re-verifies every consumer named in its row.
+
+Follow it with the change-classification rules stated once for the whole system - what is additive,
+what is breaking, and what a breaking change obliges - rather than repeating them per module.
 ```
 
 ## Example (condensed) - one module, to show the level of detail expected
@@ -125,4 +155,34 @@ One ADR per significant decision the HLD left open. Use the ADR template in `bes
 **Dependencies**: `M-PROFILE` (downstream consumer of tokens, no direct call), `Redis` (session blacklist, sync call), upstream: called by API gateway.
 
 **Security requirements**: passwords hashed with bcrypt (cost 12); tokens signed with RS256, private key in secrets manager, never in config; rate limit 5 attempts/min/IP (brute-force mitigation, STRIDE: Spoofing).
+
+**Contract** (`CT-AUTH`, v1.0) · Stability: stable
+
+A caller holding `M-AUTH` holds token issuance and token validation, and nothing about who the user is.
+
+| ID | Kind | Clause (assertable) | Consumers |
+|----|------|---------------------|-----------|
+| CT-AUTH-01 | surface | `POST /auth/login {email, password}` returns `200 {token, expires_at}`; `validate(token) -> Claims` is synchronous and makes no network call. | gateway, `M-PROFILE` |
+| CT-AUTH-02 | data | `Claims` carries `sub` (opaque user id, never an email), `iat`, `exp` (UTC epoch seconds), `scope[]`. No field is nullable. `scope[]` may be empty; empty means no scopes, not all scopes. | `M-PROFILE`, `M-BILLING` |
+| CT-AUTH-03 | behaviour | `validate` is pure and idempotent: same token, same clock, same result. It never refreshes, extends, or revokes. | all callers |
+| CT-AUTH-04 | behaviour | Token lifetime is 15 minutes from issue. Callers may rely on `exp` but not on the 15 — the number may change; the presence and meaning of `exp` may not. | all callers |
+| CT-AUTH-05 | error | `401` on expired, malformed, or unsigned token — not retryable, no state change. `429` on rate limit, retryable after `Retry-After`. `503` from the blacklist store fails closed as `401`; a caller never sees a token accepted because Redis was down. | gateway |
+| CT-AUTH-06 | state | Writes only the Redis blacklist key `bl:<jti>`. No other module writes that keyspace; any module may read it. `M-AUTH` writes no row in the user database. | `M-PROFILE` |
+| CT-AUTH-07 | perf | `validate` p99 < 2 ms at 2,000 req/s (signature check only, key cached). `login` p95 < 250 ms at 50 req/s, dominated by bcrypt cost 12. | gateway |
+| CT-AUTH-08 | security | No password, password hash, or signing key appears in any response body, log line, or exception message. `sub` is opaque and not reversible to an email by any callable operation. | all callers |
+| CT-AUTH-09 | observe | Emits `auth.login.failure` (counter, by reason) and `auth.token.rejected` (counter, by reason). Names are contract; alerting depends on them. | ops |
+| CT-AUTH-10 | behaviour | **Not promised:** token strings are opaque. Their encoding, length, and claim set beyond CT-AUTH-02 may change without notice; a caller that parses a token itself is outside the contract. | all callers |
+
+*Requires*
+
+| Depends on | Clauses relied on | What this module assumes |
+|---|---|---|
+| Redis | (external) | `SETEX`/`GET` semantics; unavailability is detectable within the 50 ms timeout so CT-AUTH-05 can fail closed |
+| Secrets manager | (external) | The signing key is readable at process start and rotates only between restarts |
+
+*Compatibility.* Additive: new `scope` values, new optional response fields, a shorter `login` latency.
+Breaking: any change to `Claims` field names or semantics, making `validate` non-pure, widening
+CT-AUTH-05's fail-closed behaviour, renaming an `observe` signal. A breaking change bumps `CT-AUTH` to
+v2.0 and re-verifies every consumer named above. Consumers test against `FakeAuth`, which must
+reproduce CT-AUTH-02, -03 and -05 exactly, including the fail-closed path.
 ```

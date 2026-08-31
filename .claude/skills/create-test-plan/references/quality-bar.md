@@ -41,6 +41,24 @@ ask whether that code matters.
 **Silence about what isn't covered.** A plan with no Known Gaps section is either
 incomplete or dishonest, and readers who notice will discount the rest of it.
 
+**Contracts inventoried but not verified.** A plan that lists the design's `CT-*` clauses in its
+system-under-test section and then never traces them has done the expensive half of the work and
+skipped the half that pays. The tell is a traceability matrix with `FR-*` rows only.
+
+**Contract cases that would survive the violation.** The commonest way this tier goes wrong: a case
+nominally traced to a clause about async writes that would pass just as well if the write were made
+synchronous. It is testing the same code, not the same promise. The `Breaks if` field exists to make
+this checkable — if the named change leaves the case green, the case is mislabeled.
+
+**Non-promises left untested.** Every clause saying "this is not guaranteed" with no case that makes
+the unpromised thing vary. Nothing fails, so nothing looks wrong, and meanwhile consumers quietly
+acquire dependencies on the freedom the design deliberately kept. Discovered years later as
+"we can't change that, it'll break everything".
+
+**Doubles exempt from the contract.** A fake that stands in for a contracted module across two
+hundred tests but never runs that module's clause suite. Every one of those tests is asserting
+against a fiction, and the plan reads as though they aren't.
+
 ### In the tests the plan specifies
 
 **Assertion-free tests.** Code that executes the system and asserts nothing, or asserts only
@@ -86,7 +104,14 @@ caveat - the traceability *is* the deliverable.
 - [ ] Every quantified NFR has a performance or capacity scenario with a numeric threshold
 - [ ] Every failure mode named in the design's error-handling sections has a resilience case
 - [ ] Every state machine has both legal-transition and illegal-transition cases
-- [ ] `check_traceability.py` runs clean
+- [ ] Every `CT-*` clause has at least one case, or a Known Gaps entry with a compensating control
+- [ ] Every `Requires` row in the design has a pairwise integration case at rung 2+
+- [ ] Every non-promise clause has a case that makes the unpromised thing vary
+- [ ] Every double standing in for a contracted module runs that module's clause suite, or its
+      exemption is recorded with the consequence stated
+- [ ] Every dependency edge in the design's graph has a clause behind it, or is reported as a
+      design finding
+- [ ] `check_traceability.py` runs clean (requirements **and** clauses)
 
 **Depth**
 - [ ] Every requirement has at least one negative and one boundary case
@@ -99,6 +124,11 @@ caveat - the traceability *is* the deliverable.
 **Rigor**
 - [ ] Every case names its oracle; none say "verify the output is correct"
 - [ ] Every case names its isolation rung
+- [ ] Every contract case names the change it would catch (`Breaks if`), and that change would
+      actually turn it red — spot-check the safety-property clauses, where it matters most
+- [ ] The plan says what a red clause suite means (breaking change or wrong clause), and says
+      explicitly that it does not mean update the test
+- [ ] The blast-radius rule is written as a command wired into CI, not as an intention
 - [ ] Every mocked dependency has a named companion test against the real thing, or a Known
       Gaps entry
 - [ ] Test data uses concrete values, not descriptions of values

@@ -50,14 +50,45 @@ Every `FR-*` / `NFR-*` from the design, with the module that owns it. If the des
 ID scheme, assign one here and note the assignment - the traceability matrix needs stable
 handles.
 
-### 2.3 Testability gaps and open questions
+### 2.3 Contract inventory
+
+Omit this section only if the design defines no module contracts, and say so in one line if you do.
+
+| Module | Contract | Ver | Clauses | Consumed by | Clause suite |
+|---|---|---|---|---|---|
+| M-STORE | CT-STORE | 1.0 | 18 | 13 modules | CS-STORE |
+
+Then the clauses themselves, which §7.1b traces and §6.11 specifies:
+
+| Clause | Kind | Promise (short) | Consumers | Non-promise? |
+|---|---|---|---|---|
+| CT-STORE-02 | behaviour | `enqueue_write` returns before the row is durable | M-ORCH, M-JUDGE, M-EXTRACT, … | no |
+| CT-STORE-18 | behaviour | Query results carry no order this module chose | all readers | **yes** |
+
+Flag the non-promises. They are tested differently (by proving no consumer depends on the
+unpromised thing) and they are the clauses a plan omits by reflex.
+
+Also record the **`Requires` rows** from the design — each is one integration case with its subject
+already named, and §7.1b checks them off:
+
+| Consumer | Provider | Clauses relied on | Verified by |
+|---|---|---|---|
+| M-ORCH | M-STORE | CT-STORE-02, CT-STORE-03, CT-STORE-14 | TC-ORCH-40, TC-ORCH-41 |
+
+A row with an empty right-hand column is an assumption nobody is checking.
+
+### 2.4 Testability gaps and open questions
 
 | ID | Requirement / area | Problem | Needed to make it testable |
 |---|---|---|---|
 | Q-01 | NFR-ING-02 "ingestion should be fast" | No quantified target | A latency/throughput number and the load it applies at |
+| Q-02 | CT-CONFORM-14 gate has no declared statistic | Clause is not computable as written | A statistic and a threshold, or the clause withdrawn |
+| Q-03 | M-X → M-Y dependency edge with no clause behind it | M-X relies on something M-Y never promised | A clause on M-Y, or the reliance removed |
 
 Requirements that can't be tested as written belong here, not silently in the gaps section
-at the end. Each one is a question for the design author.
+at the end. Each one is a question for the design author. Q-03's shape is worth looking for
+deliberately: walk the design's dependency graph against its `Requires` tables, and every edge with
+no clause behind it is a module built on an unstated assumption.
 
 ## 3. Risk register and depth allocation
 
@@ -95,10 +126,37 @@ mocked dependency has a named companion test against the real thing.
 
 | Dependency | Doubled as | Used in | Companion real test | Contract test |
 |---|---|---|---|---|
-| Model server | Recorded-response fixture | TC-SCORE-01..12 | TC-SCORE-40 (live model, nightly) | n/a |
-| Storage | In-memory fake | TC-ING-03..09 | TC-ING-20 (containerized real) | Conformance suite CS-01 |
+| Model server | Recorded-response fixture | TC-SCORE-01..12 | TC-SCORE-40 (live model, nightly) | CS-PROV |
+| Storage | In-memory fake | TC-ING-03..09 | TC-ING-20 (containerized real) | CS-STORE |
 
-A row with an empty companion column is a gap - either add one or record it in §7.
+A row with an empty companion column is a gap - either add one or record it in §7. A row with an
+empty **contract test** column, where the doubled module has a contract, is a worse gap: it means
+the double is free to differ from the real thing in exactly the ways the contract says matter.
+
+### 4.9 Contract verification policy
+
+Omit if the design defines no contracts. Otherwise, four statements:
+
+**Ownership.** Each clause suite is owned by the **provider** and runs on every change to it. A
+clause suite living with the consumer verifies the consumer's belief, not the provider's behaviour.
+
+**Double conformance.** Every double standing in for a module with a contract runs that module's
+clause suite unchanged. Name the exceptions and what they cost:
+
+| Double | Stands in for | Clauses it cannot reproduce | Consequence, stated |
+|---|---|---|---|
+| In-memory store | M-STORE | CT-STORE-02 (async write), CT-STORE-05 (durability bound) | Every read-after-write bug is invisible against this double; TC-ING-20 at rung 2 is the only cover |
+
+**Blast-radius rule**, as a command rather than an intention:
+
+| Module changed | Suites that must re-run |
+|---|---|
+| M-STORE | CS-STORE, plus integration suites of its 13 consumers |
+
+**Response to a red clause suite.** State it explicitly: a failing clause case means either the
+change is breaking — contract version bump, every named consumer re-verified — or the clause is
+wrong, which is a design conversation. It does **not** mean update the test. Writing this down is
+the only defence against the reflex.
 
 ### 4.3 Test oracles
 
@@ -155,11 +213,17 @@ someone can implement the test without going back to the design:
 | Field | Value |
 |---|---|
 | Requirements | FR-<ModuleID>-01 |
+| Contract clause | CT-<ModuleID>-02 (`data`) — omit if the case verifies no clause |
+| Breaks if | "someone makes this return sorted results" — required on contract cases |
 | Risk | RISK-03 (High) |
 | Level / type | Unit |
 | Technique | Boundary value analysis |
 | Isolation | Rung 0 - clock stubbed, no I/O |
 | Priority | P0 |
+
+The **Breaks if** field is what separates a contract case from a case that happens to touch the same
+code. It names the plausible future change the case exists to catch, and it is checkable: if the
+named change would leave the case green, the case is not verifying the clause.
 
 **Preconditions / fixtures**: <exact state and data the test starts from>
 
@@ -222,10 +286,40 @@ The checks, their order, the total time budget, and what a failure blocks.
 |---|---|---|---|---|
 
 ### 6.9 Regression and baselines
-The policy, the baseline artifacts, and who reviews baseline changes.
+The policy, the baseline artifacts, and who reviews baseline changes. Where contracts exist, name
+§6.11's clause suites as the regression spine and keep the distinction visible: defect-regression
+tests accumulate reactively from bugs already had; clause suites exist from the first commit and
+guard against the bug a refactor is about to introduce.
 
 ### 6.10 Observability tests
 | ID | Promised signal | Trigger | Assertion |
+|---|---|---|---|
+
+### 6.11 Contract suites
+
+One subsection per module with a contract. Omit the whole section only if the design defines none.
+
+#### CS-<ModuleID> — clause suite for `<ModuleID>`
+
+| Case | Clause | Kind | Assertion | Breaks if | Rung | Pri |
+|---|---|---|---|---|---|---|
+| TC-STORE-C02 | CT-STORE-02 | behaviour | `enqueue_write` returns before the row is queryable outside a transaction | someone makes the write synchronous | 2 | P0 |
+| TC-STORE-C18 | CT-STORE-18 | behaviour (**non-promise**) | Consumers pass when query results are returned shuffled under a fixed seed | someone starts relying on incidental ordering | 1 | P1 |
+
+Runs against: the real implementation, and every double listed in §4.9.
+
+**Pairwise `Requires` cases** — one per row of §2.3's third table, at rung 2+ against the real
+provider:
+
+| Case | Consumer | Provider | Clause | Assertion |
+|---|---|---|---|---|
+| TC-ORCH-40 | M-ORCH | M-STORE | CT-STORE-02 | The orchestrator never reads back its own write outside a transaction; asserted by a store double that never serves an un-committed row |
+
+**Safety-property cases** — where the design flags clauses whose violation degrades no metric
+anyone watches, each gets a case at a second rung plus the adversarial case described in
+techniques §13:
+
+| Case | Clause | The change it tries to construct | Pass = |
 |---|---|---|---|
 
 ## 7. Traceability, coverage and residual risk
@@ -241,14 +335,31 @@ Built by walking every requirement from §2.2 in order - not by walking the test
 Verify mechanically:
 `python .claude/skills/create-test-plan/scripts/check_traceability.py --design <design> --plan <this file>`
 
+### 7.1b Contract traceability matrix
+
+Built by walking every clause from §2.3. Separate from the RTM because it answers a different
+question: the RTM asks whether the design was built, this asks **what breaks when a module changes**.
+
+| Clause | Kind | Verified by | Also run against | Consumers | Re-run on change to |
+|---|---|---|---|---|---|
+| CT-STORE-02 | behaviour | TC-STORE-C02 | in-memory fake | M-ORCH, M-JUDGE, … (13) | M-STORE |
+
+A clause with no case is a promise nobody is holding the module to — either add the case or put the
+clause in §7.4 with what compensates.
+
 ### 7.2 What passing this suite proves
 The confidence claim from §1, now specific: which requirements are verified, at which
-isolation level, with which oracle strength.
+isolation level, with which oracle strength. Where contracts exist, state both halves and give
+the clause-coverage figure: *these modules do what the design asked*, and *these modules can be
+changed without breaking the named consumers*.
 
 ### 7.3 What it does not prove
 Untested requirements, conditions not reproducible in test (production traffic shape, real
 hardware, true scale), assumptions baked into every double, requirements covered only by
-weak oracles, and anything verified only at rung 0.
+weak oracles, and anything verified only at rung 0. Plus the contract-specific remainder:
+clauses verified only against a double, `Requires` rows with no rung-2 case, non-promise clauses
+with no varying case (the freedom is undefended and will be lost quietly), and dependency edges
+with no clause behind them.
 
 ### 7.4 Known gaps and compensating controls
 
@@ -275,6 +386,13 @@ issues → `/write-tests`.
 |---|---|---|---|
 | Unit tests for score aggregation | TC-SCORE-01, TC-SCORE-02, … TC-SCORE-09 | Implement score aggregation | no |
 | Property tests for the response parser | TC-PARSE-20, TC-PARSE-21, TC-PARSE-22 | — | yes — written against the design's interface |
+| Clause suite CS-STORE (real + fake) | TC-STORE-C01, TC-STORE-C02, … TC-STORE-C18 | — | yes — the contract predates the code |
+
+Clause suites are `yes` stories by nature: a contract is a specification that exists before the
+implementation, so its suite can be written first, and writing it first is what makes the contract
+binding rather than aspirational. Keep the double-conformance cases in the same story as the clause
+suite — they are the same cases with a different constructor, and splitting them produces a double
+that drifts before anyone notices.
 
 `/plan-to-issues` transcribes this table directly, so the column names and values matter:
 

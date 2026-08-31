@@ -68,7 +68,9 @@ heavy mocking isn't a failing test - it's a suite that stays green while product
   published).
 - **Fakes need their own tests.** An in-memory repository used across a hundred tests is
   production-critical infrastructure. Run the same conformance suite against the fake and
-  the real implementation - that suite is the definition of the interface.
+  the real implementation - that suite is the definition of the interface. Where the design
+  defines `CT-*` clauses, that suite already exists and is already written down: it is the
+  provider's clause suite, pointed at the fake (§5.3).
 
 ## 2. Unit tests
 
@@ -121,18 +123,107 @@ until tests pass only on the machine where they were written.
 
 ## 5. Contract tests
 
-**Scope**: the agreement between a consumer and a provider, verified from both sides.
+**Scope**: the agreement between a consumer and a provider, verified from both sides. Where the
+design defines module contracts (`CT-*` clauses with `Consumers` and `Requires` tables), this tier
+is not optional and it is not small — it is the suite that makes every *other* module safe to
+change.
 
-**Use when** modules are separately deployable or separately built, or when a double stands
-in for a real service anywhere in the suite. The consumer's expectations are recorded as a
-contract; the provider's build replays it against the real implementation. The provider
-then cannot ship an incompatible change without a red build, which is the property that
-makes independent deployment safe.
+**What it is for, stated precisely.** Unit and integration tests answer "is this module correct".
+A contract test answers a different question: **"is this module still the thing its callers were
+built against"**. Those come apart constantly. A module can be refactored into something better by
+every internal measure and still break four neighbours, because the neighbours depended on an
+ordering, a nullability, a retryability, or a write that nobody wrote down. Where the design *has*
+written them down, each one is a clause, and each clause is a test.
 
-**Design**: one contract per consumer-provider pair, covering the fields and status codes
-that consumer actually uses (not the whole API surface - over-broad contracts make providers
-unable to evolve). Version the contract and state the compatibility policy: which changes
-are additive-safe, which are breaking, and what the deprecation window is.
+**The defining property of a good contract case**: it goes red when the promise breaks, and stays
+green through every change that keeps it. A case that passes both before and after the violation is
+not a contract test regardless of what it is called. When designing one, name the plausible future
+change it is meant to catch — "someone makes this return sorted results", "someone adds a fallback
+provider", "someone makes this write synchronous" — and check the case would actually fail.
+
+### 5.1 Designing from clause kinds
+
+One or more cases per clause, technique chosen by kind. `test-design-techniques.md` §13 has the
+full recipes; the short form:
+
+| Kind | Case shape | The violation it catches |
+|---|---|---|
+| `surface` | Call as specified; assert signature, sync/async, and whether it blocks until durable | An async call quietly made sync, or the reverse |
+| `data` | Per field: type, nullability, unit, enum domain. Then the insisted-on distinctions: empty vs absent, null vs zero, not-measured vs measured-false | A collapsed distinction — invisible to type checks, fatal downstream |
+| `behaviour` | Idempotency (twice → one effect), ordering, purity, determinism, atomicity under mid-operation failure | A retry that double-writes; an order callers indexed into |
+| `error` | Per named error: provoke, assert type, assert retryability, **assert state left behind** | A failed call that left a partial write; a non-retryable error made retryable |
+| `state` | Assert what it writes, **and a negative case that no other module's rows changed** | Two modules writing the same row |
+| `perf` | The bound at the stated load, as a numeric threshold, in the named environment | An O(n²) fine at 100 and not at 10,000 |
+| `config` | Default value; behaviour change when it moves; runtime-changeability as claimed | A default changed under a caller who relied on it |
+| `observe` | Signal emitted under the exact name with the promised semantics | A renamed metric that takes an alert with it |
+| `security` | Negative assertion over the artifact: payload, log line, stored row | A credential in a log; a field that escaped |
+
+**`perf` clauses deserve a note.** They are contract clauses, not just NFR scenarios: a *loosened*
+performance bound breaks callers as thoroughly as a deleted method, and it is the change most
+likely to be waved through because nothing failed. If the plan has a perf clause with no threshold
+or no stated load, it is untestable — send it back to the design rather than inventing a number.
+
+### 5.2 The three case types unique to this tier
+
+**Provider-side clause suite.** Every clause of module P, run against the real P, owned by P, run on
+every change to P. This is the default home for clause cases. A clause suite that lives with the
+consumer proves the consumer's *belief* about P, which is exactly the thing that drifts.
+
+**Pairwise `Requires` cases.** Each `Requires` row names a consumer, a provider, and the specific
+clause relied on. That is a test with its subject pre-written: at rung 2+, against the real
+provider, assert the consumer's actual usage matches the clause. A `Requires` row with no case is
+an unverified assumption wearing a citation, and it is where integration bugs hide even in
+well-tested systems.
+
+**Non-promise cases** — the ones nobody writes, and the ones that keep refactoring legal. A clause
+saying something is *not* guaranteed is verified by making the unpromised thing vary and asserting
+every consumer still works:
+
+- Order unspecified → return results shuffled; consumers must still pass
+- Output not reproducible → return different text for identical input; consumers must not diff it
+- `None` means not-measured → return `None`; the consumer must not read it as false
+- Timing unspecified → deliver the same unit twice; the worker must be idempotent
+
+Without these, the *absence* of a promise gets depended on anyway, and the first person to exercise
+the freedom the design deliberately kept discovers it is gone.
+
+### 5.3 Doubles must pass the contract
+
+**Every test double standing in for a module with a contract runs that module's clause suite.**
+This is the rule that keeps a large mocked suite from becoming decorative, and it upgrades §1's
+"fakes need their own tests" from good practice to a mechanical check: the clause suite *is* the
+definition of the interface, so pointing it at the fake is not extra work, it is the same cases
+with a different constructor.
+
+Where the double cannot reproduce a clause, that is a finding, not a shrug — say which clause,
+and either fix the double or record in Known Gaps that everything tested against it is untested
+for that clause. The classic example: an in-memory store that commits synchronously, standing in
+for one whose contract says writes are asynchronous. Every "read back what I just wrote" bug in
+the system is invisible against that double.
+
+### 5.4 Running them: the blast-radius rule
+
+The point of the `Consumers` column is that it converts into a CI rule:
+
+> Changing module X runs X's clause suite, plus the integration cases of every module in X's
+> `Consumers` column.
+
+Write it as a command, not an intention. Contracts that are not wired into CI are documentation,
+and documentation does not go red.
+
+**When a clause suite fails, the default response is wrong.** The reflex on a red test is to update
+the test. Here that is exactly backwards: a red clause suite means either the change is breaking —
+in which case it needs a contract version bump and every named consumer re-verified — or the clause
+was wrong, which is a design conversation. State this in the plan in those words, because the reflex
+is strong and the failure it produces is silent.
+
+**Compatibility policy.** State which changes are additive-safe (clause suite stays green: new
+optional field, new operation, tightened perf bound), which are breaking (suite goes red: removed
+or renamed anything, changed type/nullability/enum domain, changed ordering or idempotency or
+atomicity, changed retryability, **loosened** perf bound, renamed observed signal), and what a
+breaking change obliges. Version the contract, keep the clause suite versioned with it, and do not
+let over-broad clauses accumulate — a contract that pins more than consumers actually use makes the
+provider unable to evolve, which is the opposite failure and just as real.
 
 ## 6. Smoke tests
 
@@ -303,6 +394,13 @@ survives.
 control and review the diff on change deliberately. Snapshot testing degrades into
 "regenerate until green" unless the plan says who reviews baseline changes and on what
 grounds - so say it.
+
+**Where contracts exist, the clause suites (§5) are the regression spine** and should be named as
+such here rather than treated as a separate concern. The distinction is worth keeping straight:
+a defect-regression test records something that *went wrong once*, and accumulates reactively; a
+clause suite records something that *must never change*, and exists from the first commit. A plan
+with a strong defect-regression policy and no clause suite is protected against every bug it has
+already had, and against none of the ones a refactor is about to introduce.
 
 ## 15. Observability tests
 

@@ -11,7 +11,7 @@ produce another stage's:
 
 | Artifact | Owner |
 |---|---|
-| `FR-*` / `NFR-*` IDs, `docs/design/detailed-design.md` | `/detailed-design-generator` |
+| `FR-*` / `NFR-*` / `CT-*` IDs, `docs/design/detailed-design.md` | `/detailed-design-generator` |
 | `TC-*` IDs, risk register, test-story sizing, `docs/design/test-plan.md` | `/create-test-plan` |
 | GitHub issues | `/plan-to-issues` — nothing else runs `gh issue create` |
 | Implementation code | `/fix-issue` |
@@ -68,5 +68,33 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 ## Code conventions
 
-<!-- Add this repo's actual code conventions here: style, branch naming, PR expectations,
-     anything Claude can't infer from reading the code. -->
+### The four seams — build them in, don't retrofit them
+
+From `/harness-bootstrap` ; rationale in
+`docs/harness-adoption.md`). These are cheap now and expensive later, so every module carries
+them from its first commit:
+
+1. **A headless driver.** The system runs end-to-end from code, returning a structured result
+   plus a per-stage trace. Nothing may require the console to run — `CT-CONSOLE-01`.
+2. **A deterministic transport for every external dependency.** Added the same moment the
+   dependency is. The system must run with no network and no real upstream: that is
+   `RecordedFixtureProvider` (`CT-PROV-10`), and it stays the only egress point
+   (`CT-PROV-15`).
+3. **Env-gated knobs for every environment-sensitive constant** — timeout, page size,
+   concurrency, retry count. Production value is the default; the knob exists so a slower test
+   box can adjust without a code change. A constant calibrated for prod that is hard-coded
+   becomes a phantom bug in every other environment.
+4. **Stage-level observability in the result.** Surface what each stage did, next to the
+   status. A bare `status=success` sitting on top of an empty result is the top silent-failure
+   trap — `IngestReport.gates` is deliberately per-gate rather than one boolean (`CT-INGEST-08`).
+
+### Co-evolution: the pair ships together, not the same commit
+
+The harness rule is "every new capability ships with its case." Here that means the
+`type:story` and its `type:test` issue are **scheduled and merged as a pair** — it does *not*
+mean `/fix-issue` writes tests. Test authorship stays separate on purpose: the agent that wrote
+the code is the wrong one to judge whether its tests would catch its own bugs. Keep both rules;
+they are compatible as long as "same change" is read as "same pair", not "same author".
+
+Every environment-sensitive constant discovered mid-implementation becomes a knob in that same
+pass, and every bug found later becomes a permanent case.

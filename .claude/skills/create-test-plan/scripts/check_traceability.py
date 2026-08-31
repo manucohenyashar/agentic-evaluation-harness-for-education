@@ -22,6 +22,11 @@ Checks
    not declared cross-cutting.
 4. Duplicate test case IDs -- the same TC ID defined in two places.
 
+Contract clauses (`CT-*`) are checked the same way but counted and reported separately, because
+they answer a different question: a requirement asks whether the design was built, a clause asks
+what breaks when a module changes. Both must be covered for the check to pass. Use --contracts-only
+while writing the contract suite, or --no-contracts for a design with no contract scheme.
+
 Exit code is 1 if any check fails, so it can be used as a gate.
 
 How association works
@@ -51,7 +56,11 @@ from pathlib import Path
 TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".rst"}
 
 DEFAULT_REQ_PATTERN = r"\b(?:FR|NFR)(?:-[A-Z0-9]+)*-\d+\b|\bR\d+\b"
-DEFAULT_TC_PATTERN = r"\b(?:TC|UAT|PERF|SEC|ADV|FUZZ|RES|OBS|CS)(?:-[A-Z0-9]+)*-\d+\b"
+DEFAULT_CONTRACT_PATTERN = r"\bCT(?:-[A-Z0-9]+)*-\d+\b"
+# The final segment allows an optional letter prefix so clause-suite cases can be named after the
+# clause they verify -- TC-STORE-C02 verifies CT-STORE-02 -- which is worth the extra character in
+# the pattern because it makes a failing test name point straight at the broken promise.
+DEFAULT_TC_PATTERN = r"\b(?:TC|UAT|PERF|SEC|ADV|FUZZ|RES|OBS|CS)(?:-[A-Z0-9]+)*-[A-Z]?\d+\b"
 
 GAP_HEADING = re.compile(r"^#{1,6}\s.*\b(known gaps?|gaps? and|not covered|out of scope|"
                          r"testability gaps?|open questions?)\b", re.I)
@@ -157,22 +166,44 @@ def main() -> int:
     ap.add_argument("--design", nargs="+", required=True, help="design doc file(s) or dir(s)")
     ap.add_argument("--plan", nargs="+", required=True, help="test plan file(s) or dir(s)")
     ap.add_argument("--req-pattern", default=DEFAULT_REQ_PATTERN)
+    ap.add_argument("--contract-pattern", default=DEFAULT_CONTRACT_PATTERN,
+                    help="pattern for contract clause IDs (default matches CT-MODULE-NN)")
     ap.add_argument("--tc-pattern", default=DEFAULT_TC_PATTERN)
+    ap.add_argument("--no-contracts", action="store_true",
+                    help="ignore contract clauses entirely (design has no contract scheme)")
+    ap.add_argument("--contracts-only", action="store_true",
+                    help="check contract clause coverage only, ignoring FR/NFR requirements")
     ap.add_argument("--quiet", action="store_true", help="only print failures")
     args = ap.parse_args()
 
-    req_re = re.compile(args.req_pattern)
+    if args.no_contracts and args.contracts_only:
+        sys.exit("error: --no-contracts and --contracts-only are mutually exclusive")
+
+    ct_re = re.compile(args.contract_pattern)
+    # One scan over both ID families keeps the association logic identical for each; they are
+    # split apart at report time so the two coverage questions stay distinguishable.
+    parts = []
+    if not args.contracts_only:
+        parts.append(args.req_pattern)
+    if not args.no_contracts:
+        parts.append(args.contract_pattern)
+    req_re = re.compile("|".join(parts))
     tc_re = re.compile(args.tc_pattern)
+
+    is_clause = (lambda i: False) if args.no_contracts else (lambda i: bool(ct_re.fullmatch(i)))
 
     design_files = collect_files(args.design, "design")
     plan_files = collect_files(args.plan, "plan")
 
     requirements = scan_design(design_files, req_re)
     if not requirements:
-        print("error: no requirement IDs found in the design documents.")
-        print(f"       pattern was: {args.req_pattern}")
-        print("       if the design uses a different ID scheme, pass --req-pattern,")
-        print("       or assign IDs in the plan's requirements inventory and re-run.")
+        kind = "contract clause" if args.contracts_only else "requirement"
+        print(f"error: no {kind} IDs found in the design documents.")
+        print(f"       pattern was: {req_re.pattern}")
+        print("       if the design uses a different ID scheme, pass --req-pattern or")
+        print("       --contract-pattern, or assign IDs in the plan's inventory and re-run.")
+        if not args.contracts_only and not args.no_contracts:
+            print("       if the design defines no module contracts, pass --no-contracts.")
         return 1
 
     covered, plan_reqs, tc_reqs, tc_defs, gap_reqs = scan_plan(plan_files, req_re, tc_re)
@@ -182,33 +213,55 @@ def main() -> int:
     orphans = sorted(tc for tc, reqs in tc_reqs.items() if not reqs)
     duplicates = sorted(tc for tc, locs in tc_defs.items() if len(locs) > 1)
 
-    total = len(requirements)
-    traced = len(covered & set(requirements))
-    pct = 100.0 * traced / total if total else 0.0
+    def split(ids):
+        """(requirements, contract clauses) -- reported separately, gated together."""
+        ids = list(ids)
+        return [i for i in ids if not is_clause(i)], [i for i in ids if is_clause(i)]
+
+    req_ids, clause_ids = split(requirements)
+    traced_reqs, traced_clauses = split(covered & set(requirements))
+
+    def line(label, traced, total):
+        pct = 100.0 * len(traced) / len(total) if total else 0.0
+        return f"{label:<12}: {len(traced)}/{len(total)} traced ({pct:.1f}%)"
 
     if not args.quiet:
         print(f"design docs : {len(design_files)}   plan docs: {len(plan_files)}")
-        print(f"requirements: {total}")
         print(f"test cases  : {len(tc_reqs)}")
-        print(f"traced      : {traced}/{total} ({pct:.1f}%)"
-              + (f", {len(gap_reqs & set(requirements))} in known-gaps" if gap_reqs else ""))
+        if req_ids:
+            print(line("requirements", traced_reqs, req_ids))
+        if clause_ids:
+            print(line("clauses", traced_clauses, clause_ids))
+        if gap_reqs:
+            print(f"known-gaps  : {len(gap_reqs & set(requirements))}")
         print()
 
     ok = True
 
-    if uncovered:
+    unc_reqs, unc_clauses = split(uncovered)
+
+    if unc_reqs:
         ok = False
-        print(f"FAIL  {len(uncovered)} requirement(s) with no test case and no known-gaps entry:")
-        for r in uncovered:
+        print(f"FAIL  {len(unc_reqs)} requirement(s) with no test case and no known-gaps entry:")
+        for r in unc_reqs:
             print(f"        {r:<20} (design {requirements[r]})")
+        print()
+
+    if unc_clauses:
+        ok = False
+        print(f"FAIL  {len(unc_clauses)} contract clause(s) with no test case and no known-gaps entry:")
+        for r in unc_clauses:
+            print(f"        {r:<20} (design {requirements[r]})")
+        print("      (a clause with no case is a promise nobody is holding the module to --")
+        print("       add a case that goes red when the clause is violated, or record the gap)")
         print()
 
     if unknown:
         ok = False
-        print(f"FAIL  {len(unknown)} requirement ID(s) referenced by the plan but absent from the design:")
+        print(f"FAIL  {len(unknown)} requirement/clause ID(s) referenced by the plan but absent from the design:")
         for r in unknown:
             print(f"        {r}")
-        print("      (typo, or a requirement the plan introduced -- reconcile with the design)")
+        print("      (typo, or an ID the plan introduced -- reconcile with the design)")
         print()
 
     if orphans:
@@ -228,7 +281,12 @@ def main() -> int:
         print()
 
     if ok:
-        print("PASS  every requirement traces to a test case or a known-gaps entry;"
+        what = "requirement"
+        if clause_ids and req_ids:
+            what = "requirement and contract clause"
+        elif clause_ids:
+            what = "contract clause"
+        print(f"PASS  every {what} traces to a test case or a known-gaps entry;"
               " no orphan or duplicate test IDs.")
         return 0
 

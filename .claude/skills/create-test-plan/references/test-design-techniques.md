@@ -17,6 +17,7 @@ Contents:
 10. Choosing an oracle
 11. Coverage criteria and what they're worth
 12. Sizing: how many cases is enough
+13. Deriving cases from a contract clause
 
 ---
 
@@ -221,3 +222,116 @@ the same failure mode as one already written. Practical floor per requirement:
 
 If a requirement needs more than about a dozen cases, it's probably several requirements
 wearing a trench coat - split it in the traceability matrix and say so.
+
+## 13. Deriving cases from a contract clause
+
+Techniques 1-12 get you from a *requirement* to cases: what should this do. A contract clause asks
+something narrower and more durable - **what may a caller rely on** - and it is derived differently.
+
+**The controlling question, applied to every clause.** Not "does this hold" but:
+
+> What is the plausible change that breaks this clause, and would my case go red when someone
+> makes it?
+
+Name the change explicitly while designing the case. "Someone makes this return sorted results."
+"Someone adds a retry to this error." "Someone makes this write land before the call returns."
+If you cannot name one, the clause may be describing an internal detail that does not belong in a
+contract - which is a finding to send back to the design. If you can name one but your case would
+survive it, the case is testing something adjacent to the clause and needs rewriting.
+
+### Per-kind recipes
+
+**`surface`** - call it exactly as specified. Assert arity, parameter and return types, and the
+sync/async character. The high-value assertion is the one a signature cannot express: *when does the
+effect become observable*. A call that returns before its write is durable, and one that returns
+after, have identical signatures and completely different correct usage.
+
+**`data`** - one case per field for type, nullability, unit, and enum domain, then a case per
+distinction the clause insists on. Those distinctions are where the money is:
+
+| Distinction | The bug when collapsed |
+|---|---|
+| empty vs absent | A student who wrote nothing scored the same as a page that failed to parse |
+| null vs zero | "No data" rendered as a real measurement of zero |
+| not-measured vs measured-false | An unrun check read as a passed check |
+| optional-and-omitted vs explicitly-null | A default silently applied where the caller meant "none" |
+
+Each is a single equality that looks harmless and is a semantic change. Write the case as: produce
+both states, assert the consumer distinguishes them.
+
+**`behaviour`** - four sub-shapes, each a standard technique pointed at the clause:
+
+- *Idempotency*: invoke twice with identical input, assert exactly one effect. Then invoke twice
+  concurrently if the clause claims safety under that.
+- *Ordering*: if promised, assert the order. If **not** promised, assert the caller tolerates any
+  order - see non-promises below.
+- *Purity / determinism*: same input twice, same output, and assert no I/O occurred (a spy on the
+  store or the clock, asserting zero calls, is the cheap version).
+- *Atomicity*: inject a failure mid-operation and assert all-or-nothing. §4's state-transition
+  technique gives the injection points; the crash-between-two-writes case is the one that matters.
+
+**`error`** - one case per named error, with four assertions, of which the last two are the ones
+plans skip: the error *type* (not just that something raised), the message or code where it is
+contract, the **retryability** the clause claims, and the **state left behind**. "The failed call
+wrote nothing" is a real assertion with a real query behind it, and its absence is how partial-write
+bugs survive a full error-path suite.
+
+**`state`** - assert the writes the clause promises, then write the negative case: after the
+operation, **no other module's rows changed**. Write-ownership violations produce no error and no
+failing test anywhere else in the suite; a snapshot-and-diff of the neighbouring tables is the only
+thing that catches them.
+
+**`perf`** - the numeric bound at the stated load, in the named environment, as a threshold
+assertion. Two rules: measure percentiles rather than averages, and treat a *loosened* bound as a
+failure even when the absolute number still looks acceptable, because the clause is what callers
+budgeted against. A clause with no load figure is untestable as written - flag it rather than
+choosing one.
+
+**`config`** - assert the documented default, then assert the externally-visible behaviour actually
+changes when the value moves (a config key nothing observes is not a contract clause). If the clause
+says runtime-changeable, test that; if it says start-time only, test that a runtime change is
+refused rather than half-applied.
+
+**`observe`** - trigger the condition, assert the signal is emitted **under the exact name** with
+the promised fields and semantics. Name assertions feel pedantic and are the entire point: renaming
+a metric silently disables every dashboard and alert built on it, and no other test in the suite has
+an opinion about it.
+
+**`security`** - always a negative assertion, and always over an *artifact* rather than an
+intention. Capture the assembled payload, the emitted log line, the persisted row, the outbound
+request - then assert the forbidden thing is absent. Asserting over the artifact is what makes the
+case survive a refactor of the code that produces it.
+
+### Non-promise clauses
+
+A clause stating something is deliberately **not** guaranteed is tested by proving no consumer
+depends on it. Make the unpromised thing vary, and assert every consumer in the clause's
+`Consumers` column still behaves correctly:
+
+| Non-promise | How to make it vary |
+|---|---|
+| "iteration order is unspecified" | Return results shuffled (seeded, so failures reproduce) |
+| "output is not reproducible" | Return different valid text for identical input |
+| "`None` means not measured" | Return `None` where a value was permitted |
+| "delivery timing is not guaranteed" | Deliver the same unit twice, and out of order |
+| "the token is opaque" | Change its internal encoding entirely |
+
+These are the cases that keep a refactor legal, and they are the ones a plan omits by reflex
+because nothing is obviously being verified. What is being verified is a *freedom* - and freedoms
+are lost silently, one consumer at a time, until the day someone tries to exercise one.
+
+### Sizing a clause
+
+Smaller than a requirement, and deliberately so. Per clause:
+
+- 1 positive case asserting the promise, with an exact oracle
+- 1 case per distinction the clause insists on (`data`), per named error (`error`), or per
+  sub-shape (`behaviour`)
+- 1 negative case where the clause is a prohibition or a non-promise
+- The same cases run against every double standing in for the module
+- For clauses the design flags as safety properties: plus a case at a second isolation rung, and
+  an adversarial case that tries to construct a change breaking the clause while every `FR-*` case
+  stays green
+
+A clause needing more than a handful of cases is usually two clauses - split it and tell the design
+author, the same way an over-large requirement gets split.

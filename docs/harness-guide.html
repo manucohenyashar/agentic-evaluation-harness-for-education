@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* minimal reset — the artifact host supplies this; a standalone file must carry it */
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0}
+  h1,h2,h3,h4,p,figure,blockquote,dl,dd{margin:0}
+  ul[class],ol[class]{list-style:none;margin:0;padding:0}
+  img,picture,svg,video{max-width:100%;display:block}
+  table{border-collapse:collapse}
+  button,input,select,textarea{font:inherit;color:inherit}
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;
+      transition-duration:.01ms!important;scroll-behavior:auto!important}
+  }
+</style>
+<title>Adopting the a360 Harness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap">
+
+<style>
+  :root{
+    --paper:#F2F5F6; --surface:#FFFFFF; --surface-2:#FAFBFC;
+    --ink:#14232B; --ink-2:#4E626D; --ink-3:#7A8D97;
+    --rule:#D9E2E6; --rule-strong:#B9C8CE;
+    --accent:#0C6F76; --accent-ink:#095055; --accent-soft:#E2F0F0;
+    --take:#3C6E43; --take-soft:#E6EFE4;
+    --skip:#7C878C; --skip-soft:#EDF0F1;
+    --warn:#A45E1B; --warn-soft:#F7EDE1;
+    --shadow:0 1px 2px rgba(20,35,43,.06),0 8px 24px -12px rgba(20,35,43,.16);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#0D161B; --surface:#141F26; --surface-2:#18252C;
+      --ink:#E8EFF2; --ink-2:#A2B3BC; --ink-3:#7E9099;
+      --rule:#24343C; --rule-strong:#33474F;
+      --accent:#4FB8BE; --accent-ink:#8AD5D9; --accent-soft:#123336;
+      --take:#7FB183; --take-soft:#172A1C;
+      --skip:#8B979C; --skip-soft:#1B262B;
+      --warn:#D79A5C; --warn-soft:#2C2114;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0D161B; --surface:#141F26; --surface-2:#18252C;
+    --ink:#E8EFF2; --ink-2:#A2B3BC; --ink-3:#7E9099;
+    --rule:#24343C; --rule-strong:#33474F;
+    --accent:#4FB8BE; --accent-ink:#8AD5D9; --accent-soft:#123336;
+    --take:#7FB183; --take-soft:#172A1C;
+    --skip:#8B979C; --skip-soft:#1B262B;
+    --warn:#D79A5C; --warn-soft:#2C2114;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.7);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Serif",Georgia,"Times New Roman",serif;
+    font-size:17px; line-height:1.62;
+    -webkit-font-smoothing:antialiased;
+    padding:0 20px 96px;
+  }
+  .wrap{max-width:820px;margin:0 auto}
+  .prose{max-width:68ch}
+
+  h1,h2,h3,.label,.rung-name,th,.btn{font-family:"IBM Plex Sans",system-ui,-apple-system,Segoe UI,sans-serif}
+  code,kbd,.mono{font-family:"IBM Plex Mono",ui-monospace,Consolas,monospace}
+
+  h1{font-size:clamp(2rem,4.6vw,2.9rem);line-height:1.1;font-weight:700;letter-spacing:-.02em;text-wrap:balance;margin:0}
+  h2{font-size:1.42rem;font-weight:600;letter-spacing:-.01em;line-height:1.25;text-wrap:balance;margin:0}
+  h3{font-size:1.02rem;font-weight:600;letter-spacing:-.005em;margin:0}
+  p{margin:0}
+  strong{font-weight:600}
+  a{color:var(--accent-ink);text-decoration-thickness:1px;text-underline-offset:2px}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+
+  .label{
+    font-size:.688rem;font-weight:600;letter-spacing:.11em;text-transform:uppercase;
+    color:var(--ink-3);
+  }
+  code{
+    font-size:.855em;background:var(--surface-2);border:1px solid var(--rule);
+    padding:.09em .38em;border-radius:4px;white-space:nowrap;
+  }
+
+  /* ---------- masthead ---------- */
+  header{padding:64px 0 0}
+  .eyebrow{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+  .eyebrow .bar{height:2px;width:34px;background:var(--accent);border-radius:2px}
+  .sub{margin-top:18px;font-size:1.14rem;line-height:1.55;color:var(--ink-2);max-width:60ch}
+  .meta{
+    margin-top:26px;padding-top:16px;border-top:1px solid var(--rule);
+    display:flex;flex-wrap:wrap;gap:8px 26px;
+  }
+  .meta div{font-size:.8rem;color:var(--ink-3);font-family:"IBM Plex Sans",sans-serif}
+  .meta b{color:var(--ink-2);font-weight:500}
+
+  /* ---------- sections ---------- */
+  section{margin-top:56px}
+  .sec-head{display:flex;flex-direction:column;gap:9px;margin-bottom:22px}
+  .stack{display:flex;flex-direction:column;gap:16px}
+
+  /* ---------- answer cards ---------- */
+  .answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:14px}
+  .ans{
+    background:var(--surface);border:1px solid var(--rule);border-radius:9px;
+    padding:18px 19px;display:flex;flex-direction:column;gap:9px;box-shadow:var(--shadow);
+  }
+  .ans .q{font-family:"IBM Plex Sans",sans-serif;font-size:.9rem;font-weight:600;color:var(--ink-2);line-height:1.35}
+  .ans .a{font-size:.95rem;line-height:1.5;color:var(--ink)}
+  .verdict{
+    display:inline-flex;align-items:center;align-self:flex-start;gap:6px;
+    font-family:"IBM Plex Sans",sans-serif;font-size:.72rem;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;
+    padding:3px 9px;border-radius:99px;border:1px solid;
+  }
+  .v-yes{color:var(--take);background:var(--take-soft);border-color:color-mix(in srgb,var(--take) 32%,transparent)}
+  .v-no{color:var(--skip);background:var(--skip-soft);border-color:var(--rule-strong)}
+  .v-note{color:var(--warn);background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 32%,transparent)}
+
+  /* ---------- callout ---------- */
+  .callout{
+    background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
+    border-radius:9px;padding:20px 22px;display:flex;flex-direction:column;gap:10px;
+  }
+  .callout .label{color:var(--accent-ink)}
+  .callout p{font-size:1.02rem}
+
+  /* ---------- tables ---------- */
+  .tw{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--surface);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:520px;font-size:.9rem}
+  th{
+    text-align:left;font-size:.7rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-3);padding:12px 16px;border-bottom:1px solid var(--rule-strong);
+    background:var(--surface-2);white-space:nowrap;
+  }
+  td{padding:12px 16px;border-bottom:1px solid var(--rule);vertical-align:top;line-height:1.5;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td:first-child{color:var(--ink);font-weight:500}
+  td.tight{white-space:nowrap}
+
+  /* ---------- ladder ---------- */
+  .ladder{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .rung{
+    display:grid;grid-template-columns:52px 1fr;gap:16px;align-items:start;
+    background:var(--surface);border:1px solid var(--rule);border-radius:8px;
+    padding:14px 16px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  }
+  .rung::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--tone)}
+  .rung .lv{
+    font-family:"IBM Plex Mono",monospace;font-size:.78rem;font-weight:600;
+    color:var(--tone);letter-spacing:.02em;padding-top:2px;
+  }
+  .rung-name{font-size:.95rem;font-weight:600;color:var(--ink);margin-bottom:4px}
+  .rung-body{font-size:.88rem;line-height:1.5;color:var(--ink-2)}
+  .rung-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .tag{
+    font-family:"IBM Plex Mono",monospace;font-size:.7rem;color:var(--ink-3);
+    border:1px solid var(--rule);border-radius:4px;padding:2px 7px;background:var(--surface-2);
+  }
+  .axis{
+    display:flex;justify-content:space-between;gap:12px;margin-top:12px;
+    font-family:"IBM Plex Sans",sans-serif;font-size:.74rem;color:var(--ink-3);
+  }
+
+  /* ---------- steps ---------- */
+  .steps{display:flex;flex-direction:column;gap:0}
+  .step{
+    display:grid;grid-template-columns:30px 1fr;gap:18px;
+    padding:20px 0;border-bottom:1px solid var(--rule);
+  }
+  .step:last-child{border-bottom:0}
+  .step-n{
+    font-family:"IBM Plex Mono",monospace;font-size:.8rem;font-weight:600;color:var(--accent);
+    border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);border-radius:99px;
+    width:30px;height:30px;display:grid;place-items:center;background:var(--accent-soft);
+  }
+  .step-body{display:flex;flex-direction:column;gap:9px}
+  .step-body p{font-size:.95rem;color:var(--ink-2)}
+  .done .step-n{color:var(--take);background:var(--take-soft);border-color:color-mix(in srgb,var(--take) 34%,transparent)}
+
+  pre{
+    margin:0;background:var(--surface-2);border:1px solid var(--rule);border-radius:7px;
+    padding:13px 15px;overflow-x:auto;font-size:.83rem;line-height:1.65;color:var(--ink);
+  }
+  pre .c{color:var(--ink-3)}
+
+  ul{margin:0;padding-left:1.15em;display:flex;flex-direction:column;gap:7px}
+  li{padding-left:.15em}
+  li::marker{color:var(--accent)}
+
+  .rule{height:1px;background:var(--rule);margin:56px 0 0}
+
+  .closer{
+    margin-top:56px;background:var(--surface);border:1px solid var(--rule-strong);
+    border-radius:10px;padding:28px 30px;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow);
+  }
+  .closer .big{
+    font-family:"IBM Plex Serif",Georgia,serif;font-style:italic;
+    font-size:1.28rem;line-height:1.45;color:var(--ink);text-wrap:balance;
+  }
+
+  footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);
+    font-family:"IBM Plex Sans",sans-serif;font-size:.78rem;color:var(--ink-3);line-height:1.6}
+
+  @media (max-width:560px){
+    body{font-size:16px;padding:0 16px 72px}
+    header{padding-top:44px}
+    .rung{grid-template-columns:1fr;gap:6px}
+    .rung .lv{padding-top:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><span class="bar"></span><span class="label">Agentic Evaluation Harness for Education</span></div>
+    <h1>Adopting the a360 Harness</h1>
+    <p class="sub">What the harness actually is, which two-thirds of it you can ignore, and the order to do things in on a Windows machine.</p>
+    <div class="meta">
+      <div><b>Source</b> a360-stack-kit &middot; commit ccfeae4</div>
+      <div><b>Method</b> harness-bootstrap (green-field)</div>
+      <div><b>Full detail</b> docs/harness-adoption.md</div>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head"><span class="label">Start here</span><h2>The short answers</h2></div>
+    <div class="answers">
+      <div class="ans">
+        <span class="verdict v-yes">Yes</span>
+        <div class="q">Will it run on my Windows machine?</div>
+        <div class="a">The parts you need are Markdown and Python. Everything platform-specific &mdash; Azure VMs, Bastion tunnels, Docker substrate &mdash; is in the two-thirds you skip. You already have Python, uv, pytest, Git and gh installed.</div>
+      </div>
+      <div class="ans">
+        <span class="verdict v-no">No Docker needed</span>
+        <div class="q">Do I need Docker or WSL running?</div>
+        <div class="a">No. The kit's containers are SQL Server, Kafka and Redis. This system is deliberately four SQLite files with no server process at all (ADR&#8209;6), so there is nothing to containerize.</div>
+      </div>
+      <div class="ans">
+        <span class="verdict v-yes">Bootstrap</span>
+        <div class="q">Which of the two playbooks applies?</div>
+        <div class="a">The kit has a <em>retrofit</em> method and a <em>bootstrap</em> method. This project has no application code yet &mdash; only design documents &mdash; so bootstrap is correct, and it is the cheaper of the two.</div>
+      </div>
+      <div class="ans">
+        <span class="verdict v-note">Mostly already done</span>
+        <div class="q">How much work is this?</div>
+        <div class="a">Less than it looks. All four seams the harness says to design in on day one are already specified in your detailed design. The real remaining cost is the fixture corpus.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="prose">
+    <div class="sec-head"><span class="label">The idea</span><h2>What a harness is, in one sentence</h2></div>
+    <div class="stack">
+      <div class="callout">
+        <span class="label">Definition</span>
+        <p>A harness is a program that runs your whole system end to end on inputs you control, and scores whether the answer was right.</p>
+      </div>
+      <p>That is the entire idea. It is not a framework and not something you install. Three things follow from it, and they are what make it worth having:</p>
+      <ul>
+        <li><strong>Whole system, not one function.</strong> A unit test proves one piece works. A harness proves the pieces <em>combined</em> produce the right answer. Your system has nineteen modules handing work to each other; every one can be individually correct and the final grade still wrong.</li>
+        <li><strong>Inputs you control.</strong> Real student PDFs vary. The harness runs a fixed set where you already know the right grade, so a difference in output means the code changed &mdash; not the data.</li>
+        <li><strong>It scores the outcome.</strong> Not &ldquo;did it finish without crashing&rdquo; but &ldquo;was the grade right, and did it avoid the specific wrong answers we care about.&rdquo;</li>
+      </ul>
+      <p>Advisor360 built this because ViDA merged 450+ agent-written pull requests in under a month with no regressions. The harness is what made that safe. It is not overhead that slows you down; it is what lets you change code fast without fear.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="label">Why the docs are hard</span><h2>Three different things, never separated</h2></div>
+    <div class="stack">
+      <p class="prose">The Confluence pages describe three things at once and rarely say which one you are reading. Two of them solve problems you do not have. That is the whole reason the documentation feels impenetrable.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>The thing</th><th>What it solves</th><th class="tight">Applies here?</th></tr></thead>
+          <tbody>
+            <tr><td>The harness pattern<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">ladder, seams, scoring</span></td><td>Testing a multi-stage system end to end</td><td class="tight"><span class="verdict v-yes">Yes &mdash; this is it</span></td></tr>
+            <tr><td>The stack workspace<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">symlinks, setup.sh, REGISTRY.md, tunnel ports</span></td><td>Working across 7&ndash;11 separate git repos at once</td><td class="tight"><span class="verdict v-no">No &mdash; one repo</span></td></tr>
+            <tr><td>The Azure VM lane<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">create-vm, Bastion, PIM, tunnels</span></td><td>Heavy .NET and Kafka stacks that will not fit on a laptop</td><td class="tight"><span class="verdict v-no">No &mdash; fits a laptop</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="prose">The kit's own README says the quiet part out loud: <em>&ldquo;There is no harness framework to clone, and that is deliberate.&rdquo;</em> What is shared is a method and a handful of scripts for other people's problems.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="label">All 27 files</span><h2>What we take, what we skip</h2></div>
+    <div class="stack">
+      <p class="prose">The kit is 1,415 lines across 27 files. Three are worth taking, three more contain a <em>policy</em> worth lifting without its tooling, and the rest solve problems this project does not have.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>File</th><th class="tight">Verdict</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>harness-bootstrap<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">92 lines</span></td><td class="tight"><span class="verdict v-yes">Take</span></td><td>The green-field method. Exactly our situation. Copied in.</td></tr>
+            <tr><td>p1-bug-sweep<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">190 lines</span></td><td class="tight"><span class="verdict v-note">Adapt</span></td><td>Not a .NET tool &mdash; a <strong>Workflow script this project can run</strong>. Five bug-hunting methodologies in parallel, then a two-lens panel that tries to <em>refute</em> each finding. Only the C# wording needs retuning.</td></tr>
+            <tr><td>metamorphic.skeleton.py<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">57 lines</span></td><td class="tight"><span class="verdict v-yes">Take</span></td><td>The one directly reusable code artifact. Copied in as reference.</td></tr>
+            <tr><td>test-quality<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">132 lines</span></td><td class="tight"><span class="verdict v-note">One idea</span></td><td>Adopting the file would create a second owner for test authorship, which your conventions forbid. But it contains one thing you are missing: the <strong>mutation-testing bar</strong>.</td></tr>
+            <tr><td>ci-coverage<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">114 lines</span></td><td class="tight"><span class="verdict v-note">Policy only</span></td><td>The .NET code is useless here; the staging policy is not &mdash; enforce 90% on <em>changed</em> lines, report-only overall, ratchet up. Works in any language, and avoids failing every build on day one.</td></tr>
+            <tr><td>stryker-rebaseline<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">34 lines</span></td><td class="tight"><span class="verdict v-note">Practice only</span></td><td>A committed mutation baseline plus a weekly scan for new survivors. Ports to Python via <code>mutmut</code>.</td></tr>
+            <tr><td>The Azure VM lane<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">8 files, 215 lines</span></td><td class="tight"><span class="verdict v-no">Skip</span></td><td>Resource groups, PIM role activation, Bastion tunnels, headless VM commands. No VM lane here.</td></tr>
+            <tr><td>substrate compose<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">95 lines</span></td><td class="tight"><span class="verdict v-no">Skip</span></td><td>SQL Server, Kafka, Redis, Azurite, WireMock &mdash; none of which this system has.</td></tr>
+            <tr><td>dotnet-retrofit, p2, run-svc, build-rules, schemathesis, conventions, registry<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">9 files, 486 lines</span></td><td class="tight"><span class="verdict v-no">Skip</span></td><td>.NET service mechanics, MSBuild quirks, OpenAPI fuzzing, Bitbucket auth, the multi-repo registry.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="label">The mental model</span><h2>The ladder</h2></div>
+    <div class="stack">
+      <p class="prose">Test lanes, from cheap and fast to slow and real. Each rung catches a class of bug the rung below cannot. <strong>Build the bottom one first</strong> &mdash; a green top rung sitting on an unproven bottom tells you almost nothing.</p>
+      <div class="ladder">
+        <div class="rung" style="--tone:var(--take)">
+          <div class="lv">L0</div>
+          <div>
+            <div class="rung-name">Offline &mdash; pure logic, no model</div>
+            <div class="rung-body">Functions with no input or output of any kind: band aggregation, the confidence inversion, grade policy, span verification, prompt assembly. Your design already declares all six of these <em>pure</em>, which is why this rung is unusually large here &mdash; most of the risky logic needs no model at all.</div>
+            <div class="rung-tags"><span class="tag">seconds</span><span class="tag">every commit</span><span class="tag">blocks merge</span></div>
+          </div>
+        </div>
+        <div class="rung" style="--tone:var(--take)">
+          <div class="lv">L1</div>
+          <div>
+            <div class="rung-name">Component &amp; contract</div>
+            <div class="rung-body">Each module checked against its <code>CT-*</code> contract clauses, plus the same cases run against every test double. Your test plan already generates these.</div>
+            <div class="rung-tags"><span class="tag">seconds</span><span class="tag">every commit</span></div>
+          </div>
+        </div>
+        <div class="rung" style="--tone:var(--accent)">
+          <div class="lv">L2</div>
+          <div>
+            <div class="rung-name">Integrated local bring-up</div>
+            <div class="rung-body">The whole pipeline on one synthetic cohort, with every model call served from recorded fixtures. No network, fully deterministic.</div>
+            <div class="rung-tags"><span class="tag">~1 min</span><span class="tag">every PR</span></div>
+          </div>
+        </div>
+        <div class="rung" style="--tone:var(--warn)">
+          <div class="lv">L3</div>
+          <div>
+            <div class="rung-name">End to end on the synthetic corpus</div>
+            <div class="rung-body">Ingest &rarr; extract &rarr; integrity &rarr; judge &rarr; aggregate &rarr; grade, against a real local model, scored against grades you already know.</div>
+            <div class="rung-tags"><span class="tag">~10&ndash;30 min</span><span class="tag">on behaviour change</span></div>
+          </div>
+        </div>
+        <div class="rung" style="--tone:var(--warn)">
+          <div class="lv">L4</div>
+          <div>
+            <div class="rung-name">Nightly conformance</div>
+            <div class="rung-body">The frozen fixture set through both backends, comparing where they diverge. <strong>You have already designed this as a module</strong> &mdash; it is <code>M&#8209;CONFORM</code>.</div>
+            <div class="rung-tags"><span class="tag">~1 hr</span><span class="tag">nightly</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="axis"><span>&larr; cheap &middot; fast &middot; deterministic</span><span>expensive &middot; slow &middot; real &rarr;</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="label">The good news</span><h2>Your design is already harness-shaped</h2></div>
+    <div class="stack">
+      <p class="prose">The bootstrap playbook says to design four seams in on day one, because they are painful to add later. <strong>All four are already in your detailed design</strong> &mdash; written before anyone read the harness docs. Adoption is mostly naming what exists.</p>
+      <div class="tw">
+        <table>
+          <thead><tr><th>Seam the harness asks for</th><th>Already in your design as</th><th class="tight">Clause</th></tr></thead>
+          <tbody>
+            <tr><td>A headless driver</td><td>The orchestrator's <code>create_run</code> / <code>start</code> / <code>progress</code>. The console is explicitly optional &mdash; killing it does not affect a run.</td><td class="tight mono">CT-ORCH-01</td></tr>
+            <tr><td>A deterministic transport for every dependency</td><td>The recorded-fixture provider: keyed by a hash of the assembled request, raises rather than touching the network.</td><td class="tight mono">CT-PROV-10</td></tr>
+            <tr><td>Env-gated knobs for every environment-sensitive constant</td><td>Every module has a Configuration section; the run config freezes about twenty named knobs into one immutable value.</td><td class="tight mono">CT-CONF-11</td></tr>
+            <tr><td>Stage-level observability in the result</td><td>Run metrics, per-gate ingest outcomes (deliberately not collapsed to a boolean), progress reports, integrity signals.</td><td class="tight mono">CT-INGEST-08</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="prose">The same holds for the harder ideas. <strong>Score the outcome, not the route</strong> is your paired benign-twin fixtures. <strong>Metamorphic relations</strong> are your order-permutation and replication requirements. <strong>Flake-aware gating</strong> is already implied by the clause that states outright that verdicts are not reproducible.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head"><span class="label">Honest accounting</span><h2>What is genuinely missing</h2></div>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Piece</th><th>What it is</th><th class="tight">Cost</th></tr></thead>
+        <tbody>
+          <tr><td>The runner</td><td>A <code>harness run</code> / <code>harness batch</code> command that drives the orchestrator on a fixture and prints a per-stage trace.</td><td class="tight">Small</td></tr>
+          <tr><td>The fixture corpus</td><td>Synthetic assessments, rubrics and submissions with known correct grades &mdash; including real scanned handwriting, legible through marginal.</td><td class="tight" style="color:var(--warn)">Expensive</td></tr>
+          <tr><td>Lane wiring</td><td>pytest markers so the cheap lanes run on every commit and the expensive ones only on request.</td><td class="tight">Small</td></tr>
+          <tr><td>The verification gate</td><td><code>TEST_CMD</code> is currently empty, which disables the stop-hook check. It gets set once a suite exists.</td><td class="tight">One line</td></tr>
+          <tr><td>A mutation bar</td><td>Your test plan asks whether a case <em>names</em> the bug it would catch. It never asks anyone to prove it. See below.</td><td class="tight">Small</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose" style="margin-top:16px">The corpus is the one to plan around. The Confluence page is blunt about it: <em>&ldquo;the domain corpus is the expensive part of the whole build, because there is no generic synthetic-data generator to reuse.&rdquo;</em> Start with three submissions, not fifty &mdash; you will build the wrong fifty.</p>
+
+    <div class="callout" style="margin-top:22px">
+      <span class="label">The gap worth closing</span>
+      <p style="font-size:.98rem;line-height:1.55">The kit sets a bar your pipeline does not: <strong>deliberately introduce a bug anywhere in the core behaviour, and something must go red.</strong> Coverage cannot tell you this; mutation testing can.</p>
+      <p style="font-size:.95rem;color:var(--ink-2);line-height:1.55">It matters unusually much here, because so much of your design is <em>negative</em> &mdash; no numeral in a judge prompt, no path from empty evidence to a low band, no even panel. A test that fails to catch one of those violations looks identical to one that does. <code>mutmut</code> is the Python equivalent; scope it to the pure-function modules first, where it is cheapest and means the most.</p>
+    </div>
+  </section>
+
+  <div class="rule"></div>
+
+  <section>
+    <div class="sec-head"><span class="label">Do this</span><h2>Step by step</h2></div>
+    <div class="steps">
+
+      <div class="step done">
+        <div class="step-n">&#10003;</div>
+        <div class="step-body">
+          <h3>Already done for you</h3>
+          <p>Three files are in place. Nothing else from the kit was worth copying.</p>
+<pre>Code/.claude/skills/harness-bootstrap/SKILL.md   <span class="c"># the method</span>
+Code/harness/reference/metamorphic.skeleton.py   <span class="c"># the one reusable pattern</span>
+Code/docs/harness-adoption.md                    <span class="c"># the full write-up</span></pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">1</div>
+        <div class="step-body">
+          <h3>Read one page, not four</h3>
+          <p>Open <code>.claude/skills/harness-bootstrap/SKILL.md</code>. It is ninety lines and it is the entire method. Skip every Azure and stack-workspace page &mdash; they are for other teams' problems.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">2</div>
+        <div class="step-body">
+          <h3>Finish the design pipeline first</h3>
+          <p>The harness needs something to drive. Your existing pipeline produces it, and the test plan now generates the contract suites that <em>are</em> the L1 rung.</p>
+<pre>cd Code
+claude
+<span class="c"># then, in order:</span>
+/create-test-plan docs/design/
+/plan-to-issues docs/design/</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">3</div>
+        <div class="step-body">
+          <h3>Build the bottom rung with the first module</h3>
+          <p>Start where your dependency graph says to: the run config or the persistence substrate. When you implement the module, implement its L0 tests <em>in the same change</em>. That is the whole discipline.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">4</div>
+        <div class="step-body">
+          <h3>Turn the verification gate on</h3>
+          <p>Once the first tests exist, set <code>TEST_CMD</code> in <code>.claude/settings.json</code> so no session can end claiming success without a green suite.</p>
+<pre>{ "env": { "TEST_CMD": "uv run pytest -m \"not slow\"" } }</pre>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">5</div>
+        <div class="step-body">
+          <h3>Add the runner when there are two stages to connect</h3>
+          <p>Once the orchestrator and one worker exist, add <code>harness/cli.py</code> with <code>run</code> and <code>batch</code>. Not before &mdash; a runner with nothing to run is scaffolding.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">6</div>
+        <div class="step-body">
+          <h3>Grow the corpus incrementally</h3>
+          <p>Three synthetic submissions, then grow. Every bug anyone finds later becomes a permanent case, so the set only ever tightens.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <div class="closer">
+    <span class="label">The one habit</span>
+    <p class="big">When you add a feature, add its harness case in the same change.</p>
+    <p style="color:var(--ink-2);font-size:.97rem">Not next sprint, not &ldquo;when we get to testing&rdquo; &mdash; the same change. That single habit is the difference between 450 pull requests with zero regressions and a harness that permanently lags the code as an afterthought. Your design already gives you the hooks: every <code>FR-*</code> says what must be true, every <code>CT-*</code> says what callers may rely on, and the traceability checker fails the build when either has no test.</p>
+  </div>
+
+  <footer>
+    Sources: <span class="mono">a360-stack-kit</span> at commit <span class="mono">ccfeae4</span> &mdash; all 27 files, 1,415 lines, read in full. Confluence: How the ViDA ADLC Works, Test Harnesses for AI Systems, Standing Up a Stack Workspace, Bootstrapping a Test Harness, and Retrofitting the Harness Approach. Tooling verified on this machine: Python 3.12/3.14, uv 0.11, pytest 9.0, Git 2.51, gh 2.93. Docker 28.4 installed but not required.
+  </footer>
+
+</div>
+</body>
+</html>
