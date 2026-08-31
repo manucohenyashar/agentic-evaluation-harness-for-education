@@ -1,0 +1,123 @@
+"""The store spy — a write-audit hook, not a store.
+
+Test plan §4.2 is explicit that the databases are **not doubled**: store-touching cases use
+real SQLite in a per-test temp dir, and §4.10 forbids an in-memory stand-in for the
+`CT-STORE` contract outright, because a synchronously-committing fake hides every
+`CT-STORE-02` violation.
+
+So this is *not* a fake store. It is the write-audit hook the prohibition cases need:
+several clauses assert that a module writes **nothing at all**, and the only way to assert
+that positively is to hand it something that records. `TC-CONF-C09` is the canonical case —
+*"Run a full resolution with the data directory, the blob directory and the database under a
+write-audit hook; assert zero writes of any kind"* — and its oracle is "an empty write log".
+
+Shaped after design §3.3's `Store` / `TierHandle` interfaces so a module under test can take
+it wherever it takes a real store.
+"""
+
+from __future__ import annotations
+
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any, Iterator, Sequence
+
+
+@dataclass(frozen=True)
+class WriteRecord:
+    """One observed write. `in_transaction` matters: `CT-STORE-03` scopes atomicity to a
+    single `transaction()` body, so a case checking atomicity needs to see the grouping."""
+
+    tier: str            # "package:<id>" | "cohort:<id>" | "durable" | "blobs"
+    operation: str       # "enqueue_write" | "transaction_write" | "blob_put" | "purge_cohort"
+    payload: Any
+    in_transaction: bool = False
+
+
+@dataclass
+class StoreSpy:
+    """Records every write reaching it and never persists anything."""
+
+    writes: list[WriteRecord] = field(default_factory=list)
+    queries: list[tuple[str, Any]] = field(default_factory=list)
+
+    # -- Store surface (design §3.3) ----------------------------------------------------
+    def package(self, package_id: str) -> "TierHandleSpy":
+        return TierHandleSpy(self, f"package:{package_id}")
+
+    def cohort(self, cohort_id: str) -> "TierHandleSpy":
+        return TierHandleSpy(self, f"cohort:{cohort_id}")
+
+    def durable(self) -> "TierHandleSpy":
+        return TierHandleSpy(self, "durable")
+
+    def blobs(self) -> "BlobStoreSpy":
+        return BlobStoreSpy(self)
+
+    def purge_cohort(self, cohort_id: str) -> None:
+        self.writes.append(
+            WriteRecord(tier=f"cohort:{cohort_id}", operation="purge_cohort", payload=cohort_id)
+        )
+
+    # -- assertions ---------------------------------------------------------------------
+    def assert_no_writes(self) -> None:
+        """The whole point of the spy. Used by every 'writes nothing' clause case."""
+        if self.writes:
+            observed = ", ".join(f"{w.tier}:{w.operation}" for w in self.writes)
+            raise AssertionError(
+                f"expected zero writes, but {len(self.writes)} were made: {observed}"
+            )
+
+    def writes_to(self, tier: str) -> list[WriteRecord]:
+        return [w for w in self.writes if w.tier == tier]
+
+
+@dataclass
+class TierHandleSpy:
+    """Design §3.3: a `TierHandle` offers `query`, `enqueue_write` and `transaction` — and
+    nothing else (`CT-STORE-01`). Kept to exactly those three so a module that reaches for a
+    fourth method fails here rather than against the real store."""
+
+    _spy: StoreSpy
+    _tier: str
+    _in_transaction: bool = False
+
+    def query(self, stmt: Any, **params: Any) -> Sequence[Any]:
+        self._spy.queries.append((self._tier, (stmt, params)))
+        return []
+
+    def enqueue_write(self, unit: Any) -> None:
+        self._spy.writes.append(
+            WriteRecord(
+                tier=self._tier,
+                operation="transaction_write" if self._in_transaction else "enqueue_write",
+                payload=unit,
+                in_transaction=self._in_transaction,
+            )
+        )
+
+    @contextmanager
+    def transaction(self) -> Iterator["TierHandleSpy"]:
+        nested = TierHandleSpy(self._spy, self._tier, _in_transaction=True)
+        yield nested
+
+
+@dataclass
+class BlobStoreSpy:
+    """Content-addressed like the real one (`CT-STORE-07`: identical bytes, identical hash,
+    one copy) so a caller's dedup expectations hold, but nothing touches disk."""
+
+    _spy: StoreSpy
+    _blobs: dict[str, bytes] = field(default_factory=dict)
+
+    def put(self, data: bytes) -> str:
+        import hashlib
+
+        content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+        self._blobs.setdefault(content_hash, data)
+        self._spy.writes.append(
+            WriteRecord(tier="blobs", operation="blob_put", payload=content_hash)
+        )
+        return content_hash
+
+    def get(self, content_hash: str) -> bytes:
+        return self._blobs[content_hash]
