@@ -64,11 +64,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "fixtures/F-FROZEN/manifest.json",
         ("tests/artifact/test_heldout_disjoint.py",),
     ),
-    "#5": (
-        "symbol",
-        f"{CONF_MODULE}:RunConfig.profile_summary",
-        ("tests/unit/conf/test_profile_summary.py",),
-    ),
     # One detector for both of #6's red cases. Retention validation (FR-CONF-12) adds no symbol
     # whose name can be predicted from the design, whereas `rehydrate_run_config` is fixed by
     # §3.1's Interfaces block -- #6 must add it under exactly that name, so it is the reliable

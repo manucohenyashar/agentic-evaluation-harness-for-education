@@ -7,14 +7,14 @@ function of `(cfg, cohort)`.
 
 Scope of this file today
 ------------------------
-`M-CONF` ships across three stories. This one is **issue #4** — `FR-CONF-01`, `-02`, `-03`, `-06`,
-`-07`, `NFR-CONF-01`, `NFR-CONF-03`. Two things the design's Interfaces list are deliberately
-**absent** rather than stubbed, because a stub would let a contract case pass vacuously:
+`M-CONF` ships across three stories. Landed here: **#4** (`FR-CONF-01`, `-02`, `-03`, `-06`,
+`-07`, `NFR-CONF-01`, `NFR-CONF-03`) and **#5** (`FR-CONF-05`, `-09`, `-10`). One thing the
+design's Interfaces list is deliberately **absent** rather than stubbed, because a stub would let
+a contract case pass vacuously:
 
 | Absent | Lands in |
 |---|---|
 | `rehydrate_run_config`, `RunConfig.to_persisted_dict` | #6 — `TC-CONF-C01` asserts over *both* entry points |
-| `RunConfig.profile_summary`, the run-start log line | #5 — `TC-CONF-C13` asserts *exactly one* log line |
 
 Decisions this file fixes, that the design underdetermines
 ----------------------------------------------------------
@@ -36,6 +36,11 @@ the wrong thing.
 | `edge-weights` vs `provider-pinned` | Told apart by `WEIGHTS_SUFFIXES`, not by `@sha256:` alone | Otherwise a digest-pinned hosted build reads as a weights path |
 | `ModelRef` / `HardwarePolicy` validate on construction | Shape only, raising `ConfigurationError` | Both are caller-supplied and reach a primary key (`panel_build_ref`) or an arithmetic clamp; a bad one must not surface as a bare `TypeError` (`TC-CONF-15`) |
 | A `RunConfig` literal must be **legal** | `__post_init__` refuses one violating `CT-CONF-02`/`-03`/`-07` | §3.1 says the type is "cheap to construct"; it does not say a value carrying none of its guarantees is a `RunConfig` |
+| `ProfileSummary`'s field set | Chosen here; the design names the type twice and never specifies it | `FR-CONF-09` lists the *contents*, not the shape |
+| `quantization` on a hosted backend | The `PROVIDER_MANAGED` sentinel, never blank | `CT-CONSOLE-10` renders this under every grade; empty reads as "unknown", not "not applicable" |
+| One serializer, `to_canonical_json()` | Both the log line and `M-ORCH`'s audit record call it | `TC-CONF-17` is a **differential** against "the one logged at run start" |
+| The run-start log line | `log_run_start()`, separate from resolution | `CT-CONF-12` lets `M-CONSOLE` resolve on the request path, so logging inside resolution would emit two lines for one run |
+| The prefix ceiling's knob | `cfg["hardware_profiles"]`, gated behind `HARNESS_HARDWARE_PROFILE` — no seventh `HARNESS_*` key | `FR-CONF-06`/`-10` derive the ceiling *from* the profile; a separate key would permit `unified-large` with a ceiling of 500 |
 
 The second of those changes an input class `TS-03` will meet: an empty or whitespace `build_id`,
 or a `role` outside the four, now raises from the **constructor** rather than surfacing as an
@@ -57,38 +62,46 @@ offending **key**, and echoes a **value** only for the four non-credential `HARN
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import os
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from decimal import Decimal, InvalidOperation
 from types import MappingProxyType
 from typing import Any, Literal
 
 __all__ = [
-    "BackendProfile",
     "BackendMismatchError",
+    "BackendProfile",
+    "BuildSummary",
     "CohortRef",
+    "compute_panel_build_ref",
     "ConfigurationError",
     "ConsentGateError",
     "DEFAULT_HOSTED_CONCURRENCY",
     "DEFAULT_HOSTED_PREFIX_TOKEN_CEILING",
+    "environment_snapshot",
     "FLOATING_TAGS",
+    "hardware_policy_for",
     "HARDWARE_PROFILES",
-    "HARNESS_KEYS",
     "HardwarePolicy",
+    "HARNESS_KEYS",
+    "log_run_start",
+    "LOGGER_NAME",
     "ModelRef",
     "PANEL_SIZES",
+    "parse_allow_remote_real_work",
+    "ProfileSummary",
+    "PROVIDER_MANAGED",
+    "resolve_run_config",
     "RUN_CONFIG_FIELDS",
+    "RUN_START_EVENT",
     "RunConfig",
     "RunConfigError",
     "UnresolvedModelRefError",
     "WEIGHTS_SUFFIXES",
-    "compute_panel_build_ref",
-    "environment_snapshot",
-    "hardware_policy_for",
-    "parse_allow_remote_real_work",
-    "resolve_run_config",
 ]
 
 
@@ -422,6 +435,90 @@ class CohortRef:
     consent_class: Literal["synthetic", "consented", "real"] = "real"
 
 
+# --- the renderable grader identity (FR-CONF-09) --------------------------------------------
+
+#: What `quantization` says when the run cannot state one. A hosted `ModelRef` carries
+#: `quantization=None` because the provider owns it — but `profile_summary()` is rendered on
+#: **every view showing a grade** (`FR-CONSOLE-09`, `CT-CONSOLE-10`), and an empty cell there
+#: reads as "unknown" rather than "not applicable". Those are different claims to a teacher
+#: asking what graded their student, so the summary says which one it means.
+PROVIDER_MANAGED = "provider-managed"
+
+
+@_typeerror_on_mutation
+@dataclass(frozen=True)
+class BuildSummary:
+    """One model build, in the form a console renders and an audit record keeps.
+
+    A projection of `ModelRef`, not the ref itself: `is_resolved()` and `build_form()` are
+    resolution-time questions with no meaning on a stored record, and a summary that carried
+    behaviour would invite a consumer to re-derive rather than read.
+    """
+
+    role: str
+    provider: str
+    build_id: str
+    quantization: str
+
+    @classmethod
+    def of(cls, ref: ModelRef) -> "BuildSummary":
+        return cls(
+            role=ref.role,
+            provider=ref.provider,
+            build_id=ref.build_id,
+            quantization=ref.quantization or PROVIDER_MANAGED,
+        )
+
+
+@_typeerror_on_mutation
+@dataclass(frozen=True)
+class ProfileSummary:
+    """`FR-CONF-09`'s record: "backend profile, panel builds, transcriber build, quantization,
+    and (cloud only) retention setting, in a form the console renders on any view showing a
+    grade and the audit record stores verbatim."
+
+    The design names this type twice and never specifies it, so the field set is chosen here.
+    Two consumers constrain it and both are worth naming, because a later editor will otherwise
+    read the shape as arbitrary:
+
+    * `CT-CONSOLE-10` puts it on **every** grade view — "a grade is never displayed without its
+      provenance" — which is why `quantization` is never blank (see `PROVIDER_MANAGED`).
+    * `TC-CONF-17` is a **differential**: the stored summary must be byte-identical to the one
+      logged at run start. That is what `to_canonical_json` is for, and why both paths must call
+      it rather than each formatting the record their own way.
+
+    `panel_build_ref` is carried although `FR-CONF-09` does not list it — additive per §3.1's
+    Compatibility note, and an audit record holding a run's grader identity without the key that
+    identity is filed under would be a strange thing to have stored.
+
+    Credential-free by construction (`CT-CONF-10`): every field is a build identity, a profile
+    name or a retention setting, and nothing here is read from the environment. The four-surface
+    sentinel scan that proves it is `TC-CONF-11`, on issue #8.
+    """
+
+    backend_profile: str
+    panel: tuple[BuildSummary, ...]
+    transcriber: BuildSummary
+    off_panel_checker: BuildSummary | None
+    quantization: tuple[str, ...]
+    retention_setting: str | None
+    panel_build_ref: str
+
+    def to_canonical_json(self) -> str:
+        """The one serialization, so `TC-CONF-17`'s differential can hold.
+
+        `M-ORCH` stores this record and `log_run_start` logs it. If each formatted the summary
+        its own way, "byte-identical to the one logged at run start" would fail on whitespace
+        and key order — a difference that is not a defect, reported as one. So there is exactly
+        one serializer and both callers use it.
+
+        `sort_keys=True` rather than field order: §3.1's Compatibility note makes a new
+        `ProfileSummary` field additive, and ordering by declaration would let an additive change
+        reorder every existing record.
+        """
+        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+
+
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class RunConfig:
@@ -543,6 +640,37 @@ class RunConfig:
                 f"{self.panel_build_ref!r}, the ordered panel hashes to {expected_ref!r} "
                 f"(CT-CONF-07)."
             )
+
+    def profile_summary(self) -> ProfileSummary:
+        """`FR-CONF-09` — the run's grader identity, renderable and storable.
+
+        Every reachable build appears, in panel order. "Every" is the load-bearing word: a
+        summary listing the first judge and dropping the other two describes a panel that never
+        ran, and `CT-CONSOLE-10` puts this record under a grade a teacher is reading.
+
+        `quantization` collects the **distinct** labels rather than one per build, because the
+        console shows it as a single fact about the run ("q4") and the per-build detail is
+        already in `panel` and `transcriber`. Deduplicated in first-seen order, not sorted, so a
+        mixed panel reads in the order the builds are listed above it.
+        """
+        builds = [BuildSummary.of(ref) for ref in self.panel]
+        builds.append(BuildSummary.of(self.transcriber))
+        if self.off_panel_checker is not None:
+            builds.append(BuildSummary.of(self.off_panel_checker))
+
+        return ProfileSummary(
+            backend_profile=self.backend_profile,
+            panel=tuple(BuildSummary.of(ref) for ref in self.panel),
+            transcriber=BuildSummary.of(self.transcriber),
+            off_panel_checker=(
+                None
+                if self.off_panel_checker is None
+                else BuildSummary.of(self.off_panel_checker)
+            ),
+            quantization=tuple(dict.fromkeys(build.quantization for build in builds)),
+            retention_setting=self.retention_setting,
+            panel_build_ref=self.panel_build_ref,
+        )
 
 
 # --- the hardware table --------------------------------------------------------------------
@@ -1017,3 +1145,47 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
 #: written out, so it cannot drift from it — the contract case compares this against the design's
 #: Interfaces list, which is the comparison that matters.
 RUN_CONFIG_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(RunConfig))
+
+
+# --- observability ---------------------------------------------------------------------------
+
+#: The module's only logger. Design §3.1: "One structured log line per run start containing
+#: `profile_summary()`. No metrics of its own."
+LOGGER_NAME = "aeh.conf"
+
+#: The single event this module emits. Named so a log pipeline can select on it without parsing.
+RUN_START_EVENT = "run_start"
+
+
+def log_run_start(config: RunConfig, logger: logging.Logger | None = None) -> ProfileSummary:
+    """Emit the one structured log line a run start produces, and return what it carried.
+
+    **Why this is not inside `resolve_run_config`.** `CT-CONF-12` gives `M-CONSOLE` the right to
+    resolve on the request path, and `M-ORCH` resolves again when it constructs the run. If
+    resolution logged, one run would produce two lines and `CT-CONF-13`'s "exactly one structured
+    log line per run start" would be false — not because anything was wrong, but because the
+    line was attached to the wrong event. Resolution is a pure function; a *run start* is a
+    moment, and only the caller knows when it happened. Keeping the two apart also preserves
+    `CT-CONF-05` purity and `CT-CONF-09`'s "writes nothing".
+
+    Returns the summary so `M-ORCH` stores **the same record it logged** rather than building a
+    second one — which is what makes `TC-CONF-17`'s differential ("byte-identical to the one
+    logged at run start") a property of the code rather than a hope about it.
+
+    Emits **no metric**, deliberately: `CT-CONF-13` names that as a non-promise, and the reason
+    is that a telemetry surface here becomes something ops depends on and this module then
+    cannot change.
+
+    Takes no argument that could rebind an existing run (`CT-CONF-14`).
+    """
+    summary = config.profile_summary()
+    (logger or logging.getLogger(LOGGER_NAME)).info(
+        RUN_START_EVENT,
+        extra={
+            "event": RUN_START_EVENT,
+            "backend_profile": summary.backend_profile,
+            "panel_build_ref": summary.panel_build_ref,
+            "profile_summary": summary.to_canonical_json(),
+        },
+    )
+    return summary

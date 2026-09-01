@@ -4,11 +4,12 @@ Case: `TC-CONF-09` (`FR-CONF-09`, P1), test plan §5.1. Rung 0.
 Oracle: artifact assertion over the returned record — each field asserted present and non-empty
 **by name**.
 
-**Written ahead of implementation** (issue #5). `RunConfig.profile_summary` does not exist yet;
-`aeh.conf` does, so the blocker is a `symbol` entry in `WRITTEN_AHEAD_BLOCKERS` rather than a
-`module` one — a module-kind check has read as "resolved" since #4 merged.
+Written ahead of its implementation, and now **green**: issue #5 landed `profile_summary()`, so
+the `writtenahead` marker came off and the `WRITTEN_AHEAD_BLOCKERS` entry keyed on
+`aeh.conf:RunConfig.profile_summary` was removed. The test is unchanged — that is the point of
+the rule: the marker goes, never the case.
 
-Remove the `writtenahead` marker — not the test — when #5 closes.
+`require_attr` stays. It costs nothing now and states what these assertions depend on.
 
 Why this matters beyond the console: `FR-CONSOLE-09` puts this record on **any view showing a
 grade**, and the audit record stores it verbatim. A summary missing the transcriber build means
@@ -22,8 +23,6 @@ import pytest
 from aeh.conf import RunConfig, resolve_run_config
 from tests.support.conf_builders import SYNTHETIC_COHORT, edge_cfg, hosted_cfg
 from tests.support.impl import require_attr
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#5"
 
