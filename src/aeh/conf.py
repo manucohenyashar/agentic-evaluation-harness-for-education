@@ -7,14 +7,11 @@ function of `(cfg, cohort)`.
 
 Scope of this file today
 ------------------------
-`M-CONF` ships across three stories. Landed here: **#4** (`FR-CONF-01`, `-02`, `-03`, `-06`,
-`-07`, `NFR-CONF-01`, `NFR-CONF-03`) and **#5** (`FR-CONF-05`, `-09`, `-10`). One thing the
-design's Interfaces list is deliberately **absent** rather than stubbed, because a stub would let
-a contract case pass vacuously:
+`M-CONF` shipped across three stories, all landed: **#4** (`FR-CONF-01`, `-02`, `-03`, `-06`,
+`-07`, `NFR-CONF-01`, `NFR-CONF-03`), **#5** (`FR-CONF-05`, `-09`, `-10`) and **#6**
+(`FR-CONF-04`, `-08`, `-11`, `-12`, `NFR-CONF-02`, `NFR-CONF-04`).
 
-| Absent | Lands in |
-|---|---|
-| `rehydrate_run_config`, `RunConfig.to_persisted_dict` | #6 — `TC-CONF-C01` asserts over *both* entry points |
+`M-CONF` is complete: nothing the design's Interfaces block names is absent.
 
 Decisions this file fixes, that the design underdetermines
 ----------------------------------------------------------
@@ -162,8 +159,8 @@ class BackendMismatchError(RunConfigError):
     """A resumed run's persisted backend disagrees with current configuration (`FR-CONF-04`).
 
     Declared here so the taxonomy `CT-CONF-08` names is complete and `TC-CONF-15`'s invariant
-    ("one of the four declared exception types") can be written. **Raised by issue #6**, which
-    owns `rehydrate_run_config`.
+    ("one of the four declared exception types") can be written. Raised by `rehydrate_run_config`
+    and `_refuse_on_mismatch`.
     """
 
 
@@ -171,8 +168,8 @@ class ConsentGateError(RunConfigError):
     """A remote provider was bound for a cohort that is neither synthetic nor consented
     (`FR-CONF-08`, RISK-10).
 
-    Declared here for the same reason as `BackendMismatchError`. **Raised by issue #6**, which
-    owns the consent gate.
+    Declared here for the same reason as `BackendMismatchError`. Raised by `_check_consent`, on
+    resolution and — when a cohort is supplied — on resume.
     """
 
 
@@ -486,11 +483,31 @@ class CohortRef:
 
     The default is `"real"` and that is load-bearing: `TC-CONF-08` calls the undeclared-cohort
     row "the difference between a fail-closed and a fail-open design". The gate that reads it is
-    `FR-CONF-08`, on issue #6; the default belongs here because this is where the type lives.
+    `FR-CONF-08`, in `_check_consent`; the default belongs here because this is where the type lives.
     """
 
     cohort_id: str
     consent_class: Literal["synthetic", "consented", "real"] = "real"
+
+    def __post_init__(self) -> None:
+        """Shape only, like `ModelRef`'s.
+
+        `_check_consent` tests `consent_class in CONSENTED_CLASSES` against a `frozenset`, so an
+        unhashable value escaped `resolve_run_config` as a bare `TypeError` — undeclared, which
+        `CT-CONF-08`'s closed taxonomy and `TC-CONF-15`'s invariant both forbid. `TC-CONF-15`
+        holds the cohort fixed and fuzzes only `cfg`, so the green suite could not see it.
+        """
+        if not isinstance(self.cohort_id, str) or not self.cohort_id.strip():
+            raise ConfigurationError(
+                f"CohortRef.cohort_id must be a non-empty string, got "
+                f"{type(self.cohort_id).__name__}."
+            )
+        if self.consent_class not in ("synthetic", "consented", "real"):
+            raise ConfigurationError(
+                "CohortRef.consent_class must be 'synthetic', 'consented' or 'real' (ADR-5). "
+                "An unrecognized value is refused rather than treated as unconsented, so a "
+                "typo cannot quietly become a gate decision."
+            )
 
 
 # --- the renderable grader identity (FR-CONF-09) --------------------------------------------
@@ -501,7 +518,7 @@ class CohortRef:
 #: reads as "unknown" rather than "not applicable". Those are different claims to a teacher
 #: asking what graded their student, so the summary says which one it means.
 #:
-#: **Constraint this places on issue #6.** `rehydrate_run_config` must not reconstruct
+#: **A constraint this places on rehydration, honoured:** `rehydrate_run_config` must not reconstruct
 #: `ModelRef.quantization` out of a `ProfileSummary`: on a hosted run `None` would come back as
 #: `"provider-managed"`, and `NFR-CONF-04`'s byte-identical round-trip would break. The summary
 #: is a rendering of the config, never a source for rebuilding it. It also never reaches
@@ -605,7 +622,7 @@ class RunConfig:
     |---|---|
     | `hardware_profile` | `backend_profile == "edge-local"` |
     | `cost_ceiling`, `cost_currency` | `backend_profile in {"cloud-hosted", "dev-ci"}` |
-    | `retention_setting` | `backend_profile == "cloud-hosted"` — enforced by issue #6 |
+    | `retention_setting` | `backend_profile == "cloud-hosted"`, and one of `RETENTION_SETTINGS` |
 
     No method returns a copy with a different backend or panel, and none will be added
     (`CT-CONF-14`, a safety property): a consumer needing a different backend creates a
@@ -636,9 +653,9 @@ class RunConfig:
         `CT-CONF-02`'s iffs at once, and one `resolve_run_config` can never return. An invariant
         that lives only in the function that happens to build the value is not an invariant.
 
-        Deliberately **not** enforced here: `retention_setting` non-null for `cloud-hosted`.
-        That is `FR-CONF-12`, on issue #6, and asserting it now would make its case pass before
-        its code exists.
+        All three of `CT-CONF-02`'s nullability rules are enforced here, including
+        `retention_setting` — added by #6 once `FR-CONF-12` had code, rather than asserted ahead
+        of it.
         """
         if self.backend_profile not in BACKEND_PROFILES:
             raise ConfigurationError(
@@ -681,6 +698,26 @@ class RunConfig:
                     f"{name}={'set' if value is not None else 'None'}."
                 )
 
+        # `CT-CONF-02`'s third nullability rule, and `FR-CONF-12`. On the type rather than only
+        # in the resolver, for the reason the module docstring gives about the other two: an
+        # invariant enforced only by the function that builds the value is forgeable — through
+        # `dataclasses.replace`, through a hand-written literal, and through `rehydrate_run_config`,
+        # which reconstructs from a row rather than from `cfg` and so never reaches the resolver's
+        # check. A `cloud-hosted` run resuming with `retention_setting=None` is a run proceeding
+        # in the belief that retention is off.
+        cloud = self.backend_profile == "cloud-hosted"
+        if cloud != (self.retention_setting is not None):
+            raise ConfigurationError(
+                f"retention_setting is non-null iff backend_profile is 'cloud-hosted' "
+                f"(CT-CONF-02, FR-CONF-12); got backend_profile={self.backend_profile!r} and "
+                f"retention_setting={'set' if self.retention_setting is not None else 'None'}."
+            )
+        if cloud and self.retention_setting not in RETENTION_SETTINGS:
+            raise ConfigurationError(
+                f"retention_setting must be one of {RETENTION_SETTINGS} (FR-CONF-12). The "
+                f"supplied value is not echoed here; it is not one of them."
+            )
+
         for name in ("concurrency_ceiling", "prefix_token_ceiling"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -702,8 +739,9 @@ class RunConfig:
         # verbatim the regression `TC-CONF-C07` exists to catch, and `CT-CONF-07` licenses
         # consumers to use the ref as a `package_validation` primary-key component.
         #
-        # It also gives issue #6 `TC-CONF-04`'s stated variant for nothing: "a persisted
-        # `panel_build_ref` that disagrees with the one recomputed from the persisted builds".
+        # `rehydrate_run_config` checks the same thing earlier and raises `BackendMismatchError`
+        # instead, because `TC-CONF-04`'s variant names that type for a row whose stored ref no
+        # longer matches its stored builds -- a changed panel, not a malformed row.
         expected_ref = compute_panel_build_ref(self.panel)
         if self.panel_build_ref != expected_ref:
             raise ConfigurationError(
@@ -896,8 +934,8 @@ def parse_allow_remote_real_work(value: Any) -> bool:
 
     The string `"false"` must not be truthy-coerced — a non-empty string is truthy in Python, so
     a bare `bool(value)` here would open the consent gate for every operator who set the key to
-    turn the override *off*. The gate that consumes this is issue #6; the parse lives here so a
-    malformed value fails at resolution rather than silently reading as `True` later.
+    turn the override *off*. The gate that consumes it is `_check_consent`; the parse is separate
+    so a malformed value fails at resolution rather than silently reading as `True` later.
     """
     if value is None:
         return False
@@ -982,10 +1020,13 @@ def _check_resolved(ref: ModelRef, what: str, backend_profile: str) -> None:
     """
     form = ref.build_form()
     if form is None:
+        # The position, never the value. `NFR-CONF-02` forbids a credential reaching any
+        # message this module emits, and a `build_id` is caller data that can carry one in a
+        # query string. The caller holds the config, so `panel[2]` locates the ref exactly.
         raise UnresolvedModelRefError(
-            f"{what} is not a resolved build identity: build_id={ref.build_id!r}, "
-            f"quantization={ref.quantization!r}. Expected a weights path plus quantization plus "
-            f"hash, or a provider-pinned slug (FR-CONF-03)."
+            f"{what} is not a resolved build identity. Expected a weights path plus "
+            f"quantization plus hash, or a provider-pinned slug (FR-CONF-03). The offending "
+            f"value is not echoed here; read it from the config at {what}."
         )
     expected = _REQUIRED_BUILD_FORM[backend_profile]
     if form != expected:
@@ -995,9 +1036,9 @@ def _check_resolved(ref: ModelRef, what: str, backend_profile: str) -> None:
         # hash they in fact supplied.
         raise UnresolvedModelRefError(
             f"{what} is a {form} build, but backend_profile {backend_profile!r} requires a "
-            f"{expected} build (CT-CONF-03). build_id={ref.build_id!r}. The two forms are told "
-            f"apart by WEIGHTS_SUFFIXES {WEIGHTS_SUFFIXES}: a path outside that list is read as "
-            f"a provider-pinned slug."
+            f"{expected} build (CT-CONF-03). The two forms are told apart by WEIGHTS_SUFFIXES "
+            f"{WEIGHTS_SUFFIXES}: a path outside that list is read as a provider-pinned slug. "
+            f"The build_id is not echoed here (NFR-CONF-02); read it from the config at {what}."
         )
 
 
@@ -1147,10 +1188,14 @@ def _check_consent(
     # "explicit and logged rather than a flag someone sets once and forgets" -- so it is refused
     # rather than recorded as anonymous.
     if not isinstance(supplied_by, str) or not supplied_by.strip():
-        raise ConfigurationError(
+        # `ConsentGateError`, not `ConfigurationError`: the outcome is a refused remote binding
+        # for non-consented work, which is this exception's documented job. `CT-CONF-08` makes
+        # the four types a closed taxonomy consumers branch on, and `M-ORCH` branching on
+        # `ConsentGateError` to raise consent-required UX would miss this path entirely.
+        raise ConsentGateError(
             "allow_remote_real_work_supplied_by must name who authorised sending real student "
-            "work to a remote provider. The override is not usable without attribution "
-            "(FR-CONF-08)."
+            "work to a remote provider. The override is not usable without attribution, so the "
+            "gate still refuses (FR-CONF-08)."
         )
 
     return ConsentOverride(
@@ -1190,9 +1235,12 @@ def _resolve_retention_setting(cfg: Mapping[str, Any], backend_profile: str) -> 
             "run proceeds believing retention is off when it is not."
         )
     if raw not in RETENTION_SETTINGS:
+        # The legal set, never the rejected value: `retention_setting` is caller data and
+        # `NFR-CONF-02` forbids echoing it, the same rule `_ECHOABLE_KEYS` states for the
+        # `HARNESS_*` keys.
         raise ConfigurationError(
-            f"retention_setting must be one of {RETENTION_SETTINGS}, got "
-            f"{raw!r} (FR-CONF-12)."
+            f"retention_setting must be one of {RETENTION_SETTINGS} (FR-CONF-12). The supplied "
+            f"value is not echoed here; it is not one of them."
         )
     return raw
 
@@ -1246,8 +1294,11 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     failed resolution leaves no partial value to clean up (`CT-CONF-08`), and every failure is
     one of the four declared types — `TC-CONF-15`'s invariant is that no other exception escapes.
 
-    `cohort` is accepted and not yet read: `FR-CONF-08`'s consent gate is issue #6. It is in the
-    signature because the design puts it there and because #6 must not change this surface.
+    `cohort` is read by the consent gate (`FR-CONF-08`), which runs last — see `_check_consent`.
+    When that gate passes **because of an override**, `M-ORCH` must also call
+    `consent_override_for(cfg, cohort)` and persist the record it returns: this module writes
+    nothing (`CT-CONF-09`), so resolution alone leaves no audit trail of who authorised the
+    remote dispatch of real student work.
 
     Config keys, all read from `cfg`:
 
@@ -1257,12 +1308,13 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     | `HARNESS_HARDWARE_PROFILE` | iff `edge-local` | key into `HARDWARE_PROFILES` |
     | `HARNESS_COST_CEILING` / `_CURRENCY` | iff hosted | zero accepted, negative refused |
     | `HARNESS_CONCURRENCY` | no | clamps the derived ceiling **down**; never raises it |
-    | `HARNESS_ALLOW_REMOTE_REAL_WORK` | no | defaults `False`; consumed by #6 |
+    | `HARNESS_ALLOW_REMOTE_REAL_WORK` | no | defaults `False`; overrides the consent gate, and **requires** `allow_remote_real_work_supplied_by` |
     | `panel` | always | 1, 3 or 5 `ModelRef`s, each `role="judge"` |
     | `transcriber` | always | `ModelRef`, `role="transcriber"` |
     | `off_panel_checker` | no | `ModelRef`, `role="off_panel"` |
     | `prompt_template_v` | always | non-empty string |
-    | `retention_setting` | no | passed through; validated by #6 (`FR-CONF-12`) |
+    | `retention_setting` | **iff `cloud-hosted`** | one of `RETENTION_SETTINGS`; unset or unrecognized is refused (`FR-CONF-12`) |
+    | `allow_remote_real_work_supplied_by` | iff the override is used | who authorised sending real work remotely; the override is refused without it |
     | `hardware_profiles` | no | overrides `HARDWARE_PROFILES` for this call |
     """
     if not isinstance(cfg, Mapping):
@@ -1409,7 +1461,9 @@ RUN_CONFIG_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(RunConfig))
 
 
 def rehydrate_run_config(
-    run_row: Mapping[str, Any], cfg: Mapping[str, Any] | None = None
+    run_row: Mapping[str, Any],
+    cfg: Mapping[str, Any] | None = None,
+    cohort: CohortRef | None = None,
 ) -> RunConfig:
     """Reconstruct the `RunConfig` a persisted `run` row was written from, or refuse.
 
@@ -1431,6 +1485,14 @@ def rehydrate_run_config(
 
     Reconstruction is from the **row**, never from current configuration — that is the whole
     point. Current configuration is only ever consulted to *refuse*.
+
+    **`cohort` re-runs the consent gate on resume, and is optional for the same reason.**
+    `FR-CONF-08` says "refuse to produce a `RunConfig` binding a remote provider" for
+    non-consented work, and this function produces exactly that. The row can only exist if
+    `resolve_run_config` already passed the gate — but consent can be *withdrawn* between a run
+    starting at 9pm and resuming at 3am, and a hand-edited row is a back door this module
+    already documents. Pass the cohort and the gate runs again; omit it and it does not, which
+    is the caller asserting the run is unattended machinery replaying its own row.
     """
     if not isinstance(run_row, Mapping):
         raise ConfigurationError(
@@ -1470,11 +1532,25 @@ def rehydrate_run_config(
             f"after it started (FR-CONF-04, RISK-22)."
         )
 
+    # The same checks the resolver applies, not a looser parse. A persisted `NaN` ceiling makes
+    # every `spend > ceiling` comparison False -- unbounded spend on a resumed run, against R5
+    # and FR-CONF-07 -- and a row is exactly where a hand-edit would put one.
     raw_ceiling = provider_config.get("cost_ceiling")
-    try:
-        cost_ceiling = None if raw_ceiling is None else Decimal(str(raw_ceiling))
-    except InvalidOperation:
-        raise ConfigurationError("persisted cost_ceiling is not a decimal number.") from None
+    if raw_ceiling is None:
+        cost_ceiling = None
+    else:
+        try:
+            cost_ceiling = Decimal(str(raw_ceiling))
+        except InvalidOperation:
+            raise ConfigurationError("persisted cost_ceiling is not a decimal number.") from None
+        if not cost_ceiling.is_finite():
+            raise ConfigurationError("persisted cost_ceiling must be finite.")
+        if cost_ceiling < 0:
+            raise ConfigurationError("persisted cost_ceiling must not be negative.")
+
+    raw_currency = provider_config.get("cost_currency")
+    if raw_currency is not None and (not isinstance(raw_currency, str) or not raw_currency.strip()):
+        raise ConfigurationError("persisted cost_currency must be a non-empty string or absent.")
 
     config = RunConfig(
         backend_profile=backend_profile,  # type: ignore[arg-type]
@@ -1486,54 +1562,108 @@ def rehydrate_run_config(
         concurrency_ceiling=provider_config.get("concurrency_ceiling"),  # type: ignore[arg-type]
         prefix_token_ceiling=provider_config.get("prefix_token_ceiling"),  # type: ignore[arg-type]
         cost_ceiling=cost_ceiling,
-        cost_currency=provider_config.get("cost_currency"),
+        cost_currency=raw_currency,
         retention_setting=provider_config.get("retention_setting"),
         panel_build_ref=persisted_ref,  # type: ignore[arg-type]
     )
 
     if cfg is not None:
         _refuse_on_mismatch(config, cfg)
+    if cohort is not None:
+        _check_consent(cfg if cfg is not None else {}, cohort, config.backend_profile)
     return config
 
 
 def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
     """Compare a rehydrated run against current configuration and refuse any disagreement.
 
-    Compared: the backend, and the resolved build identity of every model the run uses. Those
-    are what "which grader is this run" means — a changed ceiling is an operational tweak, a
-    changed build is a different grader.
+    Compared: everything that decides **which grader this run is** — the backend, the ordered
+    panel, the transcriber, the off-panel checker, the prompt template, and (on `edge-local`)
+    the hardware profile, which sets the prefix ceiling and so decides what fits in the cached
+    prefix. A changed *ceiling* is an operational tweak; a changed *build or template* is a
+    different grader, and grading half a cohort with one and half with another is exactly
+    RISK-22.
+
+    **Absence is a refusal, not a pass.** An earlier version skipped each check when the key was
+    missing or the wrong type, which meant `cfg = {"HARNESS_PROFILE": "cloud-hosted"}` compared
+    one field and silently approved everything else — a guard that degrades to nearly vacuous on
+    the Critical-risk path. This module refuses on absence everywhere else (`CT-CONF-11`,
+    "absence raises"); passing `cfg` at all is a claim to be holding current configuration.
     """
     if not isinstance(cfg, Mapping):
         raise ConfigurationError(f"cfg must be a Mapping, got {type(cfg).__name__}.")
 
-    current_profile = cfg.get("HARNESS_PROFILE")
-    if current_profile != persisted.backend_profile:
+    if cfg.get("HARNESS_PROFILE") != persisted.backend_profile:
         raise BackendMismatchError(
             f"this run was started on backend_profile {persisted.backend_profile!r} and current "
-            f"configuration says {_echo('HARNESS_PROFILE', current_profile)}. A resumed run "
-            f"rebinds to its persisted backend or refuses; it never switches (FR-CONF-04). A "
-            f"different backend needs a different run."
+            f"configuration says "
+            f"{_echo('HARNESS_PROFILE', cfg.get('HARNESS_PROFILE'))}. A resumed run rebinds to "
+            f"its persisted backend or refuses; it never switches (FR-CONF-04). A different "
+            f"backend needs a different run."
         )
 
     current_panel = cfg.get("panel")
-    if isinstance(current_panel, Sequence) and not isinstance(current_panel, (str, bytes)):
-        current_ref = compute_panel_build_ref(tuple(current_panel))
-        if current_ref != persisted.panel_build_ref:
+    if (
+        isinstance(current_panel, (str, bytes))
+        or not isinstance(current_panel, Sequence)
+        or not all(isinstance(ref, ModelRef) for ref in current_panel)
+    ):
+        raise ConfigurationError(
+            "current configuration must name a panel of ModelRefs to compare a resumed run "
+            "against. Omitting it would let the comparison pass by default, which is the one "
+            "outcome FR-CONF-04 must never produce."
+        )
+    current_ref = compute_panel_build_ref(tuple(current_panel))
+    if current_ref != persisted.panel_build_ref:
+        raise BackendMismatchError(
+            f"this run was started with panel {persisted.panel_build_ref!r} and current "
+            f"configuration resolves to {current_ref!r}. Half a cohort graded by one panel and "
+            f"half by another is what FR-CONF-04 exists to prevent (RISK-22)."
+        )
+
+    # The transcriber and off-panel checker are compared by **full identity**, not by build_id
+    # alone: the panel goes through `compute_panel_build_ref`, which mixes in provider and
+    # quantization, and comparing these two more loosely would let a build_id served by a
+    # different provider through on the one path nobody is watching.
+    for what, mine, theirs in (
+        ("transcriber", persisted.transcriber, cfg.get("transcriber")),
+        ("off_panel_checker", persisted.off_panel_checker, cfg.get("off_panel_checker")),
+    ):
+        if mine is None and theirs is None:
+            continue
+        if what == "transcriber" and not isinstance(theirs, ModelRef):
+            raise ConfigurationError(
+                "current configuration must name a transcriber ModelRef to compare a resumed "
+                "run against."
+            )
+        if (mine is None) != (theirs is None) or (
+            mine is not None and _ref_to_dict(mine) != _ref_to_dict(theirs)
+        ):
             raise BackendMismatchError(
-                f"this run was started with panel {persisted.panel_build_ref!r} and current "
-                f"configuration resolves to {current_ref!r}. Half a cohort graded by one panel "
-                f"and half by another is what FR-CONF-04 exists to prevent (RISK-22)."
+                f"this run was started with one {what} and current configuration names another "
+                f"(FR-CONF-04). Neither identity is echoed here (NFR-CONF-02); compare "
+                f"run_row['panel_config'][{what!r}] with cfg[{what!r}]."
             )
 
-    current_transcriber = cfg.get("transcriber")
-    if (
-        isinstance(current_transcriber, ModelRef)
-        and current_transcriber.build_id != persisted.transcriber.build_id
-    ):
+    if cfg.get("prompt_template_v") != persisted.prompt_template_v:
         raise BackendMismatchError(
-            f"this run was started with transcriber build "
-            f"{persisted.transcriber.build_id!r} and current configuration names "
-            f"{current_transcriber.build_id!r} (FR-CONF-04)."
+            f"this run was started with prompt_template_v "
+            f"{persisted.prompt_template_v!r} and current configuration names "
+            f"{cfg.get('prompt_template_v')!r}. A changed prompt template is a changed grader "
+            f"(FR-CONF-04, RISK-22)."
+        )
+
+    if cfg.get("HARNESS_HARDWARE_PROFILE") != persisted.hardware_profile and (
+        persisted.hardware_profile is not None
+        or cfg.get("HARNESS_HARDWARE_PROFILE") is not None
+    ):
+        # Only meaningful on edge-local, where it is non-null; elsewhere both sides are None.
+        # It sets the prefix ceiling, so a change alters what fits in the cached prefix.
+        raise BackendMismatchError(
+            f"this run was started on hardware_profile {persisted.hardware_profile!r} and "
+            f"current configuration says "
+            f"{_echo('HARNESS_HARDWARE_PROFILE', cfg.get('HARNESS_HARDWARE_PROFILE'))} "
+            f"(FR-CONF-04)."
         )
 
 
