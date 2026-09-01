@@ -33,10 +33,16 @@ def _require_retention_validation():
     `rehydrate_run_config` — fixed by design §3.1's Interfaces block, so #6 must add it under
     exactly that name. Same detector as `WRITTEN_AHEAD_BLOCKERS["#6"]`, so the marker and the
     failure reason cannot disagree.
+
+    Returns the vocabulary #6 declared, so the cases below assert the *mechanism* rather than a
+    set of literals. Neither `FR-CONF-12` nor the plan names the legal values — only
+    "unrecognized refuses" — so hard-coding them here would invent a requirement with less
+    design backing than the 1500/2000 Assumption `TC-CONF-10` deliberately refuses to cement.
     """
     import aeh.conf
 
     require_attr(aeh.conf, "rehydrate_run_config", issue=ISSUE)
+    return set(getattr(aeh.conf, "RETENTION_SETTINGS", ()))
 
 
 def test_tc_conf_12_an_unset_retention_setting_is_refused_on_cloud_hosted():
@@ -59,11 +65,15 @@ def test_tc_conf_12_an_unset_retention_setting_is_refused_on_cloud_hosted():
 def test_tc_conf_12_an_unrecognized_retention_setting_is_refused(unrecognized):
     """TC-CONF-12 — "unrecognized refuses".
 
-    `ZERO-RETENTION` is in the list for the same reason `EDGE-LOCAL` is in `TC-CONF-01`: a
-    case-insensitive match would accept a value the design never defined, and here the cost of
-    accepting a near-miss is that the run proceeds believing retention is off.
+    Each value is checked to be **outside** whatever set #6 declares before it is asserted to be
+    refused, so this case never hardens into a demand that a particular vocabulary be rejected —
+    only that a value the module does not recognize is. `ZERO-RETENTION` is here for the same
+    reason `EDGE-LOCAL` is in `TC-CONF-01`: a case-insensitive match would accept a near-miss,
+    and the cost is a run proceeding in the belief that retention is off.
     """
-    _require_retention_validation()
+    recognized = _require_retention_validation()
+    if unrecognized in recognized:
+        pytest.skip(f"{unrecognized!r} is in the vocabulary #6 declared, so it is not a negative")
 
     with pytest.raises(ConfigurationError):
         resolve_run_config(
@@ -72,19 +82,24 @@ def test_tc_conf_12_an_unrecognized_retention_setting_is_refused(unrecognized):
 
 
 def test_tc_conf_12_a_recognized_retention_setting_is_recorded_on_the_config():
-    """TC-CONF-12 — "set is recorded on the config".
+    """TC-CONF-12 — "set is recorded on the config", over every value #6 declares recognized.
 
     The positive half, and not a formality: a validator that checked the value and dropped it
     would pass both negatives above while leaving the audit record unable to say what the run
     was configured to do.
     """
-    _require_retention_validation()
-
-    config = resolve_run_config(
-        hosted_cfg("cloud-hosted", retention_setting="zero-retention"), SYNTHETIC_COHORT
+    recognized = _require_retention_validation()
+    assert recognized, (
+        "FR-CONF-12 requires a recognized set to validate against. Issue #6 should expose it as "
+        "`aeh.conf.RETENTION_SETTINGS` so this case and `conf_builders` read it rather than "
+        "guessing a vocabulary the design never names."
     )
 
-    assert config.retention_setting == "zero-retention"
+    for value in sorted(recognized):
+        config = resolve_run_config(
+            hosted_cfg("cloud-hosted", retention_setting=value), SYNTHETIC_COHORT
+        )
+        assert config.retention_setting == value
 
 
 def test_tc_conf_12_retention_is_not_required_on_edge_local():

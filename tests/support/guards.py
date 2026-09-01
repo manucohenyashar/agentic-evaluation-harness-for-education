@@ -18,9 +18,14 @@ Deliberately strict: loopback is blocked too. A test that genuinely needs a real
 
 from __future__ import annotations
 
+import builtins
+import os
+import pathlib
 import socket
+import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Iterator
 
 
 _LOCAL_HOSTS = {None, "", "localhost", "localhost.localdomain", "127.0.0.1", "::1"}
@@ -136,3 +141,102 @@ class SocketGuard:
             f"(test plan §4.5 E1); model calls go through RecordedFixtureProvider. "
             f"Mark the test `live` if it genuinely needs a socket."
         )
+
+
+# --- the filesystem write audit ------------------------------------------------------------
+
+
+class DiskWriteError(AssertionError):
+    """Raised when an audited block writes to disk.
+
+    `AssertionError` for the same reason as `NetworkAccessError`: a module that promised to
+    write nothing and then wrote is a broken claim about the system, not an infrastructure
+    problem.
+    """
+
+
+@dataclass
+class WriteAttempt:
+    """One recorded write, kept whether or not the caller swallowed the exception."""
+
+    api: str      # "open", "Path.write_text", "sqlite3.connect", ...
+    target: Any   # whatever the caller passed; not normalized, so the record is honest
+
+
+_WRITE_MODES = frozenset("wax+")
+
+
+@contextmanager
+def write_audit() -> Iterator[list[WriteAttempt]]:
+    """Fail the block if anything in it writes to disk. Yields the attempt log.
+
+    This exists because `StoreSpy` cannot answer the question. The spy is a *passive recorder*
+    shaped like design §3.3's `Store` — it only sees writes routed through a handle a caller
+    was given. `M-CONF` is a leaf that takes no store at all (`CT-CONF-09`: "Writes nothing. No
+    database, no file, no blob"), so `StoreSpy().assert_no_writes()` after a resolution is
+    vacuous: it passes for every possible implementation, including one that caches its result
+    to a file on every call.
+
+    `TC-CONF-C09` states the shape this needs — *"the data directory, the blob directory and the
+    database under a write-audit hook; assert zero writes of any kind"* — which is a filesystem
+    audit, not a store double. That case belongs to TS-58 (issue #9); this is the hook it will
+    use, and it is here now because `TC-CONF-02`'s substituted oracle leans on it.
+
+    Deliberately narrow: reads are untouched, so a test that opens a fixture inside the block
+    still works. Only the write-capable modes and the mutating `Path`/`os` calls are blocked.
+    """
+    attempts: list[WriteAttempt] = []
+
+    real_open = builtins.open
+    real_path_open = pathlib.Path.open
+    real_write_text = pathlib.Path.write_text
+    real_write_bytes = pathlib.Path.write_bytes
+    real_mkdir = pathlib.Path.mkdir
+    real_unlink = pathlib.Path.unlink
+    real_remove = os.remove
+    real_rename = os.rename
+    real_connect = sqlite3.connect
+
+    def _fail(api: str, target: Any) -> None:
+        attempts.append(WriteAttempt(api=api, target=target))
+        raise DiskWriteError(
+            f"blocked {api}({target!r}): this block must write nothing to disk "
+            f"(CT-CONF-09). If a write is legitimate here, audit it explicitly rather than "
+            f"widening the guard."
+        )
+
+    def _is_write_mode(mode: Any) -> bool:
+        return isinstance(mode, str) and bool(_WRITE_MODES & set(mode))
+
+    def _open(file, mode="r", *args, **kwargs):  # noqa: ANN001
+        if _is_write_mode(mode):
+            _fail("open", file)
+        return real_open(file, mode, *args, **kwargs)
+
+    def _path_open(self, mode="r", *args, **kwargs):  # noqa: ANN001
+        if _is_write_mode(mode):
+            _fail("Path.open", self)
+        return real_path_open(self, mode, *args, **kwargs)
+
+    builtins.open = _open                                        # type: ignore[assignment]
+    pathlib.Path.open = _path_open                               # type: ignore[method-assign]
+    pathlib.Path.write_text = lambda self, *a, **k: _fail("Path.write_text", self)  # type: ignore[method-assign]
+    pathlib.Path.write_bytes = lambda self, *a, **k: _fail("Path.write_bytes", self)  # type: ignore[method-assign]
+    pathlib.Path.mkdir = lambda self, *a, **k: _fail("Path.mkdir", self)  # type: ignore[method-assign]
+    pathlib.Path.unlink = lambda self, *a, **k: _fail("Path.unlink", self)  # type: ignore[method-assign]
+    os.remove = lambda path, *a, **k: _fail("os.remove", path)   # type: ignore[assignment]
+    os.rename = lambda src, dst, *a, **k: _fail("os.rename", (src, dst))  # type: ignore[assignment]
+    sqlite3.connect = lambda *a, **k: _fail("sqlite3.connect", a[0] if a else None)  # type: ignore[assignment]
+
+    try:
+        yield attempts
+    finally:
+        builtins.open = real_open                                # type: ignore[assignment]
+        pathlib.Path.open = real_path_open                       # type: ignore[method-assign]
+        pathlib.Path.write_text = real_write_text                # type: ignore[method-assign]
+        pathlib.Path.write_bytes = real_write_bytes              # type: ignore[method-assign]
+        pathlib.Path.mkdir = real_mkdir                          # type: ignore[method-assign]
+        pathlib.Path.unlink = real_unlink                        # type: ignore[method-assign]
+        os.remove = real_remove                                  # type: ignore[assignment]
+        os.rename = real_rename                                  # type: ignore[assignment]
+        sqlite3.connect = real_connect                           # type: ignore[assignment]

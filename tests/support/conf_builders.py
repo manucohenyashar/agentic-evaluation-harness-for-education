@@ -59,6 +59,26 @@ HOSTED_TRANSCRIBER = ModelRef(
 PROMPT_TEMPLATE_V = "conf-v1.0.0"
 
 
+def default_retention_setting() -> str:
+    """A `retention_setting` every hosted config in the suite can carry.
+
+    Read from `aeh.conf` when issue #6 declares the vocabulary (`FR-CONF-12`), with a literal
+    fallback until then. Neither the design nor the test plan names the legal values — only
+    "unrecognized refuses" — so hard-coding `"zero-retention"` here would silently make it the
+    requirement: if #6 lands `"none"` or an enum, **every** hosted test in this suite would go
+    red for a reason `FR-CONF-12` does not ask for, not just `TC-CONF-12`.
+
+    Same reasoning `TC-CONF-10` applies to the prefix ceilings: assert the mechanism, not the
+    Assumption.
+    """
+    import aeh.conf
+
+    declared = getattr(aeh.conf, "RETENTION_SETTINGS", None)
+    if declared:
+        return sorted(declared)[0]
+    return "zero-retention"
+
+
 def edge_cfg(**overrides: Any) -> dict[str, Any]:
     """A resolvable `edge-local` configuration. `**overrides` replaces keys; pop to remove."""
     cfg: dict[str, Any] = {
@@ -81,7 +101,7 @@ def hosted_cfg(profile: str = "cloud-hosted", **overrides: Any) -> dict[str, Any
         "panel": (HOSTED_JUDGE,),
         "transcriber": HOSTED_TRANSCRIBER,
         "prompt_template_v": PROMPT_TEMPLATE_V,
-        "retention_setting": "zero-retention",
+        "retention_setting": default_retention_setting(),
     }
     cfg.update(overrides)
     return cfg

@@ -154,6 +154,75 @@ def test_tc_conf_06_residency_and_quantization_are_data_the_resolver_reads_not_v
     assert HARDWARE_PROFILES["unified-large"] == _DECLARED_CELLS["unified-large"]
 
 
+@pytest.mark.parametrize(
+    "requested,expected,why",
+    [
+        (1, 1, "below the ceiling: the knob takes effect"),
+        (2, 2, "at the ceiling: unchanged"),
+        (3, 2, "above the ceiling: clamped down"),
+        (64, 2, "far above: still clamped, not raised"),
+    ],
+)
+def test_tc_conf_06_harness_concurrency_clamps_the_derived_ceiling_down_never_up(
+    requested, expected, why
+):
+    """`HARNESS_CONCURRENCY` against `unified-small`'s declared ceiling of 2.
+
+    `FR-CONF-06` calls the derived value a **ceiling**, and one an environment variable can
+    raise is not a ceiling — an operator who exported `HARNESS_CONCURRENCY=64` on a small box
+    would get 64 concurrent judges on hardware sized for two. `CLAUDE.md`'s third seam puts the
+    knob there "so a slower test box can adjust", which is the downward direction.
+
+    Both directions are parametrized because they fail differently and independently: `max()`
+    instead of `min()` passes the first two rows, and ignoring the key entirely passes the last
+    two. Verified as a real gap — both mutations left the whole suite green before this case
+    existed, since every other test resolves with the key absent.
+    """
+    config = resolve_run_config(
+        edge_cfg(HARNESS_HARDWARE_PROFILE="unified-small", HARNESS_CONCURRENCY=str(requested)),
+        SYNTHETIC_COHORT,
+    )
+
+    assert config.concurrency_ceiling == expected, why
+    assert config.concurrency_ceiling <= hardware_policy_for(config).concurrency_ceiling
+
+
+@pytest.mark.parametrize("bad", ["0", "-2", "", "two", 0, -1])
+def test_tc_conf_06_a_nonsensical_concurrency_is_refused_rather_than_ignored(bad):
+    """A knob that silently ignores a value it cannot parse is worse than one that has no
+    default: the operator believes they set it. `TC-CONF-15`'s invariant additionally requires
+    the refusal to be a declared type rather than a `ValueError` out of `int()`."""
+    with pytest.raises(ConfigurationError):
+        resolve_run_config(edge_cfg(HARNESS_CONCURRENCY=bad), SYNTHETIC_COHORT)
+
+
+@pytest.mark.parametrize("profile", ["cloud-hosted", "dev-ci"])
+def test_tc_conf_06_a_hosted_profile_takes_its_concurrency_from_the_key_or_a_documented_default(
+    profile,
+):
+    """There is no hardware profile to derive from on a hosted backend, so the key stands alone
+    over `DEFAULT_HOSTED_CONCURRENCY`. Asserted because nothing else in the suite reads
+    `concurrency_ceiling` or `prefix_token_ceiling` on a hosted config at all — any value ≥ 1
+    would pass otherwise, including 1, which would serialize the whole run."""
+    from aeh.conf import DEFAULT_HOSTED_CONCURRENCY, DEFAULT_HOSTED_PREFIX_TOKEN_CEILING
+
+    # Pinned as literals, not read from the module. Importing the constant and comparing the
+    # config against it is a tautology — both move together, so `DEFAULT_HOSTED_CONCURRENCY = 1`
+    # (which would serialize every hosted run) passes. Neither number is design-stated; they are
+    # issue #4's choice, so this is a golden reference that makes a change a review event, in
+    # the same spirit as `_DECLARED_CELLS` above.
+    assert (DEFAULT_HOSTED_CONCURRENCY, DEFAULT_HOSTED_PREFIX_TOKEN_CEILING) == (8, 1500)
+
+    default = resolve_run_config(hosted_cfg(profile), SYNTHETIC_COHORT)
+    assert default.concurrency_ceiling == DEFAULT_HOSTED_CONCURRENCY
+    assert default.prefix_token_ceiling == DEFAULT_HOSTED_PREFIX_TOKEN_CEILING
+
+    overridden = resolve_run_config(
+        hosted_cfg(profile, HARNESS_CONCURRENCY="3"), SYNTHETIC_COHORT
+    )
+    assert overridden.concurrency_ceiling == 3
+
+
 # --- TC-CONF-10 -----------------------------------------------------------------------------
 
 

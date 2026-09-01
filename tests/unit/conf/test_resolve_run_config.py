@@ -22,12 +22,14 @@ from aeh.conf import (
 )
 from tests.support.conf_builders import (
     EDGE_JUDGE,
+    EDGE_OFF_PANEL,
     EDGE_TRANSCRIBER,
     HOSTED_JUDGE,
     SYNTHETIC_COHORT,
     edge_cfg,
     hosted_cfg,
 )
+from tests.support.guards import write_audit
 
 # --- TC-CONF-01 -----------------------------------------------------------------------------
 
@@ -108,17 +110,46 @@ def test_tc_conf_02_assignment_to_any_field_raises_type_error(field):
     `TypeError`, and consumers written from the requirement will catch that.
     """
     config = resolve_run_config(edge_cfg(), SYNTHETIC_COHORT)
+    before = getattr(config, field)
 
     with pytest.raises(TypeError):
-        setattr(config, field, None)
+        setattr(config, field, "mutated")
 
-    # The value did not change on the way to raising.
-    assert getattr(config, field) == getattr(
-        resolve_run_config(edge_cfg(), SYNTHETIC_COHORT), field
-    )
+    # The value did not change on the way to raising. `"mutated"` rather than `None` as the
+    # attempted value, because four fields are legitimately `None` under `edge_cfg()` and
+    # assigning `None` to them would leave this check unable to tell a blocked write from a
+    # successful one.
+    assert getattr(config, field) == before
 
 
-def test_tc_conf_02_the_config_is_complete_before_anything_is_written(store_spy, network_guard):
+def test_tc_conf_02_the_refs_reachable_from_a_config_are_frozen_too(field="build_id"):
+    """`CT-CONF-04` promises consumers may hold a `RunConfig` "for the life of a run without
+    defensive copying". A frozen shell around mutable members does not deliver that.
+
+    `conf.py`'s own argument for `panel` being a `tuple` — that a list would leave the object
+    "frozen while its panel stayed mutable" — reaches the members as well: a judge's `build_id`
+    edited in place leaves a config whose `panel_build_ref` names a build that is no longer
+    there, which is RISK-22 arriving by a different door.
+
+    `TypeError` again, not `FrozenInstanceError`: same requirement, same reason.
+    """
+    config = resolve_run_config(edge_cfg(off_panel_checker=None), SYNTHETIC_COHORT)
+
+    for ref in (*config.panel, config.transcriber):
+        for attribute in ("role", "provider", "build_id", "quantization"):
+            with pytest.raises(TypeError):
+                setattr(ref, attribute, "mutated")
+
+    # `copy.replace` routes through `__replace__`, so a rebound copy is refused as well. The
+    # full back-door sweep — `dataclasses.replace`, pickle, a hand-edited row — is
+    # `TC-CONF-C14`'s, on issue #9.
+    import copy
+
+    with pytest.raises(TypeError):
+        copy.replace(config.panel[0], build_id="/models/other.gguf@sha256:dddd")
+
+
+def test_tc_conf_02_the_config_is_complete_before_anything_is_written(network_guard):
     """TC-CONF-02, second half — "the object is constructed before any `run` row write".
 
     **Rung caveat, stated rather than silently downgraded.** The plan's oracle is a call-order
@@ -127,14 +158,22 @@ def test_tc_conf_02_the_config_is_complete_before_anything_is_written(store_spy,
     and is not achievable here.
 
     What *is* achievable at rung 0, and is the load-bearing half: a complete `RunConfig` exists
-    after a call that made **zero** writes of any kind (`CT-CONF-09`), so any later `run` row
-    write is necessarily after it. Asserted with the `StoreSpy` write-audit hook TS-00 built for
-    this, plus the socket guard — a resolver that reached out to fetch a profile would satisfy
-    the write assertion while breaking `CT-CONF-01`.
-    """
-    config = resolve_run_config(edge_cfg(), SYNTHETIC_COHORT)
+    after a call that wrote **nothing** (`CT-CONF-09`), so any later `run` row write is
+    necessarily after it.
 
-    store_spy.assert_no_writes()
+    Audited with `write_audit()`, **not** `StoreSpy`. The spy only sees writes routed through a
+    store handle a caller was given, and `resolve_run_config` is a leaf that takes no store — so
+    `StoreSpy().assert_no_writes()` here would pass for every possible implementation, including
+    one that cached its result to a file on every call. Verified: it did. `write_audit` patches
+    the filesystem and `sqlite3` instead, which is the shape `TC-CONF-C09` names.
+
+    The socket guard is the third leg — a resolver that fetched a remote profile would satisfy
+    both write assertions while breaking `CT-CONF-01`.
+    """
+    with write_audit() as writes:
+        config = resolve_run_config(edge_cfg(), SYNTHETIC_COHORT)
+
+    assert writes == [], f"resolution wrote to disk: {writes}"
     network_guard.assert_no_network()
 
     # "Complete" asserted by name, not by truthiness: a field left as `None` that should carry a
@@ -210,6 +249,59 @@ def test_tc_conf_03_every_reachable_ref_is_checked_not_just_the_panel():
     ):
         with pytest.raises(UnresolvedModelRefError, match=position):
             resolve_run_config(cfg, SYNTHETIC_COHORT)
+
+
+@pytest.mark.parametrize("bad_index", [0, 1, 2])
+def test_tc_conf_03_an_unresolved_judge_is_caught_at_any_position_in_the_panel(bad_index):
+    """Every other negative in this file uses a one-judge panel, which cannot tell a loop from a
+    check of `panel[0]`.
+
+    Verified as a real gap: with both resolution loops narrowed to `panel[:1]`, the whole suite
+    stayed green while a config resolved carrying the friendly name `FR-CONF-03` names verbatim
+    at index 2 — and a `panel_build_ref` keyed to it.
+    """
+    panel = [EDGE_JUDGE, EDGE_JUDGE, EDGE_JUDGE]
+    panel[bad_index] = _FRIENDLY_NAME
+
+    with pytest.raises(UnresolvedModelRefError, match=rf"panel\[{bad_index}\]"):
+        resolve_run_config(edge_cfg(panel=tuple(panel)), SYNTHETIC_COHORT)
+
+
+def test_tc_conf_03_a_resolved_off_panel_checker_reaches_the_config():
+    """The positive for `off_panel_checker`, which otherwise appears only in negatives.
+
+    Without it, an implementation that validated the checker and then dropped it — returning
+    `off_panel_checker=None` unconditionally — passes every other case in this file. `M-INTEG`
+    routes to that checker on escalation, so silently losing it turns an escalation path into a
+    no-op.
+    """
+    config = resolve_run_config(edge_cfg(off_panel_checker=EDGE_OFF_PANEL), SYNTHETIC_COHORT)
+
+    assert config.off_panel_checker == EDGE_OFF_PANEL
+
+
+@pytest.mark.parametrize("size", [0, 2, 4, 6])
+def test_tc_conf_02_a_panel_that_is_empty_or_even_is_refused(size):
+    """`CT-CONF-02`: "`panel` has length 1, 3, or 5 — never even, never 0."
+
+    Deterministic rather than left to `TC-CONF-15`'s property clause. Measured over 3,000 draws
+    of that strategy, **every** successful resolution had a one-judge panel — the even and empty
+    panels are all rejected before the invariant is evaluated, so the clause never sees a size
+    other than 1. A property assertion that cannot reach its own input is not coverage.
+
+    An even panel cannot break a tie, and an empty one grades nothing while still producing a
+    `RunConfig` a caller would trust.
+    """
+    with pytest.raises(ConfigurationError):
+        resolve_run_config(edge_cfg(panel=tuple([EDGE_JUDGE] * size)), SYNTHETIC_COHORT)
+
+
+@pytest.mark.parametrize("size", [1, 3, 5])
+def test_tc_conf_02_a_panel_of_one_three_or_five_resolves(size):
+    """The positive half. Without it, "refuse every panel" satisfies the negative above."""
+    config = resolve_run_config(edge_cfg(panel=tuple([EDGE_JUDGE] * size)), SYNTHETIC_COHORT)
+
+    assert len(config.panel) == size
 
 
 # --- TC-CONF-07 -----------------------------------------------------------------------------

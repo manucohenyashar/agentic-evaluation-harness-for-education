@@ -282,6 +282,63 @@ def test_written_ahead_markers_are_removed_once_their_blocker_lands(repo_root):
     )
 
 
+def _carries_writtenahead_marker(path) -> bool:
+    """Whether `path` actually applies `pytest.mark.writtenahead`, at module or test level."""
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(
+        isinstance(node, ast.Attribute)
+        and node.attr == "writtenahead"
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "mark"
+        for node in ast.walk(tree)
+    )
+
+
+def test_every_writtenahead_test_file_is_registered_as_blocked(repo_root):
+    """The registry must be **complete**, not merely correct about what is in it.
+
+    `WRITTEN_AHEAD_BLOCKERS` fires when a blocker lands — but nothing noticed a marked test that
+    was never registered, and that test would sit outside `TEST_CMD` permanently. Which is the
+    precise failure the registry exists to prevent, arriving through the one door it did not
+    watch.
+    """
+    registered = {
+        path.split("::")[0]
+        for _, _, files in WRITTEN_AHEAD_BLOCKERS.values()
+        for path in files
+    }
+
+    # Detected by AST, not by grepping for the name. Every file in this suite *discusses* the
+    # marker in a docstring, and this file names it in a comment — a substring match flagged
+    # both, including itself. An `Attribute` node cannot appear in prose.
+    marked = {
+        str(path.relative_to(repo_root)).replace("\\", "/")
+        for path in (repo_root / "tests").rglob("test_*.py")
+        if _carries_writtenahead_marker(path)
+    }
+
+    assert marked <= registered, (
+        "these files carry `writtenahead` but no entry in WRITTEN_AHEAD_BLOCKERS, so nothing "
+        "will ever tell anyone to unmark them:\n  " + "\n  ".join(sorted(marked - registered))
+    )
+
+
+def test_every_registered_blocker_names_a_file_that_exists(repo_root):
+    """A registry entry pointing at a renamed or deleted file is a gate that fires and then
+    names nothing actionable — indistinguishable, to whoever reads the failure, from a
+    false alarm they should ignore."""
+    missing = [
+        path
+        for _, _, files in WRITTEN_AHEAD_BLOCKERS.values()
+        for path in files
+        if not (repo_root / path.split("::")[0]).exists()
+    ]
+
+    assert not missing, "WRITTEN_AHEAD_BLOCKERS names files that do not exist: " + ", ".join(missing)
+
+
 def test_blocker_is_resolved_detects_a_symbol_landing_inside_an_existing_module(repo_root):
     """The `symbol` kind, which is what a module split across several stories needs.
 
