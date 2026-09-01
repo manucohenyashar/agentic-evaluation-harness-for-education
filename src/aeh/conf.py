@@ -43,11 +43,12 @@ unresolved ref out of `resolve_run_config`. `TC-CONF-03`'s listed inputs (a frie
 GGUF path with no hash, a bare slug) are all still constructible and still refused by the
 resolver, which is where that case looks.
 
-Also unowned, and raised on the PR rather than silently absorbed: **`CT-CONF-14` appears in no
-issue's `Traces to`.** #6 carries `FR-CONF-04/08/11/12` and `NFR-CONF-02/04`; the clause is on
-none of them, yet `TC-CONF-C14` is a P0 safety property (design §4.7). The back doors this
-module leaves open are listed in `_typeerror_on_mutation`, so whoever picks the clause up starts
-from a written list rather than a search.
+`CT-CONF-14` is a P0 safety property (design §4.7) and is owned: its case `TC-CONF-C14` is on
+issue #9's `Traces to`, and the implementation obligation reaches #6 through `FR-CONF-04`.
+Clauses are tracked through their `TC-*-C*` cases rather than by `CT-*` ID — no issue's
+`Traces to` names a `CT-*` ID, for any of the design's 330 clauses. What #9 needs from here is
+the list of back doors this module leaves open, which `_typeerror_on_mutation` records
+explicitly so that sweep starts from a written list rather than a search.
 
 Credentials (`NFR-CONF-02`) never appear in an exception raised here: a message names the
 offending **key**, and echoes a **value** only for the four non-credential `HARNESS_*` keys.
