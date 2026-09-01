@@ -427,9 +427,16 @@ class RunConfig:
                 f"{_echo('HARNESS_PROFILE', self.backend_profile)}."
             )
 
+        # A `tuple` specifically, not any sequence, and that is deliberate: the design declares
+        # `panel: tuple[ModelRef, ...]`, and a `list` field would make `CT-CONF-04`'s "consumers
+        # may hold one for the life of a run without defensive copying" false — the object would
+        # be frozen while its panel stayed mutable. `resolve_run_config` converts for callers;
+        # a literal has to pass a tuple.
         if not isinstance(self.panel, tuple) or len(self.panel) not in PANEL_SIZES:
             raise ConfigurationError(
-                f"panel must be a tuple of {sorted(PANEL_SIZES)} ModelRefs (CT-CONF-02)."
+                f"panel must be a tuple of {sorted(PANEL_SIZES)} ModelRefs, got "
+                f"{type(self.panel).__name__} of length "
+                f"{len(self.panel) if isinstance(self.panel, Sequence) else '?'} (CT-CONF-02)."
             )
         for position, member in enumerate(self.panel):
             _require_model_ref(member, f"panel[{position}]", "judge")
