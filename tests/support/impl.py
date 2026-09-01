@@ -31,6 +31,7 @@ IMPLEMENTATION_PACKAGE = "aeh"
 PROVIDER_MODULE = f"{IMPLEMENTATION_PACKAGE}.prov"
 CONF_MODULE = f"{IMPLEMENTATION_PACKAGE}.conf"
 STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
+ORCH_MODULE = f"{IMPLEMENTATION_PACKAGE}.orch"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -66,11 +67,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/artifact/test_heldout_disjoint.py",),
     ),
     # `TC-CONF-17` is the one case in TS-04 whose rung is not achievable: rung 2 means a
-    # *finished run's* audit record, which needs `M-STORE` to write it. Keyed on the module
-    # rather than a symbol because none of it exists yet.
-    "#10": (
+    # *finished run's* audit record. Keyed on `M-ORCH` rather than `M-STORE`, deliberately --
+    # the case is a **differential** between what the orchestrator stores and what the run start
+    # logged, so it needs the *producer*, not the storage. Unmarking it when `M-STORE` alone
+    # landed would report a P1 case as covered while the test still wrote the row itself and
+    # compared a value to itself.
+    "#57": (
         "module",
-        STORE_MODULE,
+        ORCH_MODULE,
         ("tests/integration/conf/test_audit_record.py",),
     ),
 }

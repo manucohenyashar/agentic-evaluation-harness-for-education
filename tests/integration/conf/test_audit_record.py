@@ -5,7 +5,12 @@ Case: `TC-CONF-17` (`FR-CONF-09`, `NFR-SYS-11`, P1), test plan §5.1.
 
 **Written ahead of implementation, and the only case in TS-04 that is.** Its rung is not
 achievable today: rung 2 means a *finished run's* audit record, which needs `M-STORE` (#10–13)
-to write it and `M-ORCH` (#57–62) to run it. Neither exists.
+for the store and `M-ORCH` (#57–62) to write the record. Neither exists.
+
+Registered on **#57**, not #10, and the distinction matters. `M-STORE` alone would let this file
+import and the marker come off — and the case would then report as covered while comparing a
+value to itself, because the test would still be the thing writing the row. The blocker is the
+producer, not the storage.
 
 A rung-0 stand-in — comparing `log_run_start`'s record against `to_persisted_dict()` in memory —
 would be green today and would assert the wrong thing. What this case exists to catch is the two
@@ -30,11 +35,11 @@ import pytest
 
 from aeh.conf import log_run_start, resolve_run_config
 from tests.support.conf_builders import HOSTED_PANEL_3, SYNTHETIC_COHORT, hosted_cfg
-from tests.support.impl import STORE_MODULE, require
+from tests.support.impl import ORCH_MODULE, STORE_MODULE, require
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-ISSUE = "#10"
+ISSUE = "#57"
 
 
 def test_tc_conf_17_the_stored_profile_summary_matches_the_one_logged_at_run_start(tmp_data_dir):
@@ -51,12 +56,18 @@ def test_tc_conf_17_the_stored_profile_summary_matches_the_one_logged_at_run_sta
     | Name | Status |
     |---|---|
     | `aeh.store.open_store(data_dir)` | **invented here** — `M-STORE`'s entry point is unnamed in §3.3's Interfaces |
+    | `aeh.orch.record_run_start(store, config)` | **invented here** — the orchestrator's write of the audit record |
     | `store.durable()` | design §3.3 names the tier handle |
     | an `audit_record` row carrying the run's `profile_summary` | design §9.6 names the table, not the column |
 
-    Until those exist this fails with `NotImplementedYet` naming #10, which is the correct red.
+    Until those exist this fails with `NotImplementedYet`, which is the correct red.
     """
-    open_store = require(STORE_MODULE, "open_store", issue=ISSUE)
+    # **Both** are required, and that is the point of the case. The audit record must be written
+    # by whatever writes audit records in production -- if this test writes the row itself, then
+    # `stored == logged` compares `summary.to_canonical_json()` against `summary
+    # .to_canonical_json()` and the only defect it can see is SQLite mangling a TEXT column.
+    open_store = require(STORE_MODULE, "open_store", issue="#10")
+    record_run_start = require(ORCH_MODULE, "record_run_start", issue=ISSUE)
 
     records: list[logging.LogRecord] = []
 
@@ -76,10 +87,7 @@ def test_tc_conf_17_the_stored_profile_summary_matches_the_one_logged_at_run_sta
     # stand-in for the store contract outright, and this case is one of the reasons —
     # a fake that round-trips a Python object never exercises the serialization step.
     store = open_store(tmp_data_dir)
-    with store.durable().transaction() as tx:
-        tx.enqueue_write(
-            {"table": "audit_record", "profile_summary": summary.to_canonical_json()}
-        )
+    record_run_start(store, config)
 
     stored_bytes = store.durable().query(
         "SELECT profile_summary FROM audit_record ORDER BY rowid DESC LIMIT 1"
