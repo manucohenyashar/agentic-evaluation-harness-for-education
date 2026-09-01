@@ -80,7 +80,10 @@ __all__ = [
     "CohortRef",
     "compute_panel_build_ref",
     "ConfigurationError",
+    "consent_override_for",
+    "CONSENTED_CLASSES",
     "ConsentGateError",
+    "ConsentOverride",
     "DEFAULT_HOSTED_CONCURRENCY",
     "DEFAULT_HOSTED_PREFIX_TOKEN_CEILING",
     "environment_snapshot",
@@ -96,7 +99,10 @@ __all__ = [
     "parse_allow_remote_real_work",
     "ProfileSummary",
     "PROVIDER_MANAGED",
+    "rehydrate_run_config",
+    "REMOTE_PROFILES",
     "resolve_run_config",
+    "RETENTION_SETTINGS",
     "RUN_CONFIG_FIELDS",
     "RUN_START_EVENT",
     "RunConfig",
@@ -408,6 +414,27 @@ class ModelRef:
         return self.build_form() is not None
 
 
+#: The four `ModelRef` fields, in the order the persisted row carries them. One definition, used
+#: by both directions of the round trip, so `NFR-CONF-04`'s byte-identical guarantee cannot be
+#: broken by the two halves disagreeing about a field name.
+_REF_FIELDS: tuple[str, ...] = ("role", "provider", "build_id", "quantization")
+
+
+def _ref_to_dict(ref: ModelRef) -> dict[str, Any]:
+    return {name: getattr(ref, name) for name in _REF_FIELDS}
+
+
+def _ref_from_dict(raw: Any, what: str) -> ModelRef:
+    if not isinstance(raw, Mapping):
+        raise ConfigurationError(
+            f"persisted {what} must be a mapping of {_REF_FIELDS}, got {type(raw).__name__}."
+        )
+    missing = [name for name in _REF_FIELDS if name not in raw]
+    if missing:
+        raise ConfigurationError(f"persisted {what} is missing {', '.join(missing)}.")
+    return ModelRef(**{name: raw[name] for name in _REF_FIELDS})
+
+
 @_typeerror_on_mutation
 @dataclass(frozen=True)
 class HardwarePolicy:
@@ -716,6 +743,43 @@ class RunConfig:
             panel_build_ref=self.panel_build_ref,
         )
 
+    def to_persisted_dict(self) -> dict[str, Any]:
+        """The credential-free serialization `M-ORCH` writes to the `run` row (`FR-CONF-11`).
+
+        Shaped as design §3.1's three columns — *"`RunConfig` is serialized into
+        `run.backend_profile`, `run.panel_config`, and `run.provider_config`. No new tables"* —
+        so `M-ORCH` writes each key to its column without reshaping. A flat dict would have
+        needed a mapping step, and a mapping step is a second place for the round trip to drift.
+
+        `cost_ceiling` goes out as `str(Decimal)` and comes back through `Decimal(...)`, which is
+        exact. `NFR-CONF-04` asks for a **byte-identical** round trip, and a float would lose it
+        on the first two-decimal ceiling anybody sets.
+
+        Credential-free **by construction**, not by redaction: no field of this type holds a
+        secret, and the module never reads one (see `environment_snapshot`). There is nothing
+        here to filter out, which is a stronger guarantee than filtering correctly.
+        """
+        return {
+            "backend_profile": self.backend_profile,
+            "panel_config": {
+                "panel": [_ref_to_dict(ref) for ref in self.panel],
+                "transcriber": _ref_to_dict(self.transcriber),
+                "off_panel_checker": (
+                    None if self.off_panel_checker is None else _ref_to_dict(self.off_panel_checker)
+                ),
+                "prompt_template_v": self.prompt_template_v,
+                "panel_build_ref": self.panel_build_ref,
+            },
+            "provider_config": {
+                "hardware_profile": self.hardware_profile,
+                "concurrency_ceiling": self.concurrency_ceiling,
+                "prefix_token_ceiling": self.prefix_token_ceiling,
+                "cost_ceiling": None if self.cost_ceiling is None else str(self.cost_ceiling),
+                "cost_currency": self.cost_currency,
+                "retention_setting": self.retention_setting,
+            },
+        }
+
 
 # --- the hardware table --------------------------------------------------------------------
 
@@ -1014,6 +1078,125 @@ def _positive_int(raw: Any, key: str, default: int) -> int:
     return value
 
 
+# --- consent (FR-CONF-08, RISK-10) -----------------------------------------------------------
+
+#: The consent classes that may be graded by a remote provider without an override (ADR-5).
+#: `real` is absent deliberately, and an undeclared cohort defaults to `real` on `CohortRef`.
+CONSENTED_CLASSES: frozenset[str] = frozenset({"synthetic", "consented"})
+
+#: The backends that dispatch student work off the machine. `edge-local` is not one of them, so
+#: the gate does not apply there at all — there is nothing to consent to.
+REMOTE_PROFILES: frozenset[str] = frozenset({"cloud-hosted", "dev-ci"})
+
+
+@_typeerror_on_mutation
+@dataclass(frozen=True)
+class ConsentOverride:
+    """The record `FR-CONF-08` requires when real work is sent to a remote provider anyway.
+
+    *"the override and its supplier are written to the audit record"* — but `CT-CONF-09` says
+    this module writes **nothing**, and `CT-CONF-C02` leaves no free field on `RunConfig`. So
+    `M-CONF` **produces** this value and `M-ORCH` persists it. Producing it and writing it are
+    different jobs, and only one of them is this module's.
+    """
+
+    cohort_id: str
+    consent_class: str
+    backend_profile: str
+    supplied_by: str
+
+
+def consent_override_for(cfg: Mapping[str, Any], cohort: CohortRef) -> ConsentOverride | None:
+    """The audit record for this resolution's consent override, or `None` if none was needed.
+
+    `M-ORCH` calls this and writes the result. It shares `_check_consent`'s logic, so a run that
+    resolved under an override and the record of that override cannot disagree — two
+    implementations of the same rule is how a run ends up dispatched with nothing in the audit
+    trail saying who authorised it.
+    """
+    return _check_consent(cfg, cohort, cfg.get("HARNESS_PROFILE"))
+
+
+def _check_consent(
+    cfg: Mapping[str, Any], cohort: CohortRef, backend_profile: Any
+) -> ConsentOverride | None:
+    """Refuse a remote binding for work that is neither synthetic nor consented.
+
+    RISK-10 is student work leaving the machine without consent, and this is the pre-dispatch
+    check ADR-5 added the `consent_class` column for. Fails **closed** twice over: an undeclared
+    cohort is `real` by `CohortRef`'s default, and an override is refused unless it names who
+    supplied it.
+    """
+    if backend_profile not in REMOTE_PROFILES:
+        return None  # nothing leaves the machine, so there is nothing to gate
+    if cohort.consent_class in CONSENTED_CLASSES:
+        return None
+
+    supplied_by = cfg.get("allow_remote_real_work_supplied_by")
+    if not parse_allow_remote_real_work(cfg.get("HARNESS_ALLOW_REMOTE_REAL_WORK")):
+        raise ConsentGateError(
+            f"cohort {cohort.cohort_id!r} has consent_class {cohort.consent_class!r}, which is "
+            f"neither 'synthetic' nor 'consented', so its work may not be sent to a "
+            f"{backend_profile!r} provider (FR-CONF-08, R31). Supply "
+            f"HARNESS_ALLOW_REMOTE_REAL_WORK together with "
+            f"allow_remote_real_work_supplied_by to override this deliberately."
+        )
+
+    # `TC-CONF-08`'s oracle: "a record naming the override but not its supplier fails." An
+    # override nobody is accountable for is the configuration flag ADR-5 set out to avoid --
+    # "explicit and logged rather than a flag someone sets once and forgets" -- so it is refused
+    # rather than recorded as anonymous.
+    if not isinstance(supplied_by, str) or not supplied_by.strip():
+        raise ConfigurationError(
+            "allow_remote_real_work_supplied_by must name who authorised sending real student "
+            "work to a remote provider. The override is not usable without attribution "
+            "(FR-CONF-08)."
+        )
+
+    return ConsentOverride(
+        cohort_id=cohort.cohort_id,
+        consent_class=cohort.consent_class,
+        backend_profile=backend_profile,
+        supplied_by=supplied_by.strip(),
+    )
+
+
+# --- retention (FR-CONF-12, R4/R31) ----------------------------------------------------------
+
+#: The recognized values for `cloud-hosted` retention routing. Two, because `TC-CONF-12` needs a
+#: recognized value and an unrecognized one to differ, and because the design requires the
+#: setting be *recorded* and refuses it *unset* — it does not mandate zero retention, which is
+#: the operator's policy call. An unrecognized value is refused rather than passed through: the
+#: cost of accepting a near-miss is a run proceeding in the belief that retention is off.
+RETENTION_SETTINGS: tuple[str, ...] = ("provider-default", "zero-retention")
+
+
+def _resolve_retention_setting(cfg: Mapping[str, Any], backend_profile: str) -> str | None:
+    """`FR-CONF-12`, and `CT-CONF-02`'s "non-null for `cloud-hosted`".
+
+    Required only on `cloud-hosted`. `dev-ci` also dispatches remotely and is still exempt,
+    because the design scopes the requirement to `cloud-hosted` in both `FR-CONF-12` and
+    `CT-CONF-02`; `dev-ci`'s protection is the consent gate above, which covers it.
+    """
+    raw = cfg.get("retention_setting")
+
+    if backend_profile != "cloud-hosted":
+        return None  # inapplicable keys are ignored, as elsewhere in this resolver
+
+    if raw is None:
+        raise ConfigurationError(
+            "retention_setting is required for backend_profile 'cloud-hosted' (FR-CONF-12). "
+            "Absence is not permission to use the provider's default: an unset value is how a "
+            "run proceeds believing retention is off when it is not."
+        )
+    if raw not in RETENTION_SETTINGS:
+        raise ConfigurationError(
+            f"retention_setting must be one of {RETENTION_SETTINGS}, got "
+            f"{raw!r} (FR-CONF-12)."
+        )
+    return raw
+
+
 def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) -> int:
     """`HARNESS_CONCURRENCY` **clamps down**, never up.
 
@@ -1101,8 +1284,8 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
             f"would select a grader by accident (FR-CONF-01, CT-CONF-11)."
         )
 
-    # `HARNESS_ALLOW_REMOTE_REAL_WORK` is parsed for its side effect of refusing a malformed
-    # value. The gate that reads the result is FR-CONF-08, on issue #6.
+    # Parsed here for its side effect of refusing a malformed value; the gate that acts on it
+    # runs last, once the config is otherwise known good (FR-CONF-08).
     parse_allow_remote_real_work(cfg.get("HARNESS_ALLOW_REMOTE_REAL_WORK"))
 
     # 2. Hardware profile. FR-CONF-06 requires it for edge-local; CT-CONF-02's iff forbids it
@@ -1192,13 +1375,14 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
             default=DEFAULT_HOSTED_PREFIX_TOKEN_CEILING,
         )
 
-    retention_setting = cfg.get("retention_setting")
-    if retention_setting is not None and not isinstance(retention_setting, str):
-        raise ConfigurationError(
-            f"retention_setting must be a string, got {type(retention_setting).__name__}."
-        )
+    retention_setting = _resolve_retention_setting(cfg, backend_profile)
 
-    # 6. Nothing has been constructed until here, so no failure above leaves partial state.
+    # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
+    #    a malformed config reports the malformation, and a well-formed one gets an unambiguous
+    #    consent verdict rather than one buried behind a typo.
+    _check_consent(cfg, cohort, backend_profile)
+
+    # 7. Nothing has been constructed until here, so no failure above leaves partial state.
     return RunConfig(
         backend_profile=backend_profile,  # type: ignore[arg-type]
         hardware_profile=hardware_profile,  # type: ignore[arg-type]
@@ -1219,6 +1403,138 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
 #: written out, so it cannot drift from it — the contract case compares this against the design's
 #: Interfaces list, which is the comparison that matters.
 RUN_CONFIG_FIELDS: tuple[str, ...] = tuple(f.name for f in fields(RunConfig))
+
+
+# --- resume (FR-CONF-04, NFR-CONF-04, RISK-22) -----------------------------------------------
+
+
+def rehydrate_run_config(
+    run_row: Mapping[str, Any], cfg: Mapping[str, Any] | None = None
+) -> RunConfig:
+    """Reconstruct the `RunConfig` a persisted `run` row was written from, or refuse.
+
+    `FR-CONF-04`: *"a run resumed after interruption resolves to the `backend_profile` and
+    `provider_config` persisted on its `run` row, and a mismatch against current configuration
+    raises `BackendMismatchError` rather than proceeding."* RISK-22 is a resumed run silently
+    changing the grader — half a cohort scored by one panel, half by another, and nothing in the
+    record saying so.
+
+    **`cfg` is optional, and that is deliberate.** `TC-CONF-16`'s round-trip property calls this
+    with the row alone, so a one-argument call must reconstruct; `TC-CONF-04` steps 2 and 3 call
+    it *"with current configuration set to `cloud-hosted`"* and require `BackendMismatchError`.
+    Both hold only if current configuration is an optional second argument — additive to §3.1's
+    `rehydrate_run_config(run_row)`.
+
+    The comparison is against `cfg` **directly**, never against `resolve_run_config(cfg, cohort)`:
+    resolving would run the consent gate and could raise `ConsentGateError` where `TC-CONF-04`
+    expects a mismatch, and it would demand a `cohort` a resume check has no reason to hold.
+
+    Reconstruction is from the **row**, never from current configuration — that is the whole
+    point. Current configuration is only ever consulted to *refuse*.
+    """
+    if not isinstance(run_row, Mapping):
+        raise ConfigurationError(
+            f"run_row must be a Mapping, got {type(run_row).__name__}."
+        )
+    panel_config = run_row.get("panel_config")
+    provider_config = run_row.get("provider_config")
+    for name, section in (("panel_config", panel_config), ("provider_config", provider_config)):
+        if not isinstance(section, Mapping):
+            raise ConfigurationError(
+                f"run row is missing a usable {name}: got {type(section).__name__}."
+            )
+
+    backend_profile = run_row.get("backend_profile")
+    raw_panel = panel_config.get("panel")
+    if not isinstance(raw_panel, Sequence) or isinstance(raw_panel, (str, bytes)):
+        raise ConfigurationError("persisted panel must be a sequence of model refs.")
+
+    panel = tuple(_ref_from_dict(raw, f"panel[{i}]") for i, raw in enumerate(raw_panel))
+    transcriber = _ref_from_dict(panel_config.get("transcriber"), "transcriber")
+    raw_off_panel = panel_config.get("off_panel_checker")
+    off_panel_checker = (
+        None if raw_off_panel is None else _ref_from_dict(raw_off_panel, "off_panel_checker")
+    )
+
+    # Checked BEFORE construction, and raised as a mismatch rather than a configuration error.
+    # `RunConfig.__post_init__` would otherwise reach this first and raise `ConfigurationError`,
+    # but `TC-CONF-04`'s variant names `BackendMismatchError` for it -- and it is right to: a
+    # stored ref that no longer matches its stored builds means the panel changed underneath a
+    # run, which is RISK-22, not a malformed row.
+    persisted_ref = panel_config.get("panel_build_ref")
+    recomputed_ref = compute_panel_build_ref(panel)
+    if persisted_ref != recomputed_ref:
+        raise BackendMismatchError(
+            f"the persisted panel_build_ref {persisted_ref!r} disagrees with the one recomputed "
+            f"from the persisted builds ({recomputed_ref!r}). The panel on this run changed "
+            f"after it started (FR-CONF-04, RISK-22)."
+        )
+
+    raw_ceiling = provider_config.get("cost_ceiling")
+    try:
+        cost_ceiling = None if raw_ceiling is None else Decimal(str(raw_ceiling))
+    except InvalidOperation:
+        raise ConfigurationError("persisted cost_ceiling is not a decimal number.") from None
+
+    config = RunConfig(
+        backend_profile=backend_profile,  # type: ignore[arg-type]
+        hardware_profile=provider_config.get("hardware_profile"),  # type: ignore[arg-type]
+        panel=panel,
+        transcriber=transcriber,
+        off_panel_checker=off_panel_checker,
+        prompt_template_v=panel_config.get("prompt_template_v"),  # type: ignore[arg-type]
+        concurrency_ceiling=provider_config.get("concurrency_ceiling"),  # type: ignore[arg-type]
+        prefix_token_ceiling=provider_config.get("prefix_token_ceiling"),  # type: ignore[arg-type]
+        cost_ceiling=cost_ceiling,
+        cost_currency=provider_config.get("cost_currency"),
+        retention_setting=provider_config.get("retention_setting"),
+        panel_build_ref=persisted_ref,  # type: ignore[arg-type]
+    )
+
+    if cfg is not None:
+        _refuse_on_mismatch(config, cfg)
+    return config
+
+
+def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
+    """Compare a rehydrated run against current configuration and refuse any disagreement.
+
+    Compared: the backend, and the resolved build identity of every model the run uses. Those
+    are what "which grader is this run" means — a changed ceiling is an operational tweak, a
+    changed build is a different grader.
+    """
+    if not isinstance(cfg, Mapping):
+        raise ConfigurationError(f"cfg must be a Mapping, got {type(cfg).__name__}.")
+
+    current_profile = cfg.get("HARNESS_PROFILE")
+    if current_profile != persisted.backend_profile:
+        raise BackendMismatchError(
+            f"this run was started on backend_profile {persisted.backend_profile!r} and current "
+            f"configuration says {_echo('HARNESS_PROFILE', current_profile)}. A resumed run "
+            f"rebinds to its persisted backend or refuses; it never switches (FR-CONF-04). A "
+            f"different backend needs a different run."
+        )
+
+    current_panel = cfg.get("panel")
+    if isinstance(current_panel, Sequence) and not isinstance(current_panel, (str, bytes)):
+        current_ref = compute_panel_build_ref(tuple(current_panel))
+        if current_ref != persisted.panel_build_ref:
+            raise BackendMismatchError(
+                f"this run was started with panel {persisted.panel_build_ref!r} and current "
+                f"configuration resolves to {current_ref!r}. Half a cohort graded by one panel "
+                f"and half by another is what FR-CONF-04 exists to prevent (RISK-22)."
+            )
+
+    current_transcriber = cfg.get("transcriber")
+    if (
+        isinstance(current_transcriber, ModelRef)
+        and current_transcriber.build_id != persisted.transcriber.build_id
+    ):
+        raise BackendMismatchError(
+            f"this run was started with transcriber build "
+            f"{persisted.transcriber.build_id!r} and current configuration names "
+            f"{current_transcriber.build_id!r} (FR-CONF-04)."
+        )
 
 
 # --- observability ---------------------------------------------------------------------------

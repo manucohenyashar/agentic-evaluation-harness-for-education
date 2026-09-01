@@ -64,19 +64,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "fixtures/F-FROZEN/manifest.json",
         ("tests/artifact/test_heldout_disjoint.py",),
     ),
-    # One detector for both of #6's red cases. Retention validation (FR-CONF-12) adds no symbol
-    # whose name can be predicted from the design, whereas `rehydrate_run_config` is fixed by
-    # §3.1's Interfaces block -- #6 must add it under exactly that name, so it is the reliable
-    # signal that the issue has landed.
-    "#6": (
-        "symbol",
-        f"{CONF_MODULE}:rehydrate_run_config",
-        (
-            "tests/unit/conf/test_retention_setting.py",
-            "tests/unit/conf/test_properties.py::test_tc_conf_16_"
-            "rehydrating_a_persisted_config_reproduces_it_byte_identically",
-        ),
-    ),
 }
 
 

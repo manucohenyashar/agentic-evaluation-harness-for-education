@@ -3,9 +3,13 @@
 Case: `TC-CONF-12` (`FR-CONF-12`, **P0**, negative), test plan §5.1. Rung 0.
 Oracle: exact exception type.
 
-**Written ahead of implementation** (issue #6). Issue #4 passes `retention_setting` through
-without validating it, deliberately — asserting `FR-CONF-12` before its code exists would make
-#6's own case pass on arrival. Remove the `writtenahead` marker — not the test — when #6 closes.
+Written ahead of its implementation, and now **green**: issue #6 landed `FR-CONF-12`, so the
+`writtenahead` marker came off and the `WRITTEN_AHEAD_BLOCKERS` entry was removed. The test is
+unchanged — the marker goes, never the case.
+
+Its vocabulary now comes from `aeh.conf.RETENTION_SETTINGS`, exactly as the case asked: the
+design names no legal values, only "unrecognized refuses", so the assertions are about the
+mechanism rather than about a set of literals this suite would otherwise have invented.
 
 Why P0 for a field that looks like a preference: `FR-CONF-12` and `R4`/`R31` make this the switch
 that decides whether student work sent to a remote provider is retained by that provider. An
@@ -20,8 +24,6 @@ import pytest
 from aeh.conf import ConfigurationError, resolve_run_config
 from tests.support.conf_builders import SYNTHETIC_COHORT, edge_cfg, hosted_cfg
 from tests.support.impl import require_attr
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#6"
 

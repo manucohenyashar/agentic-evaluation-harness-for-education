@@ -276,24 +276,22 @@ _VALID_CFGS = st.sampled_from(
 )
 
 
-@pytest.mark.writtenahead
 @given(cfg=_VALID_CFGS)
 def test_tc_conf_16_rehydrating_a_persisted_config_reproduces_it_byte_identically(cfg):
     """TC-CONF-16 — round-trip invariant: `rehydrate_run_config(persist(c))` equals `c`
     byte-identically (`NFR-CONF-04`).
 
-    **Written ahead of implementation** (issue #6, which owns `FR-CONF-04` and
-    `rehydrate_run_config`). Remove the `writtenahead` marker — not the test — when #6 closes.
+    Written ahead of its implementation and now green: issue #6 landed `rehydrate_run_config`
+    and `to_persisted_dict`, so the `writtenahead` marker came off. The case is unchanged.
 
     Why P0: `NFR-CONF-04` exists so "resume cannot silently change the grader" (RISK-22). A run
     killed overnight and resumed at 3am must rebind to the panel that graded the first half of
     the cohort, or half the class is scored by one panel and half by another with nothing in the
     record saying so.
 
-    **Interface this case assumes, so #6 reconciles it deliberately rather than discovering it:**
-    `to_persisted_dict()` produces the persisted form and `rehydrate_run_config` accepts it.
-    Design §3.1 types the parameter as `RunRow`, a type that does not exist yet — if #6 makes the
-    row a wrapper rather than the dict itself, `_persist` below is the single line to change.
+    The interface this case assumed — `to_persisted_dict()` produces the persisted form and
+    `rehydrate_run_config` accepts it — is what #6 shipped. Design §3.1 types the parameter as
+    `RunRow`; #6 made that the persisted mapping itself, so `_persist` below stayed a one-liner.
     """
     require_attr(RunConfig, "to_persisted_dict", issue="#6")
     rehydrate = require_attr(aeh.conf, "rehydrate_run_config", issue="#6")
