@@ -243,20 +243,44 @@ def test_tc_conf_04_step_4_no_public_member_mutates_or_replaces_the_backend(star
     `TC-CONF-C14`'s, on issue #9. What is asserted here is the member list plus the two doors
     this type closes itself.
     """
-    members = [name for name in dir(RunConfig) if not name.startswith("_")]
-
-    for name in members:
-        attribute = getattr(RunConfig, name, None)
-        if not callable(attribute):
+    # **Instance methods only.** `conf.py` states the exemption in as many words — "the sweep is
+    # over operations that rebind *an object that already exists*, so it must exempt
+    # constructors — otherwise every frozen value object in the module fails it". A
+    # `@classmethod from_persisted(cls, backend_profile, panel, …)` is a constructor and is
+    # additive per §3.1; without this filter it fails, which would be the test contradicting the
+    # code it guards.
+    for name in [n for n in dir(RunConfig) if not n.startswith("_")]:
+        attribute = inspect.getattr_static(RunConfig, name, None)
+        if isinstance(attribute, (classmethod, staticmethod)) or not callable(attribute):
             continue
         try:
-            parameters = set(inspect.signature(attribute).parameters)
+            parameters = list(inspect.signature(attribute).parameters)
         except (TypeError, ValueError):  # pragma: no cover - builtins without a signature
             continue
-        forbidden = parameters & {"backend_profile", "panel", "cost_ceiling", "retention_setting"}
+        if not parameters or parameters[0] != "self":
+            continue
+
+        # `CT-CONF-14`'s own words: "backend, panel, or ceilings". `retention_setting` is not on
+        # that list, so it is not asserted here — it is `CT-CONF-02`'s, enforced on the type.
+        forbidden = set(parameters) & {
+            "backend_profile", "panel", "cost_ceiling", "concurrency_ceiling",
+            "prefix_token_ceiling",
+        }
         assert not forbidden, (
             f"RunConfig.{name} accepts {sorted(forbidden)} on an object that already exists — "
             f"that is a rebinding surface (CT-CONF-14)"
+        )
+
+        # The parameter names are only half of it. `CT-CONF-14` names `with_backend()` as the
+        # exact forbidden construction, and `def with_backend(self, profile)` carries none of
+        # the names above — so the *verb* is checked too. Found by mutation: that method
+        # survived the whole suite.
+        assert not any(
+            name.startswith(prefix)
+            for prefix in ("with_", "set_", "rebind", "evolve", "replace_", "copy_with")
+        ), (
+            f"RunConfig.{name} reads as an operation that returns a rebound copy; CT-CONF-14 "
+            f"names `with_backend()` as the construction that makes RISK-22 possible again"
         )
 
     with pytest.raises(TypeError):
@@ -336,3 +360,113 @@ def test_tc_conf_04_no_step_returns_a_config_differing_from_the_persisted_one(st
         except (BackendMismatchError, ConfigurationError):
             continue
         assert result == started, "a resume returned a config that is not the persisted one"
+
+
+# --- the second producer of a remote binding --------------------------------------------------
+
+
+@pytest.mark.parametrize("consent", ["real", "undeclared"])
+def test_tc_conf_04_a_resume_re_runs_the_consent_gate_when_a_cohort_is_supplied(consent):
+    """`FR-CONF-08` says *"refuse to produce a `RunConfig` binding a remote provider"* — and
+    `rehydrate_run_config` produces exactly that.
+
+    **This is the second producer, and it had no coverage at all.** The reasoning is `SEC-02`'s
+    own: that case sweeps every remote profile because "a fourth remote backend added later is
+    caught here and by nothing else". A second *entry point* is the same argument. Found by
+    mutation — a `rehydrate_run_config` that silently ignored its `cohort` argument passed the
+    entire suite.
+
+    The scenario is not hypothetical: consent withdrawn at 6pm, a run killed at 2am, resumed at
+    3am by an unattended sweeper holding the row. Without this the row is authority enough.
+    """
+    from aeh.conf import CohortRef, ConsentGateError
+
+    hosted = resolve_run_config(hosted_cfg("cloud-hosted"), SYNTHETIC_COHORT)
+    row = hosted.to_persisted_dict()
+    cohort = CohortRef("c-2026-7B") if consent == "undeclared" else CohortRef("c-2026-7B", consent)
+
+    with pytest.raises(ConsentGateError) as caught:
+        rehydrate_run_config(row, cohort=cohort)
+    assert type(caught.value) is ConsentGateError
+
+
+@pytest.mark.parametrize("consent", ["synthetic", "consented"])
+def test_tc_conf_04_a_resume_for_a_still_consented_cohort_reconstructs(consent):
+    """The positive half: the gate must not refuse work that is still consented, or a resume
+    becomes impossible for the cohorts the remote profile exists to serve."""
+    from aeh.conf import CohortRef
+
+    hosted = resolve_run_config(hosted_cfg("cloud-hosted"), SYNTHETIC_COHORT)
+    row = hosted.to_persisted_dict()
+
+    assert rehydrate_run_config(row, cohort=CohortRef("c-2026-7B", consent)) == hosted
+
+
+def test_tc_conf_04_an_edge_local_resume_is_never_gated(started, run_row):
+    """Nothing leaves the machine, so there is nothing to consent to — the same asymmetry the
+    decision table has. A gate that refused here would make the air-gapped tier unresumable."""
+    from aeh.conf import CohortRef
+
+    assert rehydrate_run_config(run_row, cohort=CohortRef("c", "real")) == started
+
+
+def test_tc_conf_04_omitting_the_cohort_skips_the_gate_deliberately():
+    """The absence of a cohort is the caller saying "this is machinery replaying its own row",
+    and it must not become an accidental bypass that looks like a check.
+
+    Asserted so the optionality is a documented decision rather than something a reader has to
+    infer from a default argument — and so that flipping it to mandatory later is a visible
+    change to this test rather than a silent behaviour change.
+    """
+    hosted = resolve_run_config(hosted_cfg("cloud-hosted"), SYNTHETIC_COHORT)
+
+    assert rehydrate_run_config(hosted.to_persisted_dict()) == hosted
+
+
+# --- the off-panel checker --------------------------------------------------------------------
+
+_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/qwen-2.5-7b.gguf@sha256:abcd", "q4")
+_OTHER_OFF_PANEL = ModelRef("off_panel", "ollama", "/models/phi-4.gguf@sha256:bcde", "q4")
+
+
+@pytest.mark.parametrize(
+    "persisted_has,current,what",
+    [
+        (True, None, "dropped between start and resume"),
+        (False, _OFF_PANEL, "added between start and resume"),
+        (True, _OTHER_OFF_PANEL, "swapped for a different build"),
+        (
+            True,
+            ModelRef("off_panel", "vllm-mlx", _OFF_PANEL.build_id, _OFF_PANEL.quantization),
+            "same build_id served by a different provider",
+        ),
+    ],
+)
+def test_tc_conf_04_step_3_the_off_panel_checker_is_compared_too(persisted_has, current, what):
+    """`TC-CONF-04` step 3 reaches the off-panel checker as much as the transcriber: it is a
+    reachable `ModelRef` that `_check_resolved` validates, so it is "a resolved build id".
+
+    Found by mutation — the `started` fixture had no off-panel checker, so only the
+    `both are None` branch of the comparison ever ran, and deleting the off-panel comparison
+    entirely passed the whole suite. `M-INTEG` routes to this model on escalation, so a swap
+    changes who adjudicates the contested cases specifically.
+    """
+    cfg_started = _current(off_panel_checker=_OFF_PANEL) if persisted_has else _current()
+    row = resolve_run_config(cfg_started, SYNTHETIC_COHORT).to_persisted_dict()
+
+    cfg_now = _current(off_panel_checker=current) if current is not None else _current()
+
+    with pytest.raises(BackendMismatchError) as caught:
+        rehydrate_run_config(row, cfg_now)
+    assert type(caught.value) is BackendMismatchError, what
+
+
+def test_tc_conf_04_an_unchanged_off_panel_checker_round_trips():
+    """The positive half, so "refuse every off-panel configuration" cannot satisfy the above."""
+    cfg = _current(off_panel_checker=_OFF_PANEL)
+    started = resolve_run_config(cfg, SYNTHETIC_COHORT)
+
+    restored = rehydrate_run_config(started.to_persisted_dict(), cfg)
+
+    assert restored == started
+    assert restored.off_panel_checker == _OFF_PANEL

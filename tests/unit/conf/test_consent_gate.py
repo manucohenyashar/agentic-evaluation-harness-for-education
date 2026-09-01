@@ -140,6 +140,27 @@ def test_tc_conf_08_variant_the_override_is_not_truthy_coerced(falsy):
         resolve_run_config(_cfg("cloud-hosted", override=falsy, supplier=SUPPLIER), COHORTS["real"])
 
 
+@pytest.mark.parametrize("malformed", ["y", "yes please", "enabled", "TRUE!", 1, 2, 1.0, [], {}])
+def test_tc_conf_08_variant_a_malformed_override_never_opens_the_gate(malformed):
+    """The third equivalence class on the override axis, and the one that was missing.
+
+    The truthy-coercion case above uses only *recognized* falsy tokens. A value that is neither
+    recognized-true nor recognized-false is a different branch, and the failure it guards is the
+    worse one: `parse_allow_remote_real_work` returning `True` for anything it does not
+    understand. Verified by mutation — under that defect,
+    `HARNESS_ALLOW_REMOTE_REAL_WORK="y"` with a named supplier dispatches real student work to a
+    remote provider, and every other cell of this table still passes.
+
+    Refused as `ConfigurationError`: the value is unparseable, so the gate never gets a verdict
+    to act on. Either declared type is a refusal; what must never happen is a resolution.
+    """
+    cfg = _cfg("cloud-hosted", supplier=SUPPLIER)
+    cfg["HARNESS_ALLOW_REMOTE_REAL_WORK"] = malformed
+
+    with pytest.raises((ConfigurationError, ConsentGateError)):
+        resolve_run_config(cfg, COHORTS["real"])
+
+
 @pytest.mark.parametrize("supplier", [None, "", "   "])
 def test_tc_conf_08_an_override_without_a_named_supplier_is_refused(supplier):
     """TC-CONF-08's oracle: *"a record naming the override but not its supplier fails."*
@@ -219,8 +240,14 @@ def test_tc_conf_08_the_gate_and_the_audit_record_cannot_disagree():
                     resolved = False
 
                 if not resolved:
-                    with pytest.raises((ConsentGateError, ConfigurationError)):
+                    # The **same** type, not "one of two". `CT-CONF-08`'s taxonomy is what
+                    # `M-ORCH` branches on to raise consent-required UX, so a record request
+                    # that refused with `ConfigurationError` where resolution said
+                    # `ConsentGateError` is a real divergence — and a disjunction here would
+                    # not see it.
+                    with pytest.raises(ConsentGateError) as caught:
                         consent_override_for(cfg, cohort)
+                    assert type(caught.value) is ConsentGateError, where
                     continue
 
                 record = consent_override_for(cfg, cohort)
@@ -235,6 +262,26 @@ def test_tc_conf_08_the_gate_and_the_audit_record_cannot_disagree():
 
 
 # --- SEC-02 -----------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "profile", ["Cloud-Hosted", "cloud-hosted ", " cloud-hosted", "CLOUD-HOSTED", "cloud_hosted"]
+)
+def test_tc_conf_08_an_unrecognized_profile_cannot_yield_an_audit_record(profile):
+    """The input class where the gate and the record could diverge, and the sweep above cannot
+    reach: a `HARNESS_PROFILE` that is *nearly* a remote profile.
+
+    `consent_override_for` reads the key directly while `resolve_run_config` validates it first,
+    so a near-miss made resolution refuse while the record request answered `None` — which reads
+    as "no override was needed" for a run that can never start. The two must refuse together.
+    """
+    cfg = _cfg("cloud-hosted")
+    cfg["HARNESS_PROFILE"] = profile
+
+    with pytest.raises(ConfigurationError):
+        resolve_run_config(cfg, COHORTS["real"])
+    with pytest.raises(ConfigurationError):
+        consent_override_for(cfg, COHORTS["real"])
 
 
 def test_sec_02_the_machine_to_remote_provider_boundary_refuses_unconsented_work():

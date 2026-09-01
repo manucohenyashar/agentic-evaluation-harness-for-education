@@ -267,6 +267,59 @@ def test_tc_conf_11_the_serialized_provider_config_matches_no_credential_pattern
         )
 
 
+@pytest.mark.parametrize(
+    "currency",
+    [SENTINEL_CREDENTIAL, "sk-or-v1-abcdefghijklmnop", "usd", "US", "USDX", "", "  ", "$"],
+)
+def test_tc_conf_11_no_free_text_can_reach_provider_config_through_the_currency(currency):
+    """The assertion above is only meaningful if something *could* have reached that dict.
+
+    `HARNESS_COST_CURRENCY` was the one caller free-text field landing in `provider_config`
+    verbatim — planting a sentinel there put it straight into the `run` row and the pattern scan
+    caught it, which is how this case was found. `_resolve_cost` now requires an ISO-4217 alpha
+    code, so every value in `provider_config` is a validated enum, an integer, a `Decimal` string
+    or three uppercase letters.
+
+    That turns `FR-CONF-11`'s acceptance form from "a scan that happened to find nothing" into a
+    structural property, which is the difference between a test that passes and a guarantee.
+    """
+    with pytest.raises(ConfigurationError):
+        resolve_run_config(
+            hosted_cfg("cloud-hosted", HARNESS_COST_CURRENCY=currency), SYNTHETIC_COHORT
+        )
+
+
+def test_tc_conf_11_provider_config_holds_no_free_text_at_all():
+    """The structural statement itself, asserted rather than left to the reader.
+
+    Every value in `provider_config` is drawn from a closed set, an integer, or a canonical
+    numeric string. A field added later that carries caller free text fails here — which is the
+    only assertion that survives someone extending the dict.
+    """
+    from aeh.conf import HARDWARE_PROFILES, RETENTION_SETTINGS
+
+    config = resolve_run_config(hosted_cfg("cloud-hosted", panel=HOSTED_PANEL_3), SYNTHETIC_COHORT)
+    provider_config = config.to_persisted_dict()["provider_config"]
+
+    closed_sets = {
+        "hardware_profile": set(HARDWARE_PROFILES) | {None},
+        "retention_setting": set(RETENTION_SETTINGS) | {None},
+    }
+    for key, value in provider_config.items():
+        if key in closed_sets:
+            assert value in closed_sets[key], f"{key} is outside its closed set"
+        elif key == "cost_currency":
+            assert value is None or re.fullmatch(r"[A-Z]{3}", value), f"{key} is free text"
+        elif key == "cost_ceiling":
+            assert value is None or re.fullmatch(r"[-+0-9.eE]+", value), f"{key} is free text"
+        else:
+            assert isinstance(value, int) and not isinstance(value, bool), (
+                f"provider_config gained a non-numeric field {key!r} that is not a closed set — "
+                f"if it can carry caller text, FR-CONF-11's acceptance form no longer holds "
+                f"structurally"
+            )
+
+
 def test_tc_conf_11_step_4_every_mismatch_message_is_scanned_not_just_the_first(monkeypatch):
     """Step 4 again, one level down: `BackendMismatchError` is raised from **several** places,
     and provoking it once only scans whichever check happens to fire first.
@@ -357,12 +410,17 @@ def test_tc_conf_11_a_credential_a_caller_embeds_in_a_build_id_is_persisted_verb
     config = resolve_run_config(embedded, CohortRef("c-real", "real"))
     persisted = config.to_persisted_dict()
 
-    assert SENTINEL_CREDENTIAL in persisted["panel_config"]["panel"][0]["build_id"], (
-        "build_id must round-trip verbatim (CT-CONF-03); if this fails, the module began "
-        "rewriting identities and panel_build_ref no longer identifies what answered"
-    )
+    # Only the clean-surface half is asserted. Whether an embedded credential should be
+    # *refused at construction* is an open question -- an implementation that rejected a
+    # `build_id` matching a credential pattern would satisfy `CT-CONF-03` (what it accepts still
+    # round-trips verbatim) and `FR-CONF-11`'s normative clause both, and pinning today's
+    # behaviour here would fail it for no requirement's sake. Raised on the PR instead.
     assert SENTINEL_CREDENTIAL not in _render(persisted["provider_config"]), (
         "provider_config is the surface FR-CONF-11 names, and it must stay clean"
+    )
+    assert config.panel[0].build_id == embedded["panel"][0].build_id, (
+        "build_id must round-trip verbatim (CT-CONF-03): if the module starts rewriting "
+        "identities, panel_build_ref no longer identifies what answered"
     )
 
 

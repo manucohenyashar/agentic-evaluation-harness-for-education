@@ -256,6 +256,9 @@ _HEX = re.compile(r"\A[0-9a-fA-F]+\Z")
 
 _KNOWN_ROLES: frozenset[str] = frozenset({"judge", "transcriber", "extractor", "off_panel"})
 
+#: ISO-4217 alpha: exactly three uppercase letters. See `_resolve_cost`.
+_ISO_4217 = re.compile(r"\A[A-Z]{3}\Z")
+
 #: C0 controls and DEL. Refused in every field that reaches `compute_panel_build_ref`, because
 #: two of them are that function's separators — see `ModelRef.__post_init__`.
 _CONTROL_CHARS: frozenset[str] = frozenset(chr(c) for c in (*range(0x20), 0x7F))
@@ -1098,8 +1101,18 @@ def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal
     if ceiling < 0:
         raise ConfigurationError("HARNESS_COST_CEILING must not be negative.")
 
-    if not isinstance(raw_currency, str) or not raw_currency.strip():
-        raise ConfigurationError("HARNESS_COST_CURRENCY must be a non-empty string.")
+    # An ISO-4217 alpha code: exactly three uppercase letters. Not decoration --
+    # `HARNESS_COST_CURRENCY` was the **only** free-text field reaching `provider_config`, and
+    # `FR-CONF-11` names "the serialized `provider_config` matches no credential pattern" as this
+    # requirement's acceptance form. With this check every value in that dict is a validated
+    # enum, an integer, a Decimal string or a currency code, so the property holds *structurally*
+    # rather than by a scan happening not to find anything. Found by TC-CONF-11 planting a
+    # sentinel there and watching it reach the run row.
+    if not isinstance(raw_currency, str) or not _ISO_4217.match(raw_currency.strip()):
+        raise ConfigurationError(
+            "HARNESS_COST_CURRENCY must be a three-letter ISO-4217 code such as 'USD'. The "
+            "supplied value is not echoed here (NFR-CONF-02)."
+        )
 
     return ceiling, raw_currency.strip()
 
@@ -1159,8 +1172,20 @@ def consent_override_for(cfg: Mapping[str, Any], cohort: CohortRef) -> ConsentOv
     resolved under an override and the record of that override cannot disagree — two
     implementations of the same rule is how a run ends up dispatched with nothing in the audit
     trail saying who authorised it.
+
+    The profile is validated here for the same reason. Reading `HARNESS_PROFILE` raw made a
+    near-miss — `'Cloud-Hosted'`, `'cloud-hosted '` — fall outside `REMOTE_PROFILES` and return
+    `None`, which reads as *"no override was needed"* for a configuration that
+    `resolve_run_config` refuses outright. The two must refuse together or the claim that they
+    are one rule is false where it matters.
     """
-    return _check_consent(cfg, cohort, cfg.get("HARNESS_PROFILE"))
+    backend_profile = cfg.get("HARNESS_PROFILE") if isinstance(cfg, Mapping) else None
+    if not isinstance(backend_profile, str) or backend_profile not in BACKEND_PROFILES:
+        raise ConfigurationError(
+            f"HARNESS_PROFILE must be one of {BACKEND_PROFILES} before a consent override can "
+            f"be recorded, got {_echo('HARNESS_PROFILE', backend_profile)}."
+        )
+    return _check_consent(cfg, cohort, backend_profile)
 
 
 def _check_consent(

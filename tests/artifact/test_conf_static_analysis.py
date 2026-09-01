@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 import types
 from pathlib import Path
 
@@ -111,6 +112,55 @@ _FORBIDDEN_ATTRIBUTES = {
 }
 _FORBIDDEN_CALLS = {"open", "input", "eval", "exec", "compile", "__import__"}
 
+#: Modules this module must not import at all. The plan's oracle is *"import-graph **and** AST
+#: assertion"*, and the import half is not decoration: `from os import getenv` rebinds the read to
+#: a bare `Name`, so an attribute-path scan never sees it — and `getenv("HARNESS_PROFILE")` is
+#: precisely what `NFR-CONF-01` forbids. Verified: the attribute scan alone misses it, along with
+#: `requests.post`, `urllib.request.urlopen` and `Path(...).read_text()`.
+_FORBIDDEN_MODULES = {
+    "requests", "httpx", "urllib", "urllib3", "http", "socket", "ssl", "ftplib", "smtplib",
+    "sqlite3", "shelve", "dbm", "pickle", "subprocess", "multiprocessing", "shutil", "tempfile",
+    "webbrowser", "asyncio",
+}
+
+#: Names that must not be imported *from* an otherwise-permitted module, because importing them
+#: turns a forbidden attribute read into an invisible bare call.
+_FORBIDDEN_IMPORTED_NAMES = {
+    "environ", "getenv", "putenv", "system", "popen", "urlopen", "connect", "create_connection",
+    "getcwd", "chdir", "remove", "rename", "listdir", "walk",
+}
+
+
+def _imports() -> list[tuple[str, str]]:
+    """Every `(module, imported_name)` pair in `aeh.conf`; `imported_name` is `""` for a plain
+    `import x`."""
+    pairs: list[tuple[str, str]] = []
+    for node in ast.walk(CONF_TREE):
+        if isinstance(node, ast.Import):
+            pairs.extend((alias.name, "") for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            pairs.extend((node.module, alias.name) for alias in node.names)
+    return pairs
+
+
+def test_tc_conf_13_the_module_imports_nothing_that_reaches_a_file_or_the_network():
+    """TC-CONF-13's **import-graph** half — the other side of the plan's stated oracle.
+
+    An attribute scan can only refuse spellings someone anticipated. This refuses the
+    *capability*: if `requests` is not imported, no spelling of an HTTP call exists to miss. The
+    sharp case is `from os import getenv`, which the attribute scan cannot see at all.
+    """
+    offenders = [
+        f"{module}.{name}" if name else module
+        for module, name in _imports()
+        if module.split(".")[0] in _FORBIDDEN_MODULES
+        or (module.split(".")[0] == "os" and name in _FORBIDDEN_IMPORTED_NAMES)
+        or (module.split(".")[0] == "pathlib" and name)
+    ]
+    assert not offenders, (
+        "aeh.conf imports a capability NFR-CONF-01 forbids it: " + ", ".join(sorted(offenders))
+    )
+
 
 def test_tc_conf_13_resolution_reads_no_environment_opens_no_file_makes_no_network_call():
     """TC-CONF-13 — the AST half. Swept over `resolve_run_config` **and every module-level
@@ -157,9 +207,14 @@ def test_tc_conf_13_every_module_global_resolution_reads_is_immutable():
     #: change what `compute_panel_build_ref` computes between two calls in any way this case is
     #: about. What it excludes is the thing that matters — a `dict`, `list` or `set` at module
     #: level that a caller, a plugin or another test could reach in and edit.
+    #: `ModuleType` is here because an imported module is not module *state*: `hashlib` cannot
+    #: change what `compute_panel_build_ref` computes between two calls in any way this case is
+    #: about. `re.Pattern` likewise — a compiled pattern exposes no mutator, so it is a constant
+    #: that happens to be an object. What this excludes is the thing that matters: a `dict`,
+    #: `list` or `set` at module level that a caller, a plugin or another test could edit.
     immutable = (
         str, bytes, int, float, bool, complex, type(None),
-        tuple, frozenset, types.MappingProxyType, types.ModuleType,
+        tuple, frozenset, types.MappingProxyType, types.ModuleType, re.Pattern,
         type, types.FunctionType, types.BuiltinFunctionType,
     )
 
@@ -237,6 +292,19 @@ def test_tc_conf_14_the_module_has_no_conditional_import():
     for node in ast.walk(CONF_TREE):
         if not isinstance(node, (ast.If, ast.Try)):
             continue
+        # Two shapes are exempt because neither is a *platform* branch, and refusing them would
+        # fail a legitimate implementation: `if TYPE_CHECKING:` imports nothing at runtime, and
+        # `try: import tomllib / except ImportError: import tomli` selects on the standard
+        # library's version rather than on the machine.
+        if isinstance(node, ast.If) and any(
+            isinstance(n, ast.Name) and n.id == "TYPE_CHECKING" for n in ast.walk(node.test)
+        ):
+            continue
+        if isinstance(node, ast.Try) and any(
+            isinstance(h.type, ast.Name) and h.type.id in ("ImportError", "ModuleNotFoundError")
+            for h in node.handlers
+        ):
+            continue
         for child in ast.walk(node):
             if isinstance(child, (ast.Import, ast.ImportFrom)):
                 names = [a.name for a in child.names]
@@ -268,14 +336,25 @@ def test_tc_conf_14_residency_and_quantization_appear_only_as_data():
     for policy in aeh.conf.HARDWARE_PROFILES.values():
         vocabulary.add(policy.quantization_target)
 
+    # **Every** branching construct, not just `ast.If`. A ternary is the natural way to write
+    # the very branch this case forbids — `2000 if p == "unified-large" else 1500` — and
+    # `match`, a comprehension guard and `while` are all equally invisible to an `If`-only walk.
+    # Verified: all four survived the earlier version; only the docstring's own example failed.
     branched_on = set()
+    tests: list[tuple[int, ast.AST]] = []
     for node in ast.walk(CONF_TREE):
-        if not isinstance(node, ast.If):
-            continue
-        for child in ast.walk(node.test):
+        if isinstance(node, (ast.If, ast.IfExp, ast.While)):
+            tests.append((node.lineno, node.test))
+        elif isinstance(node, ast.Match):
+            tests.extend((case.pattern.lineno, case.pattern) for case in node.cases)
+        elif isinstance(node, ast.comprehension):
+            tests.extend((guard.lineno, guard) for guard in node.ifs)
+
+    for lineno, test in tests:
+        for child in ast.walk(test):
             if isinstance(child, ast.Constant) and isinstance(child.value, str):
                 if child.value in vocabulary:
-                    branched_on.add(f"line {node.lineno}: {child.value!r}")
+                    branched_on.add(f"line {lineno}: {child.value!r}")
 
     assert not branched_on, (
         "aeh.conf branches on a residency role, quantization target or hardware profile name — "

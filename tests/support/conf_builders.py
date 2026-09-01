@@ -177,8 +177,11 @@ def seed_credentials(monkeypatch, sentinel: str = SENTINEL_CREDENTIAL) -> str:
     test would stay green against an implementation that copied the key straight into
     `to_persisted_dict()`.
 
-    So the environment half proves the module does not *reach out* for a credential, and the
-    `cfg` half proves it does not *pass one through*. Both are needed and neither is sufficient.
+    So the environment half proves the module does not *reach out* for a credential, and a
+    `cfg` carrying the sentinel proves it does not *pass one through*. Both are needed and
+    neither is sufficient. Cases that only want the first claim resolve a clean config on
+    purpose — a sweep over `to_persisted_dict()` after `seed_credentials` alone is exactly the
+    assertion that nothing was fetched.
     """
     for var in CREDENTIAL_ENV_VARS:
         monkeypatch.setenv(var, sentinel)
