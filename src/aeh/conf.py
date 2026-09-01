@@ -40,7 +40,8 @@ the wrong thing.
 | `quantization` on a hosted backend | The `PROVIDER_MANAGED` sentinel, never blank | `CT-CONSOLE-10` renders this under every grade; empty reads as "unknown", not "not applicable" |
 | One serializer, `to_canonical_json()` | Both the log line and `M-ORCH`'s audit record call it | `TC-CONF-17` is a **differential** against "the one logged at run start" |
 | The run-start log line | `log_run_start()`, separate from resolution | `CT-CONF-12` lets `M-CONSOLE` resolve on the request path, so logging inside resolution would emit two lines for one run |
-| The prefix ceiling's knob | `cfg["hardware_profiles"]`, gated behind `HARNESS_HARDWARE_PROFILE` — no seventh `HARNESS_*` key | `FR-CONF-06`/`-10` derive the ceiling *from* the profile; a separate key would permit `unified-large` with a ceiling of 500 |
+| The prefix ceiling's knob | `cfg["hardware_profiles"]` on `edge-local`, `cfg["hosted_prefix_token_ceiling"]` otherwise — no seventh `HARNESS_*` key | `FR-CONF-06`/`-10` derive the ceiling *from* the profile; a separate env key would permit `unified-large` with a ceiling of 500 |
+| Control characters refused in `provider`, `build_id`, `quantization` | `ModelRef.__post_init__` | Two of them are `compute_panel_build_ref`'s separators, so one inside a field makes the encoding ambiguous and the key non-unique (`CT-CONF-07`) |
 
 The second of those changes an input class `TS-03` will meet: an empty or whitespace `build_id`,
 or a `role` outside the four, now raises from the **constructor** rather than surfacing as an
@@ -252,6 +253,10 @@ _HEX = re.compile(r"\A[0-9a-fA-F]+\Z")
 
 _KNOWN_ROLES: frozenset[str] = frozenset({"judge", "transcriber", "extractor", "off_panel"})
 
+#: C0 controls and DEL. Refused in every field that reaches `compute_panel_build_ref`, because
+#: two of them are that function's separators — see `ModelRef.__post_init__`.
+_CONTROL_CHARS: frozenset[str] = frozenset(chr(c) for c in (*range(0x20), 0x7F))
+
 
 def _has_floating_tag(build_id: str) -> bool:
     """Whether `build_id` carries a floating tag, checked in **tag positions only**.
@@ -339,6 +344,32 @@ class ModelRef:
                 "ModelRef.quantization must be a non-empty string or None, got "
                 f"{type(self.quantization).__name__}."
             )
+
+        # Control characters are refused because `compute_panel_build_ref` joins these three
+        # fields with `\x1f` and `\n`. Without this, a `provider` or `quantization` carrying a
+        # separator makes the encoding **ambiguous**, and the hash stops being injective over
+        # legal panels: a single `ModelRef` whose provider spells out two more records forges
+        # the ref of a three-judge panel. Both are reachable through `resolve_run_config`, and
+        # `RunConfig.__post_init__`'s `panel_build_ref == compute_panel_build_ref(panel)` check
+        # cannot see it — it recomputes from the same ambiguous encoding.
+        #
+        # `CT-CONF-07` lets consumers use the ref as a `package_validation` primary-key
+        # component, so a collision merges two distinct panels under one key: verbatim the
+        # regression `TC-CONF-C07` exists to catch, arriving through the encoding rather than
+        # through sorting.
+        #
+        # Refusing is the fix that keeps the formula **frozen**: no well-formed build identity
+        # contains a control character, so no existing hash changes and #7's committed
+        # reference literals stay valid. Length-prefixing would also close it and would
+        # invalidate every stored key.
+        for name in ("provider", "build_id", "quantization"):
+            value = getattr(self, name)
+            if isinstance(value, str) and any(ch in _CONTROL_CHARS for ch in value):
+                raise ConfigurationError(
+                    f"ModelRef.{name} contains a control character. These three fields are "
+                    f"joined into panel_build_ref, so a separator inside one makes the "
+                    f"encoding ambiguous and the key non-unique (CT-CONF-07)."
+                )
 
     def build_form(self) -> BuildForm | None:
         """Which of the two resolved forms `build_id` takes, or `None` if it takes neither."""
@@ -442,6 +473,12 @@ class CohortRef:
 #: **every view showing a grade** (`FR-CONSOLE-09`, `CT-CONSOLE-10`), and an empty cell there
 #: reads as "unknown" rather than "not applicable". Those are different claims to a teacher
 #: asking what graded their student, so the summary says which one it means.
+#:
+#: **Constraint this places on issue #6.** `rehydrate_run_config` must not reconstruct
+#: `ModelRef.quantization` out of a `ProfileSummary`: on a hosted run `None` would come back as
+#: `"provider-managed"`, and `NFR-CONF-04`'s byte-identical round-trip would break. The summary
+#: is a rendering of the config, never a source for rebuilding it. It also never reaches
+#: `panel_build_ref`, which encodes `ref.quantization or ''` directly.
 PROVIDER_MANAGED = "provider-managed"
 
 
@@ -491,9 +528,16 @@ class ProfileSummary:
     Compatibility note, and an audit record holding a run's grader identity without the key that
     identity is filed under would be a strange thing to have stored.
 
-    Credential-free by construction (`CT-CONF-10`): every field is a build identity, a profile
-    name or a retention setting, and nothing here is read from the environment. The four-surface
-    sentinel scan that proves it is `TC-CONF-11`, on issue #8.
+    Credential-free with respect to everything this module reads (`CT-CONF-10`): every field is
+    a build identity, a profile name or a retention setting, and none is read from the
+    environment. That is not the same as credential-free against *caller* data — a key embedded
+    in a `build_id` would land here and in the log record. The four-surface sentinel scan that
+    settles it is `TC-CONF-11`, on issue #8.
+
+    Note for `TC-CONF-C14`'s reflection sweep (issue #9): this **constructor** takes
+    `backend_profile`, `panel` and `retention_setting`, as `RunConfig`'s already does. The sweep
+    is over operations that rebind *an object that already exists*, so it must exempt
+    constructors — otherwise every frozen value object in the module fails it.
     """
 
     backend_profile: str
@@ -950,6 +994,26 @@ def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal
     return ceiling, raw_currency.strip()
 
 
+def _positive_int(raw: Any, key: str, default: int) -> int:
+    """Parse an optional integer knob, refusing anything that is not one.
+
+    A knob that silently ignores a value it cannot parse is worse than one with no default:
+    the operator believes they set it. `TC-CONF-15` additionally requires the refusal to be a
+    declared type rather than a `ValueError` escaping `int()`.
+    """
+    if raw is None:
+        return default
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        raise ConfigurationError(f"{key} must be a positive integer, got {type(raw).__name__}.")
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        raise ConfigurationError(f"{key} must be a positive integer.") from None
+    if value < 1:
+        raise ConfigurationError(f"{key} must be at least 1, got {value}.")
+    return value
+
+
 def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) -> int:
     """`HARNESS_CONCURRENCY` **clamps down**, never up.
 
@@ -1114,9 +1178,19 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     # 5. Budgets and ceilings.
     cost_ceiling, cost_currency = _resolve_cost(cfg, backend_profile)
     concurrency_ceiling = _resolve_concurrency(cfg, policy)
-    prefix_token_ceiling = (
-        policy.prefix_token_ceiling if policy is not None else DEFAULT_HOSTED_PREFIX_TOKEN_CEILING
-    )
+    # On `edge-local` the ceiling comes from the hardware policy, and `cfg["hardware_profiles"]`
+    # is its knob — swapping a whole coherent cell rather than one number, so `unified-large`
+    # can never end up paired with a ceiling meant for a smaller box. A hosted backend has no
+    # policy to derive from, so it gets its own knob rather than a constant with no way to
+    # adjust it (`CLAUDE.md` seam 3).
+    if policy is not None:
+        prefix_token_ceiling = policy.prefix_token_ceiling
+    else:
+        prefix_token_ceiling = _positive_int(
+            cfg.get("hosted_prefix_token_ceiling"),
+            "hosted_prefix_token_ceiling",
+            default=DEFAULT_HOSTED_PREFIX_TOKEN_CEILING,
+        )
 
     retention_setting = cfg.get("retention_setting")
     if retention_setting is not None and not isinstance(retention_setting, str):

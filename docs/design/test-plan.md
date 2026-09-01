@@ -800,6 +800,7 @@ identically; a credential containing regex metacharacters does not break the sca
 | TC-CONF-16 | FR-CONF-02, NFR-CONF-04 | Property / 0 | Round-trip of any valid generated `RunConfig` | `rehydrate_run_config(persist(c))` equals `c` byte-identically | Round-trip invariant | P0 |
 | TC-CONF-17 | FR-CONF-09 | Integration / 2 | A finished run's audit record | The stored `profile_summary()` is byte-identical to the one logged at run start | Differential | P1 |
 | TC-CONF-18 | NFR-CONF-02 | Observability / 1 | Run start with credentials present, at every log level including DEBUG | No credential-shaped token in any emitted record; the run-start line is emitted exactly once | Pattern scan | P0 |
+| TC-CONF-19 | FR-CONF-05 | Unit / 0, negative | A `ModelRef` whose `provider` or `quantization` contains the encoding's field or record separator, crafted so its serialization reproduces that of a longer panel | The ref is refused at construction; no two distinct legal panels share a `panel_build_ref` | Exact exception type, plus injectivity over a crafted collision pair | P0 |
 
 ### 5.2 Module: Inference Provider Abstraction (`M-PROV`)
 

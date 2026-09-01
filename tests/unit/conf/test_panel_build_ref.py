@@ -19,7 +19,12 @@ from __future__ import annotations
 
 import pytest
 
-from aeh.conf import ModelRef, compute_panel_build_ref, resolve_run_config
+from aeh.conf import (
+    ConfigurationError,
+    ModelRef,
+    compute_panel_build_ref,
+    resolve_run_config,
+)
 from tests.support.conf_builders import SYNTHETIC_COHORT, edge_cfg
 
 # A three-judge panel. Odd by contract (`CT-CONF-02`: 1, 3 or 5) and three rather than one
@@ -97,3 +102,80 @@ def test_tc_conf_05_two_panels_with_the_same_members_in_a_different_order_do_not
     refs = {compute_panel_build_ref(order) for order in permutations((J1, J2, J3))}
 
     assert len(refs) == 6, "orderings collided: two distinct panels would share one key"
+
+
+# --- TC-CONF-19 (regression) ------------------------------------------------------------------
+#
+# Added by issue #5 as the regression for a defect that had no `TC-*` coverage, per `CLAUDE.md`'s
+# defect-fix exception; the case is recorded in test plan §5.1 in the same PR.
+#
+# `compute_panel_build_ref` joins `provider`, `build_id` and `quantization` with `\x1f` and the
+# records with `\n`. `build_id` was protected incidentally — `build_form()` rejects whitespace and
+# `"\x1f".isspace()` is true — but `provider` and `quantization` were validated only as non-empty
+# strings. A `provider` containing the separators could therefore *spell out two further records*,
+# making the encoding ambiguous and the hash non-injective over legal panels: one `ModelRef` in a
+# panel of length 1 produced the exact ref of a three-judge panel.
+#
+# `CT-CONF-07` licenses consumers to use the ref as a `package_validation` primary-key component,
+# so a collision merges two distinct panels under one key. That is the regression `TC-CONF-C07`
+# names, arriving through the encoding rather than through sorting.
+
+_FIELD_SEPARATOR = "\x1f"
+_RECORD_SEPARATOR = "\n"
+
+
+def _forged_provider_spelling_out(*refs: ModelRef) -> str:
+    """A `provider` whose bytes reproduce the serialization of `refs` plus one record's opening."""
+    body = "".join(
+        f"{r.provider}{_FIELD_SEPARATOR}{r.build_id}{_FIELD_SEPARATOR}{r.quantization or ''}"
+        f"{_RECORD_SEPARATOR}"
+        for r in refs
+    )
+    return body + "ollama"
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("provider", _forged_provider_spelling_out(J1, J2)),
+        ("quantization", f"q4{_RECORD_SEPARATOR}ollama{_FIELD_SEPARATOR}/m/x.gguf@sha256:dd"),
+        ("provider", "olla\x1fma"),
+        ("quantization", "q4\n"),
+        ("build_id", "/m/a.gguf@sha256:aa\x00"),
+    ],
+)
+def test_tc_conf_19_a_ref_carrying_an_encoding_separator_is_refused(field, value):
+    """TC-CONF-19 — the fields hashed into `panel_build_ref` may not contain its separators.
+
+    Refusal at construction is what keeps the formula frozen: no well-formed build identity
+    contains a control character, so the committed reference hashes above are unchanged. The
+    alternative fix — length-prefixing the encoding — would close the same hole and invalidate
+    every `panel_build_ref` already stored.
+    """
+    fields = {
+        "role": "judge",
+        "provider": "ollama",
+        "build_id": "/models/llama-3.3-70b.gguf@sha256:aaaa",
+        "quantization": "q4",
+    }
+    fields[field] = value
+
+    with pytest.raises(ConfigurationError) as caught:
+        ModelRef(**fields)
+    assert type(caught.value) is ConfigurationError
+
+
+def test_tc_conf_19_no_single_ref_panel_can_forge_a_three_judge_panels_key():
+    """The property the refusal protects, asserted over the crafted collision itself.
+
+    Without the guard this passed identical values: `compute_panel_build_ref` over a one-member
+    panel returned `REFERENCE_PANEL_BUILD_REF`, the key of a completely different three-judge
+    panel. Asserting the exception alone would not show that, which is why the collision is
+    constructed here rather than described.
+    """
+    with pytest.raises(ConfigurationError):
+        forged = ModelRef("judge", _forged_provider_spelling_out(J1, J2), J3.build_id, J3.quantization)
+        assert compute_panel_build_ref((forged,)) != REFERENCE_PANEL_BUILD_REF, (
+            "a one-judge panel forged the three-judge panel's key: panel_build_ref is not "
+            "injective over legal panels (CT-CONF-07)"
+        )
