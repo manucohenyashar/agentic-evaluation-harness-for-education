@@ -479,7 +479,8 @@ implementation` field — see `write-tests/SKILL.md`.
 3. Set `TEST_CMD` in `.claude/settings.json`. It ships **empty**, which disables the
    verification gate — deliberately, because a `TEST_CMD` pointing at a suite that doesn't
    exist makes the Stop hook fail every turn that touches a file, and people learn to ignore
-   it. Set it as soon as there's a real suite.
+   it. Set it as soon as there's a real suite. (In *this* repo it is set — see
+   [Developing this project](#developing-this-project).)
 4. Authenticate `gh` (`gh auth login`) and make sure `jq` is installed. `plan-to-issues`,
    `ready-issues.sh`, and `work-backlog` all shell out to them. No repo secrets and no
    GitHub App are needed — nothing runs in GitHub.
@@ -487,6 +488,46 @@ implementation` field — see `write-tests/SKILL.md`.
    `/create-test-plan docs/design/`, then `/plan-to-issues docs/design/`. Check the printed
    graph before starting work.
 6. Work the backlog — see [Running it](#running-it) below.
+
+## Developing this project
+
+The sections above describe the harness as a template. This is what *this* repository needs,
+once, on a fresh clone. `.venv/` is gitignored, so nothing runs until you create it.
+
+```bash
+python -m venv .venv
+```
+
+```bash
+.venv/Scripts/python -m pip install -r requirements-dev.txt
+```
+
+On macOS and Linux that second path is `.venv/bin/python`; `scripts/test.sh` finds either.
+
+Then the fast tier, which is also what `TEST_CMD` and the Stop-hook gate run:
+
+```bash
+./scripts/test.sh
+```
+
+Any other tier — the marker scheme is test plan §4.7's — by passing pytest arguments through:
+
+```bash
+./scripts/test.sh -m contract
+```
+
+**A red suite is expected, and is not the same as a broken one.** Every test story is written
+*ahead* of the code it tests (test plan §8.2), so `pytest -q` with no marker filter is red by
+design and a green run would mean the tests are not asserting what they claim. Those tests
+carry `@pytest.mark.writtenahead` and are excluded from `TEST_CMD`, so the gate stays green
+over the code that does exist. When an implementing issue closes, remove the marker — never
+the test — and drop its entry from `WRITTEN_AHEAD_BLOCKERS` in `tests/support/impl.py`. A
+gate test fails until you do.
+
+Two things the fast tier enforces that are easy to trip over: **no test may reach the
+network** (an autouse socket guard fails the test on any connect, DNS lookup or UDP send —
+mark a test `live` if it genuinely needs one), and **the suite runs shuffled**, so a test that
+passes only in file order has hidden shared state and is a real defect.
 
 ## Running it
 

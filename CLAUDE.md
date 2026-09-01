@@ -58,8 +58,18 @@ PR. A test in the repo but not in the plan makes the plan lie about coverage.
 
 ## Environment
 
-- `TEST_CMD` in `.claude/settings.json` is **empty**, which disables the Stop-hook
-  verification gate. Set it once this project has a real suite.
+- `TEST_CMD` is `./scripts/test.sh` — the fast tier, and the Stop-hook verification gate. It
+  needs the dev environment: `python -m venv .venv` then
+  `.venv/Scripts/python -m pip install -r requirements-dev.txt` (`.venv/bin/python` on
+  POSIX). `.venv/` is gitignored, so a fresh clone must do this once.
+- **`writtenahead` is load-bearing.** Test plan §8.2 has every test story land **red**,
+  written ahead of its implementation — and the Stop hook blocks the turn whenever `TEST_CMD`
+  fails. So `scripts/test.sh` adds `and not writtenahead` to test-plan §4.7's marker string,
+  and red-by-design tests carry `@pytest.mark.writtenahead`. When an implementing issue
+  closes, **remove the marker, never the test**, and drop its entry from
+  `WRITTEN_AHEAD_BLOCKERS` in `tests/support/impl.py` — a gate test fails until you do, which
+  is what stops a P0 case sitting outside the gate forever. `pytest -q` with no marker filter
+  is the honest full picture and is what a PR reports.
 - Stage 3 onward needs git and a GitHub remote (PRs, `git diff`, working-tree checks). If
   `git rev-parse` fails here, stop and say so rather than working around it.
 - **All work runs locally.** GitHub hosts the repo and the issue graph; it does not run
