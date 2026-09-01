@@ -987,11 +987,16 @@ def compute_panel_build_ref(panel: Sequence[ModelRef]) -> str:
 
 # --- resolution ----------------------------------------------------------------------------
 
-_REQUIRED_BUILD_FORM: Mapping[str, BuildForm] = {
+#: A `MappingProxyType` for the same reason `HARDWARE_PROFILES` is one: `resolve_run_config`
+#: reads it, so a mutable copy would make resolution a function of process state. Mutating it
+#: between two calls would change which build form each backend requires -- and `TC-CONF-C05`,
+#: which perturbs only the *environment*, could not see it. Found by `TC-CONF-13`'s
+#: immutable-globals assertion.
+_REQUIRED_BUILD_FORM: Mapping[str, BuildForm] = MappingProxyType({
     "edge-local": "edge-weights",
     "cloud-hosted": "provider-pinned",
     "dev-ci": "provider-pinned",
-}
+})
 
 _COST_BEARING_PROFILES = frozenset({"cloud-hosted", "dev-ci"})
 

@@ -105,3 +105,81 @@ def hosted_cfg(profile: str = "cloud-hosted", **overrides: Any) -> dict[str, Any
     }
     cfg.update(overrides)
     return cfg
+
+
+# --- a three-judge panel ---------------------------------------------------------------------
+
+#: A second and third judge, so a case can use a panel that is not length 1.
+#:
+#: `edge_cfg()` and `hosted_cfg()` default to **one** judge, and that is a blind spot rather than
+#: a convenience: an implementation returning `panel[:1]` — from `profile_summary()`, from a
+#: validation loop — is indistinguishable from a correct one when the panel has a single member.
+#: Any case about "every panel build" or "every reachable ref" should reach for these.
+EDGE_JUDGE_2 = ModelRef(
+    role="judge",
+    provider="ollama",
+    build_id="/models/qwen-2.5-72b.gguf@sha256:dddd",
+    quantization="q4",
+)
+EDGE_JUDGE_3 = ModelRef(
+    role="judge",
+    provider="vllm-mlx",
+    build_id="/models/mistral-large.gguf@sha256:eeee",
+    quantization="q8",
+)
+EDGE_PANEL_3 = (EDGE_JUDGE, EDGE_JUDGE_2, EDGE_JUDGE_3)
+
+HOSTED_JUDGE_2 = ModelRef(
+    role="judge",
+    provider="openrouter",
+    build_id="qwen/qwen-2.5-72b-instruct@2024-09-19",
+    quantization=None,
+)
+HOSTED_JUDGE_3 = ModelRef(
+    role="judge",
+    provider="openrouter",
+    build_id="mistralai/mistral-large@2024-11-18",
+    quantization=None,
+)
+HOSTED_PANEL_3 = (HOSTED_JUDGE, HOSTED_JUDGE_2, HOSTED_JUDGE_3)
+
+
+# --- credential sentinels --------------------------------------------------------------------
+
+#: The exact value `TC-CONF-11`'s preconditions name.
+SENTINEL_CREDENTIAL = "sk-or-v1-SENTINEL-0123456789abcdef"
+
+#: A second sentinel carrying regex metacharacters — `TC-CONF-11`'s stated variant, "a credential
+#: containing regex metacharacters does not break the scan". A scanner that compiles the sentinel
+#: as a pattern rather than searching for it literally fails here and nowhere else.
+SENTINEL_WITH_METACHARACTERS = r"sk-or-v1-SEN(TIN[EL]).*+?^$|\{2}"
+
+#: Every variable the design names as credential-bearing, plus the shapes a careless operator
+#: reaches for. `FR-CONF-11` names `OPENROUTER_API_KEY`; the rest are "every other
+#: credential-bearing variable" from the same preconditions.
+CREDENTIAL_ENV_VARS = (
+    "OPENROUTER_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "HF_TOKEN",
+    "HARNESS_API_KEY",
+)
+
+
+def seed_credentials(monkeypatch, sentinel: str = SENTINEL_CREDENTIAL) -> str:
+    """Put `sentinel` in every credential-bearing environment variable. Returns it.
+
+    **Why this is not enough on its own, and every caller also injects into `cfg`.**
+    `TC-CONF-11`'s precondition says "an environment snapshot carrying the sentinel credential in
+    `OPENROUTER_API_KEY`" — but `environment_snapshot()` lifts only the six `HARNESS_*` keys, so a
+    credential seeded here never reaches `cfg`, never reaches the module, and a scan of the
+    module's surfaces would find nothing **whatever the module did**. That is a vacuous pass: the
+    test would stay green against an implementation that copied the key straight into
+    `to_persisted_dict()`.
+
+    So the environment half proves the module does not *reach out* for a credential, and the
+    `cfg` half proves it does not *pass one through*. Both are needed and neither is sufficient.
+    """
+    for var in CREDENTIAL_ENV_VARS:
+        monkeypatch.setenv(var, sentinel)
+    return sentinel

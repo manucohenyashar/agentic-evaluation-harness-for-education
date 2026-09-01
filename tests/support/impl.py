@@ -30,6 +30,7 @@ from typing import Any
 IMPLEMENTATION_PACKAGE = "aeh"
 PROVIDER_MODULE = f"{IMPLEMENTATION_PACKAGE}.prov"
 CONF_MODULE = f"{IMPLEMENTATION_PACKAGE}.conf"
+STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -63,6 +64,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "path",
         "fixtures/F-FROZEN/manifest.json",
         ("tests/artifact/test_heldout_disjoint.py",),
+    ),
+    # `TC-CONF-17` is the one case in TS-04 whose rung is not achievable: rung 2 means a
+    # *finished run's* audit record, which needs `M-STORE` to write it. Keyed on the module
+    # rather than a symbol because none of it exists yet.
+    "#10": (
+        "module",
+        STORE_MODULE,
+        ("tests/integration/conf/test_audit_record.py",),
     ),
 }
 
