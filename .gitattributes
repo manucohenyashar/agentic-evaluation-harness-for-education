@@ -1,0 +1,8 @@
+# Shell scripts must keep LF endings regardless of the checkout platform: a CRLF shebang
+# makes `./scripts/test.sh` fail with "bad interpreter" on Linux and macOS, and TEST_CMD in
+# .claude/settings.json points at it, so that would take the Stop-hook gate down with it.
+*.sh text eol=lf
+
+# Consumed by ready-issues.sh / create-issues.sh with `read`, which leaves a trailing \r on
+# the last field and makes an empty dependency list look non-empty.
+*.tsv text eol=lf

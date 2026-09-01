@@ -1,0 +1,34 @@
+[project]
+name = "agentic-evaluation-harness-for-education"
+version = "0.0.0"
+description = "Agentic Evaluation Harness for Education"
+requires-python = ">=3.11"
+
+# ADR-11: Python 3.11+, stdlib sqlite3. Runtime dependencies land with the modules that
+# need them; nothing is required to run the fast tier by design (NFR-SYS-06, test plan §4.5 E1).
+dependencies = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# `src` holds the implementation package (`aeh.*`); `.` holds the `harness.*` tooling
+# package that test-plan §4.7 reserves for blast_radius / conform / mvvp entry points.
+pythonpath = ["src", "."]
+
+# --strict-markers turns a typo'd marker into an error rather than a silently unselected
+# test, which matters because the marker IS the tier selector in §4.7's command table.
+addopts = "--strict-markers"
+
+# Markers, from test-plan §4.7's suite table. Every one names a tier that has its own
+# command, its own CI trigger and its own duration budget.
+markers = [
+    "integration: real modules, real SQLite, fixture provider (§4.7, < 8 min)",
+    "live: makes real model calls; nightly only, E2/E3 (§4.7, < 60 min)",
+    "slow: excluded from the fast tier; TC-ORCH-09 is the only sanctioned sleep (§4.6)",
+    "browser: headless browser, E6; three console cases only (§4.5)",
+    "property: hypothesis property tests, --hypothesis-profile=ci (§4.7)",
+    "fuzz: nightly fuzz campaign, --hypothesis-profile=nightly (§4.7)",
+    "e2e: the three end-to-end journeys against the fixture provider (§6.2)",
+    "contract: the CT-* clause suites of §6.11 (§4.10, < 60 s)",
+    "writtenahead: written ahead of its implementation and expected to FAIL. Excluded from TEST_CMD. Remove this marker — never the test — when the implementing issue closes (test plan §8.2)",
+]

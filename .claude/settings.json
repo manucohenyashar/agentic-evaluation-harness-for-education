@@ -1,6 +1,6 @@
 {
   "env": {
-    "TEST_CMD": ""
+    "TEST_CMD": "./scripts/test.sh"
   },
   "advisorModel": "opus",
   "hooks": {
