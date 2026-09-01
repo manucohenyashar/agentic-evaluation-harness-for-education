@@ -267,6 +267,43 @@ def test_tc_conf_11_the_serialized_provider_config_matches_no_credential_pattern
         )
 
 
+def test_tc_conf_11_step_4_every_mismatch_message_is_scanned_not_just_the_first(monkeypatch):
+    """Step 4 again, one level down: `BackendMismatchError` is raised from **several** places,
+    and provoking it once only scans whichever check happens to fire first.
+
+    Found by mutation: the step-4 case above trips the *backend* comparison, so the transcriber
+    message — the one that had both `build_id`s in it — was never reached with a sentinel
+    present. Each distinct refusal is provoked here on its own, with the credential in the field
+    that message would echo.
+    """
+    sentinel = seed_credentials(monkeypatch)
+    base = hosted_cfg("cloud-hosted", panel=HOSTED_PANEL_3)
+    row = resolve_run_config(base, SYNTHETIC_COHORT).to_persisted_dict()
+
+    poisoned_transcriber = ModelRef(
+        "transcriber", "openrouter", f"proxy/whisper?key={sentinel}@2024-11-02", None
+    )
+    poisoned_judge = ModelRef(
+        "judge", "openrouter", f"proxy/llama?key={sentinel}@2024-12-06", None
+    )
+
+    refusals = {
+        "backend": {**base, "HARNESS_PROFILE": "dev-ci"},
+        "panel": {**base, "panel": (poisoned_judge,) + HOSTED_PANEL_3[1:]},
+        "transcriber": {**base, "transcriber": poisoned_transcriber},
+        "prompt template": {**base, "prompt_template_v": f"v-{sentinel}"},
+    }
+
+    for what, current in refusals.items():
+        with pytest.raises(BackendMismatchError) as caught:
+            rehydrate_run_config(row, current)
+        rendered = _render([str(caught.value), repr(caught.value), [repr(a) for a in caught.value.args]])
+        for form, needle in encodings_of(sentinel).items():
+            assert needle not in rendered, (
+                f"{form} sentinel reached the {what} mismatch message"
+            )
+
+
 def test_tc_conf_11_variant_a_credential_from_a_secret_store_behaves_identically(monkeypatch):
     """TC-CONF-11's variant: *"a credential supplied by an OS secret store rather than the
     environment behaves identically."*

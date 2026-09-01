@@ -1651,11 +1651,15 @@ def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
             )
 
     if cfg.get("prompt_template_v") != persisted.prompt_template_v:
+        # Neither version echoed, for the same reason as `retention_setting` and `build_id`:
+        # `prompt_template_v` is caller data, and `NFR-CONF-02` forbids a value that is not on
+        # `_ECHOABLE_KEYS` reaching any message this module emits. Found by `TC-CONF-11`'s
+        # per-refusal scan, which provokes each mismatch message separately.
         raise BackendMismatchError(
-            f"this run was started with prompt_template_v "
-            f"{persisted.prompt_template_v!r} and current configuration names "
-            f"{cfg.get('prompt_template_v')!r}. A changed prompt template is a changed grader "
-            f"(FR-CONF-04, RISK-22)."
+            "this run was started with one prompt_template_v and current configuration names "
+            "another. A changed prompt template is a changed grader (FR-CONF-04, RISK-22). "
+            "Neither version is echoed here (NFR-CONF-02); compare "
+            "run_row['panel_config']['prompt_template_v'] with cfg['prompt_template_v']."
         )
 
     if cfg.get("HARNESS_HARDWARE_PROFILE") != persisted.hardware_profile and (

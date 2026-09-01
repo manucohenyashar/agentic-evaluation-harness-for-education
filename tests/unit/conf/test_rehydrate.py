@@ -79,6 +79,39 @@ def test_tc_conf_04_step_1_identical_configuration_rehydrates_byte_identically(s
     )
 
 
+@pytest.mark.parametrize(
+    "ceiling",
+    ["12.50", "0.10", "1E+2", "0.1234567890123456789", "12345678901234567890.01"],
+)
+def test_tc_conf_04_step_1_a_cost_ceiling_survives_the_round_trip_exactly(ceiling):
+    """The same oracle where it actually bites: a **hosted** run, whose row carries a `Decimal`.
+
+    The `edge-local` fixture above has no cost ceiling, so it cannot see a lossy serialization
+    at all. And the obvious hosted value cannot either: `12.50` through a `float` comes back as
+    `12.5`, which compares **equal** as a `Decimal` and re-serializes identically — a lossy
+    implementation is self-consistent at that precision and passes.
+
+    The last two values are the ones that discriminate. Verified: `float` loses them
+    irrecoverably, so a `str(Decimal)` → `Decimal(str)` round trip and a `float` one give
+    different answers here and nowhere else. `NFR-CONF-04` asks for byte-identical, and a ceiling
+    is money.
+    """
+    from decimal import Decimal
+
+    config = resolve_run_config(
+        hosted_cfg("cloud-hosted", HARNESS_COST_CEILING=ceiling), SYNTHETIC_COHORT
+    )
+    row = config.to_persisted_dict()
+
+    restored = rehydrate_run_config(row)
+
+    assert restored.cost_ceiling == Decimal(ceiling)
+    assert str(restored.cost_ceiling) == str(config.cost_ceiling)
+    assert json.dumps(restored.to_persisted_dict(), sort_keys=True) == json.dumps(
+        row, sort_keys=True
+    )
+
+
 def test_tc_conf_04_step_1_rehydration_reads_the_row_not_current_configuration(started, run_row):
     """`FR-CONF-04`: a resumed run "resolves to the `backend_profile` and `provider_config`
     persisted on its `run` row".

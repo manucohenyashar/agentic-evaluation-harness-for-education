@@ -20,8 +20,14 @@ from __future__ import annotations
 
 import pytest
 
-from aeh.conf import RunConfig, resolve_run_config
-from tests.support.conf_builders import SYNTHETIC_COHORT, edge_cfg, hosted_cfg
+from aeh.conf import PROVIDER_MANAGED, RunConfig, resolve_run_config
+from tests.support.conf_builders import (
+    EDGE_PANEL_3,
+    HOSTED_PANEL_3,
+    SYNTHETIC_COHORT,
+    edge_cfg,
+    hosted_cfg,
+)
 from tests.support.impl import require_attr
 
 ISSUE = "#5"
@@ -62,6 +68,73 @@ def test_tc_conf_09_profile_summary_names_the_backend_every_build_and_the_quanti
 
     if profile == "cloud-hosted":
         assert rendered.get("retention_setting"), "retention_setting absent on cloud-hosted"
+
+
+@pytest.mark.parametrize("profile", ["edge-local", "cloud-hosted", "dev-ci"])
+def test_tc_conf_09_every_build_appears_in_its_own_field_not_merely_somewhere(profile):
+    """The placement half of the oracle, which the substring sweep above cannot see.
+
+    `rendered_text = repr(rendered)` proves each `build_id` is *present*; it cannot prove it is
+    in the right **field**. Found by mutation: five defects survived the whole fast tier —
+    `panel` truncated to `panel[:1]`, `transcriber` and `panel[0]` swapped, `provider` and
+    `quantization` blanked on every build, `quantization` empty instead of `PROVIDER_MANAGED`,
+    `retention_setting` replaced by a constant. Every one of them keeps the build ids somewhere
+    in the record.
+
+    Three judges, deliberately: with the one-judge panel the other cases use, `panel[:1]` **is**
+    the whole panel and a truncating implementation is indistinguishable from a correct one.
+    """
+    require_attr(RunConfig, "profile_summary", issue=ISSUE)
+
+    panel = EDGE_PANEL_3 if profile == "edge-local" else HOSTED_PANEL_3
+    cfg = edge_cfg(panel=panel) if profile == "edge-local" else hosted_cfg(profile, panel=panel)
+    config = resolve_run_config(cfg, SYNTHETIC_COHORT)
+
+    summary = config.profile_summary()
+
+    assert len(summary.panel) == 3, "the summary dropped panel members"
+    for position, (declared, reported) in enumerate(zip(config.panel, summary.panel)):
+        assert reported.build_id == declared.build_id, f"panel[{position}] build_id"
+        assert reported.provider == declared.provider, f"panel[{position}] provider"
+        assert reported.role == declared.role, f"panel[{position}] role"
+        assert reported.quantization == (declared.quantization or PROVIDER_MANAGED), (
+            f"panel[{position}] quantization"
+        )
+
+    assert summary.transcriber.build_id == config.transcriber.build_id
+    assert summary.transcriber.role == "transcriber", (
+        "the transcriber slot holds something that is not the transcriber"
+    )
+    assert summary.transcriber.build_id != summary.panel[0].build_id, (
+        "transcriber and panel[0] are the same build, so a swap would be invisible"
+    )
+
+    assert all(summary.quantization), "a quantization label is blank; use PROVIDER_MANAGED"
+    if profile != "edge-local":
+        assert PROVIDER_MANAGED in summary.quantization
+    assert summary.panel_build_ref == config.panel_build_ref
+
+
+def test_tc_conf_09_the_retention_setting_is_this_run_s_and_not_a_constant():
+    """`retention_setting` replaced by a fixed string survives a "present and non-empty" check.
+
+    Asserted against the config's own value, and across both hosted values, so a constant cannot
+    match both.
+    """
+    require_attr(RunConfig, "profile_summary", issue=ISSUE)
+
+    from aeh.conf import RETENTION_SETTINGS
+
+    seen = set()
+    for value in RETENTION_SETTINGS:
+        config = resolve_run_config(
+            hosted_cfg("cloud-hosted", panel=HOSTED_PANEL_3, retention_setting=value),
+            SYNTHETIC_COHORT,
+        )
+        assert config.profile_summary().retention_setting == value
+        seen.add(config.profile_summary().retention_setting)
+
+    assert len(seen) == len(RETENTION_SETTINGS), "the summary reported a constant"
 
 
 def test_tc_conf_09_the_summary_carries_no_credential(monkeypatch):

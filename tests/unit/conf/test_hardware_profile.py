@@ -268,3 +268,38 @@ def test_tc_conf_10_the_ceiling_is_read_from_injected_configuration_not_asserted
     )
 
     assert config.prefix_token_ceiling == injected_ceiling
+
+
+def test_tc_conf_10_the_hosted_prefix_ceiling_follows_its_own_injected_knob():
+    """The hosted half of `TC-CONF-10`'s oracle, which the edge cases above cannot reach.
+
+    A hosted backend has no `hardware_profile` to derive from, so its ceiling comes from
+    `cfg["hosted_prefix_token_ceiling"]` over `DEFAULT_HOSTED_PREFIX_TOKEN_CEILING`. Found by
+    mutation: ignoring that key entirely left the whole fast tier green, because nothing asserted
+    the knob was read on this branch — `CLAUDE.md` seam 3 exists so a slower box can adjust
+    without a code change, and a knob nothing reads is not a knob.
+    """
+    from aeh.conf import DEFAULT_HOSTED_PREFIX_TOKEN_CEILING
+
+    for profile in ("cloud-hosted", "dev-ci"):
+        default = resolve_run_config(hosted_cfg(profile), SYNTHETIC_COHORT)
+        assert default.prefix_token_ceiling == DEFAULT_HOSTED_PREFIX_TOKEN_CEILING
+
+        for injected in (1, 999, 4096):
+            config = resolve_run_config(
+                hosted_cfg(profile, hosted_prefix_token_ceiling=str(injected)), SYNTHETIC_COHORT
+            )
+            assert config.prefix_token_ceiling == injected, (
+                f"{profile} ignored its injected prefix ceiling"
+            )
+
+
+@pytest.mark.parametrize("bad", ["0", "-1", "", "lots", 0, -3])
+def test_tc_conf_10_a_nonsensical_hosted_prefix_ceiling_is_refused(bad):
+    """A knob that silently ignores a value it cannot parse is worse than one with no default:
+    the operator believes they set it. `TC-CONF-15` additionally requires the refusal to be a
+    declared type rather than a `ValueError` escaping `int()`."""
+    with pytest.raises(ConfigurationError):
+        resolve_run_config(
+            hosted_cfg("cloud-hosted", hosted_prefix_token_ceiling=bad), SYNTHETIC_COHORT
+        )
