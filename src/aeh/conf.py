@@ -34,6 +34,20 @@ the wrong thing.
 | Inapplicable `HARNESS_*` keys | Ignored, not refused | `CT-CONF-02`'s iff constrains `RunConfig` fields; refusing would make `environment_snapshot` unusable |
 | Where the iffs live | `RunConfig.__post_init__`, not only the resolver | An invariant enforced only by the function that builds the value is forgeable through `dataclasses.replace` |
 | `edge-weights` vs `provider-pinned` | Told apart by `WEIGHTS_SUFFIXES`, not by `@sha256:` alone | Otherwise a digest-pinned hosted build reads as a weights path |
+| `ModelRef` / `HardwarePolicy` validate on construction | Shape only, raising `ConfigurationError` | Both are caller-supplied and reach a primary key (`panel_build_ref`) or an arithmetic clamp; a bad one must not surface as a bare `TypeError` (`TC-CONF-15`) |
+| A `RunConfig` literal must be **legal** | `__post_init__` refuses one violating `CT-CONF-02`/`-03`/`-07` | §3.1 says the type is "cheap to construct"; it does not say a value carrying none of its guarantees is a `RunConfig` |
+
+The second of those changes an input class `TS-03` will meet: an empty or whitespace `build_id`,
+or a `role` outside the four, now raises from the **constructor** rather than surfacing as an
+unresolved ref out of `resolve_run_config`. `TC-CONF-03`'s listed inputs (a friendly name, a
+GGUF path with no hash, a bare slug) are all still constructible and still refused by the
+resolver, which is where that case looks.
+
+Also unowned, and raised on the PR rather than silently absorbed: **`CT-CONF-14` appears in no
+issue's `Traces to`.** #6 carries `FR-CONF-04/08/11/12` and `NFR-CONF-02/04`; the clause is on
+none of them, yet `TC-CONF-C14` is a P0 safety property (design §4.7). The back doors this
+module leaves open are listed in `_typeerror_on_mutation`, so whoever picks the clause up starts
+from a written list rather than a search.
 
 Credentials (`NFR-CONF-02`) never appear in an exception raised here: a message names the
 offending **key**, and echoes a **value** only for the four non-credential `HARNESS_*` keys.
@@ -158,17 +172,25 @@ def _typeerror_on_mutation(cls):
 
     `dataclasses.replace` does **not** route through `__replace__` — verified on CPython 3.14,
     where it calls `obj.__class__(**changes)` directly — so this decorator cannot see it. It is
-    closed from the other end instead: `RunConfig.__post_init__` enforces `CT-CONF-02` and
-    `CT-CONF-03` on the *type*, so any replace that rebinds one field without the rest raises.
-    Direct construction of a legal literal keeps working, which design §3.1's Compatibility note
-    requires in as many words: *"Consumers test against a literal `RunConfig` value rather than
-    a double — the type is frozen and cheap to construct."*
+    narrowed from the other end instead: `RunConfig.__post_init__` enforces `CT-CONF-02`,
+    `CT-CONF-03` and `CT-CONF-07` on the *type*, so a replace that rebinds the backend, the
+    hardware profile, either cost field, or the panel raises. Direct construction of a legal
+    literal keeps working, which design §3.1's Compatibility note requires in as many words:
+    *"Consumers test against a literal `RunConfig` value rather than a double — the type is
+    frozen and cheap to construct."*
 
-    What that leaves open is a *self-consistent* rebuild — `replace(cfg, backend_profile=...,
-    hardware_profile=None, panel=<hosted builds>, ...)` — which is indistinguishable from
-    constructing the literal directly, and so cannot be closed without forbidding both.
-    `TC-CONF-C14` step 2's back-door sweep and the remaining doors (pickle's `__setstate__`, a
-    hand-edited `run` row) are issue #6's.
+    Precisely what stays open, so nobody reads more into this than it does:
+
+    - a *self-consistent* rebuild (`replace(cfg, backend_profile=…, hardware_profile=None,
+      panel=<hosted builds>, cost_ceiling=…, cost_currency=…, panel_build_ref=…)`), which is
+      indistinguishable from constructing the literal directly and so cannot be closed without
+      forbidding both;
+    - `replace(cfg, concurrency_ceiling=999)`, because the ceiling a config was resolved under
+      depends on the hardware table used at resolution time, which the value does not carry;
+    - pickle's `__setstate__` and a hand-edited `run` row.
+
+    All three belong to `TC-CONF-C14`'s back-door sweep — see the module docstring's note on
+    which issue owns that clause.
 
     The decorator is applied *after* `@dataclass(frozen=True)`, which is required: assigning
     `__setattr__` inside the class body makes the dataclass decorator itself raise. The
@@ -330,6 +352,10 @@ class ModelRef:
         slug, at_sign, pin = build_id.rpartition("@")
         if not at_sign or not slug or not pin:
             return None
+        # An empty `:`-segment means the pin was truncated — `x@sha256:` names a digest that
+        # is not there, and a pin that identifies nothing is not a pin.
+        if any(not segment for segment in pin.split(":")):
+            return None
         return "provider-pinned"
 
     def is_resolved(self) -> bool:
@@ -355,6 +381,30 @@ class HardwarePolicy:
     concurrency_ceiling: int
     quantization_target: str
     prefix_token_ceiling: int
+
+    def __post_init__(self) -> None:
+        """Type hygiene, for the same reason `ModelRef` has it: this type is caller-supplied
+        through `cfg["hardware_profiles"]`, and `_resolve_concurrency` clamps against
+        `concurrency_ceiling`. A string there would surface a bare `TypeError` out of
+        `resolve_run_config`, which `TC-CONF-15`'s invariant forbids.
+        """
+        if not isinstance(self.residency_policy, tuple) or not all(
+            isinstance(role, str) and role for role in self.residency_policy
+        ):
+            raise ConfigurationError(
+                "HardwarePolicy.residency_policy must be a tuple of non-empty role names."
+            )
+        for name in ("concurrency_ceiling", "prefix_token_ceiling"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ConfigurationError(
+                    f"HardwarePolicy.{name} must be an integer of at least 1, got "
+                    f"{type(value).__name__}."
+                )
+        if not isinstance(self.quantization_target, str) or not self.quantization_target.strip():
+            raise ConfigurationError(
+                "HardwarePolicy.quantization_target must be a non-empty string."
+            )
 
 
 @_typeerror_on_mutation
@@ -462,12 +512,36 @@ class RunConfig:
                     f"{name}={'set' if value is not None else 'None'}."
                 )
 
+        for name in ("concurrency_ceiling", "prefix_token_ceiling"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ConfigurationError(
+                    f"{name} must be an integer of at least 1, got {type(value).__name__}."
+                )
+        if not isinstance(self.prompt_template_v, str) or not self.prompt_template_v.strip():
+            raise ConfigurationError("prompt_template_v must be a non-empty string.")
+
         # CT-CONF-03: every reachable ref is resolved, in the form this backend requires.
         for position, member in enumerate(self.panel):
             _check_resolved(member, f"panel[{position}]", self.backend_profile)
         _check_resolved(self.transcriber, "transcriber", self.backend_profile)
         if self.off_panel_checker is not None:
             _check_resolved(self.off_panel_checker, "off_panel_checker", self.backend_profile)
+
+        # CT-CONF-07: the ref must be the hash **of this panel**. Without this, a replace that
+        # reorders the panel keeps the old ref, and two distinct ordered panels share one key —
+        # verbatim the regression `TC-CONF-C07` exists to catch, and `CT-CONF-07` licenses
+        # consumers to use the ref as a `package_validation` primary-key component.
+        #
+        # It also gives issue #6 `TC-CONF-04`'s stated variant for nothing: "a persisted
+        # `panel_build_ref` that disagrees with the one recomputed from the persisted builds".
+        expected_ref = compute_panel_build_ref(self.panel)
+        if self.panel_build_ref != expected_ref:
+            raise ConfigurationError(
+                f"panel_build_ref does not match this panel: carries "
+                f"{self.panel_build_ref!r}, the ordered panel hashes to {expected_ref!r} "
+                f"(CT-CONF-07)."
+            )
 
 
 # --- the hardware table --------------------------------------------------------------------
@@ -522,9 +596,14 @@ def hardware_policy_for(
     Declared, not effective, and the distinction is load-bearing: `TC-CONF-06`'s oracle is
     "exact value per cell", so this must return the table's row unchanged. The *effective*
     concurrency for a run is `RunConfig.concurrency_ceiling`, which `HARNESS_CONCURRENCY` may
-    have lowered — it can never raise it above the value returned here (see
-    `_resolve_concurrency`), so `config.concurrency_ceiling <= policy.concurrency_ceiling`
-    always holds and there is no ambiguity about which number is the ceiling.
+    have lowered but can never raise (see `_resolve_concurrency`).
+
+    **Pass the same `table` the config was resolved against.** `RunConfig` carries no reference
+    to it — `CT-CONF-C02` pins the field set at twelve — so a config resolved with a
+    `cfg["hardware_profiles"]` override and read back through the default table gets a row that
+    was never applied, or `None` for a profile name the default table has never heard of.
+    `config.concurrency_ceiling <= policy.concurrency_ceiling` holds when, and only when, the
+    two tables agree.
 
     Reads the table; takes no argument that could rebind the run.
     """
@@ -673,9 +752,15 @@ def _check_resolved(ref: ModelRef, what: str, backend_profile: str) -> None:
         )
     expected = _REQUIRED_BUILD_FORM[backend_profile]
     if form != expected:
+        # Name the discriminator in the message. The commonest way to hit this is a weights
+        # path whose extension is not in WEIGHTS_SUFFIXES — it reads as provider-pinned, and
+        # "requires an edge-weights build" alone would send the reader hunting for a missing
+        # hash they in fact supplied.
         raise UnresolvedModelRefError(
             f"{what} is a {form} build, but backend_profile {backend_profile!r} requires a "
-            f"{expected} build (CT-CONF-03)."
+            f"{expected} build (CT-CONF-03). build_id={ref.build_id!r}. The two forms are told "
+            f"apart by WEIGHTS_SUFFIXES {WEIGHTS_SUFFIXES}: a path outside that list is read as "
+            f"a provider-pinned slug."
         )
 
 
@@ -795,7 +880,7 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
     | `HARNESS_PROFILE` | always | `edge-local` \\| `cloud-hosted` \\| `dev-ci`. No default |
     | `HARNESS_HARDWARE_PROFILE` | iff `edge-local` | key into `HARDWARE_PROFILES` |
     | `HARNESS_COST_CEILING` / `_CURRENCY` | iff hosted | zero accepted, negative refused |
-    | `HARNESS_CONCURRENCY` | no | overrides the derived ceiling |
+    | `HARNESS_CONCURRENCY` | no | clamps the derived ceiling **down**; never raises it |
     | `HARNESS_ALLOW_REMOTE_REAL_WORK` | no | defaults `False`; consumed by #6 |
     | `panel` | always | 1, 3 or 5 `ModelRef`s, each `role="judge"` |
     | `transcriber` | always | `ModelRef`, `role="transcriber"` |
