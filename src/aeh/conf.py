@@ -30,7 +30,10 @@ the wrong thing.
 | Mutation raises | `TypeError`, via `_typeerror_on_mutation` | `FR-CONF-02` says `TypeError`; `dataclasses.FrozenInstanceError` is an `AttributeError` |
 | Residency + quantization | Public **data** in `HARDWARE_PROFILES`, not fields and not code paths | `CT-CONF-C02` pins `RunConfig` to 12 fields; `TC-CONF-14` forbids platform branches |
 | `HARNESS_*` namespace | Stays at **exactly six** keys; structural inputs use plain keys | `TC-CONF-C11` sweeps "each of the six `HARNESS_*` keys" |
-| `HARNESS_CONCURRENCY` | Explicit value always wins; else the hardware ceiling (`edge-local`) or `DEFAULT_HOSTED_CONCURRENCY` | Precedence is unstated in the design |
+| `HARNESS_CONCURRENCY` | **Clamps down, never up**: `min(key, hardware ceiling)`; alone on a hosted backend | Precedence is unstated; a ceiling a variable can raise is not a ceiling |
+| Inapplicable `HARNESS_*` keys | Ignored, not refused | `CT-CONF-02`'s iff constrains `RunConfig` fields; refusing would make `environment_snapshot` unusable |
+| Where the iffs live | `RunConfig.__post_init__`, not only the resolver | An invariant enforced only by the function that builds the value is forgeable through `dataclasses.replace` |
+| `edge-weights` vs `provider-pinned` | Told apart by `WEIGHTS_SUFFIXES`, not by `@sha256:` alone | Otherwise a digest-pinned hosted build reads as a weights path |
 
 Credentials (`NFR-CONF-02`) never appear in an exception raised here: a message names the
 offending **key**, and echoes a **value** only for the four non-credential `HARNESS_*` keys.
@@ -44,6 +47,7 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, fields
 from decimal import Decimal, InvalidOperation
+from types import MappingProxyType
 from typing import Any, Literal
 
 __all__ = [
@@ -64,6 +68,7 @@ __all__ = [
     "RunConfig",
     "RunConfigError",
     "UnresolvedModelRefError",
+    "WEIGHTS_SUFFIXES",
     "compute_panel_build_ref",
     "environment_snapshot",
     "hardware_policy_for",
@@ -151,17 +156,19 @@ def _typeerror_on_mutation(cls):
     different `backend_profile` or `panel` is precisely the rebinding `CT-CONF-04` forbids and
     RISK-22 describes.
 
-    **`dataclasses.replace` stays open, deliberately, and this is a finding rather than an
-    oversight.** It does not route through `__replace__` — verified on CPython 3.14, where it
-    calls `obj.__class__(**changes)` directly — so the only way to close it is to make
-    `RunConfig` un-constructible from the outside. Design §3.1's Compatibility note rules that
-    out in as many words: *"Consumers test against a literal `RunConfig` value rather than a
-    double — the type is frozen and cheap to construct."* Direct construction and
-    `dataclasses.replace` are the same operation, so a rule that forbids one forbids both.
-    `TC-CONF-C14` step 2 lists `dataclasses.replace` among the back doors it expects to raise;
-    resolving that against the Compatibility note is a decision for issue #6, which owns the
-    case. The remaining back doors — pickle's `__setstate__`, a hand-edited `run` row — are
-    that same sweep.
+    `dataclasses.replace` does **not** route through `__replace__` — verified on CPython 3.14,
+    where it calls `obj.__class__(**changes)` directly — so this decorator cannot see it. It is
+    closed from the other end instead: `RunConfig.__post_init__` enforces `CT-CONF-02` and
+    `CT-CONF-03` on the *type*, so any replace that rebinds one field without the rest raises.
+    Direct construction of a legal literal keeps working, which design §3.1's Compatibility note
+    requires in as many words: *"Consumers test against a literal `RunConfig` value rather than
+    a double — the type is frozen and cheap to construct."*
+
+    What that leaves open is a *self-consistent* rebuild — `replace(cfg, backend_profile=...,
+    hardware_profile=None, panel=<hosted builds>, ...)` — which is indistinguishable from
+    constructing the literal directly, and so cannot be closed without forbidding both.
+    `TC-CONF-C14` step 2's back-door sweep and the remaining doors (pickle's `__setstate__`, a
+    hand-edited `run` row) are issue #6's.
 
     The decorator is applied *after* `@dataclass(frozen=True)`, which is required: assigning
     `__setattr__` inside the class body makes the dataclass decorator itself raise. The
@@ -195,13 +202,40 @@ def _typeerror_on_mutation(cls):
 #: what answered. `CT-CONF-C03`: "A ref carrying a floating tag (`:latest`) must fail."
 FLOATING_TAGS: frozenset[str] = frozenset({"latest", "stable", "main", "head", "newest"})
 
+#: What makes the left half of `<path>@sha256:<digest>` a *weights file* rather than a model
+#: slug that happens to be pinned by digest. Without this, `openrouter/x@sha256:abcd` — a
+#: perfectly pinned hosted build — would be read as an edge-local weights path and refused for
+#: carrying no quantization. Additive: a new serving format adds a suffix here.
+WEIGHTS_SUFFIXES: tuple[str, ...] = (".gguf", ".safetensors", ".bin", ".pt", ".mlx", ".npz")
+
 _WEIGHTS_HASH_MARKER = "@sha256:"
-_HEX = re.compile(r"\A[0-9a-f]+\Z")
-_TAG_SPLIT = re.compile(r"[@:]")
+#: Case-insensitive on purpose: `sha256:AAAA` names the same build as `sha256:aaaa`, so
+#: rejecting it as *unresolved* would be wrong. (Canonicalizing the case before it reaches
+#: `panel_build_ref` is `FR-CONF-05`'s question, on issue #5.)
+_HEX = re.compile(r"\A[0-9a-fA-F]+\Z")
+
+_KNOWN_ROLES: frozenset[str] = frozenset({"judge", "transcriber", "extractor", "off_panel"})
 
 
 def _has_floating_tag(build_id: str) -> bool:
-    return any(part.strip().lower() in FLOATING_TAGS for part in _TAG_SPLIT.split(build_id))
+    """Whether `build_id` carries a floating tag, checked in **tag positions only**.
+
+    A tag position is the `@pin` suffix, or a `:tag` on the final path/slug segment. Splitting
+    on every `@` and `:` instead would reject `/models/main/llama.gguf@sha256:aa`, where `main`
+    is a directory and not a tag — a false refusal of a fully-pinned weights build.
+    """
+    slug, at_sign, pin = build_id.rpartition("@")
+    if at_sign and pin.strip().lower() in FLOATING_TAGS:
+        return True
+    stem = slug if at_sign else build_id
+    final_segment = stem.replace("\\", "/").rsplit("/", 1)[-1]
+    # A weights suffix is not part of the tag: `llama:latest.gguf` carries the tag `latest`.
+    for suffix in WEIGHTS_SUFFIXES:
+        if final_segment.lower().endswith(suffix):
+            final_segment = final_segment[: -len(suffix)]
+            break
+    _, colon, tag = final_segment.rpartition(":")
+    return bool(colon) and tag.strip().lower() in FLOATING_TAGS
 
 
 @_typeerror_on_mutation
@@ -218,10 +252,15 @@ class ModelRef:
     | `/models/llama-3.3-70b.gguf@sha256:aaaa` | `"q4"` | edge-weights | yes |
     | `/models/llama-3.3-70b.gguf@sha256:aaaa` | `None` | — | no — `FR-CONF-03` wants path **plus quantization plus** hash |
     | `/models/llama-3.3-70b.gguf` | `"q4"` | — | no — no weights hash |
+    | `/models/llama:latest.gguf@sha256:aaaa` | `"q4"` | — | no — floating tag, on either form |
     | `openrouter/llama-3.3-70b-instruct@2024-12-06` | any | provider-pinned | yes |
     | `openrouter/llama-3.3-70b-instruct` | any | — | no — a bare slug is not pinned |
     | `llama3.3:latest@2024-12-06` | any | — | no — floating tag |
     | `Llama 3.3 70B` | any | — | no — a friendly name (`FR-CONF-03`, verbatim) |
+
+    The two forms are told apart by `WEIGHTS_SUFFIXES`, not by the presence of `@sha256:`
+    alone: a hosted build pinned by content digest (`openrouter/x@sha256:abcd`) is
+    provider-pinned, not a weights path.
 
     The digest is required to be hex and non-empty, but **not** 64 characters: the repository
     already commits `sha256:aaaa` as a legal judge build
@@ -234,6 +273,37 @@ class ModelRef:
     build_id: str
     quantization: str | None
 
+    def __post_init__(self) -> None:
+        """Type hygiene only — never form, which is `build_form`'s question.
+
+        `provider` and `build_id` are hashed into `panel_build_ref`, which `CT-CONF-07` makes a
+        `package_validation` primary-key component. A `None` provider would be hashed as the
+        literal string `"None"` and key a validation record to nothing.
+
+        `provider` is checked for shape and not against the four names design §3.1 lists as
+        examples: its Compatibility note makes a new provider an **additive** change, so an
+        allowlist here would turn one into a breaking one.
+        """
+        if self.role not in _KNOWN_ROLES:
+            raise ConfigurationError(
+                f"ModelRef.role must be one of {sorted(_KNOWN_ROLES)}, got {self.role!r}."
+            )
+        for name in ("provider", "build_id"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigurationError(
+                    f"ModelRef.{name} must be a non-empty string, got "
+                    f"{type(value).__name__}. It is hashed into panel_build_ref, which keys "
+                    f"every package_validation row (CT-CONF-07)."
+                )
+        if self.quantization is not None and (
+            not isinstance(self.quantization, str) or not self.quantization.strip()
+        ):
+            raise ConfigurationError(
+                "ModelRef.quantization must be a non-empty string or None, got "
+                f"{type(self.quantization).__name__}."
+            )
+
     def build_form(self) -> BuildForm | None:
         """Which of the two resolved forms `build_id` takes, or `None` if it takes neither."""
         if not isinstance(self.build_id, str):
@@ -242,19 +312,23 @@ class ModelRef:
         if not build_id or any(ch.isspace() for ch in build_id):
             return None
 
-        if _WEIGHTS_HASH_MARKER in build_id:
-            path, _, digest = build_id.partition(_WEIGHTS_HASH_MARKER)
-            if not path or not _HEX.match(digest):
-                return None
-            # A weights build is identified by path + hash + quantization, all three.
-            if not isinstance(self.quantization, str) or not self.quantization:
-                return None
-            return "edge-weights"
-
+        # Checked before the branch, not inside the hosted one: a weights path can carry a
+        # floating tag too, and CT-CONF-C03 states the rule for every ref.
         if _has_floating_tag(build_id):
             return None
-        slug, sep, pin = build_id.rpartition("@")
-        if not sep or not slug or not pin:
+
+        if _WEIGHTS_HASH_MARKER in build_id:
+            path, _, digest = build_id.partition(_WEIGHTS_HASH_MARKER)
+            if path.lower().endswith(WEIGHTS_SUFFIXES):
+                if not _HEX.match(digest):
+                    return None
+                # A weights build is identified by path + hash + quantization, all three.
+                if not isinstance(self.quantization, str) or not self.quantization:
+                    return None
+                return "edge-weights"
+
+        slug, at_sign, pin = build_id.rpartition("@")
+        if not at_sign or not slug or not pin:
             return None
         return "provider-pinned"
 
@@ -332,6 +406,62 @@ class RunConfig:
     retention_setting: str | None
     panel_build_ref: str
 
+    def __post_init__(self) -> None:
+        """`CT-CONF-02` and `CT-CONF-03`, enforced on the **type** rather than only in the
+        resolver.
+
+        This is what makes the invariants unforgeable. `dataclasses.replace` does not route
+        through `__replace__` (see `_typeerror_on_mutation`), so without this a caller could
+        take a resolved `edge-local` config and produce a `cloud-hosted` one still carrying
+        `hardware_profile='unified-large'` and no cost ceiling — a value violating both of
+        `CT-CONF-02`'s iffs at once, and one `resolve_run_config` can never return. An invariant
+        that lives only in the function that happens to build the value is not an invariant.
+
+        Deliberately **not** enforced here: `retention_setting` non-null for `cloud-hosted`.
+        That is `FR-CONF-12`, on issue #6, and asserting it now would make its case pass before
+        its code exists.
+        """
+        if self.backend_profile not in BACKEND_PROFILES:
+            raise ConfigurationError(
+                f"backend_profile must be one of {BACKEND_PROFILES}, got "
+                f"{_echo('HARNESS_PROFILE', self.backend_profile)}."
+            )
+
+        if not isinstance(self.panel, tuple) or len(self.panel) not in PANEL_SIZES:
+            raise ConfigurationError(
+                f"panel must be a tuple of {sorted(PANEL_SIZES)} ModelRefs (CT-CONF-02)."
+            )
+        for position, member in enumerate(self.panel):
+            _require_model_ref(member, f"panel[{position}]", "judge")
+        _require_model_ref(self.transcriber, "transcriber", "transcriber")
+        if self.off_panel_checker is not None:
+            _require_model_ref(self.off_panel_checker, "off_panel_checker", "off_panel")
+
+        # The two iffs, both directions. Asserting only "required when" would let a stray
+        # non-null through on the profile that has no use for it.
+        edge = self.backend_profile == "edge-local"
+        if edge != (self.hardware_profile is not None):
+            raise ConfigurationError(
+                f"hardware_profile is non-null iff backend_profile is 'edge-local' "
+                f"(CT-CONF-02); got backend_profile={self.backend_profile!r}, "
+                f"hardware_profile={self.hardware_profile!r}."
+            )
+        hosted = self.backend_profile in _COST_BEARING_PROFILES
+        for name, value in (("cost_ceiling", self.cost_ceiling), ("cost_currency", self.cost_currency)):
+            if hosted != (value is not None):
+                raise ConfigurationError(
+                    f"{name} is non-null iff backend_profile is cloud-hosted or dev-ci "
+                    f"(CT-CONF-02); got backend_profile={self.backend_profile!r} and "
+                    f"{name}={'set' if value is not None else 'None'}."
+                )
+
+        # CT-CONF-03: every reachable ref is resolved, in the form this backend requires.
+        for position, member in enumerate(self.panel):
+            _check_resolved(member, f"panel[{position}]", self.backend_profile)
+        _check_resolved(self.transcriber, "transcriber", self.backend_profile)
+        if self.off_panel_checker is not None:
+            _check_resolved(self.off_panel_checker, "off_panel_checker", self.backend_profile)
+
 
 # --- the hardware table --------------------------------------------------------------------
 
@@ -342,7 +472,12 @@ class RunConfig:
 #:
 #: Prefix ceilings are design §3.1's recorded Assumption — the HLD gives "on the order of 1,500
 #: to 2,000" without a per-profile assignment. Issue #5 owns `FR-CONF-10` and the env-gated knob.
-HARDWARE_PROFILES: Mapping[str, HardwarePolicy] = {
+#: A `MappingProxyType`, not a `dict`: it is exported *and* read as `resolve_run_config`'s
+#: default table, so a mutable one would make resolution a function of process state —
+#: `HARDWARE_PROFILES["unified-large"] = ...` between two calls would return two different
+#: `RunConfig`s for identical inputs, which is exactly what `CT-CONF-05` and `NFR-CONF-01`
+#: forbid. `TC-CONF-C05` perturbs the *environment* and would not catch it.
+HARDWARE_PROFILES: Mapping[str, HardwarePolicy] = MappingProxyType({
     "unified-large": HardwarePolicy(
         residency_policy=("judge", "transcriber"),
         concurrency_ceiling=4,
@@ -361,7 +496,7 @@ HARDWARE_PROFILES: Mapping[str, HardwarePolicy] = {
         quantization_target="q4",
         prefix_token_ceiling=1500,
     ),
-}
+})
 
 #: Used only when `backend_profile` is `cloud-hosted` or `dev-ci`, where no `hardware_profile`
 #: exists to derive from and `HARNESS_CONCURRENCY` was not supplied. A default is safe here:
@@ -375,8 +510,17 @@ def hardware_policy_for(
     config: RunConfig,
     table: Mapping[str, HardwarePolicy] = HARDWARE_PROFILES,
 ) -> HardwarePolicy | None:
-    """The residency policy and quantization target behind a resolved config, or `None` for a
-    hosted backend. Reads the table; takes no argument that could rebind the run."""
+    """The **declared** policy behind a resolved config, or `None` for a hosted backend.
+
+    Declared, not effective, and the distinction is load-bearing: `TC-CONF-06`'s oracle is
+    "exact value per cell", so this must return the table's row unchanged. The *effective*
+    concurrency for a run is `RunConfig.concurrency_ceiling`, which `HARNESS_CONCURRENCY` may
+    have lowered — it can never raise it above the value returned here (see
+    `_resolve_concurrency`), so `config.concurrency_ceiling <= policy.concurrency_ceiling`
+    always holds and there is no ambiguity about which number is the ceiling.
+
+    Reads the table; takes no argument that could rebind the run.
+    """
     if config.hardware_profile is None:
         return None
     return table.get(config.hardware_profile)
@@ -534,13 +678,12 @@ def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal
     raw_currency = cfg.get("HARNESS_COST_CURRENCY")
 
     if backend_profile not in _COST_BEARING_PROFILES:
-        for key, raw in (("HARNESS_COST_CEILING", raw_ceiling), ("HARNESS_COST_CURRENCY", raw_currency)):
-            if raw is not None:
-                raise ConfigurationError(
-                    f"{key} is set but backend_profile is {backend_profile!r}: cost_ceiling and "
-                    f"cost_currency are non-null iff the backend is cloud-hosted or dev-ci "
-                    f"(CT-CONF-02)."
-                )
+        # Inapplicable keys are ignored, not refused. `CT-CONF-02`'s iff constrains the
+        # `RunConfig` *fields* — guaranteed by returning `None, None` here and re-checked in
+        # `RunConfig.__post_init__` — not the `cfg` keys. Refusing on mere presence would make
+        # `environment_snapshot()` a trap: it lifts all six `HARNESS_*` keys out of the
+        # environment, so a `HARNESS_COST_CURRENCY` left exported from yesterday's cloud run
+        # would make an `edge-local` run impossible to start.
         return None, None
 
     if raw_ceiling is None:
@@ -587,9 +730,16 @@ def _resolve_cost(cfg: Mapping[str, Any], backend_profile: str) -> tuple[Decimal
 
 
 def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) -> int:
-    """Explicit `HARNESS_CONCURRENCY` wins; otherwise the hardware ceiling, otherwise the hosted
-    default. The precedence is a decision, not a reading — the design names the key and the
-    derivation without ordering them."""
+    """`HARNESS_CONCURRENCY` **clamps down**, never up.
+
+    The design names the key and names the derivation without ordering them, so the precedence
+    is a decision. It is clamping rather than overriding for two reasons that agree: `FR-CONF-06`
+    calls the derived value a *ceiling*, and one an environment variable can raise is not a
+    ceiling; and `CLAUDE.md` seam 3 exists "so a slower test box can adjust" — downward, which
+    is the direction a slower box needs. Absent the key, the hardware ceiling stands; on a
+    hosted backend there is no hardware to derive from, so the key stands alone over
+    `DEFAULT_HOSTED_CONCURRENCY`.
+    """
     raw = cfg.get("HARNESS_CONCURRENCY")
     if raw is None:
         return policy.concurrency_ceiling if policy is not None else DEFAULT_HOSTED_CONCURRENCY
@@ -611,6 +761,8 @@ def _resolve_concurrency(cfg: Mapping[str, Any], policy: HardwarePolicy | None) 
             f"HARNESS_CONCURRENCY must be at least 1, got "
             f"{_echo('HARNESS_CONCURRENCY', raw)}."
         )
+    if policy is not None:
+        return min(concurrency, policy.concurrency_ceiling)
     return concurrency
 
 
@@ -698,11 +850,10 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
                 f"{type(policy).__name__}."
             )
         hardware_profile = raw_hardware
-    elif raw_hardware is not None:
-        raise ConfigurationError(
-            f"HARNESS_HARDWARE_PROFILE is set but HARNESS_PROFILE is {backend_profile!r}: "
-            f"hardware_profile is non-null iff the backend is edge-local (CT-CONF-02)."
-        )
+    # On a hosted backend `HARNESS_HARDWARE_PROFILE` is simply inapplicable — there is no
+    # residency to police — so it is ignored rather than refused, for the same reason as the
+    # cost keys above. `hardware_profile` stays `None`, which is the half of `CT-CONF-02`'s iff
+    # that actually constrains the type.
 
     # 3. Panel shape. CT-CONF-02: length 1, 3 or 5 — never even, never 0.
     raw_panel = cfg.get("panel")
