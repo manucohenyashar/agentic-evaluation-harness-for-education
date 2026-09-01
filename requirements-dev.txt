@@ -12,5 +12,8 @@ pytest>=8.0
 # worth surfacing."
 pytest-randomly>=3.15
 
-# Declared by §4.7 but not yet used; added by the first property/fuzz story (TS-56).
-# hypothesis>=6.100
+# §4.7's property/fuzz tool. Added by TS-03 (issue #7), which is the first story carrying
+# Property-level cases — `TC-CONF-15` and `TC-CONF-16`. TS-00 guessed TS-56 would be first;
+# §8.2 shows TS-56 is the *cross-module* property suite (FUZZ-06, FUZZ-07), which is later.
+# Profiles `ci` and `nightly` are registered in tests/conftest.py, per §4.7's command table.
+hypothesis>=6.100

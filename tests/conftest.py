@@ -12,6 +12,7 @@ import random
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, settings
 
 from tests.support.clock import EPOCH, FrozenClock
 from tests.support.guards import SocketGuard
@@ -27,6 +28,27 @@ from tests.support.store_spy import StoreSpy
 DEFAULT_SEED = 20260101
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+# --- hypothesis profiles ------------------------------------------------------------------
+# §4.7's command table names two by name: `pytest -q -m property --hypothesis-profile=ci` on
+# every push (< 3 min) and `--hypothesis-profile=nightly` for the fuzz campaign (30 min).
+#
+# All three are `derandomize=True` except `nightly`. §4.6 pins reproducibility and already runs
+# the unit suite shuffled, so a property case that fails only on some seeds is, by §4.6's flake
+# policy, a P1 defect rather than an interesting result — and a derandomized profile is what
+# makes "it failed for me but not for you" impossible to say. `nightly` is the one tier whose
+# job *is* to find new inputs, so it draws fresh entropy.
+#
+# `function_scoped_fixture` is suppressed because `network_guard` is autouse: hypothesis would
+# otherwise warn on every property test that the guard is not re-created per example. It does
+# not need to be — the guard is stateless between examples and asserts across all of them.
+_COMMON = {"suppress_health_check": [HealthCheck.function_scoped_fixture]}
+
+settings.register_profile("default", max_examples=50, derandomize=True, **_COMMON)
+settings.register_profile("ci", max_examples=200, derandomize=True, deadline=None, **_COMMON)
+settings.register_profile("nightly", max_examples=2000, derandomize=False, deadline=None, **_COMMON)
+settings.load_profile("default")
 
 
 # --- the socket guard ---------------------------------------------------------------------
