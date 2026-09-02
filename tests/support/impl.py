@@ -33,6 +33,7 @@ CONF_MODULE = f"{IMPLEMENTATION_PACKAGE}.conf"
 STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
 ORCH_MODULE = f"{IMPLEMENTATION_PACKAGE}.orch"
 CONSOLE_MODULE = f"{IMPLEMENTATION_PACKAGE}.console"
+JUDGE_MODULE = f"{IMPLEMENTATION_PACKAGE}.judge"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -66,6 +67,48 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "path",
         "fixtures/F-FROZEN/manifest.json",
         ("tests/artifact/test_heldout_disjoint.py",),
+    ),
+    # `TC-PROV-18`'s six counters (`FR-PROV-12`). Keyed on **#20** rather than #19, although
+    # both must have landed: `transport_retries` cannot be implemented before there is a retry
+    # to count, so #19 lands first by construction and keying on it would fire while the
+    # counters were still absent. The `symbol` target is the accessor rather than the module --
+    # `aeh.prov` arrives with #18, months before `FR-PROV-12`.
+    "#20": (
+        "symbol",
+        # `LocalServerProvider.counters`, because that is the object the test drives -- the
+        # registry's question is which blocker *resolved* makes the test runnable, and
+        # `RecordedFixtureProvider.counters` resolving would fire the gate for a test that
+        # then fails on a provider it never mentions. Same trap the #122 note describes.
+        f"{PROVIDER_MODULE}:LocalServerProvider.counters",
+        ("tests/unit/prov/test_run_counters.py",),
+    ),
+    # `SEC-03` -- `cloud-hosted` retention (`FR-PROV-14`). `OpenRouterProvider` is named
+    # verbatim in design 3.2's Interfaces block, so this blocker is forced rather than guessed,
+    # and retention is meaningless without the implementation that talks to the cloud.
+    "#21": (
+        "symbol",
+        f"{PROVIDER_MODULE}:OpenRouterProvider.verify_retention",
+        ("tests/unit/prov/test_retention_gate.py",),
+    ),
+    # `TC-PROV-21` and `SEC-04` scan assembled payloads for student names. Keyed on `M-JUDGE`
+    # and **not** on `M-ORCH`, although both cases read as though they need a full run: design
+    # 3.10 declares `assemble(unit) -> ScoringRequest` pure ("# pure, testable"), so a test
+    # drives it 350 times with no scheduler, no store and no model call. #78 is the M-JUDGE
+    # story that owns assembly, so it landing is exactly what makes these two runnable.
+    #
+    # Only the two case tests carry the marker; the file's scanner controls run in the gate
+    # today, which is what keeps the cases from going green-by-blindness when #78 lands.
+    "#78": (
+        # The symbol the tests actually resolve, not the module: `aeh.judge` could land with
+        # #79's numeral prohibition while `assemble` is still #78's.
+        "symbol",
+        f"{JUDGE_MODULE}:ScoringWorker",
+        (
+            "tests/artifact/test_payload_pseudonymization.py"
+            "::test_tc_prov_21_no_assembled_payload_carries_a_student_name",
+            "tests/artifact/test_payload_pseudonymization.py"
+            "::test_sec_04_a_full_run_discloses_no_name_to_the_provider",
+        ),
     ),
     # `TC-CONF-17` is the one case in TS-04 whose rung is not achievable: rung 2 means a
     # *finished run's* audit record. Keyed on `M-ORCH` rather than `M-STORE`, deliberately --
