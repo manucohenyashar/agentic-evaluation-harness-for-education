@@ -28,10 +28,35 @@ What is asserted beyond the exception type
 -------------------------------------------
 An exception-only assertion passes against an implementation that checks retention *after*
 dispatching, and against one that confirms two of three models and reports success. Both are
-disclosures. So this file asserts three things the row form does not spell out but
-`FR-PROV-14`, `TC-PROV-16` and `TC-PROV-17` do: that **any one** unconfirmed model fails the
-whole check, that an **ambiguous or absent** answer counts as unconfirmed (fail-closed), and
-that **no dispatch precedes** the check.
+disclosures. So this file asserts that **any one** unconfirmed model fails the whole check,
+that an **ambiguous or absent** answer counts as unconfirmed (fail-closed), and that **no
+dispatch precedes** the check.
+
+And, first of all, that the gate can *pass*. A file of nothing but `pytest.raises` is satisfied
+by a `verify_retention` that is a bare `raise` statement — a provider that confirms nothing,
+ever, and could never start a cloud run at all. A reviewer's stub demonstrated exactly that
+against an earlier draft: six green tests, zero requirement asserted. The all-confirmed control
+is what makes every `raises` below mean something.
+
+Scope note, because the ID matters for the RTM
+-----------------------------------------------
+The fail-closed parametrization reproduces `TC-PROV-17`'s input list, and **`TC-PROV-17` is not
+this story's** — §8.2 assigns it, with `TC-PROV-16`, to `TS-05` (issue #22). It is here because
+`SEC-03`'s oracle is worth nothing without it: "raises when unconfirmed" is only a defense if
+"unconfirmed" includes the ambiguous answer. `TS-05` owns the case ID and the fuller treatment
+(a retention check against the live provider API's actual response shapes); this file claims
+neither, and the PR says so, so the RTM is not told `TC-PROV-17` is covered here.
+
+Interface expectations this test places on #21
+-----------------------------------------------
+| Name | Status in the design |
+|---|---|
+| `OpenRouterProvider` | defined, design §3.2 Interfaces |
+| `verify_retention(model_refs) -> RetentionReport` | defined, design §3.2 Interfaces |
+| `RetentionPolicyError` | defined, `FR-PROV-14` |
+| `RetentionReport.all_confirmed` / `.confirmed` / `.unconfirmed` | **not specified** — the design names the type and never its fields. `TC-PROV-16` is "two of three", so the report must say *which*, not just whether |
+| `OpenRouterProvider(retention_answers=...)` | **not in the design** — the seam by which a test programs the provider API's answers. §4.2 offers no double for a retention response |
+| `OpenRouterProvider(on_dispatch=...)` | **not in the design** — the recorder the call-order assertion reads. `CT-PROV-13`'s "before the first dispatch" is unassertable without one |
 """
 
 from __future__ import annotations
@@ -57,6 +82,45 @@ def _panel(model_ref_cls, size: int = 3):
         )
         for index in range(1, size + 1)
     )
+
+
+def test_sec_03_a_fully_confirmed_panel_passes_the_gate(network_guard):
+    """The control every `raises` in this file depends on: the gate can be *passed*.
+
+    Without it, a `verify_retention` consisting of a single `raise RetentionPolicyError` — a
+    provider that confirms nothing, ever — satisfies every other test here. That was
+    demonstrated against an earlier draft of this file: six green tests, and an implementation
+    that could never start a `cloud-hosted` run.
+
+    Two further assertions ride along, both from `CT-PROV-01`:
+
+    - the report says **which** models were confirmed, not merely that all were. `TC-PROV-16`
+      is "two of three", and an operator told only "failed" cannot act on it;
+    - `verify_retention` makes **no model call**. It is one of the three synchronous operations
+      the clause says do not dispatch, and a retention check implemented as a trial completion
+      would send a payload to the provider it is still deciding about.
+    """
+    ModelRef = require(CONF_MODULE, "ModelRef", issue=ISSUE)
+    OpenRouterProvider = require(PROVIDER_MODULE, "OpenRouterProvider", issue=ISSUE)
+
+    panel = _panel(ModelRef)
+    dispatched: list[object] = []
+    provider = OpenRouterProvider(
+        retention_answers={ref.build_id: True for ref in panel},
+        on_dispatch=dispatched.append,
+    )
+
+    report = provider.verify_retention(panel)
+
+    assert report.all_confirmed
+    assert set(report.confirmed) == set(panel)
+    assert tuple(report.unconfirmed) == ()
+    assert dispatched == [], (
+        "verify_retention dispatched a payload. CT-PROV-01: capabilities, estimate_cost and "
+        "verify_retention make no model call — a retention check implemented as a trial "
+        "completion sends student work to the provider it has not yet cleared."
+    )
+    network_guard.assert_no_network()
 
 
 def test_sec_03_one_unconfirmed_panel_model_stops_the_run(network_guard):
@@ -97,15 +161,19 @@ def test_sec_03_one_unconfirmed_panel_model_stops_the_run(network_guard):
     ids=["absent", "ambiguous-word", "empty", "hedged"],
 )
 def test_sec_03_an_ambiguous_or_absent_answer_is_unconfirmed(answer, network_guard):
-    """`TC-PROV-17` — the fail-closed half. An answer that is not a confirmation is a refusal.
+    """SEC-03's fail-closed half: an answer that is not a confirmation is a refusal.
 
-    *"A retention check where the provider API returns an ambiguous or absent answer ... treated
-    as unconfirmed, so `RetentionPolicyError`; fail-closed."*
+    This is what separates a real gate from a plausible one. An implementation reading the
+    provider's response with `bool(answer)` treats `"unknown"` as confirmation, and one using
+    `answer is not False` treats `None` the same way. Both look correct in review and both send
+    student work to a provider that never promised to delete it — so `SEC-03`'s expected
+    defense ("`RetentionPolicyError`; the run does not start") is only worth asserting if
+    *unconfirmed* covers these.
 
-    This is the case that separates a real gate from a plausible one. An implementation reading
-    the provider's response with `bool(answer)` treats `"unknown"` as confirmation, and one
-    using `answer is not False` treats `None` the same way. Both look correct in review and
-    both send student work to a provider that never promised to delete it.
+    **This is not `TC-PROV-17`.** That case belongs to `TS-05` (issue #22), which owns it
+    together with `TC-PROV-16` and will assert it against the live provider API's actual
+    response shapes. The assertion here is `SEC-03`'s own precondition, not a second suite for
+    `FR-PROV-14` — see the module docstring's scope note.
     """
     ModelRef = require(CONF_MODULE, "ModelRef", issue=ISSUE)
     OpenRouterProvider, RetentionPolicyError = require(

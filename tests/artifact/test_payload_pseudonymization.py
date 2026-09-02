@@ -41,7 +41,8 @@ the same courtesy `TS-00` extended to #18.
 |---|---|
 | `aeh.judge` as `M-JUDGE`'s module | convention from `tests/support/impl.py` |
 | `ScoringWorker.assemble(unit) -> ScoringRequest` | defined, design §3.10 Interfaces |
-| `WorkUnit` | named across §3.7 and §3.10 |
+| `WorkUnit` | named in §3.10's Interfaces block; **its fields are nowhere specified** |
+| `WorkUnit(student_ref=, student_name=, submission_id=, criterion_id=, submission_text=)` | **chosen here** — see `work_unit_fields()`. `student_name` is the sentinel `TC-PROV-C13` requires the fixture to carry |
 | A concrete `ScoringWorker` implementation | **not named in the design** — resolved by duck-typing whatever `aeh.judge` exports |
 
 The scan itself places no requirement on `ScoringRequest`'s shape: `strings_in()` walks
@@ -138,15 +139,18 @@ def test_sec_04_a_full_run_discloses_no_name_to_the_provider(network_guard):
     | Probe | scan every assembled payload in a full run against the roster's real names |
     | Expected defense | `student_ref` only; no name in any payload |
 
-    Separate from `TC-PROV-21` because the probe is different in kind, not only in scope: this
-    one asserts about **the set of distinct strings that crosses the boundary**, which catches
-    a leak `TC-PROV-21` cannot. A payload that embedded a name only in, say, a cache key or a
-    metadata header would still be scanned by the walk above — but a payload that embedded the
-    *whole roster* in every request would pass `TC-PROV-21`'s per-student framing on any
-    implementation that also happened to include the right `student_ref`.
+    The same property as `TC-PROV-21`, computed the other way round: `TC-PROV-21` walks each
+    payload and reports the names in it, this one collects every string the run would dispatch
+    and asks which roster names appear anywhere in that set.
 
-    So this case asserts the stronger, simpler property: across the entire run, the union of
-    every string that would be dispatched contains no roster name at all.
+    Both are here because the plan states them as two cases and the RTM counts them separately
+    — `TC-PROV-21` against `NFR-PROV-04`, `SEC-04` against `NFR-PROV-04` **and**
+    `NFR-JUDGE-04`, at the machine-to-provider trust boundary. Neither is stronger than the
+    other, and an earlier draft of this docstring claimed it was: it argued that
+    `TC-PROV-21` used a "per-student framing" a whole-roster embed would slip past. That was
+    simply false — `TC-PROV-21` scans each payload against the **full** roster and would catch
+    that leak 350 times over. Manufacturing a distinction makes the RTM look better covered
+    than it is, which is the failure mode a test plan exists to prevent.
     """
     roster = build_roster()
     patterns = roster_name_patterns(roster)
@@ -170,6 +174,39 @@ def test_sec_04_a_full_run_discloses_no_name_to_the_provider(network_guard):
     network_guard.assert_no_network()
 
 
+def work_unit_fields(student: Student) -> dict[str, str]:
+    """The fields of one scoring work unit — **carrying the name that must not get out.**
+
+    `TC-PROV-C13` states the construction this case needs, in as many words: *"assert by
+    scanning assembled bodies for a **sentinel student name present in the fixture**."* The
+    emphasis is the whole case. A work unit built from `student_ref` alone hands the assembler
+    nothing to leak, so the scan cannot find a name however broken the assembler is — the two
+    P0 cases would then assert over an input where the disclosure they name is structurally
+    impossible, and pass against an assembler that copies every field it is given.
+
+    That is not hypothetical: it was the first draft of this file, and a reviewer's stub
+    assembler — one that copied every attribute of the unit into the payload *and* added a
+    `display_name` field — passed both cases.
+
+    So the unit carries the roster identity the real one carries. A submission is a row that
+    knows whose it is; `M-JUDGE`'s job (`FR-JUDGE-01`'s whitelist schema, `NFR-JUDGE-04`) is to
+    put `student_ref` in the request and leave `student_name` behind. The submission *text*
+    deliberately contains no name — design §3.2 says student text travels verbatim because the
+    judge needs it, so asking the assembler to redact prose would be asserting a requirement
+    the design does not make.
+    """
+    return {
+        "student_ref": student.student_ref,
+        # The sentinel. Present in the fixture, forbidden in the payload.
+        "student_name": student.full_name,
+        "submission_id": f"sub-{student.student_ref}",
+        "criterion_id": "crit-friction-01",
+        "submission_text": (
+            "The block slides because friction is lower than gravity, so it accelerates."
+        ),
+    }
+
+
 def _work_unit_for(student: Student):
     """One scoring work unit for `student`, built against #78's `WorkUnit`.
 
@@ -177,7 +214,7 @@ def _work_unit_for(student: Student):
     than one per case.
     """
     work_unit_cls = require(JUDGE_MODULE, "WorkUnit", issue=ISSUE)
-    return work_unit_cls(student_ref=student.student_ref)
+    return work_unit_cls(**work_unit_fields(student))
 
 
 # --- controls for the scan itself ----------------------------------------------------------------
@@ -186,6 +223,34 @@ def _work_unit_for(student: Student):
 # TEST_CMD and they are what stops the two cases above from being green-by-blindness once #78
 # lands — a scan that finds nothing in a leaking payload is indistinguishable, from the report,
 # from a payload that does not leak.
+
+
+def test_the_work_unit_handed_to_the_assembler_actually_carries_a_name_to_leak():
+    """The control that keeps the two cases above from becoming unfalsifiable.
+
+    `TC-PROV-21` and `SEC-04` scan an assembled payload for a name. If the *input* to the
+    assembler carries no name, neither case can fail — they pass against an assembler that
+    copies every field it is handed, which is exactly the bug they exist to catch. That was
+    the first draft of this file, and it passed against a deliberately leaky stub.
+
+    Nothing about the two cases announces that failure when it happens: they go green. So the
+    property is asserted here instead, against the fixture rather than the implementation,
+    where it runs in `TEST_CMD` today and stays true regardless of what #78 builds.
+    """
+    roster = build_roster()
+
+    for student in (roster[0], roster[174], roster[-1]):
+        fields = work_unit_fields(student)
+        hits = scan_for_names("work-unit", fields, roster)
+
+        assert hits, (
+            f"the work unit for {student.student_ref} carries no roster name, so TC-PROV-21 "
+            f"and SEC-04 are scanning an input the disclosure cannot come from. TC-PROV-C13: "
+            f"'a sentinel student name present in the fixture'."
+        )
+        assert student.student_ref in hits[0].student_refs
+        # ...and it carries the ref too, so the *correct* assembler has something to emit.
+        assert carries_student_ref(fields, student)
 
 
 def test_the_scan_catches_a_planted_name_in_any_shape_of_payload():

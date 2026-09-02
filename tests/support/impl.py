@@ -75,7 +75,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `aeh.prov` arrives with #18, months before `FR-PROV-12`.
     "#20": (
         "symbol",
-        f"{PROVIDER_MODULE}:{FIXTURE_PROVIDER_CLASS}.counters",
+        # `LocalServerProvider.counters`, because that is the object the test drives -- the
+        # registry's question is which blocker *resolved* makes the test runnable, and
+        # `RecordedFixtureProvider.counters` resolving would fire the gate for a test that
+        # then fails on a provider it never mentions. Same trap the #122 note describes.
+        f"{PROVIDER_MODULE}:LocalServerProvider.counters",
         ("tests/unit/prov/test_run_counters.py",),
     ),
     # `SEC-03` -- `cloud-hosted` retention (`FR-PROV-14`). `OpenRouterProvider` is named
@@ -83,7 +87,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # and retention is meaningless without the implementation that talks to the cloud.
     "#21": (
         "symbol",
-        f"{PROVIDER_MODULE}:OpenRouterProvider",
+        f"{PROVIDER_MODULE}:OpenRouterProvider.verify_retention",
         ("tests/unit/prov/test_retention_gate.py",),
     ),
     # `TC-PROV-21` and `SEC-04` scan assembled payloads for student names. Keyed on `M-JUDGE`
@@ -95,8 +99,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Only the two case tests carry the marker; the file's scanner controls run in the gate
     # today, which is what keeps the cases from going green-by-blindness when #78 lands.
     "#78": (
-        "module",
-        JUDGE_MODULE,
+        # The symbol the tests actually resolve, not the module: `aeh.judge` could land with
+        # #79's numeral prohibition while `assemble` is still #78's.
+        "symbol",
+        f"{JUDGE_MODULE}:ScoringWorker",
         (
             "tests/artifact/test_payload_pseudonymization.py"
             "::test_tc_prov_21_no_assembled_payload_carries_a_student_name",

@@ -35,6 +35,15 @@ discovered by a signature mismatch — see the PR, where both are raised as find
 | `LocalServerProvider` | defined, design §3.2 |
 | A `counters` accessor on a provider | **not named** — the design names the six counters and never the surface that exposes them. `CT-PROV-11` says they "accumulate in memory and are read by `M-ORCH`", and the only object `M-ORCH` holds is a provider, so the accessor is on the provider |
 | A programmable transport seam (`transport=`) | **not named anywhere** — see the note below |
+| An injected clock (`clock=`) | **not named** — but `rate_limit_wait_s` is unassertable without one. Honouring `Retry-After: 2` twenty times is 40 seconds of real waiting, and §4.6 makes `TC-ORCH-09` the *single* sanctioned sleep in the suite. Either #19 takes a clock or this case cannot run in any tier that has a duration budget |
+
+Two **semantic** expectations, which are likelier to produce a false red than the missing names
+above, because a correct implementation can disagree with them and still satisfy `FR-PROV-12`:
+
+| Assumption | Why it is the reading taken here | The alternative |
+|---|---|---|
+| A 429-provoked retry increments `transport_retries` **as well as** `rate_limited_calls` | `FR-PROV-06` classifies 429 as one of the retryable transport-class failures, so every attempt beyond the first is a transport retry; `rate_limited_calls` then answers a different question — *how many calls were throttled* — rather than partitioning the same total | #20 may reasonably count only non-429 retries there, giving 15 rather than 35. If it does, this expectation moves and the case does not |
+| `cache_hit_rate` is token-weighted: `cached_prefix_tokens / tokens_in` | `NFR-JUDGE-01` and `TC-JUDGE-21` both state it against token counts (about 1,500 of roughly 1,800), and `TC-PROV-C14` requires a rate in `[0,1]` | A call-weighted rate (calls that hit the cache / calls) would also be a rate in `[0,1]`, and would read 1.0 here |
 
 The transport seam is a gap in the plan, not a choice
 ------------------------------------------------------
@@ -121,7 +130,9 @@ def _counter_mapping(provider) -> Mapping[str, float]:
     return {name: getattr(value, name) for name in COUNTER_NAMES if hasattr(value, name)}
 
 
-def test_tc_prov_18_the_six_run_counters_match_a_hand_counted_reference(network_guard):
+def test_tc_prov_18_the_six_run_counters_match_a_hand_counted_reference(
+    network_guard, frozen_clock
+):
     """TC-PROV-18 — 200 calls, 20 programmed 429s and 15 transport failures, counted by hand.
 
     Oracle (§5.2): *hand-computed reference*. Every expectation is a module constant above,
@@ -153,7 +164,11 @@ def test_tc_prov_18_the_six_run_counters_match_a_hand_counted_reference(network_
         tokens_out=TOKENS_OUT_PER_CALL,
         cached_prefix_tokens=CACHED_PREFIX_TOKENS_PER_CALL,
     )
-    provider = LocalServerProvider(transport=transport)
+    # The clock is injected, not slept through. Honouring `Retry-After: 2` twenty times is 40
+    # seconds of real time; §4.6 makes TC-ORCH-09 the one sanctioned sleep in this suite, and a
+    # 40-second unit test is how a fast tier stops being run. If #19 waits on a real clock
+    # instead, `rate_limit_wait_s` is either a 40-second test or a fabricated number.
+    provider = LocalServerProvider(transport=transport, clock=frozen_clock)
     # Fails here, naming #20, until FR-PROV-12 lands — before any invented seam is touched.
     _counter_mapping(provider)
 
@@ -187,6 +202,8 @@ def test_tc_prov_18_the_six_run_counters_match_a_hand_counted_reference(network_
         f"makes every historical-band alert meaningless. Got {counters['cache_hit_rate']!r}"
     )
 
+    # See the module docstring's semantic-assumptions table: this reading counts a 429-provoked
+    # retry in both counters. A #20 that partitions them instead reports 15 and is not wrong.
     assert counters["transport_retries"] == EXPECTED_TRANSPORT_RETRIES
     assert counters["rate_limited_calls"] == RATE_LIMITED_CALLS
     assert counters["rate_limit_wait_s"] == pytest.approx(EXPECTED_RATE_LIMIT_WAIT_S)

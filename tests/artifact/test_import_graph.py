@@ -35,12 +35,19 @@ from tests.support.import_graph import (
     BACKEND_CONSTANT_EXEMPT,
     FORBIDDEN_ROOTS,
     PROVIDER_MODULES,
+    SOURCE_ROOTS,
     Violation,
-    egress_capable_modules,
+    egress_holders_outside_m_prov,
+    is_within,
     scan_module,
     scan_tree,
+    skipped_files,
     source_files,
 )
+
+#: The one file in the repository whose stem is not a Python identifier, and which is therefore
+#: invisible to all three steps. Bounded by a test below rather than left as a category.
+KNOWN_UNIMPORTABLE = {"harness/reference/metamorphic.skeleton.py"}
 
 
 # --- the case ---------------------------------------------------------------------------------
@@ -86,14 +93,14 @@ def test_tc_prov_05_step_3_the_set_of_egress_capable_modules_has_cardinality_at_
     module at all satisfies "zero violations outside `M-PROV`" vacuously while satisfying
     nothing a reviewer could rely on.
 
-    *At most* one rather than exactly one, and that is the honest bound today: `M-PROV`'s two
-    live implementations are issue #21, so on a tree where they have not landed the correct
-    answer is zero. The assertion that matters in both states is that it never exceeds one, and
-    that the one is `M-PROV`.
+    Stated as "nothing outside `M-PROV`" rather than "exactly one module", because `M-PROV`
+    is expected to become a *package* — three implementations, design §3.2 — and a count over
+    modules would then report three and be right to. The clause is about the audit boundary,
+    and `aeh.prov.openrouter_backend` is inside it.
     """
-    holders = egress_capable_modules(repo_root)
+    holders = egress_holders_outside_m_prov(repo_root)
 
-    assert holders <= PROVIDER_MODULES, (
+    assert not holders, (
         "egress-capable imports must live in M-PROV alone, so a reviewer can audit egress by "
         "reading one module (CT-PROV-15). Found them in: " + ", ".join(sorted(holders))
     )
@@ -113,6 +120,39 @@ def test_tc_prov_05_scans_a_tree_that_actually_contains_modules(repo_root):
         "the import-graph scan found no aeh.conf, so it is scanning the wrong tree and its "
         f"clean result means nothing. Modules found: {sorted(modules)}"
     )
+    # Both roots, asserted separately. `harness/` is in scope because RISK-32's named
+    # construction lands there, and it contributes zero modules today — so a `SOURCE_ROOTS`
+    # that quietly lost it would change nothing visible and take M-CONFORM out of the scan.
+    assert set(SOURCE_ROOTS) == {"src", "harness"}
+
+
+def test_nothing_but_the_known_skeleton_is_invisible_to_the_scan(repo_root):
+    """A file the walk skips is reported by no step of `TC-PROV-05`, so the set must be bounded.
+
+    The skip rule exists for one file — a `/harness-bootstrap` reference skeleton whose stem
+    (`metamorphic.skeleton`) is not an identifier, and which holds a live `urllib.request`
+    call. It is not runnable and nothing can import it.
+
+    Without this assertion the skip is an open category: a leak parked in `adhoc.probe.py`
+    would be silently dropped, and a green `TC-PROV-05` would be reporting on a tree it had
+    not fully read.
+    """
+    assert set(skipped_files(repo_root)) == KNOWN_UNIMPORTABLE
+
+
+def test_a_directory_name_never_removes_a_file_from_the_scan(tmp_path):
+    """The narrow half of the skip rule, and a regression.
+
+    An earlier draft required **every** path segment to be an identifier, so a directory named
+    `quick-tools/` dropped its whole subtree — a working second egress point, invisible, which
+    is the single outcome this case exists to prevent. Only the file's own stem decides.
+    """
+    probe = tmp_path / "harness" / "quick-tools" / "latency_probe.py"
+    probe.parent.mkdir(parents=True)
+    probe.write_text("import httpx\n", encoding="utf-8")
+
+    assert skipped_files(tmp_path, roots=("harness",)) == []
+    assert [v.symbol for v in scan_tree(tmp_path, roots=("harness",))] == ["httpx"]
 
 
 # --- positive controls for the walker ----------------------------------------------------------
@@ -147,6 +187,20 @@ _EVASIONS = {
         "client = import_module('openai')\n"
     ),
     "dynamic_dunder_import": "client = __import__('litellm')\n",
+    # The same door with the argument passed by name.
+    "dynamic_keyword_argument": (
+        "import importlib\n"
+        "client = importlib.import_module(name='litellm')\n"
+    ),
+    # ...and with the callee renamed, which defeats a walker matching on the literal name.
+    "dynamic_aliased_callee": (
+        "from importlib import import_module as _load\n"
+        "client = _load('litellm')\n"
+    ),
+    "dynamic_aliased_module": (
+        "import importlib as _il\n"
+        "client = _il.import_module('openai')\n"
+    ),
     "http_client": "import httpx\n",
     "http_client_stdlib": "from urllib.request import urlopen\n",
     "mlx": "import mlx_lm\n",
@@ -166,10 +220,20 @@ def test_the_walker_catches_every_spelling_of_a_forbidden_import(spelling):
 
     assert violations, f"the walker missed a forbidden import spelled {spelling!r}"
     assert all(isinstance(v, Violation) for v in violations)
-    # The expected result requires the report to name both, so a reader can act on the failure
-    # without opening the walker.
+
+    # The expected result requires the report to name the importing module *and the symbol*, so
+    # a reader can act on the failure without opening the walker. Asserting the symbol is
+    # merely truthy would pass for a walker that reported every violation as "something".
     reported = str(violations[0])
-    assert "aeh.leaky" in reported and violations[0].symbol
+    assert "aeh.leaky" in reported
+    expected_symbol = next(
+        name
+        for name in ("litellm", "openai", "ollama", "mlx_lm", "httpx", "urllib.request")
+        if name in _EVASIONS[spelling]
+    )
+    assert any(v.symbol.startswith(expected_symbol) for v in violations), (
+        f"the report names {[v.symbol for v in violations]}, not {expected_symbol!r}"
+    )
 
 
 def test_the_walker_catches_a_backend_constant_outside_the_exempt_modules():
@@ -237,6 +301,41 @@ def test_m_prov_and_m_conf_are_exempt_exactly_where_the_case_says():
         "aeh.conf", "import litellm\n", "src/aeh/conf.py", check_backend_constants=False
     )
     assert [v.symbol for v in violations] == ["litellm"]
+
+
+def test_the_exemptions_follow_m_prov_when_it_becomes_a_package(tmp_path):
+    """A submodule of `M-PROV` is inside the seam. A module merely *named* like one is not.
+
+    `M-PROV` ships three implementations (design §3.2), so `aeh/prov/` as a package is the
+    likely layout. An exact-string exemption turns a **correct** `M-PROV` red — and the damage
+    is not the red, it is the reflex fix, which is to add the new module to the exempt set.
+    That is how one auditable seam quietly becomes two.
+    """
+    assert is_within("aeh.prov.openrouter_backend", PROVIDER_MODULES)
+    assert is_within("aeh.prov", PROVIDER_MODULES)
+    assert not is_within("aeh.provisioning", PROVIDER_MODULES)
+    assert not is_within("aeh.orch", PROVIDER_MODULES)
+
+    # End to end: a package-shaped M-PROV importing an SDK is clean, and its lookalike is not.
+    package = tmp_path / "src" / "aeh" / "prov"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "openrouter_backend.py").write_text("import litellm\n", encoding="utf-8")
+
+    assert scan_tree(tmp_path, roots=("src",)) == []
+    assert egress_holders_outside_m_prov(tmp_path, roots=("src",)) == set()
+
+    lookalike = tmp_path / "src" / "aeh" / "provisioning.py"
+    lookalike.write_text("import litellm\n", encoding="utf-8")
+
+    assert [v.module for v in scan_tree(tmp_path, roots=("src",))] == ["aeh.provisioning"]
+
+
+def test_m_conf_keeps_its_step_3_exemption_as_a_package(tmp_path):
+    """The same boundary rule on the other exemption. `M-CONF` is the module that *must* name
+    the backends, and a submodule of it must not lose that."""
+    assert is_within("aeh.conf.profiles", BACKEND_CONSTANT_EXEMPT)
+    assert not is_within("aeh.configurator", BACKEND_CONSTANT_EXEMPT)
 
 
 def test_the_declared_forbidden_list_covers_the_symbols_the_case_names():

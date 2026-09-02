@@ -92,6 +92,12 @@ FORBIDDEN_ROOTS: frozenset[str] = PROVIDER_SDK_ROOTS | HTTP_CLIENT_ROOTS
 BACKEND_CONSTANTS: tuple[str, ...] = ("ollama", "vllm-mlx", "openrouter")
 
 #: `M-PROV`. The one module allowed an egress-capable import — that is the whole clause.
+#:
+#: Matched on module **boundaries**, so `aeh.prov.openrouter_backend` is covered when `M-PROV`
+#: grows from a module into a package — which is the likely layout for three implementations.
+#: An exact-string test was the first draft and it turned a *correct* `M-PROV` red; the damage
+#: is not the red but the reflex fix, which is to add the new module to this set. That is
+#: precisely how one seam becomes two.
 PROVIDER_MODULES: frozenset[str] = frozenset({"aeh.prov"})
 
 #: `M-CONF` resolves `provider` on a `ModelRef` and so names the backends; `TC-PROV-05` step 3
@@ -99,6 +105,20 @@ PROVIDER_MODULES: frozenset[str] = frozenset({"aeh.prov"})
 #: does not call one (design §3.1, "it owns the *fixing* of the backend; it does not own the
 #: calling of it").
 BACKEND_CONSTANT_EXEMPT: frozenset[str] = PROVIDER_MODULES | {"aeh.conf"}
+
+
+def is_within(module: str, roots: Iterable[str]) -> bool:
+    """Whether `module` is one of `roots` or a submodule of one.
+
+    `aeh.prov` covers `aeh.prov.openrouter_backend`; `aeh.provisioning` is a different module
+    and is covered by neither.
+    """
+    segments = module.split(".")
+    for root in roots:
+        root_segments = root.split(".")
+        if segments[: len(root_segments)] == root_segments:
+            return True
+    return False
 
 #: Package roots the walk covers. `harness/` is included because RISK-32's named scenario is
 #: "a direct SDK import to `M-CONFORM` to compare raw latencies", and `M-CONFORM`'s entry point
@@ -163,7 +183,26 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
     return marked
 
 
-def _dynamic_import_targets(node: ast.Call) -> Iterator[str]:
+def _dynamic_import_aliases(tree: ast.AST) -> set[str]:
+    """Local names bound to `importlib.import_module`, so an alias is still caught.
+
+    `from importlib import import_module as im` makes `im("litellm")` a working dynamic import
+    that no walker matching on the callee's literal name would see.
+    """
+    aliases = {"import_module", "__import__"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "importlib":
+            for alias in node.names:
+                if alias.name == "import_module" and alias.asname:
+                    aliases.add(alias.asname)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "importlib" and alias.asname:
+                    aliases.add(f"{alias.asname}.import_module")
+    return aliases
+
+
+def _dynamic_import_targets(node: ast.Call, aliases: set[str]) -> Iterator[str]:
     """The module names a dynamic-import call asks for, when they are string literals.
 
     `TC-PROV-05`'s **Variants** line: *"a dynamic `importlib.import_module('litellm')` must
@@ -177,9 +216,12 @@ def _dynamic_import_targets(node: ast.Call) -> Iterator[str]:
     """
     func = node.func
     called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-    if called not in ("import_module", "__import__"):
+    if called not in aliases:
         return
-    for argument in node.args:
+    # Positional *and* keyword: `import_module(name="litellm")` is the same door, and the
+    # Variants line is the one spelling the plan calls out by hand.
+    arguments = list(node.args) + [keyword.value for keyword in node.keywords]
+    for argument in arguments:
         if isinstance(argument, ast.Constant) and isinstance(argument.value, str):
             yield argument.value
 
@@ -188,15 +230,21 @@ def module_name_for(path: Path, root: Path) -> str | None:
     """The dotted module path a file would be imported as, or `None` if it is not importable.
 
     `TC-PROV-05` step 1 is *"build the import graph of every module in the package"*, and a
-    file whose name is not a Python identifier has no node in that graph: nothing can import
-    `harness/reference/metamorphic.skeleton.py`, because `metamorphic.skeleton` does not name a
-    module. The repository holds exactly one such file today — a reference skeleton copied in
-    from `/harness-bootstrap` and marked *"a REFERENCE to copy + fill in, not a runnable
-    suite"*, carrying a `urllib.request` call against a placeholder `http://localhost:PORT`.
+    file whose **name** is not a Python identifier has no node in that graph: nothing can
+    import `harness/reference/metamorphic.skeleton.py`, because `metamorphic.skeleton` does not
+    name a module. The repository holds exactly one such file today — a reference skeleton
+    copied in from `/harness-bootstrap` and marked *"a REFERENCE to copy + fill in, not a
+    runnable suite"*, carrying a `urllib.request` call against a placeholder
+    `http://localhost:PORT`.
 
     Skipping it is not an exemption. Give that file an importable name and it becomes a node,
     and this case reports it — which is the correct outcome, because a copy of that skeleton
     wired to a real endpoint is precisely the second egress point `CT-PROV-15` forbids.
+
+    The rule is deliberately narrow: **the stem, never a parent directory**. Requiring every
+    segment to be an identifier would drop `harness/quick-tools/latency_probe.py` — a perfectly
+    working egress point — out of the scan entirely, and `skipped_files()` exists so nothing
+    lands in this category without a test noticing.
     """
     relative = path.relative_to(root)
     parts = list(relative.parts)
@@ -204,7 +252,12 @@ def module_name_for(path: Path, root: Path) -> str | None:
         parts = parts[:-1]
     else:
         parts[-1] = parts[-1][: -len(".py")]
-    if not all(part.isidentifier() for part in parts):
+    # The **stem** only. An earlier draft required every path segment to be an identifier,
+    # which meant a directory named `quick-tools/` silently dropped its entire subtree from all
+    # three steps — a working second egress point, invisible, which is the one outcome this
+    # case exists to prevent. A hyphenated directory does not make the file unreadable, and the
+    # walk is a static read rather than an import.
+    if parts and not parts[-1].isidentifier():
         return None
     return ".".join(parts)
 
@@ -233,6 +286,27 @@ def source_files(repo_root: Path, roots: Iterable[str] = SOURCE_ROOTS) -> list[t
     return found
 
 
+def skipped_files(repo_root: Path, roots: Iterable[str] = SOURCE_ROOTS) -> list[str]:
+    """Every `.py` file the walk does not scan, because its stem is not importable.
+
+    Exposed so a test can bound the set. Whatever is in here is invisible to all three steps of
+    `TC-PROV-05`, so it must stay a list somebody has looked at rather than a growing category
+    — a leak parked in a file named `adhoc.probe.py` would otherwise be reported by nothing.
+    """
+    skipped: list[str] = []
+    for root_name in roots:
+        root = repo_root / root_name
+        if not root.is_dir():
+            continue
+        package_root = root if root_name == "src" else repo_root
+        for path in sorted(root.rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            if module_name_for(path, package_root) is None:
+                skipped.append(path.relative_to(repo_root).as_posix())
+    return skipped
+
+
 def scan_module(
     module: str,
     source: str,
@@ -250,6 +324,7 @@ def scan_module(
     """
     tree = ast.parse(source, filename=path)
     forbidden = tuple(forbidden)
+    aliases = _dynamic_import_aliases(tree)
     violations: list[Violation] = []
 
     for node in ast.walk(tree):
@@ -271,7 +346,7 @@ def scan_module(
                         Violation(module, path, node.lineno, "import", node.module)
                     )
         elif isinstance(node, ast.Call):
-            for target in _dynamic_import_targets(node):
+            for target in _dynamic_import_targets(node, aliases):
                 hit = _matches_forbidden(target, forbidden)
                 if hit is not None:
                     violations.append(
@@ -304,14 +379,14 @@ def scan_tree(repo_root: Path, roots: Iterable[str] = SOURCE_ROOTS) -> list[Viol
     violations: list[Violation] = []
     for module, path in source_files(repo_root, roots):
         relative = path.relative_to(repo_root).as_posix()
-        if module in PROVIDER_MODULES:
+        if is_within(module, PROVIDER_MODULES):
             continue
         violations.extend(
             scan_module(
                 module,
                 path.read_text(encoding="utf-8"),
                 relative,
-                check_backend_constants=module not in BACKEND_CONSTANT_EXEMPT,
+                check_backend_constants=not is_within(module, BACKEND_CONSTANT_EXEMPT),
             )
         )
     return violations
@@ -337,3 +412,12 @@ def egress_capable_modules(repo_root: Path, roots: Iterable[str] = SOURCE_ROOTS)
         if found:
             holders.add(module)
     return holders
+
+
+def egress_holders_outside_m_prov(repo_root: Path, roots: Iterable[str] = SOURCE_ROOTS) -> set[str]:
+    """`egress_capable_modules`, minus everything inside `M-PROV`."""
+    return {
+        module
+        for module in egress_capable_modules(repo_root, roots)
+        if not is_within(module, PROVIDER_MODULES)
+    }
