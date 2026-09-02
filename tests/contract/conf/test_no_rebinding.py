@@ -84,12 +84,25 @@ def _takes_a_config(signature) -> bool:
     return False
 
 
+#: Set by `_attempt` whenever a probe returns anything at all. Read by the liveness guard at the
+#: end of `assert_no_rebinding_surface`.
+#:
+#: `_attempt` swallows every exception, which is correct — a refusal is the outcome this case
+#: wants — but it means a sweep in which *every* call happens to raise looks identical to a sweep
+#: in which nothing rebinds. That is not hypothetical: the mutation harness once reported a graft
+#: as MISSED because a botched rename made its body raise `AttributeError`, and `_attempt` ate it.
+#: A broken probe reads exactly like a clean module. So the machinery asserts it is live.
+_PROBE_RETURNED: list[object] = []
+
+
 def _attempt(call, *args, **kwargs):
     """Invoke and return the result, or `None` if it refused. Refusing is the correct outcome."""
     try:
-        return call(*args, **kwargs)
+        result = call(*args, **kwargs)
     except Exception:  # noqa: BLE001 - any refusal passes; only a returned config is a finding
         return None
+    _PROBE_RETURNED.append(result)
+    return result
 
 
 def _is_a_rebinding(result, original, conf) -> bool:
@@ -137,10 +150,12 @@ def assert_no_rebinding_surface(conf) -> None:
     watching.
 
     **Invoking arbitrary public members is safe here and nowhere else**: `CT-CONF-09` is that this
-    module writes nothing at all, and `TC-CONF-C09` asserts it. A member that grew a side effect
-    would fail that case first.
+    module writes nothing at all, and a member that grew a side effect would be caught by
+    `TC-CONF-C09`. Not *first* — pytest runs shuffled (§4.6), so there is no ordering to lean on;
+    the two cases are independent and both must hold.
     """
     offenders: list[str] = []
+    _PROBE_RETURNED.clear()
 
     edge = conf.resolve_run_config(edge_cfg(**{"panel": EDGE_PANEL_3}), SYNTHETIC_COHORT)
     hosted = conf.resolve_run_config(hosted_cfg(), SYNTHETIC_COHORT)
@@ -222,6 +237,17 @@ def assert_no_rebinding_surface(conf) -> None:
                         f"one"
                     )
                     break
+
+    # The behavioural net is only worth anything if it actually reached the code. Every probe
+    # raising looks exactly like nothing rebinding, so assert the machinery is live before
+    # reporting a clean sweep. `log_run_start(config)` returns a `ProfileSummary` and
+    # `to_persisted_dict()` a dict, so this is non-vacuous today without asserting on either
+    # by name.
+    assert _PROBE_RETURNED, (
+        "the behavioural sweep made hundreds of calls and every one of them raised, so it "
+        "asserted nothing. Something upstream of the probes is broken — a fixture, a builder, or "
+        "the module itself — and a clean result here would be a false negative on a P0 clause."
+    )
 
     assert not offenders, (
         "CT-CONF-14: the module offers a way to change an existing run's backend, panel or "
