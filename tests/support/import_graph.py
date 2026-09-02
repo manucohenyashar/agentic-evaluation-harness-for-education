@@ -230,16 +230,20 @@ def module_name_for(path: Path, root: Path) -> str | None:
     """The dotted module path a file would be imported as, or `None` if it is not importable.
 
     `TC-PROV-05` step 1 is *"build the import graph of every module in the package"*, and a
-    file whose **name** is not a Python identifier has no node in that graph: nothing can
+    file whose **name** is not a Python identifier has no node in that graph: nothing could
     import `harness/reference/metamorphic.skeleton.py`, because `metamorphic.skeleton` does not
-    name a module. The repository holds exactly one such file today — a reference skeleton
-    copied in from `/harness-bootstrap` and marked *"a REFERENCE to copy + fill in, not a
-    runnable suite"*, carrying a `urllib.request` call against a placeholder
-    `http://localhost:PORT`.
+    name a module.
 
-    Skipping it is not an exemption. Give that file an importable name and it becomes a node,
-    and this case reports it — which is the correct outcome, because a copy of that skeleton
-    wired to a real endpoint is precisely the second egress point `CT-PROV-15` forbids.
+    The repository holds **no** such file today, and `skipped_files()` is asserted empty. The
+    one occupant this rule ever had was that `/harness-bootstrap` reference skeleton — marked
+    *"a REFERENCE to copy + fill in, not a runnable suite"* and carrying a `urllib.request` call
+    against a placeholder `http://localhost:PORT`. PR #161 raised it as a finding and it now
+    lives at `docs/reference/metamorphic_skeleton.py`: outside `SOURCE_ROOTS`, and with an
+    importable stem, so that moving it back into scope makes it a node this case reports. That
+    is the correct outcome — a copy of that skeleton wired to a real endpoint is precisely the
+    second egress point `CT-PROV-15` forbids.
+
+    The rule stays because the *category* must stay closed, not because anything is in it.
 
     The rule is deliberately narrow: **the stem, never a parent directory**. Requiring every
     segment to be an identifier would drop `harness/quick-tools/latency_probe.py` — a perfectly

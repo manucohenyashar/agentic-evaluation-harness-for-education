@@ -36,7 +36,7 @@ substrate and skills."* This project is that case.
 
 ---
 
-## 2. What we take from the kit, and what we skip
+## 2. What we take from the kit
 
 Every file in the kit, with a verdict. The repo is 27 files / 1,415 lines, all of it read.
 
@@ -44,18 +44,8 @@ Every file in the kit, with a verdict. The repo is 27 files / 1,415 lines, all o
 |---|---|---|---|
 | `skills/harness-bootstrap/SKILL.md` | 92 | **Take** — copied to `.claude/skills/` | The green-field method. Exactly our situation. |
 | `lib/harness/p1-bug-sweep.workflow.js` | 190 | **Take — adapt** | A **Claude Code Workflow script**, not a .NET tool. Five methodology finders (logic / adversarial / metamorphic / fuzz / error-IO) fanned out per component, then a **two-lens adversarial verify panel** that defaults to REFUTED and needs 2/2 to confirm, then synthesis. The architecture is language-agnostic; only the C# specifics in the prompt strings need retuning. See §5a. |
-| `lib/harness/metamorphic.skeleton.py` | 57 | **Take as reference** — copied to `harness/reference/` | The one directly reusable code artifact. Six metamorphic relations for testing outputs you can't hardcode. |
+| `lib/harness/metamorphic.skeleton.py` | 57 | **Take as reference** — copied to `docs/reference/` | The one directly reusable code artifact. Six metamorphic relations for testing outputs you can't hardcode. |
 | `skills/test-quality/SKILL.md` | 132 | **Skip the file, steal one idea** | The 7-point rubric is framework-agnostic (the skill says so itself), but adopting the file would create a second owner for test authorship, which `CLAUDE.md` forbids — `/create-test-plan` + `/write-tests` + the `reviewer` subagent already cover it, in more depth. The one idea worth taking is the **mutation-testing bar** — see §5b. |
-| `conventions.md` | 21 | **Skip** | Eight bullets; five are advisor360 infrastructure (Bitbucket auth, Arnica secret scanning, the ADO NuGet feed, Azure VM P2). The two that apply — branch+PR, worktree-per-session — are already in our `CLAUDE.md`. |
-| `skills/dotnet-service-harness-retrofit/SKILL.md` | 108 | **Skip** | .NET *and* retrofit-shaped. Nothing to retrofit. Its environment gotchas (SDK side-by-side, the private NuGet feed, DACPAC, Zscaler CA) are all advisor360-.NET problems. |
-| `lib/common.sh`, `create-vm.sh`, `bastion-up.sh`, `bastion-tunnel.sh`, `activate-pim.sh`, `teardown-vm.sh`, `onvm.sh`, `cloud-init.base.yaml` | 215 | **Skip** | Azure ephemeral-VM lifecycle: resource groups, PIM role self-activation, Bastion tunnels, headless `az vm run-command`. We have no VM lane. |
-| `lib/p2.sh`, `lib/run-svc.py` | 102 | **Skip** | Dispatcher for `local` vs `vm`, and a launcher for ASP.NET services that injects KeyVault dummies. Both .NET-shaped. |
-| `lib/substrate/docker-compose.substrate.yml` | 95 | **Skip** | SQL Server, Kafka, Schema Registry, Redis, Azurite, WireMock. Our design (ADR-6) is deliberately four SQLite files and **no server process**. |
-| `lib/harness/ci-coverage/` (3 files) | 114 | **Skip the code, keep the policy** | .NET coverlet + ReportGenerator + a Bitbucket pipeline. The *staging policy* is worth copying though: **enforce ≥90% on changed lines, report-only on overall, ratchet the floor up over time.** That works in any language and avoids failing every build on day one. |
-| `lib/harness/stryker-rebaseline.sh` | 34 | **Skip the tool, keep the practice** | Stryker.NET. The practice — a committed mutation baseline plus a weekly scan for new survivors — ports to Python via `mutmut`. |
-| `lib/harness/build-rules.sh` | 46 | **Skip** | MSBuild parallelism and symlink-path collisions. No equivalent problem in Python. |
-| `lib/harness/schemathesis.sh` | 44 | **Skip for now** | OpenAPI 5xx fuzz sweep. Revisit only if `M-CONSOLE` grows an API worth fuzzing — today it is server-rendered HTML on loopback. |
-| `REGISTRY.md`, `docs/EXPANSION-DESIGN.md` | 108 | **Skip — but read once** | The stack-of-stacks registry and the kit's own roadmap. No action for us, but `EXPANSION-DESIGN.md` states the principle the whole kit is built on, and it is the right one to copy: *"mechanism + templates in the kit; values/routes/suites/defs/lists in the stack."* |
 | `README.md`, `.gitignore` | 57 | — | Orientation. |
 
 **Net: three files taken** (one copied, one copied as reference, one to adapt), plus three
@@ -229,7 +219,7 @@ Two Windows-specific notes:
 
 ```
 Code/.claude/skills/harness-bootstrap/SKILL.md   # the method, with a provenance header
-Code/harness/reference/metamorphic.skeleton.py   # the metamorphic pattern, as reference
+Code/docs/reference/metamorphic_skeleton.py      # the metamorphic pattern, as reference
 Code/docs/harness-adoption.md                    # this file
 ```
 

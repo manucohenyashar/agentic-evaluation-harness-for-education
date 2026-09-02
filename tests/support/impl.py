@@ -98,6 +98,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # Only the two case tests carry the marker; the file's scanner controls run in the gate
     # today, which is what keeps the cases from going green-by-blindness when #78 lands.
+    #
+    # The tests also need `aeh.orch.WorkUnit` -- design v1.5 §3.7 defines it on the M-ORCH side,
+    # since M-ORCH owns the ledger and M-JUDGE merely consumes the unit. That does not change the
+    # key: #78 depends on #59, so the ledger is present by the time assembly is, and #78 remains
+    # the single blocker whose landing makes these runnable.
     "#78": (
         # The symbol the tests actually resolve, not the module: `aeh.judge` could land with
         # #79's numeral prohibition while `assemble` is still #78's.

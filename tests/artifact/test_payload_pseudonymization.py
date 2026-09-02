@@ -41,8 +41,8 @@ the same courtesy `TS-00` extended to #18.
 |---|---|
 | `aeh.judge` as `M-JUDGE`'s module | convention from `tests/support/impl.py` |
 | `ScoringWorker.assemble(unit) -> ScoringRequest` | defined, design §3.10 Interfaces |
-| `WorkUnit` | named in §3.10's Interfaces block; **its fields are nowhere specified** |
-| `WorkUnit(student_ref=, student_name=, submission_id=, criterion_id=, submission_text=)` | **chosen here** — see `work_unit_fields()`. `student_name` is the sentinel `TC-PROV-C13` requires the fixture to carry |
+| `WorkUnit`, imported from `aeh.orch` | **defined in design v1.5**, §3.7 — `M-ORCH` owns the ledger, so the type belongs there rather than in §3.10 where it is merely consumed. Its fields had been nowhere specified; raised as a finding in PR #161 |
+| `WorkUnit(student_ref=, student_name=, submission_id=, criterion_id=, submission_text=, ...)` | matches v1.5's definition, which also carries `work_id`, `run_id`, `stage`, `judge` and `attempt` — none of which this scan reads. `student_name` being **on** the unit is now design, with `work_unit_fields()`'s reasoning quoted as the reason: the pseudonymization boundary is at assembly, not at the ledger |
 | A concrete `ScoringWorker` implementation | **not named in the design** — resolved by duck-typing whatever `aeh.judge` exports |
 
 The scan itself places no requirement on `ScoringRequest`'s shape: `strings_in()` walks
@@ -54,7 +54,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.support.impl import JUDGE_MODULE, require
+from tests.support.impl import JUDGE_MODULE, ORCH_MODULE, require
 from tests.support.roster import (
     ROSTER_SIZE,
     NameHit,
@@ -208,12 +208,16 @@ def work_unit_fields(student: Student) -> dict[str, str]:
 
 
 def _work_unit_for(student: Student):
-    """One scoring work unit for `student`, built against #78's `WorkUnit`.
+    """One scoring work unit for `student`, built against design §3.7's `WorkUnit`.
 
     Kept in one place so the reconciliation with #78's actual signature is a single edit rather
     than one per case.
     """
-    work_unit_cls = require(JUDGE_MODULE, "WorkUnit", issue=ISSUE)
+    # `aeh.orch`, not `aeh.judge`: design v1.5 puts `WorkUnit` in §3.7 because `M-ORCH` owns
+    # the ledger. `M-JUDGE` consumes it (§3.10's `assemble(unit)`), which is why this file's
+    # blocker stays #78 — that is the story whose landing makes the case runnable, and it lands
+    # strictly after the ledger it depends on.
+    work_unit_cls = require(ORCH_MODULE, "WorkUnit", issue=ISSUE)
     return work_unit_cls(**work_unit_fields(student))
 
 

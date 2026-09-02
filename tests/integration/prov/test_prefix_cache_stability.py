@@ -45,7 +45,16 @@ import pytest
 
 from tests.support.impl import PROVIDER_MODULE, require
 
-pytestmark = [pytest.mark.live, pytest.mark.slow, pytest.mark.integration]
+# `perf` from test-plan §4.7 (added in v1.3): TC-PROV-22 and PERF-04 are one measurement
+# declared in two sections, and before the marker existed there was no way to select them
+# together. `live` and `slow` stay -- §4.7 excludes all three from the fast tier, and the
+# case needs E3 either way.
+pytestmark = [
+    pytest.mark.perf,
+    pytest.mark.live,
+    pytest.mark.slow,
+    pytest.mark.integration,
+]
 
 CONF_MODULE = "aeh.conf"
 ISSUE = "#21"

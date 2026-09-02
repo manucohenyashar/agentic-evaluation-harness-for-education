@@ -29,6 +29,7 @@ markers = [
     "property: hypothesis property tests, --hypothesis-profile=ci (§4.7)",
     "fuzz: nightly fuzz campaign, --hypothesis-profile=nightly (§4.7)",
     "e2e: the three end-to-end journeys against the fixture provider (§6.2)",
+    "perf: the §6.4 performance scenarios (PERF-01..10, TC-PROV-22). Excluded from TEST_CMD by §4.7 -- a scenario that measures wall clock does not belong in a 90-second budget",
     "contract: the CT-* clause suites of §6.11 (§4.10, < 60 s)",
     "writtenahead: written ahead of its implementation and expected to FAIL. Excluded from TEST_CMD. Remove this marker — never the test — when the implementing issue closes (test plan §8.2)",
 ]

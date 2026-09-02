@@ -31,8 +31,8 @@ fi
 
 # The fast tier, from test-plan §4.7, plus `not writtenahead`.
 #
-# §4.7's string is `pytest -q -m "not integration and not live and not slow"`. The extra
-# clause is this repo's answer to a real conflict: §8.2 says every test story lands RED
+# §4.7's string is `pytest -q -m "not integration and not live and not slow and not perf"`.
+# The one extra clause here is this repo's answer to a real conflict: §8.2 says every test story lands RED
 # (written ahead of its implementation), and the Stop hook blocks the turn whenever TEST_CMD
 # fails — so the unmodified string would block every turn from the first test story until the
 # last implementation story.
@@ -42,7 +42,7 @@ fi
 # implementing issue closes. That is what makes this gate tighten over time instead of
 # quietly staying narrow. `pytest -q` with no marker filter is the honest full picture and is
 # what a PR reports.
-DEFAULT_MARKERS='not integration and not live and not slow and not writtenahead'
+DEFAULT_MARKERS='not integration and not live and not slow and not perf and not writtenahead'
 
 if [ "$#" -gt 0 ]; then
   exec "$PY" -m pytest -q "$@"

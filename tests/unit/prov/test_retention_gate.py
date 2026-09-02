@@ -54,9 +54,12 @@ Interface expectations this test places on #21
 | `OpenRouterProvider` | defined, design §3.2 Interfaces |
 | `verify_retention(model_refs) -> RetentionReport` | defined, design §3.2 Interfaces |
 | `RetentionPolicyError` | defined, `FR-PROV-14` |
-| `RetentionReport.all_confirmed` / `.confirmed` / `.unconfirmed` | **not specified** — the design names the type and never its fields. `TC-PROV-16` is "two of three", so the report must say *which*, not just whether |
-| `OpenRouterProvider(retention_answers=...)` | **not in the design** — the seam by which a test programs the provider API's answers. §4.2 offers no double for a retention response |
-| `OpenRouterProvider(on_dispatch=...)` | **not in the design** — the recorder the call-order assertion reads. `CT-PROV-13`'s "before the first dispatch" is unassertable without one |
+| `RetentionReport.all_confirmed` / `.confirmed` / `.unconfirmed` | **defined in design v1.5**, §3.2 — the type had been named and its fields never specified. `TC-PROV-16` is "two of three", so the report must say *which*, not just whether; v1.5 adds `evidence` alongside, for the audit record |
+| `OpenRouterProvider(retention_answers=...)` | **defined in v1.5** — `FR-PROV-15`, and plan §4.2 now carries a doubles row for it. The seam abstracts *what the provider said about this build*, deliberately, because §3.2's open questions record that the wire shape of a retention confirmation is still `TBD` |
+| `OpenRouterProvider(on_dispatch=...)` | **defined in v1.5** — `FR-PROV-15`, a no-op by default, invoked once per dispatched model call. `CT-PROV-13`'s "before the first dispatch" is an ordering promise, and an unobservable ordering promise is untestable |
+
+All three were raised as findings against the plan in PR #161 and answered by detailed design
+v1.5 / test plan v1.3.
 """
 
 from __future__ import annotations

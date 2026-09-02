@@ -45,9 +45,11 @@ from tests.support.import_graph import (
     source_files,
 )
 
-#: The one file in the repository whose stem is not a Python identifier, and which is therefore
-#: invisible to all three steps. Bounded by a test below rather than left as a category.
-KNOWN_UNIMPORTABLE = {"harness/reference/metamorphic.skeleton.py"}
+#: Files under the scanned roots whose stem is not a Python identifier, and which are therefore
+#: invisible to all three steps. **Empty, and that is the assertion** — the one file that used to
+#: be in here was moved out of the scanned roots entirely rather than skipped inside them; see the
+#: test below. Bounded by a test rather than left as a growing category.
+KNOWN_UNIMPORTABLE: set[str] = set()
 
 
 # --- the case ---------------------------------------------------------------------------------
@@ -126,18 +128,27 @@ def test_tc_prov_05_scans_a_tree_that_actually_contains_modules(repo_root):
     assert set(SOURCE_ROOTS) == {"src", "harness"}
 
 
-def test_nothing_but_the_known_skeleton_is_invisible_to_the_scan(repo_root):
-    """A file the walk skips is reported by no step of `TC-PROV-05`, so the set must be bounded.
+def test_no_file_under_the_scanned_roots_is_invisible_to_the_scan(repo_root):
+    """A file the walk skips is reported by no step of `TC-PROV-05`, so the set must be **empty**.
 
-    The skip rule exists for one file — a `/harness-bootstrap` reference skeleton whose stem
-    (`metamorphic.skeleton`) is not an identifier, and which holds a live `urllib.request`
-    call. It is not runnable and nothing can import it.
+    The skip rule used to have exactly one occupant: `harness/reference/metamorphic.skeleton.py`,
+    a `/harness-bootstrap` reference skeleton whose stem is not an identifier and which holds a
+    live `urllib.request` call against a placeholder endpoint. Nothing could import it, so it had
+    no node in the import graph and no step of this case could see it — while being, in substance,
+    a copy-and-fill template for the second egress point `CT-PROV-15` forbids.
 
-    Without this assertion the skip is an open category: a leak parked in `adhoc.probe.py`
-    would be silently dropped, and a green `TC-PROV-05` would be reporting on a tree it had
-    not fully read.
+    Raised as a finding against the plan in PR #161 and resolved by moving it to
+    `docs/reference/metamorphic_skeleton.py`: **out of** `SOURCE_ROOTS` because a copy-me
+    reference is not source, and with an **importable stem** so that the moment anyone moves it
+    back under `src/` or `harness/` it becomes a node and `TC-PROV-05` reports its
+    `urllib.request` import. Skipping and exempting were both worse: either leaves a live HTTP
+    call in the tree that the sole-egress assertion cannot see.
+
+    Asserting the set is empty rather than listing a known occupant is strictly stronger. A leak
+    parked in `adhoc.probe.py` would otherwise be silently dropped and a green `TC-PROV-05` would
+    be reporting on a tree it had not fully read.
     """
-    assert set(skipped_files(repo_root)) == KNOWN_UNIMPORTABLE
+    assert set(skipped_files(repo_root)) == KNOWN_UNIMPORTABLE == set()
 
 
 def test_a_directory_name_never_removes_a_file_from_the_scan(tmp_path):

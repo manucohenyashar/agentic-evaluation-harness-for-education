@@ -300,7 +300,7 @@
           <tbody>
             <tr><td>harness-bootstrap<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">92 lines</span></td><td class="tight"><span class="verdict v-yes">Take</span></td><td>The green-field method. Exactly our situation. Copied in.</td></tr>
             <tr><td>p1-bug-sweep<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">190 lines</span></td><td class="tight"><span class="verdict v-note">Adapt</span></td><td>Not a .NET tool &mdash; a <strong>Workflow script this project can run</strong>. Five bug-hunting methodologies in parallel, then a two-lens panel that tries to <em>refute</em> each finding. Only the C# wording needs retuning.</td></tr>
-            <tr><td>metamorphic.skeleton.py<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">57 lines</span></td><td class="tight"><span class="verdict v-yes">Take</span></td><td>The one directly reusable code artifact. Copied in as reference.</td></tr>
+            <tr><td>metamorphic_skeleton.py<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">57 lines</span></td><td class="tight"><span class="verdict v-yes">Take</span></td><td>The one directly reusable code artifact. Copied in as reference.</td></tr>
             <tr><td>test-quality<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">132 lines</span></td><td class="tight"><span class="verdict v-note">One idea</span></td><td>Adopting the file would create a second owner for test authorship, which your conventions forbid. But it contains one thing you are missing: the <strong>mutation-testing bar</strong>.</td></tr>
             <tr><td>ci-coverage<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">114 lines</span></td><td class="tight"><span class="verdict v-note">Policy only</span></td><td>The .NET code is useless here; the staging policy is not &mdash; enforce 90% on <em>changed</em> lines, report-only overall, ratchet up. Works in any language, and avoids failing every build on day one.</td></tr>
             <tr><td>stryker-rebaseline<br><span style="font-weight:400;color:var(--ink-3);font-size:.85em">34 lines</span></td><td class="tight"><span class="verdict v-note">Practice only</span></td><td>A committed mutation baseline plus a weekly scan for new survivors. Ports to Python via <code>mutmut</code>.</td></tr>
@@ -417,7 +417,7 @@
           <h3>Already done for you</h3>
           <p>Three files are in place. Nothing else from the kit was worth copying.</p>
 <pre>Code/.claude/skills/harness-bootstrap/SKILL.md   <span class="c"># the method</span>
-Code/harness/reference/metamorphic.skeleton.py   <span class="c"># the one reusable pattern</span>
+Code/docs/reference/metamorphic_skeleton.py      <span class="c"># the one reusable pattern</span>
 Code/docs/harness-adoption.md                    <span class="c"># the full write-up</span></pre>
         </div>
       </div>
