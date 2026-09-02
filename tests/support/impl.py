@@ -19,6 +19,7 @@ One constant below is the only place the implementation package is named.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import Any
 
 # --- the implementation under test -------------------------------------------------------
@@ -28,6 +29,10 @@ from typing import Any
 # a one-line change.
 IMPLEMENTATION_PACKAGE = "aeh"
 PROVIDER_MODULE = f"{IMPLEMENTATION_PACKAGE}.prov"
+CONF_MODULE = f"{IMPLEMENTATION_PACKAGE}.conf"
+STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
+ORCH_MODULE = f"{IMPLEMENTATION_PACKAGE}.orch"
+CONSOLE_MODULE = f"{IMPLEMENTATION_PACKAGE}.console"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -42,6 +47,14 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 #
 # This registry closes it. `tests/unit/harness/test_harness.py` asserts every blocker is
 # still unresolved, so the moment one lands the gate fails and names the tests to unmark.
+# Three kinds of target, because a blocker is not always a whole module:
+#   "module"  importable module path            -- the module does not exist yet
+#   "path"    repo-relative file or directory   -- a data artifact does not exist yet
+#   "symbol"  "module:dotted.attr"              -- the module exists; this name in it does not
+#
+# `symbol` is what a module split across several stories needs. `aeh.conf` landed with #4, so
+# `find_spec` has said "resolved" since then — but `RunConfig.profile_summary` arrives with #5
+# and `rehydrate_run_config` with #6, and until they do their cases are correctly red.
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
     "#18": (
@@ -54,7 +67,67 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "fixtures/F-FROZEN/manifest.json",
         ("tests/artifact/test_heldout_disjoint.py",),
     ),
+    # `TC-CONF-17` is the one case in TS-04 whose rung is not achievable: rung 2 means a
+    # *finished run's* audit record. Keyed on `M-ORCH` rather than `M-STORE`, deliberately --
+    # the case is a **differential** between what the orchestrator stores and what the run start
+    # logged, so it needs the *producer*, not the storage. Unmarking it when `M-STORE` alone
+    # landed would report a P1 case as covered while the test still wrote the row itself and
+    # compared a value to itself.
+    "#57": (
+        "module",
+        ORCH_MODULE,
+        ("tests/integration/conf/test_audit_record.py",),
+    ),
+    # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
+    # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
+    # run in the gate today; only the sweep is blocked.
+    #
+    # Keyed on `M-CONSOLE` although it needs both, because the gate fires when **any** registered
+    # blocker resolves. Registering it against `M-ORCH` too would fire the moment #57 lands with
+    # `M-CONSOLE` still months away -- and whoever acted on that would unmark a test that then
+    # fails for a reason nobody expects, which is how a gate stops being believed. The
+    # discriminating question is *which single blocker, resolved, means this test can run*:
+    # #122 depends on #10 and #61, so `M-CONSOLE` lands strictly after `M-ORCH` and resolving it
+    # means both halves are present.
+    "#122": (
+        "module",
+        CONSOLE_MODULE,
+        ("tests/contract/conf/test_no_rebinding.py::test_tc_conf_c14_step_3_no_consumer_"
+         "exposes_a_path_that_rebinds_a_run",),
+    ),
 }
+
+
+def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
+    """Has the thing a written-ahead test waits on landed?
+
+    Lives here rather than in the gate test so the registry and the rule that reads it stay in
+    one file — a new `kind` added above without a branch here would otherwise fail silently as
+    "not resolved", which is the direction that keeps a P0 case outside the gate forever.
+    """
+    if kind == "module":
+        try:
+            # find_spec raises rather than returning None when the *parent* package is absent.
+            return importlib.util.find_spec(target) is not None
+        except ModuleNotFoundError:
+            return False
+    if kind == "symbol":
+        module_path, _, dotted = target.partition(":")
+        try:
+            obj: Any = importlib.import_module(module_path)
+        except ModuleNotFoundError:
+            return False
+        for attribute in dotted.split("."):
+            obj = getattr(obj, attribute, None)
+            if obj is None:
+                return False
+        return True
+    if kind == "path":
+        return (repo_root / target).exists()
+    raise ValueError(
+        f"unknown written-ahead blocker kind {kind!r}. Add a branch here when adding a kind, "
+        f"or the gate reads it as unresolved and never fires."
+    )
 
 
 class NotImplementedYet(AssertionError):
@@ -106,6 +179,22 @@ def require(module_path: str, *names: str, issue: str | None = None) -> Any:
 
     resolved = tuple(getattr(module, n) for n in names)
     return resolved[0] if len(resolved) == 1 else resolved
+
+
+def require_attr(owner: Any, name: str, issue: str | None = None) -> Any:
+    """The same idea for a method arriving later on a class that already exists.
+
+    `require()` cannot express this: `aeh.conf` is importable and `RunConfig` is defined, so a
+    module-level check says "resolved" while `profile_summary` is still months away.
+    """
+    attr = getattr(owner, name, None)
+    if attr is None:
+        blocked_by = f" (blocked on {issue})" if issue else ""
+        raise NotImplementedYet(
+            f"{getattr(owner, '__name__', owner)!s} exists but has no {name!r} yet{blocked_by}. "
+            f"This test is written ahead of its implementation (test plan §8.2)."
+        )
+    return attr
 
 
 def require_path(path: Any, what: str, issue: str | None = None) -> Any:

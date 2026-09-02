@@ -12,7 +12,6 @@ three `TC-*` cases in this issue, this file tests code that exists now, so it is
 
 from __future__ import annotations
 
-import importlib.util
 import socket
 from datetime import timedelta
 
@@ -21,10 +20,12 @@ import pytest
 from tests.support.clock import EPOCH, Clock, FrozenClock
 from tests.support.guards import NetworkAccessError, SocketGuard
 from tests.support.impl import (
+    CONF_MODULE,
     FIXTURE_PROVIDER_CLASS,
     NotImplementedYet,
     PROVIDER_MODULE,
     WRITTEN_AHEAD_BLOCKERS,
+    blocker_is_resolved,
     require,
 )
 from tests.support.store_spy import StoreSpy
@@ -271,16 +272,7 @@ def test_written_ahead_markers_are_removed_once_their_blocker_lands(repo_root):
     """
     landed = []
     for issue, (kind, target, test_files) in WRITTEN_AHEAD_BLOCKERS.items():
-        if kind == "module":
-            try:
-                # find_spec raises rather than returning None when the *parent* package is
-                # absent, which is the normal state here until `aeh` exists.
-                resolved = importlib.util.find_spec(target) is not None
-            except ModuleNotFoundError:
-                resolved = False
-        else:
-            resolved = (repo_root / target).exists()
-        if resolved:
+        if blocker_is_resolved(kind, target, repo_root):
             landed.append(f"{issue} ({target}) -> unmark {', '.join(test_files)}")
 
     assert not landed, (
@@ -288,6 +280,87 @@ def test_written_ahead_markers_are_removed_once_their_blocker_lands(repo_root):
         "rejoin TEST_CMD — remove the marker, never the test (test plan §8.2):\n  "
         + "\n  ".join(landed)
     )
+
+
+def _carries_writtenahead_marker(path) -> bool:
+    """Whether `path` actually applies `pytest.mark.writtenahead`, at module or test level."""
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return any(
+        isinstance(node, ast.Attribute)
+        and node.attr == "writtenahead"
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "mark"
+        for node in ast.walk(tree)
+    )
+
+
+def test_every_writtenahead_test_file_is_registered_as_blocked(repo_root):
+    """The registry must be **complete**, not merely correct about what is in it.
+
+    `WRITTEN_AHEAD_BLOCKERS` fires when a blocker lands — but nothing noticed a marked test that
+    was never registered, and that test would sit outside `TEST_CMD` permanently. Which is the
+    precise failure the registry exists to prevent, arriving through the one door it did not
+    watch.
+    """
+    registered = {
+        path.split("::")[0]
+        for _, _, files in WRITTEN_AHEAD_BLOCKERS.values()
+        for path in files
+    }
+
+    # Detected by AST, not by grepping for the name. Every file in this suite *discusses* the
+    # marker in a docstring, and this file names it in a comment — a substring match flagged
+    # both, including itself. An `Attribute` node cannot appear in prose.
+    marked = {
+        str(path.relative_to(repo_root)).replace("\\", "/")
+        for path in (repo_root / "tests").rglob("test_*.py")
+        if _carries_writtenahead_marker(path)
+    }
+
+    assert marked <= registered, (
+        "these files carry `writtenahead` but no entry in WRITTEN_AHEAD_BLOCKERS, so nothing "
+        "will ever tell anyone to unmark them:\n  " + "\n  ".join(sorted(marked - registered))
+    )
+
+
+def test_every_registered_blocker_names_a_file_that_exists(repo_root):
+    """A registry entry pointing at a renamed or deleted file is a gate that fires and then
+    names nothing actionable — indistinguishable, to whoever reads the failure, from a
+    false alarm they should ignore."""
+    missing = [
+        path
+        for _, _, files in WRITTEN_AHEAD_BLOCKERS.values()
+        for path in files
+        if not (repo_root / path.split("::")[0]).exists()
+    ]
+
+    assert not missing, "WRITTEN_AHEAD_BLOCKERS names files that do not exist: " + ", ".join(missing)
+
+
+def test_blocker_is_resolved_detects_a_symbol_landing_inside_an_existing_module(repo_root):
+    """The `symbol` kind, which is what a module split across several stories needs.
+
+    `aeh.conf` has existed since #4, so a `module`-kind blocker on it would read as resolved
+    while `RunConfig.profile_summary` (#5) and `rehydrate_run_config` (#6) are still absent —
+    and their cases would be told to leave `writtenahead` months early.
+    """
+    assert blocker_is_resolved("symbol", f"{CONF_MODULE}:resolve_run_config", repo_root) is True
+    assert blocker_is_resolved("symbol", f"{CONF_MODULE}:RunConfig.__post_init__", repo_root) is True
+    assert blocker_is_resolved("symbol", f"{CONF_MODULE}:not_a_real_name", repo_root) is False
+    assert blocker_is_resolved("symbol", f"{CONF_MODULE}:RunConfig.not_a_method", repo_root) is False
+    assert blocker_is_resolved("symbol", "aeh.does_not_exist:anything", repo_root) is False
+
+
+def test_blocker_is_resolved_refuses_an_unknown_kind(repo_root):
+    """A `kind` with no branch must raise, not read as unresolved.
+
+    Reading it as unresolved is the silent direction: the gate would never fire, and the case
+    it guards would sit outside `TEST_CMD` forever — the exact failure the registry exists to
+    prevent."""
+    with pytest.raises(ValueError, match="unknown written-ahead blocker kind"):
+        blocker_is_resolved("commit", "abc123", repo_root)
 
 
 def test_require_reports_a_missing_implementation_as_a_stated_failure():
