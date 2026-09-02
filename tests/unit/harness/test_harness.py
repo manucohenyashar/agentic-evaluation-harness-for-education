@@ -22,6 +22,7 @@ from tests.support.guards import NetworkAccessError, SocketGuard
 from tests.support.impl import (
     CONF_MODULE,
     FIXTURE_PROVIDER_CLASS,
+    IMPLEMENTATION_PACKAGE,
     NotImplementedYet,
     PROVIDER_MODULE,
     WRITTEN_AHEAD_BLOCKERS,
@@ -366,9 +367,16 @@ def test_blocker_is_resolved_refuses_an_unknown_kind(repo_root):
 def test_require_reports_a_missing_implementation_as_a_stated_failure():
     """The mechanism that keeps written-ahead tests red *for the right reason*: a clear
     "does not exist yet" failure naming the blocking issue, rather than a collection error
-    that asserts nothing (see `tests/support/impl.py`)."""
+    that asserts nothing (see `tests/support/impl.py`).
+
+    The target is a module that will **never** land, as in the `symbol` case above. This
+    assertion was written against `aeh.prov` while it was still absent, and #18 landing it
+    turned the self-test red — a stand-in for "does not exist" cannot be a module somebody is
+    on their way to writing.
+    """
+    absent = f"{IMPLEMENTATION_PACKAGE}.does_not_exist"
     with pytest.raises(NotImplementedYet, match=r"does not exist yet \(blocked on #18\)"):
-        require(PROVIDER_MODULE, "RecordedFixtureProvider", issue="#18")
+        require(absent, "RecordedFixtureProvider", issue="#18")
 
 
 def test_require_does_not_mask_a_real_import_error_inside_an_existing_module():
