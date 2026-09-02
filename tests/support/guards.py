@@ -240,3 +240,83 @@ def write_audit() -> Iterator[list[WriteAttempt]]:
         os.remove = real_remove                                  # type: ignore[assignment]
         os.rename = real_rename                                  # type: ignore[assignment]
         sqlite3.connect = real_connect                           # type: ignore[assignment]
+
+
+# --- the filesystem read audit ---------------------------------------------------------------
+
+
+@dataclass
+class ReadAttempt:
+    """One recorded read. Records rather than raises — see `open_audit`."""
+
+    api: str      # "open", "Path.read_text", "sqlite3.connect", ...
+    target: Any   # whatever the caller passed; not normalized, so the record is honest
+
+
+@contextmanager
+def open_audit() -> Iterator[list[ReadAttempt]]:
+    """Record every file a block opens for reading. Yields the log; asserts nothing itself.
+
+    `write_audit()` cannot answer `CT-CONF-01`. That clause is *"reads no file the caller did
+    not name"* — a **read** assertion — and `write_audit` deliberately leaves reads untouched so
+    a test can open a fixture inside its block. `TC-CONF-C01`'s oracle is "no unnamed file",
+    which is a comparison between two *sets*: what was opened, and what the caller named.
+
+    **Records rather than raises**, unlike its write-side sibling, and the difference is the
+    point. Raising stops at the first read, so the failure message names one file when the
+    interesting fact is the whole set — and an implementation that reads a profile table from
+    disk would report only the first of six. A record-only audit also lets the read succeed, so
+    the code under test proceeds normally and the case still gets to assert on its *result*.
+
+    `sqlite3.connect` is recorded here too: `CT-CONF-12`'s "no database read" is the same
+    question asked of a different API, and a module that opened a connection but only issued
+    `SELECT`s would slip past `write_audit` entirely.
+
+    Caller-named paths are subtracted by the test, not here — the audit does not know which
+    paths a given case considers named.
+    """
+    attempts: list[ReadAttempt] = []
+
+    real_open = builtins.open
+    real_path_open = pathlib.Path.open
+    real_read_text = pathlib.Path.read_text
+    real_read_bytes = pathlib.Path.read_bytes
+    real_connect = sqlite3.connect
+
+    def _record(api: str, target: Any) -> None:
+        attempts.append(ReadAttempt(api=api, target=target))
+
+    def _open(file, mode="r", *args, **kwargs):  # noqa: ANN001
+        _record("open", file)
+        return real_open(file, mode, *args, **kwargs)
+
+    def _path_open(self, mode="r", *args, **kwargs):  # noqa: ANN001
+        _record("Path.open", self)
+        return real_path_open(self, mode, *args, **kwargs)
+
+    def _read_text(self, *args, **kwargs):  # noqa: ANN001
+        _record("Path.read_text", self)
+        return real_read_text(self, *args, **kwargs)
+
+    def _read_bytes(self, *args, **kwargs):  # noqa: ANN001
+        _record("Path.read_bytes", self)
+        return real_read_bytes(self, *args, **kwargs)
+
+    def _connect(*args, **kwargs):  # noqa: ANN001
+        _record("sqlite3.connect", args[0] if args else None)
+        return real_connect(*args, **kwargs)
+
+    builtins.open = _open                          # type: ignore[assignment]
+    pathlib.Path.open = _path_open                 # type: ignore[method-assign]
+    pathlib.Path.read_text = _read_text            # type: ignore[method-assign]
+    pathlib.Path.read_bytes = _read_bytes          # type: ignore[method-assign]
+    sqlite3.connect = _connect                     # type: ignore[assignment]
+
+    try:
+        yield attempts
+    finally:
+        builtins.open = real_open                  # type: ignore[assignment]
+        pathlib.Path.open = real_path_open         # type: ignore[method-assign]
+        pathlib.Path.read_text = real_read_text    # type: ignore[method-assign]
+        pathlib.Path.read_bytes = real_read_bytes  # type: ignore[method-assign]
+        sqlite3.connect = real_connect             # type: ignore[assignment]

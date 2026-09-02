@@ -186,3 +186,49 @@ def seed_credentials(monkeypatch, sentinel: str = SENTINEL_CREDENTIAL) -> str:
     for var in CREDENTIAL_ENV_VARS:
         monkeypatch.setenv(var, sentinel)
     return sentinel
+
+
+# --- panels of every legal size --------------------------------------------------------------
+
+EDGE_JUDGE_4 = ModelRef(
+    role="judge",
+    provider="vllm-mlx",
+    build_id="/models/gemma-2-27b.gguf@sha256:ffff",
+    quantization="q8",
+)
+EDGE_JUDGE_5 = ModelRef(
+    role="judge",
+    provider="ollama",
+    build_id="/models/phi-4-14b.gguf@sha256:1111",
+    quantization="q4",
+)
+
+#: The five distinct judges, in a fixed order, so a case can slice the panel sizes `PANEL_SIZES`
+#: actually permits. `EDGE_PANEL_3` above is the first three of these.
+EDGE_JUDGES_5 = (EDGE_JUDGE, EDGE_JUDGE_2, EDGE_JUDGE_3, EDGE_JUDGE_4, EDGE_JUDGE_5)
+
+
+def edge_panel(size: int) -> tuple[ModelRef, ...]:
+    """`size` distinct, resolved `edge-local` judges.
+
+    Distinct matters: `compute_panel_build_ref` mixes provider, build and quantization, so a
+    panel of one ref repeated is a weaker input than a panel of five different ones — an
+    implementation that deduplicated the panel before hashing would be invisible against the
+    first and caught by the second.
+
+    Sizes above five repeat the pool with a fresh hash suffix, so a case asserting that `2`, `4`
+    and `0` are refused can build them from the same helper as the legal sizes rather than from
+    a differently-shaped literal that could itself be the reason the call raised.
+    """
+    if size <= len(EDGE_JUDGES_5):
+        return EDGE_JUDGES_5[:size]
+    extra = tuple(
+        ModelRef(
+            role="judge",
+            provider="ollama",
+            build_id=f"/models/filler-{i}.gguf@sha256:{i:04x}",
+            quantization="q4",
+        )
+        for i in range(size - len(EDGE_JUDGES_5))
+    )
+    return EDGE_JUDGES_5 + extra

@@ -32,6 +32,7 @@ PROVIDER_MODULE = f"{IMPLEMENTATION_PACKAGE}.prov"
 CONF_MODULE = f"{IMPLEMENTATION_PACKAGE}.conf"
 STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
 ORCH_MODULE = f"{IMPLEMENTATION_PACKAGE}.orch"
+CONSOLE_MODULE = f"{IMPLEMENTATION_PACKAGE}.console"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -76,6 +77,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "module",
         ORCH_MODULE,
         ("tests/integration/conf/test_audit_record.py",),
+    ),
+    # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
+    # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
+    # run in the gate today; only the sweep is blocked.
+    #
+    # Keyed on `M-CONSOLE` although it needs both, because the gate fires when **any** registered
+    # blocker resolves. Registering it against `M-ORCH` too would fire the moment #57 lands with
+    # `M-CONSOLE` still months away -- and whoever acted on that would unmark a test that then
+    # fails for a reason nobody expects, which is how a gate stops being believed. The
+    # discriminating question is *which single blocker, resolved, means this test can run*:
+    # #122 depends on #10 and #61, so `M-CONSOLE` lands strictly after `M-ORCH` and resolving it
+    # means both halves are present.
+    "#122": (
+        "module",
+        CONSOLE_MODULE,
+        ("tests/contract/conf/test_no_rebinding.py::test_tc_conf_c14_step_3_no_consumer_"
+         "exposes_a_path_that_rebinds_a_run",),
     ),
 }
 
