@@ -44,9 +44,59 @@ pytestmark = pytest.mark.contract
 
 #: What no operation may accept on an object that already exists. `CT-CONF-14`'s own list, plus
 #: `profile`, which is what a `with_backend(profile)` helper would call its argument.
+#:
+#: This is the **nominal** net, and on its own it is a naming convention rather than a test:
+#: review showed `with_backend(self, backend)` — one word renamed — sailing through the entire
+#: repository green. It is kept because it catches a helper that exists and is never called, which
+#: is what the plan asks for, and it is paired with the behavioural probe below, which catches one
+#: whatever its arguments happen to be called.
 REBINDING_ARGUMENTS = frozenset(
     {"backend_profile", "panel", "cost_ceiling", "retention_setting", "profile"}
 )
+
+#: The two entry points, exempt from the module-level sweep. Exempt **by construction, not by
+#: preference**: neither takes a `RunConfig`, so neither operates on an object that already
+#: exists. Building a new config from a mapping is the sanctioned way to get a different backend —
+#: a different run (`FR-CONF-04`, R1).
+ENTRY_POINTS = frozenset({"resolve_run_config", "rehydrate_run_config"})
+
+#: How the *nominal* net decides a module-level function operates on a config that already exists.
+#:
+#: The prerequisite matters: without it the net flags `compute_panel_build_ref(panel)`, which takes
+#: a panel and no config and is the sanctioned way to compute a *new* run's key. Annotation alone
+#: is not enough either — `conf.py` has `from __future__ import annotations`, so an unannotated
+#: parameter is `Parameter.empty` and `RunConfig | None` is a string matching neither the class nor
+#: `"RunConfig"` exactly. So: a substring match on whatever the annotation stringifies to, **or** a
+#: config-shaped parameter name.
+#:
+#: A helper whose config parameter is named something else entirely falls through this net — and is
+#: caught by the behavioural one, which passes a real config in and does not care what it is called.
+CONFIG_PARAMETER_NAMES = frozenset({"config", "run_config", "persisted", "existing", "run"})
+
+
+def _takes_a_config(signature) -> bool:
+    for parameter in signature.parameters.values():
+        annotation = parameter.annotation
+        if annotation is not inspect.Parameter.empty and "RunConfig" in str(annotation):
+            return True
+        if parameter.name in CONFIG_PARAMETER_NAMES:
+            return True
+    return False
+
+
+def _attempt(call, *args, **kwargs):
+    """Invoke and return the result, or `None` if it refused. Refusing is the correct outcome."""
+    try:
+        return call(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - any refusal passes; only a returned config is a finding
+        return None
+
+
+def _is_a_rebinding(result, original, conf) -> bool:
+    """Did this call hand back a config that is *this run* wearing a different grader?"""
+    return isinstance(result, conf.RunConfig) and (
+        result.backend_profile != original.backend_profile or result.panel != original.panel
+    )
 
 
 def assert_no_rebinding_surface(conf) -> None:
@@ -57,22 +107,49 @@ def assert_no_rebinding_surface(conf) -> None:
     on an object that already exists — the assertion is over the surface, not over a call, so a
     method that exists but is never called still fails."*
 
-    Two populations, because a rebinding helper can live in either:
+    Two populations, because a rebinding helper can live in either — members of `RunConfig` (the
+    `with_backend()` shape) and module-level callables taking a config (the
+    `rebind(config, backend_profile)` shape, which the first population misses entirely).
 
-    * **members of `RunConfig`** — the `with_backend()` shape. Any parameter beyond `self` named
-      in `REBINDING_ARGUMENTS` fails, as does any member that returns a `RunConfig`.
-    * **module-level functions taking a `RunConfig`** — the `rebind(config, backend_profile)`
-      shape, which the first population misses entirely. `log_run_start(config)` is the existing
-      member of this population and takes no such argument, which is what makes the population
-      non-empty and the sweep non-vacuous.
+    And **two nets over each**, because either alone is defeated by a rename:
 
-    `resolve_run_config` and `rehydrate_run_config` are exempt from the second population by
-    construction rather than by name: neither takes a `RunConfig`, so neither is *operating on an
-    object that already exists*. Building a new config from a mapping is the sanctioned way to get
-    a different backend — a different run.
+    * the **nominal** net reads parameter names, `**kwargs` and return annotations. It is what
+      satisfies the plan's "over the surface, not over a call" — a helper that exists and is never
+      called fails here — and it is the only net that can see a helper whose body is not yet
+      written.
+    * the **behavioural** net *invokes* every plausible member with every backend profile and with
+      a different panel, and fails if anything hands back a `RunConfig` whose backend or panel
+      differs from the one it was given. That is what the clause actually says, and it does not
+      care what the argument is named.
+
+    The behavioural net was added after review. The nominal net alone passed
+    `with_backend(self, backend)` — the plan's own adversarial construction with one word renamed
+    — while every case in the repository stayed green, and the plan is explicit about what that
+    means: *"if it does not, the case is testing something adjacent to the clause and must be
+    tightened."*
+
+    Two further holes review found in the module population, both closed here: it filtered on
+    `parameter.annotation in (RunConfig, "RunConfig")`, but `conf.py` has
+    `from __future__ import annotations` — an unannotated parameter is `Parameter.empty` and
+    `RunConfig | None` stringifies to neither, so the filter skipped the whole population before
+    looking at a single argument. And it enumerated `conf.__all__` rather than `dir(conf)`, so a
+    helper the author simply did not export was invisible — which is precisely the one nobody is
+    watching.
+
+    **Invoking arbitrary public members is safe here and nowhere else**: `CT-CONF-09` is that this
+    module writes nothing at all, and `TC-CONF-C09` asserts it. A member that grew a side effect
+    would fail that case first.
     """
     offenders: list[str] = []
 
+    edge = conf.resolve_run_config(edge_cfg(**{"panel": EDGE_PANEL_3}), SYNTHETIC_COHORT)
+    hosted = conf.resolve_run_config(hosted_cfg(), SYNTHETIC_COHORT)
+    # Probed from both directions, so a helper that only ever moves *to* the cloud and one that
+    # only ever moves *to* the edge are both caught.
+    baselines = (edge, hosted)
+    probes = ("edge-local", "cloud-hosted", "dev-ci", (EDGE_JUDGE_4,), EDGE_PANEL_3)
+
+    # -- population 1: members of RunConfig
     for name in dir(conf.RunConfig):
         if name.startswith("_"):
             continue
@@ -99,28 +176,57 @@ def assert_no_rebinding_surface(conf) -> None:
         if signature.return_annotation in (conf.RunConfig, "RunConfig"):
             offenders.append(f"RunConfig.{name}() returns a RunConfig")
 
-    for name in conf.__all__:
+        for baseline in baselines:
+            bound = getattr(baseline, name)
+            calls = [((), {})]
+            calls += [((probe,), {}) for probe in probes]
+            calls += [((), {key: probe}) for key in sorted(REBINDING_ARGUMENTS) for probe in probes]
+            for args, kwargs in calls:
+                if _is_a_rebinding(_attempt(bound, *args, **kwargs), baseline, conf):
+                    offenders.append(
+                        f"RunConfig.{name}() returned a config on a different backend or panel"
+                    )
+                    break
+
+    # -- population 2: module-level callables that operate on a config
+    for name in dir(conf):
+        if name.startswith("_") or name in ENTRY_POINTS:
+            continue
         member = getattr(conf, name)
         if not inspect.isfunction(member):
             continue
         signature = inspect.signature(member)
-        takes_a_config = any(
-            parameter.annotation in (conf.RunConfig, "RunConfig")
-            for parameter in signature.parameters.values()
-        )
-        if not takes_a_config:
-            continue
-        for parameter in signature.parameters.values():
-            if parameter.name in REBINDING_ARGUMENTS:
-                offenders.append(
-                    f"{name}() takes a RunConfig and a {parameter.name!r} argument, which is a "
-                    f"rebinding by another name"
-                )
+
+        if _takes_a_config(signature):
+            for parameter in signature.parameters.values():
+                if parameter.name in REBINDING_ARGUMENTS:
+                    offenders.append(
+                        f"{name}() takes a config and a {parameter.name!r} argument, which is a "
+                        f"rebinding by another name"
+                    )
+                if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+                    offenders.append(f"{name}() takes a config and **{parameter.name}")
+
+        for baseline in baselines:
+            calls = [((baseline,), {})]
+            calls += [((baseline, probe), {}) for probe in probes]
+            calls += [
+                ((baseline,), {key: probe})
+                for key in sorted(REBINDING_ARGUMENTS)
+                for probe in probes
+            ]
+            for args, kwargs in calls:
+                if _is_a_rebinding(_attempt(member, *args, **kwargs), baseline, conf):
+                    offenders.append(
+                        f"{name}() returned a config on a different backend or panel when given "
+                        f"one"
+                    )
+                    break
 
     assert not offenders, (
         "CT-CONF-14: the module offers a way to change an existing run's backend, panel or "
         "ceilings. A consumer needing a different backend creates a different run "
-        "(FR-CONF-04, R1, RISK-22):\n  " + "\n  ".join(offenders)
+        "(FR-CONF-04, R1, RISK-22):\n  " + "\n  ".join(sorted(set(offenders)))
     )
 
 

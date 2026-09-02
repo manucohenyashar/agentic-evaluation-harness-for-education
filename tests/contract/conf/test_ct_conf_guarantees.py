@@ -156,12 +156,22 @@ def test_tc_conf_c08_each_named_error_is_exact_not_retryable_and_leaves_no_run_r
     validated second — a partial write that leaves an orphaned run for `M-ORCH` to resume into,
     and the assertion the plan calls "the one usually skipped".
 
-    Two independent oracles, because either alone can be fooled:
+    **What carries "no run row exists afterwards", and what does not.** The plan's oracle is a
+    *state assertion over the store*, and at rung 0 that is not literally reachable: `M-CONF` is a
+    leaf taking `(cfg, cohort)`, so no implementation — correct or broken — can be handed the
+    database path, and `_run_row_count(database) == 0` is therefore true for every possible
+    implementation. Review flagged it as decorative and was right.
 
-    * a **real** SQLite database with a real `run` table, counted before and after — which
-      catches a write however it was made;
-    * a `write_audit` log, which catches a write that went somewhere *else* (a cache file, a blob)
-      and would leave the `run` table innocently empty.
+    The assertion that does the work is `write_audit`, which patches `sqlite3.connect` to raise:
+    a resolver that opened *any* database would surface as a `DiskWriteError` escaping the
+    `pytest.raises` below, and a resolver that wrote a cache file instead lands in the write log.
+    Both can fail; the row count cannot.
+
+    The real store is kept as the **seam**, not as the oracle, and the row count with it: when
+    `M-STORE` lands (#10) the schema it owns replaces this literal, the module can be handed a
+    store, and the same line becomes an assertion. Deleting it now would mean rediscovering that
+    this case needs one. The docstring says which is which so nobody mistakes the count for
+    coverage — recorded in the PR as a finding about the plan's rung, not smuggled.
 
     `type(exc) is expected`, not `isinstance`. The four errors are deliberate **siblings** under a
     neutral base rather than a chain, so `isinstance` would let a `ConsentGateError` satisfy a
@@ -414,6 +424,22 @@ def test_tc_conf_c11_a_key_present_only_in_the_environment_does_not_select_a_bac
     cfg.pop("HARNESS_PROFILE")
     with pytest.raises(conf.ConfigurationError):
         conf.resolve_run_config(cfg, SYNTHETIC_COHORT)
+
+    # The same leak on the consent flag, which is the one that costs something. A
+    # `cfg.get(key, os.environ.get(key))` fallback is invisible to every other case in this file:
+    # `TC-CONF-C05` sets the flag in the environment but pairs it with a synthetic cohort and an
+    # edge-local config, both of which return before the flag is read, and the default-false case
+    # below never touches the environment at all. The failure mode is RISK-10 at its worst — an
+    # operator who once exported HARNESS_ALLOW_REMOTE_REAL_WORK dispatches a `real` cohort's work
+    # to a remote provider from a config that says nothing about consent. Found by review.
+    monkeypatch.setenv("HARNESS_ALLOW_REMOTE_REAL_WORK", "true")
+    monkeypatch.setenv("allow_remote_real_work_supplied_by", "an-operator-shell")
+
+    hosted = hosted_cfg()
+    assert "HARNESS_ALLOW_REMOTE_REAL_WORK" not in hosted
+
+    with pytest.raises(conf.ConsentGateError):
+        conf.resolve_run_config(hosted, conf.CohortRef(**REAL_COHORT_KWARGS))
 
 
 def test_tc_conf_c11_allow_remote_real_work_defaults_to_false():

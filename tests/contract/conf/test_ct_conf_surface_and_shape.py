@@ -290,6 +290,11 @@ def test_tc_conf_c03_every_reachable_ref_is_resolved_in_its_backends_form(profil
     passes any case built on a one-judge panel. The panels here are three-judge and an off-panel
     checker is supplied on every backend that can carry one.
 
+    The off-panel checker is supplied on `edge-local` only, because `hosted_cfg` carries none —
+    so the hosted rows reach four refs (three judges and a transcriber) and the edge row reaches
+    five. The `len(reachable) >= 4` guard is what stops a fixture change quietly reducing this to
+    the one-ref case it exists to be wider than.
+
     The per-backend half is the part `is_resolved()` alone cannot express: a provider-pinned slug
     is a perfectly resolved identity and still wrong on `edge-local`, where nothing but a weights
     path plus quantization plus hash names what actually ran. `M-PKG` keys every

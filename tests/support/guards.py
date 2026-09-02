@@ -19,6 +19,7 @@ Deliberately strict: loopback is blocked too. A test that genuinely needs a real
 from __future__ import annotations
 
 import builtins
+import io
 import os
 import pathlib
 import socket
@@ -272,12 +273,20 @@ def open_audit() -> Iterator[list[ReadAttempt]]:
     question asked of a different API, and a module that opened a connection but only issued
     `SELECT`s would slip past `write_audit` entirely.
 
+    **The low-level bindings are patched too**, and that was a review finding rather than
+    foresight: `os.open` + `os.read` is a complete file read that touches none of the high-level
+    APIs, and `io.open` is a *separate binding* to the same function, so rebinding
+    `builtins.open` leaves it working. A resolver reading a profile table through either left the
+    entire repository green.
+
     Caller-named paths are subtracted by the test, not here — the audit does not know which
     paths a given case considers named.
     """
     attempts: list[ReadAttempt] = []
 
     real_open = builtins.open
+    real_io_open = io.open
+    real_os_open = os.open
     real_path_open = pathlib.Path.open
     real_read_text = pathlib.Path.read_text
     real_read_bytes = pathlib.Path.read_bytes
@@ -306,7 +315,17 @@ def open_audit() -> Iterator[list[ReadAttempt]]:
         _record("sqlite3.connect", args[0] if args else None)
         return real_connect(*args, **kwargs)
 
+    def _os_open(path, flags, *args, **kwargs):  # noqa: ANN001
+        _record("os.open", path)
+        return real_os_open(path, flags, *args, **kwargs)
+
     builtins.open = _open                          # type: ignore[assignment]
+    # A separate binding, not an alias of the one above: rebinding `builtins.open` leaves
+    # `io.open` pointing at the original, and `io.open(path)` is a working read the audit would
+    # never see. Found by review — a resolver reading a file through `os.open`/`os.read` left the
+    # whole repository green.
+    io.open = _open                                # type: ignore[assignment]
+    os.open = _os_open                             # type: ignore[assignment]
     pathlib.Path.open = _path_open                 # type: ignore[method-assign]
     pathlib.Path.read_text = _read_text            # type: ignore[method-assign]
     pathlib.Path.read_bytes = _read_bytes          # type: ignore[method-assign]
@@ -316,6 +335,8 @@ def open_audit() -> Iterator[list[ReadAttempt]]:
         yield attempts
     finally:
         builtins.open = real_open                  # type: ignore[assignment]
+        io.open = real_io_open                     # type: ignore[assignment]
+        os.open = real_os_open                     # type: ignore[assignment]
         pathlib.Path.open = real_path_open         # type: ignore[method-assign]
         pathlib.Path.read_text = real_read_text    # type: ignore[method-assign]
         pathlib.Path.read_bytes = real_read_bytes  # type: ignore[method-assign]
