@@ -49,6 +49,10 @@ they have to guess is a suite that asserts the wrong thing.
 | The key covers payload, `ModelRef` **and every** `SamplingParams` field | Derived from `dataclasses.fields`, so a knob added later changes the key | `FR-PROV-10` says "the fully-assembled request"; `TC-PROV-14`'s five mutations each kill one naive key |
 | `request_key` streams into the hasher | No buffer holding the assembled request is ever materialized | `NFR-PROV-02`: no per-call copy of the invariant prefix |
 | `record()` refuses a non-null `cost` | `ValueError`, naming `CT-PROV-03` | Fixture ⇒ `cost is None`. Storing a cloud cost would make the canonical double contradict the clause every consumer tests against (RISK-37); normalizing it silently would hide the same thing |
+| The **reader** refuses one too | `FixtureMissingError`, not a silent `None` | The writer is loud and the reader is the path every fast-tier test runs; normalizing on read would make the rule silent exactly where it matters |
+| Every unusable fixture file raises inside the taxonomy | Bad JSON, a wrong `schema`, a moved `key`, a missing or ill-typed field: all `FixtureMissingError` | `CT-PROV-07` is what a caller catches. A bare `JSONDecodeError` out of a hand-edited recording is a hole in it, and §4.4 regenerates `F-RECORDED` nightly |
+| One payload encoder, shared | `_emit_payload`, used by both `payload_bytes` and `request_key` | Two copies of one encoding drift: once #21 derives the wire body from `payload_bytes`, a change to it must move the key |
+| A non-finite `temperature`/`top_p` | Refused at construction | It records and then never matches itself (`nan != nan`), so the recording would exist on disk and miss forever |
 | `latency_ms` is replayed, never measured | The stored `Completion` is returned unchanged | `TC-PROV-13` compares the whole value by equality; a measured latency makes replay non-deterministic |
 | A fixture file stores the **request** as well as the response | Verified on read; a mismatch is a miss | Turns a key collision into a loud `FixtureMissingError` instead of a stale answer — the exact RISK-37 failure `TC-PROV-14` exists to prevent |
 | Error taxonomy | Seven **siblings** under a neutral `ProviderError`; all declared, one raised here | `CT-PROV-07` names six and asserts retryability *per error*; siblings keep every "exact exception type" oracle discriminating, and reshaping the hierarchy later is a breaking change |
@@ -77,7 +81,9 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import os
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -271,6 +277,23 @@ class SamplingParams:
     seed: int | None = None
     stop: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        """Refuse a non-finite float, because the alternative failure is confusing.
+
+        `float("nan")` keys and records perfectly well and can then never be read back: the
+        stored request is compared for equality on the way out, and `nan != nan`. The result
+        is a recording that exists on disk and misses forever, which reads as a key bug rather
+        than as the nonsense sampling parameter it is. Refused at construction instead.
+        """
+        for name in ("temperature", "top_p"):
+            value = getattr(self, name)
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError(
+                    f"SamplingParams.{name} must be finite, got {value!r}. A non-finite value "
+                    f"records and then never matches itself, so the recording would exist and "
+                    f"miss forever."
+                )
+
 
 @dataclass(frozen=True)
 class Completion:
@@ -428,6 +451,35 @@ def _frame(chunk: bytes) -> bytes:
     return len(chunk).to_bytes(_FRAME_WIDTH, "big") + chunk
 
 
+def _emit_framed(emit: Any, chunk: bytes) -> None:
+    """`_frame`, without the concatenation. Two emits, byte-identical to one framed chunk.
+
+    `emit` is `hashlib`'s `update` or a `bytearray`'s `extend`. Split in two because
+    `_frame(value)` allocates a second copy of every field value, and field values are the
+    invariant prefix `NFR-PROV-02` forbids copying per call.
+    """
+    emit(len(chunk).to_bytes(_FRAME_WIDTH, "big"))
+    emit(chunk)
+
+
+def _emit_payload(emit: Any, prompt: PromptPayload) -> None:
+    """The payload's canonical encoding, emitted in the caller's field order.
+
+    **The only place a `PromptPayload` is encoded.** `payload_bytes` and `request_key` both go
+    through here, so the wire body and the fixture key can never disagree about what the
+    payload was — which is what would otherwise let a change to one silently fail to move the
+    other once #21 derives its request body from `payload_bytes`.
+
+    A value that is not encodable as UTF-8 (a lone surrogate) raises `UnicodeEncodeError`,
+    which is a `ValueError` — the same class `PromptPayload.__post_init__` raises for every
+    other malformed payload, and not part of the `ProviderError` taxonomy, because a payload
+    that cannot be encoded is a caller defect rather than a provider failure.
+    """
+    for name, value in prompt.fields:
+        _emit_framed(emit, name.encode("utf-8"))
+        _emit_framed(emit, value.encode("utf-8"))
+
+
 def _encode_scalar(value: Any) -> bytes:
     """One `ModelRef` or `SamplingParams` value, type-tagged and framed.
 
@@ -466,12 +518,12 @@ def payload_bytes(prompt: PromptPayload) -> bytes:
 
     `complete()` does **not** call this — the fixture path needs only the key, and hashing
     streams (see `request_key`). It exists for the live implementations of #21, which derive
-    their wire body from it, and for the differential itself.
+    their wire body from it, and for the differential itself. Both go through `_emit_payload`,
+    so this function and the key can never encode the same payload differently.
     """
-    return b"".join(
-        _frame(name.encode("utf-8")) + _frame(value.encode("utf-8"))
-        for name, value in prompt.fields
-    )
+    buffer = bytearray()
+    _emit_payload(buffer.extend, prompt)
+    return bytes(buffer)
 
 
 def request_key(
@@ -484,10 +536,12 @@ def request_key(
     change, a different build and a different temperature each move the key, because each is
     part of the request rather than of a normalized view of it.
 
-    Streamed into the hasher rather than assembled into a buffer. `NFR-PROV-02` forbids a
-    per-call copy of the invariant prefix — the prefix is a shared string the caller owns, and
-    hashing it in place means an observed `cache_hit_rate` reflects the caller's prompt
-    ordering rather than this module's allocation behaviour (`CT-PROV-12`).
+    Streamed into the hasher rather than assembled into a buffer, and framed without
+    concatenation (`_emit_framed`), so the only copy of a field value made per call is the one
+    `str.encode` must make for `hashlib`. `NFR-PROV-02` forbids a per-call copy of the
+    invariant prefix — the prefix is a shared string the caller owns, and hashing it in place
+    means an observed `cache_hit_rate` reflects the caller's prompt ordering rather than this
+    module's allocation behaviour (`CT-PROV-12`).
 
     The element counts go in ahead of the elements. Framing alone decodes unambiguously
     *within* a section; the counts are what keep a payload field named `"model_ref"` from
@@ -498,9 +552,7 @@ def request_key(
 
     digest.update(_frame(b"payload"))
     digest.update(len(prompt.fields).to_bytes(_FRAME_WIDTH, "big"))
-    for name, value in prompt.fields:
-        digest.update(_frame(name.encode("utf-8")))
-        digest.update(_frame(value.encode("utf-8")))
+    _emit_payload(digest.update, prompt)
 
     digest.update(_frame(b"model_ref"))
     for name in _MODEL_REF_FIELDS:
@@ -617,9 +669,9 @@ class RecordedFixtureProvider:
         try:
             raw = path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            # FileNotFoundError only: a permission or decoding error is a broken fixture set,
-            # and reporting it as a miss would send whoever reads the failure looking for a
-            # recording that is sitting right there.
+            # FileNotFoundError only. A permission error is an environment problem and
+            # surfaces as itself: reporting it as a miss would send whoever reads the failure
+            # looking for a recording that is sitting right there.
             raise FixtureMissingError(
                 f"no recording for request {key} under {self._fixture_dir}. The key covers "
                 f"the assembled payload, the model ref and every sampling parameter "
@@ -627,8 +679,8 @@ class RecordedFixtureProvider:
                 f"stale recording. Record it, or fix the prompt that changed."
             ) from None
 
-        record = json.loads(raw)
-        if record.get("request") != _request_record(prompt, model_ref, params):
+        document = _fixture_document(raw, path, key)
+        if document.get("request") != _request_record(prompt, model_ref, params):
             # Only reachable through a sha256 collision or a hand-edited file. Loud either
             # way: the failure this whole module is arranged around is a stale recording
             # answering a request it never saw.
@@ -638,7 +690,7 @@ class RecordedFixtureProvider:
                 f"TC-PROV-14 exists to prevent."
             )
 
-        completion = _completion_from_record(record.get("completion"), path)
+        completion = _completion_from_document(document, path)
         _LOGGER.debug(
             # CT-PROV-14's per-call fields, by name. Metadata only — payload values are
             # student work and never reach a log line (CT-PROV-13).
@@ -670,8 +722,10 @@ class RecordedFixtureProvider:
         of zero would read as a measured price rather than an absent one (`CT-PROV-03`).
         `FR-PROV-09`'s running `actual_cost` arrives with #20.
         """
-        if plan.calls < 0:
-            raise ValueError(f"CallPlan.calls must be non-negative, got {plan.calls}.")
+        for name in ("calls", "tokens_in_per_call", "tokens_out_per_call"):
+            value = getattr(plan, name)
+            if value < 0:
+                raise ValueError(f"CallPlan.{name} must be non-negative, got {value}.")
         tokens_in = plan.calls * plan.tokens_in_per_call
         tokens_out = plan.calls * plan.tokens_out_per_call
         per_token = self._capabilities.cost_per_token
@@ -728,23 +782,28 @@ class RecordedFixtureProvider:
             "key": key,
             "request": _request_record(prompt, model_ref, params),
             "completion": {
-                "text": completion.text,
-                "tokens_in": completion.tokens_in,
-                "tokens_out": completion.tokens_out,
-                "latency_ms": completion.latency_ms,
-                "resolved_build": completion.resolved_build,
-                "cached_prefix_tokens": completion.cached_prefix_tokens,
+                **{name: getattr(completion, name) for name in _COMPLETION_FIELDS},
+                # Never `completion.cost`: refused above, and written as null so the file
+                # cannot disagree with CT-PROV-03 even if this branch is ever reached.
                 "cost": None,
             },
         }
         # Written whole and then moved into place: a half-written recording read by a
         # concurrent reader would raise a JSON error, which is neither a hit nor the miss the
-        # caller could act on.
-        temporary = path.with_name(path.name + ".partial")
-        temporary.write_text(
-            json.dumps(document, ensure_ascii=False, indent=2), encoding="utf-8"
+        # caller could act on. The temp name is unique rather than derived from the key, so
+        # two writers recording the same request cannot contend on one path.
+        handle, temporary = tempfile.mkstemp(
+            dir=path.parent, prefix=path.name + ".", suffix=".partial"
         )
-        os.replace(temporary, path)
+        try:
+            with os.fdopen(handle, "w", encoding="utf-8") as stream:
+                json.dump(document, stream, ensure_ascii=False, indent=2)
+            os.replace(temporary, path)
+        except BaseException:
+            # A temp file left behind is not a recording, but it is litter in a directory the
+            # nightly regeneration diffs by hand.
+            Path(temporary).unlink(missing_ok=True)
+            raise
         return key
 
     # -- internals ---------------------------------------------------------------------------
@@ -811,31 +870,89 @@ def _request_record(
     }
 
 
-def _completion_from_record(raw: Any, path: Path) -> Completion:
-    """Rebuild a `Completion` from a fixture file, or say which file is wrong.
+_COMPLETION_FIELDS = (
+    "text",
+    "tokens_in",
+    "tokens_out",
+    "latency_ms",
+    "resolved_build",
+    "cached_prefix_tokens",
+)
 
-    `cost` is read back as `None` unconditionally rather than parsed: `record()` refuses to
-    store anything else, so a non-null value here means the file was hand-edited into
-    contradiction with `CT-PROV-03`, and honouring it would let an edited fixture teach a
-    consumer that fixture calls carry a cost.
+
+def _fixture_document(raw: str, path: Path, key: str) -> dict[str, Any]:
+    """Parse a fixture file and check its identity, or raise `FixtureMissingError`.
+
+    Every way a file on disk can fail to be a usable recording lands inside the taxonomy
+    (`CT-PROV-07`): a caller catching `ProviderError` is catching what this module promised to
+    raise, and a bare `JSONDecodeError` or `AttributeError` out of a corrupt fixture is a hole
+    in that promise. The fast tier is where corrupt fixtures actually appear — `F-RECORDED` is
+    regenerated nightly and its diffs are read by hand (test plan §4.4).
+
+    The schema check is what makes bumping `FIXTURE_SCHEMA` mean anything. Without it the
+    constant is decoration: a recording written under a format this code no longer understands
+    would be half-parsed rather than missed.
     """
-    if not isinstance(raw, dict):
+    try:
+        document = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise FixtureMissingError(
+            f"the recording at {path} is not valid JSON ({exc}). Unusable rather than absent: "
+            f"the file is there, and it is the file that is wrong."
+        ) from None
+    if not isinstance(document, dict):
+        raise FixtureMissingError(
+            f"the recording at {path} is a {type(document).__name__}, not a "
+            f"{FIXTURE_SCHEMA} document."
+        )
+    schema = document.get("schema")
+    if schema != FIXTURE_SCHEMA:
+        raise FixtureMissingError(
+            f"the recording at {path} declares schema {schema!r}, not {FIXTURE_SCHEMA!r}. A "
+            f"recording whose shape this code no longer understands must miss, not be "
+            f"half-parsed."
+        )
+    stored_key = document.get("key")
+    if stored_key != key:
+        raise FixtureMissingError(
+            f"the recording at {path} declares key {stored_key!r} but was found under {key}. "
+            f"A file moved between key paths cannot be trusted to answer either."
+        )
+    return document
+
+
+def _completion_from_document(document: dict[str, Any], path: Path) -> Completion:
+    """Rebuild a `Completion` from a parsed recording, or say which file is wrong.
+
+    A stored non-null `cost` is **refused, not normalized**. `record()` refuses to write one
+    (`CT-PROV-03`: fixture ⇒ null), and the reader is the path every fast-tier test runs — so
+    quietly reading it back as `None` would make the loud rule silent exactly where it
+    matters. Refusing gives the same protection and says so.
+    """
+    completion = document.get("completion")
+    if not isinstance(completion, dict):
         raise FixtureMissingError(
             f"the recording at {path} has no completion object; it is not a "
             f"{FIXTURE_SCHEMA} fixture."
         )
-    try:
-        return Completion(
-            text=raw["text"],
-            tokens_in=raw["tokens_in"],
-            tokens_out=raw["tokens_out"],
-            latency_ms=raw["latency_ms"],
-            resolved_build=raw["resolved_build"],
-            cached_prefix_tokens=raw["cached_prefix_tokens"],
-            cost=None,
+    if completion.get("cost") is not None:
+        raise FixtureMissingError(
+            f"the recording at {path} stores cost={completion['cost']!r}. CT-PROV-03 makes "
+            f"cost null on fixture and edge-local, so this file contradicts the clause its "
+            f"consumers test against, and record() refuses to write one."
         )
+    try:
+        fields = {name: completion[name] for name in _COMPLETION_FIELDS}
     except KeyError as exc:
         raise FixtureMissingError(
             f"the recording at {path} is missing {exc.args[0]!r}. Every Completion field but "
             f"cost is non-nullable (CT-PROV-03), so a partial recording is not a hit."
+        ) from None
+    try:
+        return Completion(cost=None, **fields)
+    except ValueError as exc:
+        # `Completion.__post_init__` guards shape. Reached only from a hand-edited file, so it
+        # is a bad fixture rather than a caller defect, and belongs in the taxonomy.
+        raise FixtureMissingError(
+            f"the recording at {path} does not hold a well-formed Completion: {exc}"
         ) from None
