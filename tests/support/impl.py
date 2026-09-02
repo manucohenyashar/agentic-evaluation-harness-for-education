@@ -57,11 +57,6 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 # and `rehydrate_run_config` with #6, and until they do their cases are correctly red.
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
-    "#18": (
-        "module",
-        PROVIDER_MODULE,
-        ("tests/unit/prov/test_recorded_fixture_provider.py",),
-    ),
     "#2": (
         "path",
         "fixtures/F-FROZEN/manifest.json",

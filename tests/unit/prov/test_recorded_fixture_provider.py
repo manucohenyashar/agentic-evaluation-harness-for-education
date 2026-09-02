@@ -36,8 +36,6 @@ import pytest
 
 from tests.support.impl import PROVIDER_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 CONF_MODULE = "aeh.conf"
 ISSUE = "#18"
 
