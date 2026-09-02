@@ -65,21 +65,44 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: `name>=1.2`, `name==1.2`, `name[extra]>=1.2`, or a bare `name`. Extras and environment markers
 #: are stripped, because the assertion is about *which distribution* is installed.
-_REQUIREMENT = re.compile(r"^\s*([A-Za-z0-9._-]+)\s*(?:\[[^\]]*\])?\s*(?:[<>=!~;].*)?$")
+_REQUIREMENT = re.compile(
+    r"^\s*([A-Za-z0-9._-]+)\s*(?:\[[^\]]*\])?\s*([<>=!~][^;#]*)?\s*(?:;[^#]*)?(?:#.*)?$"
+)
 
 
-def _declared_dev_requirements() -> dict[str, str]:
-    """Every non-comment line of `requirements-dev.txt`, as `distribution -> the raw line`."""
+def _dev_requirement_lines() -> tuple[dict[str, str], list[str]]:
+    """`({distribution: specifier}, [option lines])` from `requirements-dev.txt`.
+
+    Option lines are **returned, not skipped**. The first draft dropped anything starting with
+    `-`, which silently ignored `-r other.txt`, `--index-url` and `--extra-index-url` — and an
+    index override is a textbook A08 vector: it redirects every install to a host nobody
+    reviewed, without changing a single package name.
+    """
     text = (REPO_ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
     found: dict[str, str] = {}
+    options: list[str] = []
     for raw in text.splitlines():
         line = raw.strip()
-        if not line or line.startswith("#") or line.startswith("-"):
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("-"):
+            options.append(line)
             continue
         match = _REQUIREMENT.match(line)
         assert match, f"unparseable requirement line: {line!r}"
-        found[match.group(1).lower()] = line
-    return found
+        found[match.group(1).lower()] = match.group(2) or ""
+    return found, options
+
+
+def _declared_dev_requirements() -> dict[str, str]:
+    """`{distribution: specifier}` — the specifier alone, never the raw line.
+
+    The version-floor check used to `re.search(r"[<>=~!]", line)` over the raw text, so
+    `pytest  # >= pin this someday` and `pytest; python_version >= "3.11"` both counted as
+    bounded while the distribution was unpinned. `_REQUIREMENT` already isolates the specifier;
+    this is where that isolation is applied.
+    """
+    return _dev_requirement_lines()[0]
 
 
 def test_sec_14_the_shipped_dependency_set_is_empty():
@@ -147,14 +170,31 @@ def test_sec_14_every_dev_dependency_declares_a_version_floor():
     set reproducible enough to answer the question after the fact — which is the minimum this
     repository can offer while the advisory scan itself is out of reach.
     """
-    unbounded = [
-        line for line in _declared_dev_requirements().values()
-        if not re.search(r"[<>=~!]", line)
-    ]
+    declared = _declared_dev_requirements()
+    unbounded = sorted(name for name, specifier in declared.items() if not specifier.strip())
 
     assert not unbounded, (
         "SEC-14: these dev requirements have no version constraint, so the installed version "
         f"is whatever the index served: {unbounded}"
+    )
+
+
+def test_sec_14_no_option_line_redirects_the_install():
+    """`requirements-dev.txt` carries requirements, not install options.
+
+    `--index-url` and `--extra-index-url` redirect every install to a host nobody reviewed, and
+    `-r other.txt` moves the dependency set somewhere this file does not look — both A08, both
+    invisible to a check that reads package names. Review found the first draft skipping every
+    `-`-prefixed line outright, which made the "and nothing else" claim in the case above false.
+
+    Asserted as absence rather than parsed: this repository has no reason to carry one, and if
+    that changes it should be a decision recorded here rather than a line that appeared.
+    """
+    options = _dev_requirement_lines()[1]
+
+    assert not options, (
+        f"SEC-14: requirements-dev.txt carries install options: {options}. An index override "
+        "or an -r include changes what gets installed without changing a package name."
     )
 
 

@@ -43,8 +43,8 @@ import pytest
 from tests.support.impl import STORE_MODULE, require
 from tests.support.sql_scan import (
     EXECUTE_METHODS,
-    SEARCH_METHOD_NAMES,
     execute_call_sites,
+    is_search_name,
     scan_module,
     scan_tree,
 )
@@ -83,23 +83,28 @@ def test_sec_15_no_module_assembles_a_sql_statement():
 
 
 @pytest.mark.parametrize(
-    "function, form",
+    "function, form, kind",
     [
-        ("by_name", "f-string"),
-        ("by_cohort", "concatenation"),
-        ("by_status", "percent formatting"),
-        ("ordered_by", ".format()"),
-        ("migrate", "executescript"),
-        ("split_across_lines", "a chain assembled across three statements"),
+        ("by_name", "f-string", "fstring"),
+        ("by_cohort", "concatenation", "concat"),
+        ("by_status", "percent formatting", "percent"),
+        ("ordered_by", ".format()", "format-call"),
+        ("migrate", "executescript", "executescript"),
+        ("split_across_lines", "a chain assembled across statements", "computed-statement"),
     ],
 )
-def test_sec_15_the_walker_catches_every_form_of_assembly(function, form):
-    """The positive control, one row per form the scanner claims to catch.
+def test_sec_15_the_walker_catches_every_form_of_assembly(function, form, kind):
+    """The positive control, one row per **rule** the walker claims to enforce.
 
-    Parametrized rather than asserted in a lump, so a regression names the form that stopped
-    being caught. `split_across_lines` is the row that matters most: it carries no single string
-    a keyword check can read, and it is the reason the walker asserts on the argument reaching
-    `execute()` rather than only on text that looks like SQL.
+    The `kind` column is the whole assertion, and its absence was a blocker. The first draft
+    checked only that *some* violation fell inside the function's line range — and every one of
+    these functions is caught twice, once by the rule it is named after and once by the
+    execute-argument rule. So disabling four of the six rules outright (review did it, by
+    stubbing `_looks_like_sql` to return `False`) left all six rows green. Six assertions
+    collapsed to two.
+
+    Asserting the kind pins each rule to the row that exists for it, so a regression names the
+    form that stopped being caught rather than reporting nothing at all.
     """
     import ast
 
@@ -110,39 +115,91 @@ def test_sec_15_the_walker_catches_every_form_of_assembly(function, form):
         if isinstance(node, ast.FunctionDef) and node.name == function
     )
 
-    flagged = {
-        v.line for v in scan_module("broken_sql_fixture", BROKEN_SQL_FIXTURE, REPO_ROOT)
+    within = {
+        v.kind for v in scan_module("broken_sql_fixture", BROKEN_SQL_FIXTURE, REPO_ROOT)
+        if target.lineno <= v.line <= (target.end_lineno or target.lineno)
     }
 
-    assert any(target.lineno <= line <= (target.end_lineno or target.lineno) for line in flagged), (
-        f"SEC-15: the walker did not flag {function}() ({form}). The control exists because "
-        "the real tree issues no SQL, so a silent scanner and a clean tree look identical."
+    assert kind in within, (
+        f"SEC-15: the walker no longer catches {function}() ({form}) by its own rule. It "
+        f"reported {sorted(within) or 'nothing'}, and {kind!r} is missing. The control exists "
+        "because the real tree issues no SQL, so a silent rule and a clean tree look identical."
     )
 
 
-def test_sec_15_the_walker_reports_nothing_against_a_declared_statement():
-    """The negative control — the walker must not flag the *correct* form.
+#: The legitimate ways a store names a statement. Every one of these must scan clean.
+#:
+#: One negative control was not enough, and review proved it with measurement: four of these five
+#: were flagged by the first draft, including the shape the single control itself wrote. `sql`,
+#: `stmt` and `query` are the commonest identifiers in a store module, so a walker that
+#: false-positives here reds the build on the first ordinary `M-STORE` commit — a *false* finding,
+#: which against this issue's Goal ("fail the build on a finding") is worse than a miss.
+DECLARED_FORMS: dict[str, str] = {
+    "a module constant, used directly": '''
+SELECT_BY_ID = "SELECT id, status FROM work_unit WHERE id = ?"
+
+def fetch(connection, unit_id):
+    return connection.execute(SELECT_BY_ID, (unit_id,))
+''',
+    "a local literal, while an unrelated helper binds the same name": '''
+def unrelated_helper(raw):
+    stmt = raw.strip()
+    return stmt
+
+def fetch(connection, unit_id):
+    stmt = "SELECT id, status FROM work_unit WHERE id = ?"
+    return connection.execute(stmt, (unit_id,))
+''',
+    "textwrap.dedent over a multi-line literal": '''
+import textwrap
+
+SELECT_BY_ID = textwrap.dedent("""
+    SELECT id, status
+    FROM work_unit
+    WHERE id = ?
+""")
+
+def fetch(connection, unit_id):
+    return connection.execute(SELECT_BY_ID, (unit_id,))
+''',
+    "implicit concatenation across lines": '''
+def fetch(connection, unit_id):
+    return connection.execute(
+        "SELECT id, status "
+        "FROM work_unit "
+        "WHERE id = ?",
+        (unit_id,),
+    )
+''',
+    "a table of declared statements": '''
+STATEMENTS = {"by_id": "SELECT id, status FROM work_unit WHERE id = ?"}
+
+def fetch(connection, unit_id):
+    return connection.execute(STATEMENTS["by_id"], (unit_id,))
+''',
+}
+
+
+@pytest.mark.parametrize("form", sorted(DECLARED_FORMS), ids=lambda f: f[:38])
+def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tmp_path):
+    """The negative controls — the walker must not flag the *correct* forms.
 
     A scanner that flags everything passes every positive control above and is worthless: the
-    first `M-STORE` commit turns it off. So a parameterized declared statement, the exact shape
-    `FR-STORE-08` asks for, must come back clean.
+    first `M-STORE` commit turns it off. So each shape `FR-STORE-08` sanctions gets its own row,
+    and the row names the shape so a false positive says which one broke.
+
+    Written into `tmp_path`, not the repository. The first draft wrote its probe into
+    `tests/support/` and unlinked it in a `finally` — a killed process left an untracked file
+    behind in the tree the sibling case scans.
     """
-    clean = REPO_ROOT / "tests" / "support" / "_sec15_declared_statement_probe.py"
-    clean.write_text(
-        "import sqlite3\n\n"
-        "SELECT_BY_ID = 'SELECT id, status FROM work_unit WHERE id = ?'\n\n"
-        "def fetch(connection: sqlite3.Connection, unit_id: str):\n"
-        "    return connection.execute(SELECT_BY_ID, (unit_id,))\n",
-        encoding="utf-8",
-    )
-    try:
-        violations = scan_module("declared_probe", clean, REPO_ROOT)
-    finally:
-        clean.unlink()
+    probe = tmp_path / "declared_probe.py"
+    probe.write_text(DECLARED_FORMS[form], encoding="utf-8")
+
+    violations = scan_module("declared_probe", probe, tmp_path)
 
     assert not violations, (
-        "SEC-15: the walker flagged a correctly declared, parameterized statement. A scanner "
-        "with false positives on the sanctioned form is one somebody switches off:\n  "
+        f"SEC-15: the walker flagged a correctly declared statement ({form}). A scanner with "
+        "false positives on the sanctioned form is one somebody switches off:\n  "
         + "\n  ".join(str(v) for v in violations)
     )
 
@@ -193,10 +250,14 @@ def test_sec_15_no_tier_exposes_a_free_text_or_similarity_query():
     over any tier reachable from the scoring path; the store interface offers keyed lookup and
     declared queries only."*
 
-    Every tier, not one: `package()`, `cohort()` and `durable()` are all reachable from the
-    scoring path (design §3.3's data model — Tier P holds criteria and bands, C+R the submissions
-    and verdicts, D the labels), and a search method added to one of them is an injection surface
-    however clean the other two are.
+    **What this checks, precisely.** `Store` and `TierHandle` are `Protocol`s, so the assertion
+    is reflective — every public member of both, plus the module surface — rather than a call
+    against a live tier. §6.5's probe says *"every tier reachable from the scoring path"*, and
+    `package()`, `cohort()` and `durable()` all return a `TierHandle`, so checking the protocol
+    covers all three *as far as the protocol goes*. It does **not** reach a concrete class that
+    implements `TierHandle` and adds an off-protocol `search()`. Closing that needs a real
+    instance, which needs the tiers to be constructible; it belongs with `TS-08`/`TS-09` (#14,
+    #15), and is recorded here rather than implied by a green tick.
 
     The second half is what makes it more than a name check: `TierHandle.query` must take a
     `Statement`, not a `str`. A store that grew `query(sql: str)` exposes no method *named*
@@ -221,23 +282,47 @@ def test_sec_15_no_tier_exposes_a_free_text_or_similarity_query():
         for name in dir(owner):
             if name.startswith("_"):
                 continue
-            if name.lower() in SEARCH_METHOD_NAMES:
+            if is_search_name(name):
                 offenders.append(f"{owner.__name__}.{name}() is a search surface")
 
     # `query` takes a declared `Statement`, never a raw string.
+    #
+    # The first draft read `parameters.get("stmt", "").annotation`, which had three faults review
+    # found by simulating four candidate signatures: it raised `AttributeError` on a differently
+    # named parameter (`sql`, `statement`) rather than reporting a finding, and — the real hole —
+    # an **unannotated** `stmt` stringified to `<class 'inspect._empty'>`, containing neither
+    # "str" nor "Statement", so a raw-SQL passthrough with no type hint passed silently. That is
+    # the exact A03 shape this limb exists to catch.
     query = getattr(TierHandle, "query", None)
     assert query is not None, "TierHandle exposes no query() at all — design §3.3 declares one"
-    annotation = str(inspect.signature(query).parameters.get("stmt", "").annotation)
-    if "str" in annotation and "Statement" not in annotation:
-        offenders.append(
-            f"TierHandle.query takes {annotation} — a raw-SQL passthrough is A03 whatever the "
-            "method is called"
+
+    parameters = [
+        parameter for name, parameter in inspect.signature(query).parameters.items()
+        if name != "self" and parameter.kind not in (
+            inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD
         )
+    ]
+    assert parameters, "TierHandle.query takes no statement argument at all"
+    statement_parameter = parameters[0]
+
+    if statement_parameter.annotation is inspect.Parameter.empty:
+        offenders.append(
+            f"TierHandle.query({statement_parameter.name}) is unannotated, so nothing stops a "
+            "raw SQL string being passed — design §3.3 types it `Statement` precisely to close "
+            "that door"
+        )
+    else:
+        annotation = str(statement_parameter.annotation)
+        if "Statement" not in annotation:
+            offenders.append(
+                f"TierHandle.query({statement_parameter.name}: {annotation}) does not take a "
+                "declared Statement — a raw-SQL passthrough is A03 whatever the method is called"
+            )
 
     # And nothing at module level either: a free function taking a tier and a search string is
     # the same surface one indirection away.
     for name in dir(store_module):
-        if not name.startswith("_") and name.lower() in SEARCH_METHOD_NAMES:
+        if not name.startswith("_") and is_search_name(name):
             offenders.append(f"{STORE_MODULE}.{name}() is a module-level search surface")
 
     assert not offenders, (
