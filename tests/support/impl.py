@@ -58,6 +58,21 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 # and `rehydrate_run_config` with #6, and until they do their cases are correctly red.
 WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # issue: (kind, target, tests to unmark)
+    #
+    # `SEC-15`'s stated probe is behavioural — call into a real `Store` and assert the search
+    # method is not there — so it needs `M-STORE`. Keyed on **#10** although `FR-STORE-08` is
+    # #13's: the discriminating question is *which single blocker, resolved, makes this test
+    # runnable and non-vacuous*, and that is #10, which creates `aeh.store` and the
+    # `Store`/`TierHandle` protocols. An absence assertion over a class is real the moment the
+    # class exists; keying on #13 (which depends on #10) would hold it outside the gate for two
+    # further stories. `symbol` rather than `module` for the same precision — `aeh.store` could
+    # exist as an empty module.
+    "#10": (
+        "symbol",
+        f"{STORE_MODULE}:Store",
+        ("tests/artifact/test_store_query_surface.py"
+         "::test_sec_15_no_tier_exposes_a_free_text_or_similarity_query",),
+    ),
     "#2": (
         "path",
         "fixtures/F-FROZEN/manifest.json",
