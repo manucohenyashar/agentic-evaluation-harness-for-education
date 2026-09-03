@@ -34,6 +34,7 @@ STORE_MODULE = f"{IMPLEMENTATION_PACKAGE}.store"
 ORCH_MODULE = f"{IMPLEMENTATION_PACKAGE}.orch"
 CONSOLE_MODULE = f"{IMPLEMENTATION_PACKAGE}.console"
 JUDGE_MODULE = f"{IMPLEMENTATION_PACKAGE}.judge"
+PKG_MODULE = f"{IMPLEMENTATION_PACKAGE}.pkg"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -72,6 +73,43 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{STORE_MODULE}:Store",
         ("tests/artifact/test_store_query_surface.py"
          "::test_sec_15_no_tier_exposes_a_free_text_or_similarity_query",),
+    ),
+    # --- TS-56 (#149), the two cross-module fuzz cases -------------------------------------
+    #
+    # Each of the four is keyed on the story that makes *it* runnable, rather than all four on the
+    # last one: `FUZZ-06`'s halves target M-PKG and M-ORCH, `FUZZ-07`'s target the blob store and
+    # the write queue, and the four land at four different moments.
+    #
+    # **Keyed on symbols no Interfaces block declares.** `symbol` checks that a name exists, and
+    # design §3.3 declares `Store`, `TierHandle` and `BlobStore` in one block that #10 creates
+    # (§3.6 does the same for `PackageCatalog` at #26) -- so a key on any of those classes, *or on
+    # any of their members*, resolves against a Protocol-only module with no implementation behind
+    # it. An earlier draft keyed on `BlobStore.put` and `TierHandle.transaction` believing that
+    # narrowed the window; review measured all four candidates firing at once and the narrowing was
+    # zero.
+    #
+    # `in_memory_catalog`, `open_store` and `compute_work_id` are the constructors these tests
+    # actually call and appear in no Interfaces block, so none can exist before an implementation
+    # does. That closes the window without needing a fourth registry kind.
+    "#28": (
+        "symbol",
+        f"{PKG_MODULE}:in_memory_catalog",
+        ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
+         "::test_fuzz_06_a_cyclic_dependency_write_is_always_rejected",
+         "tests/property/test_fuzz_06_graphs_and_work_ids.py"
+         "::test_fuzz_06_topological_order_always_satisfies_every_edge"),
+    ),
+    "#12": (
+        "symbol",
+        f"{STORE_MODULE}:open_store",
+        ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
+         "::test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory",),
+    ),
+    "#11": (
+        "symbol",
+        f"{STORE_MODULE}:open_store",
+        ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
+         "::test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent",),
     ),
     "#2": (
         "path",
@@ -130,6 +168,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "module",
         ORCH_MODULE,
         ("tests/integration/conf/test_audit_record.py",),
+    ),
+    # The same issue, a different target. `TC-CONF-17` above needs the whole orchestrator, so a
+    # module key is right for it; `FUZZ-06`'s work-ID half needs one function, and `aeh.orch` as an
+    # empty file would fire the module key while `compute_work_id` was still absent. The dict key
+    # carries the symbol so the two entries can coexist and the gate message names which is which.
+    "#57 compute_work_id": (
+        "symbol",
+        f"{ORCH_MODULE}:compute_work_id",
+        ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
+         "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids",),
     ),
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
     # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
