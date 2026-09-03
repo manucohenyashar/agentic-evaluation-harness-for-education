@@ -25,10 +25,14 @@ from __future__ import annotations
 
 import pytest
 
-from tests.support.calib_vocabulary import DECLARED_PHASES, PROTOCOL_MEMBERS
 from tests.support.impl import CALIB_MODULE, CONSOLE_MODULE, require
 
 pytestmark = pytest.mark.contract
+
+#: The R₀ the fixtures pin, so "ended at R₀" is checked against a value **this test** chose.
+#: Comparing two fields of the run's own report passes for an implementation that reports whatever
+#: rubric it happened to use, which is the assertion these cases exist to make impossible.
+R0_VERSION = "pkg-v1-r0"
 
 #: `CT-CALIB-02`, verbatim from §6.11.17: *"teacher declines to answer, teacher abandons mid-flow,
 #: a gate fails, dual-scoring rejects, back-translation finds a divergence, the model cannot
@@ -75,8 +79,27 @@ def test_tc_calib_c01_grades_deliver_with_calibration_absent_and_with_it_disable
     console = require(CONSOLE_MODULE, issue="#122")
     run_pipeline = require(CONSOLE_MODULE, "run_pipeline_for_test", issue="#122")
 
-    absent = run_pipeline(calibration=None)
+    # **Absent means unimportable, not a kwarg.** An earlier draft passed `calibration=None` and
+    # `calibration="disabled"` to one function — two values on one code path, which is not the
+    # differential the Oracle names and which a single degenerate return value satisfies. Genuine
+    # absence is `aeh.calib` not being importable at all, so the module is hidden from `sys.modules`
+    # for the first run and the assertion below is that the pipeline never reached for it.
+    import sys
+
+    hidden = {name: sys.modules.pop(name) for name in list(sys.modules) if name.startswith(CALIB_MODULE)}
+    sys.modules[CALIB_MODULE] = None  # an import raises rather than finding a stub
+    try:
+        absent = run_pipeline()
+    finally:
+        del sys.modules[CALIB_MODULE]
+        sys.modules.update(hidden)
+
     disabled = run_pipeline(calibration="disabled")
+
+    assert CALIB_MODULE not in absent.modules_imported, (
+        "the pipeline imported aeh.calib on a run where calibration was absent, so the module is "
+        "on the critical path after all (CT-CALIB-01, RISK-11)"
+    )
 
     for label, outcome in (("absent", absent), ("disabled", disabled)):
         assert outcome.grades_delivered, (
@@ -84,8 +107,11 @@ def test_tc_calib_c01_grades_deliver_with_calibration_absent_and_with_it_disable
             "on the critical path of grade delivery (R11, R60, RISK-11)."
         )
         assert outcome.finalized, f"with calibration {label}, the batch did not finalize"
-        assert outcome.rubric_version == outcome.r0_version, (
-            f"with calibration {label}, the class was graded against something other than R₀"
+        assert outcome.rubric_version == R0_VERSION, (
+            f"with calibration {label}, the class was graded against "
+            f"{outcome.rubric_version!r} rather than the R₀ the fixture pinned ({R0_VERSION!r}). "
+            "Comparing the run's own two fields to each other passes for an implementation that "
+            "reports whatever it used."
         )
         assert outcome.lower_confidence_criteria, (
             f"with calibration {label}, no criterion was marked lower-confidence. FR-CALIB-13 "
@@ -121,10 +147,11 @@ def test_tc_calib_c02_every_failure_mode_ends_at_r0(failure_mode):
     reach for.
     """
     calib = require(CALIB_MODULE, issue="#139")
-    outcome = calib.simulate_failure(failure_mode)
+    outcome = calib.simulate_failure(failure_mode, r0=R0_VERSION)
 
-    assert outcome.active_rubric == outcome.r0_version, (
-        f"{failure_mode}: the run did not end at R₀ (CT-CALIB-02, FR-CALIB-10)"
+    assert outcome.active_rubric == R0_VERSION, (
+        f"{failure_mode}: the run ended on {outcome.active_rubric!r}, not the R₀ the fixture "
+        f"pinned ({R0_VERSION!r}) (CT-CALIB-02, FR-CALIB-10)"
     )
     assert outcome.ambiguous_criteria_lower_confidence, (
         f"{failure_mode}: ended at R₀ but did not mark the ambiguous criteria lower-confidence — "
@@ -168,11 +195,10 @@ def test_tc_calib_c15_an_edit_against_a_package_predating_the_lock_is_refused():
     with pytest.raises(calib.PhaseDependencyError):
         apply_answers({"q1": "a"}, package_version=pre_lock_version)
 
-    for member in PROTOCOL_MEMBERS:
-        assert member in DECLARED_PHASES or member == "discover", (
-            f"{member}() has no declared phase, so 'phasing is part of the contract' is not true "
-            "of it (CT-CALIB-15)"
-        )
+    # The member-phase sweep used to live here and was **broken**: `apply_answers` had no entry in
+    # `DECLARED_PHASES`, so this test would have failed after `M-CALIB` landed — masked until then
+    # by `require()` above. It touches no implementation, so it belongs in the green file where a
+    # gap is visible today: `test_ct_calib_vocabulary.py::test_every_protocol_member_has_a_declared_phase`.
 
 
 @pytest.mark.writtenahead

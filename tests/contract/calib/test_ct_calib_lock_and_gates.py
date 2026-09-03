@@ -22,6 +22,7 @@ import pytest
 
 from tests.support.calib_vocabulary import (
     DECLARED_KNOBS,
+    affirmative_sentences,
     LOCKED_FIELDS,
     SUPERIORITY_LANGUAGE,
 )
@@ -29,9 +30,10 @@ from tests.support.impl import (
     CALIB_MODULE,
     CONSOLE_MODULE,
     GRADE_MODULE,
+    STATS_MODULE,
     require,
 )
-from tests.support.guards import write_audit
+from tests.support.guards import recording_write_audit
 
 pytestmark = pytest.mark.contract
 
@@ -56,15 +58,29 @@ def test_tc_calib_c06_no_edit_reaches_tier_p_except_through_the_catalog():
     calib = require(CALIB_MODULE, issue="#138")
     apply_answers = require(CALIB_MODULE, "apply_answers", issue="#138")
 
-    catalog = calib.catalog_for_test()
-    with write_audit() as direct_writes:
+    tier_p = calib.tier_p_path_for_test()
+    catalog = calib.catalog_for_test(tier_p_path=tier_p)
+
+    # A **recording** audit, not the blocking `write_audit()`. This case must tell a permitted
+    # write (the catalog's, which is required) from a forbidden one (anything else) — and the
+    # blocking guard raises on whichever comes first, making the two indistinguishable and the
+    # "did the catalog write?" assertion below unreachable. §6.11.17's Oracle is a
+    # "**write-audit log**", which is a recorder rather than a guard.
+    with recording_write_audit() as writes:
         apply_answers({"q1": "broaden"}, catalog=catalog)
 
-    assert direct_writes == [], (
-        "M-CALIB wrote to disk outside the catalog: "
-        + ", ".join(f"{w.api}({w.target!r})" for w in direct_writes)
-        + ". CT-CALIB-06 makes the lock structural by routing every edit through M-PKG; a direct "
-        "write bypasses FR-PKG-03 entirely."
+    touched_tier_p = [w for w in writes if str(tier_p) in str(w.target)]
+    assert touched_tier_p, (
+        "nothing wrote to Tier P at all, so this audit observed no write to classify and the "
+        "assertion below would pass over an empty log"
+    )
+
+    outside = [w for w in touched_tier_p if w not in catalog.audited_writes]
+    assert not outside, (
+        "M-CALIB wrote to Tier P outside the catalog: "
+        + ", ".join(f"{w.api}({w.target!r})" for w in outside)
+        + ". CT-CALIB-06 makes the lock structural by routing every edit through M-PKG; a "
+        "direct write bypasses FR-PKG-03 entirely."
     )
     assert catalog.writes, "the edit did not reach the catalog either — nothing was applied"
 
@@ -127,10 +143,14 @@ def test_tc_calib_c07_the_gate_refuses_to_run_on_the_calibration_set():
 @pytest.mark.parametrize(
     "shifted_fraction, expected",
     [
+        # Fractions a realistic class can express. An earlier draft used 0.0999 and 0.1001,
+        # which need a cohort of 10,000 — with any real class the fixture must round, and
+        # 0.1001 rounding to 0.10 turns the reject row into a spurious failure. A 100-student
+        # class expresses every fraction below exactly.
         (0.05, "pass"),
-        (0.0999, "pass"),
-        (0.10, "pass"),     # exactly at threshold: "more than" is strict
-        (0.1001, "reject"),
+        (0.09, "pass"),
+        (0.10, "pass"),     # exactly at threshold: "more than" is strict, so this passes
+        (0.11, "reject"),
         (0.25, "reject"),
     ],
 )
@@ -148,11 +168,11 @@ def test_tc_calib_c07_the_revision_is_rejected_above_the_threshold(shifted_fract
     calib = require(CALIB_MODULE, issue="#139")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#139")
 
-    cohort = calib.cohort_with_band_shift(fraction=shifted_fraction)
+    cohort = calib.cohort_with_band_shift(fraction=shifted_fraction, class_size=100)
     result = non_inferiority(r0="pkg-v1", r1="pkg-v2", cohort_id=cohort, threshold=0.10)
 
     assert result.outcome == expected, (
-        f"{shifted_fraction:.4f} of the class shifted a full band against a 0.10 threshold and "
+        f"{shifted_fraction:.2f} of the class shifted a full band against a 0.10 threshold and "
         f"the gate returned {result.outcome!r}, not {expected!r}. FR-CALIB-08 rejects on *more "
         "than* the threshold, so exactly-at-threshold passes."
     )
@@ -173,9 +193,15 @@ def test_tc_calib_c07_the_threshold_is_recorded_before_any_result_exists():
     calib = require(CALIB_MODULE, issue="#139")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#139")
 
-    cohort = calib.cohort_with_band_shift(fraction=0.05)
-    result = non_inferiority(r0="pkg-v1", r1="pkg-v2", cohort_id=cohort, threshold=0.10)
+    # Read **from configuration**, not passed as a literal. An earlier draft passed
+    # `threshold=0.10` and then asserted `threshold_source == "configuration"` — a module
+    # honestly reporting where its value came from would say "argument", so the only way to
+    # pass was to misreport, or to ignore the parameter §3.17 declares.
+    calib.declare_institutional_threshold(0.10)
+    cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
+    result = non_inferiority(r0="pkg-v1", r1="pkg-v2", cohort_id=cohort, threshold=None)
 
+    assert result.threshold_used == 0.10, "the declared institutional threshold was not used"
     assert result.threshold_declared_at is not None, "the threshold was never recorded"
     assert result.first_result_at is not None
     assert result.threshold_declared_at < result.first_result_at, (
@@ -291,6 +317,31 @@ def test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation(
         assert {segment.rubric_version for segment in mixed.segments} == {"pkg-v1", "pkg-v2"}
 
 
+@pytest.mark.writtenahead
+def test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary():
+    """`CT-CALIB-09`'s **second consumer**, missing from the first draft.
+
+    §6.11.17: *"…and that `M-STATS` scopes its figures across the revision boundary."* The
+    rollup assertion above is `M-GRADE`'s; this is `M-STATS`'s, and it matters for longer — an
+    accumulated validation record spanning a revision describes two instruments, and it is then
+    used to decide whether the *next* revision is safe. That is RISK-06 compounding.
+    """
+    stats = require(STATS_MODULE, issue="#118")
+    figures = require(STATS_MODULE, "criterion_figures", issue="#118")
+
+    scoped = figures(cohort_id=stats.cohort_with_mixed_revisions())
+
+    assert scoped, "M-STATS produced no figures for a cohort spanning a revision"
+    assert all(figure.rubric_version is not None for figure in scoped), (
+        "M-STATS produced figures that name no rubric version, so a reader cannot tell which "
+        "instrument they describe (CT-CALIB-09)"
+    )
+    assert {figure.rubric_version for figure in scoped} == {"pkg-v1", "pkg-v2"}, (
+        "the figures do not span both revisions, so nothing shows they were scoped rather "
+        "than silently merged"
+    )
+
+
 # --- CT-CALIB-10 — a rubric published in advance ---------------------------------------------------
 
 
@@ -341,8 +392,19 @@ def test_tc_calib_c13_each_knob_is_read_and_has_an_externally_visible_effect(kno
     calib = require(CALIB_MODULE, issue="#139")
 
     assert knob in calib.KNOBS, f"{knob} is not among the knobs the module reads"
-    assert calib.knob_has_visible_effect(knob), (
-        f"{knob} is read and then ignored — the operator sets it and nothing changes"
+
+    # The knob is **moved and the difference observed**, not reported on. An earlier draft
+    # asserted `calib.knob_has_visible_effect(knob)` — the module grading its own homework,
+    # satisfied by a method returning True. A knob read and then ignored is worse than one
+    # never read: the operator sets it, the value appears in configuration, and nothing
+    # contradicts them.
+    low, high = calib.contrasting_values_for(knob)
+
+    assert calib.observable_behaviour_with(knob, low) != calib.observable_behaviour_with(
+        knob, high
+    ), (
+        f"{knob} moved from {low!r} to {high!r} and nothing observable changed — it is read "
+        "and then ignored"
     )
 
 
@@ -493,12 +555,45 @@ def test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superi
 
     surface = render(outcome="pass").lower()
 
-    found = sorted(term for term in SUPERIORITY_LANGUAGE if term in surface)
-    assert not found, (
-        f"the console presents a passed gate using superiority language {found}. CT-CALIB-16 says "
-        "a pass is non-inferiority and nothing more."
+    # Scanned in **affirmative sentences only**. `CT-CALIB-16`'s own wording is a negation —
+    # "a passed gate is *not* evidence that a revision improved the rubric" — so a raw
+    # substring sweep forbids the console from stating the very thing the clause requires.
+    # Review demonstrated a correct console failing on `improved` inside its own disclaimer.
+    affirmative = affirmative_sentences(surface)
+    found = sorted(
+        term for term in SUPERIORITY_LANGUAGE
+        if any(term in sentence.lower() for sentence in affirmative)
     )
-    assert "non-inferiority" in surface or "did not shift" in surface, (
+    assert not found, (
+        f"the console claims superiority in {found}. CT-CALIB-16 says a pass is "
+        "non-inferiority and nothing more."
+    )
+    assert "non-inferiority" in surface.lower() or "did not shift" in surface.lower(), (
         f"the rendered surface does not say what the pass actually means: {surface[:120]!r}"
     )
     assert console is not None
+
+
+@pytest.mark.writtenahead
+def test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too():
+    """`CT-CALIB-16`'s **second consumer**, which the first draft's docstring claimed to sweep
+    and did not.
+
+    §6.11.17 names two: *"assert `M-CONSOLE` **and `M-STATS`** present it as non-inferiority,
+    never superiority."* Design §2 lists `M-STATS` among this clause's consumers, and it is the
+    one whose output is most likely to be read as a quality claim — a table of figures carries
+    an authority a console message does not.
+    """
+    stats = require(STATS_MODULE, issue="#118")
+    describe = require(STATS_MODULE, "describe_revision_gate", issue="#118")
+
+    surface = describe(outcome="pass")
+
+    found = sorted(
+        term for term in SUPERIORITY_LANGUAGE
+        if any(term in sentence.lower() for sentence in affirmative_sentences(surface))
+    )
+    assert not found, (
+        f"M-STATS presents a passed gate using superiority language {found} (CT-CALIB-16)"
+    )
+    assert stats is not None

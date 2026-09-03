@@ -23,7 +23,11 @@ from pathlib import Path
 import pytest
 
 from tests.support.calib_vocabulary import (
+    ACCURACY_LANGUAGE,
     DECLARED_KNOBS,
+    DECLARED_PHASES,
+    SUPERIORITY_LANGUAGE,
+    affirmative_sentences,
     EDITABLE_CATEGORY,
     EXAMPLES_PER_QUESTION,
     LOCKED_FIELDS,
@@ -47,7 +51,15 @@ def test_the_triage_categories_are_the_three_the_design_names():
     """
     clause = next(line for line in DESIGN.splitlines() if line.startswith("| CT-CALIB-04 "))
 
-    named = set(re.findall(r"`(rubric_ambiguity|model_failure|teacher_inconsistency)`", clause))
+    # Parsed **generically**, not by alternating over the fixture's own three names. The first
+    # draft did the latter, which made `named` a subset of `TRIAGE_CATEGORIES` by construction —
+    # so a fourth category added to the design was invisible, which is the exact case this
+    # docstring claims to catch. Review added `extraction_defect` and watched six green tests.
+    #
+    # The clause states its categories as a set, so that is what is read.
+    membership = re.search(r"∈ \{([^}]*)\}", clause)
+    assert membership, "CT-CALIB-04 no longer states its triage categories as a set"
+    named = set(re.findall(r"`([a-z_]+)`", membership.group(1)))
 
     assert named == TRIAGE_CATEGORIES, (
         f"the design's CT-CALIB-04 names {sorted(named)}; the fixture carries "
@@ -136,6 +148,23 @@ def test_the_locked_field_list_matches_fr_pkg_03():
         f"{sorted(set(LOCKED_FIELDS) - {f for _, f in LOCK_PHRASES})}"
     )
 
+    # The direction the mapping alone cannot see: a field `FR-PKG-03` forbids that neither the
+    # mapping nor the fixture mentions. `LOCK_PHRASES` is hand-written, so checking the fixture
+    # against it is closed over the author's own list — review added an eighth locked field to the
+    # design and watched six green tests. Every backticked identifier in the requirement is read
+    # instead, and each must be accounted for by the mapping.
+    design_fields = set(re.findall(r"`([a-z][a-z_]+)`", requirement))
+    unaccounted = sorted(
+        field for field in design_fields
+        if field not in LOCKED_FIELDS
+        and not any(field in phrase for phrase, _ in LOCK_PHRASES)
+    )
+    assert not unaccounted, (
+        f"FR-PKG-03 names fields the fixture's lock list does not cover: {unaccounted}. "
+        "TC-CALIB-C06 sweeps LOCKED_FIELDS, so an uncovered field is one M-CALIB could write "
+        "without this suite noticing."
+    )
+
 
 def test_the_protocol_members_match_the_interfaces_block():
     """Design §3.17's `Calibration` protocol, transcribed.
@@ -172,4 +201,77 @@ def test_the_contract_is_still_marked_provisional():
     assert "provisional" in heading.lower(), (
         "§6.11.17 no longer marks CT-CALIB provisional. These sixteen cases were written against "
         "a contract the design said was still moving; re-read them against the settled one."
+    )
+
+
+def test_the_editable_category_is_rubric_ambiguity_exactly():
+    """`EDITABLE_CATEGORY` is pinned to a value, not merely to membership.
+
+    The first draft asserted only `EDITABLE_CATEGORY in TRIAGE_CATEGORIES`, which holds for all
+    three. Drifted to `"model_failure"`, `TC-CALIB-C04`'s eligibility sweep would demand that
+    `model_failure` produce edits and `rubric_ambiguity` not — the exact inversion of the clause,
+    with a green vocabulary suite sitting above it. Review found it by mutation: one character,
+    six passing tests.
+    """
+    assert EDITABLE_CATEGORY == "rubric_ambiguity"
+    clause = next(line for line in DESIGN.splitlines() if line.startswith("| CT-CALIB-04 "))
+    assert f"only `{EDITABLE_CATEGORY}`" in clause
+
+
+def test_every_protocol_member_has_a_declared_phase():
+    """`CT-CALIB-15` asserts a phase per member, so every member must have one.
+
+    This ran inside the written-ahead `TC-CALIB-C15` test, where it could not execute — and it was
+    **broken**: `apply_answers` had no entry, so the case would have failed *after* `M-CALIB`
+    landed, masked until then by `require()`. An `or member == "discover"` escape hatch showed the
+    same thing had already happened once and been patched rather than fixed.
+
+    It touches no implementation, so it belongs here, green, where a gap is visible today.
+    """
+    missing = [member for member in PROTOCOL_MEMBERS if member not in DECLARED_PHASES]
+
+    assert not missing, (
+        f"these Calibration protocol members have no declared phase: {missing}. CT-CALIB-15 says "
+        "phasing is part of the contract, which is not true of a member without one."
+    )
+    assert set(DECLARED_PHASES.values()) <= {1, 3, 4}, "an undeclared phase number appeared"
+    assert DECLARED_PHASES["elicit"] == 4 and DECLARED_PHASES["apply_answers"] == 4, (
+        "CT-CALIB-15 puts elicitation in Phase 4"
+    )
+    assert DECLARED_PHASES["schema_lock"] == 1, (
+        "the §6.2 lock is Phase 1 and belongs to M-PKG — the dependency direction C15 asserts"
+    )
+
+
+def test_the_declared_phases_match_the_clause():
+    """The phases, read from `CT-CALIB-15` rather than trusted."""
+    clause = next(line for line in DESIGN.splitlines() if line.startswith("| CT-CALIB-15 "))
+
+    assert "Phase 3" in clause and "Phase 4" in clause and "Phase 1" in clause
+    for member in ("Triage", "non-inferiority", "back-translation"):
+        assert member in clause, f"CT-CALIB-15 no longer names {member} among the Phase 3 work"
+    assert "elicitation is Phase 4" in clause
+
+
+def test_the_language_lists_are_populated_and_negation_scoped():
+    """The two consumer-language lists, and the scan that uses them.
+
+    Gutting either list is a mutation the rest of this file cannot see — the lists are only read
+    by written-ahead tests — so it is asserted here. And the negation scoping is asserted in both
+    directions, because it is the difference between forbidding a claim and forbidding the
+    disclaimer the clause requires.
+    """
+    assert len(ACCURACY_LANGUAGE) >= 8, "the accuracy vocabulary has been emptied"
+    assert len(SUPERIORITY_LANGUAGE) >= 6, "the superiority vocabulary has been emptied"
+
+    correct = "Gate: PASS (non-inferiority). This is not evidence the revision improved the rubric."
+    overclaiming = "Gate: PASS. The revision improved the rubric."
+
+    assert not [t for t in SUPERIORITY_LANGUAGE
+                if any(t in s.lower() for s in affirmative_sentences(correct))], (
+        "the scan rejects a console stating CT-CALIB-16's own disclaimer"
+    )
+    assert [t for t in SUPERIORITY_LANGUAGE
+            if any(t in s.lower() for s in affirmative_sentences(overclaiming))], (
+        "the scan accepts a console claiming the revision improved the rubric"
     )

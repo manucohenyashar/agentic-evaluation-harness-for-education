@@ -37,6 +37,7 @@ JUDGE_MODULE = f"{IMPLEMENTATION_PACKAGE}.judge"
 PKG_MODULE = f"{IMPLEMENTATION_PACKAGE}.pkg"
 CALIB_MODULE = f"{IMPLEMENTATION_PACKAGE}.calib"
 GRADE_MODULE = f"{IMPLEMENTATION_PACKAGE}.grade"
+STATS_MODULE = f"{IMPLEMENTATION_PACKAGE}.stats"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -115,21 +116,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-74 (#142), the sixteen CT-CALIB clause cases ------------------------------------
     #
-    # **This is the instance where the registry's limits actually cost something, so it is stated
-    # plainly.** `M-CALIB` is Phase 3/4 and three stories away: #137 (triage) -> #138 (elicitation,
-    # lock, history) -> #139 (the two gates). The `Calibration` protocol declares six members, and
-    # #137 will almost certainly stub all six at once -- so keying #138's or #139's cases on a
-    # protocol member fires at #137, and keying them on an *invented* story-specific name that
-    # never appears leaves a P0 case outside the gate **forever**. The second failure is strictly
-    # worse than the first.
+    # `M-CALIB` is Phase 3/4 and three stories away: #137 (triage) -> #138 (elicitation, lock,
+    # history) -> #139 (the two gates). The `Calibration` protocol declares six members and #137
+    # will very likely stub all six at once, so keying a later story on a protocol member fires at
+    # #137.
     #
-    # So: #137 keys on a vocabulary constant its own tests need, and #138 and #139 key on the
-    # module. Those two fire when #137 lands, and the marker comes off in two later passes. That
-    # is a known, accepted false alarm rather than an unnoticed one -- and it is the fifth
-    # instance of a limitation a fourth registry kind would close (see PR #164).
+    # An earlier draft concluded the only alternative was an invented name that might never appear
+    # — leaving a P0 case outside the gate forever, which is strictly worse — and keyed #138 and
+    # #139 on the whole module. That dichotomy was false. Each story's tests already call several
+    # **non-protocol** names that story must supply, and none appears in any Interfaces block, so
+    # none can exist before an implementation does. They are invented, but the tests invent and use
+    # them together, which is what makes them self-consistent — the same reasoning as `open_store`
+    # and `compute_work_id` in TS-56, and `record_run_start` in #164.
     "#137": (
         "symbol",
-        f"{CALIB_MODULE}:TRIAGE_CATEGORIES",
+        f"{CALIB_MODULE}:TriageCategoryRequired",
         ("tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
          "::test_tc_calib_c03_the_discovery_report_carries_no_accuracy_figure",
          "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
@@ -138,25 +139,36 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "::test_tc_calib_c04_only_rubric_ambiguity_can_produce_a_proposed_edit"),
     ),
     "#138": (
-        "module",
-        CALIB_MODULE,
+        "symbol",
+        f"{CALIB_MODULE}:PhaseDependencyError",
         ("tests/contract/calib/test_ct_calib_removability.py",
          "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py",
          "tests/contract/calib/test_ct_calib_lock_and_gates.py"),
     ),
     "#139": (
-        "module",
-        CALIB_MODULE,
+        "symbol",
+        f"{CALIB_MODULE}:ThresholdNotDeclared",
         ("tests/contract/calib/test_ct_calib_removability.py",
          "tests/contract/calib/test_ct_calib_lock_and_gates.py"),
     ),
-    # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R₀- and R₁-scored
+    # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R0- and R1-scored
     # results must not share an unannotated rollup. Keyed on the consumer that implements it.
     "#101": (
         "module",
         GRADE_MODULE,
         ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
          "::test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation",),
+    ),
+    # §6.11.17 names `M-STATS` as a second consumer for both `CT-CALIB-09` (it scopes its figures
+    # across the revision boundary) and `CT-CALIB-16` (it presents the gate as non-inferiority).
+    # Both were missing from the first draft, one of them under a docstring claiming otherwise.
+    "#118": (
+        "module",
+        STATS_MODULE,
+        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
+         "::test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary",
+         "tests/contract/calib/test_ct_calib_lock_and_gates.py"
+         "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too"),
     ),
     "#2": (
         "path",

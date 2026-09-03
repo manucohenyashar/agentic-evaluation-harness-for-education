@@ -72,11 +72,18 @@ LOCKED_FIELDS: tuple[str, ...] = (
 #: `CT-CALIB-15`: *"triage, dual-scoring non-inferiority and back-translation are Phase 3;
 #: elicitation is Phase 4; the §6.2 lock they depend on is Phase 1 and belongs to `M-PKG`."*
 #: Phasing is part of the contract, so it is asserted rather than assumed.
+#: **Every** protocol member has a phase, plus the lock. An earlier draft omitted `apply_answers`
+#: and `discover`, so `TC-CALIB-C15`'s member loop could never pass — it was masked behind
+#: `require()` and would have failed *after* `M-CALIB` landed, which is the worst time to discover
+#: a broken assertion. `elicit` and `apply_answers` are the Phase 4 elicitation pair; `discover`
+#: feeds triage and lands with it.
 DECLARED_PHASES: dict[str, int] = {
+    "discover": 3,
     "triage": 3,
+    "elicit": 4,
+    "apply_answers": 4,
     "non_inferiority": 3,
     "back_translate": 3,
-    "elicit": 4,
     "schema_lock": 1,  # M-PKG's, and the dependency direction C15 asserts
 }
 
@@ -100,11 +107,38 @@ PROTOCOL_MEMBERS: tuple[str, ...] = (
 #: `M-STATS` owns the ones that exist. A passed gate is *"not evidence that a revision improved the
 #: rubric"* — only that the class did not shift beyond the declared threshold and an off-panel
 #: model could not construct a divergent case.
+#: Scanned **only in affirmative sentences** — see `affirmative_sentences()`. A raw substring
+#: sweep cannot tell a claim from its negation, and both clauses require the negation: `CT-CALIB-03`
+#: says discovery is *"never a measurement of accuracy"* and a console rendering that sentence
+#: would fail a naive scan for "accuracy". Review found both, plus a bare `"right"` matching
+#: `copyright` in a page footer.
 ACCURACY_LANGUAGE: tuple[str, ...] = (
     "accuracy", "accurate", "correct rate", "correctness", "percent correct",
-    "% correct", "right", "precision", "recall", "f1", "agreement rate",
+    "% correct", "precision", "recall", "agreement rate", "was right",
 )
 SUPERIORITY_LANGUAGE: tuple[str, ...] = (
     "improved", "improvement", "better", "superior", "superiority",
     "more accurate", "higher quality", "upgrade",
 )
+
+#: Words that make a sentence a denial rather than a claim.
+_NEGATIONS: tuple[str, ...] = ("not", "never", "no ", "n't", "rather than", "without")
+
+
+def affirmative_sentences(text: str) -> list[str]:
+    """The sentences of `text` that assert rather than deny.
+
+    Both `CT-CALIB-03` and `CT-CALIB-16` require a consumer to *state the negation* — "this is not
+    a measurement of accuracy", "a pass is not evidence the revision improved the rubric" — so a
+    scan that forbids the vocabulary outright forbids the disclaimer the clause asks for. Review
+    demonstrated both: a correct console failed on `accuracy` and on `improved`.
+
+    Splitting on sentence boundaries and dropping the negated ones is coarse, and deliberately so
+    — the alternative is parsing English. It errs toward *missing* a violation buried in a
+    negated sentence rather than toward rejecting correct copy, because a scanner that fails
+    correct copy is one somebody switches off.
+    """
+    import re
+
+    sentences = [part.strip() for part in re.split(r"[.!?\n]+", text) if part.strip()]
+    return [s for s in sentences if not any(n in s.lower() for n in _NEGATIONS)]

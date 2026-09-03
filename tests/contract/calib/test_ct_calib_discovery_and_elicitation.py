@@ -15,10 +15,13 @@ All five are red. See `test_ct_calib_vocabulary.py` for what is green and why it
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from tests.support.calib_vocabulary import (
     ACCURACY_LANGUAGE,
+    affirmative_sentences,
     EDITABLE_CATEGORY,
     EXAMPLES_PER_QUESTION,
     MAX_QUESTIONS,
@@ -55,7 +58,11 @@ def test_tc_calib_c03_the_discovery_report_carries_no_accuracy_figure():
         "and labelled as ambiguity discovery"
     )
 
-    fields = {name.lower() for name in report.__dataclass_fields__}
+    # `__dataclass_fields__` only exists on a dataclass, and the clause does not require one —
+    # a report built as a plain object or a mapping would make this sweep silently empty, which is
+    # a pass over nothing.
+    fields = {name.lower() for name in calib.field_names_of(report)}
+    assert fields, "the discovery report exposes no inspectable fields, so this sweep is vacuous"
     offending = sorted(
         name for name in fields
         if any(term.replace(" ", "_") in name for term in ACCURACY_LANGUAGE)
@@ -87,14 +94,26 @@ def test_tc_calib_c03_the_console_renders_no_accuracy_language():
     console = require(CONSOLE_MODULE, issue="#122")
     render = require(CONSOLE_MODULE, "render_discovery", issue="#122")
 
-    surface = render(package_version="pkg-v1").lower()
+    surface = render(package_version="pkg-v1")
 
-    found = sorted(term for term in ACCURACY_LANGUAGE if term in surface)
+    # Scanned in **affirmative sentences only**. `CT-CALIB-03` requires the console to say what
+    # discovery is *not* — "this is not a measurement of accuracy" — and a raw substring sweep
+    # forbids exactly that sentence. Review demonstrated it: a correct console failed on the word
+    # `accuracy` inside its own disclaimer, and a bare `right` in the vocabulary matched
+    # `copyright` in a footer.
+    affirmative = affirmative_sentences(surface)
+    found = sorted(
+        term for term in ACCURACY_LANGUAGE
+        if any(term in sentence.lower() for sentence in affirmative)
+    )
     assert not found, (
-        f"the rendered discovery surface uses accuracy language {found}. CT-CALIB-03: a consumer "
+        f"the rendered discovery surface claims accuracy in {found}. CT-CALIB-03: a consumer "
         "rendering this as 'the model was right 82% of the time' has misused it."
     )
-    assert "%" not in surface, "the discovery surface renders a percentage"
+    assert not re.search(r"\d+\s*%", " ".join(affirmative)), (
+        "the discovery surface renders a percentage as a claim; the calibration set is far too "
+        "small for one to mean anything, and M-STATS owns the figures that exist (CT-STATS-01)"
+    )
     assert console is not None
 
 
@@ -336,17 +355,33 @@ def test_tc_calib_c12_the_dual_scoring_cost_is_disclosed_before_the_pass_is_auth
     that arrives with the invoice is a receipt.
     """
     calib = require(CALIB_MODULE, issue="#139")
-    plan = calib.plan_dual_scoring(cohort_id="c-1", r0="pkg-v1", r1="pkg-v2")
+    provider = calib.counting_provider_for_test()
 
-    assert plan.disclosed_before_authorization, (
-        "the dual-scoring cost was not surfaced before authorization. NFR-CALIB-03 says it must "
-        "be *budgeted*, and a cost discovered afterwards was incurred rather than budgeted."
+    # The **observed** order and the **observed** call count, not the module's report of either.
+    # An earlier draft asserted `plan.disclosed_before_authorization` and compared
+    # `plan.estimated_calls` to two other fields of the same object — three numbers the module
+    # authors, checked against each other. §6.11.17's Oracle is a *call-count assertion*, so the
+    # calls are counted.
+    plan = calib.plan_dual_scoring(cohort_id="c-1", r0="pkg-v1", r1="pkg-v2", provider=provider)
+
+    assert plan.disclosed_at is not None, "the cost was never disclosed"
+    assert provider.calls == 0, (
+        f"{provider.calls} scoring calls were made before the operator saw a cost. NFR-CALIB-03 "
+        "says dual-scoring must be *budgeted*, and a cost discovered afterwards was incurred."
     )
-    assert plan.additional_full_class_passes == 1, (
-        f"the plan declares {plan.additional_full_class_passes} additional full-class passes; "
-        "NFR-CALIB-03 says one"
+
+    calib.authorize(plan)
+    calib.run_dual_scoring(plan)
+
+    assert plan.authorized_at > plan.disclosed_at, (
+        "authorization is not recorded after disclosure, so nothing distinguishes a budgeted cost "
+        "from a reported one"
     )
-    assert plan.estimated_calls == plan.class_size * plan.criteria_count, (
-        "the disclosed call count is not one full-class pass, so the figure the operator "
-        "authorizes is not the cost they will pay"
+    assert provider.calls == plan.estimated_calls, (
+        f"the operator authorized {plan.estimated_calls} calls and {provider.calls} were made — "
+        "the disclosed figure is not the cost they paid"
+    )
+    assert provider.calls == plan.class_size * plan.criteria_count, (
+        f"{provider.calls} calls is not one additional full-class pass over "
+        f"{plan.class_size} submissions x {plan.criteria_count} criteria (NFR-CALIB-03)"
     )

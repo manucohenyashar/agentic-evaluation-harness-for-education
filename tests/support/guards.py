@@ -341,3 +341,93 @@ def open_audit() -> Iterator[list[ReadAttempt]]:
         pathlib.Path.read_text = real_read_text    # type: ignore[method-assign]
         pathlib.Path.read_bytes = real_read_bytes  # type: ignore[method-assign]
         sqlite3.connect = real_connect             # type: ignore[assignment]
+
+
+@contextmanager
+def recording_write_audit() -> Iterator[list[WriteAttempt]]:
+    """Record every write a block makes, without blocking any of them. Yields the log.
+
+    The sibling `write_audit()` **raises** on the first write, which makes it the wrong tool for a
+    case that must distinguish a *permitted* write from a forbidden one. `TC-CALIB-C06` is exactly
+    that case: every rubric edit must reach Tier P **through `M-PKG`**, so the catalog's own write
+    is required and any other write is the violation. Under the blocking guard the two are
+    indistinguishable — the first write raises, whichever it was, and the assertion that the
+    catalog *did* write becomes unreachable.
+
+    §6.11.17's Oracle for that case is a "**Write-audit log**", which is this shape rather than a
+    guard. Review found the blocking version making C06's two assertions jointly unsatisfiable
+    against a real on-disk catalog, and its carefully worded failure message unreachable.
+
+    Same APIs as `write_audit`, same narrowness — reads are untouched, only write-capable modes and
+    the mutating `Path`/`os`/`sqlite3` calls are seen.
+    """
+    attempts: list[WriteAttempt] = []
+
+    real_open = builtins.open
+    real_path_open = pathlib.Path.open
+    real_write_text = pathlib.Path.write_text
+    real_write_bytes = pathlib.Path.write_bytes
+    real_mkdir = pathlib.Path.mkdir
+    real_unlink = pathlib.Path.unlink
+    real_remove = os.remove
+    real_rename = os.rename
+    real_connect = sqlite3.connect
+
+    def _record(api: str, target: Any) -> None:
+        attempts.append(WriteAttempt(api=api, target=target))
+
+    def _is_write_mode(mode: Any) -> bool:
+        return isinstance(mode, str) and bool(_WRITE_MODES & set(mode))
+
+    def _open(file, mode="r", *args, **kwargs):  # noqa: ANN001
+        if _is_write_mode(mode):
+            _record("open", file)
+        return real_open(file, mode, *args, **kwargs)
+
+    def _path_open(self, mode="r", *args, **kwargs):  # noqa: ANN001
+        if _is_write_mode(mode):
+            _record("Path.open", self)
+        return real_path_open(self, mode, *args, **kwargs)
+
+    def _write_text(self, *a, **k):  # noqa: ANN001
+        _record("Path.write_text", self)
+        return real_write_text(self, *a, **k)
+
+    def _write_bytes(self, *a, **k):  # noqa: ANN001
+        _record("Path.write_bytes", self)
+        return real_write_bytes(self, *a, **k)
+
+    def _mkdir(self, *a, **k):  # noqa: ANN001
+        _record("Path.mkdir", self)
+        return real_mkdir(self, *a, **k)
+
+    def _unlink(self, *a, **k):  # noqa: ANN001
+        _record("Path.unlink", self)
+        return real_unlink(self, *a, **k)
+
+    def _connect(*a, **k):  # noqa: ANN001
+        _record("sqlite3.connect", a[0] if a else None)
+        return real_connect(*a, **k)
+
+    builtins.open = _open                                        # type: ignore[assignment]
+    pathlib.Path.open = _path_open                               # type: ignore[method-assign]
+    pathlib.Path.write_text = _write_text                        # type: ignore[method-assign]
+    pathlib.Path.write_bytes = _write_bytes                      # type: ignore[method-assign]
+    pathlib.Path.mkdir = _mkdir                                  # type: ignore[method-assign]
+    pathlib.Path.unlink = _unlink                                # type: ignore[method-assign]
+    os.remove = lambda path, *a, **k: (_record("os.remove", path), real_remove(path, *a, **k))[1]
+    os.rename = lambda s, d, *a, **k: (_record("os.rename", (s, d)), real_rename(s, d, *a, **k))[1]
+    sqlite3.connect = _connect                                   # type: ignore[assignment]
+
+    try:
+        yield attempts
+    finally:
+        builtins.open = real_open                                # type: ignore[assignment]
+        pathlib.Path.open = real_path_open                       # type: ignore[method-assign]
+        pathlib.Path.write_text = real_write_text                # type: ignore[method-assign]
+        pathlib.Path.write_bytes = real_write_bytes              # type: ignore[method-assign]
+        pathlib.Path.mkdir = real_mkdir                          # type: ignore[method-assign]
+        pathlib.Path.unlink = real_unlink                        # type: ignore[method-assign]
+        os.remove = real_remove                                  # type: ignore[assignment]
+        os.rename = real_rename                                  # type: ignore[assignment]
+        sqlite3.connect = real_connect                           # type: ignore[assignment]
