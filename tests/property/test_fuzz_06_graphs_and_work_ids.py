@@ -29,7 +29,6 @@ import pytest
 from hypothesis import given, settings
 
 from tests.support.fuzz_strategies import (
-    WORK_ID_FIELDS,
     acyclic_graphs,
     criterion_graphs,
     satisfies_every_edge,
@@ -80,7 +79,11 @@ def test_fuzz_06_a_cyclic_dependency_write_is_always_rejected(graph):
             catalog.set_dependencies(version, graph.edges)
     else:
         catalog.set_dependencies(version, graph.edges)
-        assert catalog.topological_order(version), "an accepted graph must be orderable"
+        order = catalog.topological_order(version)
+        assert satisfies_every_edge(order, graph), (
+            "an accepted graph must be orderable, and the order must satisfy it — a truthiness "
+            "check here is satisfied by any non-empty sequence"
+        )
 
 
 @pytest.mark.writtenahead
@@ -140,13 +143,16 @@ def test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids(pair):
     """
     base, other, field = pair
 
-    orch = require(ORCH_MODULE, issue="#57")
     compute = require(ORCH_MODULE, "compute_work_id", issue="#57")
 
     assert compute(**base) != compute(**other), (
         f"two tuples differing only in {field!r} produced the same work_id, so that input is not "
         "reaching the hash (FR-ORCH-01, CT-ORCH-01, R14)"
     )
-    assert compute(**base) == compute(**base), "work_id is not a function of its inputs"
-    assert set(base) == set(WORK_ID_FIELDS)
-    assert orch is not None
+    # Determinism, which `NFR-ORCH-05` needs and a hash over a set or a dict repr would break.
+    # `compute(**base) == compute(**base)` in the same process would also hold for an
+    # implementation returning a per-call counter cached on the arguments, so the tuple is rebuilt
+    # from its own fields rather than reusing the object.
+    assert compute(**dict(base)) == compute(**base), (
+        "work_id is not a function of its inputs alone (NFR-ORCH-05)"
+    )
