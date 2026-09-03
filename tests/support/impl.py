@@ -127,8 +127,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # landed would report a P1 case as covered while the test still wrote the row itself and
     # compared a value to itself.
     "#57": (
-        "module",
-        ORCH_MODULE,
+        # `symbol`, not `module`. `find_spec("aeh.orch")` resolves against an **empty file**, so a
+        # module key fires on the first `M-ORCH` commit -- while `record_run_start` is still
+        # absent and the test still cannot run. Whoever acted on that would unmark a P1 case and
+        # get a failure nobody expects, which is how a gate stops being believed.
+        #
+        # `record_run_start` is the symbol the test actually calls, and its own docstring marks it
+        # "**invented here** -- the orchestrator's write of the audit record". It appears in no
+        # Interfaces block in either design document, so unlike a Protocol member it cannot exist
+        # before an implementation does. (Checked: zero occurrences in detailed-design.md and
+        # test-plan.md.)
+        #
+        # The case needs `M-STORE` too -- it calls `open_store` -- and keying on #57 alone is
+        # still right: #57 depends on #11, which depends on #10, so `M-ORCH` landing means the
+        # store already has.
+        "symbol",
+        f"{ORCH_MODULE}:record_run_start",
         ("tests/integration/conf/test_audit_record.py",),
     ),
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
