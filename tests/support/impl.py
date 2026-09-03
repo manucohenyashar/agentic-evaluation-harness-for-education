@@ -80,16 +80,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # last one: `FUZZ-06`'s halves target M-PKG and M-ORCH, `FUZZ-07`'s target the blob store and
     # the write queue, and the four land at four different moments.
     #
-    # **A known weakness in three of them, recorded rather than hidden.** `symbol` checks that a
-    # name exists. Design §3.3 declares `Store`, `TierHandle` and `BlobStore` in one Interfaces
-    # block that #10 creates, and §3.6 declares `PackageCatalog` for #26 -- so a key on the class
-    # resolves before any implementation works. These name the most specific member each story must
-    # supply, which narrows the window without closing it. Firing early is the safer error (the
-    # alternative is a P0 case parked outside the gate forever) but it is still an error: the three
-    # kinds cannot express "an implementation exists" for a Protocol-first module.
+    # **Keyed on symbols no Interfaces block declares.** `symbol` checks that a name exists, and
+    # design §3.3 declares `Store`, `TierHandle` and `BlobStore` in one block that #10 creates
+    # (§3.6 does the same for `PackageCatalog` at #26) -- so a key on any of those classes, *or on
+    # any of their members*, resolves against a Protocol-only module with no implementation behind
+    # it. An earlier draft keyed on `BlobStore.put` and `TierHandle.transaction` believing that
+    # narrowed the window; review measured all four candidates firing at once and the narrowing was
+    # zero.
+    #
+    # `in_memory_catalog`, `open_store` and `compute_work_id` are the constructors these tests
+    # actually call and appear in no Interfaces block, so none can exist before an implementation
+    # does. That closes the window without needing a fourth registry kind.
     "#28": (
         "symbol",
-        f"{PKG_MODULE}:PackageCatalog.topological_order",
+        f"{PKG_MODULE}:in_memory_catalog",
         ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
          "::test_fuzz_06_a_cyclic_dependency_write_is_always_rejected",
          "tests/property/test_fuzz_06_graphs_and_work_ids.py"
@@ -97,13 +101,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     "#12": (
         "symbol",
-        f"{STORE_MODULE}:BlobStore.put",
+        f"{STORE_MODULE}:open_store",
         ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
          "::test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory",),
     ),
     "#11": (
         "symbol",
-        f"{STORE_MODULE}:TierHandle.transaction",
+        f"{STORE_MODULE}:open_store",
         ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
          "::test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent",),
     ),
@@ -163,9 +167,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "#57": (
         "module",
         ORCH_MODULE,
-        ("tests/integration/conf/test_audit_record.py",
-         "tests/property/test_fuzz_06_graphs_and_work_ids.py"
-         "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids"),
+        ("tests/integration/conf/test_audit_record.py",),
+    ),
+    # The same issue, a different target. `TC-CONF-17` above needs the whole orchestrator, so a
+    # module key is right for it; `FUZZ-06`'s work-ID half needs one function, and `aeh.orch` as an
+    # empty file would fire the module key while `compute_work_id` was still absent. The dict key
+    # carries the symbol so the two entries can coexist and the gate message names which is which.
+    "#57 compute_work_id": (
+        "symbol",
+        f"{ORCH_MODULE}:compute_work_id",
+        ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
+         "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids",),
     ),
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
     # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
