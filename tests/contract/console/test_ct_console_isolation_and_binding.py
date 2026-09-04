@@ -49,6 +49,7 @@ from tests.support.console_security_vocabulary import (
     browser_storage_writes,
     external_origins,
     post_lock_write_fields,
+    prompt_visible_writes,
 )
 from tests.support.impl import CONSOLE_MODULE, require
 from tests.support.store_spy import StoreSpy
@@ -96,10 +97,17 @@ def test_tc_console_c04_no_field_the_console_writes_after_the_lock_is_read_by_a_
         f"That write is the anchor: a real post-lock write that touches a criterion and is still "
         f"correctly disjoint from everything a prompt reads."
     )
-    assert not (written & SCORING_PROMPT_FIELDS), (
-        f"the console writes {sorted(written & SCORING_PROMPT_FIELDS)} after the lock, and a "
-        f"scoring prompt reads them. That is R15's contamination channel reopened at the UI — a "
-        f"field a later judgment picks up, which is what §9.1's one-way rule forbids."
+    # **Translated before it is intersected.** §11.8's Effect column names store fields
+    # (`criterion_band.descriptor`) and §9.9 names JSON paths (`criterion.bands.descriptor`), so a
+    # raw set intersection across the two is a string coincidence rather than a comparison — it
+    # would report nothing however contaminated the write surface was, except under `criterion.*`
+    # where the two spellings happen to agree. Review measured that.
+    visible = prompt_visible_writes(written)
+    assert not visible, (
+        f"the console writes these after the §6.2 lock and a scoring prompt reads them: "
+        f"{sorted(f'{store} (read as {leaf})' for store, leaf in visible.items())}. That is R15's "
+        f"contamination channel reopened at the UI — a field a later judgment picks up, which is "
+        f"what §9.1's one-way rule forbids."
     )
 
 
@@ -122,12 +130,19 @@ def test_tc_console_c04_no_per_student_annotation_surface_exists_on_any_route():
     annotation_names = ("note", "notes", "comment", "annotation", "remark", "flag_text")
 
     offenders: list[str] = []
+    routes_rendered = 0
     for screen, route in app.screens().items():
         html = app.render(route).html.lower()
+        routes_rendered += 1 if html.strip() else 0
         for name in annotation_names:
             if f'name="{name}' in html or f"name='{name}" in html:
                 offenders.append(f"{screen} ({route}) carries a {name!r} field")
 
+    assert routes_rendered >= 5, (
+        f"only {routes_rendered} route(s) rendered any markup at all, so this sweep examined "
+        f"almost nothing. Every screen in §11.5 is a route, and a sweep over blank pages reports "
+        f"no offenders whatever the console does."
+    )
     assert not offenders, (
         f"{offenders}. A free-text field attached to a student is the annotation surface §11.1 "
         f"names, and its danger is that nothing about the resulting grades looks wrong."
@@ -157,12 +172,12 @@ def test_tc_console_c04_a_resumed_unit_reads_no_console_written_field():
     app.perform("review action", submission_ref="sub-0142", new_band="derives_only")
 
     request = app.assembled_request_for(submission_ref="sub-0142", criterion_id="c4", resumed=True)
-    flattened = _leaves(request)
+    undeclared = _undeclared_paths(request)
 
-    assert set(flattened) <= SCORING_PROMPT_FIELDS, (
-        f"a resumed unit's request carries {sorted(set(flattened) - SCORING_PROMPT_FIELDS)}, which "
-        f"§9.9's whitelist does not declare. CT-JUDGE-02: an undeclared field fails validation and "
-        f"is not dispatched — so a request that carries one has already routed around the schema."
+    assert not undeclared, (
+        f"a resumed unit's request carries {sorted(undeclared)}, which §9.9's whitelist does not "
+        f"declare. CT-JUDGE-02: an undeclared field fails validation and is not dispatched — so a "
+        f"request that carries one has already routed around the schema."
     )
     assert "derives_only" not in str(request), (
         "the band a teacher selected in the console appears in a resumed unit's scoring request. "
@@ -171,17 +186,51 @@ def test_tc_console_c04_a_resumed_unit_reads_no_console_written_field():
     )
 
 
-def _leaves(payload: object, path: str = "") -> list[str]:
+#: Every container on the way to a declared field. `criterion.bands.descriptor` contributes
+#: `criterion` and `criterion.bands`, both of which a correct request carries and neither of which
+#: `SCORING_PROMPT_FIELDS` lists — because §9.9 declares a container by declaring its contents.
+_DECLARED_PREFIXES: frozenset[str] = frozenset(
+    ".".join(field.split(".")[: depth + 1])
+    for field in SCORING_PROMPT_FIELDS
+    for depth in range(len(field.split(".")))
+)
+
+
+def _undeclared_paths(payload: object, path: str = "") -> set[str]:
+    """Paths in `payload` that §9.9's whitelist does not declare.
+
+    **The walk stops at a declared path.** `SCORING_PROMPT_FIELDS` declares `evidence.spans` and
+    `dependency_evidence` as leaves, but §9.9 gives both an internal structure —
+    `"spans": [{"start":…, "end":…, "text":…}]`. Recursing past the declared path reports
+    `evidence.spans.start` and six of its siblings as undeclared, so a **correct** request produces
+    seven violations. Review measured exactly that against §9.9's own example.
+
+    So a declared path terminates the descent: what is below it is that field's declared shape, and
+    the question the clause asks is whether a field the schema does not name has appeared.
+
+    The **prefixes** of a declared path are acceptable too, for the same reason from the other end:
+    `criterion`, `criterion.bands`, `question` and `evidence` are containers §9.9 declares by
+    declaring what is inside them, and reporting them is reporting the schema's own shape.
+    """
+    if path in SCORING_PROMPT_FIELDS:
+        return set()
     if isinstance(payload, dict):
-        found: list[str] = []
+        found: set[str] = set()
         for key, value in payload.items():
             here = f"{path}.{key}" if path else str(key)
-            nested = _leaves(value, here)
-            found.extend(nested or [here])
+            if here in SCORING_PROMPT_FIELDS:
+                continue
+            if here not in _DECLARED_PREFIXES:
+                found.add(here)
+                continue
+            found |= _undeclared_paths(value, here)
         return found
     if isinstance(payload, (list, tuple)):
-        return [name for item in payload for name in _leaves(item, path)]
-    return []
+        found = set()
+        for item in payload:
+            found |= _undeclared_paths(item, path)
+        return found
+    return set()
 
 
 # --- CT-CONSOLE-05 — loopback, and a refusal that cannot be argued with --------------------------
@@ -312,10 +361,20 @@ def test_tc_console_c06_every_page_loads_from_its_own_origin_and_nothing_else(ne
 
     app = build_console(store=StoreSpy())
     offenders: list[str] = []
+    assets_seen = 0
     for screen, route in app.screens().items():
-        for origin in external_origins(app.render(route).html):
+        html = app.render(route).html
+        # The anchor: a page that references **nothing** passes any origin rule ever written, so
+        # the sweep has to see real asset references before its silence means anything. HLD §11.7
+        # requires one stylesheet, so every page has at least that.
+        assets_seen += html.count("<link") + html.count("<script") + html.count("<img")
+        for origin in external_origins(html):
             offenders.append(f"{screen} ({route}) references {origin}")
 
+    assert assets_seen, (
+        "no route referenced a stylesheet, a script or an image, so this sweep passed over pages "
+        "with nothing to load. HLD §11.7 vendors assets locally — it does not omit them."
+    )
     assert not offenders, (
         f"{offenders}. Invariant 13 admits no exception — not a font, not a favicon, not an "
         f"analytics pixel. Assets are vendored locally (HLD §11.7)."

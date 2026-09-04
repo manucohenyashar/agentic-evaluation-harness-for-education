@@ -24,6 +24,8 @@ outside the gate waiting on a story none of them needs.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from tests.support import broken_console_security_fixtures as fixtures
@@ -34,6 +36,7 @@ from tests.support.console_security_vocabulary import (
     QUARANTINE_STATES,
     agreement_block_problems,
     grade_views_missing_provenance,
+    queries_admitting_kinds,
     queries_reaching,
 )
 from tests.support.console_vocabulary import elements, visible_text
@@ -137,30 +140,45 @@ def test_tc_console_c11b_with_no_blind_labels_the_block_says_so_and_carries_no_p
     was collected has said something false: zero is chance agreement, a real point on the scale,
     and §2.1's error is *"a blank that reads as fine"*.
 
+    **Scoped to the agreement element, not to the page**, and that scope is the clause's own
+    wording: `FR-CONSOLE-24` forbids the prior figure *"in that position"*. HLD §11.5's S12 requires
+    the opposite of a page-wide ban — the screen says the absence message *"and shows the package's
+    prior record **separately**, labelled with the cohort, population and backend it came from"*.
+    A console doing exactly that fails a page-wide assertion, which is what review measured.
+
     Keyed on **#125**: `FR-CONSOLE-24` is invariant 20 and lands with that story.
     """
     build_console = require(CONSOLE_MODULE, "build_console", issue="#125")
 
     app = build_console(store=StoreSpy(), blind_labels_collected=0)
-    block = visible_text(app.render("/runs/{id}/rollup", id="r-1").html)
-    lowered = block.lower()
+    html = app.render("/runs/{id}/rollup", id="r-1").html
+    blocks = elements(html, "agreement")
 
-    assert NO_NEW_VALIDATION_EVIDENCE in lowered, (
-        f"with no blind labels collected the agreement block reads {block!r}. FR-CONSOLE-24 "
-        f"requires this exact sentence, because 'no data' is the paraphrase a reader takes to mean "
-        f"'not shown on this page'."
+    assert blocks, (
+        "the rollup renders no agreement block at all, so 'the block says so' asserted nothing. "
+        "FR-CONSOLE-24 is about what stands in that position, and an omitted block is the "
+        "'silently absent' failure CT-CONSOLE-17 forbids elsewhere."
     )
-    assert "0.00" not in block and "0.0" not in block, (
-        f"a zero figure is rendered in the position reserved for the absence message: {block!r}. "
-        f"Zero is chance agreement, not absence — §2.1's error is the blank that reads as fine."
-    )
-    for statistic in ("kappa", "alpha", "κ", "α"):
-        assert statistic not in lowered, (
-            f"a {statistic!r} figure appears where FR-CONSOLE-24 requires the absence message. "
-            f"That is the prior administration's number in this administration's position, which "
-            f"is RISK-08 — and it looks better than the honest rendering, which is why it is a "
-            f"risk rather than a bug."
+    for block in blocks:
+        text = visible_text(block)
+        lowered = text.lower()
+        assert NO_NEW_VALIDATION_EVIDENCE in lowered, (
+            f"with no blind labels collected the agreement block reads {text!r}. FR-CONSOLE-24 "
+            f"requires this exact sentence, because 'no data' is the paraphrase a reader takes to "
+            f"mean 'not shown on this page'."
         )
+        assert not re.search(r"\d+\.\d+", text), (
+            f"a figure is rendered in the position reserved for the absence message: {text!r}. "
+            f"0.00 is a failure too — zero is chance agreement, a real point on the scale, and "
+            f"§2.1's error is the blank that reads as fine."
+        )
+        for statistic in ("kappa", "alpha", "κ", "α"):
+            assert statistic not in lowered, (
+                f"a {statistic!r} figure appears where FR-CONSOLE-24 requires the absence message. "
+                f"That is the prior administration's number in this administration's position, "
+                f"which is RISK-08 — and it looks better than the honest rendering, which is why "
+                f"it is a risk rather than a bug."
+            )
 
 
 @pytest.mark.writtenahead
@@ -220,9 +238,24 @@ def test_tc_console_c12_quarantine_and_the_review_queue_have_separate_routes_and
         f"navigation, because in a small school the same person does both jobs and the alternative "
         f"is 'a 790-item list with three rescans buried in it'."
     )
-    assert review.queue.flagged_total != quarantine.queue.flagged_total or not review.queue.shown, (
-        f"both queues report {review.queue.flagged_total}, which is the shared badge count §11.3 "
-        f"forbids by name — alongside a shared queue and a shared notification"
+    # **A differential, not an inequality.** Two independent queues can hold the same number of
+    # items by coincidence, and a genuinely shared badge count reads as "separate" whenever one of
+    # them is empty — so numeric inequality fails a compliant console and passes a broken one, in
+    # that order. What §11.3 forbids is that they *move together*: resolving a quarantine item must
+    # not change the teacher's count, because a rescan must not consume a teacher-minute.
+    review_before, quarantine_before = review.queue.flagged_total, quarantine.queue.flagged_total
+    assert quarantine_before, "the quarantine queue is empty, so moving an item asserts nothing"
+
+    app.perform("resolve quarantine item", cohort_id="c-1")
+    assert app.quarantine(cohort_id="c-1").queue.flagged_total < quarantine_before, (
+        "resolving a quarantine item did not reduce the operator count, so the differential below "
+        "would pass against two counts that are both frozen"
+    )
+    assert app.review_queue(run_id="r-1").queue.flagged_total == review_before, (
+        f"resolving a quarantine item moved the teacher's count from {review_before} to "
+        f"{app.review_queue(run_id='r-1').queue.flagged_total}. §11.3: they must not share a "
+        f"queue, a badge count, or a notification — and §7.7's reason is that letting rescans "
+        f"consume the teacher-minute budget defeats the budgeting R9 and R12 rest on."
     )
     assert not (set(review.queue.shown) & set(quarantine.queue.shown)), (
         f"{sorted(set(review.queue.shown) & set(quarantine.queue.shown))} appear in both queues"
@@ -281,9 +314,13 @@ def test_tc_console_c12_no_deterministic_blind_or_random_arm_item_is_rendered_in
     ]
     assert not offenders, f"{offenders}"
 
-    reaches = queries_reaching(queue.queries, FORBIDDEN_QUEUE_ITEM_KINDS)
-    assert not reaches, (
-        f"{reaches}. Rendering is filtered; reachability is structural, and CT-DET-04 says a "
+    # `queries_admitting_kinds`, not `queries_reaching`: the generous row-state rule condemns
+    # `reserved_for_blind_minutes`, which is `CT-REVIEW-02`'s named field and which the
+    # blind-reservation test below *requires* the queue to read. Review measured one test in this
+    # file condemning a query the next one demanded.
+    admits = queries_admitting_kinds(queue.queries, FORBIDDEN_QUEUE_ITEM_KINDS)
+    assert not admits, (
+        f"{admits}. Rendering is filtered; reachability is structural, and CT-DET-04 says a "
         f"deterministic criterion is never admitted 'on any path'."
     )
 
@@ -330,7 +367,38 @@ def test_tc_console_c12_the_blind_reservation_is_subtracted_before_ranking_not_a
     assert list(view.ranked) == list(queue.shown), (
         "the rendered order is not the ranked order, so the subtraction happened between them"
     )
+
+    # **The order is taken from the queries, not from the console's own account of itself.**
+    # `view.ranked` and `queue.shown` both come from the code under test, so a rank-then-subtract
+    # implementation that reports its post-subtraction list as `ranked` passes every assertion
+    # above unchanged — the same self-report defect review found in TS-77's duration measurements.
+    # §6.11.19 asks for an *event-order* assertion, and the query log is the one record of order
+    # the console does not get to narrate.
+    reads_reservation = _first_matching(view.queries, "reserved_for_blind")
+    ranks = _first_matching(view.queries, "order by")
+    assert reads_reservation is not None and ranks is not None, (
+        f"the queue issued {list(view.queries)!r}: without both a reservation read and a ranking "
+        f"query there is no event order to assert, and 'before' means nothing"
+    )
+    assert reads_reservation < ranks, (
+        f"the reservation was read at query {reads_reservation} and the ranking ran at "
+        f"{ranks} — so the subtraction happened after ranking. CT-REVIEW-02: 'reserving after "
+        f"ranking would let a full queue crowd out the validation sample, which is the whole "
+        f"measurement.'"
+    )
     assert fixtures.SENTINEL_STUDENT_NAME not in str(queue.queries), (
         "a queue query carries a student name; ranking is a pure function of stored signals "
         "(NFR-REVIEW-02)"
     )
+
+
+def _first_matching(queries, needle: str) -> int | None:
+    """The index of the first query containing `needle`, or `None`.
+
+    Kept local: it reads the query log's ordering, which is this suite's oracle rather than part of
+    the invented `M-CONSOLE` surface.
+    """
+    for index, query in enumerate(queries):
+        if needle in str(query).lower():
+            return index
+    return None

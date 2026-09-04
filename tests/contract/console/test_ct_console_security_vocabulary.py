@@ -31,6 +31,8 @@ import pytest
 from tests.support import broken_console_security_fixtures as fixtures
 from tests.support.console_security_vocabulary import (
     AGREEMENT_LEVELS,
+    FORBIDDEN_QUEUE_ITEM_KINDS,
+    STORE_TO_PROMPT_FIELD,
     BLOCKING_SCREENS,
     CHANCE_CORRECTED_STATISTICS,
     CLOUD_HOSTED_PROFILE,
@@ -57,10 +59,17 @@ from tests.support.console_security_vocabulary import (
     numeric_score_entry_fields,
     per_student_progress_figures,
     post_lock_write_fields,
+    prompt_visible_writes,
+    queries_admitting_kinds,
     queries_reaching,
     replayed_writes_are_idempotent,
 )
-from tests.support.console_vocabulary import CONTROL_SURFACE_ACTIONS, ROUTABLE_BIND
+from tests.support.console_vocabulary import (
+    CONTROL_SURFACE_ACTIONS,
+    ROUTABLE_BIND,
+    elements,
+    visible_text,
+)
 from tests.support.doc_tables import read_repo_text
 
 pytestmark = pytest.mark.contract
@@ -186,6 +195,110 @@ def test_the_post_lock_write_set_is_non_empty_and_disjoint_from_the_prompt():
     )
 
 
+def test_the_intersection_is_computed_across_namespaces_and_catches_a_contaminated_write():
+    """The control `CT-CONSOLE-04` did not have, and the suite's highest-stakes set operation.
+
+    Two directions, and the first is the one review found missing. §11.8's Effect column names
+    **store** fields (`criterion_band.descriptor`) and §9.9 names **JSON paths**
+    (`criterion.bands.descriptor`). A raw intersection across those two namespaces reports nothing
+    however contaminated the write surface is — except under `criterion.*`, where the spellings
+    coincide by accident. So the entire clause rested on one field, and renaming either side would
+    have turned the case green while announcing the clause could be read literally.
+
+    `STORE_TO_PROMPT_FIELD` is the declared correspondence, and this asserts it both ways: the real
+    post-lock surface translates to nothing a prompt reads, and a post-lock action that wrote a
+    rubric band **is** caught — under its store name, which is not the name §9.9 uses.
+    """
+    assert prompt_visible_writes(post_lock_write_fields()) == {}, (
+        f"the real post-lock write surface reaches the prompt: "
+        f"{prompt_visible_writes(post_lock_write_fields())}"
+    )
+
+    # The contamination that a same-namespace intersection cannot see: a rubric-band edit moved
+    # from the read-back (pre-lock, permitted) to a post-lock action. The store field is
+    # `criterion_band.descriptor`; the prompt reads it as `criterion.bands.descriptor`.
+    contaminated = dict(CONSOLE_WRITE_FIELDS)
+    contaminated["amend a finalized grade"] = (
+        *CONSOLE_WRITE_FIELDS["amend a finalized grade"],
+        "criterion_band.descriptor",
+    )
+    caught = prompt_visible_writes(post_lock_write_fields(contaminated))
+    assert caught == {"criterion_band.descriptor": "criterion.bands.descriptor"}, (
+        f"a post-lock write of criterion_band.descriptor was not reported as prompt-visible: "
+        f"{caught}. The two names differ, which is exactly why the correspondence is declared — "
+        f"a set intersection would have called this clean."
+    )
+
+    # And the map itself must stay anchored to §9.9, or it becomes a way to declare a
+    # contaminating field invisible by mapping it nowhere.
+    assert set(STORE_TO_PROMPT_FIELD.values()) <= SCORING_PROMPT_FIELDS, (
+        f"the correspondence maps to leaves §9.9 does not declare: "
+        f"{sorted(set(STORE_TO_PROMPT_FIELD.values()) - SCORING_PROMPT_FIELDS)}"
+    )
+
+
+def test_query_rules_separate_a_row_state_from_an_item_kind():
+    """The two query rules are not interchangeable, and one test in TS-76 proved it.
+
+    `queries_reaching` is deliberately generous: a quarantine **row state** named anywhere in a
+    query is evidence the queue joined to rows carrying it. Applied to an item **kind** that
+    generosity is a false positive, because the words are ordinary column vocabulary — review
+    measured it condemning `reserved_for_blind_minutes`, which is `CT-REVIEW-02`'s named field and
+    which `TC-CONSOLE-C12`'s own ordering test *requires* the queue to read. One test in the file
+    condemned a query the next one demanded.
+    """
+    # The reservation read is named rather than merely iterated: it is the one query
+    # `TC-CONSOLE-C12`'s ordering test *requires* the queue to issue, so its presence here is
+    # what stops the two tests contradicting each other. Losing it from the tuple leaves the
+    # loop passing over whatever remains.
+    assert any(
+        "reserved_for_blind_minutes" in query
+        for query in fixtures.QUERIES_THAT_NAME_A_KIND_LEGITIMATELY
+    ), (
+        "the legitimate-kind fixtures no longer include the reserved_for_blind_minutes read. "
+        "That is CT-REVIEW-02's named field and the query the blind-reservation test demands "
+        "— without it, nothing stops this rule condemning it again."
+    )
+    for query in fixtures.QUERIES_THAT_NAME_A_KIND_LEGITIMATELY:
+        assert queries_admitting_kinds([query], FORBIDDEN_QUEUE_ITEM_KINDS) == [], (
+            f"{query!r} is reported as admitting a forbidden item kind. It names the kind inside a "
+            f"column about the run, not as a thing it selects."
+        )
+    for description, query in fixtures.QUERIES_ADMITTING_A_FORBIDDEN_KIND.items():
+        assert queries_admitting_kinds([query], FORBIDDEN_QUEUE_ITEM_KINDS), (
+            f"a query that is {description} passes, so FR-CONSOLE-12 and -19 are asserted against "
+            f"rendering alone — and rendering is filtered"
+        )
+
+
+def test_the_absence_message_may_stand_beside_a_labelled_prior_record():
+    """`FR-CONSOLE-24` forbids the prior figure *"in that position"* — not on the page.
+
+    HLD §11.5's S12 requires the opposite of a page-wide ban: the screen says the absence message
+    *"and shows the package's prior record **separately**, labelled with the cohort, population and
+    backend it came from"*. A console doing exactly that fails a whole-page assertion, which is
+    what review measured — so `TC-CONSOLE-C11b` scopes to the agreement element, and this is the
+    control that keeps it scoped.
+    """
+    html = fixtures.HONEST_ROLLUP_WITH_A_LABELLED_PRIOR_RECORD
+    blocks = elements(html, "agreement")
+
+    assert len(blocks) == 1, f"the honest rollup has {len(blocks)} agreement blocks"
+    block = visible_text(blocks[0]).lower()
+    assert NO_NEW_VALIDATION_EVIDENCE in block
+    assert "kappa" not in block, "the agreement block itself carries a figure"
+
+    # …while the page does. That is the whole point: a page-wide sweep condemns this rollup.
+    assert "kappa" in visible_text(html).lower(), (
+        "the honest-rollup fixture no longer carries a prior record outside the agreement block, "
+        "so it no longer demonstrates the difference between 'on the page' and 'in that position'"
+    )
+    assert grade_views_missing_provenance(html) == [], (
+        "the honest rollup omits provenance, so it is not a fixture a compliant console would "
+        "render and cannot serve as the passing direction"
+    )
+
+
 def test_the_literal_clause_is_unsatisfiable_and_the_hld_scopes_it(repo_root):
     """A **finding**, asserted rather than described — and it should be deleted when the clause is.
 
@@ -281,8 +394,13 @@ def test_the_progress_shape_is_ct_orch_10_s_and_carries_no_per_student_field(rep
         "CT-ORCH-10 no longer says ProgressReport carries no per-student field. That sentence is "
         "the reason CT-CONSOLE-09 can assert 'and nothing more' rather than only 'not rendered'."
     )
-    for dimension in PROGRESS_DIMENSIONS:
-        assert f"({', '.join(PROGRESS_DIMENSIONS)})".lower() in design or dimension in design
+    # Asserted as the **triple**, not as any one word: "stage" alone appears 29 times in the
+    # design, so a disjunction on the individual dimensions could not fail. The parenthesised
+    # triple is the design's own notation and appears four times.
+    assert f"({', '.join(PROGRESS_DIMENSIONS)})".lower() in design, (
+        f"the design no longer writes progress granularity as ({', '.join(PROGRESS_DIMENSIONS)}), "
+        f"which is the ceiling CT-CONSOLE-09 asserts the console does not exceed"
+    )
     assert PROGRESS_REPORT_FIELDS >= {"done", "in_flight", "pending", "quarantined"}
     assert not (PROGRESS_REPORT_FIELDS & set(PROGRESS_DIMENSIONS)), (
         "a dimension has leaked into the report's top-level fields; the dimensions are how counts "
@@ -474,6 +592,14 @@ def test_agreement_block_problems_passes_a_correct_block_and_names_each_failure(
     )
     for description, block in fixtures.BROKEN_AGREEMENT_BLOCKS.items():
         assert agreement_block_problems(block), f"an agreement block with {description} passes"
+
+    # **Greek, as HLD §11.5's S12 mock actually writes it.** Review measured the rule
+    # condemning the design's own copy, and the suite was inconsistent with itself: C11b
+    # already treats κ as a statistic spelling.
+    assert agreement_block_problems(fixtures.CORRECT_AGREEMENT_BLOCK_IN_GREEK) == [], (
+        f"the S12 mock's own wording is reported as broken: "
+        f"{agreement_block_problems(fixtures.CORRECT_AGREEMENT_BLOCK_IN_GREEK)}"
+    )
 
     assert any(stat in fixtures.CORRECT_AGREEMENT_BLOCK.lower() for stat in CHANCE_CORRECTED_STATISTICS)
     assert all(level in fixtures.CORRECT_AGREEMENT_BLOCK.lower() for level in AGREEMENT_LEVELS)

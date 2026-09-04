@@ -32,6 +32,13 @@ Additions to the invented surface
         .api_payload(route, **params)-> Mapping[str, Any]
         .review_queue(run_id=...)    -> QueueView
         .quarantine(cohort_id=...)   -> QueueView
+        .write_fields(action)        -> tuple[str, ...]   the store fields that action writes
+        .assembled_request_for(...)  -> the ScoringRequest a unit would be dispatched with
+        .close()                     -> release this view; the run is unaffected
+        .hold_after(stage, action=...) -> a context manager pausing an action mid-flight, so
+                                       CT-CONSOLE-03 induces its race deterministically rather
+                                       than racing it (4.6 treats an interleaving-dependent
+                                       result as a flake)
     ControlOutcome  -> .rows_written, .refused, .refresh_required, .dispatched
     ProgressReport  -> the `CT-ORCH-10` shape, rendered
     QueueView       -> .route, .queries, .ranked, and **`.queue`, which is `M-REVIEW`'s own
@@ -171,6 +178,51 @@ PRE_LOCK_ACTIONS: frozenset[str] = frozenset(
 )
 
 
+#: **The two sides of `CT-CONSOLE-04` are in different namespaces, and this is the bridge.**
+#:
+#: §11.8's Effect column names *store* fields — `criterion_band.descriptor`, `exemplar.provenance`
+#: — because the console writes rows. §9.9's `ScoringRequest` names *JSON paths* —
+#: `criterion.bands.descriptor`, `criterion.exemplars.text` — because a prompt reads an assembled
+#: document. The two spellings coincide only by accident, under `criterion.*`.
+#:
+#: A set intersection across two namespaces is not an intersection; it is a string coincidence.
+#: Review measured the consequence: `criterion_band.descriptor` never entered the comparison at
+#: all, so the whole "the literal clause is unsatisfiable" finding rested on the one field whose
+#: two spellings happen to match, and renaming either side would have turned the case green while
+#: announcing the clause could now be read literally.
+#:
+#: So the correspondence is declared. Every entry is a store field `M-JUDGE`'s `assemble` reads to
+#: build one `ScoringRequest` leaf, taken from §9.9's own block beside §11.8's Effect column.
+STORE_TO_PROMPT_FIELD: dict[str, str] = {
+    "criterion.text": "criterion.text",
+    "criterion.criterion_id": "criterion.criterion_id",
+    "criterion_band.band": "criterion.bands.band",
+    "criterion_band.descriptor": "criterion.bands.descriptor",
+    "exemplar.band": "criterion.exemplars.band",
+    "exemplar.text": "criterion.exemplars.text",
+    "question.prompt_text": "question.prompt_text",
+    "question.reference_solution": "question.reference_solution",
+    "submission.text": "submission_text",
+    "evidence.spans": "evidence.spans",
+}
+
+
+def prompt_visible_writes(fields: Iterable[str]) -> dict[str, str]:
+    """Which of `fields` a scoring prompt can actually read, and as what.
+
+    Returns the store field mapped to the `ScoringRequest` leaf it becomes, so a failure names
+    both spellings — *"`criterion_band.descriptor`, which the prompt reads as
+    `criterion.bands.descriptor`"* — rather than reporting a name the design document the reader
+    reaches for does not contain.
+    """
+    visible: dict[str, str] = {}
+    for field in fields:
+        leaf = STORE_TO_PROMPT_FIELD.get(field)
+        if leaf is not None and leaf in SCORING_PROMPT_FIELDS:
+            visible[field] = leaf
+    return visible
+
+
 def post_lock_write_fields(
     write_fields: dict[str, tuple[str, ...]] | None = None,
 ) -> frozenset[str]:
@@ -302,6 +354,12 @@ CHANCE_CORRECTED_STATISTICS: tuple[str, ...] = (
     "alpha",
     "gwet",
     "ac1",
+    # HLD §11.5's S12 mock renders the figure as "κ = 0.63, n = 15" and "atomic criteria κ = 0.71
+    # · holistic criteria κ = 0.48". A rule that only knows the spelled-out word condemns the
+    # design's own copy — and C11b two tests away already treats κ as a statistic spelling, so the
+    # suite was internally inconsistent about it. Review measured both.
+    "κ",
+    "α",
 )
 
 #: Uncorrected figures, which may not stand alone in an agreement block.
@@ -577,6 +635,13 @@ _NOT_A_SCORE_TERMS: tuple[str, ...] = (
     "band",
     "boundary",
     "paper",
+    # `grade_policy.rule` is in CONSOLE_WRITE_FIELDS above: §11.8's "accept or correct rubric
+    # read-back" writes it, so a form field named `grade_policy_rule` is required and carries
+    # "grade". `filter` is the other one review measured — "Filter by grade" is an aria-label on
+    # a rollup, not a score entry.
+    "policy",
+    "rule",
+    "filter",
 )
 
 _NUMERIC_PATTERN = re.compile(r"[\d\\]")
@@ -821,6 +886,33 @@ QUARANTINE_STATES: tuple[str, ...] = (
 #: interesting one: it *"spends compute, never teacher minutes"* (`FR-REVIEW-07`), so an
 #: implementation that ranks it in has silently rewritten the experiment.
 FORBIDDEN_QUEUE_ITEM_KINDS: tuple[str, ...] = ("deterministic", "blind", "random_arm", "quarantine")
+
+
+def queries_admitting_kinds(queries: Iterable[Any], kinds: Iterable[str]) -> list[str]:
+    """The queries that could admit an item of a forbidden **kind** (`FR-CONSOLE-12`, `-19`).
+
+    A separate rule from `queries_reaching`, and the separation is the finding. That one is
+    deliberately generous because a quarantine **row state** appearing anywhere in a query is
+    evidence the queue joined to rows carrying it. An item **kind** is a different thing: the words
+    are ordinary column vocabulary, and review measured the generous rule condemning
+    ``select budget_minutes, reserved_for_blind_minutes from review_budget`` — which is
+    `CT-REVIEW-02`'s named field, and which the blind-reservation test three functions away
+    *requires* the queue to read. One test in the file condemned a query the test below it
+    demanded.
+
+    So a kind counts when it names a **thing**, not when it appears inside another identifier: as a
+    quoted literal, as a whole word, or at the start of an identifier (`blind_sample`, the table).
+    ``reserved_for_blind_minutes`` and ``is_deterministic`` carry the kind mid-identifier and are
+    columns *about* the reservation rather than joins *to* it.
+    """
+    hits: list[str] = []
+    for query in queries:
+        text = str(query).lower()
+        for kind in kinds:
+            escaped = re.escape(kind.lower())
+            if re.search(rf"(?<![\w])({escaped}\b|{escaped}_)", text):
+                hits.append(f"{query!r} admits a {kind} item")
+    return hits
 
 
 def queries_reaching(queries: Iterable[Any], states: Iterable[str]) -> list[str]:

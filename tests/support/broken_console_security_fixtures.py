@@ -36,6 +36,10 @@ CORRECT_REVIEW_SCREEN_HTML = """
   <input type="number" id="cut" name="grade_boundary_cut" value="70">
   <label for="papers">Papers in this cohort</label>
   <input type="number" id="papers" name="total_papers" value="350">
+  <label for="policy">Grade policy rule</label>
+  <textarea id="policy" name="grade_policy_rule">weighted_mean</textarea>
+  <label for="q">Filter</label>
+  <input type="text" id="q" name="filter" aria-label="Filter by grade">
   <label for="band">Criterion 3</label>
   <select id="band" name="new_band">
     <option>absent_or_wrong</option><option>asserts_only</option>
@@ -68,6 +72,12 @@ REQUIRED_FIELDS_WHOSE_NAMES_CARRY_A_SCORE_WORD: tuple[str, ...] = (
     "grade_boundary_cut",
     "total_papers",
     "score",
+    # `grade_policy.rule` is in CONSOLE_WRITE_FIELDS: §11.8's "accept or correct rubric
+    # read-back" writes it, so the form field that does is required and carries "grade".
+    # `filter` is the other one review measured — "Filter by grade" is an aria-label on a
+    # rollup, not a way to type a mark.
+    "grade_policy_rule",
+    "filter",
 )
 
 #: The four shapes a numeric score box actually arrives in. Only the first is an
@@ -244,6 +254,15 @@ CORRECT_AGREEMENT_BLOCK = (
     "Holistic agreement: kappa 0.64 (n = 48), same population and backend."
 )
 
+#: The **same block as HLD §11.5's S12 mock renders it** — *"κ = 0.63, n = 15"*, *"atomic
+#: criteria κ = 0.71 · holistic criteria κ = 0.48"*. A rule that only knows the spelled-out
+#: word condemns the design's own copy, which is what review measured; C11b two tests away
+#: already treated κ as a statistic spelling, so the suite disagreed with itself about it.
+CORRECT_AGREEMENT_BLOCK_IN_GREEK = (
+    "Atomic criteria κ = 0.71 (n = 48), population Grade 11 physics, backend edge-local. "
+    "Holistic criteria κ = 0.48 (n = 48), same population and backend."
+)
+
 #: One failure each, so a test names which of the four requirements broke.
 BROKEN_AGREEMENT_BLOCKS: dict[str, str] = {
     "uncorrected": (
@@ -300,6 +319,34 @@ CORRECT_QUEUE_QUERIES: tuple[str, ...] = (
 #: The two shapes the leak takes, and the second is the one that reads as *correct* in review — a
 #: filter is visible, deliberate and one refactor from being dropped. §6.11.19 asks for
 #: reachability over the queries for exactly that reason.
+#: Queries a correct queue issues that **name a forbidden kind** and are still legitimate. Review
+#: measured the first one being condemned by the generous row-state rule, while the
+#: blind-reservation test three functions away requires the queue to read exactly that column.
+#: `CT-REVIEW-02` names it: `reserved_for_blind_minutes` is the field that *"states the
+#: subtraction"*.
+QUERIES_THAT_NAME_A_KIND_LEGITIMATELY: tuple[str, ...] = (
+    "select budget_minutes, reserved_for_blind_minutes from review_budget where run_id = :run_id",
+    "select criterion_id from criterion where is_deterministic = 0",
+)
+
+#: …and the four shapes that really do admit one. The last is the quiet one: the random arm
+#: *"spends compute, never teacher minutes"* (`FR-REVIEW-07`), so ranking it into the queue
+#: rewrites the experiment that measures whether the ranking works at all.
+QUERIES_ADMITTING_A_FORBIDDEN_KIND: dict[str, str] = {
+    "an equality on the kind column": (
+        "select * from review_queue where kind = 'blind' and run_id = :run_id"
+    ),
+    "a join to the blind-sample table": (
+        "select r.item_id from review_queue r join blind_sample b on b.item_id = r.item_id"
+    ),
+    "an IN list carrying two of them": (
+        "select * from review_queue where item_kind in ('deterministic', 'blind')"
+    ),
+    "a select straight from the random arm": (
+        "select unit_id from random_arm_units where run_id = :run_id"
+    ),
+}
+
 LEAKY_QUEUE_QUERIES: dict[str, str] = {
     "joins straight to quarantined rows": (
         "select s.submission_ref, s.ingest_status from submission s "
@@ -309,3 +356,26 @@ LEAKY_QUEUE_QUERIES: dict[str, str] = {
         "select * from submission where ingest_status != 'quarantined' and run_id = :run_id"
     ),
 }
+
+
+#: A rollup that does **both** things `FR-CONSOLE-24` and HLD §11.5 require: the agreement block
+#: renders the absence message, and the package's prior record is shown *separately*, labelled
+#: with the cohort, population and backend it came from.
+#:
+#: §11.5's S12: *"the screen says 'no new validation evidence for this administration' and shows
+#: the package's prior record separately, labelled with the cohort, population and backend it came
+#: from"*. `FR-CONSOLE-24` forbids the prior figure only **in that position**. A page-wide
+#: assertion that no kappa appears anywhere condemns a console doing exactly what the design says —
+#: which is what review measured, and why C11b scopes to the agreement element.
+HONEST_ROLLUP_WITH_A_LABELLED_PRIOR_RECORD = """
+<section data-role="agreement">
+  <p>No new validation evidence for this administration: no blind labels were collected.</p>
+</section>
+<section data-role="prior-record">
+  <h3>This package's prior validation</h3>
+  <p>Grade 11A, 2026-01-14 · population Grade 11 physics · backend edge-local ·
+     atomic kappa 0.71 (n = 48), holistic kappa 0.64 (n = 48).</p>
+</section>
+<footer class="provenance">Package version pkg-1.0.0 · Rubric version rub-1.4 ·
+Backend profile edge-local</footer>
+"""

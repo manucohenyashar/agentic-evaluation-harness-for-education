@@ -92,13 +92,21 @@ def test_tc_console_c07_every_skippable_prompt_renders_the_skip_and_its_cost_in_
 
     app = build_console(store=StoreSpy())
     failures: list[str] = []
+    prompts_seen = 0
 
     for screen, route in app.screens().items():
         if screen in BLOCKING_SCREENS:
             continue
         page = app.render(route)
+        if not elements(page.html, "prompt"):
+            continue
+        prompts_seen += 1
         skips = elements(page.html, "skip")
+        # **The existence half.** Skipping this screen when it has no skip control at all would
+        # let a console with none anywhere pass — only malformed controls would ever be condemned,
+        # and "every other prompt renders a first-class skip control" is the requirement.
         if not skips:
+            failures.append(f"{screen} ({route}) prompts for something and offers no skip control")
             continue
         for index, control in enumerate(skips):
             text = visible_text(control).lower()
@@ -112,6 +120,11 @@ def test_tc_console_c07_every_skippable_prompt_renders_the_skip_and_its_cost_in_
                     f"{screen}: skip control {index} states no cost in its own view — {text!r}"
                 )
 
+    assert prompts_seen >= 3, (
+        f"only {prompts_seen} non-blocking prompt(s) were found, so this sweep asserted almost "
+        f"nothing. §7.9's inventory has ten non-blocking touchpoints and HLD §11.5's S5 alone "
+        f"carries three optional setup cards."
+    )
     assert not failures, (
         f"{failures}. R62's design is that the cost of skipping is read at the moment of skipping; "
         f"a link to an explanation is the version it rejects."
@@ -142,10 +155,17 @@ def test_tc_console_c08_no_route_anywhere_offers_a_numeric_score_entry_field():
 
     app = build_console(store=StoreSpy())
     offenders: list[str] = []
+    fields_seen = 0
     for screen, route in app.screens().items():
-        for field in numeric_score_entry_fields(app.render(route).html):
+        html = app.render(route).html
+        fields_seen += html.count("<input") + html.count("<select") + html.count("<textarea")
+        for field in numeric_score_entry_fields(html):
             offenders.append(f"{screen} ({route}) offers {field!r}")
 
+    assert fields_seen, (
+        "no route rendered a form control of any kind, so a sweep for a forbidden control passed "
+        "over pages that have no controls. S3, S4, S5 and S9 are all forms."
+    )
     assert not offenders, (
         f"{offenders}. FR-CONSOLE-07: all score edits are band selections, and FR-REVIEW-10 says "
         f"`new_points` is derived from `new_band` via the pinned mapping — a typed number has no "
@@ -172,14 +192,20 @@ def test_tc_console_c08_every_route_that_shows_a_grade_shows_it_as_an_editable_b
     app = build_console(store=StoreSpy())
     failures: list[str] = []
 
+    grade_views = 0
     for screen, route in app.screens().items():
         html = app.render(route).html
         displayed = elements(html, "band") + elements(html, "grade")
         if not displayed:
             continue
+        grade_views += 1
         if not editable_band_controls(html):
             failures.append(f"{screen} ({route}) displays a band and offers no way to change it")
 
+    assert grade_views >= 2, (
+        f"only {grade_views} route(s) displayed a band or a grade, so 'wherever a band is "
+        f"displayed' swept almost nothing. S9, S12 and S13 all display one."
+    )
     assert not failures, (
         f"{failures}. A disabled select or a rendered label is not an editable band control — "
         f"which is precisely the shape a read-only view takes."

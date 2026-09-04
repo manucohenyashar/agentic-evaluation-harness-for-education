@@ -125,9 +125,10 @@ def test_tc_console_c01_two_tabs_and_a_closed_browser_leave_the_run_untouched():
         "holds — and HLD §11.7 says every view is a query."
     )
 
-    # Discarding the tab that acted must change nothing. A console holding the run would take it
-    # with it, which is the failure a closed browser produces in the field and no test produces by
-    # accident.
+    # Discarding the tab that acted must change nothing. `del` alone proves nothing — it drops a
+    # local name and the object may well outlive it — so the console is asked to release first,
+    # and the surviving tab is then re-read from the store rather than from anything in memory.
+    first.close()
     del first
     reread = visible_text(second.render("/runs/{id}/monitor", id="r-1").html)
     assert reread == after, (
@@ -159,10 +160,19 @@ def test_tc_console_c01_killing_the_console_process_leaves_the_run_and_its_queue
 
     store = StoreSpy()
     server = serve(store=store, run_id="r-1")
+    assert server.pid is not None, (
+        "the console was served in-process, so 'killing the console process' killed nothing "
+        "and this case is a rung-3 restart wearing a rung-4 name. §6.11.19 asks for the "
+        "process, and NFR-CONSOLE-03 is about a process dying."
+    )
     build_console(store=store).perform("pause/resume", run_id="r-1", state="paused")
     queued_before = list(store.writes)
 
     server.terminate()
+    assert not _process_alive(server.pid), (
+        f"pid {server.pid} is still running after terminate(), so nothing was killed and the "
+        f"restart below is reading a store the original console still holds open"
+    )
 
     restarted = build_console(store=store)
     assert list(store.writes) == queued_before, (
@@ -277,7 +287,12 @@ def test_tc_console_c02_everything_else_the_console_does_is_a_read():
     store = StoreSpy()
     app = build_console(store=store)
 
-    for screen, route in app.screens().items():
+    screens = app.screens()
+    assert len(screens) >= 10, (
+        f'the console enumerates {len(screens)} screen(s); HLD 11.5 has thirteen. A sweep over a '
+        f'short route table is a sweep that agrees with whatever the missing screens do.'
+    )
+    for screen, route in screens.items():
         store.writes.clear()
         app.render(route)
         assert store.writes == [], (
@@ -288,16 +303,55 @@ def test_tc_console_c02_everything_else_the_console_does_is_a_read():
         assert store.queries, f"rendering {screen} ({route}) queried nothing at all"
 
 
+class _Settled:
+    """The settled write log, shaped as a `ControlOutcome`.
+
+    So the stale-state case and the per-action sweep judge idempotency by **one** rule rather than
+    by two idioms for one job.
+    """
+
+    def __init__(self, rows) -> None:
+        self.rows_written = list(rows)
+        self.refused = False
+
+
+def _process_alive(pid: int) -> bool:
+    """Is `pid` still running?
+
+    Makes the rung-4 claim checkable rather than asserted: `terminate()` returning is not evidence
+    that anything died.
+    """
+    import os
+
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+#: The keys a `StoreSpy` payload uses to name the row's table rather than one of its fields.
+_TABLE_KEYS = ("table", "tier")
+
+
 def _payload_fields(payload: object) -> list[str]:
     """The dotted field names a recorded write touched.
 
     Kept local rather than in the vocabulary: it reads `StoreSpy`'s payload shape, which is this
     repo's test double rather than part of the invented `M-CONSOLE` surface.
+
+    A payload that does not carry a table name returns **nothing** rather than reporting every key
+    as undeclared. `WriteRecord.payload` is whatever the console passed to `enqueue_write`, so an
+    unrecognised shape would otherwise fail `CT-CONSOLE-02` for a reason with nothing to do with
+    the clause — while the real question, whether an undeclared field was written, went unasked.
+    The sweep's own "the console wrote nothing at all" anchor is what covers an empty log.
     """
-    if isinstance(payload, dict):
-        table = str(payload.get("table") or payload.get("tier") or "")
-        return [f"{table}.{key}" if table else str(key) for key in payload if key != "table"]
-    return []
+    if not isinstance(payload, dict):
+        return []
+    table = next((str(payload[key]) for key in _TABLE_KEYS if payload.get(key)), "")
+    if not table:
+        return []
+    return [f"{table}.{key}" for key in payload if key not in _TABLE_KEYS]
 
 
 # --- CT-CONSOLE-03 — idempotent through every route a teacher can replay one ---------------------
@@ -360,8 +414,16 @@ def test_tc_console_c03_an_action_against_stale_state_is_refused_or_idempotent_n
     app.perform("finalize batch", run_id="r-1", actor="r.mensah")
     settled = list(store.writes)
 
-    # The same action against state that moved underneath it — the run is already finalized.
-    outcome = app.perform("finalize batch", run_id="r-1", actor="r.mensah", expected_revision=0)
+    # **The race, induced rather than raced.** The console is held mid-action at a stated point;
+    # a second actor amends the grade while it is held; then it is released into a world that
+    # moved. That is the one interleaving that can produce a partial application, and it is
+    # deterministic — §4.6 treats a case that passes on some interleavings as a flake rather
+    # than a result, so two threads and a sleep would not be an oracle. Replaying the same
+    # action twice, which this did before review, is what the per-action sweep above already
+    # covers.
+    with app.hold_after("read", action="amend a finalized grade") as held:
+        app.perform("amend a finalized grade", submission_ref="sub-0142", new_band="asserts_only")
+        outcome = held.release()
 
     if getattr(outcome, "refused", False):
         assert getattr(outcome, "refresh_required", False), (
@@ -375,10 +437,15 @@ def test_tc_console_c03_an_action_against_stale_state_is_refused_or_idempotent_n
             f"of the outcome it permits."
         )
     else:
-        assert list(store.writes) == settled, (
-            f"replaying finalize against stale state wrote {len(store.writes) - len(settled)} "
-            f"additional row(s) and did not refuse, so it was neither idempotent nor refused — "
-            f"which leaves only 'partially applied'."
+        # Idempotent, judged by the same rule the replay sweep uses. Requiring the store to be
+        # byte-identical would condemn an idempotent re-write of the same values, which
+        # `replayed_writes_are_idempotent` explicitly permits — two idioms for one job is the
+        # duplication review flagged in TS-75.
+        ok, reason = replayed_writes_are_idempotent(_Settled(settled), outcome)
+        assert ok, (
+            f"the action against stale state neither refused nor applied idempotently: {reason}. "
+            f"§3.19 permits exactly two outcomes, which leaves only 'partially applied' — and a "
+            f"half-written amendment is a grade nobody can account for."
         )
 
     assert fixtures.SENTINEL_STUDENT_NAME not in str(settled), (
