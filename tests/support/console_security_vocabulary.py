@@ -22,6 +22,7 @@ Additions to the invented surface
         .bind_address        -> str            the *configured* value
         .socket              -> socket.socket  the **actually bound** socket
         .pid                 -> int | None     None when served in-process
+        .returncode          -> int | None     None while running, the exit status once it stops
         .terminate()         -> None
     ConsoleApp
         .control_actions()   -> Mapping[str, Callable]   FR-CONSOLE-32's runtime enumeration

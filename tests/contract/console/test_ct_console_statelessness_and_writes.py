@@ -169,9 +169,15 @@ def test_tc_console_c01_killing_the_console_process_leaves_the_run_and_its_queue
     queued_before = list(store.writes)
 
     server.terminate()
-    assert not _process_alive(server.pid), (
-        f"pid {server.pid} is still running after terminate(), so nothing was killed and the "
-        f"restart below is reading a store the original console still holds open"
+    # Asserted on the server's **exit status**, not with a signal probe. `os.kill(pid, 0)` is the
+    # POSIX idiom and does not port: on Windows CPython it neither raises for a terminated-but-
+    # unreaped pid nor reliably means "alive", so the probe fails after a kill that worked — and
+    # this repo's `TEST_CMD` runs on win32. `returncode` is one line on the invented surface and
+    # says the thing the clause needs said.
+    assert server.returncode is not None, (
+        f"the console process (pid {server.pid}) has no exit status after terminate(), so nothing "
+        f"was killed and the restart below is reading a store the original console still holds "
+        f"open — which would make this a rung-3 restart wearing a rung-4 name"
     )
 
     restarted = build_console(store=store)
@@ -313,21 +319,6 @@ class _Settled:
     def __init__(self, rows) -> None:
         self.rows_written = list(rows)
         self.refused = False
-
-
-def _process_alive(pid: int) -> bool:
-    """Is `pid` still running?
-
-    Makes the rung-4 claim checkable rather than asserted: `terminate()` returning is not evidence
-    that anything died.
-    """
-    import os
-
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    return True
 
 
 #: The keys a `StoreSpy` payload uses to name the row's table rather than one of its fields.
