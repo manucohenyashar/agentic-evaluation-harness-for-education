@@ -405,12 +405,44 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "c23_the_absence_of_auth_holds_only_within_the_loopback_bound",
             "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
             "c23_no_audit_surface_presents_an_actor_string_as_an_identity",
+            # TS-76 (#131). `TC-CONSOLE-C01`, `-C02` and `-C03` are all `build_console`'s: they
+            # drive a console object rather than a served process, which is what separates them
+            # from the three under the `serve_console` key above.
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c01_the_console_makes_no_inference_and_effects_change_by_writing_a_row",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c01_two_tabs_and_a_closed_browser_leave_the_run_untouched",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c02_the_runtime_write_surface_equals_the_declared_control_actions",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c02_every_write_a_screen_makes_maps_to_a_declared_action",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c02_everything_else_the_console_does_is_a_read",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c03_every_control_action_is_idempotent_through_all_three_replay_routes",
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c03_an_action_against_stale_state_is_refused_or_idempotent_never_partial",
         ),
     ),
     "#124": (
         "symbol",
         f"{CONSOLE_MODULE}:render_review_queue",
-        ("tests/contract/console/test_ct_console_review_and_blind.py",),
+        (
+            "tests/contract/console/test_ct_console_review_and_blind.py",
+            # TS-76 (#131). `FR-CONSOLE-03` (no annotation surface, no path into a judgment) and
+            # `-17`/`-18` (browser storage, external origins) are all #124's, so `TC-CONSOLE-C04`
+            # and `-C06` land here rather than with #122's process work.
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
+            "no_field_the_console_writes_after_the_lock_is_read_by_a_scoring_prompt",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
+            "no_per_student_annotation_surface_exists_on_any_route",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
+            "a_resumed_unit_reads_no_console_written_field",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c06_"
+            "no_page_reaches_browser_storage_with_student_text_in_the_data",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c06_"
+            "every_page_loads_from_its_own_origin_and_nothing_else",
+        ),
     ),
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
@@ -428,6 +460,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/console/test_ct_console_finalization_and_touchpoints.py",
             "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
             "the_review_queue_and_rollup_render_inside_their_budgets_at_350_students",
+            # TS-76 (#131). Three renderings whose FR is #125's rather than #123's:
+            # `FR-CONSOLE-20` (invariant 16, every displayed band editable), `FR-CONSOLE-24`
+            # (invariant 20, the absent agreement block) and `FR-CONSOLE-19` (invariant 15, the
+            # blind reservation subtracted before ranking). Their sibling halves in the same files
+            # are keyed on #123, which is why these are node IDs.
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c08_"
+            "every_route_that_shows_a_grade_shows_it_as_an_editable_band",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
+            "c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
+            "the_blind_reservation_is_subtracted_before_ranking_not_after",
         ),
     ),
     "#127": (
@@ -435,6 +478,82 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{CONSOLE_MODULE}:render_submission_text",
         ("tests/contract/console/test_ct_console_observability_and_honesty.py"
          "::test_tc_console_c24_non_english_and_rtl_content_fails_or_degrades_visibly",),
+    ),
+    # --- TS-76 (#131), the twelve CT-CONSOLE security, isolation and prohibition cases ----------
+    #
+    # Keyed per **rendering**, not per case. `TC-CONSOLE-C11` carries three separate renderings
+    # (§6.11.19: *"the clause carries three separate renderings and the case asserts each"*) and
+    # they belong to three different stories -- (a) to #123, (b) to #125, (c) to #126, which is
+    # `FR-CONSOLE-26`'s S1 Packages. `-C12` splits the same way. A single key would hold two
+    # renderings outside the gate waiting on a story neither of them needs.
+    #
+    # So these entries are **node IDs throughout**, never a bare filename: every one of the four
+    # files below mixes blockers. That is the trap TS-77 hit with `TC-CONSOLE-C24`, where a
+    # file-level entry would have told whoever closed #122 to unmark another story's test.
+    #
+    # `serve_console` gets its own key rather than riding on `build_console`. The three tests under
+    # it bind a real socket or spawn a process, and `require()` reports whichever blocker resolves
+    # first -- so a test whose first call is `serve_console` must be registered against
+    # `serve_console`, or the gate unmarks it while the thing it actually needs is still missing.
+    "#122 serve_console": (
+        "symbol",
+        f"{CONSOLE_MODULE}:serve_console",
+        (
+            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
+            "c01_killing_the_console_process_leaves_the_run_and_its_queued_rows_intact",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c05_"
+            "the_console_binds_loopback_verified_against_the_actual_socket",
+            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c05_"
+            "every_cloud_hosted_setting_combination_refuses_to_start",
+        ),
+    ),
+    # #123 owns HLD §11.6's invariants 1-7, which is where `-C07` through `-C12`'s separation half
+    # and `-C10`/`-C11`(a) live. `render_setup_step` is invented and absent from both design
+    # documents and the HLD.
+    #
+    # One limitation, stated rather than discovered: no registry kind can express *"the story is
+    # finished"*, only *"this symbol exists"* -- the sixth time this suite has hit it. So a symbol
+    # landing on #123's first commit would tell a reader to unmark all eleven of these while the
+    # rest of #123 is still being written. `render_setup_step` is chosen because invariant 1 is
+    # #123's first acceptance criterion and nothing in #122 could provide it, which makes the
+    # window as narrow as the mechanism allows.
+    "#123": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_setup_step",
+        (
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c07_"
+            "exactly_two_screens_block_and_they_are_s3_and_s4",
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c07_"
+            "every_skippable_prompt_renders_the_skip_and_its_cost_in_one_view",
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c08_"
+            "no_route_anywhere_offers_a_numeric_score_entry_field",
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c09_"
+            "no_route_or_payload_carries_a_per_student_progress_figure",
+            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c09_"
+            "progress_renders_at_the_three_dimensions_and_derives_nothing_more",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c10_"
+            "every_route_that_displays_a_grade_displays_its_provenance",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
+            "c11a_any_agreement_statistic_renders_corrected_scoped_and_unmerged",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
+            "quarantine_and_the_review_queue_have_separate_routes_and_counts",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
+            "no_quarantine_item_is_reachable_from_the_review_queue",
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
+            "no_deterministic_blind_or_random_arm_item_is_rendered_in_the_queue",
+        ),
+    ),
+    # #126 builds S1 Packages, S2 Upload, S6 Preflight and S8 Quarantine, and it depends only on
+    # #122 -- so it is a **sibling** of #123 and #125 rather than downstream of them. That is
+    # exactly why `TC-CONSOLE-C11`(c) has its own key: `FR-CONSOLE-26` is S1's rule and no amount
+    # of #123 or #125 landing makes it renderable.
+    "#126": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_package_catalog",
+        (
+            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
+            "c11c_a_package_never_administered_here_renders_no_borrowed_figure",
+        ),
     ),
     "#122": (
         "module",
