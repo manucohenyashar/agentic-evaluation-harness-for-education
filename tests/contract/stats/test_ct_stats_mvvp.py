@@ -147,10 +147,16 @@ def test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes(dimension
         "it validated."
     )
     for step in (2, 3, 4, 5):
-        assert after.steps[step].measured_at != before.steps[step].measured_at, (
-            f"step {step} was not re-measured after {dimension} changed — a partial re-run is a "
-            "prior result carried across the change under a fresh timestamp"
+        assert after.steps[step].measured_configuration[dimension] == CHANGED_TO[dimension], (
+            f"step {step} reports having measured "
+            f"{after.steps[step].measured_configuration[dimension]!r} after {dimension} changed "
+            f"to {CHANGED_TO[dimension]!r} — a partial re-run, which is a prior result carried "
+            "across the change under a fresh result id"
         )
+
+    # Asserted per step on the **configuration it names**, not on a timestamp. Two MVVP runs under
+    # `RecordedFixtureProvider` can complete inside one clock tick, so a `measured_at` comparison
+    # would flake — and flakiness in a P0 case is how a case stops being trusted.
 
 
 @pytest.mark.writtenahead
@@ -158,10 +164,16 @@ def test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes(dimension
 def test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_change():
     """The prohibition that carries the risk: *"not reused, not shown, and not merged."*
 
-    Three verbs and they fail differently. **Reused** is the stale figure returned as current;
-    **shown** is the stale figure displayed beside the current one with equal standing; **merged**
-    is the two averaged, which is the worst because the result is a number that was never measured
-    anywhere.
+    Two of the three verbs are `M-STATS`' to answer and both are asserted here. **Reused** is the
+    stale figure returned as current; **merged** is the two averaged, which is the worst because
+    the result is a number that was never measured anywhere — and it is unfalsifiable unless the
+    result says what contributed to it, so that provenance is required rather than read with a
+    default.
+
+    **Shown** is a consumer's verb: displaying the stale figure beside the current one with equal
+    standing is a rendering decision, and it belongs with `M-CONSOLE`'s cases rather than here.
+    Naming it in a docstring while asserting nothing about it is how a suite comes to claim
+    coverage it does not have.
     """
     run_mvvp = require(STATS_MODULE, "run_mvvp", issue="#116")
     latest_mvvp = require(STATS_MODULE, "latest_mvvp", issue="#116")
@@ -171,9 +183,18 @@ def test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_chang
     current = latest_mvvp(assignment_type="extended_response", configuration=changed)
 
     assert current.result_id != stale.result_id, "the stale result was reused as current"
-    assert stale.result_id not in getattr(current, "contributing_results", ()), (
+
+    # `contributing_results` is **required**, not read with a default. A `getattr(..., ())` fallback
+    # passes for a module that has no such attribute — including one that merged, since a merge
+    # leaves no trace by construction. Review caught it: the assertion has to fail when the
+    # provenance is missing, because missing provenance is indistinguishable from a merge.
+    assert hasattr(current, "contributing_results"), (
+        "the MVVP result does not say what contributed to it, so 'not merged' is unverifiable — "
+        "and an unverifiable guarantee is one a consumer has to take on trust (FR-STATS-19, R30)"
+    )
+    assert stale.result_id not in current.contributing_results, (
         "the stale result contributed to the current one, so a figure measured under a different "
-        "prompt template is inside a number presented as current (FR-STATS-19, R30)"
+        "prompt template is inside a number presented as current"
     )
     assert current.measured_configuration["prompt_template_version"] == "judge-v8"
 

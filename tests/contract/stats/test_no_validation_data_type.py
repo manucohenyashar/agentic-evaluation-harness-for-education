@@ -105,18 +105,21 @@ def test_tc_stats_c03_is_not_numerically_coercible_by_any_route():
 def test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute(member):
     """Step 3 — the sweep, *"since one path returning `0.0` is the whole failure"*.
 
-    One row per member of `ValidationStats`, each **keyed on the story that delivers it**.
-    `require()` reports whichever blocker resolves first, so a sweep keyed entirely on #115 would
-    report all seven rows as runnable the moment the filter lands, five of them against functions
-    that do not exist — and whoever acted on that would unmark a P0 case that cannot pass.
+    One row per member whose **declared return type** carries the value — which §3.16 makes one,
+    `agreement`. Review caught an earlier draft sweeping six: the other five are typed
+    non-optionally (`-> CompressionReport`, `-> MVVPReport`), so demanding `NoValidationData` from
+    them contradicted the contract *and* `TC-STATS-C10` in this same suite, which requires
+    `compression_check` to return a report carrying its stated limitation. `FIGURE_MEMBERS` is now
+    derived from the design's signatures rather than chosen, so this sweep grows only when the
+    design does.
+
+    The other six are not unswept. `TC-STATS-C16` drives **all seven** for the universal half of
+    the claim — no entry point raises because there is too little data — and each report's content
+    is asserted in its own case. `promote` is excluded from both type sweeps for a second reason:
+    `CT-STATS-05` gives its no-data outcome as a message, not an absence value.
 
     Driven with an empty label set, which is the state every one of these can be in: a cohort
     whose blind sample was skipped has no admissible labels and every figure over it is absent.
-
-    `promote` is swept in `TC-STATS-C16` instead. Its no-data outcome is `CT-STATS-05`'s *"no new
-    validation evidence for this administration"*, a first-class value of a different kind —
-    asserting `NoValidationData` here would demand a return type the contract does not promise and
-    would contradict `TC-STATS-C05`.
     """
     issue = vocab.MEMBER_ISSUE[member]
     require(STATS_MODULE, member, issue=issue)  # the member this story delivers
@@ -148,13 +151,13 @@ def test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found(reason):
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
 
     known_scope, known_backend = "y9-2026-spring", "edge-local-q4"
-    labels = [] if reason == "no_blind_labels" else [broken.ADMISSIBLE_LABEL]
+    labels = [] if reason == "no_blind_labels" else broken.agreeing_population()
     scope = "never-administered" if reason == "no_data_for_population" else known_scope
     backend = "never-measured" if reason == "no_data_for_backend" else known_backend
 
     stats = build_stats(
         labels=labels, population_scopes=[known_scope], backend_profiles=[known_backend]
-    )
+    )  # `labels` is the agreeing population unless the reason under test is an empty one
     result = stats.agreement(
         package_version="pkg-v1",
         criterion_id="C-01",

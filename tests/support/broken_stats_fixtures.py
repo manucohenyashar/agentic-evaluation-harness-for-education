@@ -209,6 +209,22 @@ HEADLINE_RENDERINGS: tuple[str, ...] = (
     "Quality score\n  0.83\nDetail by criterion below",
 )
 
+#: A scoped table: the population and backend in a heading, the figures in bare columns
+#: underneath. This is how a real agreement block is laid out — `CORRECT_AGREEMENT_BLOCK` repeats
+#: its scope words on every line, which no table does — and review demonstrated the rule
+#: condemning it before the header-inheritance rule existed.
+SCOPED_TABLE_RENDERING = """
+Agreement — Year 9 Extended Response, population y9-2026-spring, backend edge-local-q4
+  criterion   model     κ        n
+  C-01        atomic    0.71     142
+  C-04        atomic    0.35     15     too few to draw conclusions from
+  C-09        holistic  0.48     118
+"""
+
+#: The same table with a headline above it. The heading below still scopes the rows, so the only
+#: thing that may be reported is the headline itself — which is what CT-STATS-20 forbids.
+HEADLINE_ABOVE_A_SCOPED_TABLE = "Overall accuracy: 87%\n" + SCOPED_TABLE_RENDERING
+
 #: The hard case for the headline rule, and the one the other fixtures do not reach: a headline
 #: that **is** scoped, in the sense that every scope word appears on its line, and is still a
 #: system-wide claim. The mutation campaign found the phrase list unexercised without it — every
@@ -238,12 +254,23 @@ Criterion C-07 (two-band), population y9-2026-spring, backend edge-local-q4
   multi-band figure at the same value, and the resolution is an open design question.
 """
 
+#: The disclosure `CT-STATS-21` asks for, written the way anybody would write it: as a **negated
+#: comparison**. Review found the rule condemning both of these — and the same test that applies
+#: the rule also requires a disclosure term to be present, so a compliant console failed both
+#: halves at once.
+NEGATED_DEGENERACY_DISCLOSURES: tuple[str, ...] = (
+    "A two-band figure is not directly comparable to a multi-band figure.",
+    "Two-band agreement is degenerate and must not be read as equivalent to multi-band agreement.",
+    "Binary criteria: α = 1.00 is a construction artifact and is never as reliable as a "
+    "four-band figure at the same value.",
+)
+
 #: A compliant rendering that uses the equivalence vocabulary about something that is **not** the
 #: degenerate figure. `CT-STATS-21` forbids presenting binary agreement as equivalent to
 #: multi-band agreement; it says nothing about comparing this year's band 3 to last year's, and a
 #: rule that flagged this would be condemning ordinary copy.
 EQUIVALENCE_ABOUT_SOMETHING_ELSE = """
-Band 3 this year is comparable to band 3 last year, so the boundary has not moved.
+Band 3 this year is comparable to band 3 last year at the same boundary.
 Criterion C-04 (four-band), population y9-2026-spring: κ = 0.35, n = 15.
 """
 
@@ -349,6 +376,29 @@ class Label:
     #: they stay separable at all, since the random arm carries its own `origin` and is never
     #: suppressed. `None` for a label not produced under the policy.
     routing: str | None = None
+
+
+def agreeing_population(count: int = 40, *, bands: int = 4, disagree_every: int = 5,
+                        prefix: str = "bl") -> list[Label]:
+    """An admissible label population with a **spread of bands and some disagreement**.
+
+    `[ADMISSIBLE_LABEL] * 40` is the unanimous single-band case, on which κ and ordinal α are
+    0/0 — undefined — and `NFR-STATS-01` names unanimity as a degenerate case whose correct answer
+    is checked against a hand-computed reference rather than assumed. Review found several
+    assertions resting on it, including one demanding a chance-corrected figure from a population
+    that cannot produce one.
+
+    So this spreads bands over the criterion's range and disagrees on every `disagree_every`-th
+    label, which is a population on which a κ exists and is not 1.
+    """
+    return [
+        Label(
+            label_id=f"{prefix}-{i}",
+            band=1 + (i % bands),
+            teacher_band=1 + ((i + 1) % bands) if i % disagree_every == 0 else 1 + (i % bands),
+        )
+        for i in range(count)
+    ]
 
 
 #: One admissible label, as the filter's positive control. Without it the exclusion sweep passes

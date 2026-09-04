@@ -49,9 +49,33 @@ def test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names():
     AgreementFigure = require(STATS_MODULE, "AgreementFigure", issue="#115")
     declared = tuple(field.name for field in dataclasses.fields(AgreementFigure))
 
-    assert declared == vocab.AGREEMENT_FIGURE_FIELDS, (
+    assert declared[: len(vocab.AGREEMENT_FIGURE_FIELDS)] == vocab.AGREEMENT_FIGURE_FIELDS, (
         f"AgreementFigure declares {declared}; §3.16 declares "
-        f"{vocab.AGREEMENT_FIGURE_FIELDS}"
+        f"{vocab.AGREEMENT_FIGURE_FIELDS} and they must come first, in order"
+    )
+
+    # Additions are allowed only where this suite declares them. `CT-STATS-21` needs the two-band
+    # degeneracy disclosed on the figure a consumer holds, so `degenerate_band_shape` is a ninth
+    # field — and an equality assertion here would have made C02 and C21 jointly unsatisfiable,
+    # which review found. Anything *not* declared still fails, so the drift detection survives.
+    additions = set(declared) - set(vocab.AGREEMENT_FIGURE_FIELDS)
+    assert additions <= set(vocab.DECLARED_FIGURE_ADDITIONS), (
+        f"AgreementFigure carries undeclared fields {sorted(additions - set(vocab.DECLARED_FIGURE_ADDITIONS))}; "
+        "a field this suite has not declared is drift from §3.16"
+    )
+
+    # CT-STATS-02's second half, at the level it is assertable: no **surface** emits a raw percent
+    # agreement. There is no percent field on the figure to govern (asserted as a finding in
+    # test_ct_stats_vocabulary.py), but the emitter would be a name, and a name is checkable.
+    percent = [
+        name
+        for name in vocab.public_surface(require(STATS_MODULE, issue="#115"))
+        if any(term in name.lower() for term in vocab.PERCENT_AGREEMENT_NAMES)
+    ]
+    assert percent == [], (
+        f"{percent} emit a raw percent agreement. FR-STATS-02: no percent figure without its "
+        "chance-corrected counterpart attached — and there is no field on AgreementFigure for one "
+        "to be attached to."
     )
 
 
@@ -69,17 +93,23 @@ def test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed(
     The three statistics are deliberately not swept: §3.16 declares `qwk` and `ordinal_alpha` as
     `| None`, so demanding them would fail a compliant figure carrying κ alone.
     """
+    import dataclasses
+
     AgreementFigure = require(STATS_MODULE, "AgreementFigure", issue="#115")
 
+    # Built from the dataclass's **own** fields rather than from a hand-written dict. A hand-written
+    # one breaks the moment the figure gains the `degenerate_band_shape` that CT-STATS-21 requires
+    # — the construction raises `TypeError` for a missing argument, the anchor below fails, and six
+    # parametrized rows go red for a reason that has nothing to do with what they assert.
+    placeholders = {
+        "kappa": 0.71, "qwk": None, "ordinal_alpha": None, "n": 142,
+        "scoring_model": "atomic", "population_scope_id": "y9-2026-spring",
+        "backend_profile": "edge-local-q4", "panel_build_ref": "9f2a1c",
+        "degenerate_band_shape": False,
+    }
     complete = {
-        "kappa": 0.71,
-        "qwk": None,
-        "ordinal_alpha": None,
-        "n": 142,
-        "scoring_model": "atomic",
-        "population_scope_id": "y9-2026-spring",
-        "backend_profile": "edge-local-q4",
-        "panel_build_ref": "9f2a1c",
+        field.name: placeholders.get(field.name, "x")
+        for field in dataclasses.fields(AgreementFigure)
     }
     assert AgreementFigure(**complete), "the complete construction failed, so the sweep below is vacuous"
 
@@ -96,7 +126,11 @@ def test_tc_stats_c02_every_emitted_figure_is_chance_corrected():
     percent agreement wearing the dataclass, and it renders identically.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    # A population with a spread of bands and some disagreement. `[ADMISSIBLE_LABEL] * 40` is
+    # unanimous on one band, where κ and α are 0/0 — `NFR-STATS-01` names unanimity as a degenerate
+    # case whose answer is checked against a hand-computed reference, so demanding a figure from it
+    # would fail a module that correctly declines to produce one.
+    stats = build_stats(labels=broken.agreeing_population())
 
     figure = _figure(stats)
     corrected = [
@@ -125,7 +159,7 @@ def test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for(
     `CT-PKG-17` says population scopes are free text per installation, nobody downstream can tell.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
 
     asked = {
         "population_scope_id": "y10-2026-autumn",
@@ -162,9 +196,13 @@ def test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_functio
     a merged figure is a claim nobody is entitled to make.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
+    holistic_labels = broken.agreeing_population(20, prefix="h")
     stats = build_stats(
-        labels=[broken.ADMISSIBLE_LABEL] * 20
-        + [broken.Label(label_id=f"h-{i}", criterion_id="C-09", band=2) for i in range(20)],
+        labels=broken.agreeing_population(20)
+        + [
+            broken.Label(**{**label.__dict__, "criterion_id": "C-09"})
+            for label in holistic_labels
+        ],
         scoring_models={"C-01": "atomic", "C-09": "holistic"},
     )
 
@@ -176,7 +214,7 @@ def test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_functio
         "one call answered with the other's scoring model, so the two are not being kept apart"
     )
 
-    merging = vocab.merging_surface([name for name in dir(stats) if not name.startswith("_")])
+    merging = vocab.merging_surface(vocab.public_surface(stats))
     assert merging == [], (
         f"{merging} offer a figure spanning something CT-STATS-04 keeps apart. The prohibition is "
         "on the function: a merge nobody can ask for is a claim nobody can make."
@@ -207,17 +245,14 @@ def test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused(dim
     """
     require(STATS_MODULE, "aggregate", issue="#118")  # the member this story delivers
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
 
     assert stats.aggregate(), "the unspanned aggregate does not work, so the refusal below is vacuous"
 
     with pytest.raises(Exception) as raised:  # noqa: PT011 - the refusal type is the module's
         stats.aggregate(across=dimension)
 
-    assert not isinstance(raised.value, AttributeError), (
-        f"aggregate(across={dimension!r}) raised AttributeError, which is what a module with no "
-        "aggregate at all raises — that is not a refusal, it is an absence"
-    )
+    assert vocab.refusal_problems(raised.value, f"aggregate(across={dimension!r})") == []
 
 
 # --- CT-STATS-13 — the weakest criterion travels with the aggregate --------------------------
@@ -240,7 +275,7 @@ def test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criter
     require(STATS_MODULE, "aggregate", issue="#118")  # the member this story delivers
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
     stats = build_stats(
-        labels=[broken.ADMISSIBLE_LABEL] * 40,
+        labels=broken.agreeing_population(),
         population_scopes=["y9-2026-spring", "y10-2026-autumn"],
     )
 
@@ -257,8 +292,8 @@ def test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criter
 
     bare = [
         name
-        for name in dir(stats)
-        if not name.startswith("_") and name in {"headline", "overall", "headline_agreement"}
+        for name in vocab.public_surface(stats)
+        if name in {"headline", "overall", "headline_agreement"}
     ]
     assert bare == [], f"{bare} return an aggregate with no weakest criterion attached"
 
@@ -274,8 +309,22 @@ def test_tc_stats_c13_an_exported_package_carries_the_weakest_figure_beside_the_
     has no way to recover what it did not send.
     """
     export_package = require(PKG_MODULE, "export_package", issue="#31")
+    record_validation = require(PKG_MODULE, "record_validation", issue="#29")
+
+    # Arranged, not assumed. An earlier draft exported a package nothing had ever written a
+    # validation record for and demanded the weakest criterion be in it — which a correct M-PKG
+    # cannot supply and would fail on. Review caught it. The record seeded here carries a headline
+    # and a weakest criterion, so the assertion is about what **export** keeps.
+    record_validation(
+        package_version="pkg-v1",
+        population_scope="y9-2026-spring",
+        headline={"kappa": 0.71, "n": 142},
+        weakest_per_population={"y9-2026-spring": {"criterion_id": "C-04", "kappa": 0.35}},
+    )
+
     exported = export_package(package_version="pkg-v1")
     validation = exported["validation"] if isinstance(exported, dict) else exported.validation
+    validation = validation if isinstance(validation, dict) else vars(validation)
 
     assert validation.get("weakest_per_population"), (
         "the exported package advertises an aggregate with no weakest criterion beside it "
@@ -297,7 +346,7 @@ def test_tc_stats_c14_narrative_quality_is_reported_separately_from_agreement():
     """
     require(STATS_MODULE, "narrative_quality", issue="#118")  # the member this story delivers
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
 
     report = stats.narrative_quality(cohort_id="coh-1")
     for metric in vocab.NARRATIVE_QUALITY_METRICS:
@@ -324,9 +373,7 @@ def test_tc_stats_c14_no_function_offers_a_combined_quality_figure():
     """
     require(STATS_MODULE, "narrative_quality", issue="#118")  # the member this story delivers
     stats = require(STATS_MODULE, issue="#115")
-    exposed = [name for name in dir(stats) if not name.startswith("_")]
-
-    combining = vocab.merging_surface(exposed)
+    combining = vocab.merging_surface(vocab.public_surface(stats))
     assert combining == [], (
         f"{combining} offer a combined figure. A system with κ = 0.8 and ungrounded feedback is "
         "failing at its most valuable job, and a blended headline hides exactly that."

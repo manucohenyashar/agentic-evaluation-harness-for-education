@@ -21,7 +21,7 @@ declare are listed below, in one place, so an invented name is visibly invented:
     open_stats(data_dir=..., cohort_id=...)              the rung-2 constructor              (#115)
     .admissible_labels()                                 the single filter (NFR-STATS-04)    (#115)
     STATS_SUBGROUP_ANALYSIS_ENABLED                      §3.16's knob, as a module constant  (#117)
-    STATS_MIN_N_FOR_HEADLINE                             the other declared knob             (#118)
+    STATS_MIN_N_FOR_HEADLINE                             the other declared knob             (#115)
     latest_mvvp(...)                                     CT-STATS-08's current result        (#116)
     .aggregate(across=...)                               FR-STATS-13, and -04's refusal      (#118)
     .criterion_override_history(...)                     CT-STATS-09 — see the note below    (#118)
@@ -126,6 +126,25 @@ REQUIRED_FIGURE_FIELDS: tuple[str, ...] = (
 CHANCE_CORRECTED_STATISTICS: frozenset[str] = frozenset(
     {"kappa", "κ", "cohen", "qwk", "quadratic weighted kappa",
      "ordinal_alpha", "alpha", "α", "krippendorff"}
+)
+
+#: Fields this suite requires `AgreementFigure` to carry **beyond** §3.16's eight.
+#:
+#: `CT-STATS-21` asks for the two-band degeneracy to be *detected and disclosed*, and the figure
+#: is where a consumer holds it — so the disclosure is a ninth field. Declared here rather than
+#: added to `AGREEMENT_FIGURE_FIELDS`, which is a transcription of the design and must stay one:
+#: `TC-STATS-C02` asserts the design's eight in order and allows exactly these additions, so an
+#: *undeclared* field still fails. Without this, C02 and C21 contradict each other and no
+#: implementation can satisfy both.
+DECLARED_FIGURE_ADDITIONS: tuple[str, ...] = ("degenerate_band_shape",)
+
+#: Names that would be a raw percent-agreement figure. `CT-STATS-02`'s second half — *"no raw
+#: percent-agreement is emitted without its chance-corrected counterpart attached"* — has no
+#: **field** to govern today, but the module-surface absence is assertable, exactly as
+#: `merging_surface` asserts `CT-STATS-14`'s.
+PERCENT_AGREEMENT_NAMES: tuple[str, ...] = (
+    "percent_agreement", "pct_agreement", "raw_agreement", "observed_agreement",
+    "agreement_rate", "percent_agree",
 )
 
 #: The figure's four scope dimensions (`CT-STATS-04`: *"keyed by population scope, backend
@@ -395,16 +414,23 @@ EMPTY_DATA_CALL: dict[str, dict[str, object]] = {
     "promote": {"cohort_id": "coh-1"},
 }
 
-#: The members that report a **figure**, and therefore the ones whose no-data outcome is
-#: `NoValidationData`.
+#: The members whose **declared return type** includes `NoValidationData`, and therefore the
+#: ones `TC-STATS-C03`'s type sweep can assert it of.
 #:
-#: `promote` is deliberately not among them. Its no-data outcome is `CT-STATS-05`'s *"no new
-#: validation evidence for this administration"* — a first-class value of a different kind, and
-#: one that also carries the non-advancement guarantee — so sweeping it here would assert a return
-#: type the contract does not promise and would contradict `TC-STATS-C05` two files away. It is
-#: still swept in `TC-STATS-C16`, which asserts the weaker and universal claim: no entry point
-#: raises because there is too little data.
-FIGURE_MEMBERS: tuple[str, ...] = tuple(m for m in PROTOCOL_MEMBERS if m != "promote")
+#: One, and that is the design's doing: §3.16 types `agreement` as
+#: `AgreementFigure | NoValidationData` and every other member non-optionally — `-> CompressionReport`,
+#: `-> MVVPReport`, and so on. An earlier draft swept six, which demanded a return type the
+#: contract does not promise and contradicted `TC-STATS-C10` in the same suite, where
+#: `compression_check` is required to return a report carrying `.stated_limitation`.
+#:
+#: `promote` is excluded for a second, different reason: `CT-STATS-05` gives its no-data outcome
+#: as *"no new validation evidence for this administration"*, a first-class value of another kind.
+#:
+#: The other six are not unasserted. `TC-STATS-C16` sweeps **all seven** for the universal claim —
+#: no entry point raises because there is too little data — and each report's content is asserted
+#: in its own case. `test_ct_stats_vocabulary.py` derives this tuple from the design's signatures,
+#: so a member that gains the union return reaches the sweep through the transcription.
+FIGURE_MEMBERS: tuple[str, ...] = ("agreement",)
 
 
 # ==================================================================================================
@@ -624,21 +650,47 @@ def unscoped_headline_figures(rendering: str) -> list[str]:
     is compliant; concatenating the whole page and asking whether the word "population" appears
     somewhere in it would pass a headline sitting above forty scoped rows, which is precisely the
     screen the clause describes.
+
+    **A row under a scoped header inherits that header's scope.** Real tables put the population
+    and the backend in a heading and the figures in bare columns underneath, and review
+    demonstrated this rule condemning one — which would have failed `M-CONSOLE`'s S12 block for
+    being laid out as a table. A heading is a line carrying two or more scope tokens and no figure
+    of its own; the framing check still runs on every line, so a headline above the heading is
+    caught by the sentence it is written in rather than by its position.
     """
     problems: list[str] = []
+    under_scoped_header = False
+
     for raw in rendering.splitlines():
         line = raw.strip()
         if not line:
+            under_scoped_header = False  # a blank line ends the block the header introduced
             continue
         lowered = line.lower()
+        tokens_present = sum(1 for token in _SCOPE_TOKENS if token in lowered)
+
         for phrase in SYSTEM_WIDE_CLAIM_PHRASES:
             if phrase in lowered:
                 problems.append(f"{line!r} frames a figure as {phrase!r}")
                 break
         else:
-            if _NUMBER.search(line) and not any(token in lowered for token in _SCOPE_TOKENS):
+            if not _NUMBER.search(line):
+                if tokens_present >= 2:
+                    under_scoped_header = True
+                continue
+            if tokens_present == 0 and not under_scoped_header:
                 problems.append(f"{line!r} carries a figure with no scope beside it")
     return problems
+
+
+#: Words that turn a claim into its denial. A clause that requires a consumer to *state the
+#: negation* — and `CT-STATS-21` does — makes a scanner that forbids the vocabulary outright
+#: forbid the disclosure itself. The `M-CALIB` suite hit the same wall and resolved it the same
+#: way; review found this rule condemning *"a two-band figure is **not** directly comparable to a
+#: multi-band figure"*, which is the most natural way to write exactly what the clause asks for.
+_NEGATIONS: tuple[str, ...] = (
+    "not ", "never", "n't", "cannot", "no ", "rather than", "unlike", "less than",
+)
 
 
 def presents_binary_agreement_as_equivalent(rendering: str) -> list[str]:
@@ -648,6 +700,11 @@ def presents_binary_agreement_as_equivalent(rendering: str) -> list[str]:
     consumers *"must not present binary-criterion agreement as equivalent to multi-band
     agreement"*. So the rule reads the equivalence, not the figure, and a rendering that shows the
     number beside a disclosure is compliant.
+
+    Negated lines are skipped, and that is not a softening: the compliant rendering **is** a
+    negated comparison, so a rule without this condemns the disclosure the same test demands. It
+    errs toward missing a violation buried inside a negated sentence rather than toward rejecting
+    correct copy, because a rule that fails correct copy is one somebody switches off.
     """
     problems: list[str] = []
     for raw in rendering.splitlines():
@@ -655,11 +712,59 @@ def presents_binary_agreement_as_equivalent(rendering: str) -> list[str]:
         lowered = line.lower()
         if not any(term in lowered for term in DEGENERACY_DISCLOSURE_TERMS):
             continue
+        if any(negation in lowered for negation in _NEGATIONS):
+            continue
         for phrase in EQUIVALENCE_PHRASES:
             if phrase in lowered:
                 problems.append(f"{line!r} presents a two-band figure as {phrase!r} multi-band")
                 break
     return problems
+
+
+def refusal_problems(error: BaseException, call: str) -> list[str]:
+    """Why `error` is not a refusal — empty when it is one.
+
+    An oracle written as *"it raises"* passes a module that refuses nothing, in two ways: the
+    method is absent (`AttributeError`), or it exists without the parameter the refusal is
+    requested through (`TypeError: unexpected keyword argument`). The second is the likelier and
+    review found it — §3.16 declares `surface_proxies(self, cohort_id, criterion_id)` with no
+    `subgroup` parameter, so a module implementing the declared signature raised from argument
+    binding and the case passed with no refusal anywhere in it.
+    """
+    problems = []
+    if isinstance(error, AttributeError):
+        problems.append(
+            f"{call} raised AttributeError, which is what a module without the function raises — "
+            "that is an absence, not a refusal"
+        )
+    if isinstance(error, TypeError) and "keyword argument" in str(error):
+        problems.append(
+            f"{call} raised {error!r}: the parameter the refusal is requested through does not "
+            "exist, so nothing refused anything"
+        )
+    return problems
+
+
+def public_surface(owner: object) -> list[str]:
+    """The public names `owner` defines itself.
+
+    Three of the clause cases scan a module's surface for a name the contract forbids, and
+    `dir()` includes everything imported into it — so a helper imported from elsewhere whose name
+    happens to carry two of a rule's terms would be reported as this module's violation. Filtered
+    on `__module__` where the object has one, which is what distinguishes a name a module *has*
+    from a name a module *offers*.
+    """
+    module_name = getattr(owner, "__name__", None)
+    names = []
+    for name in dir(owner):
+        if name.startswith("_"):
+            continue
+        attribute = getattr(owner, name, None)
+        origin = getattr(attribute, "__module__", None)
+        if module_name and origin and origin != module_name:
+            continue
+        names.append(name)
+    return names
 
 
 def numeric_coercions(value: object) -> list[str]:

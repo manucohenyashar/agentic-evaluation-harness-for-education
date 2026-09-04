@@ -705,8 +705,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[prompt_template_version]",
             "tests/contract/stats/test_ct_stats_mvvp.py"
             "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[quantization]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[run_mvvp]",
         ),
     ),
     "#117": (
@@ -734,19 +732,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
             "::test_tc_stats_c19_each_contract_alert_exists_and_fires[surface_proxy_flag]",
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_a_sample_outside_the_declared_range_is_refused[19]",
+            "::test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range[19]",
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_a_sample_outside_the_declared_range_is_refused[31]",
+            "::test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range[31]",
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
             "::test_tc_stats_c12_the_drift_check_covers_judged_criteria_only",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[compression_check]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[drift_check]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[routing_policy_validity]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[surface_proxies]",
         ),
     ),
     "#118 stats": (

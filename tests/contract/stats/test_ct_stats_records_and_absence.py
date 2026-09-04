@@ -33,14 +33,30 @@ pytestmark = pytest.mark.contract
 
 
 def _operational(count: int) -> list[broken.Label]:
+    """Operational labels that **disagree** with the panel.
+
+    The bands matter and an earlier draft left them at the `Label` defaults, where system and
+    teacher agree on band 3. Promoting sixty such labels into an agreeing population leaves κ
+    identical whether or not the filter admits them — so `TC-STATS-C06`'s κ-invariance assertion
+    passed for a module with no filter at all, which is the violation it exists to catch. Review
+    found it; these disagree, so contamination moves the number.
+    """
     return [
-        broken.Label(label_id=f"op-{i}", label_type="operational", origin="accept")
+        broken.Label(
+            label_id=f"op-{i}",
+            label_type="operational",
+            origin="accept",
+            band=1,
+            teacher_band=4,
+        )
         for i in range(count)
     ]
 
 
 def _blind(count: int) -> list[broken.Label]:
-    return [broken.Label(label_id=f"bl-{i}") for i in range(count)]
+    """An admissible population with a spread of bands and some disagreement — see
+    `broken_stats_fixtures.agreeing_population` for why unanimity is the wrong fixture here."""
+    return broken.agreeing_population(count)
 
 
 # --- CT-STATS-05 — the administration that collected nothing ---------------------------------
@@ -129,6 +145,24 @@ def test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale
     here is the previous administration, and the answer for this one is the message.
     """
     validation_for = require(PKG_MODULE, "validation_for", issue="#29")
+    record_validation = require(PKG_MODULE, "record_validation", issue="#29")
+
+    # Arranged. An earlier draft asked the catalog about a package nothing had ever written a
+    # record for, and demanded the "no new validation evidence" message — which a correct M-PKG
+    # answers with `no_data_for_population`, because that is the truth about a package it has
+    # never seen. Review caught it. Seeding the **previous** administration is what makes the
+    # question meaningful: the adjacent key now holds a figure, and CT-PKG-07 says the answer for
+    # this key is still not that figure.
+    record_validation(
+        package_version="pkg-v1",
+        criterion="C-01",
+        population_scope="y9-2026-spring",
+        backend_profile="edge-local-q4",
+        panel_build_ref="9f2a1c",
+        scoring_model="atomic",
+        administration="coh-spring",
+        figure={"kappa": 0.71, "n": 142},
+    )
 
     record = validation_for(
         package_version="pkg-v1",
@@ -200,17 +234,24 @@ def test_tc_stats_c06_an_operational_only_administration_leaves_kappa_unchanged(
         record_label(data_dir=tmp_data_dir, label=label)
     stats = open_stats(data_dir=tmp_data_dir)
     stats.promote(cohort_id="coh-spring")
-    before = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"]).kappa
+    first = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"])
+    before, n_before = first.kappa, first.n
 
     for label in _operational(60):
         record_label(data_dir=tmp_data_dir, label=label)
     stats.promote(cohort_id="coh-autumn")
-    after = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"]).kappa
+    second = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"])
+    after, n_after = second.kappa, second.n
 
     assert after == before, (
         f"κ moved from {before} to {after} after promoting sixty operational labels and no blind "
         f"ones. CT-STATS-06: an operational count never contributes to "
         f"{vocab.AGREEMENT_FIELD_CLOSED_TO_OPERATIONAL} (R18/R20, RISK-07)."
+    )
+    assert n_after == n_before, (
+        f"the sample size moved from {n_before} to {n_after}, so the operational labels are in "
+        "the population even if κ happened not to move — n is the population, and this is the "
+        "assertion that does not depend on the fixture's bands"
     )
 
 
@@ -227,7 +268,7 @@ def test_tc_stats_c06_label_weighting_applies_to_operational_signals_and_not_to_
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
     labels = _blind(20) + _operational(20)
 
-    unweighted = build_stats(labels=labels, operational_weights=None)
+    unweighted = build_stats(labels=labels, operational_weights=None)  # noqa: E501 - see below
     weighted = build_stats(
         labels=labels, operational_weights={"acceptance": 0.1, "override": 1.0, "blind": 1.0}
     )
@@ -304,23 +345,40 @@ def test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zer
     returns a distinct no-data value to two consumers that both coerce it to zero has satisfied
     the type and lost the finding.
 
-    A **differential**: rank a criterion with a measured zero override rate against one with no
-    history and assert the two do not land in the same position. Asserting an absolute position
-    would pin a ranking policy that belongs to the consumers, not here.
+    A differential over the **input**, not over list positions: rank the same three criteria
+    twice, changing only whether the third has no history or a genuine zero, and assert the two
+    orders differ. An earlier draft compared the positions of two items in one ranking — which
+    `enumerate` makes distinct by construction, so it could not fail. Review caught it.
+
+    The third criterion, measured at a high override rate, is the non-vacuity anchor: without it
+    a consumer that ignores `override_rate` entirely would produce the same order both times for
+    the right reason, and this could not tell that from the failure.
     """
     rank = require(module, entry, issue=issue)
 
-    ranked = rank(
-        criteria={
-            "C-measured-zero": {"override_rate": 0.0, "reviewed": True},
-            "C-no-history": {"override_rate": None, "reviewed": False},
-        }
-    )
-    positions = {item.criterion_id: index for index, item in enumerate(ranked)}
+    def order(third: dict) -> list[str]:
+        ranked = rank(
+            criteria={
+                "C-contested": {"override_rate": 0.6, "reviewed": True},
+                "C-measured-zero": {"override_rate": 0.0, "reviewed": True},
+                "C-under-test": third,
+            }
+        )
+        return [item.criterion_id for item in ranked]
 
-    assert positions["C-measured-zero"] != positions["C-no-history"], (
-        f"{consumer} ranks a criterion nobody has reviewed identically to one measured at zero "
-        "disagreement, so the no-data value is being read as a zero (CT-STATS-09)"
+    with_a_genuine_zero = order({"override_rate": 0.0, "reviewed": True})
+    with_no_history = order({"override_rate": None, "reviewed": False})
+
+    assert with_a_genuine_zero.index("C-contested") < with_a_genuine_zero.index(
+        "C-measured-zero"
+    ), (
+        f"{consumer} does not rank a contested criterion above an uncontested one, so its ranking "
+        "does not respond to override rate at all and the differential below means nothing"
+    )
+    assert with_no_history != with_a_genuine_zero, (
+        f"{consumer} ranks a criterion nobody has reviewed exactly where it ranks one measured at "
+        "zero disagreement, so the no-data value is being read as a zero — and the criterion "
+        "nobody has looked at is now the one the queue says is safest (CT-STATS-09)"
     )
 
 
@@ -328,27 +386,45 @@ def test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zer
 
 
 @pytest.mark.writtenahead
-@pytest.mark.parametrize("sample_size", [19, 31])
-def test_tc_stats_c12_a_sample_outside_the_declared_range_is_refused(sample_size):
-    """`FR-STATS-09`'s *"20–30 submission sample"*, asserted at both boundaries.
+@pytest.mark.parametrize("available", [19, 31])
+def test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range(available):
+    """`FR-STATS-09`'s *"20–30 submission sample"*, asserted at both boundaries — as a **range**.
 
-    Both ends, because the two failures differ: below the range the check has too little to say
-    anything and would report noise as drift; above it, the check is quietly doing a full
-    comparison and costing what the design chose to avoid. A range assertion written as "at least
-    20" catches neither.
+    Both ends, because the two failures differ, and they differ in kind:
+
+    * **31 available.** The check samples into the range and says how many it used. Comparing all
+      thirty-one is not a refusal-worthy offence, it is the check quietly costing what the design
+      chose to avoid — so the assertion is on the size it reports having used.
+    * **19 available.** There is no valid sample, and `CT-STATS-16` already fixes what a module
+      does with insufficient data: it returns the value, it does not raise and it does not
+      substitute a figure. A drift verdict computed on nineteen submissions is exactly the
+      substitute.
+
+    An earlier draft demanded a **raise** at both ends. Neither `FR-STATS-09` nor the plan's
+    "range assertion" oracle says that, and a compliant module that samples 25 from what it is
+    given would have failed it — review caught it.
     """
     drift_check = require(STATS_MODULE, "drift_check", issue="#117")
+    NoValidationData = require(STATS_MODULE, "NoValidationData", issue="#115")
     low, high = vocab.DRIFT_SAMPLE_RANGE
 
-    assert not low <= sample_size <= high, "the fixture size is inside the declared range"
+    assert not low <= available <= high, "the fixture size is inside the declared range"
 
-    with pytest.raises(Exception) as raised:  # noqa: PT011 - the refusal type is the module's
-        drift_check(
-            package_version="pkg-v1", sample=tuple(f"sub-{i}" for i in range(sample_size))
-        )
-    assert not isinstance(raised.value, AttributeError), (
-        "drift_check raised AttributeError, which is what a module with no drift check raises"
+    report = drift_check(
+        package_version="pkg-v1", sample=tuple(f"sub-{i}" for i in range(available))
     )
+
+    if available < low:
+        assert isinstance(report, NoValidationData), (
+            f"the drift check returned {report!r} from {available} submissions, below "
+            f"FR-STATS-09's floor of {low}. A verdict computed on too small a sample is the "
+            "substitute figure CT-STATS-16 forbids."
+        )
+    else:
+        assert low <= report.sample_size <= high, (
+            f"the check used {report.sample_size} submissions from {available} available; "
+            f"FR-STATS-09 fixes the sample at {low}–{high}"
+        )
 
 
 @pytest.mark.writtenahead

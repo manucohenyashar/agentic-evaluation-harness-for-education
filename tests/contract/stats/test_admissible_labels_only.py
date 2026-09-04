@@ -136,7 +136,7 @@ def test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_
     )
     source = source_path.read_text(encoding="utf-8")
 
-    exposed = [name for name in dir(stats) if not name.startswith("_")]
+    exposed = vocab.public_surface(stats)
     assert "agreement" in exposed, (
         "the module exposes no `agreement`, so the sweep below is over the wrong surface"
     )
@@ -208,9 +208,16 @@ def test_tc_stats_c01_a_contaminated_population_in_a_real_store_is_excluded(tmp_
     open_stats = require(STATS_MODULE, "open_stats", issue="#115")
     record_label = require(REVIEW_MODULE, "record_label", issue="#110")
 
-    for name in sorted(vocab.INADMISSIBLE_LABEL_CLASSES):
-        for label in _labels_for(name):
-            record_label(data_dir=tmp_data_dir, label=label)
+    # The admissible label is written **once**, outside the loop. An earlier draft wrote it per
+    # contaminated class and asserted `n == 1` on the reasoning that they carry the same id — which
+    # assumes the store upserts on `label_id`. A store with a primary key raises on the second
+    # write and an append-only ledger reports n = 4; neither is a filter defect, and neither is
+    # this case's business.
+    record_label(data_dir=tmp_data_dir, label=broken.ADMISSIBLE_LABEL)
+    for name, fields in sorted(vocab.INADMISSIBLE_LABEL_CLASSES.items()):
+        record_label(
+            data_dir=tmp_data_dir, label=broken.Label(label_id=f"lbl-{name}", **fields)
+        )
 
     stats = open_stats(data_dir=tmp_data_dir)
     figure = stats.agreement(
@@ -223,9 +230,9 @@ def test_tc_stats_c01_a_contaminated_population_in_a_real_store_is_excluded(tmp_
     )
 
     assert figure.n == 1, (
-        f"the figure was computed over n = {figure.n}. One admissible label was written per "
-        "contaminated class and they are the same label id, so a correct filter sees exactly one "
-        "— any larger n means a contaminated row reached the validity claim from the store."
+        f"the figure was computed over n = {figure.n}. One admissible label and four contaminated "
+        "ones were written, so a correct filter sees exactly one — any larger n means a "
+        "contaminated row reached the validity claim from the store."
     )
 
 

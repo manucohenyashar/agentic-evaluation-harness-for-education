@@ -324,7 +324,32 @@ def test_the_protocol_members_match_the_interfaces_block_and_each_has_an_owning_
     # the tuple comprehension: putting it back would make TC-STATS-C03 demand a return type the
     # contract does not promise, and contradict TC-STATS-C05 two files away.
     assert "promote" not in vocab.FIGURE_MEMBERS
-    assert set(vocab.FIGURE_MEMBERS) | {"promote"} == set(vocab.PROTOCOL_MEMBERS)
+
+
+def test_the_members_that_can_return_no_validation_data_are_the_ones_the_design_declares(design):
+    """`FIGURE_MEMBERS` is **derived** from §3.16's signatures, not chosen.
+
+    `TC-STATS-C03`'s type sweep asserts `isinstance(result, NoValidationData)`, and it may only do
+    that where the design says so. §3.16 types `agreement` as `AgreementFigure | NoValidationData`
+    and every other member non-optionally — `-> CompressionReport`, `-> MVVPReport` — so a sweep
+    over six demanded a return type the contract does not promise, and contradicted
+    `TC-STATS-C10`, which requires `compression_check` to return a report carrying its stated
+    limitation. Review caught it; this stops it coming back.
+
+    Derived rather than transcribed: a member that gains the union return reaches the sweep
+    through this assertion instead of through somebody remembering.
+    """
+    block = _interfaces_block(design)
+    declared = {
+        match.group(1)
+        for match in re.finditer(r"def (\w+)\(self,(?:[^)]|\n)*?\) -> [^:]*NoValidationData", block)
+    }
+
+    assert declared == set(vocab.FIGURE_MEMBERS), (
+        f"§3.16 declares NoValidationData in the return type of {sorted(declared)}; the fixture "
+        f"sweeps {sorted(vocab.FIGURE_MEMBERS)}"
+    )
+    assert set(vocab.FIGURE_MEMBERS) < set(vocab.PROTOCOL_MEMBERS)
 
 
 def test_the_two_contract_alerts_match_the_observability_paragraph(design):
@@ -454,13 +479,36 @@ def test_ct_stats_02s_percent_agreement_half_has_no_surface_to_assert_against(de
     block = design[design.index("class AgreementFigure:"):]
     block = block[: block.index("class NoValidationData")]
 
-    assert not re.search(r"percent|pct|raw_agreement|observed_agreement", block), (
-        "AgreementFigure now declares a raw-agreement field, so CT-STATS-02's second half has a "
-        "surface: TC-STATS-C02 should grow the assertion that it never travels alone"
+    declared = re.findall(r"^\s{4}(\w+)\s*:", block, flags=re.MULTILINE)
+    percent = [
+        name
+        for name in declared
+        if any(term in name.lower() for term in vocab.PERCENT_AGREEMENT_NAMES)
+    ]
+    assert percent == [], (
+        f"AgreementFigure now declares {percent}, so CT-STATS-02's second half has a field to "
+        "govern: TC-STATS-C02 should grow the assertion that it never travels alone"
     )
+
+    # The names the red case scans the module surface with are the same ones checked here, so a
+    # fixture that stopped knowing what a percent figure is called fails in both places at once.
+    assert "percent_agreement" in vocab.PERCENT_AGREEMENT_NAMES
     assert set(vocab.AGREEMENT_FIGURE_FIELDS) & {"kappa", "qwk", "ordinal_alpha"}, (
         "no chance-corrected statistic is left in the figure"
     )
+
+    # And the other half of the same balance: `degenerate_band_shape` is CT-STATS-21's disclosure
+    # and is **not** one of §3.16's eight, so it is declared as an addition rather than folded into
+    # the transcription. Review found the two clauses jointly unsatisfiable while C02 asserted
+    # field-set equality; this is what keeps the resolution honest in both directions.
+    assert not set(vocab.DECLARED_FIGURE_ADDITIONS) & set(vocab.AGREEMENT_FIGURE_FIELDS), (
+        "a declared addition is also a design field, so C02's allowance is hiding a transcription"
+    )
+    for addition in vocab.DECLARED_FIGURE_ADDITIONS:
+        assert addition not in block, (
+            f"§3.16 now declares {addition!r} itself — move it into AGREEMENT_FIGURE_FIELDS and "
+            "out of the additions list, so the transcription stays a transcription"
+        )
 
 
 # ==================================================================================================
@@ -639,6 +687,28 @@ def test_the_headline_rule_catches_a_headline_that_carries_its_scope(rendering):
     )
 
 
+def test_the_headline_rule_accepts_a_table_whose_header_carries_the_scope():
+    """A real agreement block is a table: scope in the heading, figures in bare columns.
+
+    `CORRECT_AGREEMENT_BLOCK` repeats its scope words on every line, which no table does — so
+    review demonstrated the rule condemning an ordinary scoped table, which would have failed
+    `M-CONSOLE`'s S12 block for its layout rather than for its claim.
+    """
+    assert vocab.unscoped_headline_figures(broken.SCOPED_TABLE_RENDERING) == []
+
+
+def test_the_headline_rule_still_catches_a_headline_above_a_scoped_table():
+    """And the inheritance must not become an amnesty.
+
+    The heading scopes the rows beneath it; it does not excuse the sentence above it. This is the
+    screen `CT-STATS-20` describes — *"a consumer that renders a single headline number has
+    violated this contract even if every figure in it is correct"* — and every figure in the table
+    below is correct and scoped.
+    """
+    problems = vocab.unscoped_headline_figures(broken.HEADLINE_ABOVE_A_SCOPED_TABLE)
+    assert len(problems) == 1 and "overall accuracy" in problems[0].lower()
+
+
 def test_the_headline_rule_reads_lines_not_documents():
     """A headline above forty scoped rows is the screen `CT-STATS-20` describes.
 
@@ -654,6 +724,21 @@ def test_the_degeneracy_rule_passes_a_compliant_disclosure():
     assert vocab.presents_binary_agreement_as_equivalent(
         broken.CORRECT_DEGENERACY_DISCLOSURE
     ) == []
+
+
+@pytest.mark.parametrize("disclosure", broken.NEGATED_DEGENERACY_DISCLOSURES)
+def test_the_degeneracy_rule_leaves_the_negated_disclosure_alone(disclosure):
+    """The direction that matters most: the compliant disclosure **is** a negated comparison.
+
+    *"A two-band figure is not directly comparable to a multi-band figure"* is how anybody would
+    write what `CT-STATS-21` asks for, and a rule that forbids the vocabulary outright forbids
+    exactly that. Review found it condemning all three of these — while `TC-STATS-C21`'s consumer
+    sweep, in the same assertion, *requires* a disclosure term to be present. A compliant console
+    would have failed both halves at once.
+    """
+    assert vocab.presents_binary_agreement_as_equivalent(disclosure) == [], (
+        f"{disclosure!r} states the limitation the clause asks for and was condemned for it"
+    )
 
 
 def test_the_degeneracy_rule_leaves_an_equivalence_about_something_else_alone():
@@ -857,3 +942,47 @@ def test_the_entry_point_call_arguments_match_the_interfaces_signatures(design):
             f"{member} is driven with {sorted(set(call) - declared)}, which §3.16's signature "
             f"does not declare (it takes {sorted(declared)})"
         )
+
+
+# ==================================================================================================
+# Controls for the machinery the review findings introduced
+# ==================================================================================================
+
+
+def test_the_refusal_probe_accepts_a_designed_refusal():
+    """A domain error raised by a function that exists and took the argument **is** a refusal."""
+    assert vocab.refusal_problems(ValueError("an aggregate may not span populations"), "call") == []
+    assert vocab.refusal_problems(RuntimeError("subgroup analysis is disabled"), "call") == []
+
+
+def test_the_refusal_probe_rejects_an_absence_wearing_a_raise():
+    """The two ways *"it raises"* passes a module that refuses nothing.
+
+    The second one is the likelier and it is what review found: §3.16 declares
+    `surface_proxies(self, cohort_id, criterion_id)` with no `subgroup` parameter, so a module
+    implementing the declared signature raises from argument binding — and the case passed with
+    no refusal anywhere in it.
+    """
+    assert vocab.refusal_problems(AttributeError("'Stats' object has no attribute 'aggregate'"), "call")
+    assert vocab.refusal_problems(
+        TypeError("surface_proxies() got an unexpected keyword argument 'subgroup'"), "call"
+    )
+
+
+def test_the_agreeing_population_fixture_is_not_the_unanimous_degenerate_case():
+    """The fixture κ is computed over must have a spread of bands **and** some disagreement.
+
+    `[ADMISSIBLE_LABEL] * 40` has neither: every label sits on one band and agrees with itself, so
+    κ and ordinal α are 0/0 and `NFR-STATS-01` treats that as a degenerate case with a
+    hand-computed answer. Several assertions rested on it — including one demanding a
+    chance-corrected figure from a population that cannot produce one — until review found them.
+    """
+    population = broken.agreeing_population(40)
+
+    assert len({label.band for label in population}) > 1, "the panel used one band"
+    assert len({label.teacher_band for label in population}) > 1, "the teacher used one band"
+    disagreements = [l for l in population if l.band != l.teacher_band]
+    assert disagreements, "panel and teacher agree on every label, so κ is 1 by construction"
+    assert len(disagreements) < len(population), "they disagree on every label, which is as degenerate"
+    assert all(label.label_type == "blind" for label in population)
+    assert all(label.evaluation_mode == "judged" for label in population)

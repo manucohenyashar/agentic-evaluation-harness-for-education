@@ -48,6 +48,12 @@ LABELS_PER_ADMINISTRATION = int(
     os.environ.get("HARNESS_STATS_LABELS_PER_ADMINISTRATION", "400")
 )
 
+#: How much a run may slow down while the analytical export runs beside it. `NFR-STATS-03` says
+#: *"never touches the scoring pipeline"*, which is a claim about wall clock as much as about
+#: writes — and an earlier draft's `baseline * 2` let a 100% regression through. Env-gated because
+#: a timing bound hard-coded for one machine is a phantom bug on every other one.
+EXPORT_WALL_CLOCK_TOLERANCE = float(os.environ.get("HARNESS_STATS_EXPORT_TOLERANCE", "1.25"))
+
 
 # --- CT-STATS-16 — insufficient data is a value ------------------------------------------------
 
@@ -98,7 +104,7 @@ def test_tc_stats_c16_a_genuine_programming_error_still_raises():
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
     NoValidationData = require(STATS_MODULE, "NoValidationData", issue="#115")
 
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
     call = dict(vocab.EMPTY_DATA_CALL["agreement"], scope=None, criterion_id=object())
 
     try:
@@ -198,18 +204,30 @@ def test_tc_stats_c17_the_analytical_export_is_read_only_and_does_not_touch_a_li
         run = run_scoring(data_dir=tmp_data_dir, cohort_id="coh-live", alongside=lambda: analytical_export(stats))
         concurrent = time.perf_counter() - concurrent_started
 
-    export_writes = [w for w in writes if w.initiated_by == "M-STATS" and "export" in str(w.target)]
-    assert export_writes == [] or all(
-        "export" in str(w.target) and "cohorts" not in str(w.target) for w in export_writes
-    ), f"the export wrote into the scoring pipeline's data: {[str(w.target) for w in export_writes]}"
+    # Every write the export initiated, not only the ones whose path already says "export". The
+    # earlier filter asked whether an export-named write went somewhere else, so a write straight
+    # into the scoring database was the one thing it could not see — which is the only thing this
+    # assertion exists for. Review caught it.
+    into_the_pipeline = [
+        w
+        for w in writes
+        if w.initiated_by == "M-STATS" and "export" not in str(w.target).lower()
+    ]
+    assert into_the_pipeline == [], (
+        "the analytical export wrote into the running pipeline's data: "
+        f"{[(w.api, str(w.target)) for w in into_the_pipeline]}. NFR-STATS-03: it is read-only and "
+        "never touches the scoring pipeline."
+    )
 
     assert not run.lock_waits, (
         f"the run waited on {run.lock_waits} locks while the export was running. A read-only "
         "export that stalls a run looks like a slow model, which is the diagnosis nobody revisits."
     )
-    assert concurrent < baseline * 2, (
-        f"the run took {concurrent:.1f}s alongside the export against {baseline:.1f}s alone "
-        "(NFR-STATS-03: the export never touches the scoring pipeline)"
+    assert concurrent < baseline * EXPORT_WALL_CLOCK_TOLERANCE, (
+        f"the run took {concurrent:.1f}s alongside the export against {baseline:.1f}s alone, "
+        f"beyond the {EXPORT_WALL_CLOCK_TOLERANCE}x tolerance. NFR-STATS-03 says the export never "
+        "touches the scoring pipeline, and a run that slows down whenever a reporting tool is "
+        "running is being touched by it."
     )
 
 
@@ -226,7 +244,7 @@ def test_tc_stats_c19_emits_the_declared_counters():
     """
     require(STATS_MODULE, "observability_counters", issue="#118")  # the member this story delivers
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
 
     counters = stats.observability_counters()
     missing = [name for name in vocab.OBSERVABILITY_COUNTERS if name not in counters]
@@ -271,7 +289,7 @@ def test_tc_stats_c19_each_contract_alert_exists_and_fires(alert, issue):
         },
     }[alert]
 
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40, **provoking)
+    stats = build_stats(labels=broken.agreeing_population(), **provoking)
     fired = {a.name if hasattr(a, "name") else a for a in stats.alerts()}
 
     assert alert in fired, (
@@ -335,7 +353,7 @@ def test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_
     reworded the finding goes red rather than being quietly outlived by this test.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
 
     figure = stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"])
     on_figure = [name for name in vocab.FORBIDDEN_VERDICT_FIELDS if hasattr(figure, name)]
@@ -344,10 +362,9 @@ def test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_
         "pass/fail claim about the system wearing a scoped statistic (CT-STATS-20, NFR-SYS-08)."
     )
 
-    exposed = [name for name in dir(stats) if not name.startswith("_")]
     on_surface = [
         name
-        for name in exposed
+        for name in vocab.public_surface(stats)
         if any(forbidden in name.lower() for forbidden in vocab.FORBIDDEN_VERDICT_FIELDS)
     ]
     assert on_surface == [], f"the module offers {on_surface}, which is a threshold by another name"
@@ -374,11 +391,17 @@ def test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_
     measurement, and §7.4 carries the resolution as an open design question.
 
     The fixture is the degenerate case §4.6 item 1 calls the **default** band shape: two bands,
-    unanimous agreement, α = 1 as a construction artifact rather than a finding.
+    both of them used, panel and teacher agreeing on every label. That is what makes α = 1 here a
+    construction artifact rather than a finding — an earlier fixture put every label in band 1,
+    which exercises one band and is a different degeneracy from the one the clause is about.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
     binary = [
-        broken.Label(label_id=f"bin-{i}", band=1, teacher_band=1)
+        broken.Label(
+            label_id=f"bin-{i}",
+            band=1 + (i % vocab.DEGENERATE_BAND_COUNT),
+            teacher_band=1 + (i % vocab.DEGENERATE_BAND_COUNT),
+        )
         for i in range(vocab.DEGENERATE_BAND_COUNT * 20)
     ]
 

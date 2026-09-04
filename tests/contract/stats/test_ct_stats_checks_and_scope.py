@@ -241,7 +241,7 @@ def test_tc_stats_c15_the_validation_record_is_written_through_m_pkg(tmp_data_di
         record_label(data_dir=tmp_data_dir, label=label)
 
     stats = open_stats(data_dir=tmp_data_dir)
-    with recording_write_audit() as writes:
+    with recording_write_audit() as writes, sql_trace() as statements:
         stats.promote(cohort_id="coh-spring")
 
     by_stats = [w for w in writes if w.initiated_by == "M-STATS"]
@@ -259,6 +259,21 @@ def test_tc_stats_c15_the_validation_record_is_written_through_m_pkg(tmp_data_di
         f"{[(w.api, str(w.target)) for w in direct]} reached Tier P without going through the "
         "catalog. CT-STATS-15 writes package_validation *through* M-PKG, and CT-PKG-12 makes "
         "M-PKG the sole writer of Tier P."
+    )
+
+    # The other half of the clause, which is a **grant** rather than a prohibition: *"Reads labels,
+    # grades, and metrics."* Asserted because a module that reads none of them cannot have computed
+    # anything, and because a clause case that only ever tests the prohibitions leaves the
+    # permission undefended — the next person to tighten the write rule has nothing telling them
+    # where the line is.
+    read = {
+        table
+        for table in ("label", "grade", "run_metrics")
+        if any(table in statement.lower() for statement in statements)
+    }
+    assert read, (
+        "promote read none of the label, grade or metrics tables. CT-STATS-15 permits all three, "
+        f"and the traced statements were {statements[:5]}"
     )
 
 
@@ -311,8 +326,11 @@ def test_tc_stats_c18_reads_only_tier_d_and_the_current_cohorts_labels(tmp_data_
         record_label(data_dir=tmp_data_dir, label=label, cohort_id="coh-current")
         record_label(data_dir=tmp_data_dir, label=label, cohort_id="coh-other")
 
-    stats = open_stats(data_dir=tmp_data_dir, cohort_id="coh-current")
+    # The constructor is **inside** the trace. `open_stats` is the rung-2 constructor and a
+    # constructor by that name holds the connection, so installing the callback afterwards would
+    # attach it to nothing and the non-vacuity assertion below would fail against a correct module.
     with sql_trace() as statements:
+        stats = open_stats(data_dir=tmp_data_dir, cohort_id="coh-current")
         stats.agreement(**vocab.EMPTY_DATA_CALL["agreement"])
 
     assert statements, "no SQL was traced, so this asserts nothing about the read boundary"
@@ -390,11 +408,24 @@ def test_tc_stats_c18_subgroup_analysis_is_off_by_default_and_refuses_when_disab
         f"block declares {vocab.SUBGROUP_ANALYSIS_DEFAULT!r}"
     )
 
-    stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
+    stats = build_stats(labels=broken.agreeing_population())
+
+    # First the default: with the knob where §3.16 leaves it, the report carries no subgroup
+    # breakdown. This is the half that actually protects anybody — a knob nothing reads is a
+    # comment, and *"a subgroup analysis running by default is a regulatory exposure nobody
+    # chose"*.
+    report = stats.surface_proxies(cohort_id="coh-1", criterion_id="C-01")
+    assert not getattr(report, "subgroup_breakdowns", None), (
+        "the surface-proxy report carries subgroup breakdowns with "
+        f"{vocab.SUBGROUP_ANALYSIS_KNOB} at its declared default of "
+        f"{vocab.SUBGROUP_ANALYSIS_DEFAULT!r} (NFR-STATS-05)"
+    )
+
+    # Then the refusal, on an explicit request. §3.16's declared signature has no `subgroup`
+    # parameter, so a module implementing it literally raises `TypeError` from argument binding —
+    # which an oracle written as "it raises" would have accepted as a refusal. Review caught that;
+    # `refusal_problems` is what separates the two.
     with pytest.raises(Exception) as raised:  # noqa: PT011 - the refusal type is the module's
         stats.surface_proxies(cohort_id="coh-1", criterion_id="C-01", subgroup="declared_group")
 
-    assert not isinstance(raised.value, AttributeError), (
-        "surface_proxies raised AttributeError, which is what a module with no surface-proxy "
-        "analysis raises — that is an absence, not a refusal"
-    )
+    assert vocab.refusal_problems(raised.value, "surface_proxies(subgroup=...)") == []
