@@ -30,11 +30,26 @@ yet.
 If the array is empty, report which it is — the backlog is finished, or it's fully blocked,
 or everything ready is parked on `status:needs-attention` — and stop.
 
+**Write the result down before going any further.** Put the JSON array and the stderr skip
+reasons in `.claude/backlog/work-backlog-state.md`, overwriting whatever the last run left
+there. One issue takes a lot of context, so this session will likely be compacted before it
+reaches step 4 — and a compacted summary is a lossy place to keep the one fact this skill
+must not lose. `backlog/` is gitignored, so the file survives a dead session without ever
+showing up in `git status` or tripping the `verify.sh` Stop hook.
+
 ## 2. Claim it
 
 ```bash
 gh issue edit <number> --add-label "status:in-progress"
 ```
+
+Append the number, its `type:` label and the branch to the state file the moment that
+succeeds. From here to step 4 the issue is claimed, and an issue left on
+`status:in-progress` because the session lost track of it is invisible to
+`ready-issues.sh` on every subsequent run — it filters claimed issues out, so nothing ever
+picks it up again and nothing reports it as stuck. If the state file already names a
+claimed issue when you reach step 1, that is a run that died mid-issue: say so and check
+whether its labels need releasing before starting anything new.
 
 ## 3. Implement it
 
@@ -47,7 +62,8 @@ issue may depend on its implementation story or have no dependency at all, and
 
 ## 4. Release the claim
 
-On success the PR is open and review is what happens next:
+On success the PR is open and review is what happens next. Take the number from the state
+file rather than from memory — by now the claim may be several compactions old:
 
 ```bash
 gh issue edit <number> --remove-label "status:in-progress" --add-label "status:in-review"
@@ -60,7 +76,9 @@ failing issue from being picked up again on every loop iteration and failing the
 ## 5. Report
 
 Say which issue you completed, whether a PR was opened, and what the ready set looked like
-— so the loop's next iteration is predictable rather than surprising.
+— so the loop's next iteration is predictable rather than surprising. The ready set comes
+from the state file; a report that says "the ready set was probably" is a report that has
+already lost it.
 
 ## Running this unattended
 
@@ -76,3 +94,23 @@ Then run `/work-backlog`. The evaluator re-checks the condition after each issue
 another `/work-backlog` turn until the backlog is empty or genuinely stuck. Pair with auto
 mode (`claude --permission-mode auto`) so each turn's tool calls don't need per-command
 approval.
+
+### Context
+
+One issue fills a lot of the window — a design section, a test plan section, the suite, the
+mutation runs and the review — so a loop left alone will hit the limit partway through the
+second or third. Set the auto-compact window once, in the same session you set the goal:
+
+```text
+/autocompact 500k
+```
+
+`/autocompact` needs Claude Code v2.1.221 or later and writes the window to user settings,
+so it is set once rather than per session; `/autocompact auto` returns to the default.
+
+**This skill does not compact and cannot.** Compaction is a built-in the model has no tool
+for, so nothing written in a `SKILL.md` can trigger it — a step that told you to compact
+here would just be the manual step again, wearing a different hat. What the steps above do
+instead is *survive* it: the ready set and the claimed issue number live in
+`.claude/backlog/work-backlog-state.md`, so a compaction landing mid-issue costs a re-read
+rather than a claim stranded on `status:in-progress`.
