@@ -356,6 +356,75 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
          "::test_tc_conform_c14_m_pkg_records_no_backend_equivalence_claim",),
     ),
+    # --- TS-77 (#132), the twelve CT-CONSOLE rendering and honesty clause cases ---------------
+    #
+    # `M-CONSOLE` is six stories, and these twelve cases land across four of them: #122 builds the
+    # process (control rows, uploads, the monitor, the knobs, observability, the audit surface),
+    # #124 the review queue and blind flow (invariants 8-14), #125 amendment, export and the
+    # touchpoint sweep (invariants 15-21), #127 `NFR-CONSOLE-07`. Keyed per story, because a
+    # single key would hold two thirds of the suite outside the gate for three stories.
+    #
+    # **Every name is invented, and here that is not a shortcut.** Design §3.19 declares *no Python
+    # Interfaces block at all* -- only prose, a route table and §11.8's control-surface table. So
+    # unlike `M-CALIB` or `M-CONFORM`, there is not even a Protocol to key against, and the
+    # question of whether a symbol key narrows the window does not arise: nothing the design
+    # declares could exist first. The whole invented surface is settled in one place
+    # (`tests/support/console_vocabulary.py`), so twelve cases cannot each guess a different shape.
+    # Checked: none of the four symbols below appears in either design document or the HLD.
+    "#122 console_app": (
+        # `symbol`, not `module`. The `#122` entry below is a **module** key that three other
+        # suites' consumer sweeps ride on, and it fires on the first `aeh/console.py` commit --
+        # right for a sweep that only needs the module to exist, wrong for eleven cases that drive
+        # a running console. A second entry rather than a changed one, so neither loses precision.
+        "symbol",
+        f"{CONSOLE_MODULE}:build_console",
+        (
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c18_"
+            "the_upload_handler_dispatches_the_work_rather_than_awaiting_it",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c18_"
+            "a_large_upload_streams_to_the_blob_store_rather_than_into_memory",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
+            "the_run_monitor_polls_the_ledger_and_adds_no_write_load",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c20_"
+            "the_three_knobs_carry_their_declared_defaults",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c20_"
+            "a_routable_bind_does_not_defeat_the_cloud_hosted_refusal",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c21_"
+            "the_console_renders_with_no_toolchain_and_no_network",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c21_"
+            "the_coupling_surface_is_its_reads_plus_its_declared_writes",
+            "tests/contract/console/test_ct_console_observability_and_honesty.py",
+        ),
+    ),
+    "#124": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_review_queue",
+        ("tests/contract/console/test_ct_console_review_and_blind.py",),
+    ),
+    # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
+    # `-23` (the export gate) and `-25` (the touchpoint sweep).
+    #
+    # `TC-CONSOLE-C19`'s measurement half rides here too, and that is a judgment call worth
+    # stating: `NFR-CONSOLE-01` is traced to **#126**, which builds S1, S2, S6 and S8 -- none of
+    # the two screens the NFR names. The case needs the review queue (#124) and the rollup (#125),
+    # which are siblings with no dependency between them, so no single key is certainly last.
+    # #125 is chosen because it completes the rollup surface. The mis-trace is a finding for
+    # `/plan-to-issues`, reported on the PR rather than fixed here.
+    "#125": (
+        "symbol",
+        f"{CONSOLE_MODULE}:amend_finalized_grade",
+        (
+            "tests/contract/console/test_ct_console_finalization_and_touchpoints.py",
+            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
+            "the_review_queue_and_rollup_render_inside_their_budgets_at_350_students",
+        ),
+    ),
+    "#127": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_submission_text",
+        ("tests/contract/console/test_ct_console_observability_and_honesty.py"
+         "::test_tc_console_c24_non_english_and_rtl_content_fails_or_degrades_visibly",),
+    ),
     "#122": (
         "module",
         CONSOLE_MODULE,
