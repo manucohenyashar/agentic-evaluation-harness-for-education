@@ -292,6 +292,17 @@ def test_the_blind_flow_reads_two_tables_and_cannot_join_to_the_score_row(sectio
         assert f"`{table}`" in paragraph, (
             f"§3.15's Data flow paragraph no longer says the blind session reads {table!r}"
         )
+    # The forbidden table appears in this paragraph too — in the clause that forbids it — so a
+    # membership loop over the readable set passes even when the readable set contains it.
+    # Mutation added `criterion_score` to BLIND_READABLE_TABLES and nothing caught it.
+    assert vocab.BLIND_FORBIDDEN_TABLE not in vocab.BLIND_READABLE_TABLES, (
+        f"{vocab.BLIND_FORBIDDEN_TABLE!r} is in the readable set, so CT-REVIEW-09's primary "
+        "assertion — set equality against what the session may read — now permits the one join "
+        "the clause exists to forbid"
+    )
+    assert len(vocab.BLIND_READABLE_TABLES) == 2, (
+        f"the blind session reads {len(vocab.BLIND_READABLE_TABLES)} tables; §3.15 says two"
+    )
     assert f"cannot join to `{vocab.BLIND_FORBIDDEN_TABLE}`" in paragraph, (
         f"§3.15 no longer states that the blind session cannot join to "
         f"{vocab.BLIND_FORBIDDEN_TABLE!r}, which is the structural form of FR-REVIEW-11"
@@ -304,6 +315,12 @@ def test_the_five_blind_absences_come_from_fr_review_11(design_rows):
 
     missing = [f for f in vocab.BLIND_FORBIDDEN_FIELDS if not _tokens_present(f, requirement)]
     assert missing == [], f"FR-REVIEW-11 does not name {missing}"
+    # The count as well as the membership. A subset check is half a comparison: dropping a field
+    # from this suite's tuple shortens the loop and passes, which mutation confirmed for
+    # `routing_reason`. FR-REVIEW-11 lists five and CT-REVIEW-09 step 2 sweeps five.
+    assert len(vocab.BLIND_FORBIDDEN_FIELDS) == 5, (
+        f"this suite sweeps {len(vocab.BLIND_FORBIDDEN_FIELDS)} absences; FR-REVIEW-11 names five"
+    )
     assert "unreachable" in requirement.lower(), (
         "FR-REVIEW-11 no longer requires unreachability. Hiding is a property of a template and "
         "survives exactly as long as nobody edits the template."
@@ -316,6 +333,12 @@ def test_the_four_error_probability_signals_come_from_fr_review_03(design_rows):
 
     missing = [s for s in vocab.ERROR_PROBABILITY_SIGNALS if not _tokens_present(s, requirement)]
     assert missing == [], f"FR-REVIEW-03 does not name {missing}"
+    assert len(vocab.ERROR_PROBABILITY_SIGNALS) == 4, (
+        f"this suite varies {len(vocab.ERROR_PROBABILITY_SIGNALS)} signals; FR-REVIEW-03 combines "
+        "four — panel spread, adverse integrity signals, transcription overlap and the "
+        "criterion's historical override rate. A dropped one is a signal the ranking may ignore "
+        "with nothing to notice."
+    )
 
     for signal, phrase in vocab.IMPACT_SIGNALS.items():
         assert phrase in requirement.lower(), (
@@ -409,6 +432,10 @@ def test_the_est_seconds_non_promise_is_a_phase_two_requirement(design_rows):
         f"FR-REVIEW-16 is now Phase {row[-1].strip()}; this suite treats calibration as Phase "
         f"{vocab.EST_SECONDS_CALIBRATION_PHASE}, which is the whole content of CT-REVIEW-19"
     )
+    assert len(vocab.CALIBRATION_INPUTS) == 2, (
+        "CT-REVIEW-19's Phase 2 path is a comparison, so it needs both sides stored — dropping "
+        "one leaves the non-promise with no way out and nothing asserting it"
+    )
     for field in vocab.CALIBRATION_INPUTS:
         assert _tokens_present(field, row[1]), (
             f"FR-REVIEW-16 does not name {field!r}, so CT-REVIEW-19's Phase 2 path has nothing "
@@ -489,6 +516,10 @@ def test_the_semantic_clustering_rule_does_not_match_similar_inside_dissimilar()
     dissimilar in wording are still grouped"* is exactly the honest copy the clause wants, and a
     naive rule condemns it.
     """
+    assert "dissimilar" in broken.GROUP_RENDERING_WITH_DISSIMILAR, (
+        "the control fixture no longer contains the word it exists to trap — without it this "
+        "test passes for a rule with no word-boundary handling at all"
+    )
     assert vocab.semantic_clustering_language(broken.GROUP_RENDERING_WITH_DISSIMILAR) == [], (
         "the rule matched `similar` inside `dissimilar`, so it condemns the most accurate "
         "description of Phase 1 grouping available"
@@ -796,4 +827,69 @@ def test_finding_two_of_the_four_knobs_have_no_label_count_differential(interfac
     assert "label" not in whole_grade.lower(), (
         "FR-REVIEW-14 now mentions a label, so the whole-grade sample may write one and the "
         "other half of this finding is retired"
+    )
+
+
+@pytest.mark.parametrize("phrase", sorted(vocab.SEMANTIC_CLUSTERING_PHRASES))
+def test_every_semantic_clustering_phrase_is_detected_on_its_own(phrase):
+    """One probe per phrase, so removing any single phrase from the rule fails here.
+
+    The realistic captions above each trip several phrases at once, which meant the rule could
+    lose one and stay green — mutation removed `"cluster"` and nothing noticed, because
+    `"clustered"` and `"comparable"` were in the same sentence.
+    """
+    probe = broken.SEMANTIC_PHRASE_PROBES[phrase]
+    assert vocab.semantic_clustering_language(probe) == [phrase], (
+        f"the rule reported {vocab.semantic_clustering_language(probe)} for {probe!r}; it should "
+        f"report exactly [{phrase!r}]"
+    )
+
+
+def test_the_semantic_probe_set_covers_every_declared_phrase():
+    """The probes and the rule's phrase list are the same set, so a phrase added later is swept."""
+    assert set(broken.SEMANTIC_PHRASE_PROBES) == set(vocab.SEMANTIC_CLUSTERING_PHRASES), (
+        f"probes cover {sorted(broken.SEMANTIC_PHRASE_PROBES)} against the rule's "
+        f"{sorted(vocab.SEMANTIC_CLUSTERING_PHRASES)}"
+    )
+
+
+def test_the_residual_rule_reports_a_figure_the_queue_never_computed():
+    """The `None` branch, which no other fixture reaches.
+
+    A screen omitting the residual and a queue that never computed one are different failures and
+    the rule has to report the field for both — inverting the condition passed every test until
+    this fixture existed.
+    """
+    assert vocab.unstated_residual(broken.CORRECT_QUEUE_RENDERING, broken.UNCOMPUTED_QUEUE) == [
+        "residual_provisional"
+    ], "the rule does not report a residual the queue never computed"
+
+
+def test_the_prefetch_rule_control_session_declares_no_cache_attribute_at_all():
+    """Absence, not `None`.
+
+    `blind_prefetch_attributes` tests `is not None`, which is the right semantic for a *populated*
+    cache — and it means a session declaring `prefetched_score = None` passes while being one
+    assignment from the adversarial construction. The control asserts the attribute is not
+    declared, so the fixture cannot drift into that state unnoticed.
+    """
+    session = broken.CompliantBlindSession()
+    declared = [
+        name for name in vocab.BLIND_PREFETCH_ATTRIBUTES if hasattr(session, name)
+    ]
+    assert declared == [], (
+        f"the compliant control session declares {declared}. A slot for the score row is not the "
+        "same as no route to it, and CT-REVIEW-09 is a claim about the route."
+    )
+
+
+def test_the_random_arm_produces_exactly_zero_review_items():
+    """`CT-REVIEW-05`: *"produces no review item"* — zero, not "few".
+
+    Asserted on the constant because `TC-REVIEW-C05` compares against it: raising it to 1 turns
+    the red case into one that tolerates a leak, and mutation showed nothing caught that.
+    """
+    assert vocab.RANDOM_ARM_REVIEW_ITEMS == 0, (
+        "CT-REVIEW-05 admits no random-arm review item at all. A tolerance of one is a tolerance "
+        "for the arm spending teacher minutes, which is what stops it being an independent sample."
     )

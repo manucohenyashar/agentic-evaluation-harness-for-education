@@ -134,6 +134,22 @@ SEMANTIC_GROUP_RENDERINGS: tuple[str, ...] = (
     "This cluster contains 210 comparable answers.",
 )
 
+#: One rendering per phrase in `SEMANTIC_CLUSTERING_PHRASES`, carrying **that phrase and no
+#: other**. The tuple above is a set of realistic captions and each trips several phrases at
+#: once, so dropping a phrase from the rule leaves every one of them still caught — mutation
+#: found exactly that: removing `"cluster"` changed nothing, because `"clustered"` and
+#: `"comparable"` covered for it.
+SEMANTIC_PHRASE_PROBES: dict[str, str] = {
+    "similar": "These 210 responses are similar.",
+    "semantically": "Grouped semantically for review.",
+    "same pattern": "All 210 show the same pattern.",
+    "alike": "The responses in this group are alike.",
+    "cluster": "One cluster of 210 responses.",
+    "clustered": "The responses were clustered for review.",
+    "equivalent": "These 210 answers are equivalent.",
+    "comparable": "A group of 210 comparable answers.",
+}
+
 
 # --- CT-REVIEW-19: the budget is an estimate -------------------------------------------------
 
@@ -159,7 +175,7 @@ class QueueFigures:
 
     flagged_total: int = 812
     shown: tuple[str, ...] = ("item-1", "item-2", "item-3")
-    residual_provisional: int = 809
+    residual_provisional: int | None = 809
 
 
 CORRECT_QUEUE_RENDERING = """
@@ -177,13 +193,25 @@ RENDERING_OMITTING_THE_FLAGGED_TOTAL = """
 Showing 3 items. 809 remain provisional.
 """
 
+#: A queue that never computed its residual at all. Distinct from a *screen* that omits it: the
+#: rule has to report the field in both cases, and mutation showed the `value is None` branch was
+#: never reached — every fixture carried all three figures, so inverting the condition changed
+#: nothing.
+UNCOMPUTED_QUEUE = QueueFigures(residual_provisional=None)  # type: ignore[arg-type]
+
 
 # --- CT-REVIEW-09: unreachable, not hidden ---------------------------------------------------
 
 
 @dataclass
 class CompliantBlindSession:
-    """A blind session holding only what §3.15's Data flow paragraph permits."""
+    """A blind session holding only what §3.15's Data flow paragraph permits.
+
+    It carries no prefetch attribute **at all**, not one set to `None`. The control asserts the
+    absence rather than the value: `getattr(..., None) is not None` passes a session that declares
+    `prefetched_score = None` and fills it on the next request, and mutation found that adding the
+    declaration here changed no test.
+    """
 
     session_id: str = "blind-1"
     submissions: tuple[str, ...] = ("sub-1", "sub-2")
