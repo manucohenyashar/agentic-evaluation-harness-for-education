@@ -38,6 +38,7 @@ PKG_MODULE = f"{IMPLEMENTATION_PACKAGE}.pkg"
 CALIB_MODULE = f"{IMPLEMENTATION_PACKAGE}.calib"
 GRADE_MODULE = f"{IMPLEMENTATION_PACKAGE}.grade"
 STATS_MODULE = f"{IMPLEMENTATION_PACKAGE}.stats"
+CONFORM_MODULE = f"{IMPLEMENTATION_PACKAGE}.conform"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -263,6 +264,88 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # discriminating question is *which single blocker, resolved, means this test can run*:
     # #122 depends on #10 and #61, so `M-CONSOLE` lands strictly after `M-ORCH` and resolving it
     # means both halves are present.
+    # --- TS-75 (#136), the fourteen CT-CONFORM clause cases ---------------------------------
+    #
+    # `M-CONFORM` has two implementing stories and they land in order: #133 builds the frozen
+    # corpus (size, span, media, consent, the adversarial tier) and #134 runs it (full pipeline
+    # per backend, the divergence report, the gates, the records, the tiers). Keyed separately,
+    # because seven of the cases become runnable at #133 and the rest need a run.
+    #
+    # **Keyed on symbols no Interfaces block declares.** Design §3.18 declares a two-member
+    # Protocol -- `ConformanceSuite.run` and `.compare` -- plus the type names in their
+    # signatures: `ConformanceReport`, `DivergenceReport`, `BackendResult`. A key on any of those,
+    # or on either member, resolves against a Protocol-only `aeh.conform` with nothing behind it,
+    # which is the measurement review made in TS-56: the narrowing is zero.
+    #
+    # `load_fixture_set` and `detect_build_substitution` are names these tests actually call and
+    # neither appears anywhere in either design document (checked: zero occurrences), so neither
+    # can exist before an implementation does. They are invented -- as most of this suite's
+    # surface is, because fourteen clauses cannot be written against two names -- and the tests
+    # invent and use them together, which is what makes them self-consistent.
+    #
+    # `detect_build_substitution` rather than a constructor for #134: `build_conformance_suite` is
+    # the constructor **both** stories need -- `FR-CONFORM-02`'s refusal is #133's acceptance
+    # criterion and needs a suite object -- so keying #134 on it would fire while #134 was still
+    # unstarted. `detect_build_substitution` is `FR-CONFORM-08`, which is #134's alone.
+    "#133": (
+        "symbol",
+        f"{CONFORM_MODULE}:load_fixture_set",
+        (
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_the_corpus_"
+            "spans_the_score_range_including_mid_range_partial_credit",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_a_result_"
+            "names_its_fixtures_and_one_changed_fixture_changes_the_identity",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c02_the_corpus_"
+            "carries_handwriting_spanning_the_legibility_range_and_mixed_format",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_every_"
+            "injection_submission_is_paired_with_a_benign_twin",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
+            "refuses_to_run_against_a_cohort_not_so_flagged",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_corpus_"
+            "is_only_synthetic_or_consented_work",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
+            "does_not_reimplement_the_consent_check",
+        ),
+    ),
+    "#134": (
+        "symbol",
+        f"{CONFORM_MODULE}:detect_build_substitution",
+        (
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c02_the_fixtures_"
+            "traverse_the_vlm_path_rather_than_a_text_shortcut",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_an_injection_"
+            "never_beats_its_twin_on_band_citations_or_confidence",
+            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_a_malicious_"
+            "pdf_quarantines_at_v0_and_reaches_no_model_call",
+            "tests/contract/conform/test_ct_conform_pipeline_and_divergence.py",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c06_every_written_record_carries_its_backend_profile_and_panel_build_ref",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c06_a_write_merging_two_backends_into_one_record_is_refused",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c08_the_fast_tier_runs_to_completion_with_the_network_hard_blocked",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c11_a_run_completes_within_the_declared_budget_on_each_backend",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c12_the_only_writes_this_module_makes_are_records_and_its_own_report",
+            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
+            "c12_the_pipelines_own_writes_stay_attributed_to_their_owning_modules",
+        ),
+    ),
+    # `TC-CONFORM-C14`'s consumer sweep splits by consumer. #29 owns the population- and
+    # backend-scoped validation records, so it is what makes the `M-PKG` half runnable; the
+    # `M-CONSOLE` half is #122's and rides with the other console sweeps below.
+    #
+    # `record_validation` is invented and absent from both design documents. `PackageCatalog`
+    # declares `validation_for` -- the **read** side -- and no write method at all, which is worth
+    # noticing on its own: `M-CONFORM` is required to write "through `M-PKG`" via a surface the
+    # design never names.
+    "#29": (
+        "symbol",
+        f"{PKG_MODULE}:record_validation",
+        ("tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
+         "::test_tc_conform_c14_m_pkg_records_no_backend_equivalence_claim",),
+    ),
     "#122": (
         "module",
         CONSOLE_MODULE,
@@ -279,7 +362,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
          "::test_tc_calib_c03_the_console_renders_no_accuracy_language",
          "tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superiority"),
+         "::test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superiority",
+         # TS-75's console half of `TC-CONFORM-C14`. The console is where a release decision is
+         # actually read, so it is the surface on which a backend-equivalence claim does damage.
+         # Its `M-PKG` twin is keyed on #29 above: the two land at different moments, and keying
+         # both on the later would hold one of them outside the gate for nothing.
+         "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
+         "::test_tc_conform_c14_m_console_renders_no_backend_equivalence_claim"),
     ),
 }
 
