@@ -26,7 +26,7 @@ from tests.support.console_vocabulary import (
     TEACHER_TOUCHPOINTS,
     visible_text,
 )
-from tests.support.impl import CONSOLE_MODULE, PKG_MODULE, require
+from tests.support.impl import CONSOLE_MODULE, require
 
 pytestmark = pytest.mark.contract
 
@@ -156,7 +156,6 @@ def test_tc_console_c16_the_provenance_gate_is_a_reachable_screen_and_records_it
     """
     export = require(CONSOLE_MODULE, "export_package", issue="#125")
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
-    validation_for = require(PKG_MODULE, "record_validation", issue="#29")
 
     app = build_console()
     routes = {route for routes in app.routes().values() for route in routes}
@@ -175,7 +174,6 @@ def test_tc_console_c16_the_provenance_gate_is_a_reachable_screen_and_records_it
         "the provenance gate ran and wrote no outcome to the validation record, so a later reader "
         "cannot tell it from a gate that was skipped (R71)"
     )
-    assert validation_for is not None
 
 
 # --- CT-CONSOLE-17 — no touchpoint silently absent -----------------------------------------------------

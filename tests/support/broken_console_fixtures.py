@@ -38,9 +38,34 @@ NARRATIVE_WITH_AN_OVERALL_CLAIM = (
     "Overall this is excellent work. The derivation on line 12 omits its assumption."
 )
 
-#: A narrative naming a band. `band` is scoring vocabulary and the numeral is a criterion index,
-#: so this is the near-miss that decides whether the rule reads context or counts digits.
-NARRATIVE_NAMING_A_BAND = "Criterion 3 was placed in the met band by two of the three judges."
+#: A narrative naming a band — and it is **permitted**, which is the point of keeping it here.
+#:
+#: `FR-CONSOLE-15` forbids a *numeral-bearing* or *overall-quality* claim. A band label is neither:
+#: `met` is not a numeral, and the criterion index is an index. An earlier version of the rule
+#: flagged this because `band` was in its word list beside a digit — and the same rule flagged
+#: *"the frequency band around 400 Hz"*, which is physics. Neither is a mark, and a rule cannot
+#: tell a rubric band from a frequency band by vocabulary, so it stopped trying: it matches score
+#: **constructions** instead.
+NARRATIVE_PERMITTED_NAMING_A_BAND = (
+    "Criterion 3 was placed in the met band by two of the three judges."
+)
+
+#: Four narratives an evidence-grounded console renders, each condemned by the word-plus-digit
+#: version of the rule that review measured. They are the controls that keep it from coming back:
+#: a rule which fails correct copy is a rule the first person to hit it switches off.
+NARRATIVES_A_WORD_MATCHER_WOULD_CONDEMN: tuple[str, ...] = (
+    "The student remarks in line 4 that the sample was contaminated.",
+    "The answer points to 3 possible causes but develops none.",
+    "The graph in Figure 2 is poorly scaled.",
+    "Question 5 discusses the frequency band around 400 Hz.",
+)
+
+#: Score claims the same word-plus-digit rule **missed**, because neither carries a bare scoring
+#: word beside a digit in the shape it expected.
+SCORE_CLAIMS_A_WORD_MATCHER_WOULD_MISS: tuple[str, ...] = (
+    "This was awarded 7 of a possible 10.",
+    "The candidate earns 4/5 here.",
+)
 
 # --- CT-CONSOLE-13's DOM order ---------------------------------------------------------------------
 
@@ -80,11 +105,27 @@ REVIEW_ITEM_WHOSE_MARK_TRIPS_THE_RULE = """
 </article>
 """
 
+#: A review item whose narrative contains an image crop — which is what S8 renders for an
+#: unreadable mark (`FR-CONSOLE-29`). `<img>` has no end tag, so a depth counter that counts it
+#: never closes the element and the slice runs on into the mark. Review found that hole; this is
+#: the fixture that keeps it shut.
+REVIEW_ITEM_WITH_A_CROP_IN_THE_NARRATIVE = """
+<article data-role="review-item">
+  <div data-role="narrative"><img src="/crop/1.png"><p>Line 3 shows the wrong sign.</p></div>
+  <div data-role="mark"><span>8 of 10 points</span></div>
+</article>
+"""
+
 #: The same item with the mark rendered first — read as the judgment, with the narrative below it
 #: as justification. Functionally identical, and the thing the clause exists to forbid.
+#:
+#: The wrapper's class also names **both** regions, which is ordinary markup for a panel containing
+#: them — and it is what proves `dom_order` ignores an element that matches two markers. Counting
+#: the wrapper would append them in the order the caller asked, so this inverted item would read as
+#: correct: the assertion would be about its own argument list rather than about the document.
 MARK_BEFORE_NARRATIVE_HTML = """
 <section data-role="group-actions"><button>Accept all 12</button></section>
-<article data-role="review-item">
+<article data-role="review-item" class="review-item narrative mark">
   <div data-role="mark"><select name="band"><option>met</option></select></div>
   <div data-role="narrative"><p>The derivation on line 12 omits its assumption.</p></div>
 </article>
@@ -104,6 +145,13 @@ ITEM_ACTIONS_ABOVE_GROUP_HTML = """
 HONEST_AUDIT_SURFACE = (
     "Finalized by: r.mensah. This is a self-declared actor string supplied on the form and is not "
     "an authenticated identity; the console has no accounts and does not verify who acted."
+)
+
+#: One sentence, two clauses: a false identity claim and a stray negation. Whole-sentence scoping
+#: exempts the lot on the strength of "no changes", which is the shape review measured swallowing a
+#: whole audit table — and this is its minimal form, so the fix cannot regress unnoticed.
+AUDIT_SURFACE_WITH_A_CLAIM_BESIDE_A_NEGATION = (
+    "Finalized by r.mensah, the authenticated user for this batch, and no changes were made since."
 )
 
 #: The same surface presenting the string as proof. In a dispute this is a false claim (RISK-12).

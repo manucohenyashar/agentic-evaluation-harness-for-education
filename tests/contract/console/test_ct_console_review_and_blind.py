@@ -27,6 +27,7 @@ import pytest
 from tests.support.console_vocabulary import (
     dom_order,
     element_text,
+    elements,
     forbidden_narrative_claims,
     visible_text,
 )
@@ -128,23 +129,33 @@ def test_tc_console_c13_narrative_renders_before_the_mark_and_claims_no_score():
 
     rendered = render_queue(build_console(), run_id="r-1")
 
-    narrative, mark = dom_order(rendered.html, "narrative", "mark")
-    assert narrative >= 0 and mark >= 0, (
-        "the review item renders no narrative or no mark, so the ordering clause has nothing to "
-        "order"
-    )
-    assert narrative < mark, (
-        "the mark renders before its narrative. FR-CONSOLE-15 puts the evidence first because the "
-        "order is what decides whether the teacher weighs it or rationalises from it."
-    )
+    # **Per item, not once per page.** `dom_order` and `element_text` both take the *first*
+    # matching element, so a queue that rendered item 1 narrative-first and item 5 mark-first
+    # would pass a page-level check — and a score claim in item 7's narrative would never be read.
+    # The clause is universal, so the sweep is too; the same "enumerated, not sampled" discipline
+    # `CT-CONSOLE-17` applies to touchpoints.
+    items = elements(rendered.html, "review-item")
+    assert items, "the review queue rendered no items, so this sweep has nothing to sweep"
 
-    # Sliced to the narrative element, not the page: the mark is a numeral in scoring company by
-    # definition, so a rule run over the whole rendering would condemn every correct review item.
-    claims = forbidden_narrative_claims(element_text(rendered.html, "narrative"))
-    assert not claims, (
-        f"the narrative makes a score or overall-quality claim: {claims}. FR-CONSOLE-15 keeps the "
-        f"mark out of the narrative so the narrative stays evidence."
-    )
+    for index, item in enumerate(items):
+        narrative, mark = dom_order(item, "narrative", "mark")
+        assert narrative >= 0 and mark >= 0, (
+            f"item {index} renders no narrative or no mark, so the ordering clause has nothing to "
+            f"order"
+        )
+        assert narrative < mark, (
+            f"item {index} renders the mark before its narrative. FR-CONSOLE-15 puts the evidence "
+            f"first because the order is what decides whether the teacher weighs it or "
+            f"rationalises from it."
+        )
+
+        # Sliced to the narrative element, not the page: the mark is a score claim by definition,
+        # so a rule run over the whole item would condemn every correct one.
+        claims = forbidden_narrative_claims(element_text(item, "narrative"))
+        assert not claims, (
+            f"item {index}'s narrative makes a score or overall-quality claim: {claims}. "
+            f"FR-CONSOLE-15 keeps the mark out of the narrative so the narrative stays evidence."
+        )
 
 
 # --- CT-CONSOLE-14 — unreachable, not merely undisplayed --------------------------------------------
@@ -169,11 +180,15 @@ def test_tc_console_c14_the_blind_flow_issues_no_query_that_reaches_system_outpu
     flow = flow_for(run_id="r-1", submission_ref="s-0007")
     assert not flow.submitted, "the flow must be inspected before submission"
 
+    # **`band` alone is not on this list, deliberately.** §6.2's `criterion_band` is the rubric's
+    # band-descriptor table — package data, not system output — and a teacher assigning a blind
+    # band has to be shown those descriptors. Forbidding the substring would fail a compliant flow
+    # for reading the rubric it is grading against. What is forbidden is the *system's* band.
     forbidden = {
         "verdict",
-        "band",
         "self_confidence",
         "aggregated_band",
+        "predicted_band",
         "submission_grade",
         "review_queue",
         "narrative",

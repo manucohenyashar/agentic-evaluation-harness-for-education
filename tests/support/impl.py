@@ -393,7 +393,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "the_console_renders_with_no_toolchain_and_no_network",
             "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c21_"
             "the_coupling_surface_is_its_reads_plus_its_declared_writes",
-            "tests/contract/console/test_ct_console_observability_and_honesty.py",
+            # Node IDs, not the file: `TC-CONSOLE-C24` lives in the same file and is #127's. A
+            # file-level entry would have told whoever closed #122 to unmark C24 as well, and it
+            # would then have failed inside TEST_CMD naming an issue nobody was working on — the
+            # precise trap the entries above are written to avoid.
+            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
+            "c22_the_console_emits_all_four_declared_metrics",
+            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
+            "c22_skip_rates_are_emitted_per_setup_step_not_in_aggregate",
+            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
+            "c23_the_absence_of_auth_holds_only_within_the_loopback_bound",
+            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
+            "c23_no_audit_surface_presents_an_actor_string_as_an_identity",
         ),
     ),
     "#124": (

@@ -17,26 +17,57 @@ callable to write a clause case against, and every name below is this suite's. T
 down here rather than reinvented per file, because twelve cases each guessing a slightly different
 shape is how a written-ahead suite becomes unimplementable::
 
-    build_console(...)                  -> ConsoleApp
-    ConsoleApp.routes()                 -> Mapping[str, tuple[str, ...]]   surface -> routes
-    ConsoleApp.write_surface()          -> tuple[str, ...]   FR-CONSOLE-32's enumeration
-    ConsoleApp.read_surface()           -> tuple[str, ...]   the stores/tables it reads
-    ConsoleApp.telemetry()              -> Mapping[str, tuple[str, ...]]   metric -> dimensions
-    ConsoleApp.touchpoints()            -> Mapping[str, TouchpointRender]
-    ConsoleApp.render(route, **params)  -> RenderedPage
-    RenderedPage                        -> .html, .queries, .duration_seconds
-    render_review_queue(app, run_id)    -> RenderedPage   (#124's screen)
-    render_rollup(app, run_id)          -> RenderedPage   (#125's screen)
-    TouchpointRender                    -> .implemented, .present, .available, .available_in_version
+**Module attributes**::
 
-    start_console(cfg)                  -> raises ConsoleBindRefused under `cloud-hosted`
-    blind_flow(...)                     -> .queries, .transport_payloads, .submitted
-    amend_finalized_grade(...)          -> a new grade revision
-    export_package(...)                 -> raises at the provenance gate
-    upload_scans(...)                   -> .handler_seconds, .dispatched, .peak_rss_bytes
+    CONSOLE_BIND, CONSOLE_PORT, CONSOLE_POLL_INTERVAL_MS   the three declared knobs
+
+**Constructors and entry points**::
+
+    build_console(cohort_size=..., provider=...)  -> ConsoleApp
+    start_console(cfg)                            -> raises ConsoleBindRefused under `cloud-hosted`
+    render_review_queue(app, run_id)              -> RenderedPage    (#124)
+    render_rollup(app, run_id)                    -> RenderedPage    (#125)
+    render_submission_text(app, text=...)         -> RenderedPage + .refused   (#127)
+    review_queue_header(page)                     -> {flagged, shown, left_provisional}   (#124)
+    blind_flow(run_id=..., submission_ref=...)    -> .queries, .transport_payloads, .submitted
+    touchpoint_surface(app)                       -> Mapping[str, TouchpointRender]        (#125)
+    amend_finalized_grade(app, ...)               -> a new grade revision                  (#125)
+    export_package(app, ...)                      -> raises ProvenanceRefused at the gate  (#125)
+    upload_scans(app, cohort_id=..., size_bytes=...) -> UploadOutcome                      (#122)
+
+**Types**::
+
+    ConsoleApp
+        .routes()             -> Mapping[str, tuple[str, ...]]   surface -> routes
+        .write_surface()      -> tuple[str, ...]   FR-CONSOLE-32's enumeration
+        .read_surface()       -> tuple[str, ...]   the stores/tables it reads
+        .actual_couplings()   -> tuple[str, ...]   everything it really touches (CT-CONSOLE-21)
+        .telemetry()          -> Mapping[str, tuple[str, ...]]   metric -> dimensions
+        .telemetry_values(metric, dimension=...) -> the values emitted for that dimension
+        .audit_routes()       -> tuple[str, ...]   the surfaces CT-CONSOLE-23 sweeps
+        .bind_address         -> str
+        .render(route, **params) -> RenderedPage
+        .finalize_batch(run_id=..., actor=...)   -> Mapping[submission_ref, Grade]
+        .set_review_window(run_id=..., hours=...)
+        .export_grades(run_id=...)               -> rows carrying `.provisional`
+        .grade_revision(submission_ref=..., revision=...) -> Grade | None
+        .validation_record(package_version=...)  -> .provenance_gate_outcome
+    RenderedPage        -> .html, .queries, .poll_interval_ms
+    Grade               -> .finalized_at, .revision, .bands
+    UploadOutcome       -> .dispatched, .blob_refs, .staged_in_browser
+    TouchpointRender    -> .implemented, .present, .available, .available_in_version
+    ConsoleBindRefused, ProvenanceRefused
+
+**Required markup.** The rendering clauses assert *where* things appear, so the region markers are
+part of the invented surface too: `narrative`, `mark`, `group-actions`, `item-actions` and
+`review-item`, each on the element's `id`, `class` or `data-role`.
+
+Durations and memory are **measured by the tests**, not read off these objects — a figure the code
+under test reports about itself is a claim, not a measurement — so `RenderedPage` carries no
+`duration_seconds` and `UploadOutcome` no memory field.
 
 Whoever implements #122 … #127 adopts these names or renames in both places. Checked: none of
-them appears anywhere in either design document.
+them appears anywhere in either design document or the HLD.
 """
 
 from __future__ import annotations
@@ -216,26 +247,25 @@ PILOT_QUESTIONS: tuple[str, ...] = (
 # whoever hit it first, which is the failure TS-74 shipped twice.
 #
 # So the rule is scoped: a numeral adjacent to scoring vocabulary, or a mark-shaped construction.
-_SCORE_CONTEXT = (
-    "score",
-    "scored",
-    "scores",
-    "mark",
-    "marks",
-    "marked",
-    "points",
-    "point",
-    "grade",
-    "graded",
-    "band",
-    "out of",
-    "%",
-    "percent",
+#: `FR-CONSOLE-15` forbids a **numeral-bearing score claim**, and the rule matches score
+#: *constructions* rather than a scoring word plus a digit anywhere in the sentence.
+#:
+#: Review measured the word-plus-digit version condemning four realistic narratives: *"the answer
+#: **points** to 3 possible causes"*, *"the frequency **band** around 400 Hz"*, *"the student
+#: **remarks** in line 4"*, *"the graph is **poorly** scaled"*. Every one is evidence-grounded copy
+#: a correct console would render, and a rule that fails correct copy is a rule somebody switches
+#: off. Constructions separate them: *"7 out of 10"* is a mark and *"3 possible causes"* is not,
+#: whatever words surround either.
+_SCORE_PATTERNS: tuple[str, ...] = (
+    # "7 out of 10", "7/10", "8 of 10"
+    r"\b\d+(?:\.\d+)?\s*(?:/|out of|of)\s*\d+",
+    # a scoring verb with a numeral in reach: "scored 7", "awarded 7 of a possible 10"
+    r"\b(?:scored|scores|scoring|marked|graded|awarded|earns|earned)\b[^.]{0,40}\d",
+    # a numeral carrying a scoring unit: "8 points", "3 marks", "70 percent"
+    r"\b\d+(?:\.\d+)?\s*(?:points?|marks?|percent)\b",
+    r"\d+\s*%",
 )
 
-#: Overall-quality claims: a verdict on the work as a whole rather than evidence about a criterion.
-#: `FR-CONSOLE-15` forbids these for the same reason it orders narrative before the mark — a
-#: narrative that opens with "excellent work" has made the judgment the teacher is meant to make.
 _OVERALL_QUALITY_CLAIMS = (
     "excellent",
     "outstanding",
@@ -252,7 +282,18 @@ _OVERALL_QUALITY_CLAIMS = (
     "unsatisfactory",
 )
 
-_NUMERAL = re.compile(r"\d")
+#: **Matched on word boundaries, not as substrings.** Review measured four realistic
+#: evidence-grounded narratives condemned: *"the student **remarks**"*, *"the answer **points** to
+#: 3 causes"*, *"the graph is **poorly** scaled"*, *"the frequency **band** around 400 Hz"*. Every
+#: one is copy a correct console renders, and a rule that fails correct copy gets switched off —
+#: which is the failure mode that matters here, since `CT-SYNTH-14` already keeps the mark out of
+#: the narrative upstream and this rule is the console-side second check.
+_SCORE_CLAIM = re.compile("|".join(_SCORE_PATTERNS))
+
+#: Overall-quality claims stay word-matched, on boundaries: `poorly` is not `poor`.
+_OVERALL_CLAIMS = re.compile(
+    r"\b(?:" + "|".join(re.escape(claim) for claim in _OVERALL_QUALITY_CLAIMS) + r")\b"
+)
 
 
 def forbidden_narrative_claims(text: str) -> list[str]:
@@ -269,9 +310,9 @@ def forbidden_narrative_claims(text: str) -> list[str]:
     hits: list[str] = []
     for sentence in _sentences(text):
         lowered = sentence.lower()
-        if _NUMERAL.search(sentence) and any(word in lowered for word in _SCORE_CONTEXT):
+        if _SCORE_CLAIM.search(lowered):
             hits.append(sentence)
-        elif any(claim in lowered for claim in _OVERALL_QUALITY_CLAIMS):
+        elif _OVERALL_CLAIMS.search(lowered):
             hits.append(sentence)
     return hits
 
@@ -327,12 +368,32 @@ def authenticated_identity_claims(text: str) -> list[str]:
     actor string and is not an authenticated identity"* — from being reported as the violation it
     warns about.
     """
-    return [
-        sentence
-        for sentence in _sentences(text)
-        if not any(negation in sentence.lower() for negation in _IDENTITY_NEGATIONS)
-        and any(term in sentence.lower() for term in AUTHENTICATED_IDENTITY_TERMS)
-    ]
+    hits: list[str] = []
+    for sentence in _sentences(text):
+        for clause in _clauses(sentence):
+            lowered = clause.lower()
+            if not any(term in lowered for term in AUTHENTICATED_IDENTITY_TERMS):
+                continue
+            if any(negation in lowered for negation in _IDENTITY_NEGATIONS):
+                continue
+            hits.append(sentence.strip())
+            break
+    return hits
+
+
+def _clauses(sentence: str) -> list[str]:
+    """A sentence split at the punctuation that separates independent claims.
+
+    **The negation filter has to be scoped or it disarms the sweep.** Review measured a realistic
+    audit page — a table of rows, one of which said "no items" — swallowing the whole sweep,
+    because `visible_text` joined the rows into one segment, `_sentences` found no full stop, and
+    a single bare "no " anywhere in it exempted the lot. On a table-shaped page, which is what an
+    audit surface is, the sweep reported nothing whatever the page claimed.
+
+    So the negation must sit in the **same clause** as the term it is meant to negate. A row
+    saying "no items" no longer excuses a different row saying "the authenticated user".
+    """
+    return [part for part in re.split(r"[;:,\u2014\u2013]|\s\u00b7\s|\n", sentence) if part.strip()]
 
 
 # --- CT-CONSOLE-24: the non-promise, and what "visibly" means ------------------------------------------
@@ -347,24 +408,33 @@ def authenticated_identity_claims(text: str) -> list[str]:
 # everything. So the three acceptable outcomes are enumerated: the system raises, or it renders a
 # warning naming the limitation, or it refuses the input. Anything else — including a page that
 # renders the text and says nothing — is the silent degradation the clause is about.
+#: **Phrases, not words.** Review measured the first version passing on any page containing the
+#: word "english" — which is the likeliest subject name in the pilot, so an English paper carrying
+#: silently-reversed Arabic satisfied the predicate. `"ltr"` was worse: it matched inside
+#: "u**ltr**a-wide". Each marker below is a phrase a page would only carry deliberately.
 VISIBLE_DEGRADATION_MARKERS: tuple[str, ...] = (
-    "english",
-    "left-to-right",
-    "left to right",
-    "ltr",
-    "right-to-left",
-    "right to left",
-    "rtl",
+    "left-to-right only",
+    "left to right only",
+    "english only",
+    "english and left-to-right",
+    "right-to-left text",
+    "right to left text",
     "not supported",
     "unsupported",
     "cannot render",
-    "latin",
+    "may be misordered",
+    "shown unstyled",
 )
 
 #: The classic UTF-8-decoded-as-Latin-1 signature, plus the replacement character. Present in a
 #: rendering means mojibake reached the page; the clause forbids that outcome regardless of
 #: whether a warning was also shown.
-MOJIBAKE_MARKERS: tuple[str, ...] = ("�", "Ã¢", "Ã©", "Ø§Ù", "×", "â€")
+#:
+#: `"×"` (U+00D7) was in the first version and is gone: neither probe is Hebrew, so it could never
+#: fire as a true positive, while `"1024 × 768"` on a crop view and `"3 × 4"` in a narrative fire
+#: it. A marker that cannot catch what it is for and can catch what it is not is pure false
+#: positive.
+MOJIBAKE_MARKERS: tuple[str, ...] = ("�", "Ã¢", "Ã©", "Ã¨", "Ø§Ù", "â€")
 
 #: Non-English and RTL probes. Arabic and Hebrew because §0.2's deployment context is the reason
 #: the clause says localisation is *"a real later requirement"* rather than a hypothetical.
@@ -397,9 +467,14 @@ def visibly_degraded(rendered: str, raised: BaseException | None, refused: bool)
 # proportional to its buffer, not to the upload.
 UPLOAD_PROBE_BYTES = int(os.environ.get("HARNESS_CONSOLE_UPLOAD_PROBE_BYTES", 300 * 1024 * 1024))
 
-#: Peak RSS growth may not exceed this fraction of the upload. A streaming implementation is far
+#: Peak memory may not exceed this fraction of the upload. A streaming implementation is far
 #: under it; one that buffers the batch in memory is at or above 1.0 by construction.
 UPLOAD_RSS_RATIO_CEILING = 0.25
+
+#: …but never less than this in absolute terms. The knob above exists so a slower box can shrink
+#: the probe, and at a small probe a pure ratio is blown by any incidental allocation — the knob
+#: added to prevent a phantom failure would then cause one. The ceiling is the larger of the two.
+MEMORY_FLOOR_BYTES = 8 * 1024 * 1024
 
 #: `CT-CONSOLE-18`'s other half, and the one that catches the common bug: a handler that *awaits*
 #: the work rather than dispatching it. Independent of the memory question — an implementation can
@@ -462,12 +537,66 @@ def dom_order(html: str, *markers: str) -> list[int]:
     return [parser.seen.index(m) if m in parser.seen else -1 for m in markers]
 
 
+def elements(html: str, marker: str) -> list[str]:
+    """The outer HTML of **every** element carrying `marker`, in document order.
+
+    `dom_order` and `element_text` both take the *first* match, which is right when the caller
+    means "the narrative of this item" and wrong when the clause is universal. `CT-CONSOLE-13` says
+    narrative renders before the mark — of every item — and review measured a page-level check
+    passing on a queue whose first item was correct and whose fifth was inverted.
+
+    So the ordering and content sweeps iterate `elements(html, "review-item")` and assert inside
+    each, which is the same "enumerated, not sampled" discipline `CT-CONSOLE-17` applies to
+    touchpoints.
+    """
+    from html.parser import HTMLParser
+
+    class _Collect(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=False)
+            self.found: list[str] = []
+            self.depth = 0
+            self.start = 0
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
+            if self.depth:
+                if tag not in _VOID_TAGS:
+                    self.depth += 1
+                return
+            if marker in _identifying_tokens(attrs):
+                self.depth = 1
+                self.start = self.getpos_offset()
+
+        def handle_endtag(self, tag: str) -> None:
+            if not self.depth or tag in _VOID_TAGS:
+                return
+            self.depth -= 1
+            if self.depth == 0:
+                end = self.getpos_offset() + len(f"</{tag}>")
+                self.found.append(html[self.start : end])
+
+        def getpos_offset(self) -> int:
+            line, column = self.getpos()
+            return sum(len(part) + 1 for part in html.split("\n")[: line - 1]) + column
+
+    parser = _Collect()
+    parser.feed(html)
+    return parser.found
+
+
 def visible_text(html: str) -> str:
     """The rendered text of `html`, with tags and attributes removed.
 
     The claim sweeps in this suite are about what a **reader** sees. Running them over raw markup
     would let a class name or a template comment trip a rule, and would let real copy hide inside
     an attribute the sweep never reads.
+
+    **Block elements are separated by a full stop, not a space**, and that is load-bearing rather
+    than cosmetic. Review measured `CT-CONSOLE-23`'s sweep going vacuous on a table-shaped audit
+    page: joined by spaces, the whole table became one "sentence", and one row saying "no items"
+    exempted every other row from the negation filter. An audit surface *is* a table, so that was
+    the shape the case would actually have run on. A block boundary is a sentence boundary to a
+    reader, and now to the sweep.
     """
     from html.parser import HTMLParser
 
@@ -476,12 +605,28 @@ def visible_text(html: str) -> str:
             super().__init__(convert_charrefs=True)
             self.parts: list[str] = []
 
+        def _break(self) -> None:
+            if self.parts and self.parts[-1] != _BLOCK_BREAK:
+                self.parts.append(_BLOCK_BREAK)
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
+            if tag in _BLOCK_TAGS:
+                self._break()
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag in _BLOCK_TAGS:
+                self._break()
+
         def handle_data(self, data: str) -> None:
             self.parts.append(data)
 
     parser = _Text()
     parser.feed(html)
-    return " ".join(" ".join(parser.parts).split())
+    joined = " ".join(" ".join(parser.parts).split())
+    # Collapse the markers into single terminators and tidy the ones that landed beside real
+    # punctuation, so the result reads like a page rather than like a parser's output.
+    joined = re.sub(rf"(?:\s*{re.escape(_BLOCK_BREAK)}\s*)+", ". ", joined)
+    return re.sub(r"\s*\.\s*\.", ".", joined).strip(" .") + ("." if joined.strip(" .") else "")
 
 
 def coupling_surface(app: Any) -> set[str]:
@@ -493,6 +638,32 @@ def coupling_surface(app: Any) -> set[str]:
     against exactly this and nothing else.
     """
     return set(app.read_surface()) | set(app.write_surface())
+
+
+#: The tags that end a line for a reader. A page's structure is its punctuation.
+_BLOCK_TAGS: frozenset[str] = frozenset(
+    {
+        "p", "div", "section", "article", "aside", "header", "footer", "main", "nav",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+        "ul", "ol", "li", "dl", "dt", "dd",
+        "table", "thead", "tbody", "tfoot", "tr", "td", "th",
+        "form", "fieldset", "legend", "label", "figure", "figcaption", "blockquote", "pre", "br",
+    }
+)
+
+#: Elements that never have an end tag. `_Slice` counts nesting depth to know where an element
+#: stops, and a `<br>` or an `<img>` inside it increments a depth that never comes back down — so
+#: the slice runs to the end of the document. Review measured exactly that: an `<img>` crop inside
+#: a review item (which is what S8 renders) made `element_text(..., "narrative")` swallow the mark,
+#: reintroducing the precise failure the slice exists to prevent.
+_VOID_TAGS: frozenset[str] = frozenset(
+    {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+)
+
+_BLOCK_BREAK = "␞"  # a symbol no page renders, so it cannot arrive in the input
 
 
 def element_text(html: str, marker: str) -> str:
@@ -517,16 +688,26 @@ def element_text(html: str, marker: str) -> str:
             self.inside = False
             self.parts: list[str] = []
 
-        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
             if self.inside:
-                self.depth += 1
+                # A void element has no end tag, so counting it would leave the depth permanently
+                # raised and the slice would never close.
+                if tag not in _VOID_TAGS:
+                    self.depth += 1
                 return
             if marker in _identifying_tokens(attrs):
                 self.inside = True
                 self.depth = 1
 
+        def handle_startendtag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
+            # `<br/>`, XHTML style. `HTMLParser` routes these here and never calls `handle_endtag`,
+            # so the base class's default of "start then end" would also unbalance the count.
+            if not self.inside and marker in _identifying_tokens(attrs):
+                self.inside = True
+                self.depth = 1
+
         def handle_endtag(self, tag: str) -> None:
-            if not self.inside:
+            if not self.inside or tag in _VOID_TAGS:
                 return
             self.depth -= 1
             if self.depth <= 0:

@@ -30,6 +30,7 @@ from tests.support.console_vocabulary import (
     BLOCKING_TOUCHPOINTS,
     CONSOLE_KNOBS,
     CONTROL_SURFACE_ACTIONS,
+    MOJIBAKE_MARKERS,
     MVP_ABSENT_TOUCHPOINT,
     OBSERVABILITY_METRICS,
     OPERATOR_ROUTES,
@@ -41,11 +42,13 @@ from tests.support.console_vocabulary import (
     ROUTABLE_BIND,
     TEACHER_ROUTES,
     TEACHER_TOUCHPOINTS,
+    MEMORY_FLOOR_BYTES,
     UPLOAD_PROBE_BYTES,
     UPLOAD_RSS_RATIO_CEILING,
     authenticated_identity_claims,
     dom_order,
     element_text,
+    elements,
     forbidden_narrative_claims,
     visible_text,
     visibly_degraded,
@@ -81,16 +84,41 @@ def test_the_touchpoint_inventory_transcribes_hld_7_9_in_full(repo_root):
     is *"could a teacher start a run, do nothing at all, and still have every student graded the
     next morning?"*, and it becomes false the moment a third row blocks.
     """
-    hld = _normalized(repo_root, HLD)
-
-    missing = [name for name in TEACHER_TOUCHPOINTS if name.lower() not in hld]
-    assert not missing, (
-        f"these touchpoints are no longer in HLD §7.9's inventory: {missing}. The fixture was "
-        f"transcribed from that table and the table has moved."
+    # **The table is parsed, not counted.** Containment plus a hard-coded `== 12` leaves a
+    # thirteenth row added to the HLD invisible — and `CT-CONSOLE-17`'s sweep is "enumerated, not
+    # sampled" over exactly this inventory, so a row the fixture never learned about is a
+    # touchpoint the sweep silently stops requiring.
+    hld_text = read_repo_text(repo_root, HLD)
+    heading = "#### Every teacher touchpoint, and whether it blocks (R60)"
+    assert heading in hld_text, (
+        "HLD §7.9's touchpoint inventory heading is gone. CT-CONSOLE-17 sweeps that table, so if "
+        "it moved, this fixture is asserting against a table that no longer exists."
     )
-    assert len(TEACHER_TOUCHPOINTS) == 12, (
-        "HLD §7.9's inventory has twelve rows; a fixture of a different size makes CT-CONSOLE-17's "
-        "sweep assert something other than 'every touchpoint'"
+    # Sliced to the section, not searched across the document: several other HLD tables have three
+    # columns whose third cell begins "No", and a filter on shape alone picks them up.
+    section = hld_text[hld_text.index(heading) :]
+    section = section[: section.index("\n####", 1)]
+
+    rows = markdown_rows(section)
+    declared = [row[0] for row in rows if len(row) == 3 and row[0] != "Teacher touchpoint"]
+    assert declared, "HLD §7.9's touchpoint table could not be located"
+
+    def _key(name: str) -> str:
+        return name.split(" (")[0].strip().lower()
+
+    assert {_key(name) for name in declared} == {_key(name) for name in TEACHER_TOUCHPOINTS}, (
+        f"HLD §7.9's inventory declares {sorted(_key(n) for n in declared)}; the fixture carries "
+        f"{sorted(_key(n) for n in TEACHER_TOUCHPOINTS)}"
+    )
+
+    declared_blocking = {
+        _key(row[0])
+        for row in rows
+        if len(row) == 3 and row[0] != "Teacher touchpoint" and row[2].startswith("**Yes**")
+    }
+    assert declared_blocking == {_key(name) for name in BLOCKING_TOUCHPOINTS}, (
+        f"§7.9 says {sorted(declared_blocking)} block; the fixture says "
+        f"{sorted(_key(n) for n in BLOCKING_TOUCHPOINTS)}"
     )
 
     blocking = {name for name, blocks in TEACHER_TOUCHPOINTS.items() if blocks}
@@ -137,9 +165,15 @@ def test_the_control_surface_transcribes_hld_11_8(repo_root):
     hld = _normalized(repo_root, HLD)
     assert "the console's entire write surface to the pipeline is small enough to enumerate" in hld
 
+    # **All fifteen, not a sample.** The docstring above says an action added to the design and
+    # not here leaves the seam asserted against a stale set — and checking four of the fifteen is
+    # exactly the way not to detect that. Review pointed it out and measured that all fifteen
+    # appear verbatim in the normalized design text, so the enumeration costs nothing.
     design = _normalized(repo_root, DESIGN)
-    for action in ("start run", "finalize batch", "amend a finalized grade", "purge cohort"):
-        assert action in design, f"design §3.19 no longer lists {action!r} on the control surface"
+    missing = [action for action in CONTROL_SURFACE_ACTIONS if action not in design]
+    assert not missing, (
+        f"design §3.19 no longer lists these control-surface actions: {missing}"
+    )
 
     assert len(CONTROL_SURFACE_ACTIONS) == 15
     assert len(set(CONTROL_SURFACE_ACTIONS)) == 15, "the enumeration has a duplicate"
@@ -191,8 +225,13 @@ def test_the_observability_metrics_transcribe_the_design_and_the_six_pilot_quest
     any of the six.
     """
     design = _normalized(repo_root, DESIGN)
-    assert "skip rates per optional setup step" in design
-    assert "review budget requested versus used" in design
+    for phrase in (
+        "page render times",
+        "control actions by type",
+        "skip rates per optional setup step",
+        "review budget requested versus used",
+    ):
+        assert phrase in design, f"design §3.19's Observability line no longer says {phrase!r}"
 
     assert len(OBSERVABILITY_METRICS) == 4
 
@@ -259,6 +298,14 @@ def test_the_upload_probe_is_knob_gated_and_asserted_as_a_ratio():
         "upload in memory, which is the one CT-CONSOLE-18 forbids"
     )
 
+    # The floor is what stops the knob causing the phantom failure it was added to prevent: at a
+    # small probe a pure ratio is blown by any incidental allocation, so the ceiling is the larger
+    # of the two. A floor of zero puts that back.
+    assert MEMORY_FLOOR_BYTES > 1024 * 1024, (
+        "the absolute memory floor is gone, so shrinking the probe on a slower box turns any "
+        "incidental allocation into a failure — which is what the knob exists to avoid"
+    )
+
 
 # --- the rules, against copy a correct console renders ------------------------------------------------
 
@@ -284,10 +331,39 @@ def test_the_narrative_rule_passes_evidence_and_catches_a_score_claim():
     overall = forbidden_narrative_claims(fixtures.NARRATIVE_WITH_AN_OVERALL_CLAIM)
     assert len(overall) == 1 and "excellent" in overall[0].lower()
 
-    # The near-miss that decides whether the rule reads context or counts digits: a criterion index
-    # beside the word `band`. `band` is scoring vocabulary, so this is caught — and it should be,
-    # since naming the band in the narrative is stating the mark before the mark.
-    assert forbidden_narrative_claims(fixtures.NARRATIVE_NAMING_A_BAND)
+    # **The four narratives the word-plus-digit version condemned**, measured by review. Each is
+    # copy a correct console renders, and each was red: `remarks`/`mark`, `points to`/`point`,
+    # `poorly`/`poor`, and a `band` that is a frequency rather than a rubric band.
+    condemned = {
+        text: forbidden_narrative_claims(text)
+        for text in fixtures.NARRATIVES_A_WORD_MATCHER_WOULD_CONDEMN
+        if forbidden_narrative_claims(text)
+    }
+    assert not condemned, (
+        f"the rule condemns correct evidence-grounded narratives: {condemned}. TC-CONSOLE-C13 "
+        f"would go red against a compliant console, which is how a scanner gets switched off."
+    )
+
+    # And the two it **missed**. Matching constructions rather than words buys both directions:
+    # neither of these carries a scoring word beside a digit in the shape the old rule expected.
+    for text in fixtures.SCORE_CLAIMS_A_WORD_MATCHER_WOULD_MISS:
+        assert forbidden_narrative_claims(text), f"a real score claim walked through: {text!r}"
+
+    # **One case per construction**, so a construction cannot be deleted while the others cover
+    # for it. Each of these is caught by exactly one of the four patterns.
+    for construction, text in (
+        ("fraction", "The result was 7 out of 10."),
+        ("scoring verb", "The candidate scored level 3 here."),
+        ("scoring unit", "This is worth 8 marks."),
+        ("percentage", "It reached 70%."),
+    ):
+        assert forbidden_narrative_claims(text), (
+            f"the {construction} construction no longer catches {text!r}"
+        )
+
+    # A band label is **permitted**: the clause forbids a *numeral-bearing* or *overall-quality*
+    # claim, and `met` is neither. Kept as a control because it reads like a violation.
+    assert forbidden_narrative_claims(fixtures.NARRATIVE_PERMITTED_NAMING_A_BAND) == []
 
 
 def test_the_dom_order_reader_is_not_fooled_by_an_attribute():
@@ -317,6 +393,33 @@ def test_the_dom_order_reader_is_not_fooled_by_an_attribute():
     assert dom_order(fixtures.ITEM_ACTIONS_ABOVE_GROUP_HTML, "narrative") == [-1]
 
 
+def test_the_element_collector_finds_every_item_not_just_the_first():
+    """`CT-CONSOLE-13`'s clauses are universal, so its sweep has to be too.
+
+    `dom_order` and `element_text` both take the **first** match, which review measured as a real
+    hole: a queue rendering item 1 narrative-first and item 5 mark-first passed a page-level check,
+    and a score claim in item 7's narrative was never read. `elements` is what makes the sweep
+    per-item; without it the clause is asserted about one row of a page with hundreds.
+    """
+    page = fixtures.CORRECT_REVIEW_ITEM_HTML + fixtures.MARK_BEFORE_NARRATIVE_HTML
+    items = elements(page, "review-item")
+    assert len(items) == 2, f"the collector found {len(items)} of the two review items"
+
+    orders = [dom_order(item, "narrative", "mark") for item in items]
+    assert orders[0][0] < orders[0][1], "the correct item read as inverted"
+    assert orders[1][1] < orders[1][0], (
+        "the inverted item read as correct — which is the page-level check's exact failure, "
+        "surviving into the per-item one"
+    )
+
+    # And the page-level check that this replaces: it sees only the first item and is happy.
+    page_level = dom_order(page, "narrative", "mark")
+    assert page_level[0] < page_level[1], (
+        "this is the assertion that used to run: it passes on a page whose second item renders "
+        "the mark first, which is why the sweep is now per item"
+    )
+
+
 def test_the_audit_sweep_permits_the_actor_string_and_catches_the_claim():
     """`CT-CONSOLE-23` forbids presenting an actor string as an identity — not the string itself.
 
@@ -341,6 +444,16 @@ def test_the_audit_sweep_permits_the_actor_string_and_catches_the_claim():
         f"rendering: {claims}"
     )
 
+    # **The negation must sit in the same clause as the term.** One sentence carrying both a false
+    # identity claim and an unrelated "no changes" is the minimal form of the failure review
+    # measured on a whole audit table: whole-sentence scoping exempts it and the sweep goes silent.
+    assert authenticated_identity_claims(
+        fixtures.AUDIT_SURFACE_WITH_A_CLAIM_BESIDE_A_NEGATION
+    ), (
+        "a false identity claim escaped because an unrelated negation shared its sentence — which "
+        "on a real audit page is one row saying 'no items' disarming every other row"
+    )
+
 
 def test_visible_degradation_is_a_predicate_and_not_the_absence_of_mojibake():
     """`CT-CONSOLE-24` allows failing **or** degrading visibly — so the predicate is a disjunction.
@@ -360,6 +473,84 @@ def test_visible_degradation_is_a_predicate_and_not_the_absence_of_mojibake():
     assert visibly_degraded("", ValueError("unsupported script"), refused=False)
     assert visibly_degraded("", None, refused=True)
 
+    # **Phrases, not words.** A bare-word marker list passed on any page containing "english" —
+    # the likeliest subject name in the pilot — and "ltr" matched inside "u**ltr**a-wide". Both
+    # are pages that render RTL silently and satisfy the predicate, which is the outcome the
+    # clause is about.
+    for benign in (
+        "English Language Paper 1 — student answer",
+        "Ultra-wide diagram shown below",
+        "Latin script detected",
+    ):
+        assert not visibly_degraded(benign, None, refused=False), (
+            f"{benign!r} counts as visible degradation, so a console that silently reversed "
+            f"right-to-left text on this page would pass CT-CONSOLE-24"
+        )
+
+
+def test_the_mojibake_markers_catch_corruption_and_leave_correct_pages_alone():
+    """`CT-CONSOLE-24`'s second half had no control at all, which review found.
+
+    `MOJIBAKE_MARKERS` was used only inside the red test and `MOJIBAKE_RENDERING` was defined and
+    never imported — so one of this suite's four rules shipped unexercised, against the module's
+    own stated principle. Worse, `"×"` (U+00D7) was in the list: neither probe is Hebrew, so it
+    could never fire as a true positive, while `"1024 × 768"` on a crop view fires it. A marker
+    that cannot catch what it is for and can catch what it is not is pure false positive; it is
+    gone.
+    """
+    corrupt = [m for m in MOJIBAKE_MARKERS if m in fixtures.MOJIBAKE_RENDERING]
+    assert corrupt, (
+        "the markers do not detect UTF-8-decoded-as-Latin-1 output, which is the corruption "
+        "CT-CONSOLE-24 forbids regardless of what else the page says"
+    )
+
+    for clean in (
+        "<p>Crop shown at 1024 × 768 pixels.</p>",
+        "<p>The grid is 3 × 4.</p>",
+        fixtures.HONESTLY_DEGRADED_RENDERING,
+        "<p>English Language Paper 1 — student answer</p>",
+    ):
+        present = [m for m in MOJIBAKE_MARKERS if m in clean]
+        assert not present, f"{present} fired on correct copy: {clean!r}"
+
+
+def test_the_repo_carries_no_client_toolchain_artefacts(repo_root):
+    """`NFR-CONSOLE-02`, the half that needs no implementation — and that the PR claimed and
+    did not assert.
+
+    *"No npm toolchain, no build step... repairable by whoever is present at the school."* The
+    render-time half of `CT-CONSOLE-21` waits on #122, but this half is a property of the
+    repository and is checkable today. Review caught the docstring promising it while the body
+    asserted nothing of the kind.
+
+    The clean-environment **install** remains unachievable and is reported rather than faked:
+    `pyproject.toml` declares no `[build-system]`, `dependencies` is empty, and `pythonpath =
+    ["src", "."]` — there is nothing to install into a fresh environment.
+    """
+    forbidden = (
+        "package.json",
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "webpack.config.js",
+        "vite.config.js",
+        "rollup.config.js",
+        "tsconfig.json",
+    )
+    present = [name for name in forbidden if (repo_root / name).exists()]
+    assert not present, (
+        f"the repo carries {present}. NFR-CONSOLE-02: no npm toolchain and no build step, because "
+        f"the console has to be repairable by whoever is present at the school."
+    )
+    assert not (repo_root / "node_modules").exists()
+
+    pyproject = read_repo_text(repo_root, "pyproject.toml")
+    assert "[build-system]" not in pyproject, (
+        "pyproject.toml has acquired a build system. If that is deliberate, CT-CONSOLE-21's "
+        "clean-environment install becomes achievable and this suite should assert it instead of "
+        "reporting it as missing."
+    )
+
 
 def test_visible_text_reads_the_page_rather_than_the_markup():
     """The claim sweeps are about what a reader sees.
@@ -369,9 +560,22 @@ def test_visible_text_reads_the_page_rather_than_the_markup():
     so both go through this.
     """
     assert visible_text(fixtures.CORRECT_REVIEW_ITEM_HTML) == (
-        "Accept all 12 Reviewed The derivation on line 12 omits its assumption. met Skip"
+        "Accept all 12. Reviewed. The derivation on line 12 omits its assumption. met. Skip."
     )
     assert "data-role" not in visible_text(fixtures.CORRECT_REVIEW_ITEM_HTML)
+
+    # **Block elements terminate a sentence.** Review measured the audit sweep going vacuous on a
+    # table-shaped page: joined by spaces the whole table was one "sentence", and a single row
+    # saying "no items" exempted every other row from the negation filter. An audit surface is a
+    # table, so that was the shape `TC-CONSOLE-C23` would actually have run on.
+    table = (
+        "<table><tr><td>Finalized by</td><td>r.mensah</td></tr>"
+        "<tr><td>Items left provisional</td><td>no items</td></tr></table>"
+    )
+    assert visible_text(table).count(".") >= 3, (
+        f"a table collapsed to {visible_text(table)!r}; without sentence boundaries every claim "
+        f"sweep run over it becomes one segment and one stray negation disarms the lot"
+    )
 
 
 def test_element_text_slices_to_one_element_rather_than_the_page():
@@ -390,6 +594,18 @@ def test_element_text_slices_to_one_element_rather_than_the_page():
     )
     assert element_text(fixtures.CORRECT_REVIEW_ITEM_HTML, "mark") == "met"
     assert element_text(fixtures.CORRECT_REVIEW_ITEM_HTML, "not-a-marker") == ""
+
+    # **A void element must not raise the nesting depth.** `<img>` has no end tag, so counting it
+    # leaves the slice open to the end of the document — and an image crop inside a review item is
+    # exactly what S8 renders (`FR-CONSOLE-29`). Review found the slice swallowing the mark
+    # through one `<img>`, which is the failure the slice exists to prevent, reintroduced.
+    with_crop = fixtures.REVIEW_ITEM_WITH_A_CROP_IN_THE_NARRATIVE
+    assert element_text(with_crop, "narrative") == "Line 3 shows the wrong sign."
+    assert not forbidden_narrative_claims(element_text(with_crop, "narrative"))
+    assert forbidden_narrative_claims(visible_text(with_crop)), (
+        "the mark in this fixture no longer trips the rule, so the slice above is not being shown "
+        "to matter"
+    )
 
     # And the composition the case actually relies on, on an item whose mark renders its points:
     # the page as a whole trips the narrative rule, the sliced narrative does not. If both behaved

@@ -25,12 +25,16 @@ and the two screens the budgets name are #124's and #125's.
 
 from __future__ import annotations
 
+import time
+import tracemalloc
+
 import pytest
 
 from tests.support.conf_builders import hosted_cfg
 from tests.support.console_vocabulary import (
     CONSOLE_KNOBS,
     HANDLER_BUDGET_SECONDS,
+    MEMORY_FLOOR_BYTES,
     REFERENCE_COHORT_SIZE,
     REVIEW_QUEUE_BUDGET_SECONDS,
     ROLLUP_BUDGET_SECONDS,
@@ -38,6 +42,7 @@ from tests.support.console_vocabulary import (
     UPLOAD_PROBE_BYTES,
     UPLOAD_RSS_RATIO_CEILING,
     coupling_surface,
+    visible_text,
 )
 from tests.support.impl import CONSOLE_MODULE, require
 
@@ -62,12 +67,17 @@ def test_tc_console_c18_the_upload_handler_dispatches_the_work_rather_than_await
     upload = require(CONSOLE_MODULE, "upload_scans", issue="#122")
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
 
+    # **Timed here, not read off the result.** §6.11.19 says "measured as handler duration"; a
+    # duration the implementation reports about itself is a claim, and a buffering handler that
+    # reports a small number passes. `perf_counter` around the call is the measurement.
+    started = time.perf_counter()
     outcome = upload(build_console(), cohort_id="c-1", size_bytes=UPLOAD_PROBE_BYTES)
+    elapsed = time.perf_counter() - started
 
-    assert outcome.handler_seconds < HANDLER_BUDGET_SECONDS, (
-        f"the upload handler ran for {outcome.handler_seconds:.1f}s. FR-CONSOLE-04: long work "
-        f"never happens in a request handler — it is dispatched and the orchestrator picks it up "
-        f"on its own schedule (FR-CONSOLE-01)."
+    assert elapsed < HANDLER_BUDGET_SECONDS, (
+        f"the upload handler ran for {elapsed:.1f}s. FR-CONSOLE-04: long work never happens in a "
+        f"request handler — it is dispatched and the orchestrator picks it up on its own schedule "
+        f"(FR-CONSOLE-01)."
     )
     assert outcome.dispatched, (
         "the handler returned quickly and dispatched nothing, so the work is not queued anywhere. "
@@ -97,14 +107,24 @@ def test_tc_console_c18_a_large_upload_streams_to_the_blob_store_rather_than_int
     upload = require(CONSOLE_MODULE, "upload_scans", issue="#122")
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
 
-    outcome = upload(build_console(), cohort_id="c-1", size_bytes=UPLOAD_PROBE_BYTES)
+    # **Measured by the test, not reported by the code under test.** A `peak_rss_growth_bytes`
+    # field on the result is the implementation's own account of its memory use, and a buffering
+    # implementation that reports a small number passes. `tracemalloc` watches the allocations.
+    tracemalloc.start()
+    try:
+        outcome = upload(build_console(), cohort_id="c-1", size_bytes=UPLOAD_PROBE_BYTES)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
 
-    ratio = outcome.peak_rss_growth_bytes / UPLOAD_PROBE_BYTES
-    assert ratio < UPLOAD_RSS_RATIO_CEILING, (
-        f"peak RSS grew by {ratio:.2f}× the upload size ({outcome.peak_rss_growth_bytes} bytes for "
-        f"a {UPLOAD_PROBE_BYTES}-byte upload). NFR-CONSOLE-06: uploads stream to the "
-        f"content-addressed blob store; a batch buffered in memory works on a fixture and dies on "
-        f"a real scan batch."
+    # A floor as well as a ratio: the knob exists so a slower box can shrink the probe, and at a
+    # small probe any incidental allocation blows a pure ratio — the knob would then cause the
+    # phantom failure it was added to prevent.
+    ceiling = max(MEMORY_FLOOR_BYTES, UPLOAD_RSS_RATIO_CEILING * UPLOAD_PROBE_BYTES)
+    assert peak < ceiling, (
+        f"peak traced memory was {peak} bytes for a {UPLOAD_PROBE_BYTES}-byte upload, over a "
+        f"ceiling of {ceiling:.0f}. NFR-CONSOLE-06: uploads stream to the content-addressed blob "
+        f"store; a batch buffered in memory works on a fixture and dies on a real scan batch."
     )
     assert outcome.blob_refs, (
         "nothing reached the blob store, so the memory figure above is the memory cost of doing "
@@ -143,16 +163,28 @@ def test_tc_console_c19_the_review_queue_and_rollup_render_inside_their_budgets_
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
 
     app = build_console(cohort_size=REFERENCE_COHORT_SIZE)
-    queue = render_queue(app, run_id="r-350")
-    rollup = render_rollup(app, run_id="r-350")
 
-    assert queue.rendered_items, "the review queue rendered nothing, so its duration means nothing"
-    assert queue.duration_seconds < REVIEW_QUEUE_BUDGET_SECONDS, (
-        f"the review queue took {queue.duration_seconds:.2f}s at {REFERENCE_COHORT_SIZE} students "
-        f"against a {REVIEW_QUEUE_BUDGET_SECONDS}s budget"
+    # Timed by the test. `RenderedPage.duration_seconds` is the page's account of itself, and the
+    # teacher's budget is spent on wall clock either way.
+    started = time.perf_counter()
+    queue = render_queue(app, run_id="r-350")
+    queue_seconds = time.perf_counter() - started
+
+    started = time.perf_counter()
+    rollup = render_rollup(app, run_id="r-350")
+    rollup_seconds = time.perf_counter() - started
+
+    assert visible_text(queue.html).strip(), (
+        "the review queue rendered nothing, so its duration is the duration of doing nothing"
     )
-    assert rollup.duration_seconds < ROLLUP_BUDGET_SECONDS, (
-        f"the rollup took {rollup.duration_seconds:.2f}s against a {ROLLUP_BUDGET_SECONDS}s budget"
+    assert visible_text(rollup.html).strip(), "the rollup rendered nothing"
+
+    assert queue_seconds < REVIEW_QUEUE_BUDGET_SECONDS, (
+        f"the review queue took {queue_seconds:.2f}s at {REFERENCE_COHORT_SIZE} students against a "
+        f"{REVIEW_QUEUE_BUDGET_SECONDS}s budget"
+    )
+    assert rollup_seconds < ROLLUP_BUDGET_SECONDS, (
+        f"the rollup took {rollup_seconds:.2f}s against a {ROLLUP_BUDGET_SECONDS}s budget"
     )
 
 
@@ -185,7 +217,13 @@ def test_tc_console_c19_the_run_monitor_polls_the_ledger_and_adds_no_write_load(
         f"the monitor page polls every {monitor.poll_interval_ms}ms; the declared interval is "
         f"{CONSOLE_KNOBS['CONSOLE_POLL_INTERVAL_MS']}ms"
     )
-    console_writes = [w for w in writes if w.attributed_to == "M-CONSOLE"]
+    # **`initiated_by`, not `attributed_to`.** `attributed_to` is the innermost `aeh.*` frame, and
+    # the console writes *through* `M-STORE` by design — so a heartbeat would surface as
+    # `attributed_to="M-STORE"`, `initiated_by="M-CONSOLE"`, and a filter on the first field would
+    # pass on the exact bug this assertion names.
+    console_writes = [
+        w for w in writes if "M-CONSOLE" in (w.initiated_by, w.attributed_to)
+    ]
     assert not console_writes, (
         f"polling the ledger wrote {[w.target for w in console_writes]}. The monitor is a read: a "
         f"heartbeat written every three seconds for the hours a run lasts is write load on the "
