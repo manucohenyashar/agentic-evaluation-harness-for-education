@@ -463,18 +463,22 @@ def test_the_literal_no_threshold_reading_collides_with_the_design(design, desig
     assert vocab.MIN_N_IS_NOT_A_VERDICT_THRESHOLD is True
 
 
-def test_ct_stats_02s_percent_agreement_half_has_no_surface_to_assert_against(design):
+def test_ct_stats_02s_percent_agreement_half_has_no_field_on_the_figure_to_govern(design):
     """**Finding.** *"No raw percent-agreement is emitted without its chance-corrected counterpart
-    attached"* is, today, a conditional over an empty set.
+    attached"* has nothing to attach to.
 
     `AgreementFigure` declares three statistics and every one of them is chance-corrected; there
-    is no percent-agreement field for the clause to govern, so a test written to that half passes
-    for any implementation, forever, including one that adds a percent figure elsewhere.
+    is no percent field for the counterpart to travel beside, so the clause's conditional — *this
+    figure, without that one* — cannot range over anything the design declares.
 
-    The assertable half of `CT-STATS-02` — the construction refusal and the field-set equality —
-    is implemented in `TC-STATS-C02`. This one is asserted as an absence, so the day a story adds
-    a percent field (#115 owns `AgreementFigure`; nothing schedules one), this goes red and the
-    conditional becomes worth writing.
+    What **is** assertable is the surface: no function emits a percent agreement at all, and
+    `TC-STATS-C02` asserts exactly that, with the same `PERCENT_AGREEMENT_NAMES` this test reads.
+    (An earlier draft of this finding claimed the whole clause half was unassertable, which the
+    review pointed out was overstated — and which this suite's own C02 case then contradicted.)
+
+    So the finding is narrower than it was and it is still worth keeping: the day a story adds a
+    percent field to the figure, this goes red and the *conditional* becomes writable — the
+    counterpart requirement, which no surface scan can express.
     """
     block = design[design.index("class AgreementFigure:"):]
     block = block[: block.index("class NoValidationData")]

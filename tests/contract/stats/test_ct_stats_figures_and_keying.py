@@ -196,13 +196,17 @@ def test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_functio
     a merged figure is a claim nobody is entitled to make.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    holistic_labels = broken.agreeing_population(20, prefix="h")
+    import dataclasses as _dataclasses
+
+    # `dataclasses.replace`, not `Label(**label.__dict__)`: the second breaks the day `Label`
+    # gains `slots=True`, and nobody runs this test until #115 lands — so the break would arrive
+    # as a mystery in whoever's PR removes the marker.
+    holistic_labels = [
+        _dataclasses.replace(label, criterion_id="C-09")
+        for label in broken.agreeing_population(20, prefix="h")
+    ]
     stats = build_stats(
-        labels=broken.agreeing_population(20)
-        + [
-            broken.Label(**{**label.__dict__, "criterion_id": "C-09"})
-            for label in holistic_labels
-        ],
+        labels=broken.agreeing_population(20) + holistic_labels,
         scoring_models={"C-01": "atomic", "C-09": "holistic"},
     )
 
