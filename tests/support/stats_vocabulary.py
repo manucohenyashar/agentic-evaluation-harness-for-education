@@ -434,25 +434,18 @@ def _function_nodes(tree: ast.AST) -> list[ast.FunctionDef | ast.AsyncFunctionDe
 
 
 def _string_constants(node: ast.AST) -> set[str]:
-    """String literals inside `node`, excluding its docstring.
+    """Every string literal inside `node`.
 
-    Docstrings are excluded deliberately: a module that *documents* the predicate in prose — which
-    a compliant one does, since `NFR-STATS-04` is about a single definition and not about silence
-    — would otherwise be counted as defining it a second time.
+    Docstrings need no special handling and an earlier draft's exclusion of them was **dead
+    code**, which the mutation campaign found by deleting it and watching nothing fail: the
+    caller compares against whole literals (`"blind"`, `"judged"`), and a docstring is one long
+    string that is never equal to either. A module that documents the predicate in prose — which
+    a compliant one does — is therefore already safe.
     """
-    doc_ids = set()
-    for child in ast.walk(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Module)):
-            body = getattr(child, "body", [])
-            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
-                if isinstance(body[0].value.value, str):
-                    doc_ids.add(id(body[0].value))
     return {
         child.value
         for child in ast.walk(node)
-        if isinstance(child, ast.Constant)
-        and isinstance(child.value, str)
-        and id(child) not in doc_ids
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
     }
 
 
@@ -511,7 +504,7 @@ _AGREEMENT_TERMS: tuple[str, ...] = (
 #: adversarial construction is `compute_agreement_all_labels()` — "clearly labelled as an
 #: operational figure" — and its label is exactly what the name rule reads.
 _OTHER_POPULATION_TERMS: tuple[str, ...] = (
-    "all_labels", "all_label", "any_label", "every_label", "unfiltered", "raw_labels",
+    "all_label", "any_label", "every_label", "unfiltered", "raw_labels",
     "operational", "unblind", "non_blind", "including_operational", "regardless_of_type",
 )
 

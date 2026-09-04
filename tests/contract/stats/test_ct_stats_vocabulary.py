@@ -210,7 +210,12 @@ def test_the_pairing_threshold_matches_fr_stats_18(design_rows):
     """
     row = " ".join(_row(design_rows, "FR-STATS-18"))
 
-    assert str(vocab.SELF_AGREEMENT_PAIRING_THRESHOLD) in row
+    # Matched on a number boundary. `str(0.90)` is `"0.9"`, which is a **substring** of the
+    # `"0.95"` in the requirement -- so a plain `in` check passed a fixture holding the wrong
+    # threshold, which is what the mutation campaign found.
+    assert re.search(
+        rf"(?<![\d.]){re.escape(str(vocab.SELF_AGREEMENT_PAIRING_THRESHOLD))}(?![\d])", row
+    ), f"FR-STATS-18 does not state {vocab.SELF_AGREEMENT_PAIRING_THRESHOLD}"
     assert "exceeds" in row.lower(), (
         "FR-STATS-18 no longer says 'exceeds', so the strictness of the comparison has changed"
     )
@@ -246,8 +251,16 @@ def test_the_promote_counters_match_fr_stats_10(design_rows):
     operational counts."""
     row = " ".join(_row(design_rows, "FR-STATS-10"))
 
-    for counter in vocab.PROMOTE_COUNTERS:
-        assert f"`{counter}`" in row, f"FR-STATS-10 no longer names {counter}"
+    # Set equality against what the requirement names, not a loop over the fixture: a loop
+    # asserts nothing about a counter the fixture dropped, and dropping one is the mutation this
+    # transcription exists to catch (the merge that lets operational volume read as depth).
+    declared = {
+        name for name in re.findall(r"`(\w+)`", row) if name.endswith(("_count", "_used"))
+    }
+    assert declared == set(vocab.PROMOTE_COUNTERS), (
+        f"FR-STATS-10 names {sorted(declared)}, the fixture holds "
+        f"{sorted(vocab.PROMOTE_COUNTERS)}"
+    )
     assert "separately" in row
     assert f"`{vocab.AGREEMENT_FIELD_CLOSED_TO_OPERATIONAL}`" in row
 
@@ -269,11 +282,21 @@ def test_the_narrative_metrics_match_fr_stats_12(design_rows):
     for metric in vocab.NARRATIVE_QUALITY_METRICS:
         assert _tokens_present(metric, row), f"FR-STATS-12 no longer names {metric}"
 
+    # The count as well as the members. A loop over the fixture cannot notice a metric the
+    # fixture stopped holding, and `CT-STATS-14`'s sweep is only as complete as this tuple.
+    assert len(vocab.NARRATIVE_QUALITY_METRICS) == 3, (
+        "FR-STATS-12 names three metrics: citation validity, hallucinated claims, and teacher "
+        "rating where collected"
+    )
+
 
 def test_the_surface_features_match_fr_stats_07(design_rows):
     row = " ".join(_row(design_rows, "FR-STATS-07"))
     for feature in vocab.SURFACE_FEATURES:
         assert _tokens_present(feature, row), f"FR-STATS-07 no longer names {feature}"
+    assert len(vocab.SURFACE_FEATURES) == 6, (
+        "FR-STATS-07 lists six surface features; a shorter fixture is a narrower regression"
+    )
 
 
 def test_the_protocol_members_match_the_interfaces_block_and_each_has_an_owning_story(design):
@@ -295,6 +318,13 @@ def test_the_protocol_members_match_the_interfaces_block_and_each_has_an_owning_
         "keyed on whatever blocker happened to resolve first"
     )
     assert set(vocab.MEMBER_ISSUE.values()) <= {"#115", "#116", "#117", "#118"}
+
+    # `promote` is the one member excluded from the `NoValidationData` sweep, because its no-data
+    # outcome is CT-STATS-05's message rather than an absence value. Asserted rather than left to
+    # the tuple comprehension: putting it back would make TC-STATS-C03 demand a return type the
+    # contract does not promise, and contradict TC-STATS-C05 two files away.
+    assert "promote" not in vocab.FIGURE_MEMBERS
+    assert set(vocab.FIGURE_MEMBERS) | {"promote"} == set(vocab.PROTOCOL_MEMBERS)
 
 
 def test_the_two_contract_alerts_match_the_observability_paragraph(design):
@@ -319,6 +349,10 @@ def test_the_observability_counters_match_the_observability_paragraph(design):
     paragraph = design[start:][:700]
     for counter in vocab.OBSERVABILITY_COUNTERS:
         assert _tokens_present(counter, paragraph), f"§3.16 no longer emits {counter}"
+    assert len(vocab.OBSERVABILITY_COUNTERS) == 4, (
+        "label counts by type **and** origin are two, plus blind coverage and recomputation "
+        "duration -- collapsing type and origin makes CT-ORCH-15's random arm invisible"
+    )
 
 
 def test_the_write_scope_matches_ct_stats_15(design_rows):
@@ -466,6 +500,23 @@ def test_the_filter_cardinality_rule_catches_a_second_inlined_definition():
     assert "agreement_for_dashboard" in sites
 
 
+def test_the_filter_cardinality_rule_ignores_a_function_that_merely_reads_the_column():
+    """`blind_count` mentions `"blind"` and decides nothing. It is not a definition site.
+
+    The rule reads the **conjunction**, and this is the fixture that makes that testable: a scan
+    matching either half condemns `blind_count` — which is `CT-STATS-06`'s own counter and appears
+    in `PROMOTE_COUNTERS` — and `judged_criteria`, which is what `FR-STATS-09`'s drift check needs.
+    Both are legitimate column reads, and a rule that reported them would be reporting a violation
+    against the module's own requirements.
+
+    Found by the mutation campaign: relaxing `values <= …` to `values & …` changed nothing until
+    this fixture existed.
+    """
+    assert vocab.admissibility_definition_sites(
+        broken.COLUMN_READ_WITHOUT_THE_PREDICATE_SOURCE
+    ) == []
+
+
 def test_the_filter_cardinality_rule_reports_zero_when_there_is_no_filter():
     """The oracle is **exactly one**, not *at most one*.
 
@@ -482,6 +533,12 @@ def test_the_surface_rule_passes_a_compliant_public_surface():
     None is a violation, and a rule reading either term alone would condemn all three.
     """
     assert vocab.surface_admitting_other_populations(broken.CORRECT_SURFACE_NAMES) == []
+
+    # And that the fixture is still capable of catching the `or` mutation: it must contain a name
+    # carrying each half of the conjunction on its own. Stripping those names leaves a control
+    # that passes for a rule flagging either term, which the campaign found by doing exactly that.
+    assert any("agreement" in name for name in broken.CORRECT_SURFACE_NAMES)
+    assert any("operational" in name for name in broken.CORRECT_SURFACE_NAMES)
 
 
 def test_the_surface_rule_catches_the_clauses_named_adversarial_construction():
@@ -544,6 +601,10 @@ def test_the_headline_rule_passes_the_hld_s12_agreement_block():
     The Greek spelling is the control that matters. The `M-CONSOLE` suite shipped a rule that did
     not know `κ` and it condemned HLD §11.5's own mock-up.
     """
+    assert "κ" in broken.CORRECT_AGREEMENT_BLOCK, (
+        "the fixture lost its Greek κ, so it can no longer demonstrate that the rule survives "
+        "the spelling HLD §11.5's own mock-up uses"
+    )
     assert vocab.unscoped_headline_figures(broken.CORRECT_AGREEMENT_BLOCK) == []
 
 
@@ -557,6 +618,25 @@ def test_the_headline_rule_catches_a_system_wide_framing(rendering):
 @pytest.mark.parametrize("rendering", broken.UNSCOPED_FIGURE_RENDERINGS)
 def test_the_headline_rule_catches_a_number_with_no_scope_beside_it(rendering):
     assert vocab.unscoped_headline_figures(rendering)
+
+
+@pytest.mark.parametrize("rendering", broken.SCOPED_HEADLINE_RENDERINGS)
+def test_the_headline_rule_catches_a_headline_that_carries_its_scope(rendering):
+    """The case the other headline fixtures cannot reach: **scoped, and still a headline**.
+
+    `CT-STATS-20`'s violation condition is about the claim, not about missing metadata — *"a
+    consumer that renders a single headline number has violated this contract even if every figure
+    in it is correct"*. "Overall accuracy across every population, backend and panel build: 87%"
+    names every scope dimension there is and is exactly the sentence the clause forbids.
+
+    Without this fixture the phrase list was dead: every other headline was already caught by the
+    missing-scope branch, so deleting the framing check changed nothing the suite could see.
+    """
+    problems = vocab.unscoped_headline_figures(rendering)
+    assert problems and "frames a figure" in problems[0], (
+        f"{rendering!r} names its scope and is still a system-wide claim; the framing check is "
+        "what has to catch it"
+    )
 
 
 def test_the_headline_rule_reads_lines_not_documents():
@@ -573,6 +653,19 @@ def test_the_headline_rule_reads_lines_not_documents():
 def test_the_degeneracy_rule_passes_a_compliant_disclosure():
     assert vocab.presents_binary_agreement_as_equivalent(
         broken.CORRECT_DEGENERACY_DISCLOSURE
+    ) == []
+
+
+def test_the_degeneracy_rule_leaves_an_equivalence_about_something_else_alone():
+    """*"Band 3 this year is comparable to band 3 last year"* is ordinary copy, not a violation.
+
+    `CT-STATS-21` forbids one equivalence: binary-criterion agreement presented as equivalent to
+    multi-band agreement. The rule therefore only reads lines that are about the degenerate case,
+    and this fixture is what makes that gate load-bearing — without it, removing the gate
+    condemned nothing the suite held, so nothing failed.
+    """
+    assert vocab.presents_binary_agreement_as_equivalent(
+        broken.EQUIVALENCE_ABOUT_SOMETHING_ELSE
     ) == []
 
 
@@ -603,6 +696,17 @@ def test_the_write_rule_passes_source_that_reads_grades_and_writes_only_its_own_
     """
     assert vocab.forbidden_write_statements(broken.CORRECT_WRITE_SCOPE_SOURCE) == []
 
+    # The control only controls anything while the fixture actually reads one of those tables.
+    reads = [
+        table
+        for table in vocab.FORBIDDEN_WRITE_TABLES
+        if f"FROM {table}" in broken.CORRECT_WRITE_SCOPE_SOURCE
+    ]
+    assert reads, (
+        "the compliant fixture no longer reads a table this module may not write, so it cannot "
+        "demonstrate that the rule reads write verbs rather than table names"
+    )
+
 
 @pytest.mark.parametrize("table, source", sorted(broken.FORBIDDEN_WRITE_SOURCES.items()))
 def test_the_write_rule_catches_each_forbidden_write(table, source):
@@ -610,3 +714,146 @@ def test_the_write_rule_catches_each_forbidden_write(table, source):
     assert problems and any(table in problem for problem in problems), (
         f"a write to {table} was not flagged: {problems}"
     )
+
+
+# ==================================================================================================
+# The rest of the transcription — every remaining constant, so none sits here unasserted
+# ==================================================================================================
+
+
+def test_the_chance_corrected_statistics_match_fr_stats_02(design_rows):
+    """`FR-STATS-02` names three: *"Cohen's κ, QWK, or ordinal Krippendorff's α"*.
+
+    The Greek spellings are in the fixture because a console renders them, and a rule that does
+    not know `κ` condemns HLD §11.5's own S12 mock-up — which is what happened in the `M-CONSOLE`
+    suite. Both spellings of each are asserted here so neither can be dropped quietly.
+    """
+    row = " ".join(_row(design_rows, "FR-STATS-02"))
+
+    for statistic in ("Cohen", "κ", "QWK", "Krippendorff", "α"):
+        assert statistic in row, f"FR-STATS-02 no longer names {statistic}"
+        assert statistic.lower() in {s.lower() for s in vocab.CHANCE_CORRECTED_STATISTICS} or any(
+            statistic.lower() in s for s in vocab.CHANCE_CORRECTED_STATISTICS
+        ), f"the fixture does not know {statistic}"
+
+
+def test_the_scoring_models_and_their_reporting_groups_match_fr_stats_03(design_rows):
+    """`FR-STATS-03` — `atomic`/`atomic_with_gate` together, `holistic` apart.
+
+    The grouping is the requirement, not the list: `atomic` and `atomic_with_gate` are reported
+    together and `holistic` separately, so a fixture holding three models in one group would let
+    `TC-STATS-C04` pass against a module that merged them.
+    """
+    row = " ".join(_row(design_rows, "FR-STATS-03"))
+
+    for model in vocab.SCORING_MODELS:
+        assert f"`{model}`" in row, f"FR-STATS-03 no longer names {model}"
+
+    assert vocab.SEPARATELY_REPORTED_GROUPS == (
+        frozenset({"atomic", "atomic_with_gate"}),
+        frozenset({"holistic"}),
+    )
+    assert set().union(*vocab.SEPARATELY_REPORTED_GROUPS) == set(vocab.SCORING_MODELS)
+
+
+def test_the_two_absence_messages_are_distinct_and_match_their_requirements(design_rows):
+    """Two absences, two causes, two messages — and the console must not substitute one.
+
+    `FR-CONSOLE-24` is *"no new validation evidence for this administration"*: the package has
+    been administered here and nobody collected blind labels. `FR-CONSOLE-26` is *"no validation
+    data for this population"*: it has never been administered here at all. A teacher acts
+    differently on each, so the suite holds both and asserts they are not the same string.
+    """
+    assert vocab.NO_NEW_VALIDATION_EVIDENCE in " ".join(_row(design_rows, "FR-CONSOLE-24"))
+    assert vocab.NO_VALIDATION_DATA_FOR_POPULATION in " ".join(_row(design_rows, "FR-CONSOLE-26"))
+    assert vocab.NO_NEW_VALIDATION_EVIDENCE != vocab.NO_VALIDATION_DATA_FOR_POPULATION
+
+
+def test_the_operational_evidence_ordering_matches_fr_stats_14(design_rows):
+    """`FR-STATS-14` — *"an override is informative, an acceptance is weak, a blind score is
+    authoritative"*, held as an ordering rather than as three magnitudes this suite would have to
+    invent."""
+    row = _normalize(" ".join(_row(design_rows, "FR-STATS-14")))
+
+    #: The requirement's own words, term by term. The tuple is ordered weakest-first, which is
+    #: **not** the order the sentence uses — so the assertion pairs each term with its strength
+    #: rather than reading positions off the prose.
+    strengths = {"acceptance": "weak", "override": "informative", "blind": "authoritative"}
+    assert set(strengths) == set(vocab.OPERATIONAL_EVIDENCE_ORDER)
+
+    for term in vocab.OPERATIONAL_EVIDENCE_ORDER:
+        assert re.search(rf"{term}[^,;.]*is {strengths[term]}", row), (
+            f"FR-STATS-14 no longer describes a(n) {term} as {strengths[term]}"
+        )
+
+
+def test_the_scope_key_dimensions_are_the_four_ct_stats_04_names(design_rows):
+    """`CT-STATS-04` — *"population scope, backend profile, panel build ref, and scoring model"*,
+    which are also the four fields `TC-STATS-C04` asserts a figure echoes back."""
+    row = _normalize(" ".join(_row(design_rows, "CT-STATS-04")))
+
+    assert len(vocab.SCOPE_KEY_DIMENSIONS) == 4
+    for dimension in vocab.SCOPE_KEY_DIMENSIONS:
+        words = _normalize(dimension).replace(" id", "").replace(" ref", "").split()
+        assert all(word in row for word in words), f"CT-STATS-04 no longer keys by {dimension}"
+    assert set(vocab.SCOPE_KEY_DIMENSIONS) < set(vocab.AGREEMENT_FIGURE_FIELDS), (
+        "a scope dimension is not a field of the figure, so CT-STATS-02's 'in the same value' "
+        "cannot be asserted for it"
+    )
+
+
+def test_the_filter_reads_columns_two_other_modules_own(design_rows):
+    """`CT-STATS-01` step 4's pairing: this module filters on columns it does not define.
+
+    `CT-REVIEW-08` owns `saw_system_output` and `CT-DET-06` owns `evaluation_mode` — *"so the
+    exclusion is enforceable **from the data** rather than by convention"*. If either clause stops
+    promising its column, `TC-STATS-C01` is asserting a filter over a field nobody maintains.
+    """
+    # The **promise**, not the mention. `CT-REVIEW-07` lists `saw_system_output` among the
+    # label's columns and `CT-REVIEW-08` is the one that says a label carrying it is not
+    # admissible -- so a check for the column name alone passes against the wrong clause, which is
+    # what the mutation campaign demonstrated.
+    promises = {
+        "CT-REVIEW-08": ("saw_system_output", "admissible"),
+        "CT-DET-06": ("evaluation_mode", "from the data"),
+    }
+    assert set(vocab.FILTER_SOURCE_CLAUSES) == set(promises), (
+        f"the fixture names {vocab.FILTER_SOURCE_CLAUSES}; the clauses that promise the columns "
+        f"CT-STATS-01 filters on are {sorted(promises)}"
+    )
+    for clause, phrases in promises.items():
+        row = " ".join(_row(design_rows, clause))
+        for phrase in phrases:
+            assert phrase in row, f"{clause} no longer promises {phrase!r}"
+
+
+def test_the_permitted_write_targets_match_ct_stats_15(design_rows):
+    """`CT-STATS-15` — `package_validation` and this module's own Tier D statistics rows."""
+    row = _normalize(" ".join(_row(design_rows, "CT-STATS-15")))
+
+    assert "package validation" in row
+    assert "tier d statistics rows" in row
+    assert vocab.PERMITTED_WRITE_TARGETS == ("package_validation", "tier_d_statistics")
+    assert not set(vocab.PERMITTED_WRITE_TARGETS) & set(vocab.FORBIDDEN_WRITE_TABLES), (
+        "a table is both permitted and forbidden, so the write rule contradicts itself"
+    )
+
+
+def test_the_entry_point_call_arguments_match_the_interfaces_signatures(design):
+    """`EMPTY_DATA_CALL`'s keys are the design's parameter names, not this suite's guesses.
+
+    The sweeps in `TC-STATS-C03` and `-C16` drive all seven entry points by keyword, so a renamed
+    parameter would fail deep inside a sweep with a `TypeError` that says nothing about the
+    contract. Asserted here instead, against the Interfaces block itself.
+    """
+    import re as _re
+
+    block = _interfaces_block(design)
+    for member, call in vocab.EMPTY_DATA_CALL.items():
+        match = _re.search(rf"def {member}\(self,(.*?)\) ->", block, flags=_re.DOTALL)
+        assert match, f"§3.16 no longer declares {member}"
+        declared = set(_re.findall(r"(\w+):", match.group(1)))
+        assert set(call) <= declared, (
+            f"{member} is driven with {sorted(set(call) - declared)}, which §3.16's signature "
+            f"does not declare (it takes {sorted(declared)})"
+        )

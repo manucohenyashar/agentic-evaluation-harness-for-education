@@ -156,10 +156,10 @@ def test_tc_stats_c11_compares_both_arms_using_blind_labels_only():
 
     arms = []
     for arm in vocab.ROUTING_POLICY_ARMS:
-        arms += [broken.Label(label_id=f"{arm}-blind-{i}", routing_arm=arm) for i in range(10)]
+        arms += [broken.Label(label_id=f"{arm}-blind-{i}", routing=arm) for i in range(10)]
         arms += [
             broken.Label(
-                label_id=f"{arm}-op-{i}", label_type="operational", routing_arm=arm
+                label_id=f"{arm}-op-{i}", label_type="operational", routing=arm
             )
             for i in range(10)
         ]
@@ -196,7 +196,7 @@ def test_tc_stats_c11_similar_error_rates_in_both_arms_are_reported_as_failing()
         labels += [
             broken.Label(
                 label_id=f"{arm}-{i}",
-                routing_arm=arm,
+                routing=arm,
                 band=3,
                 teacher_band=3 if i >= 3 else 5,
             )

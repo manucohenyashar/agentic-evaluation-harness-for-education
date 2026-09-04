@@ -128,20 +128,27 @@ def test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for(
     stats = build_stats(labels=[broken.ADMISSIBLE_LABEL] * 40)
 
     asked = {
-        "scope": "y10-2026-autumn",
+        "population_scope_id": "y10-2026-autumn",
         "backend_profile": "hosted-openrouter",
         "panel_build_ref": "aa11bb",
         "scoring_model": "holistic",
     }
-    figure = _figure(stats, **asked)
-
-    assert figure.population_scope_id == asked["scope"]
-    assert figure.backend_profile == asked["backend_profile"]
-    assert figure.panel_build_ref == asked["panel_build_ref"]
-    assert figure.scoring_model == asked["scoring_model"], (
-        "the figure reports a scope other than the one requested, so a consumer holding it is "
-        "reading a claim about a different population, backend or panel (CT-STATS-04)"
+    figure = _figure(
+        stats,
+        scope=asked["population_scope_id"],
+        backend_profile=asked["backend_profile"],
+        panel_build_ref=asked["panel_build_ref"],
+        scoring_model=asked["scoring_model"],
     )
+
+    # Swept over `SCOPE_KEY_DIMENSIONS` rather than four hand-written lines, so a dimension added
+    # to the clause reaches this assertion through the vocabulary instead of being forgotten here.
+    for dimension in vocab.SCOPE_KEY_DIMENSIONS:
+        assert getattr(figure, dimension) == asked[dimension], (
+            f"the figure reports {dimension} = {getattr(figure, dimension)!r} against the "
+            f"{asked[dimension]!r} that was requested, so a consumer holding it is reading a "
+            "claim about a different population, backend or panel (CT-STATS-04)"
+        )
 
 
 @pytest.mark.writtenahead

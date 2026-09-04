@@ -83,6 +83,20 @@ def agreement_for_dashboard(labels, scope):
     return AgreementFigure(kappa=cohen_kappa(rows), n=len(rows))
 '''
 
+#: A function that reads `label_type` **without** deciding admissibility: `blind_count` is
+#: `CT-STATS-06`'s counter and it legitimately mentions `"blind"`. The rule must report **zero**
+#: definition sites here, which is what makes it a rule about the predicate rather than about the
+#: word: a scan matching either half of the conjunction condemns this, and the reflex fix for that
+#: is to stop scanning.
+COLUMN_READ_WITHOUT_THE_PREDICATE_SOURCE = '''
+def blind_count(labels):
+    return sum(1 for l in labels if l.label_type == "blind")
+
+
+def judged_criteria(criteria):
+    return [c for c in criteria if c.evaluation_mode == "judged"]
+'''
+
 #: No filter at all. The rule must report a cardinality of **zero** and the case must fail on it —
 #: an oracle written as "at most one" passes this source, which computes agreement over everything.
 NO_FILTER_SOURCE = '''
@@ -180,6 +194,7 @@ Agreement — Year 9 Extended Response, population: y9-2026-spring, backend: edg
   atomic criteria      κ = 0.71   n = 142   panel build 9f2a1c   model: atomic
   holistic criteria    κ = 0.48   n = 118   panel build 9f2a1c   model: holistic
   criterion C-04       κ = 0.35   n = 15    too few to draw conclusions from
+  criterion C-11, population y9-2026-spring, backend edge-local-q4:  κ = 0.66
 Weakest criterion in this population: C-04 (evidence use)
 """
 
@@ -192,6 +207,16 @@ HEADLINE_RENDERINGS: tuple[str, ...] = (
     "This package is validated — overall agreement 0.81",
     "How accurate is the system? 89%",
     "Quality score\n  0.83\nDetail by criterion below",
+)
+
+#: The hard case for the headline rule, and the one the other fixtures do not reach: a headline
+#: that **is** scoped, in the sense that every scope word appears on its line, and is still a
+#: system-wide claim. The mutation campaign found the phrase list unexercised without it — every
+#: other headline fixture was already caught by the missing-scope branch, so disabling the framing
+#: check changed nothing.
+SCOPED_HEADLINE_RENDERINGS: tuple[str, ...] = (
+    "Overall accuracy across every population, backend and panel build: 87% (n = 4,210)",
+    "System-wide accuracy for this cohort's criterion set: 0.883 (n = 512, panel 9f2a1c)",
 )
 
 #: Renderings that carry a number with no scope beside it. Same clause, quieter route: a figure on
@@ -211,6 +236,15 @@ Criterion C-07 (two-band), population y9-2026-spring, backend edge-local-q4
   α = 1.00   n = 96   panel build 9f2a1c
   Two-band criteria are degenerate for α and κ: this figure carries less information than a
   multi-band figure at the same value, and the resolution is an open design question.
+"""
+
+#: A compliant rendering that uses the equivalence vocabulary about something that is **not** the
+#: degenerate figure. `CT-STATS-21` forbids presenting binary agreement as equivalent to
+#: multi-band agreement; it says nothing about comparing this year's band 3 to last year's, and a
+#: rule that flagged this would be condemning ordinary copy.
+EQUIVALENCE_ABOUT_SOMETHING_ELSE = """
+Band 3 this year is comparable to band 3 last year, so the boundary has not moved.
+Criterion C-04 (four-band), population y9-2026-spring: κ = 0.35, n = 15.
 """
 
 #: The forbidden presentation: the disclosure vocabulary is present, and used to claim the
@@ -310,11 +344,11 @@ class Label:
     teacher_band: int = 3
     origin: str = "blind_sample"
 
-    #: Which side of the routing policy produced the judgment this label scores. `FR-STATS-08`
-    #: compares the two arms and names them; `CT-ORCH-15` is why they stay separable at all, since
-    #: the random arm carries its own `origin` and is never suppressed. `None` for a label that
-    #: was not produced under the policy.
-    routing_arm: str | None = None
+    #: `CT-REVIEW-07`'s `routing` column: which side of the routing policy produced the judgment
+    #: this label scores. `FR-STATS-08` compares the two arms and names them; `CT-ORCH-15` is why
+    #: they stay separable at all, since the random arm carries its own `origin` and is never
+    #: suppressed. `None` for a label not produced under the policy.
+    routing: str | None = None
 
 
 #: One admissible label, as the filter's positive control. Without it the exclusion sweep passes
