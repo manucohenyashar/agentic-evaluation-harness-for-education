@@ -109,21 +109,32 @@ def test_tc_review_c09_no_system_output_is_available_before_submission(forbidden
     the value and a template omitting it satisfies the second and fails the first.
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
-    service = build_review(scores=broken.flagged_population(30))
+    scores = broken.system_output_population(30)
+    service = build_review(scores=scores)
     session = service.blind_sample(run_id="run-1", n=vocab.BLIND_SAMPLE_RANGE[0])
     require_attr(session, "available_data", issue="#111")
     require_attr(service, "render_blind_flow", issue="#111")
 
-    available = session.available_data()
-    assert forbidden not in available, (
-        f"the blind session's available data carries {forbidden!r} before submission "
-        f"(FR-REVIEW-11). The teacher has not answered yet, so anything the system decided is "
-        "an anchor on the answer they are about to give."
+    # **Values, not names.** `forbidden not in session.available_data()` is key membership on a
+    # mapping, so a session returning `{"items": [ref_with_a_system_band, ...]}` passes it for all
+    # five fields — and `"system_band" not in rendered_text` passes a page that displays `B3`.
+    # Review found both. The fixture carries a distinctive sentinel per field so the probe can ask
+    # the only question that matters: is the system's answer reachable from here?
+    sentinel = broken.SYSTEM_OUTPUT_SENTINELS[forbidden]
+
+    leaked = vocab.reachable_values(session.available_data(), sentinel)
+    assert not leaked, (
+        f"the blind session's available data reaches {forbidden!r} = {sentinel!r} before "
+        f"submission, at {leaked}. FR-REVIEW-11: the teacher has not answered yet, so anything "
+        "the system decided is an anchor on the answer they are about to give — and a value "
+        "nested one level down is as reachable as one at the top."
     )
 
     rendered = service.render_blind_flow(session.session_id)
-    assert forbidden not in rendered, (
-        f"the blind flow renders {forbidden!r} before submission (FR-REVIEW-11)."
+    assert str(sentinel) not in rendered, (
+        f"the blind flow renders {forbidden!r} = {sentinel!r} before submission (FR-REVIEW-11). "
+        "Scanning for the field *name* would have passed this: the page shows the value, not the "
+        "column it came from."
     )
 
 
@@ -154,8 +165,15 @@ def test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrender
         "the blind flow made no requests, so this test asserts nothing about transport"
     )
 
+    # Values again, for the reason step 3 exists: a field serialized into a response has already
+    # left the module, whatever the template does with it. Matching the field *name* would pass a
+    # payload carrying `{"b": "B3"}`.
     leaked = {
-        request.path: [f for f in vocab.BLIND_FORBIDDEN_FIELDS if f in request.body]
+        request.path: [
+            field
+            for field, sentinel in broken.SYSTEM_OUTPUT_SENTINELS.items()
+            if str(sentinel) in str(request.body)
+        ]
         for request in payloads
     }
     leaked = {path: fields for path, fields in leaked.items() if fields}

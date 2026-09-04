@@ -52,12 +52,17 @@ def test_tc_review_c04_the_queue_states_all_three_figures_and_they_are_arithmeti
         f"the queue reported {queue.flagged_total} flagged against a population of "
         f"{len(population)} queued rows"
     )
-    assert 0 < len(queue.shown) < queue.flagged_total, (
-        f"{len(queue.shown)} of {queue.flagged_total} shown — the fixture is not "
-        "over-subscribed, so the arithmetic below holds trivially"
+    # Items, not entries. §3.15 types `shown` as `Sequence[ReviewItem | ReviewGroup]`, so a
+    # queue presenting 200 items as 16 groups shows 16 entries and covers 200 items — and this
+    # clause's arithmetic is about the second number. `len(shown)` would demand a residual of 184
+    # from a correct queue with nothing left over.
+    covered = vocab.items_shown(queue)
+    assert 0 < covered < queue.flagged_total, (
+        f"{covered} of {queue.flagged_total} shown — the fixture is not over-subscribed, so the "
+        "arithmetic below holds trivially"
     )
-    assert queue.residual_provisional == queue.flagged_total - len(queue.shown), (
-        f"{queue.flagged_total} flagged, {len(queue.shown)} shown, "
+    assert queue.residual_provisional == queue.flagged_total - covered, (
+        f"{queue.flagged_total} flagged, {covered} covered by what is shown, "
         f"{queue.residual_provisional} residual. The three do not reconcile, so at least one of "
         "them is describing a different population than the teacher is looking at."
     )
@@ -79,10 +84,12 @@ def test_tc_review_c04_the_console_renders_all_three_figures():
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     render_review_queue = require(CONSOLE_MODULE, "render_review_queue", issue="#124")
 
-    queue = build_review(scores=broken.flagged_population(200)).build_queue(
-        run_id="run-1", budget_minutes=30
-    )
-    rendering = render_review_queue(run_id="run-1", budget_minutes=30)
+    # One service behind both. An earlier draft built the queue in memory and rendered the
+    # console's own `run-1`, so the comparison was between figures from two unrelated objects —
+    # it would mismatch for a correct console, or match by coincidence. Review caught it.
+    service = build_review(scores=broken.flagged_population(200))
+    queue = service.build_queue(run_id="run-1", budget_minutes=30)
+    rendering = render_review_queue(service, run_id="run-1", budget_minutes=30)
 
     unstated = vocab.unstated_residual(rendering, queue)
     assert unstated == [], (
@@ -283,15 +290,21 @@ def test_tc_review_c06_the_residual_persists_across_review_sessions():
 
     second = service.build_queue(run_id="run-1", budget_minutes=30)
 
-    assert second.residual_provisional == first.residual_provisional - 1, (
-        f"the residual went from {first.residual_provisional} to "
-        f"{second.residual_provisional} across one action in a new sitting. FR-REVIEW-08: it "
-        "persists across sessions rather than clearing per sitting — one action reviewed, one "
-        "item off the residual, and nothing else moves."
-    )
+    # `flagged_total`, not the residual. The residual is `flagged_total - items shown`, and the
+    # second sitting frees the reviewed item's `est_seconds` — so a correct greedy fill generally
+    # shows a different number of items and the residual moves by more than one. Review found an
+    # earlier draft asserting `residual - 1`, which fails correct code. What actually detects the
+    # per-sitting clear is the flagged count: it falls by exactly the one item that was reviewed,
+    # and a queue that rebuilt from scratch reports the original 200.
     assert second.flagged_total == first.flagged_total - 1, (
-        f"flagged_total went from {first.flagged_total} to {second.flagged_total}. A count that "
-        "restarts each sitting tells the teacher a new story every time they sit down."
+        f"flagged_total went from {first.flagged_total} to {second.flagged_total} after one "
+        "item was reviewed in the previous sitting. FR-REVIEW-08: the residual persists across "
+        "sessions rather than clearing per sitting, and a count that restarts tells the teacher "
+        "a new story every time they sit down."
+    )
+    assert second.residual_provisional == second.flagged_total - vocab.items_shown(second), (
+        "the second sitting's residual does not reconcile with what it is showing, so the "
+        "carried-forward count and the displayed queue disagree"
     )
 
 
@@ -316,6 +329,11 @@ def test_tc_review_c06_a_residual_item_is_never_silently_finalized_or_backfilled
     rows = {row.score_id: row for row in service.scores(run_id="run-1")}
     shown = {item.score_id for item in before.shown}
     residual = [row for score_id, row in rows.items() if score_id not in shown]
+    assert residual, (
+        "closing the run left no rows outside what the queue showed, so both assertions below "
+        "hold over an empty list. Either the fixture is not over-subscribed or `scores()` stopped "
+        "returning the residual at close-out — and the second is the defect this test is for."
+    )
 
     finalized = [row.score_id for row in residual if row.state != vocab.RESIDUAL_STATE]
     assert finalized == [], (
@@ -324,12 +342,14 @@ def test_tc_review_c06_a_residual_item_is_never_silently_finalized_or_backfilled
         "reviewed is the one outcome the residual exists to prevent."
     )
 
-    backfilled = [
-        row.score_id
-        for row in residual
-        if getattr(row, "teacher_band", None) is not None
-    ]
+    # Asked of the label store, not of the score row. A `criterion_score` row has no
+    # `teacher_band` — the teacher's band lives on the `label` (§3.15's Data flow) — so
+    # `getattr(row, "teacher_band", None) is None` was true of every row shape and could not fail.
+    # Review caught it. A backfill leaves either a label nobody wrote or a resolved state, and
+    # both are asked for here.
+    labels = {label.score_id for label in service.labels_for(run_id="run-1")}
+    backfilled = sorted({row.score_id for row in residual} & labels)
     assert backfilled == [], (
-        f"{len(backfilled)} residual items carry a teacher band nobody entered: "
-        f"{backfilled[:5]}. FR-REVIEW-08: never backfilled with a substitute value."
+        f"{len(backfilled)} residual items gained a label nobody entered: {backfilled[:5]}. "
+        "FR-REVIEW-08: never backfilled with a substitute value."
     )

@@ -29,7 +29,6 @@ one place, so an invented name is visibly invented:
     .points_for_band(...)                             CT-PKG-05's mapping, reached from here
     .escalate(score_id)                               CT-REVIEW-15's induced race
     ReviewQueue.groups                                the group entries, separable from .shown
-    ReviewQueue.build_trace                           CT-REVIEW-02's event order; .name per event
     ReviewQueue.build_seconds                         CT-REVIEW-16's budget accounting
     ReviewGroup.members                               so "one label per member" is countable
     ReviewItem.score_id / .criterion_id /
@@ -59,6 +58,10 @@ one place, so an invented name is visibly invented:
 
 **#111 — S-REVIEW-04, the two samples**
 
+    ReviewQueue.build_trace                           CT-REVIEW-02's event order; .name per
+                                                      event. #111's, not #108's: S-REVIEW-04
+                                                      owns the budget subtraction the trace
+                                                      has to show happening first
     BlindSession.readable_tables()                    CT-REVIEW-09 — see the note below
     BlindSession.available_data() / .items            CT-REVIEW-09 step 2, and the refs to answer
     .render_blind_flow(session_id)                    the rendered half of step 2
@@ -183,6 +186,24 @@ LABEL_FIELD_COUNT_CLAIMED_BY_PLAN = 9
 #: from `LABEL_FIELDS` because it comes from a different requirement — folding them together
 #: would make the count assertion above untestable.
 LABEL_ATTRIBUTION_FIELDS: tuple[str, ...] = ("actor", "timestamp")
+
+#: What a label may **not** also carry. `CT-REVIEW-07` is asserted by set equality, and the
+#: direction a presence check misses is the extra field: each of these is the system's own output
+#: denormalized onto the record that is supposed to be an independent judgement of it. A label
+#: carrying `confidence` beside `system_band` is one join short of an agreement statistic that
+#: weights by the system's own certainty.
+#:
+#: `system_band` is deliberately absent — `FR-REVIEW-09` requires it, and the pair is the whole
+#: point of the record. What is forbidden is everything *derived* from the score.
+FORBIDDEN_LABEL_FIELDS: tuple[str, ...] = (
+    "confidence",
+    "self_confidence",
+    "proposed_points",
+    "system_points",
+    "routing_reason",
+    "narrative",
+    "panel_spread",
+)
 
 #: `CT-REVIEW-07`: *"both `system_band` and `teacher_band`"* — a label with only one is useless
 #: for agreement, which is the whole reason the label store exists.
@@ -397,6 +418,12 @@ RANDOMNESS_TRIALS = 200
 
 #: The one consequence, transcribed from `FR-REVIEW-13`.
 SKIP_CONSEQUENCE = "no new validation evidence for this administration"
+
+#: The same consequence as the words a report has to contain, because §3.15 fixes the
+#: *consequence* and fixes no wording for reporting it. Pinning the sentence would fail a
+#: compliant console over a synonym; requiring these four words fails a report that says
+#: something else. Review caught the string-equality gate.
+SKIP_CONSEQUENCE_TERMS: tuple[str, ...] = ("no", "validation evidence", "administration")
 
 #: What must be **unaffected** — the "exactly one" half. Asserted as everything-else-normal
 #: rather than as the absence alone.
@@ -724,6 +751,81 @@ def unstated_residual(rendering: str, queue: object) -> list[str]:
         if value is None or str(value) not in rendering:
             missing.append(field)
     return missing
+
+
+_FIELD_WORDS = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def label_fields_in(text: str) -> list[str]:
+    """Which `LABEL_FIELDS` appear in `text` as whole identifiers.
+
+    `origin` is a substring of `original`, and a re-run prompt saying *"the original submission"*
+    is compliant — a substring scan fails it. Tokenising first is what keeps the rule usable, and
+    review found the substring version.
+    """
+    words = set(_FIELD_WORDS.findall(text))
+    return sorted(field for field in LABEL_FIELDS if field in words)
+
+
+def reachable_values(data: object, sentinel: object, path: str = "") -> list[str]:
+    """Every place `sentinel` is reachable inside `data`, as dotted paths.
+
+    `CT-REVIEW-09` step 2 asks whether the system's answer is *available* to the blind session,
+    and an earlier draft asked `"system_band" not in session.available_data()` — top-level key
+    membership on a mapping, which passes a session returning
+    `{"items": [ref_with_a_system_band, ...]}` for all five fields. The question is about the
+    value and about the whole structure, so the walk is recursive.
+    """
+    found: list[str] = []
+    if data == sentinel:
+        return [path or "<root>"]
+    if isinstance(data, dict):
+        for key, value in data.items():
+            found += reachable_values(value, sentinel, f"{path}.{key}" if path else str(key))
+    elif isinstance(data, (list, tuple, set, frozenset)):
+        for index, value in enumerate(data):
+            found += reachable_values(value, sentinel, f"{path}[{index}]")
+    elif hasattr(data, "__dict__"):
+        for key, value in vars(data).items():
+            found += reachable_values(value, sentinel, f"{path}.{key}" if path else str(key))
+    return found
+
+
+def module_sources(module: object) -> list[tuple[str, str]]:
+    """`(name, source)` for a module, or for every source file in it if it is a package.
+
+    `inspect.getsource(package)` returns `__init__.py` alone. `M-REVIEW` is four stories — a
+    queue, a label store and two samples — so shipping as a package is likely, and a surface scan
+    that saw only the `__init__` would miss a numeric-entry parameter in `aeh/review/queue.py`
+    while its docstring promised the whole surface. Review caught that.
+    """
+    import inspect
+    import pathlib as _pathlib
+
+    paths = getattr(module, "__path__", None)
+    if paths is None:
+        return [(module.__name__, inspect.getsource(module))]
+    sources = []
+    for root in paths:
+        for file in sorted(_pathlib.Path(root).rglob("*.py")):
+            sources.append((file.name, file.read_text(encoding="utf-8")))
+    return sources
+
+
+def items_shown(queue: object) -> int:
+    """How many review **items** a queue is showing, counting a group as its members.
+
+    `len(queue.shown)` counts *entries*, and §3.15 types `shown` as
+    `Sequence[ReviewItem | ReviewGroup]` — so a queue presenting 200 items as 16 groups shows 16
+    entries and covers 200 items, and `CT-REVIEW-04`'s residual arithmetic is about the second
+    number. Review found `flagged_total - len(shown)` demanding a residual of 184 from a correct
+    queue with nothing left over.
+    """
+    total = 0
+    for entry in getattr(queue, "shown", ()):
+        members = getattr(entry, "members", None)
+        total += len(members) if members is not None else 1
+    return total
 
 
 def blind_prefetch_attributes(session: object) -> list[str]:

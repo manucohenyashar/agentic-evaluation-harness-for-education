@@ -104,11 +104,24 @@ def test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_outpu
         item, action="accept", new_band=None, review_seconds=20
     )
 
+    # The blind flow answers **its own** items. Submitting the queue item here would ask the
+    # session to record a band for a criterion it never drew, which a correct `submit_blind`
+    # refuses (CT-REVIEW-15 records only what was answered) — so the path that matters most to
+    # this sweep would fail for a reason that has nothing to do with `saw_system_output`.
     session = service.blind_sample(run_id="run-1", n=vocab.BLIND_SAMPLE_RANGE[0])
-    produced["blind_flow"] = service.submit_blind(session.session_id, bands={item: "B2"})[0]
+    blind_ref = list(session.items)[0]
+    produced["blind_flow"] = service.submit_blind(
+        session.session_id, bands={blind_ref: "B2"}
+    )[0]
 
+    # A different item: `item` was accepted above, and re-actioning a resolved item is a
+    # different case (CT-REVIEW-15) that would fail here for the wrong reason.
     produced["other_view_edit"] = service.act_from_view(
-        item, view="submission_detail", action="edit", new_band="B4", review_seconds=15
+        service.build_queue(run_id="run-1", budget_minutes=30).shown[1],
+        view="submission_detail",
+        action="edit",
+        new_band="B4",
+        review_seconds=15,
     )
 
     group = service.build_queue(run_id="run-1", budget_minutes=30).groups[0]

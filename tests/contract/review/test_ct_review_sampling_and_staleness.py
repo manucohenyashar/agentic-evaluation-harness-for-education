@@ -83,7 +83,15 @@ def test_tc_review_c10_the_absence_is_reported_rather_than_papered_over():
     )
 
     blind_sample_skipped = require(REVIEW_MODULE, "blind_sample_skipped", issue="#111")
-    service = build_review(scores=broken.flagged_population(40), administration_id="admin-2")
+    # The earlier administration's figure has to be *reachable* from this one, or "was it carried
+    # forward?" has no answer: review found an earlier draft asserting `current_figure is None`
+    # on a service that had never had access to admin-1's result, which an aggressively
+    # carry-forward implementation would also pass.
+    service = build_review(
+        scores=broken.flagged_population(40),
+        administration_id="admin-2",
+        previous_administration=earlier,
+    )
     require_attr(service, "skip_blind_sample", issue="#111")
     service.skip_blind_sample(run_id="run-2")
 
@@ -92,9 +100,14 @@ def test_tc_review_c10_the_absence_is_reported_rather_than_papered_over():
         "the skipped sample was not reported. FR-REVIEW-13: the system reports the absence — a "
         "blank where a figure belongs is the finding, not a gap to fill."
     )
-    assert vocab.SKIP_CONSEQUENCE in report.message, (
-        f"the report says {report.message!r}, which does not state "
-        f"{vocab.SKIP_CONSEQUENCE!r}"
+    # Words, not a sentence. §3.15 fixes the *consequence* — "no new validation evidence for that
+    # administration" — and fixes no wording for reporting it, so pinning the literal string would
+    # fail a compliant console over a synonym. Review caught the string-equality gate.
+    missing = [w for w in vocab.SKIP_CONSEQUENCE_TERMS if w not in report.message.lower()]
+    assert missing == [], (
+        f"the report says {report.message!r}, which does not say {missing}. FR-REVIEW-13's one "
+        "consequence is that this administration has no new validation evidence, and a report "
+        "that does not say so is not reporting the absence."
     )
     assert report.current_figure is None, (
         f"the skipped administration presents {report.current_figure!r} as its current figure. "
@@ -180,12 +193,21 @@ def test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_popul
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#111")
 
+    # `submission_id` as well as `score_id`. `flagged_population` numbers submissions by position,
+    # so both populations carried the identical ids `sub-0…` and the filter below could never be
+    # true for any implementation — a module drawing every grade from the reviewed population
+    # passed. Review caught it; it is the clause's stated point, so it was the worst place to
+    # have an unfalsifiable assertion.
     auto = [
-        dataclasses.replace(row, score_id=f"auto-{i}", routing="auto")
+        dataclasses.replace(
+            row, score_id=f"auto-{i}", submission_id=f"auto-sub-{i}", routing="auto"
+        )
         for i, row in enumerate(broken.flagged_population(30))
     ]
     reviewed = [
-        dataclasses.replace(row, score_id=f"rev-{i}", routing="reviewed")
+        dataclasses.replace(
+            row, score_id=f"rev-{i}", submission_id=f"rev-sub-{i}", routing="reviewed"
+        )
         for i, row in enumerate(broken.flagged_population(30))
     ]
     service = build_review(scores=[*auto, *reviewed])
@@ -197,7 +219,8 @@ def test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_popul
     assert low <= len(sample) <= high, (
         f"the whole-grade sample drew {len(sample)} grades against FR-REVIEW-14's {low}–{high}"
     )
-    from_reviewed = [g.submission_id for g in sample if g.submission_id.startswith("rev-")]
+    reviewed_ids = {row.submission_id for row in reviewed}
+    from_reviewed = [g.submission_id for g in sample if g.submission_id in reviewed_ids]
     assert from_reviewed == [], (
         f"the whole-grade sample included reviewed grades: {from_reviewed[:5]}. FR-REVIEW-14 "
         "draws from the auto-accepted population — sampling reviewed grades measures the review, "
@@ -286,11 +309,22 @@ def test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh():
         "refresh. CT-REVIEW-15 rejects *with a refresh* — a bare error leaves them retrying the "
         "same dead row."
     )
+    # Asked of the row's own state and of the label store. `teacher_band` is not a
+    # `criterion_score` column (§3.15 puts it on the `label`), so probing for it with a `getattr`
+    # default could not fail — review caught that. A misapplied write lands either as a resolved
+    # state on the superseded row or as a label against it.
     rows = {row.score_id: row for row in service.scores(run_id="run-1")}
-    assert getattr(rows[item.score_id], "teacher_band", None) is None, (
-        "the rejected action was applied to the old row anyway. CT-REVIEW-15: never applied to "
-        "the old row — a band written against a superseded score is a judgement about text the "
-        "teacher was not shown."
+    assert rows[item.score_id].state == vocab.RESIDUAL_STATE, (
+        f"the superseded row is now {rows[item.score_id].state!r}. CT-REVIEW-15: the rejected "
+        "action was applied to the old row anyway — a band written against a superseded score is "
+        "a judgement about text the teacher was not shown."
+    )
+    assert not [
+        label for label in service.labels_for(run_id="run-1")
+        if label.score_id == item.score_id
+    ], (
+        "the rejected action still wrote a label against the superseded score, so the refusal "
+        "reached the teacher and the record disagrees with it"
     )
 
 

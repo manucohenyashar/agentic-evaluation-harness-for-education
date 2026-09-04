@@ -861,7 +861,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `M-REVIEW` is four stories: #108 builds the queue, #109 the admission prohibitions and the
     # residual, #110 the label store, #111 the two samples. Attribution below was **measured**,
     # not read off the stories' `Evaluation strategy` lines: a plugin recorded which `require()`
-    # fired per test, and the first pass reported #108 for 68 of the 81 — because every case has
+    # fired per test, and the first pass reported #108 for 68 of the 81 -- because every case has
     # to construct a service before it can probe anything.
     #
     # That is exactly the shape of the `#118` defect this registry already carries a fix for. A
@@ -872,12 +872,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # Every target is a name that appears in **no** Interfaces block. §3.15 declares
     # `ReviewService`'s six members, so a key on `blind_sample` or `submit_blind` resolves
-    # against a Protocol-only module — and a key on a *member of the concrete class* never
+    # against a Protocol-only module -- and a key on a *member of the concrete class* never
     # resolves at all if the implementation puts it somewhere else, which leaves a P0 case
     # outside the gate permanently. `build_review`, `write_fields`, `record_label` and
     # `blind_sample_skipped` are this suite's own inventions (declared in
     # `tests/support/review_vocabulary.py`'s docstring) and cannot exist before an implementation
     # does.
+    #
+    # Four keys are the reviewer's corrections rather than the plugin's: three cases reach the
+    # blind flow (#111) or the label store (#110) through a *call* rather than a `require`, which
+    # a scan of `require(issue=...)` arguments cannot see. `CT-REVIEW-14` was one test needing two
+    # independent stories -- #78 and #68, either of which could land first -- so it is
+    # parametrized per consumer and each half carries its own key. And `CT-REVIEW-09`'s
+    # transport-layer step reaches a different console symbol from the other three console cases,
+    # so it gets its own entry rather than riding on `render_review_queue`.
     "#108 review": (
         "symbol",
         f"{REVIEW_MODULE}:build_review",
@@ -906,8 +914,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c13_a_group_action_emits_one_label_per_member",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
             "::test_tc_review_c13_group_items_rank_above_per_item_entries",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones",
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c17_each_knob_declares_its_documented_default",
             "tests/contract/review/test_ct_review_limits_and_config.py"
@@ -947,15 +953,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/review/test_ct_review_budget_and_ranking.py"
             "::test_tc_review_c19_both_calibration_inputs_are_stored_so_phase_2_has_a_path",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_names_an_actor_and_a_timestamp",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
             "::test_tc_review_c12_an_edit_from_any_view_writes_the_same_action_and_the_same_label_type",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
             "::test_tc_review_c12_new_points_is_derived_from_new_band_through_the_pinned_mapping",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
             "::test_tc_review_c12_no_interface_in_the_module_accepts_a_numeric_score",
+            "tests/contract/review/test_ct_review_labels_and_edits.py"
+            "::test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones",
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c18_every_named_counter_is_emitted",
             "tests/contract/review/test_ct_review_limits_and_config.py"
@@ -964,8 +968,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c18_the_budget_exhaustion_signal_is_retained_across_administrations",
             "tests/contract/review/test_saw_system_output.py"
             "::test_tc_review_c08_an_override_from_the_queue_still_records_that_the_system_was_visible",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_output_value",
             "tests/contract/review/test_saw_system_output.py"
             "::test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_null",
         ),
@@ -986,6 +988,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs",
             "tests/contract/review/test_ct_review_budget_and_ranking.py"
             "::test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget",
+            "tests/contract/review/test_ct_review_labels_and_edits.py"
+            "::test_tc_review_c07_every_label_names_an_actor_and_a_timestamp",
+            "tests/contract/review/test_ct_review_labels_and_edits.py"
+            "::test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality",
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_produced",
             "tests/contract/review/test_ct_review_sampling_and_staleness.py"
@@ -1000,6 +1006,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_population_only",
             "tests/contract/review/test_ct_review_sampling_and_staleness.py"
             "::test_tc_review_c15_an_interrupted_blind_session_keeps_the_criteria_actually_answered",
+            "tests/contract/review/test_saw_system_output.py"
+            "::test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_output_value",
         ),
     ),
     "#115 review": (
@@ -1016,16 +1024,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c08_m_stats_excludes_an_operational_label_from_agreement_and_says_how_many",
         ),
     ),
-    # CT-REVIEW-09 step 3 (the transport-layer probe), CT-REVIEW-04's rendering half and
-    # CT-REVIEW-19/-20's consumer-language sweeps are all `M-CONSOLE` surfaces. The clauses
-    # are M-REVIEW's and the assertions are not, which is reported as a finding on the PR:
-    # CT-REVIEW-09 is not fully asserted until a different module lands.
+    # CT-REVIEW-04's rendering half and CT-REVIEW-19/-20's consumer-language sweeps are
+    # `M-CONSOLE` surfaces. The clauses are M-REVIEW's and the assertions are not, which is
+    # reported as a finding on the PR.
     "#124 review": (
         "symbol",
         f"{CONSOLE_MODULE}:render_review_queue",
         (
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrendered",
             "tests/contract/review/test_ct_review_admission_and_residual.py"
             "::test_tc_review_c04_the_console_renders_all_three_figures",
             "tests/contract/review/test_ct_review_budget_and_ranking.py"
@@ -1034,18 +1039,44 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c20_the_console_does_not_describe_a_group_as_semantically_clustered",
         ),
     ),
-    # CT-REVIEW-14 intersects M-REVIEW's write set with what M-JUDGE (#78) and M-EXTRACT
-    # (#68) assemble into a prompt, so it needs both. Keyed on #78: the two are independent
-    # and either could land first, and #78 is the one whose `assemble_prompt` the re-run
-    # case below also calls.
+    # CT-REVIEW-09 step 3, the transport-layer probe. A P0 safety-property step that lands
+    # outside the module its clause belongs to: `M-REVIEW` is a service with six methods and
+    # no requests. Keyed on its own symbol because `render_review_queue` -- which three other
+    # cases here need -- is the likelier of the two to land first.
+    "#124 transport review": (
+        "symbol",
+        f"{CONSOLE_MODULE}:blind_flow_requests",
+        (
+            "tests/contract/review/test_blind_unreachability.py"
+            "::test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrendered",
+        ),
+    ),
+    # CT-REVIEW-14 intersects M-REVIEW's write set with what each scoring consumer assembles
+    # into a prompt. #78 (M-JUDGE) and #68 (M-EXTRACT) are independent, so the case is
+    # parametrized and each half is keyed on the story it actually needs -- rather than one
+    # test keyed on whichever of the two somebody guessed would land last.
     "#78 review": (
+        "symbol",
+        f"{JUDGE_MODULE}:prompt_fields",
+        (
+            "tests/contract/review/test_ct_review_limits_and_config.py"
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
+        ),
+    ),
+    "#78 rerun review": (
         "symbol",
         f"{JUDGE_MODULE}:assemble_prompt",
         (
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit",
+        ),
+    ),
+    "#68 review": (
+        "symbol",
+        f"{EXTRACT_MODULE}:prompt_fields",
+        (
             "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect",
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
         ),
     ),
 }

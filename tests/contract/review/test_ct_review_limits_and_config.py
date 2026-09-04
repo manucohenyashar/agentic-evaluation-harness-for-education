@@ -34,19 +34,33 @@ pytestmark = pytest.mark.contract
 # --- CT-REVIEW-14 — review is downstream of scoring, in the strict sense -------------------------
 
 
+#: The two modules whose prompt assembly `CT-REVIEW-14` intersects the write set against, each
+#: with the story that delivers it. Parametrized rather than looped: `M-JUDGE` (#78) and
+#: `M-EXTRACT` (#68) are independent stories and either can land first, so a single test needing
+#: both could only be registered against one of them — which is exactly the first-blocker keying
+#: `WRITTEN_AHEAD_BLOCKERS` exists to forbid. Two node ids, two honest keys.
+PROMPT_ASSEMBLERS: tuple[tuple[str, str], ...] = (("judge", "#78"), ("extract", "#68"))
+
+
 @pytest.mark.writtenahead
-def test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect():
+@pytest.mark.parametrize(
+    "consumer, issue", PROMPT_ASSEMBLERS, ids=[c for c, _ in PROMPT_ASSEMBLERS]
+)
+def test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect(
+    consumer, issue
+):
     """The empty-intersection assertion, *"which is stronger than sampling prompts"*.
 
-    Every field this module writes, against every field `M-JUDGE` and `M-EXTRACT` assemble into a
-    prompt. The intersection is the contamination channel and it must be empty — not "no current
-    prompt reads a review field", which is a statement about today's prompts, but "there is no
-    field a prompt could read", which survives the next prompt somebody writes.
+    Every field this module writes, against every field the consumer assembles into a prompt. The
+    intersection is the contamination channel and it must be empty — not "no current prompt reads
+    a review field", which is a statement about today's prompts, but "there is no field a prompt
+    could read", which survives the next prompt somebody writes.
 
     Both consumers are checked, and separately, because they assemble different things:
     `M-EXTRACT` reads the submission, `M-JUDGE` reads the evidence, and a review field leaking
     into either is R15.
     """
+    module_path = {"judge": JUDGE_MODULE, "extract": EXTRACT_MODULE}[consumer]
     write_fields = require(REVIEW_MODULE, "write_fields", issue="#109")()
 
     assert write_fields, (
@@ -54,23 +68,17 @@ def test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_inters
         "reason"
     )
 
-    for module_name, module_path in (
-        ("judge", JUDGE_MODULE),
-        ("extract", EXTRACT_MODULE),
-    ):
-        assemble = require(module_path, "prompt_fields", issue="#78" if module_name == "judge" else "#68")
-        prompt_fields = set(assemble())
-        assert prompt_fields, (
-            f"M-{module_name.upper()} reports no prompt fields, so the intersection below is "
-            "vacuous"
-        )
-        shared = sorted(set(write_fields) & prompt_fields)
-        assert shared == [], (
-            f"M-REVIEW writes {shared}, which M-{module_name.upper()}'s prompt assembly reads. "
-            "FR-REVIEW-17: no field this module writes is read by any scoring prompt — review is "
-            "downstream of scoring in the strict sense, and a field on both sides of that line is "
-            "the cross-student contamination channel R15 exists to close."
-        )
+    prompt_fields = set(require(module_path, "prompt_fields", issue=issue)())
+    assert prompt_fields, (
+        f"M-{consumer.upper()} reports no prompt fields, so the intersection below is vacuous"
+    )
+    shared = sorted(set(write_fields) & prompt_fields)
+    assert shared == [], (
+        f"M-REVIEW writes {shared}, which M-{consumer.upper()}'s prompt assembly reads. "
+        "FR-REVIEW-17: no field this module writes is read by any scoring prompt — review is "
+        "downstream of scoring in the strict sense, and a field on both sides of that line is "
+        "the cross-student contamination channel R15 exists to close."
+    )
 
 
 @pytest.mark.writtenahead
@@ -127,11 +135,13 @@ def test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_uni
         "the teacher's override band appears in the prompt assembled for a re-run of the same "
         "unit. FR-REVIEW-17, R15: nothing a teacher records here can reach a later judgment."
     )
-    for field in vocab.LABEL_FIELDS:
-        assert field not in text, (
-            f"the re-run prompt carries the label field {field!r}. A panel that can see how the "
-            "unit was reviewed is not scoring it independently."
-        )
+    # Whole words. `origin` is a substring of `original`, and a prompt saying "the original
+    # submission" is compliant — a substring scan fails it. Review caught that.
+    carried = vocab.label_fields_in(text)
+    assert carried == [], (
+        f"the re-run prompt carries the label fields {carried}. A panel that can see how the "
+        "unit was reviewed is not scoring it independently."
+    )
 
 
 # --- CT-REVIEW-17 — the four knobs are M-STATS's inputs -----------------------------------------
@@ -157,7 +167,7 @@ def test_tc_review_c17_each_knob_declares_its_documented_default(knob):
 
 
 @pytest.mark.writtenahead
-@pytest.mark.parametrize("knob", ["REVIEW_BLIND_N", "REVIEW_BLIND_RESERVE_MINUTES"])
+@pytest.mark.parametrize("knob", ["REVIEW_BLIND_N"])
 def test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_produced(knob):
     """*"Measured as label counts, not as a settings read."*
 
@@ -166,14 +176,23 @@ def test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_pro
     evidence an administration produces"*, which is a claim about the label store. A module that
     accepts the knob and ignores it passes the settings read and fails here.
 
-    **Two knobs rather than four, and that is a finding.** `CT-REVIEW-17` says all four *"change
-    how much validation evidence an administration produces"*, and two of them cannot be measured
-    that way inside this module. `REVIEW_WHOLE_GRADE_N` sizes a sample that writes no label —
-    `FR-REVIEW-14` offers it as a display, and `FR-REVIEW-09` writes labels for teacher *actions*.
-    `REVIEW_DEFAULT_BUDGET_MINUTES` is a default for a parameter §3.15's own Interfaces block
-    declares as required — `build_queue(self, run_id, budget_minutes)` — so nothing in this module
-    ever reads it. Both are asserted for their declared value by the test above; neither has a
-    label-count differential to measure, and inventing one would be worse than reporting it.
+    **One knob rather than four, and that is a finding.** `CT-REVIEW-17` says all four *"change
+    how much validation evidence an administration produces"*, and three of them cannot be
+    measured that way inside this module.
+
+    * `REVIEW_WHOLE_GRADE_N` sizes a sample that writes no label — `FR-REVIEW-14` offers it as a
+      display, and `FR-REVIEW-09` writes labels for teacher *actions*.
+    * `REVIEW_DEFAULT_BUDGET_MINUTES` is a default for a parameter §3.15's own Interfaces block
+      declares as required — `build_queue(self, run_id, budget_minutes)` — so nothing in this
+      module ever reads it.
+    * `REVIEW_BLIND_RESERVE_MINUTES` sizes the *reservation*, and nothing in §3.15 couples
+      reserved minutes to sample size: `blind_sample(n=...)` draws `REVIEW_BLIND_N` submissions
+      whatever the reserve is. An earlier draft swept it here and the assertion could not have
+      passed for any implementation — review caught that.
+
+    All four are asserted for their declared values by the test above. Only `REVIEW_BLIND_N` has
+    a label-count differential to measure, and inventing one for the other three would be worse
+    than reporting it.
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     population = broken.flagged_population(120, criteria=1)
@@ -274,6 +293,15 @@ def test_tc_review_c18_shown_and_flagged_are_emitted_as_a_pair():
 
     emissions = service.counter_emissions(run_id="run-1")
     shown, flagged = vocab.HONESTY_CHECK_PAIR
+
+    assert emissions, (
+        "the module recorded no counter emissions, so the pairing assertion below holds over an "
+        "empty list and asserts nothing"
+    )
+    assert any(shown in e.names or flagged in e.names for e in emissions), (
+        f"neither {shown!r} nor {flagged!r} was ever emitted. A module that emits neither is "
+        "trivially consistent about the pair and has published nothing about R12's honesty check."
+    )
 
     unpaired = [e.at for e in emissions if (shown in e.names) != (flagged in e.names)]
     assert unpaired == [], (
@@ -394,9 +422,18 @@ def test_tc_review_c20_the_console_does_not_describe_a_group_as_semantically_clu
     phrases, so *"dissimilar in wording"* passes and *"210 similar responses"* does not — both
     controlled in the vocabulary suite.
     """
+    build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     render_review_queue = require(CONSOLE_MODULE, "render_review_queue", issue="#124")
 
-    rendering = render_review_queue(run_id="run-1", budget_minutes=30)
+    # Rendered from a population that actually groups, so there is a group caption to sweep. Over
+    # a queue with no group the sweep is empty and passes for any console — review caught that.
+    service = build_review(scores=broken.identical_signature_population(12))
+    queue = service.build_queue(run_id="run-1", budget_minutes=600)
+    assert queue.groups, (
+        "the fixture produced no group, so the rendering carries no group caption and this sweep "
+        "asserts nothing"
+    )
+    rendering = render_review_queue(service, run_id="run-1", budget_minutes=600)
     claims = vocab.semantic_clustering_language(rendering)
 
     assert claims == [], (

@@ -607,12 +607,33 @@ def test_the_fixture_populations_are_not_degenerate():
             "sensitivity case run over it cannot detect a ranking that ignores the signal"
         )
 
+    # Not a disjunction. An earlier draft wrote `... or len(set(est)) > 1`, whose right-hand side
+    # is always true for this fixture — so the guard could not fail, including for a fixture in
+    # perfect lockstep. Review caught it. What lockstep means is that one value determines the
+    # other, so the test is that neither mapping is a function.
     est = [row.est_seconds for row in population]
     spread = [row.panel_spread for row in population]
-    assert len(set(zip(est, spread))) > len(set(est)) or len(set(est)) > 1, (
-        "est_seconds and panel_spread vary in lockstep, so a ranking reading one is "
-        "indistinguishable from a ranking reading the other"
+    assert len({(e, s) for e, s in zip(est, spread)}) > max(len(set(est)), len(set(spread))), (
+        "est_seconds and panel_spread vary in lockstep — one determines the other — so a ranking "
+        "reading one is indistinguishable from a ranking reading the other, and CT-REVIEW-03's "
+        "per-signal sensitivity case cannot tell them apart"
     )
+
+    # The premise ten cases in this suite rest on: `queue.shown` is typed
+    # `Sequence[ReviewItem | ReviewGroup]`, and those cases iterate it for `.score_id` and
+    # `.est_seconds`. If this population groups, a *correct* implementation hands them a
+    # `ReviewGroup` and they raise. Review measured an earlier draft grouping all 200 rows.
+    for size in (12, 20, 40, 200):
+        rows = broken.flagged_population(size)
+        signatures = [
+            (row.criterion_id, *(getattr(row, c) for c in vocab.GROUP_SIGNATURE_COMPONENTS))
+            for row in rows
+        ]
+        assert len(set(signatures)) == len(rows), (
+            f"flagged_population({size}) has {len(rows) - len(set(signatures))} rows sharing a "
+            "criterion and a grouping signature, so a correct queue presents them as a group and "
+            "every case that iterates `shown` for `.score_id` fails against compliant code"
+        )
 
     grouped = broken.identical_signature_population(12)
     assert len({row.submission_id for row in grouped}) == len(grouped), (
@@ -892,4 +913,147 @@ def test_the_random_arm_produces_exactly_zero_review_items():
     assert vocab.RANDOM_ARM_REVIEW_ITEMS == 0, (
         "CT-REVIEW-05 admits no random-arm review item at all. A tolerance of one is a tolerance "
         "for the arm spending teacher minutes, which is what stops it being an independent sample."
+    )
+
+
+# ==================================================================================================
+# Controls for the machinery the review findings introduced
+# ==================================================================================================
+
+
+def test_items_shown_counts_members_rather_than_entries():
+    """`CT-REVIEW-04`'s arithmetic is about items; `len(shown)` counts entries.
+
+    §3.15 types `shown` as `Sequence[ReviewItem | ReviewGroup]`, so a queue presenting 200 items
+    as 16 groups shows 16 entries and covers 200 items. Both shapes are exercised, because a
+    helper that only handled groups would break the far commoner all-items case.
+    """
+
+    class _Group:
+        def __init__(self, n):
+            self.members = tuple(range(n))
+
+    class _Item:
+        pass
+
+    assert vocab.items_shown(broken.QueueFigures(shown=("a", "b", "c"))) == 3
+
+    mixed = type("Q", (), {"shown": (_Item(), _Group(12), _Item(), _Group(5))})()
+    assert vocab.items_shown(mixed) == 1 + 12 + 1 + 5, (
+        "a group is counted as one entry rather than as its members, so the residual arithmetic "
+        "would demand back the items the group already covered"
+    )
+    assert vocab.items_shown(type("Q", (), {"shown": ()})()) == 0
+
+
+def test_label_fields_in_matches_whole_identifiers_only():
+    """`origin` is a substring of `original`, and a compliant prompt says "the original submission".
+
+    Both directions: the rule must not fire on the compliant sentence and must fire on a prompt
+    that genuinely carries the field.
+    """
+    assert vocab.label_fields_in("consider the original submission and its evidence") == [], (
+        "the rule matched `origin` inside `original`, so it fails a prompt that says nothing "
+        "about the label store"
+    )
+    assert vocab.label_fields_in("origin: escalation") == ["origin"]
+    assert set(vocab.label_fields_in("teacher_band=B2 saw_system_output=1")) == {
+        "teacher_band",
+        "saw_system_output",
+    }
+
+
+def test_reachable_values_finds_a_value_nested_inside_the_structure():
+    """`CT-REVIEW-09` step 2 asks whether the system's answer is *reachable*, not whether a key
+    is present at the top level.
+
+    The nested cases are the ones that matter: a session returning
+    `{"items": [ref_with_a_system_band, ...]}` passes a `in` check on the mapping and hands the
+    teacher the answer anyway.
+    """
+    sentinel = "B7-SYSTEM"
+
+    assert vocab.reachable_values({"a": 1, "b": "safe"}, sentinel) == []
+    assert vocab.reachable_values({"system_band": sentinel}, sentinel) == ["system_band"]
+    assert vocab.reachable_values({"items": [{"band": sentinel}]}, sentinel) == ["items[0].band"]
+
+    class _Ref:
+        def __init__(self):
+            self.system_band = sentinel
+
+    assert vocab.reachable_values({"items": [_Ref()]}, sentinel) == ["items[0].system_band"], (
+        "a value on an object attribute is not reachable to the walker, so a session handing back "
+        "item refs rather than dicts defeats CT-REVIEW-09 step 2"
+    )
+
+
+def test_the_system_output_sentinels_are_distinctive_enough_to_attribute():
+    """A probe that looks for `"B3"` in a page cannot say the value came from the score row.
+
+    Every sentinel must be absent from the ordinary fixture, or step 2 reports a leak whenever the
+    blind flow renders anything at all.
+    """
+    ordinary = repr(broken.flagged_population(40))
+    for field, sentinel in broken.SYSTEM_OUTPUT_SENTINELS.items():
+        assert str(sentinel) not in ordinary, (
+            f"the {field!r} sentinel {sentinel!r} appears in the ordinary population, so "
+            "CT-REVIEW-09 step 2 would report a leak for a compliant blind flow"
+        )
+    assert set(broken.SYSTEM_OUTPUT_SENTINELS) == set(vocab.BLIND_FORBIDDEN_FIELDS), (
+        "the sentinels and FR-REVIEW-11's five absences have drifted apart, so a field is swept "
+        "with no distinctive value to look for"
+    )
+    carried = broken.system_output_population(5)
+    assert all(
+        row.proposed_band == broken.SYSTEM_OUTPUT_SENTINELS["system_band"] for row in carried
+    ), "the population does not actually carry the system's band, so the probe finds nothing"
+
+
+def test_the_forbidden_label_fields_do_not_overlap_the_required_ones():
+    """`CT-REVIEW-07`'s extra-field direction cannot condemn a field the same clause requires."""
+    overlap = sorted(set(vocab.FORBIDDEN_LABEL_FIELDS) & set(vocab.LABEL_FIELDS))
+    assert overlap == [], (
+        f"{overlap} is both required by FR-REVIEW-09 and forbidden as a denormalization, so the "
+        "set-equality assertion cannot be satisfied by any label"
+    )
+    assert "system_band" not in vocab.FORBIDDEN_LABEL_FIELDS, (
+        "the system's band is the required half of the agreement pair, not a contamination — "
+        "forbidding it would fail every compliant label"
+    )
+    assert "confidence" in vocab.FORBIDDEN_LABEL_FIELDS, (
+        "a label carrying the system's confidence is one join from an agreement statistic that "
+        "weights by the system's own certainty"
+    )
+
+
+def test_module_sources_walks_a_package_rather_than_reading_its_init():
+    """`inspect.getsource(package)` returns `__init__.py` alone.
+
+    Exercised against `tests.support` itself, which is a real package in this repo — so the
+    control does not depend on `aeh.review` existing.
+    """
+    import tests.support as pkg
+
+    names = [name for name, _ in vocab.module_sources(pkg)]
+    assert "review_vocabulary.py" in names and "broken_review_fixtures.py" in names, (
+        f"the walk found {names}; a package scan that sees only __init__.py would miss a "
+        "numeric-entry parameter in any file but the first"
+    )
+
+    single = vocab.module_sources(vocab)
+    assert len(single) == 1 and "SERVICE_MEMBERS" in single[0][1], (
+        "a plain module is no longer read at all, so the scan works only for packages"
+    )
+
+
+def test_the_skip_consequence_terms_are_present_in_the_sentence_they_came_from():
+    """The terms have to be a weakening of the sentence, not a different claim."""
+    for term in vocab.SKIP_CONSEQUENCE_TERMS:
+        assert term in vocab.SKIP_CONSEQUENCE, (
+            f"{term!r} is required of a skip report but is not in the consequence FR-REVIEW-13 "
+            "states, so the test would demand wording the design does not"
+        )
+    assert not vocab.SKIP_CONSEQUENCE_TERMS[0].startswith("no new"), (
+        "the terms have collapsed back into the sentence, which is the string-equality gate this "
+        "replaced"
     )

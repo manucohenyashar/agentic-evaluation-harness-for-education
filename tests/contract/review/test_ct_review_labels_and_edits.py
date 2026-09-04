@@ -54,6 +54,17 @@ def test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality
         "on every label, not on the ones where they happen to apply."
     )
 
+    # The direction presence misses, and the one this test is named for. A label carrying an
+    # **extra** score-derived field is a label carrying something M-STATS did not agree to read,
+    # and the field that arrives this way is a convenience denormalization of the very score the
+    # label is supposed to be independent of. Review found only the subset check here.
+    contaminating = sorted(present & set(vocab.FORBIDDEN_LABEL_FIELDS))
+    assert contaminating == [], (
+        f"a {label_type!r} label also carries {contaminating}. Those are the system's own output "
+        "denormalized onto the record that is supposed to be an independent judgement of it — "
+        "CT-REVIEW-08's whole point is that the two stay separable."
+    )
+
 
 @pytest.mark.writtenahead
 def test_tc_review_c07_both_bands_are_present_and_agreement_is_computed_over_them_not_points():
@@ -144,12 +155,18 @@ def test_tc_review_c12_no_interface_in_the_module_accepts_a_numeric_score():
     `FR-REVIEW-10` derives `new_points` from `new_band`, so the direction is the whole
     distinction. Both directions are controlled in the vocabulary suite.
     """
-    import inspect
-
     module = require(REVIEW_MODULE, issue="#110")
-    source = inspect.getsource(module)
 
-    accepting = vocab.numeric_entry_parameters(source)
+    # Every source file in the module, not `inspect.getsource(module)`. Four stories build a
+    # queue, a label store and two samples, so `M-REVIEW` shipping as a package is likely — and
+    # `getsource` on a package returns `__init__.py` alone, leaving a `new_points=` parameter in
+    # `aeh/review/queue.py` invisible to a test whose docstring promises the whole surface.
+    # Review caught that.
+    accepting = sorted(
+        f"{name}:{hit}"
+        for name, source in vocab.module_sources(module)
+        for hit in vocab.numeric_entry_parameters(source)
+    )
     assert accepting == [], (
         f"these entry points accept a numeric score: {accepting}. FR-REVIEW-10: score edits are "
         "band selections, and the module exposes no interface accepting a number — a teacher who "
@@ -288,18 +305,24 @@ def test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones()
     members = broken.identical_signature_population(12)
 
     grouped = build_review(scores=members)
+    require_attr(grouped, "label", issue="#110")
     group = grouped.build_queue(run_id="run-1", budget_minutes=30).groups[0]
     group_labels = [
         grouped.label(i) for i in grouped.act_on_group(group, band="B4", review_seconds=60)
     ]
 
+    # The individual arm acts on **each member**, not on the entry the queue shows. These twelve
+    # rows share a signature by construction, so a correct queue presents them as one
+    # `ReviewGroup` — and iterating `shown` would perform a single group action here and compare
+    # twelve labels against one. Review caught that; the differential is only a differential if
+    # both arms make the same twelve decisions by different routes.
     individually = build_review(scores=members)
-    queue = individually.build_queue(run_id="run-1", budget_minutes=600)
+    individual_group = individually.build_queue(run_id="run-1", budget_minutes=600).groups[0]
     individual_labels = [
         individually.label(
-            individually.act(item, action="edit", new_band="B4", review_seconds=5)
+            individually.act(member, action="edit", new_band="B4", review_seconds=5)
         )
-        for item in queue.shown
+        for member in individual_group.members
     ]
 
     def signature(labels):
@@ -313,6 +336,15 @@ def test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones()
         "one at a time. CT-REVIEW-13: an agreement figure that can tell them apart is weighting "
         "bulk review differently from individual review, which is a property of the interface "
         "rather than of the teacher's judgement."
+    )
+
+    # The members are signature-identical, so the seven-field tuples above are twelve copies of
+    # one tuple and the comparison degrades to a count. What distinguishes twelve labels from
+    # twelve copies of one label is which score each is *about*, so that is asserted separately.
+    assert {label.score_id for label in group_labels} == {m.score_id for m in group.members}, (
+        "the group's labels do not identify the twelve scores they were written for. Twelve "
+        "identical rows are indistinguishable from one row written twelve times, and an "
+        "agreement statistic reading them cannot tell which submissions the teacher judged."
     )
 
 

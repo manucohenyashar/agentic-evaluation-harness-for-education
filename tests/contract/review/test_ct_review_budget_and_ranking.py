@@ -183,11 +183,18 @@ def test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_
         "subtraction."
     )
 
-    session = service.blind_sample(run_id="run-1", n=vocab.CONFIG_DEFAULTS["REVIEW_BLIND_N"])
-    assert len(session.items) >= vocab.BLIND_SAMPLE_RANGE[0], (
-        f"an over-subscribed run left {len(session.items)} blind items. This is the mechanism by "
-        "which RISK-13 happens without anyone choosing it: the queue fills, the sample starves, "
-        "and nothing on the screen looks wrong."
+    # `blind_sample` draws independently of the queue, so its item count is the same under either
+    # ordering and asserting it proves nothing — review caught that. What a reserve-after-ranking
+    # implementation actually does is *spend* the reserved minutes on queue items: it ranks
+    # against the full 30, fills, and reports a reservation it already gave away. So the
+    # assertion is that the minutes are still there.
+    available_seconds = (budget - reserve) * 60
+    spent = sum(item.est_seconds for item in queue.shown)
+    assert spent <= available_seconds, (
+        f"the queue filled {spent}s against the {available_seconds}s left after reserving "
+        f"{reserve} minutes for the blind sample. On an over-subscribed run this is exactly what "
+        "reserving *after* ranking looks like: a full queue, a header that still says "
+        f"{reserve}, and no minutes left for the measurement. Nothing on the screen looks wrong."
     )
 
 
@@ -305,6 +312,10 @@ def test_tc_review_c03_the_ranking_score_is_expected_value_per_estimated_second(
     scores = service.rank_queue_items(run_id="run-1")
     by_id = {entry.score_id: entry.expected_value for entry in scores}
 
+    assert by_id["dear"] > 0, (
+        f"every expected value is {by_id['dear']!r}, so the ratio below is 0 == approx(0) and "
+        "passes for a ranker that scores nothing"
+    )
     assert by_id["cheap"] == pytest.approx(by_id["dear"] * 4, rel=0.01), (
         f"equal-value items costing 30s and 120s scored {by_id['cheap']} and {by_id['dear']}. "
         "FR-REVIEW-03 divides expected value by estimated seconds, so a 4× cost difference is a "
@@ -369,16 +380,31 @@ def test_tc_review_c16_build_time_is_excluded_from_the_teachers_minute_budget():
 
     assert queue.budget_minutes == budget, (
         f"the queue reports a budget of {queue.budget_minutes} against the {budget} the teacher "
-        "stated — build time was billed to the teacher"
+        "stated"
     )
-    available = queue.budget_minutes - queue.reserved_for_blind_minutes
-    assert available * 60 >= sum(item.est_seconds for item in queue.shown), (
-        "the items shown exceed the minutes left after the blind reservation, so something other "
-        "than the teacher's time is being counted against the budget"
-    )
-    assert getattr(queue, "build_seconds", 0) >= 0, (
+    assert isinstance(getattr(queue, "build_seconds", None), (int, float)), (
         "the queue does not report its own build time, so CT-REVIEW-16's accounting cannot be "
-        "checked from stored data"
+        "checked from stored data. (An earlier draft wrote this as "
+        "`getattr(queue, 'build_seconds', 0) >= 0`, which is true of every implementation "
+        "including the one with no such field — review caught it.)"
+    )
+
+    available_seconds = (queue.budget_minutes - queue.reserved_for_blind_minutes) * 60
+    shown_seconds = sum(item.est_seconds for item in queue.shown)
+
+    assert shown_seconds <= available_seconds, (
+        f"the queue filled {shown_seconds}s against {available_seconds}s available after the "
+        "blind reservation, so it is spending minutes the teacher did not offer"
+    )
+    # The direction that detects billing. A queue that charged its own build to the budget
+    # under-fills, and reports the full number it was given — so the header check above cannot
+    # see it. `est_seconds` is at most 190 in this fixture, so a queue that stopped more than one
+    # item short of the pool left time on the table that something else consumed.
+    largest = max(item.est_seconds for item in queue.shown)
+    assert shown_seconds > available_seconds - largest - int(queue.build_seconds), (
+        f"the queue filled only {shown_seconds}s of {available_seconds}s and reported a build "
+        f"time of {queue.build_seconds}s. CT-REVIEW-16: every second spent building is a second "
+        "not spent reviewing, and it is not the teacher who should pay for it."
     )
 
 
@@ -416,7 +442,7 @@ def test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_bad
         f"the queue reported {first.flagged_total} flagged against {len(distorted)} — the "
         "residual arithmetic moved with the estimate"
     )
-    assert first.residual_provisional == first.flagged_total - len(first.shown), (
+    assert first.residual_provisional == first.flagged_total - vocab.items_shown(first), (
         "the stated residual no longer accounts for every flagged item that was not shown"
     )
 
@@ -430,9 +456,16 @@ def test_tc_review_c19_the_console_does_not_present_the_budget_as_a_guarantee_of
     `budget_guarantee_language` is controlled in both directions in the vocabulary suite: it stays
     silent on *"30 minutes, estimated"* and fires on *"this will take 20 minutes"*.
     """
+    build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     render_review_queue = require(CONSOLE_MODULE, "render_review_queue", issue="#124")
 
-    rendering = render_review_queue(run_id="run-1", budget_minutes=30)
+    # Rendered from a real queue, so the caption under test exists. A sweep over an empty page
+    # finds no forbidden language and passes for any console.
+    service = build_review(scores=broken.flagged_population(200))
+    rendering = render_review_queue(service, run_id="run-1", budget_minutes=30)
+    assert str(service.build_queue(run_id="run-1", budget_minutes=30).budget_minutes) in rendering, (
+        "the rendering does not state the budget, so there is no budget language here to sweep"
+    )
     promises = vocab.budget_guarantee_language(rendering)
 
     assert promises == [], (

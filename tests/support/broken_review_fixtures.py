@@ -305,23 +305,46 @@ class Label:
     timestamp: str = "2026-01-01T09:00:00Z"
 
 
-def flagged_population(count: int = 40, *, criteria: int = 4) -> list[ScoreRow]:
-    """A queued population with a **spread of expected values**, for the ranking cases.
+#: Distinct grouping signatures available per criterion: four bands x four boolean integrity
+#: signals. `flagged_population` spreads rows across criteria so it never needs more than this.
+SIGNATURES_PER_CRITERION = 4 * 2 ** 4
 
-    Every signal varies across the population, and none of them varies in lockstep with another:
-    a fixture where `panel_spread` and `est_seconds` rise together cannot distinguish a ranking
-    that reads one from a ranking that reads the other, so a per-signal sensitivity case run over
-    it asserts nothing. The offsets below are deliberately coprime with `criteria` for that
-    reason.
+
+def flagged_population(count: int = 40, *, criteria: int = 4) -> list[ScoreRow]:
+    """A queued population with a spread of expected values and **no two rows that group**.
+
+    Two properties, and the second was found by review rather than designed in.
+
+    *A spread of expected values.* Every `FR-REVIEW-03` signal varies across the population, and
+    none varies in lockstep with another: a fixture where `panel_spread` and `est_seconds` rise
+    together cannot distinguish a ranking that reads one from a ranking that reads the other, so
+    a per-signal sensitivity case run over it asserts nothing.
+
+    *No two rows that group.* §3.15 types `ReviewQueue.shown` as
+    `Sequence[ReviewItem | ReviewGroup]`, so a population that groups makes `shown` a mixed list —
+    and ten cases here iterate it for `.score_id` and `.est_seconds`, which a `ReviewGroup` does
+    not have. An earlier draft cycled the four integrity flags on short periods and grouped every
+    row at n=200; those cases would have raised `AttributeError` against a *correct*
+    implementation, and `CT-REVIEW-04`'s `flagged_total - len(shown)` would have been wrong by the
+    difference between entries and items.
+
+    So the signature — band plus the four integrity flags, which is exactly `CT-REVIEW-20`'s
+    Phase 1 grouping rule — is derived from the row's index **within its criterion** and is unique
+    there. `identical_signature_population` is the fixture for the cases that need grouping.
     """
+    criteria = max(criteria, -(-count // SIGNATURES_PER_CRITERION))
     rows = []
     for i in range(count):
+        # `within` indexes the row inside its own criterion; the signature is a bijection from it,
+        # so two rows group only if they share a criterion *and* a `within`, which cannot happen.
+        within = i // criteria
+        flags = within // 4
         rows.append(
             ScoreRow(
                 score_id=f"score-{i}",
                 criterion_id=f"C-{(i % criteria) + 1:02d}",
-                submission_id=f"sub-{i // criteria}",
-                proposed_band=f"B{(i % 4) + 1}",
+                submission_id=f"sub-{within}",
+                proposed_band=f"B{(within % 4) + 1}",
                 panel_spread=round(0.05 + (i % 7) * 0.12, 3),
                 adverse_integrity_signals=i % 3,
                 transcription_overlap=round((i % 5) * 0.15, 3),
@@ -330,13 +353,46 @@ def flagged_population(count: int = 40, *, criteria: int = 4) -> list[ScoreRow]:
                 grade_boundary_delta=round(1.0 + (i % 13) * 2.5, 3),
                 est_seconds=30 + (i % 9) * 20,
                 self_confidence=round(0.5 + (i % 6) * 0.08, 3),
-                spans_verified=(i % 4) != 0,
-                evidence_present=(i % 6) != 0,
-                sufficiency_flag=(i % 5) != 0,
-                ocr_overlap_risk=(i % 8) == 0,
+                spans_verified=bool(flags & 1),
+                evidence_present=bool(flags & 2),
+                sufficiency_flag=bool(flags & 4),
+                ocr_overlap_risk=bool(flags & 8),
             )
         )
     return rows
+
+
+#: One distinctive value per field `FR-REVIEW-11` forbids the blind flow to show.
+#:
+#: Distinctive on purpose: `CT-REVIEW-09` step 2 asks whether the *value* is reachable, and the
+#: probe has to be able to say "that number came from the score row" rather than "the page
+#: contains a 3". `"B3"` would collide with the bands the blind flow legitimately offers, so the
+#: system's band here is one the fixture uses nowhere else.
+SYSTEM_OUTPUT_SENTINELS: dict[str, object] = {
+    "system_band": "B7-SYSTEM",
+    "points": 41.5,
+    "narrative": "the response develops its argument unevenly",
+    "confidence": 0.9137,
+    "routing_reason": "panel spread above the atomic ceiling",
+}
+
+
+def system_output_population(count: int = 30) -> list[ScoreRow]:
+    """`flagged_population`, with the system's own answer carried in recognisable values.
+
+    `CT-REVIEW-09` step 2 is a claim about reachability of the answer, not about the presence of
+    a column name — so every row carries the sentinels above and the probe looks for those.
+    """
+    import dataclasses as _dataclasses
+
+    return [
+        _dataclasses.replace(
+            row,
+            proposed_band=SYSTEM_OUTPUT_SENTINELS["system_band"],  # type: ignore[arg-type]
+            self_confidence=SYSTEM_OUTPUT_SENTINELS["confidence"],  # type: ignore[arg-type]
+        )
+        for row in flagged_population(count)
+    ]
 
 
 def oversubscribed_population(count: int = 800) -> list[ScoreRow]:
