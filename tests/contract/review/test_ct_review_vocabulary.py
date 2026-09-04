@@ -827,27 +827,45 @@ def test_finding_review_item_is_prose_where_every_other_wire_shape_is_declared(i
         )
 
 
-def test_finding_two_of_the_four_knobs_have_no_label_count_differential(interfaces, design_rows):
+def test_finding_three_of_the_four_knobs_have_no_label_count_differential(
+    interfaces, design_rows
+):
     """**Finding.** `CT-REVIEW-17` says all four knobs change how much validation evidence an
-    administration produces. Two of them cannot be measured that way in this module.
+    administration produces. Three of them cannot be measured that way in this module.
 
-    `REVIEW_WHOLE_GRADE_N` sizes a sample that writes no label: `FR-REVIEW-14` offers the
-    whole-grade sample as a display, and `FR-REVIEW-09` writes labels for teacher *actions*.
-    `REVIEW_DEFAULT_BUDGET_MINUTES` is a default for a parameter the Interfaces block declares as
-    required — `build_queue(self, run_id, budget_minutes)` — so nothing inside `M-REVIEW` reads
-    it; the default belongs to whichever consumer calls the method.
+    * `REVIEW_WHOLE_GRADE_N` sizes a sample that writes no label: `FR-REVIEW-14` offers the
+      whole-grade sample as a display, and `FR-REVIEW-09` writes labels for teacher *actions*.
+    * `REVIEW_DEFAULT_BUDGET_MINUTES` is a default for a parameter the Interfaces block declares
+      as required — `build_queue(self, run_id, budget_minutes)` — so nothing inside `M-REVIEW`
+      reads it; the default belongs to whichever consumer calls the method.
+    * `REVIEW_BLIND_RESERVE_MINUTES` sizes the **reservation**, and nothing in §3.15 couples
+      reserved minutes to sample size: `blind_sample(n=...)` draws its own `n` whatever the
+      reserve is. An earlier draft swept it for a label-count differential and the assertion could
+      not have passed for any implementation — which is why this finding says three where the
+      first draft said two.
 
-    Both are asserted for their declared values; neither has the differential the clause's framing
-    asks for, and inventing one would be worse than reporting it.
+    All four are asserted for their declared values. Only `REVIEW_BLIND_N` has the differential
+    the clause's framing asks for, and inventing one for the other three would be worse than
+    reporting it. Each assertion below retires its own third.
     """
     assert re.search(r"def build_queue\(self, run_id: RunId, budget_minutes: int\)", interfaces), (
         "build_queue's signature has changed; if budget_minutes now carries a default, "
-        "REVIEW_DEFAULT_BUDGET_MINUTES has a differential and half this finding is retired"
+        "REVIEW_DEFAULT_BUDGET_MINUTES has a differential and a third of this finding is retired"
     )
     whole_grade = _row(design_rows, "FR-REVIEW-14")[1]
     assert "label" not in whole_grade.lower(), (
-        "FR-REVIEW-14 now mentions a label, so the whole-grade sample may write one and the "
-        "other half of this finding is retired"
+        "FR-REVIEW-14 now mentions a label, so the whole-grade sample may write one and a third "
+        "of this finding is retired"
+    )
+    reserve = _row(design_rows, "FR-REVIEW-02")[1]
+    assert "REVIEW_BLIND_N" not in reserve and not _tokens_present("sample size", reserve), (
+        "FR-REVIEW-02 now couples the blind reservation to the sample size, so "
+        "REVIEW_BLIND_RESERVE_MINUTES has a label-count differential after all — sweep it in "
+        "TC-REVIEW-C17 and retire the last third of this finding"
+    )
+    assert "def blind_sample(self, run_id: RunId, n: int = 15)" in interfaces, (
+        "blind_sample no longer draws a caller-supplied n independent of the reserve, which is "
+        "what makes the reservation unmeasurable as validation evidence today"
     )
 
 
