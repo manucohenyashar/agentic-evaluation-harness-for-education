@@ -61,6 +61,20 @@ BROKEN_TEST_SH = (
     'exec "$PY" -m pytest -q -m "$DEFAULT_MARKERS" && "$PY" -m harness.conform\n'
 )
 
+#: The **near-miss**, and the one that mattered: the live exclusion is gone from the marker string
+#: that is actually executed, but the comment above it still quotes §4.7's string verbatim — which
+#: is how the real `scripts/test.sh` is written. Review measured a whole-file substring check
+#: staying green on exactly this, and the comment is precisely the text nobody updates when they
+#: change the markers.
+TEST_SH_WITH_LIVE_ONLY_IN_A_COMMENT = (
+    "# The fast tier, from test-plan §4.7, plus `not writtenahead`.\n"
+    "#\n"
+    '# §4.7\'s string is `pytest -q -m "not integration and not live and not slow"`. The extra\n'
+    "# clause is this repo's answer to a real conflict.\n"
+    "DEFAULT_MARKERS='not integration and not slow and not writtenahead'\n"
+    'exec "$PY" -m pytest -q -m "$DEFAULT_MARKERS"\n'
+)
+
 #: The table with the conformance row deleted outright. Separated from the row above because the
 #: two failures are different findings: a row wired wrongly is a configuration defect, a row that
 #: is gone means the locator is asserting about nothing and every rule built on it is vacuous.
@@ -138,7 +152,15 @@ PLAN_GAP_ROW_CLOSED = (
 
 #: §4.8's exclusion dropped while §7.4 still carries the gap — the two documents disagreeing, which
 #: is the state in which a release decision could reasonably reach for a gate that cannot fire.
+#:
+#: **Carries a decoy**, because the real document always does: `not computable as written` occurs
+#: five times in `test-plan.md`, and one of them is `TC-CONFORM-C14`'s own row in §6.11.18 — this
+#: suite's own specification, which survives exactly the edit the rule is meant to detect. Review
+#: measured the unscoped rule never firing against the real plan. The row below is that decoy, so
+#: this control now proves the rule reads §4.8's own sentence rather than the whole document.
 PLAN_RELEASE_GATE_EXCLUSION_DROPPED = (
+    "| TC-CONFORM-C14 | CT-CONFORM-14 | behaviour | The gate is **not computable as written**, so "
+    "the case asserts the hole rather than concealing it. |\n"
     "| `FR-CONFORM-06` — the divergence gate (Q-02) | No statistic and no threshold are "
     "declared, so the gate is not computable | The evidence-integrity-rate half **is** computable "
     "and is gated; **Accepted risk** until a statistic and threshold are declared |\n"
@@ -196,3 +218,48 @@ def _eligible(cohort):
 def _reversed(cohort):
     return "synthetic" == cohort.consent_class
 '''
+
+#: **The shapes the first version of the scan walked straight through.**
+#:
+#: Review measured five realistic re-implementations against a rule that inspected only `Compare`
+#: nodes holding a string literal; all five returned no sites. Each is kept here as its own named
+#: control, because a control fitted to the rule — three shapes the rule already handled — reads as
+#: thorough and measures nothing. The first entry is the one that matters most: it is the shape a
+#: careful implementer writes, since importing `M-CONF`'s own constant *looks* like delegation.
+EVASIVE_REIMPLEMENTATIONS: dict[str, str] = {
+    "imported constant": '''
+from aeh.conf import CONSENTED_CLASSES
+
+
+def run(fixture_set_v, backends, cohort):
+    if cohort.consent_class not in CONSENTED_CLASSES:
+        raise RuntimeError("refusing")
+''',
+    "locally bound set": '''
+_OK = {"synthetic", "consented"}
+
+
+def run(fixture_set_v, backends, cohort):
+    if cohort.consent_class not in _OK:
+        raise RuntimeError("refusing")
+''',
+    "match statement": '''
+def run(fixture_set_v, backends, cohort):
+    match cohort.consent_class:
+        case "real":
+            raise RuntimeError("refusing")
+        case _:
+            return True
+''',
+    "decision table": '''
+def run(fixture_set_v, backends, cohort):
+    allowed = {"real": False, "synthetic": True, "consented": True}
+    if not allowed[cohort.consent_class]:
+        raise RuntimeError("refusing")
+''',
+    "string predicate": '''
+def run(fixture_set_v, backends, cohort):
+    if cohort.consent_class.startswith("real"):
+        raise RuntimeError("refusing")
+''',
+}

@@ -287,6 +287,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # the constructor **both** stories need -- `FR-CONFORM-02`'s refusal is #133's acceptance
     # criterion and needs a suite object -- so keying #134 on it would fire while #134 was still
     # unstarted. `detect_build_substitution` is `FR-CONFORM-08`, which is #134's alone.
+    #
+    # **`TC-CONFORM-C09`'s two run-halves are keyed on #134, and the issues disagree about that.**
+    # #133's *acceptance criteria* name both of them verbatim ("each yields the same band... no
+    # higher confidence than its benign twin", "quarantine at V0 and reach no model call"), which
+    # argues for #133; its *Evaluation strategy* line says the story is covered by C01-C05, which
+    # argues for #134. Both cannot be right, and the same contradiction runs the other way for
+    # `TC-CONFORM-C05`. Keyed on the later of the two here, because the registry's own rule is that
+    # an early unmark is the worse direction: a test told to rejoin TEST_CMD that then fails naming
+    # an issue nobody is working on is how the gate stops being believed. Reported on the PR for
+    # `/plan-to-issues` rather than resolved here -- the issue bodies are that skill's artifact.
     "#133": (
         "symbol",
         f"{CONFORM_MODULE}:load_fixture_set",

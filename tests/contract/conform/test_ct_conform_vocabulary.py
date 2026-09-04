@@ -25,6 +25,9 @@ import pytest
 from tests.support import broken_conform_docs as broken
 from tests.support.conform_vocabulary import (
     AGREEMENT_DIMENSION,
+    CLASSIFICATION_BLOCKING,
+    CLASSIFICATION_INFORMATIONAL,
+    CLASSIFICATION_UNAVAILABLE,
     CONFORMANCE_BUDGET_SECONDS,
     CONSENT_CLASSES_ALLOWED,
     CONSENT_CLASSES_REFUSED,
@@ -48,9 +51,12 @@ from tests.support.conform_vocabulary import (
     consent_reimplementation_sites,
     divergence_hole_problems,
     equivalence_claims,
+    module_sources,
+    simulated_implementation_module,
     tier_wiring_problems,
 )
 from tests.support.doc_tables import DocRowMissing, find_row, markdown_rows, read_repo_text
+from tests.support.guards import recording_write_audit
 
 pytestmark = pytest.mark.contract
 
@@ -139,6 +145,22 @@ def test_the_gate_partition_is_exhaustive_over_the_five_dimensions():
     assert set(EXPECTED_CLASSIFICATION) == DIVERGENCE_DIMENSIONS, (
         "every dimension needs a declared expected classification, or a case parametrized over "
         "this mapping silently skips the dimension nobody added"
+    )
+
+    # **The partition and the expected classifications must agree.** The union and disjointness
+    # assertions above cannot fail on their own — `INFORMATIONAL_DIMENSIONS` is *defined* as the
+    # complement — so this is the row that does the work. Without it, flipping one dimension in
+    # `EXPECTED_CLASSIFICATION` would leave `TC-CONFORM-C05`'s two red tests contradicting each
+    # other, with nothing naming the cause.
+    derived = {
+        dimension: (CLASSIFICATION_INFORMATIONAL if dimension in INFORMATIONAL_DIMENSIONS else None)
+        for dimension in DIVERGENCE_DIMENSIONS
+    }
+    derived[UNAVAILABLE_GATE_DIMENSION] = CLASSIFICATION_UNAVAILABLE
+    derived[LIVE_GATE_DIMENSION] = CLASSIFICATION_BLOCKING
+    assert EXPECTED_CLASSIFICATION == derived, (
+        f"the gate partition and the expected classifications disagree: partition implies "
+        f"{derived}, the fixture declares {EXPECTED_CLASSIFICATION}"
     )
 
 
@@ -315,13 +337,32 @@ def test_the_combined_figure_net_exempts_the_five_required_dimensions():
             f"missed it"
         )
 
-    # The token path, which is what catches a headline nobody thought to list. Kept to four tokens
-    # precisely because each one condemns a family of names.
-    for compound in ("overall_status", "conformance_verdict", "backend_equivalence", "is_equivalent"):
+    # The token path, which is what catches a headline nobody thought to list. Review measured the
+    # first version of this net — exact names plus four tokens — letting eight plausible headline
+    # figures through, so `score` joined the token list and these rows are the record of it.
+    for compound in (
+        "overall_status",
+        "conformance_verdict",
+        "backend_equivalence",
+        "is_equivalent",
+        "final_score",
+        "aggregate_score",
+        "headline_score",
+        "divergence_score",
+        "conformance_index",
+        "summary",
+        "is_pass",
+        "result",
+    ):
         assert combined_figure_names([compound]) == [compound], (
             f"{compound!r} reads as a combined figure or an equivalence claim and the net missed "
             f"it — an exact-name list alone cannot catch a name nobody enumerated"
         )
+
+    # The one name carrying the `score` token that a **correct** report is required to have:
+    # CT-CONFORM-07 reports build substitution as "a score shift". Exempted by name, so adding the
+    # token did not buy four catches at the price of one false positive.
+    assert combined_figure_names(["score_shift", "score_shifts"]) == []
 
 
 def test_the_equivalence_sweep_permits_the_disclaimer_the_clause_requires():
@@ -368,6 +409,14 @@ def test_the_tier_wiring_rules_fire_on_a_table_wired_the_wrong_way(repo_root):
         "test_sh_admits_live",
         "test_sh_runs_the_conformance_suite",
     }
+
+    # **The near-miss that the first version of this rule walked straight through.** `scripts/test.sh`
+    # quotes §4.7's marker string in a comment as well as assigning it, so a whole-file check stayed
+    # green when the live exclusion was deleted from the string that is actually executed. The rule
+    # now reads the `DEFAULT_MARKERS` assignment; this row is what proves it.
+    assert tier_wiring_problems(
+        broken.GOOD_PLAN_TIER_TABLE, broken.TEST_SH_WITH_LIVE_ONLY_IN_A_COMMENT
+    ) == ["test_sh_admits_live"]
 
     # A missing row is its own finding: every rule downstream of the locator is vacuous without it.
     assert tier_wiring_problems(
@@ -430,3 +479,110 @@ def test_the_consent_reimplementation_scan_has_a_positive_and_a_negative_control
         f"— must all be caught; caught {sites}"
     )
     assert {literal for _, literal in sites} == {"real", "consented", "synthetic"}
+
+    # **The controls that are not fitted to the rule.** Review measured five realistic
+    # re-implementations against the first version of this scan and all five walked through it,
+    # including `not in CONSENTED_CLASSES` — the shape a careful implementer writes, because
+    # importing M-CONF's own constant looks like delegation. Each is asserted by name so a
+    # regression says which shape stopped being caught.
+    missed = [
+        label
+        for label, source in broken.EVASIVE_REIMPLEMENTATIONS.items()
+        if not consent_reimplementation_sites(source)
+    ]
+    assert not missed, (
+        f"these re-implementations of the consent gate are invisible to the scan: {missed}. Each "
+        f"is a second consent check inside M-CONFORM, which is what CT-CONFORM-10 forbids."
+    )
+
+
+def test_the_consent_scan_reads_every_file_of_a_package_not_just_its_init(tmp_path):
+    """`inspect.getsource` on a package returns `__init__.py` and nothing else.
+
+    `M-CONFORM` has a corpus builder, a runner and a comparator, so it plausibly lands as a
+    package — and a scan that read only the `__init__` would report clean while the second consent
+    check sat in `runner.py`, which is exactly where it would be written. Review found that hole.
+
+    A real package on disk rather than a mock, because the thing being asserted is what
+    `__path__` traversal does, and a mock of it would assert the mock.
+    """
+    import sys
+
+    package = tmp_path / "fake_conform_pkg"
+    package.mkdir()
+    (package / "__init__.py").write_text("from .runner import run\n", encoding="utf-8")
+    (package / "runner.py").write_text(
+        "def run(cohort):\n"
+        '    if cohort.consent_class == "real":\n'
+        "        raise RuntimeError\n",
+        encoding="utf-8",
+    )
+
+    sys.path.insert(0, str(tmp_path))
+    try:
+        import importlib
+
+        module = importlib.import_module("fake_conform_pkg")
+        source = module_sources(module)
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("fake_conform_pkg", None)
+        sys.modules.pop("fake_conform_pkg.runner", None)
+
+    assert "consent_class" in source, "module_sources missed the package's non-__init__ files"
+    assert consent_reimplementation_sites(source), (
+        "a consent check living in a package submodule is invisible to the scan, so a packaged "
+        "M-CONFORM could re-implement the gate and CT-CONFORM-10's structural half would pass"
+    )
+
+
+def test_the_write_audit_attributes_a_write_to_the_module_that_made_it():
+    """`TC-CONFORM-C12`'s oracle is *"a write-audit log with per-stack attribution"* — this is it.
+
+    The clause's whole claim is about **whose** write a write is: `M-CONFORM` runs whole pipelines,
+    so a great deal is written during its run and none of it is its own. Without attribution the
+    audit records every write identically and the case has no oracle at all — which is what review
+    found: `WriteAttempt` had no such field, so C12's two tests were unsatisfiable rather than
+    merely red, and `getattr(w, "attributed_to", None)` turned the missing field into a silent
+    wrong answer.
+
+    Exercised here against simulated modules because no `aeh.*` module involved in a conformance
+    run exists yet. A mechanism that arrived at #134 having never been run, reporting `None` for
+    everything, would read as "M-CONFORM wrote nothing" — the passing answer, for the wrong reason.
+    """
+    import pathlib
+    import tempfile
+
+    pkg = simulated_implementation_module(
+        "aeh.pkg",
+        "def record(path):\n    path.write_text('validation record', encoding='utf-8')\n",
+    )
+    conform = simulated_implementation_module(
+        "aeh.conform",
+        "def through_pkg(path, pkg):\n    pkg.record(path)\n"
+        "def direct(path):\n    path.write_text('report', encoding='utf-8')\n",
+    )
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = pathlib.Path(raw)
+        with recording_write_audit() as writes:
+            conform.through_pkg(root / "record.json", pkg)
+            conform.direct(root / "conformance-report.json")
+            (root / "scaffolding.txt").write_text("the test's own", encoding="utf-8")
+
+    by_target = {pathlib.Path(str(w.target)).name: w for w in writes}
+    assert set(by_target) >= {"record.json", "conformance-report.json", "scaffolding.txt"}
+
+    # Written **through** M-PKG: performed there, initiated here. This is the distinction the
+    # clause turns on — "writes backend-scoped validation records through M-PKG".
+    assert by_target["record.json"].attributed_to == "M-PKG"
+    assert by_target["record.json"].initiated_by == "M-CONFORM"
+
+    # Written with its own hands: M-CONFORM at both ends.
+    assert by_target["conformance-report.json"].attributed_to == "M-CONFORM"
+    assert by_target["conformance-report.json"].initiated_by == "M-CONFORM"
+
+    # The test's own scaffolding has no implementation frame, so it is attributed to nothing —
+    # which is what keeps a fixture file from reading as a module's write.
+    assert by_target["scaffolding.txt"].attributed_to is None
+    assert by_target["scaffolding.txt"].initiated_by is None

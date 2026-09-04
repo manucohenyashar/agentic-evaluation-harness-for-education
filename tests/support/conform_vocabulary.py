@@ -167,10 +167,34 @@ FORBIDDEN_COMBINED_FIGURE_NAMES: frozenset[str] = frozenset(
         "equivalent",
         "equivalence",
         "backends_equivalent",
+        # Names review measured walking through an exact-name-plus-four-tokens net. Each is a
+        # single combined figure by any reading, and none is caught by a token rule that a correct
+        # report also survives.
+        "summary",
+        "result",
+        "is_pass",
+        "conformance_index",
+        "conformance_result",
     }
 )
 
-HEADLINE_TOKENS: frozenset[str] = frozenset({"overall", "verdict", "equivalence", "equivalent"})
+#: Matched as identifier **tokens**, so a headline nobody enumerated is still caught. Kept tiny,
+#: because every token here condemns a family of names.
+#:
+#: `score` is in the list and it is the load-bearing one: `final_score`, `aggregate_score`,
+#: `headline_score` and `divergence_score` are all exactly the single figure `CT-CONFORM-04`
+#: forbids, and an exact-name list cannot enumerate them. It is safe as a token because the five
+#: declared dimensions are exempted by name before tokenizing, and the plural `scores` — which is
+#: what a correct report carries for per-fixture reference scores — is a different token.
+HEADLINE_TOKENS: frozenset[str] = frozenset(
+    {"overall", "verdict", "equivalence", "equivalent", "score"}
+)
+
+#: The one name that carries the `score` token and is **required** rather than forbidden.
+#: `CT-CONFORM-07` reports build substitution as *"a score shift"*, so a report that names one is
+#: doing what the clause asks. Exempted explicitly rather than by dropping the token, because
+#: dropping it would let four real headline figures through to keep one correct name.
+HEADLINE_TOKEN_EXEMPTIONS: frozenset[str] = frozenset({"score_shift", "score_shifts"})
 
 
 def combined_figure_names(surface_names: Any) -> list[str]:
@@ -189,6 +213,8 @@ def combined_figure_names(surface_names: Any) -> list[str]:
         if name in DIVERGENCE_DIMENSIONS:
             continue
         lowered = str(name).lower()
+        if lowered in HEADLINE_TOKEN_EXEMPTIONS:
+            continue
         tokens = set(re.split(r"[^a-z0-9]+", lowered)) - {""}
         if lowered in FORBIDDEN_COMBINED_FIGURE_NAMES or (tokens & HEADLINE_TOKENS):
             hits.append(name)
@@ -460,12 +486,27 @@ def tier_wiring_problems(plan_text: str, test_sh_text: str) -> list[str]:
 
     if "not live" not in " ".join(fast_tier):
         problems.append("fast_tier_admits_live")
-    if "not live" not in test_sh_text:
+
+    # **Read the marker string that is executed, not the file.** `scripts/test.sh` contains
+    # `not live` twice: once in `DEFAULT_MARKERS` and once in the comment quoting §4.7 verbatim.
+    # A whole-file substring check therefore stayed green when the live exclusion was deleted from
+    # the executed string — measured, not theorised — and the comment is exactly the text nobody
+    # updates when they change the markers. So the assignment is extracted and read on its own.
+    executed = _default_markers(test_sh_text)
+    if executed is None:
+        problems.append("test_sh_declares_no_default_markers")
+    elif "not live" not in executed:
         problems.append("test_sh_admits_live")
     if "harness.conform" in test_sh_text:
         problems.append("test_sh_runs_the_conformance_suite")
 
     return problems
+
+
+def _default_markers(test_sh_text: str) -> str | None:
+    """The value of `DEFAULT_MARKERS=` in `scripts/test.sh`, or `None` if it is not assigned."""
+    match = re.search(r"^\s*DEFAULT_MARKERS=(['\"])(?P<markers>.*?)\1", test_sh_text, re.MULTILINE)
+    return match.group("markers") if match else None
 
 
 def divergence_hole_problems(design_text: str, plan_text: str) -> list[str]:
@@ -502,10 +543,41 @@ def divergence_hole_problems(design_text: str, plan_text: str) -> list[str]:
         problems.append("plan_gap_row_no_longer_accepted_risk")
 
     # Test plan §4.8 — the explicit exclusion from the release gate.
-    if "not computable as written" not in plan_lower:
+    #
+    # **Scoped to §4.8's own sentence**, not searched across the whole plan. `not computable as
+    # written` occurs five times in `test-plan.md`, and one of them is `TC-CONFORM-C14`'s row in
+    # §6.11.18 — this suite's own specification, which survives precisely the edit this rule is
+    # meant to detect. A whole-document check therefore could never fire; measured, not assumed.
+    release_gate = _release_gate_exclusions(plan_text.lower())
+    if release_gate is None:
+        problems.append("plan_release_gate_paragraph_missing")
+    elif not ("fr-conform-06" in release_gate and "not computable as written" in release_gate):
         problems.append("plan_release_gate_no_longer_excludes_the_divergence_gate")
 
     return problems
+
+
+#: §4.8's closing sentence, which names what does **not** gate a release.
+_RELEASE_GATE_MARKER = "**what explicitly does not gate a release**"
+
+
+def _release_gate_exclusions(plan_raw_lower: str) -> str | None:
+    """The §4.8 sentence listing what does not gate a release, lower-cased, or `None`.
+
+    Takes the **raw** lower-cased plan rather than the whitespace-normalized copy the other rules
+    use, because the sentence boundary is the newline: without it the window has to be sized in
+    characters, and a character window silently starts reading §4.9 the next time somebody adds a
+    clause to the sentence.
+    """
+    start = plan_raw_lower.find(_RELEASE_GATE_MARKER)
+    if start < 0:
+        return None
+    # The **paragraph**, not the first line: the sentence wraps mid-clause in the source, and
+    # cutting at the first newline truncates it before `FR-CONFORM-06` — which would report the
+    # exclusion as gone while it is right there on the next line.
+    end = plan_raw_lower.find("\n\n", start)
+    paragraph = plan_raw_lower[start:] if end < 0 else plan_raw_lower[start:end]
+    return " ".join(paragraph.split())
 
 
 # --- CT-CONFORM-10's enforcement-location rule ---------------------------------------------------
@@ -525,31 +597,125 @@ def consent_reimplementation_sites(source: str) -> list[tuple[int, str]]:
     nobody notices (RISK-10). So the oracle is structural: an AST scan for this module comparing a
     consent class against a literal of its own.
 
-    What is flagged is a **comparison or membership test against a consent-class literal**.
-    Reading `consent_class` is fine and necessary — a suite may log it or key a record by it; what
-    it may not do is decide on it. Passing the value to `M-CONF` is likewise fine, which is why the
-    scan looks at `Compare` nodes rather than at every mention of the name.
+    What is flagged is a **decision taken on a consent class**. Reading `consent_class` is fine and
+    necessary — a suite may log it or key a record by it; what it may not do is branch on it.
+    Passing the value to `M-CONF` is likewise fine, which is why the scan looks at decision
+    constructs rather than at every mention of the name.
+
+    **The first draft flagged only `Compare` nodes holding a string literal, and review measured
+    five realistic re-implementations walking straight through it** — including the likeliest one,
+    `if cohort.consent_class not in CONSENTED_CLASSES:` with the constant imported from `M-CONF`.
+    That shape reads as delegation and is not: importing the vocabulary is not the same as leaving
+    the decision where it belongs. The rule now resolves names one hop, so a locally bound set of
+    consent literals is treated as the literals it holds, and covers the constructs an implementer
+    actually reaches for:
+
+    * `Compare` — `==`, `in`, `not in`, and the reversed forms;
+    * `match` / `case` — a `MatchValue` is not a `Compare` and Python 3.11 is the declared target;
+    * a call to a string predicate (`startswith`, `endswith`, `casefold().__eq__`) on a consent
+      literal, which is a comparison written as a method;
+    * a `Dict` literal keyed by consent classes — a decision table is still a decision.
     """
     import ast
 
     literals = set(CONSENT_CLASSES_ALLOWED) | {"real"}
+    tree = ast.parse(source)
     sites: list[tuple[int, str]] = []
 
-    def _literal_strings(node: Any) -> set[str]:
-        found: set[str] = set()
+    # One hop of name resolution. `_OK = {"synthetic", "consented"}` then `x not in _OK` is the
+    # same decision as writing the set inline, and `CONSENTED_CLASSES` imported from `M-CONF` is
+    # the same decision again — the import moves the vocabulary, not the choice.
+    consent_bound_names: set[str] = {"CONSENTED_CLASSES"}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            value = node.value
+            if value is not None and _string_constants(value) & literals:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        consent_bound_names.add(target.id)
+
+    def _decides(node: Any) -> set[str]:
+        """The consent literals a subtree brings to a decision, directly or through one name."""
+        found = _string_constants(node) & literals
         for child in ast.walk(node):
-            if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                found.add(child.value)
+            if isinstance(child, ast.Name) and child.id in consent_bound_names:
+                found.add(f"<{child.id}>")
         return found
 
-    for node in ast.walk(ast.parse(source)):
-        if not isinstance(node, ast.Compare):
-            continue
-        # `x == "synthetic"`, `x in ("synthetic", "consented")`, `x not in {...}` — all of them
-        # are the module deciding. The left operand is included in the sweep because
-        # `"consented" == cohort.consent_class` is the same decision written backwards.
-        operands = [node.left, *node.comparators]
-        hit = set().union(*(_literal_strings(operand) for operand in operands)) & literals
+    for node in ast.walk(tree):
+        hit: set[str] = set()
+        if isinstance(node, ast.Compare):
+            for operand in (node.left, *node.comparators):
+                hit |= _decides(operand)
+        elif isinstance(node, ast.match_case):
+            hit |= _decides(node.pattern)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr in {"startswith", "endswith", "__eq__", "count", "index"}:
+                for argument in node.args:
+                    hit |= _decides(argument)
+        elif isinstance(node, ast.Dict):
+            for key in node.keys:
+                if key is not None:
+                    hit |= _string_constants(key) & literals
+
         if hit:
-            sites.append((node.lineno, sorted(hit)[0]))
-    return sites
+            # `match_case` carries no `lineno` of its own — it is a clause, not an expression — so
+            # the pattern's line is what names the site.
+            lineno = getattr(node, "lineno", None) or getattr(node.pattern, "lineno", 0)
+            sites.append((lineno, sorted(hit)[0]))
+    return sorted(set(sites))
+
+
+def _string_constants(node: Any) -> set[str]:
+    """Every string literal anywhere under `node`."""
+    import ast
+
+    return {
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str)
+    }
+
+
+def module_sources(module: Any) -> str:
+    """The source of `module`, or of **every** file in it when it is a package.
+
+    `inspect.getsource` on a package returns only `__init__.py`. `M-CONFORM` has a corpus builder,
+    a runner and a comparator, so it plausibly lands as a package — and a scan that read only the
+    `__init__` would report clean while the consent check sat in `runner.py`. Review found that
+    hole; this closes it.
+    """
+    import inspect
+    import pathlib
+
+    paths = getattr(module, "__path__", None)
+    if not paths:
+        return inspect.getsource(module)
+    return "\n".join(
+        source_file.read_text(encoding="utf-8")
+        for directory in paths
+        for source_file in sorted(pathlib.Path(directory).rglob("*.py"))
+    )
+
+
+# --- CT-CONFORM-12's attribution, exercised without an implementation --------------------------
+
+
+def simulated_implementation_module(dotted_name: str, source: str) -> Any:
+    """A module object whose frames look like `dotted_name` to the write audit's stack walker.
+
+    `TC-CONFORM-12`'s oracle is a *"write-audit log with per-stack attribution"*, and
+    `recording_write_audit` reads that attribution off `frame.f_globals["__name__"]`. None of the
+    `aeh.*` modules exist yet, so without this the mechanism would arrive at #134 having never
+    been run — and the first person to see it report `None` for every write would reasonably
+    conclude the module wrote nothing.
+
+    Not registered in `sys.modules`: the walker reads frame globals, so a module object is
+    enough, and leaving `sys.modules` untouched keeps this out of the way of `require()`.
+    """
+    import types
+
+    module = types.ModuleType(dotted_name)
+    exec(compile(source, f"<{dotted_name}>", "exec"), module.__dict__)  # noqa: S102
+    return module

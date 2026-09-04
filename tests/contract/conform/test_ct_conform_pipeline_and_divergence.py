@@ -34,6 +34,7 @@ from tests.support.conform_vocabulary import (
     EXPECTED_CLASSIFICATION,
     INFORMATIONAL_DIMENSIONS,
     LIVE_GATE_DIMENSION,
+    OBSERVABILITY_FIELDS,
     PIPELINE_STAGES,
     REQUESTED_BUILDS_FIELD,
     RESOLVED_BUILDS_FIELD,
@@ -60,6 +61,20 @@ def _synthetic_cohort():
     from aeh.conf import CohortRef
 
     return CohortRef(cohort_id="c-conform-fixtures", consent_class="synthetic")
+
+
+def _profile(cfg):
+    return cfg["HARNESS_PROFILE"]
+
+
+def _requested_builds(cfg):
+    """What the caller asked for, read off the config rather than off the report.
+
+    `CT-CONFORM-13` turns on *resolved, not requested*, so the comparison has to have a source of
+    truth for "requested" that the implementation cannot supply. Taking it from the report would
+    let an implementation that echoes one value into both fields pass.
+    """
+    return tuple(sorted(ref.build_id for ref in (*cfg["panel"], cfg["transcriber"])))
 
 
 # --- CT-CONFORM-03 — the identical set, the full pipeline -------------------------------------------
@@ -199,11 +214,10 @@ def test_tc_conform_c05_an_evidence_integrity_divergence_blocks_rather_than_bein
     """
     build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#134")
     classify = require(CONFORM_MODULE, "classify_divergence", issue="#134")
+    induce = require(CONFORM_MODULE, "induced_divergence", issue="#134")
 
-    outcome = build_suite().run(
-        "v1", _two_backends(), cohort=_synthetic_cohort(),
-        induced_divergence=LIVE_GATE_DIMENSION,
-    )
+    with induce(LIVE_GATE_DIMENSION):
+        outcome = build_suite().run("v1", _two_backends(), cohort=_synthetic_cohort())
 
     assert classify(LIVE_GATE_DIMENSION, outcome.divergence) == CLASSIFICATION_BLOCKING
     assert outcome.blocked, (
@@ -226,10 +240,10 @@ def test_tc_conform_c05_the_three_remaining_dimensions_are_findings_not_failures
     """
     build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#134")
     classify = require(CONFORM_MODULE, "classify_divergence", issue="#134")
+    induce = require(CONFORM_MODULE, "induced_divergence", issue="#134")
 
-    outcome = build_suite().run(
-        "v1", _two_backends(), cohort=_synthetic_cohort(), induced_divergence=dimension,
-    )
+    with induce(dimension):
+        outcome = build_suite().run("v1", _two_backends(), cohort=_synthetic_cohort())
 
     assert classify(dimension, outcome.divergence) == CLASSIFICATION_INFORMATIONAL
     assert not outcome.blocked, (
@@ -258,11 +272,10 @@ def test_tc_conform_c05_the_score_distribution_gate_is_reported_unavailable_not_
     """
     build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#134")
     classify = require(CONFORM_MODULE, "classify_divergence", issue="#134")
+    induce = require(CONFORM_MODULE, "induced_divergence", issue="#134")
 
-    outcome = build_suite().run(
-        "v1", _two_backends(), cohort=_synthetic_cohort(),
-        induced_divergence=UNAVAILABLE_GATE_DIMENSION,
-    )
+    with induce(UNAVAILABLE_GATE_DIMENSION):
+        outcome = build_suite().run("v1", _two_backends(), cohort=_synthetic_cohort())
 
     assert classify(UNAVAILABLE_GATE_DIMENSION, outcome.divergence) == CLASSIFICATION_UNAVAILABLE
     assert UNAVAILABLE_GATE_DIMENSION in outcome.unavailable_dimensions, (
@@ -351,11 +364,10 @@ def test_tc_conform_c13_the_report_names_both_backends_resolved_builds_not_the_r
     with substitute(backends[0]) as swapped:
         report = build_suite().run("v1", [swapped, backends[1]], cohort=_synthetic_cohort())
 
-    assert set(report.observability) >= {
-        "per_dimension_divergence",
-        "fixture_set_version",
-        RESOLVED_BUILDS_FIELD,
-    }
+    assert set(report.observability) >= OBSERVABILITY_FIELDS, (
+        f"the report emits {sorted(report.observability)}; design §3.18's Observability line "
+        f"requires {sorted(OBSERVABILITY_FIELDS)}"
+    )
 
     resolved = report.observability[RESOLVED_BUILDS_FIELD]
     assert len(resolved) == 2, (
@@ -365,10 +377,22 @@ def test_tc_conform_c13_the_report_names_both_backends_resolved_builds_not_the_r
     for profile, builds in resolved.items():
         assert builds, f"{profile}'s resolved builds are empty"
 
-    requested = report.observability.get(REQUESTED_BUILDS_FIELD)
-    if requested is not None:
-        assert resolved != requested, (
-            "a build was substituted under an unchanged name and the report's resolved builds are "
-            "identical to the requested ones — so the report is echoing the request, which is "
-            "consistent with exactly the substitution CT-CONFORM-07 detects"
-        )
+    # **Unconditional, and compared against what was asked for rather than against a field the
+    # report may simply omit.** An earlier draft only made this comparison `if requested is not
+    # None`, which let the exact failure the case exists for walk through: an implementation that
+    # echoes the request under the name `resolved_builds` and never emits `requested_builds` never
+    # entered the branch and passed. The test induced the substitution, so it knows what was
+    # requested — that is what it compares to.
+    requested_here = _requested_builds(backends[0])
+    assert resolved[_profile(backends[0])] != requested_here, (
+        "a build was substituted under an unchanged name and the report's resolved builds for "
+        "that backend are identical to what was requested — so the report is echoing the request, "
+        "which is consistent with exactly the substitution CT-CONFORM-07 detects and would make "
+        "the divergence mysterious rather than attributable"
+    )
+
+    # And when the report does emit the requested builds, the two must differ for the substituted
+    # backend. Kept as a second assertion rather than folded in: emitting both is additive and
+    # good, so its absence is not a failure, but its presence must not contradict the above.
+    if REQUESTED_BUILDS_FIELD in report.observability:
+        assert report.observability[REQUESTED_BUILDS_FIELD] != resolved

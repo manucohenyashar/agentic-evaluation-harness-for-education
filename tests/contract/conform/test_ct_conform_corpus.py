@@ -27,10 +27,13 @@ that half is an assertion about `M-CONF`, which is exactly what the clause says.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from tests.support.conf_builders import EDGE_PANEL_3, edge_cfg, hosted_cfg
 from tests.support.conform_vocabulary import (
+    CONSENT_CLASSES_REFUSED,
     CORPUS_MAX,
     CORPUS_MIN,
     INJECTION_PAYLOAD_KINDS,
@@ -42,6 +45,7 @@ from tests.support.conform_vocabulary import (
     VLM_STAGE,
     CountingProvider,
     consent_reimplementation_sites,
+    module_sources,
 )
 from tests.support.impl import CONFORM_MODULE, require
 
@@ -349,7 +353,7 @@ def test_tc_conform_c10_the_consent_gate_that_refuses_lives_in_m_conf():
 
 
 @pytest.mark.writtenahead
-@pytest.mark.parametrize("consent_class", ["real", None, ""])
+@pytest.mark.parametrize("consent_class", CONSENT_CLASSES_REFUSED)
 def test_tc_conform_c10_the_suite_refuses_to_run_against_a_cohort_not_so_flagged(consent_class):
     """`CT-CONFORM-10` / `FR-CONFORM-02` — the refusal, swept over every unflagged class.
 
@@ -358,18 +362,30 @@ def test_tc_conform_c10_the_suite_refuses_to_run_against_a_cohort_not_so_flagged
     than an explicit `real` — a gate keyed on the string `"real"` opens for a cohort whose consent
     was never recorded, which is the common case and the more dangerous one.
 
+    Parametrized over `CONSENT_CLASSES_REFUSED` rather than over a hand-written list, so the
+    constant cannot claim a sweep the test does not perform. An earlier draft enumerated three of
+    its four values and `"unknown"` went unswept.
+
     **The exception asserted differs by row, and that is deliberate rather than a weakening.**
     `"real"` is a value `CohortRef` accepts (ADR-5), so the run reaches the gate and the refusal is
-    `M-CONFORM`'s own `ConsentRefused`. `None` and `""` are values `CohortRef` **refuses to
-    construct** — which is `M-CONF` enforcing the boundary, exactly as `CT-CONFORM-10` says it
-    should. Demanding `ConsentRefused` on those two rows would demand that `M-CONFORM` check first,
-    which is the second consent check the same clause forbids. So those rows assert that the run
-    does not happen and let either module be the one that stopped it.
+    `M-CONFORM`'s own `ConsentRefused`. The rest are values `CohortRef` **refuses to construct**,
+    so the sweep hands the suite a stand-in and either module may be the one that stops it —
+    demanding `ConsentRefused` there would demand `M-CONFORM` check first, which is the second
+    consent check this same clause forbids.
+
+    What is *not* accepted on any row is a bare `TypeError`. The claim is that the run is refused
+    **on consent grounds**; a stand-in that merely broke a signature would raise one too, and a
+    row that accepted it would pass against an implementation with no gate at all.
     """
+    from aeh.conf import ConsentGateError
+
     build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#133")
     ConsentRefused = require(CONFORM_MODULE, "ConsentRefused", issue="#133")
 
-    expected = (ConsentRefused,) if consent_class == "real" else (ConsentRefused, ValueError, TypeError)
+    expected: tuple[type[BaseException], ...] = (ConsentRefused,)
+    if consent_class != "real":
+        expected += (ConsentGateError, ValueError)
+
     with pytest.raises(expected):
         build_suite().run("v1", [hosted_cfg()], cohort=_cohort_with(consent_class))
 
@@ -404,11 +420,14 @@ def test_tc_conform_c10_the_suite_does_not_reimplement_the_consent_check():
     own. Reading `consent_class` is fine and expected; deciding on it is not. The scan's positive
     and negative controls run today in `test_ct_conform_vocabulary.py`, so it does not arrive here
     having never been shown to work.
-    """
-    import inspect
 
+    Read through `module_sources`, not `inspect.getsource`: `M-CONFORM` has a corpus builder, a
+    runner and a comparator, so it plausibly lands as a **package** — and `getsource` on a package
+    returns `__init__.py` alone. A scan of the `__init__` would report clean while the second
+    consent check sat in the runner, which is the one place it would actually be written.
+    """
     conform = require(CONFORM_MODULE, issue="#133")
-    sites = consent_reimplementation_sites(inspect.getsource(conform))
+    sites = consent_reimplementation_sites(module_sources(conform))
 
     assert not sites, (
         f"aeh.conform decides consent for itself at {sites}. CT-CONFORM-10 says the M-CONF gate "
@@ -430,18 +449,28 @@ def _cohort_with(consent_class):
     """A cohort carrying `consent_class` verbatim — a real `CohortRef` where one can be built.
 
     `"real"` is a legal ADR-5 value, so that row gets the real type and the refusal it triggers is
-    `M-CONFORM`'s. `None` and `""` are values `CohortRef` refuses to construct, and a stand-in is
-    the only way to hand them to the suite at all — which is why the caller widens the expected
+    `M-CONFORM`'s. The others are values `CohortRef` refuses to construct, and a stand-in is the
+    only way to hand them to the suite at all — which is why the caller widens the expected
     exception for those rows rather than pretending the stand-in reaches the same gate.
+
+    The stand-in is built by copying a **valid** `CohortRef`'s attributes and overriding only
+    `consent_class`, so it has full attribute parity with the real type. A bare namespace carrying
+    two fields would raise `AttributeError` the moment a correct implementation read a third — a
+    red row for a reason that has nothing to do with consent.
     """
     from aeh.conf import CohortRef
 
+    valid = CohortRef(cohort_id="c-2026-unflagged", consent_class="synthetic")
     if consent_class in ("synthetic", "consented", "real"):
-        return CohortRef(cohort_id="c-2026-unflagged", consent_class=consent_class)
+        return CohortRef(cohort_id=valid.cohort_id, consent_class=consent_class)
 
     from types import SimpleNamespace
 
-    return SimpleNamespace(cohort_id="c-2026-unflagged", consent_class=consent_class)
+    stand_in = SimpleNamespace(
+        **{f.name: getattr(valid, f.name) for f in dataclasses.fields(valid)}
+    )
+    stand_in.consent_class = consent_class
+    return stand_in
 
 
 def _profile(cfg):
