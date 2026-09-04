@@ -39,6 +39,8 @@ CALIB_MODULE = f"{IMPLEMENTATION_PACKAGE}.calib"
 GRADE_MODULE = f"{IMPLEMENTATION_PACKAGE}.grade"
 STATS_MODULE = f"{IMPLEMENTATION_PACKAGE}.stats"
 CONFORM_MODULE = f"{IMPLEMENTATION_PACKAGE}.conform"
+REVIEW_MODULE = f"{IMPLEMENTATION_PACKAGE}.review"
+AGG_MODULE = f"{IMPLEMENTATION_PACKAGE}.agg"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -163,13 +165,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # §6.11.17 names `M-STATS` as a second consumer for both `CT-CALIB-09` (it scopes its figures
     # across the revision boundary) and `CT-CALIB-16` (it presents the gate as non-inferiority).
     # Both were missing from the first draft, one of them under a docstring claiming otherwise.
-    "#118": (
-        "module",
-        STATS_MODULE,
+    # Split from one `module` key into two `symbol` keys by TS-73. `find_spec("aeh.stats")`
+    # resolves against the module's **first** commit, which is #115's -- so the entry fired three
+    # stories early and named two tests that still could not run. Both tests say `issue="#118"`
+    # themselves, and each drives a different invented name, so each gets the symbol it actually
+    # resolves. The calib assertions are untouched.
+    "#118 criterion_figures": (
+        "symbol",
+        f"{STATS_MODULE}:criterion_figures",
         ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary",
-         "tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too"),
+         "::test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary",),
+    ),
+    "#118 describe_revision_gate": (
+        "symbol",
+        f"{STATS_MODULE}:describe_revision_gate",
+        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
+         "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too",),
     ),
     "#2": (
         "path",
@@ -578,6 +589,281 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          # both on the later would hold one of them outside the gate for nothing.
          "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
          "::test_tc_conform_c14_m_console_renders_no_backend_equivalence_claim"),
+    ),
+    # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
+    #
+    # `M-STATS` is four stories -- #115 (the admissible-label filter, the figure, the scoped
+    # result), #116 (the MVVP), #117 (compression, surface proxies, routing policy, drift) and
+    # #118 (the validation record, the weakest criterion, narrative metrics) -- and the twenty-one
+    # cases land across all four plus nine consumer stories. Keyed per story: a single key would
+    # hold four fifths of the suite outside the gate until the last of them shipped.
+    #
+    # **Every symbol below is one the story that owns it introduces, never a constructor.**
+    # `build_stats` and `open_stats` are #115's, so a #117 case probing `build_stats` would resolve
+    # the moment the filter landed -- and then run against a `compression_check` that did not exist
+    # yet and fail with `AttributeError`, which is precisely the failure this registry exists to
+    # prevent. So each case probes the member *its* story delivers first and constructs through
+    # #115 afterwards; attribution is measured per test, and the thirteen groups below are what the
+    # run reports rather than what the plan predicted.
+    #
+    # The consumer-side rows reuse the per-story console symbols the TS-77 entries above already
+    # settled (`render_setup_step` for #123, `amend_finalized_grade` for #125) rather than
+    # `render_agreement_block`, which #123 and #125 both touch: `FR-CONSOLE-10`'s scoped rendering
+    # and `FR-CONSOLE-24`'s honest absence are two invariants on one renderer, and a shared target
+    # would fire #125's rows at #123.
+    "#115": (
+        "symbol",
+        f"{STATS_MODULE}:build_stats",
+        (
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_a_contaminated_population_in_a_real_store_is_excluded",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[deterministic_mcq]",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[operational]",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[saw_system_output]",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[whole_grade_sample]",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_population",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_the_admissibility_filter_exists_once_in_the_source",
+            "tests/contract/stats/test_admissible_labels_only.py"
+            "::test_tc_stats_c01_the_predicate_is_a_conjunction_and_admits_only_the_blind_judged_label",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c15_no_statement_in_the_source_writes_a_score_grade_or_package_row",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c18_reads_only_tier_d_and_the_current_cohorts_labels",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[backend_profile]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[n]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[panel_build_ref]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[population_scope_id]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[scoring_model]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_every_emitted_figure_is_chance_corrected",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_function_merges_them",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_a_genuine_programming_error_still_raises",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[agreement]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c17_statistics_over_accumulated_labels_compute_within_the_budget",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_figure",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_degeneracy",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_blind_labels]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_data_for_backend]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_data_for_population]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[agreement]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_blind_labels]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_data_for_backend]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_data_for_population]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_is_not_numerically_coercible_by_any_route",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_refuses_a_reason_outside_the_declared_literal",
+        ),
+    ),
+    "#116": (
+        "symbol",
+        f"{STATS_MODULE}:run_mvvp",
+        (
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[run_mvvp]",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c07_a_judge_above_the_stability_threshold_carries_its_position_bias_result",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c07_reports_the_six_steps_individually_and_offers_no_single_verdict",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_change",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_a_result_names_the_exact_configuration_it_measured",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[model_build]",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[panel_member]",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[prompt_template_version]",
+            "tests/contract/stats/test_ct_stats_mvvp.py"
+            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[quantization]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[run_mvvp]",
+        ),
+    ),
+    "#117": (
+        "symbol",
+        f"{STATS_MODULE}:compression_check",
+        (
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c10_compares_panel_against_gold_bands_on_hand_computed_constants",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c10_states_its_co_compression_blind_spot_inside_the_return_value",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c11_compares_both_arms_using_blind_labels_only",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c11_similar_error_rates_in_both_arms_are_reported_as_failing",
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c18_subgroup_analysis_is_off_by_default_and_refuses_when_disabled",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[compression_check]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[drift_check]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[routing_policy_validity]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[surface_proxies]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c19_each_contract_alert_exists_and_fires[surface_proxy_flag]",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c12_a_sample_outside_the_declared_range_is_refused[19]",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c12_a_sample_outside_the_declared_range_is_refused[31]",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c12_the_drift_check_covers_judged_criteria_only",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[compression_check]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[drift_check]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[routing_policy_validity]",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[surface_proxies]",
+        ),
+    ),
+    "#118 stats": (
+        "symbol",
+        f"{STATS_MODULE}:promote",
+        (
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c15_the_validation_record_is_written_through_m_pkg",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[assignment_type]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[backend]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[population]",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criterion",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c14_narrative_quality_is_reported_separately_from_agreement",
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c14_no_function_offers_a_combined_quality_figure",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[promote]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c17_the_analytical_export_is_read_only_and_does_not_touch_a_live_run",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c19_each_contract_alert_exists_and_fires[blind_sample_skipped]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c19_emits_the_declared_counters",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c05_an_administration_with_no_blind_labels_does_not_advance_the_figures",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c06_an_operational_only_administration_leaves_kappa_unchanged",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c06_label_weighting_applies_to_operational_signals_and_not_to_the_figure",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c06_promote_increments_the_three_counters_separately",
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_zero_rate",
+        ),
+    ),
+    "#10 tier_d": (
+        "symbol",
+        f"{STORE_MODULE}:open_store",
+        (
+            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
+            "::test_tc_stats_c18_tier_d_holds_no_student_name_column_reachable_from_here",
+        ),
+    ),
+    "#29 stats": (
+        "symbol",
+        f"{PKG_MODULE}:validation_for",
+        (
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale_figure",
+        ),
+    ),
+    "#31 stats": (
+        "symbol",
+        f"{PKG_MODULE}:export_package",
+        (
+            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
+            "::test_tc_stats_c13_an_exported_package_carries_the_weakest_figure_beside_the_headline",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c20_no_consumer_renders_or_exports_a_single_headline_figure[m_pkg_export]",
+        ),
+    ),
+    "#91 stats": (
+        "symbol",
+        f"{AGG_MODULE}:describe_agreement",
+        (
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_agg]",
+        ),
+    ),
+    "#93 stats": (
+        "symbol",
+        f"{AGG_MODULE}:rank_criteria_for_escalation",
+        (
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero[m_agg]",
+        ),
+    ),
+    "#108 stats": (
+        "symbol",
+        f"{REVIEW_MODULE}:rank_queue_items",
+        (
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero[m_review]",
+        ),
+    ),
+    "#123 stats": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_setup_step",
+        (
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c20_no_consumer_renders_or_exports_a_single_headline_figure[m_console]",
+            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
+            "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_console]",
+        ),
+    ),
+    "#125 stats": (
+        "symbol",
+        f"{CONSOLE_MODULE}:amend_finalized_grade",
+        (
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c05_the_console_renders_the_message_not_the_previous_administrations_number",
+            "tests/contract/stats/test_no_validation_data_type.py"
+            "::test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank",
+        ),
+    ),
+    "#126 stats": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_preflight",
+        (
+            "tests/contract/stats/test_ct_stats_records_and_absence.py"
+            "::test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run",
+        ),
     ),
 }
 
