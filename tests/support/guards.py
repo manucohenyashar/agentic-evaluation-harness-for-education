@@ -24,10 +24,12 @@ import os
 import pathlib
 import socket
 import sqlite3
+import sys
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Iterator
 
+from tests.support.impl import IMPLEMENTATION_PACKAGE as _IMPLEMENTATION_PACKAGE
 
 _LOCAL_HOSTS = {None, "", "localhost", "localhost.localdomain", "127.0.0.1", "::1"}
 
@@ -163,8 +165,83 @@ class WriteAttempt:
     api: str      # "open", "Path.write_text", "sqlite3.connect", ...
     target: Any   # whatever the caller passed; not normalized, so the record is honest
 
+    #: The implementation module that **performed** the write — the innermost `aeh.*` frame on
+    #: the stack, as its design label (`M-PKG`, `M-GRADE`, ...). `None` when no implementation
+    #: frame is involved, which is what a test's own scaffolding writes look like.
+    attributed_to: str | None = None
+
+    #: The implementation module that **started** the call chain — the outermost `aeh.*` frame.
+    #: Different from `attributed_to` exactly when one module wrote through another, which is
+    #: the distinction `CT-CONFORM-12` is about: `M-CONFORM` runs whole pipelines and owns none
+    #: of their output, so a validation record shows `attributed_to="M-PKG"` with
+    #: `initiated_by="M-CONFORM"` — written *through* `M-PKG`, exactly as the clause requires.
+    initiated_by: str | None = None
+
 
 _WRITE_MODES = frozenset("wax+")
+
+#: `aeh.<name>` -> the design's module label. Used for write attribution; a module absent here
+#: is reported by its dotted path rather than dropped, so a new module shows up as unattributed
+#: noise instead of silently reading as "not this module's write".
+_MODULE_LABELS: dict[str, str] = {
+    "conf": "M-CONF",
+    "prov": "M-PROV",
+    "store": "M-STORE",
+    "pkg": "M-PKG",
+    "setup": "M-SETUP",
+    "ingest": "M-INGEST",
+    "orch": "M-ORCH",
+    "extract": "M-EXTRACT",
+    "integ": "M-INTEG",
+    "judge": "M-JUDGE",
+    "det": "M-DET",
+    "agg": "M-AGG",
+    "synth": "M-SYNTH",
+    "grade": "M-GRADE",
+    "review": "M-REVIEW",
+    "stats": "M-STATS",
+    "conform": "M-CONFORM",
+    "console": "M-CONSOLE",
+    "calib": "M-CALIB",
+}
+
+
+def _implementation_frames() -> list[str]:
+    """The `aeh.*` module labels on the current stack, innermost first.
+
+    §6.11.18's oracle for `TC-CONFORM-12` is a *"write-audit log with per-stack attribution"*, and
+    the stack is the only thing that can supply it: the write APIs are patched globally, so the
+    record itself carries no idea of who called it. Without this, every attempt looks identical
+    and `CT-CONFORM-12` — whose whole claim is *which* module a write belongs to — has no oracle
+    at all.
+
+    Walked with `sys._getframe` rather than `inspect.stack()`, which builds a `FrameInfo` with
+    source context per frame and turns a run with thousands of writes into a minute of I/O.
+    """
+    labels: list[str] = []
+    depth = 1
+    while True:
+        try:
+            frame = sys._getframe(depth)
+        except ValueError:
+            break
+        depth += 1
+        name = frame.f_globals.get("__name__", "")
+        if not name.startswith(f"{_IMPLEMENTATION_PACKAGE}."):
+            continue
+        submodule = name.split(".", 2)[1]
+        label = _MODULE_LABELS.get(submodule, name)
+        if not labels or labels[-1] != label:
+            labels.append(label)
+    return labels
+
+
+def _attribution() -> tuple[str | None, str | None]:
+    """`(performed_by, initiated_by)` for the write happening right now."""
+    labels = _implementation_frames()
+    if not labels:
+        return None, None
+    return labels[0], labels[-1]
 
 
 @contextmanager
@@ -374,7 +451,12 @@ def recording_write_audit() -> Iterator[list[WriteAttempt]]:
     real_connect = sqlite3.connect
 
     def _record(api: str, target: Any) -> None:
-        attempts.append(WriteAttempt(api=api, target=target))
+        performed_by, initiated_by = _attribution()
+        attempts.append(
+            WriteAttempt(
+                api=api, target=target, attributed_to=performed_by, initiated_by=initiated_by
+            )
+        )
 
     def _is_write_mode(mode: Any) -> bool:
         return isinstance(mode, str) and bool(_WRITE_MODES & set(mode))
