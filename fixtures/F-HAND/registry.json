@@ -1,0 +1,33 @@
+{
+  "corpus": "F-HAND",
+  "committed": false,
+  "consent_class": "consented",
+  "provenance": "Consented real student work (test plan §4.4).",
+  "status": "external prerequisite -- not arranged in this repository (§8.1)",
+  "corpus_dir_env": "HARNESS_F_HAND_DIR",
+  "required_composition": {
+    "media_kinds": [
+      "scanned_handwriting",
+      "mixed_format"
+    ],
+    "legibility_span": [
+      "legible",
+      "marginal"
+    ],
+    "min_mixed_format_papers": 1,
+    "requirement": "FR-CONFORM-03",
+    "traces_to": "R37"
+  },
+  "tier_c_rules": [
+    "owner-only permissions",
+    "never committed to the repo",
+    "stored in a separate consented-corpus directory",
+    "never transmitted to a remote provider except under the FR-CONF-08 consent gate"
+  ],
+  "consumers": [
+    "TC-INGEST-45",
+    "TC-CONFORM-03",
+    "PERF-10"
+  ],
+  "note": "No synthetic corpus in this repository declares media_kind 'scanned_handwriting'. Stamping it onto generated Markdown would make the CT-CONFORM-02 composition assertion pass against a clean-typed-text corpus, which is the measurement that clause exists to prevent."
+}

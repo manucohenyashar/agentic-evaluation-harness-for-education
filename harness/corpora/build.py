@@ -23,7 +23,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from harness.corpora import graphic, reference_package, stats, synth
+from harness.corpora import adv_inj, adv_pdf, graphic, hand, reference_package, stats, synth
 from harness.corpora.baselines import (
     BASELINES,
     WORK_ID_INPUTS,
@@ -32,8 +32,11 @@ from harness.corpora.baselines import (
 from harness.corpora.manifest import (
     CORPUS_ROOT,
     Manifest,
+    ManifestEntry,
     as_document,
     entries_from,
+    fixture_set_id,
+    set_content_hash,
     write_manifest,
 )
 
@@ -56,6 +59,13 @@ def _build_submission_corpus(root: Path, corpus: str, seed: int, generator: str,
             {
                 "student_ref": s.student_ref,
                 "consent_class": "synthetic",
+                # Declared honestly rather than left absent. `FR-CONFORM-03` requires the
+                # conformance set to carry *real* scanned handwriting; these are generated
+                # Markdown and say so. Stamping `scanned_handwriting` here would make
+                # `CT-CONFORM-02`'s composition assertion pass against a clean-typed-text
+                # corpus — the exact measurement §6.11.18 says that clause exists to prevent.
+                # See `harness.corpora.hand` for where the real-medium tier is declared.
+                "media_kind": hand.SYNTHETIC_MEDIA_KIND,
                 "pages": len(s.pages),
                 # The known reference labels FR-CONFORM-01 requires of the frozen set. Carried
                 # by every submission corpus, because an agreement figure computed against a
@@ -125,6 +135,130 @@ def _build_graphic(root: Path) -> None:
             },
         ),
     )
+
+
+def _build_adv_inj(root: Path) -> None:
+    """`F-ADV-INJ` — both halves of every twin pair, in pair order.
+
+    The pairing is carried in the manifest by `twin_id` on **both** members, so a reader of one
+    entry can find the other without reconstructing the naming convention. `payload_line` is what
+    lets `TC-CONFORM-09` reconstruct the benign document from the injected one and assert the two
+    really are identical but for the payload.
+    """
+    members = []
+    for member in adv_inj.submissions():
+        extra: dict[str, object] = {
+            "student_ref": member.student_ref,
+            "consent_class": "synthetic",
+            "media_kind": hand.SYNTHETIC_MEDIA_KIND,
+            "pair_id": member.pair_id,
+            "variant": member.variant,
+            "twin_id": member.twin_id,
+            # `null` for the benign half rather than absent, so a case can select on the key
+            # without a membership test — and so a benign member that acquired a payload would
+            # show up as a changed value rather than as a new key nobody was reading.
+            "injection_kind": member.injection_kind,
+            "pages": len(member.pages),
+            "reference_bands": dict(member.bands),
+            "reference_points": member.reference_points,
+        }
+        if member.payload is not None:
+            extra["payload_line"] = member.payload_line
+            extra["payload_lines"] = list(member.payload.lines)
+            extra["payload_intent"] = member.payload.intent
+            if member.payload.forged_quote is not None:
+                extra["forged_quote"] = member.payload.forged_quote
+        members.append(
+            (
+                member.submission_id,
+                f"submissions/{member.submission_id}.md",
+                as_document(member.as_document()),
+                extra,
+            )
+        )
+
+    entries = entries_from(root, members)
+    write_manifest(
+        root,
+        Manifest(
+            corpus="F-ADV-INJ",
+            version=CORPUS_VERSION,
+            seed=adv_inj.INJ_SEED,
+            generator="harness.corpora.adv_inj:twin_pairs",
+            description=(
+                "Injection twin pairs (§4.4, FR-CONFORM-09). Each pair is one submission "
+                "carrying an injection payload and one benign twin identical in content but "
+                "for the payload; both halves carry the same reference bands, so a band "
+                "difference downstream is attributable to the payload and to nothing else."
+            ),
+            entries=entries,
+            extra={
+                "package_id": reference_package.PACKAGE_ID,
+                "package_version": reference_package.PACKAGE_VERSION,
+                "consent_class": "synthetic",
+                "pairs": len(adv_inj.twin_pairs()),
+                "payload_kinds": list(adv_inj.PAYLOAD_KINDS),
+                "pairs_per_kind": adv_inj.PAIRS_PER_KIND,
+            },
+        ),
+    )
+
+
+def _build_adv_pdf(root: Path) -> None:
+    """`F-ADV-PDF` — the manifest only. §4.7: *generated, not committed as binaries*.
+
+    The digests are computed by generating each construct here and discarding the bytes, which is
+    what keeps `--check` able to catch a generator edited without a rebuild while leaving fourteen
+    scanner-tripping files out of the repository. `materialize_adv_pdfs` writes the real files
+    into a temp directory when a case needs them, verifying each against the digest below.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    rows = adv_pdf.manifest_entries()
+    # Hashed the same way every other corpus is, although this manifest is assembled by hand:
+    # `NFR-CONFORM-01`'s content addressing is about the set, and a corpus exempt from it because
+    # its bytes are not committed would be the one corpus nobody could cite.
+    digest = set_content_hash(
+        tuple(
+            ManifestEntry(id=row["id"], path=row["path"], content_hash=row["content_hash"])
+            for row in rows
+        )
+    )
+    (root / "manifest.json").write_bytes(
+        _json_bytes(
+            {
+                "corpus": "F-ADV-PDF",
+                "version": CORPUS_VERSION,
+                "seed": None,
+                "generator": "harness.corpora.adv_pdf:build_construct",
+                "set_content_hash": digest,
+                "fixture_set_id": fixture_set_id("F-ADV-PDF", CORPUS_VERSION, digest),
+                "description": (
+                    "One PDF per malicious or malformed construct §4.4 names. Every one must "
+                    "quarantine at V0 and reach no model call (FR-CONFORM-09, FR-INGEST-33/34, "
+                    "NFR-INGEST-08, R74)."
+                ),
+                # The header field that says why there are no files next to this manifest.
+                "committed_bytes": False,
+                "committed_bytes_reason": (
+                    "Test plan §4.7: F-ADV-PDF is generated, not committed as binaries. The "
+                    "digests below are what make it reproducible from committed scripts (§4.8); "
+                    "tests.support.corpora.materialize_adv_pdfs() writes the files on demand."
+                ),
+                "consent_class": "synthetic",
+                "expected_outcome": adv_pdf.EXPECTED_OUTCOME,
+                "quarantine_gate": adv_pdf.QUARANTINE_GATE,
+                "expected_model_calls": adv_pdf.EXPECTED_MODEL_CALLS,
+                "constructs_in_section_4_4_order": list(adv_pdf.SECTION_4_4_CONSTRUCTS),
+                "submissions": rows,
+            }
+        )
+    )
+
+
+def _build_hand(root: Path) -> None:
+    """`F-HAND` — a declaration, and no student work. See `harness.corpora.hand`."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "registry.json").write_bytes(_json_bytes(hand.registry()))
 
 
 def _build_stats(root: Path) -> None:
@@ -208,7 +342,18 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-DEV/` | The 8 submissions development iterates against, disjoint from `F-FROZEN` (`TC-CONFORM-10`) |
 | `F-GRAPHIC/` | One page per `FR-INGEST-10` element kind, plus the confusable-with-a-verdict page |
 | `F-STATS/` | Label sets whose statistics were worked out by hand (`NFR-STATS-01`) |
+| `F-ADV-INJ/` | Injection twin pairs: each payload paired with a benign twin (`FR-CONFORM-09`) |
+| `F-ADV-PDF/` | **Manifest only.** One entry per malicious/malformed construct, with the digest of the bytes the generator emits |
+| `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
+
+`F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not
+committed as binaries"*. `tests.support.corpora.materialize_adv_pdfs()` writes them into a
+temp directory on demand and verifies each against the digest in the manifest.
+
+`F-HAND/` holds no student work and never will. §4.4's PII rules make it the only corpus
+containing real work and forbid committing it; `registry.json` is the committed declaration of
+what it must contain and where a machine that has it keeps the corpus.
 
 `baselines/` holds no golden files yet. A baseline is the output of a producer and no producer
 exists; see `tests/support/baselines.py` for why committing one early would be worse than
@@ -252,6 +397,9 @@ def build(root: Path) -> None:
     )
     _build_graphic(root / "F-GRAPHIC")
     _build_stats(root / "F-STATS")
+    _build_adv_inj(root / "F-ADV-INJ")
+    _build_adv_pdf(root / "F-ADV-PDF")
+    _build_hand(root / "F-HAND")
     _build_baselines(root / "baselines")
 
 

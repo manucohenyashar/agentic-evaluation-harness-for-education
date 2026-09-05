@@ -4,6 +4,8 @@
   "seed": null,
   "generator": "harness.corpora.graphic",
   "description": "One page per FR-INGEST-10 element kind, plus the page whose correct description is easily confusable with a verdict (FR-INGEST-11).",
+  "set_content_hash": "sha256:6876c6985ed6ee5699543af890972ca54ac872a5f877449d3c7ddfeddb854542",
+  "fixture_set_id": "F-GRAPHIC@1+sha256:6876c6985ed6ee5699543af890972ca54ac872a5f877449d3c7ddfeddb854542",
   "element_kinds": [
     "free_body_diagram",
     "geometry_construction",

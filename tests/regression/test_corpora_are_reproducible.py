@@ -22,7 +22,7 @@ import hashlib
 import json
 
 from harness.corpora import build as corpora_build
-from harness.corpora import graphic, reference_package, synth
+from harness.corpora import adv_inj, adv_pdf, graphic, reference_package, synth
 from tests.support import corpora
 
 
@@ -49,7 +49,7 @@ def test_every_manifest_hash_still_describes_the_bytes_on_disk():
     let a copied submission pass a disjointness check. The same reasoning applies to every
     corpus: `NFR-CONFORM-01`'s point is that a result can *name* the fixtures that produced it.
     """
-    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS"):
+    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ"):
         corpus = corpora.load(name)
         for member in corpus.members:
             actual = "sha256:" + hashlib.sha256(member.path.read_bytes()).hexdigest()
@@ -271,3 +271,52 @@ def test_the_generators_are_deterministic_across_two_runs_in_one_process():
         s.as_document() for s in synth.frozen_set()
     ]
     assert json.dumps(reference_package.as_json()) == json.dumps(reference_package.as_json())
+    assert [s.as_document() for s in adv_inj.submissions()] == [
+        s.as_document() for s in adv_inj.submissions()
+    ]
+
+
+def test_the_adversarial_pdf_generators_emit_identical_bytes_on_every_run():
+    """§4.8's entry criterion for the one corpus whose bytes are not committed.
+
+    *"`F-SYNTH`, `F-GRAPHIC`, `F-STATS`, `F-SCHEMA` and `F-ADV-PDF` are generated and reproducible
+    from committed scripts."* For every other corpus the committed bytes are the reproducibility
+    check; for `F-ADV-PDF` there are none (§4.7 keeps the binaries out of the repository), so the
+    declared digest and this two-run comparison are the whole of it.
+
+    Both matter and neither is enough alone. The digest catches a generator edited without a
+    rebuild; this catches a generator whose output depends on something that varies between calls
+    — a timestamp, a random file `/ID`, a set iteration order. Those are exactly the values a real
+    PDF library stamps, and it is why the writer here is hand-rolled.
+    """
+    first = {c.construct_id: c.builder() for c in adv_pdf.CONSTRUCTS}
+    second = {c.construct_id: c.builder() for c in adv_pdf.CONSTRUCTS}
+    differing = [key for key in first if first[key] != second[key]]
+    assert not differing, (
+        f"these constructs emitted different bytes on two consecutive calls: {differing}. "
+        f"F-ADV-PDF has no committed bytes, so a non-deterministic generator makes the corpus "
+        f"unciteable rather than merely inconvenient."
+    )
+
+    declared = {row["id"]: row["content_hash"] for row in corpora.adv_pdf_manifest()["submissions"]}
+    for construct_id, data in first.items():
+        digest = "sha256:" + hashlib.sha256(data).hexdigest()
+        assert digest == declared[construct_id], (
+            f"{construct_id} generates {digest}; the manifest declares {declared[construct_id]}"
+        )
+
+
+def test_neither_uncommitted_corpus_has_acquired_member_files():
+    """`F-ADV-PDF` and `F-HAND` are the two directories that must stay almost empty.
+
+    Different reasons — §4.7 for one, §4.4's Tier C rules for the other — and the same failure
+    mode: a well-meaning change to `build()` starts writing files out, and nothing else in the
+    suite would notice, because every other assertion about those corpora reads their manifest.
+    """
+    for name, allowed in (("F-ADV-PDF", {"manifest.json"}), ("F-HAND", {"registry.json"})):
+        root = corpora.CORPUS_ROOT / name
+        present = {p.name for p in root.rglob("*") if p.is_file()}
+        assert present == allowed, (
+            f"fixtures/{name}/ contains {sorted(present)}; only {sorted(allowed)} may be "
+            f"committed there"
+        )

@@ -4,6 +4,8 @@
   "seed": 20260103,
   "generator": "harness.corpora.synth:dev_set",
   "description": "The 8 submissions development iterates against, disjoint from F-FROZEN (§4.4).",
+  "set_content_hash": "sha256:34a6471308ffe2733ab748a99ec5f79a49d2f1fe18736f59920608dd30d82e12",
+  "fixture_set_id": "F-DEV@1+sha256:34a6471308ffe2733ab748a99ec5f79a49d2f1fe18736f59920608dd30d82e12",
   "package_id": "PKG-REF",
   "package_version": "1",
   "consent_class": "synthetic",
@@ -15,6 +17,7 @@
       "content_hash": "sha256:5c64604dce6b2813cb308a5d6a050b7dad83524901eec6e9a2bc762b61f0e9d1",
       "student_ref": "D-0001",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -41,6 +44,7 @@
       "content_hash": "sha256:78f059cc1f146ab37a09c8ad9cb40c6bf65394aa544c2a07a592dc9b32f64291",
       "student_ref": "D-0002",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -67,6 +71,7 @@
       "content_hash": "sha256:1bfaf7522bd92330885a50fecaf28512f7fb0d5b987d1d5d82a41c1dd27419b5",
       "student_ref": "D-0003",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -93,6 +98,7 @@
       "content_hash": "sha256:079b1dff38575e17fd22286fb65f2ad261936c6fa3454e5d2f5601863f5d379e",
       "student_ref": "D-0004",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -119,6 +125,7 @@
       "content_hash": "sha256:24eee13a80ae65a3fae5f6a6ef755b5e311c44ff50aa41b2db28308e6902772a",
       "student_ref": "D-0005",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -145,6 +152,7 @@
       "content_hash": "sha256:0843ffb91214c868894914c6b8a80b95969f36e43e12429136d3964541adfca0",
       "student_ref": "D-0006",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -171,6 +179,7 @@
       "content_hash": "sha256:f1cd961859c194fde4c87f0d0ab461e50a052e57c829456d4dceebbfa961e55e",
       "student_ref": "D-0007",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -197,6 +206,7 @@
       "content_hash": "sha256:3f97e888d7e6dab1a30110f1ddc64893594ab87d4c11304435c84cccc707402f",
       "student_ref": "D-0008",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",

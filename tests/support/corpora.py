@@ -29,6 +29,11 @@ CORPUS_ROOT = REPO_ROOT / "fixtures"
 # The issue that owns the corpora, for the message a missing one produces.
 CORPORA_ISSUE = "#2"
 
+# The adversarial corpora and the F-HAND declaration are TS-02's (§8.1's third blocking item),
+# so a missing one names #3 rather than #2 — a reader chasing an absent fixture should land on
+# the story that builds it.
+ADVERSARIAL_ISSUE = "#3"
+
 _PAGE_MARKER = re.compile(r"^<!-- page: (\d+) of (\d+) -->$", re.MULTILINE)
 
 
@@ -127,6 +132,109 @@ def materialize_pages(member: CorpusMember, dest: Path) -> tuple[Path, ...]:
 
 def graphic_pages() -> Sequence[CorpusMember]:
     return load("F-GRAPHIC").members
+
+
+# --- the adversarial corpora (TS-02, issue #3) ----------------------------------------------
+
+
+def injection_pairs() -> list[tuple[CorpusMember, CorpusMember]]:
+    """`F-ADV-INJ` as (benign, injected) pairs, in manifest order.
+
+    Paired here rather than in each case, because `CT-CONFORM-09`'s whole point is that the
+    differential has a baseline: *"an unpaired injection test proves nothing about whether the
+    injection mattered."* A helper that returned a flat list would let a case iterate the
+    injections and forget the twins, which is the shape the clause forbids.
+
+    Raises rather than skipping a member whose `twin_id` names nothing: a pair with a missing
+    half is a corpus defect, and returning the injections that happen to have twins would hide
+    it behind a smaller-than-expected count nobody checks.
+    """
+    corpus = load("F-ADV-INJ")
+    by_id = {member.id: member for member in corpus.members}
+    pairs: list[tuple[CorpusMember, CorpusMember]] = []
+    for member in corpus.members:
+        if member.attributes.get("injection_kind") is None:
+            continue
+        twin_id = member.attributes["twin_id"]
+        if twin_id not in by_id:
+            raise AssertionError(
+                f"{member.id} names twin {twin_id!r}, which is not in F-ADV-INJ. "
+                f"CT-CONFORM-09's differential has no baseline without it."
+            )
+        pairs.append((by_id[twin_id], member))
+    return pairs
+
+
+def benign_page_of(injected: CorpusMember) -> str:
+    """Reconstruct the injected member's first page as its benign twin's, from the manifest.
+
+    Truncates at the recorded `payload_line` rather than searching for the payload text. Searching
+    would pass against a pair whose payload was the empty string — that is, against two identical
+    documents wearing a `twin_id` — which is exactly the degenerate corpus the differential must
+    not silently accept.
+    """
+    line = injected.attributes["payload_line"]
+    return "\n".join(injected.pages()[0].split("\n")[:line])
+
+
+def adv_pdf_manifest() -> Mapping[str, Any]:
+    """`F-ADV-PDF`'s manifest. There are no committed bytes next to it — §4.7 forbids them."""
+    path = require_path(
+        CORPUS_ROOT / "F-ADV-PDF" / "manifest.json",
+        "the F-ADV-PDF manifest",
+        issue=ADVERSARIAL_ISSUE,
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def materialize_adv_pdfs(dest: Path, ids: Sequence[str] | None = None) -> dict[str, Path]:
+    """Generate the malicious PDFs into `dest` and verify each against its declared digest.
+
+    §4.7: *"`F-ADV-PDF` is generated, not committed as binaries."* So the bytes come from the
+    committed generator, and the manifest's digest is what makes that generator's output the same
+    thing every time — §4.8's *"generated and reproducible from committed scripts"*.
+
+    The verification is not ceremony. Without it, a generator edited in a way that changed its
+    output would hand every downstream security case a *different* fixture from the one the
+    manifest describes, and `SEC-05..09` would go on passing against constructs nobody declared.
+    """
+    from harness.corpora.adv_pdf import build_construct
+    from harness.corpora.manifest import content_hash
+
+    dest.mkdir(parents=True, exist_ok=True)
+    wanted = set(ids) if ids is not None else None
+    written: dict[str, Path] = {}
+    for entry in adv_pdf_manifest()["submissions"]:
+        if wanted is not None and entry["id"] not in wanted:
+            continue
+        data = build_construct(entry["id"])
+        digest = content_hash(data)
+        if digest != entry["content_hash"]:
+            raise AssertionError(
+                f"{entry['id']} ({entry['construct']}) generated {digest}, but "
+                f"fixtures/F-ADV-PDF/manifest.json declares {entry['content_hash']}. The "
+                f"generator was edited without rebuilding: run "
+                f"`python -m harness.corpora.build`."
+            )
+        path = dest / Path(entry["path"]).name
+        path.write_bytes(data)
+        written[entry["id"]] = path
+
+    if wanted is not None and wanted - set(written):
+        raise AssertionError(
+            f"F-ADV-PDF declares no construct(s) {sorted(wanted - set(written))}"
+        )
+    return written
+
+
+def hand_registry() -> Mapping[str, Any]:
+    """`F-HAND`'s committed declaration. It contains no student work — see `harness.corpora.hand`."""
+    path = require_path(
+        CORPUS_ROOT / "F-HAND" / "registry.json",
+        "the F-HAND registry",
+        issue=ADVERSARIAL_ISSUE,
+    )
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def stats_cases() -> list[Mapping[str, Any]]:
