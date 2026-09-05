@@ -88,8 +88,11 @@ def test_tc_store_24_every_named_signal_is_emitted_and_the_free_disk_alert_fires
 
     with cohort.transaction() as tx:
         tx.execute(statement(_DDL, issue=ISSUE))
-    with durable.transaction() as tx:
-        tx.execute(statement(_DDL, issue=ISSUE))
+    # `durable` needs no scratch table: opening it above created and migrated the file, and
+    # #13's schema authorizer refuses caller DDL on Tier D write connections — schema there
+    # belongs to migrations. (This case's original draft created `metric_rows` on both
+    # tiers; the durable half of that fixture is what the refusal disproved, not any
+    # assertion — nothing ever wrote to it.)
 
     # Sampled *during* saturation, because that is the only moment a queue-depth signal can be
     # distinguished from a hard-coded zero. Reading it after the queue drains reports 0 whether

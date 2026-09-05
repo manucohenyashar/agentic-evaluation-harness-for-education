@@ -54,6 +54,8 @@ guess is a suite that asserts the wrong thing.
 | Insecure location is a POSIX-mode rule | Resolve the configured dir (`realpath`, which also closes the symlink bypass) and refuse on the first world-writable ancestor (`mode & 0o002`). No-op on Windows, where `os.stat` fabricates `0o777` for every directory and `%TEMP%` is ACL-scoped per user — the precondition "world-writable temporary path" is unconstructible there. The platform and `stat` are injectable so both branches are exercisable from one host | `FR-STORE-09` names world-writable, not merely temporary; pytest's `tmp_path` sits inside `gettempdir()` on every platform, so a blanket temp-dir refusal would red the entire suite |
 | Disk-full halts from the last commit, on every write door | `SQLITE_FULL`/`ENOSPC` on any write path — a queue batch, a `transaction()` body or its commit, purge's deletes or its `VACUUM` — rolls the interrupted work back whole (results *and* their paired status transitions), records `DiskFullError`, and halts the process via an injectable hook; the write queue additionally terminally refuses. The stronger reading — post-rollback commit of the batch's `work_unit`-only units — is rejected: with results rolled back it manufactures status-without-result states, breaking the either-both-or-neither invariant `TC-STORE-08` pins. `TC-STORE-13`'s "outstanding ledger status transitions commit" is written against this declared semantics: the ledger stands at its last commit, which is resumable | `FR-STORE-10` halts "rather than continuing with partial writes" and names no door exemption; `CT-STORE-11` says `DiskFullError` is not retryable |
 | The Tier D guard parses the INSERT header unanchored | The search for `INSERT [OR …] INTO tbl (cols)` / `REPLACE INTO tbl (cols)` runs anywhere in the statement, tolerates comments and schema-qualified tables, and takes the last identifier as the table. Cost, accepted and stated: a statement whose *string literal* quotes insert-shaped text can be refused when it would have run. A false positive fails loud; a false negative is a name in the tier nothing can purge | `FR-STORE-12` says "any insert"; the CTE form (`WITH x AS (...) INSERT INTO ...`) is ordinary SQL and anchored parsing missed it |
+| Tier D write connections refuse schema DDL | `set_authorizer` denies CREATE/ALTER/DROP of tables, indexes, triggers and views, plus `ATTACH`/`DETACH`, on the durable tier's write connections. The header guard reads statements; without this, a `CREATE TABLE` through a guarded `transaction()` body — followed by a no-column-list `INSERT ... SELECT` the guard cannot parse — was a verified end-to-end bypass. Migrations are unaffected: they run on the open connection, not the write connection | Schema belongs to migrations (`NFR-STORE-04`); the guard's own guarantee ("a false negative is a name in the tier nothing can purge") requires the DDL half closed, not documented |
+| Destructive operations validate their identifier | `purge_cohort` refuses a `cohort_id` that cannot safely become a filename component — the same principle `TC-STORE-22` fixes for the blob accessors, applied where the blast radius is irreversible. Keyed lookups pass ids as bound parameters and need no rule | Review verified the traversal: `purge_cohort('../other')` and an absolute path both escaped the data directory |
 | Purge preconditions are scoped by `cohort_id` | A Tier D gate (`audit_record`, `label`, `criterion_stats`) passes iff the table exists **and** carries a `cohort_id` column **and** holds a row for this cohort. The column name is the contract `M-STATS`/`M-REVIEW` migrations must honor | #10's minimal Tier D columns carry no cohort scope; promotion means cohort-scoped rows were copied in, so absent the column promotion structurally cannot have happened — fail closed (`CT-STORE-10`'s sweep is per-precondition) |
 | Purge keeps the file and its `schema_version` | The DELETE sweep skips `schema_version` and the `sqlite_%` internals; wiping `schema_version` would make migration 001 re-run against surviving tables and leave the file permanently unopenable. The file itself remains — `TC-STORE-11`'s oracle scans the emptied file's raw bytes | `FR-STORE-07` deletes Tier C and R *content*; §3.3's data model makes the purge a `VACUUM` on one database |
 | Purge does not touch blobs | Blob reclamation at purge time is an **accepted risk** with the rule undeclared (test plan §7.4: "blob shared across cohorts at purge time"), and the blob store is #12's. `PurgeReport.blobs_deleted` is an honest zero | Making the design decision this PR would be deciding what §7.4 reserves for the design |
@@ -468,25 +470,24 @@ def is_student_name_column(column: str) -> bool:
         return True
 
     if unique & PERSON_TOKENS:
-        # `student_ref`, `pupil_id`, `learner_uuid` — the shape the clause requires. The
-        # pseudonym veto protects them, but a *strong name token* outranks it: a hash of a
-        # student's name (`student_name_hash`) is a dictionary attack away from the name on
-        # the small populations Tier D serves, so person + strong name is refused whatever
-        # else the column carries. The veto still governs the weak-token path, which is
-        # where the longitudinal columns it exists for live.
-        strong = any(word in STRONG_NAME_TOKENS for word in words)
-        if not strong and unique & PSEUDONYM_TOKENS:
-            return False
+        # Scan order is the rule: a **strong name token outranks the pseudonym veto**
+        # (`student_name_hash` is a dictionary attack away from the name on the small
+        # populations Tier D serves), and so does a **weak name token that a pseudonym
+        # token follows** (`student_given_hash`, `student_first_hash` — a hash of a
+        # partial name is the same attack with a smaller dictionary). The veto then
+        # protects what remains: `student_ref`, `pupil_id`, `learner_uuid` — the shape the
+        # clause requires — and the longitudinal columns (`student_first_seen`,
+        # `student_family_income`) that a permanent pseudonymous tier exists for.
         for position, word in enumerate(words):
             if word in STRONG_NAME_TOKENS:
                 return True
             if word in WEAK_NAME_TOKENS:
-                terminal = position == len(words) - 1
-                before_strong = (
-                    position + 1 < len(words) and words[position + 1] in STRONG_NAME_TOKENS
-                )
-                if terminal or before_strong:
+                next_word = words[position + 1] if position + 1 < len(words) else None
+                terminal = next_word is None
+                if terminal or next_word in STRONG_NAME_TOKENS or next_word in PSEUDONYM_TOKENS:
                     return True
+        if unique & PSEUDONYM_TOKENS:
+            return False
 
     # `studentname`, `pupilForename` — a person and a name glued into one token.
     return bool(
@@ -592,10 +593,22 @@ def _refuse_insecure_location(data_dir: Path) -> None:
 #: Written as one literal, in the declared-statement pattern: the *text* contains SQL
 #: keywords, but it is a regular expression, nothing is assembled, and the scanner that
 #: flags assembled SQL reads it as one constant — the same discipline every statement in
-#: this module follows. In it, the gap between tokens (`(?:\s|--[^\n]*|/\*.*?\*/)*`) is
-#: whitespace or a comment — `INSERT INTO /* provenance */ t (cols)` is ordinary SQL and a
-#: guard that missed the comment would miss the name — and one identifier is any of its four
-#: SQL spellings (double-quoted, backquoted, bracketed, bare).
+#: this module follows.
+#:
+#: Two mechanical properties the guard depends on, both paid for here:
+#:
+#: **Every comment matcher is atomic.** A naive `/\*.*?\*/` inside a `*`-quantified
+#: alternation backtracks exponentially when the header fails to match — a 200-byte
+#: statement of the string-literal shape the unanchored search admits can freeze the
+#: caller's thread for tens of seconds at a door that runs inline (`Tx.execute`,
+#: `enqueue_write`). `/\*(?:[^*]|\*(?!/))*\*/` matches the same comments in linear time.
+#:
+#: **The column list is not `[^)]*`.** That form stops at the first `)`, so a comment or
+#: quoted identifier containing one (`(band /* until (v2) */, student_name)`) truncates the
+#: parse and silently hides every column after it — a false negative in exactly the control
+#: that must not have one. The list body therefore consumes comments, `--` lines, quoted
+#: and bracketed identifiers as units, and treats everything else as ordinary characters
+#: except the closing paren.
 #:
 #: **Unanchored, deliberately.** Anchoring on `INSERT` made `WITH x AS (...) INSERT INTO t
 #: (student_name) ...` invisible to the guard — a name lands in the permanent tier with no
@@ -606,14 +619,16 @@ def _refuse_insecure_location(data_dir: Path) -> None:
 #: is silent contamination of the one tier nothing can purge — and every caller here is
 #: in-process trusted code whose statements are declared literals reviewed in PRs.
 _INSERT_COLUMN_LIST = re.compile(
-    r"\b(?:INSERT(?:\s|--[^\n]*|/\*.*?\*/)*(?:OR(?:\s|--[^\n]*|/\*.*?\*/)*\w+"
-    r"(?:\s|--[^\n]*|/\*.*?\*/)*)?INTO|REPLACE(?:\s|--[^\n]*|/\*.*?\*/)*INTO)"
-    r"(?:\s|--[^\n]*|/\*.*?\*/)*"
+    r"\b(?:INSERT(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*(?:OR(?:\s|--[^\n]*"
+    r"|/\*(?:[^*]|\*(?!/))*\*/)*\w+(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*)?INTO"
+    r"|REPLACE(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*INTO)"
+    r"(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*"
     r"((?:\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[A-Za-z_][\w$]*)"
-    r"(?:(?:\s|--[^\n]*|/\*.*?\*/)*\.(?:\s|--[^\n]*|/\*.*?\*/)*"
+    r"(?:(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*\."
+    r"(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*"
     r"(?:\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[A-Za-z_][\w$]*))*)"
-    r"(?:\s|--[^\n]*|/\*.*?\*/)*"
-    r"\(([^)]*)\)",  # the column list — a missing one means no match at all
+    r"(?:\s|--[^\n]*|/\*(?:[^*]|\*(?!/))*\*/)*"
+    r"\(((?:/\*(?:[^*]|\*(?!/))*\*/|--[^\n]*|\[[^\]]*\]|\"[^\"]*\"|`[^`]*`|[^)])*)\)",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -630,13 +645,16 @@ def _reject_tier_d_student_name_insert(declared: Statement) -> None:
 
     What the parse tolerates, because each was a silent bypass in an earlier draft: CTE
     prefixes (`WITH x AS (...) INSERT INTO ...` — hence the unanchored search, with its
-    string-literal trade recorded above), comments between the header's tokens, and
-    schema-qualified tables (`main.label` — the last identifier is the table). What it
-    deliberately does not: a statement with **no column list** (`INSERT INTO t DEFAULT
-    VALUES`, or a bare `VALUES (...)`) names no column and passes — there is nothing here to
-    inspect, and the schema sweep (`TC-STORE-12`'s third limb) is what holds a name-bearing
-    *column* out of Tier D in the first place. Nor does the mapping see unsegmented
-    abbreviations (`sname`) — `is_student_name_column`'s own stated limit.
+    string-literal trade recorded above), comments between the header's tokens and inside
+    the column list, and schema-qualified tables (`main.label` — the last identifier is the
+    table). What it deliberately does not: a statement with **no column list** (`INSERT
+    INTO t DEFAULT VALUES`, `INSERT INTO t SELECT ...`, or a bare `VALUES (...)`) names no
+    column and passes the header parse — the rest of that defense is structural, not
+    textual: the schema authorizer (`_refuse_tier_d_schema`) refuses to let a name-bearing
+    column be *created* through a Tier D write connection, so the tables a no-column-list
+    insert can reach are exactly those the migrations shipped, which the sweep
+    (`TC-STORE-12`'s third limb) holds clean at test time. Nor does the mapping see
+    unsegmented abbreviations (`sname`) — `is_student_name_column`'s own stated limit.
 
     Exactness is the control that makes this a guard rather than a wrapper: only a
     name-mapped column raises. Every other failure — a typo'd column, a CHECK violation, a
@@ -650,8 +668,28 @@ def _reject_tier_d_student_name_insert(declared: Statement) -> None:
     # identifier. Split on the dots after unquoting; every segment carries the quotes it had.
     segments = matched.group(1).split(".")
     table = segments[-1].strip().strip("\"'`[]")
-    columns = [part.strip().strip("\"'`[]") for part in matched.group(2).split(",")]
-    offenders = [column for column in columns if column and is_student_name_column(column)]
+    # Column extraction, in three steps, each closing a bypass review found:
+    # 1. comments out of the list (`band /* until (v2) */, student_name` — a naive
+    #    comma-split truncates at the paren and hides every column after it);
+    # 2. quoted/bracketed identifiers as atomic tokens (`"stu,dent_name"` survives a
+    #    comma-split that would otherwise shatter it into fragments);
+    # 3. a token that is not a plain bare identifier is checked on its word characters —
+    #    `"stu)dent_name"` normalizes to `student_name` and is refused. Fail closed: a
+    #    spelling that needs quoting is extraordinary on Tier D, and the ordinary cost of
+    #    a false positive here is a loud refusal, not a silent name.
+    body = re.sub(r"/\*(?:[^*]|\*(?!/))*\*/", " ", matched.group(2))
+    body = re.sub(r"--[^\n]*", " ", body)
+    tokens = re.findall(r"\"[^\"]+\"|`[^`]+`|\[[^\]]+\]|[A-Za-z_][\w$]*", body)
+    offenders: list[str] = []
+    for token in tokens:
+        bare = token.strip("\"'`[]")
+        candidate = (
+            bare
+            if re.fullmatch(r"[A-Za-z_][\w$]*", bare)
+            else re.sub(r"\W", "", bare, flags=re.UNICODE)
+        )
+        if candidate and is_student_name_column(candidate):
+            offenders.append(bare)
     if offenders:
         raise StudentNameInTierDError(
             f"Tier D refused a write naming student-name column(s) "
@@ -660,6 +698,55 @@ def _reject_tier_d_student_name_insert(declared: Statement) -> None:
             f"and is pseudonymized (CT-STORE-09), and it is the one tier purge_cohort does "
             f"not touch — a name here would outlive every retention control in the system."
         )
+
+
+# --- the Tier D schema authorizer (FR-STORE-12, CT-STORE-09) ------------------------------------
+#
+# The name guard above reads statements; this authorizer refuses to let a statement *become
+# schema* on the one tier nothing can purge. The bypass review demonstrated end-to-end:
+# `CREATE TABLE leak (student_name TEXT)` through a guarded `transaction()` — the guard only
+# reads INSERT headers — followed by `INSERT INTO leak SELECT ...`, whose no-column-list
+# shape names nothing the guard can check. Refusing DDL on Tier D's write connections closes
+# the first half of every such chain.
+#
+# Schema belongs to migrations (`NFR-STORE-04`), and migrations run on the *open* connection
+# (`_open_tier`), never on the lazily-opened write connection this authorizer guards — so
+# refusing DDL here refuses no sanctioned path. A promotion-shaped `ALTER TABLE` a test
+# wants to simulate goes through an independent `sqlite3` connection, exactly like the
+# poisoned table `TC-STORE-12` creates behind the store's back.
+
+#: Authorizer actions that create, change or drop persistent schema objects — plus
+#: `ATTACH`/`DETACH`, which would let a write connection reach a second file from inside a
+#: Tier D transaction. Resolved defensively over both of sqlite3's constant spellings, so
+#: the set degrades to what this interpreter knows rather than raising at import.
+_SCHEMA_DDL_ACTIONS: frozenset[int] = frozenset(
+    code
+    for code in (
+        getattr(sqlite3, name, getattr(sqlite3, name.removeprefix("SQLITE_"), None))
+        for name in (
+            "SQLITE_CREATE_TABLE", "SQLITE_CREATE_INDEX", "SQLITE_CREATE_TRIGGER",
+            "SQLITE_CREATE_VIEW", "SQLITE_ALTER_TABLE", "SQLITE_DROP_TABLE",
+            "SQLITE_DROP_INDEX", "SQLITE_DROP_TRIGGER", "SQLITE_DROP_VIEW",
+            "SQLITE_REINDEX", "SQLITE_ATTACH", "SQLITE_DETACH",
+        )
+    )
+    if code is not None
+)
+_SQLITE_OK = getattr(sqlite3, "SQLITE_OK", getattr(sqlite3, "OK", 0))
+_SQLITE_DENY = getattr(sqlite3, "SQLITE_DENY", getattr(sqlite3, "DENY", 1))
+
+
+def _refuse_tier_d_schema(action: int, arg1: Any, arg2: Any, db_name: Any,
+                          trigger_or_view: Any) -> int:
+    """Deny schema DDL (and cross-database ATTACH) on a Tier D write connection.
+
+    Installed via `set_authorizer` on the durable tier's write connections only — see the
+    section comment above for why. Everything that is not schema DDL is allowed: rows,
+    reads, pragmas, transactions.
+    """
+    if action in _SCHEMA_DDL_ACTIONS:
+        return _SQLITE_DENY
+    return _SQLITE_OK
 
 
 # --- the declared-statement type ---------------------------------------------------------------
@@ -1128,6 +1215,9 @@ def current_schema_version(tier: Tier) -> int:
 _SCHEMA_VERSION_TABLE_NAME = "schema_version"
 
 _SELECT_COHORT_TABLES = Statement("SELECT name FROM sqlite_master WHERE type = 'table'")
+_SELECT_COHORT_TRIGGERS_VIEWS = Statement(
+    "SELECT name, type FROM sqlite_master WHERE type IN ('trigger', 'view')"
+)
 _PRAGMA_DEFER_FOREIGN_KEYS = Statement("PRAGMA defer_foreign_keys = ON")
 _VACUUM = Statement("VACUUM")
 #: Run after the `VACUUM`, for a reason the main file alone cannot see: `VACUUM` rewrites the
@@ -1187,6 +1277,32 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "roster": Statement("DELETE FROM roster"),
     "cohort": Statement("DELETE FROM cohort"),
 }
+
+
+#: What an identifier may look like when it becomes a filename component or a key. Anything
+#: else — path separators, `..`, a leading dash, an absolute path — is refused at the
+#: operations where the value reaches the filesystem: `purge_cohort` deletes whatever file
+#: `cohort_path(cohort_id)` resolves to, so an unvalidated id is a traversal away from
+#: irreversibly purging the wrong cohort's file. Review verified the traversal both ways
+#: (`../cohorts/other` and an absolute path resetting the join). Keyed lookups pass the id
+#: to SQLite as a bound parameter and never reach a filename, so they need no rule.
+_SAFE_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\Z")
+
+
+def _validated_component(kind: str, value: str) -> str:
+    """Refuse an identifier that cannot safely become a filename (`FR-STORE-09`'s posture).
+
+    `TC-STORE-22` fixes the principle for the blob store's accessors — input validation at
+    the operation that could leave the data directory — and purge is the operation where
+    the blast radius is irreversible.
+    """
+    if not isinstance(value, str) or not _SAFE_ID.match(value):
+        raise ConfigurationProblem(
+            f"{kind} {value!r} is not a safe identifier. It becomes a filename component, "
+            f"so path separators, '..' and non-identifier characters are refused: a "
+            f"destructive operation must not resolve outside the data directory."
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -1416,9 +1532,6 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
         )
 
     path.parent.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
-    # Umask-filtering applies here as much as in open_store, and a lazily-opened tier's
-    # parent may be created before any hardening ran on it.
-    _harden_dir(path.parent)
     connection = _connect(
         path, read_only=read_only, busy_timeout_ms=busy_timeout_ms, retries=retries
     )
@@ -1447,10 +1560,13 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             # database the store was about to refuse — see `_connect`.
             _run(connection, _PRAGMA_JOURNAL_WAL, retries=retries)
             applied = _migrate(connection, tier, already, retries)
-            # Owner-only on the file this connection just created or reopened, and on the
-            # `-wal`/`-shm` siblings the WAL pragma above created (`FR-STORE-09`). Only ever
-            # on the writable path: a read-only inspection must not touch the file it is
-            # inspecting, and the too-new refusal above must leave what it refused untouched.
+            # Owner-only on the directory (umask-filtered at mkdir), on the file this
+            # connection just created or reopened, and on the `-wal`/`-shm` siblings the
+            # WAL pragma above created (`FR-STORE-09`). Only ever on the writable path,
+            # and only after the refusal: a read-only inspection must not touch the file
+            # or directory it is inspecting, and the too-new refusal must leave what it
+            # refused untouched — chmod'ing the parent there would have done both.
+            _harden_dir(path.parent)
             _harden_files(path)
 
         after = max(_applied_versions(connection, retries), default=0)
@@ -1599,8 +1715,8 @@ class Tx:
         return _run(self._connection, declared, params, retries=self._retries).fetchall()
 
 
-def _is_disk_full(error: BaseException) -> bool:
-    """Is this failure the out-of-space condition `FR-STORE-10` is about?
+def _as_disk_full(error: BaseException, *, include_os_errors: bool = True) -> DiskFullError | None:
+    """Is this the out-of-space condition `FR-STORE-10` is about — and if so, the error.
 
     Two signatures, because the same condition arrives wearing two faces: SQLite's
     `SQLITE_FULL` (`OperationalError: database or disk is full`) when the *database* layer
@@ -1611,13 +1727,50 @@ def _is_disk_full(error: BaseException) -> bool:
     one: a mis-classified error halts a process that could have kept going, and "halts the
     process" is not an outcome to hand to a loose string match. The message check is
     SQLite's own wording, not a guess at it.
+
+    `include_os_errors=False` is the **transaction body's** setting, and it is not a
+    technicality: a `transaction()` body runs arbitrary caller code, so a raw
+    `OSError(ENOSPC)` raised there can be the caller's *own* file export failing on an
+    unrelated path. Classifying that as the store's disk-full would halt the run for
+    somebody else's I/O. The body door therefore classifies only the store's own
+    `sqlite3` errors; the batch, commit and purge doors — whose failures are always this
+    module's I/O — keep `OSError(ENOSPC)` in scope.
+
+    Declared residual faces: out-of-space that surfaces as `SQLITE_CANTOPEN` ("unable to
+    open database file") or a generic `disk I/O error` is **not** classified, because
+    neither message is unique to exhaustion — the same codes fire for a wrong path or
+    permissions, and a mis-classified halt is exactly the loose string match this helper
+    refuses to be.
+
+    The returned error carries the decision-table wording and the original chained as its
+    cause. The door that saw the failure owns the state to record (the queue's failure
+    list and broken flag; purge has none) and then runs the halt hook — which is why this
+    helper only builds the error and never halts on its own.
     """
-    if isinstance(error, sqlite3.OperationalError):
-        return "database or disk is full" in str(error).lower()
-    return isinstance(error, OSError) and error.errno == errno.ENOSPC
-
-
-def _as_disk_full(error: BaseException) -> DiskFullError | None:
+    if isinstance(error, sqlite3.Error):
+        if isinstance(error, sqlite3.OperationalError) and "database or disk is full" in str(
+            error
+        ).lower():
+            failure = DiskFullError(
+                f"the write failed for want of disk space and the process halts "
+                f"(FR-STORE-10): {error}. The interrupted work was rolled back whole, so "
+                f"no result row is present without its ledger transition, and the ledger "
+                f"stands at its last commit, which is resumable (CT-STORE-05's window, "
+                f"not a new loss)."
+            )
+            failure.__cause__ = error
+            return failure
+        return None
+    if include_os_errors and isinstance(error, OSError) and error.errno == errno.ENOSPC:
+        failure = DiskFullError(
+            f"the write failed for want of disk space and the process halts (FR-STORE-10): "
+            f"{error}. The interrupted work was rolled back whole, so no result row is "
+            f"present without its ledger transition, and the ledger stands at its last "
+            f"commit, which is resumable (CT-STORE-05's window, not a new loss)."
+        )
+        failure.__cause__ = error
+        return failure
+    return None
     """`DiskFullError` for `error` — chained, with the decision-table wording — or `None`.
 
     The classification step shared by every door the requirement covers: the write queue's
@@ -1625,17 +1778,45 @@ def _as_disk_full(error: BaseException) -> DiskFullError | None:
     that saw the failure owns the state to record (the queue's failure list and broken
     flag; purge has none) and then runs the halt hook — which is why this helper only
     builds the error and never halts on its own.
+
+    `include_os_errors=False` is the **transaction body's** setting, and it is not a
+    technicality: a `transaction()` body runs arbitrary caller code, so a raw
+    `OSError(ENOSPC)` raised there can be the caller's *own* file export failing on an
+    unrelated path. Classifying that as the store's disk-full would halt the run for
+    somebody else's I/O. The body door therefore classifies only the store's own
+    `sqlite3` errors; the batch, commit and purge doors — whose failures are always this
+    module's I/O — keep `OSError(ENOSPC)` in scope.
+
+    Declared residual faces: out-of-space that surfaces as `SQLITE_CANTOPEN` ("unable to
+    open database file") or a generic `disk I/O error` is **not** classified, because
+    neither message is unique to exhaustion — the same codes fire for a wrong path or
+    permissions, and a mis-classified halt is exactly the loose string match
+    `_is_disk_full` refuses to be.
     """
-    if not _is_disk_full(error):
+    if isinstance(error, sqlite3.Error):
+        if isinstance(error, sqlite3.OperationalError) and "database or disk is full" in str(
+            error
+        ).lower():
+            failure = DiskFullError(
+                f"the write failed for want of disk space and the process halts "
+                f"(FR-STORE-10): {error}. The interrupted work was rolled back whole, so "
+                f"no result row is present without its ledger transition, and the ledger "
+                f"stands at its last commit, which is resumable (CT-STORE-05's window, "
+                f"not a new loss)."
+            )
+            failure.__cause__ = error
+            return failure
         return None
-    failure = DiskFullError(
-        f"the write failed for want of disk space and the process halts (FR-STORE-10): "
-        f"{error}. The interrupted work was rolled back whole, so no result row is "
-        f"present without its ledger transition, and the ledger stands at its last "
-        f"commit, which is resumable (CT-STORE-05's window, not a new loss)."
-    )
-    failure.__cause__ = error
-    return failure
+    if include_os_errors and isinstance(error, OSError) and error.errno == errno.ENOSPC:
+        failure = DiskFullError(
+            f"the write failed for want of disk space and the process halts (FR-STORE-10): "
+            f"{error}. The interrupted work was rolled back whole, so no result row is "
+            f"present without its ledger transition, and the ledger stands at its last "
+            f"commit, which is resumable (CT-STORE-05's window, not a new loss)."
+        )
+        failure.__cause__ = error
+        return failure
+    return None
 
 
 class WriteQueue:
@@ -1853,8 +2034,18 @@ class WriteQueue:
                 "here would commit to a tier whose handle has already been released."
             )
         with self._write_lock:
-            connection = self._connect_write()
-            _run(connection, _BEGIN, retries=self._limits.retries)
+            try:
+                # The door's entry is this module's own I/O — on first write it creates
+                # the `-wal`/`-shm` siblings — so out-of-space here classifies like every
+                # other door: without this, a full disk at BEGIN surfaced as a
+                # retryable-looking `OperationalError` from a process that kept going.
+                connection = self._connect_write()
+                _run(connection, _BEGIN, retries=self._limits.retries)
+            except BaseException as error:
+                failure = self._disk_full_failure(error)
+                if failure is not None:
+                    raise failure
+                raise
             self._holder.in_transaction = True
             try:
                 yield Tx(connection, self._limits.retries, guard=self._guard)
@@ -1867,8 +2058,10 @@ class WriteQueue:
                 # A body statement can hit the out-of-space condition as surely as a batch
                 # can, and `FR-STORE-10` names no door exemption: classify here too, so a
                 # disk-full transaction halts instead of surfacing a retryable-looking
-                # `OperationalError` from a process that kept going.
-                failure = self._disk_full_failure(error)
+                # `OperationalError` from a process that kept going. The body runs caller
+                # code, so a raw OSError from *its own* I/O is not the store's disk-full —
+                # only the store's sqlite errors classify here.
+                failure = self._disk_full_failure(error, include_os_errors=False)
                 if failure is not None:
                     raise failure
                 raise
@@ -1888,7 +2081,8 @@ class WriteQueue:
                     raise failure
                 raise
 
-    def _disk_full_failure(self, error: BaseException) -> DiskFullError | None:
+    def _disk_full_failure(self, error: BaseException, *,
+                           include_os_errors: bool = True) -> DiskFullError | None:
         """Classify `error`; on out-of-space record `DiskFullError`, break the queue, halt.
 
         The queue door of `FR-STORE-10`'s sequence — shared with `purge_cohort`, whose door
@@ -1913,7 +2107,7 @@ class WriteQueue:
         which happens only under an injected (test) hook; the production hook ends the
         process and this never returns.
         """
-        failure = _as_disk_full(error)
+        failure = _as_disk_full(error, include_os_errors=include_os_errors)
         if failure is None:
             return None
         self._failures.append(failure)
@@ -2168,6 +2362,13 @@ class SqliteTierHandle:
                 self._path, read_only=False, busy_timeout_ms=self._limits.busy_timeout_ms,
                 retries=self._limits.retries, check_same_thread=False,
             )
+            if self._opened.tier is Tier.DURABLE:
+                # Schema DDL refused at the SQLite layer (see `_refuse_tier_d_schema`): the
+                # name guard reads statements, but a CREATE TABLE through a transaction()
+                # body would create the very name-bearing column the guard's schema sweep
+                # is trusted to have excluded — and fill it with a no-column-list INSERT
+                # the guard cannot see. On the durable tier, schema belongs to migrations.
+                self._write_connection.set_authorizer(_refuse_tier_d_schema)
         return self._write_connection
 
     def _refuse_read_only(self, door: str) -> None:
@@ -2480,6 +2681,7 @@ class SqliteStore:
         committed its deletes; re-running it completes the vacuum — the tables are empty and
         the preconditions still hold.
         """
+        cohort_id = _validated_component("cohort id", cohort_id)
         if self._read_only:
             raise ReadOnlyTierError(
                 f"purge_cohort was called on a read-only store for cohort {cohort_id!r}. A "
@@ -2497,9 +2699,14 @@ class SqliteStore:
             )
 
         path = self.cohort_path(cohort_id)
-        handle = self._handles.pop((Tier.COHORT, cohort_id, False), None)
+        # Close **before** evicting: if the close raises (a recorded batch failure
+        # re-raised by queue.close()), the handle stays cached and reachable — for
+        # `store.close()`'s cleanup and for the caller — instead of becoming an unreachable
+        # object holding open connections on the very file a retry will need to delete.
+        handle = self._handles.get((Tier.COHORT, cohort_id, False))
         if handle is not None:
             handle.close()  # flush queued writes; a failure propagates — nothing deleted
+            self._handles.pop((Tier.COHORT, cohort_id, False), None)
 
         rows: dict[str, int] = {}
         vacuum_ms = 0.0
@@ -2525,6 +2732,25 @@ class SqliteStore:
                             connection, _SELECT_COHORT_TABLES, retries=self._retries
                         ).fetchall()
                     }
+                    # Triggers and views are refused, not swept: an AFTER DELETE trigger
+                    # would fire on this very sweep's DELETEs and repopulate tables the
+                    # report is about to claim cleared — student text surviving a
+                    # "successful" purge. Views are refused for the same fail-closed
+                    # reason. (Indexes stay: they are SQLite-managed structure, emptied
+                    # with their tables, and a legitimate performance object.)
+                    objects = _run(
+                        connection, _SELECT_COHORT_TRIGGERS_VIEWS, retries=self._retries
+                    ).fetchall()
+                    if objects:
+                        raise ConfigurationProblem(
+                            f"{path} declares trigger(s) or view(s) this purge refuses: "
+                            f"{sorted((str(row[0]), str(row[1])) for row in objects)}. A "
+                            "trigger fires on the sweep's own DELETEs and can repopulate "
+                            "tables the report would claim cleared — student text "
+                            "surviving a purge. Schema belongs to migrations "
+                            "(NFR-STORE-04); nothing here should declare triggers. "
+                            "Nothing was removed."
+                        )
                     unknown = sorted(
                         table for table in found
                         if not table.startswith("sqlite_")
@@ -2800,6 +3026,7 @@ STATEMENTS: Mapping[str, Statement] = {
     "rollback": _ROLLBACK,
     # -- purge (FR-STORE-07) --------------------------------------------------------------------
     "select_cohort_tables": _SELECT_COHORT_TABLES,
+    "select_cohort_triggers_views": _SELECT_COHORT_TRIGGERS_VIEWS,
     "vacuum": _VACUUM,
     "wal_checkpoint_truncate": _PRAGMA_WAL_CHECKPOINT_TRUNCATE,
     "table_info_audit_record": _PURGE_TABLE_INFO["audit_record"],
