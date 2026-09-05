@@ -11,9 +11,9 @@ Nothing else enforces this. Held-out-ness decays silently: someone copies a stub
 into the dev set to reproduce a bug, the conformance number quietly starts measuring training
 data, and no test fails. This one does.
 
-**Written ahead of the corpora** (issue #2, TS-01, which owns `F-FROZEN` and `F-DEV`).
-Expected to fail with `NotImplementedYet` until they land. Remove the `writtenahead` marker —
-not the test — when #2 closes.
+Was written ahead of the corpora (issue #2, TS-01, which owns `F-FROZEN` and `F-DEV`). #2 has
+landed, so the `writtenahead` marker is gone and this test runs in `TEST_CMD` — the marker was
+removed, never the test.
 """
 
 from __future__ import annotations
@@ -22,11 +22,7 @@ import hashlib
 import json
 from pathlib import Path
 
-import pytest
-
 from tests.support.impl import NotImplementedYet, require_path
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#2"
 FROZEN_MANIFEST = Path("fixtures/F-FROZEN/manifest.json")

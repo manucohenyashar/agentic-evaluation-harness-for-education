@@ -1,0 +1,40 @@
+{
+  "corpus": "F-STATS",
+  "version": "1",
+  "seed": null,
+  "generator": "harness.corpora.stats",
+  "description": "Label sets whose kappa, QWK, ordinal alpha, entropy and interior rate were worked out by hand, including every degenerate case NFR-STATS-01 names.",
+  "note": "Undefined figures are null with a stated reason, never 0 (CT-STATS-03).",
+  "submissions": [
+    {
+      "id": "STATS-SINGLE-LABEL",
+      "path": "cases/STATS-SINGLE-LABEL.json",
+      "content_hash": "sha256:5a8b2c44cbeeec8ac937ca16779d97ed58e1ab1bd6add49d87818fafafd28bb8"
+    },
+    {
+      "id": "STATS-UNANIMOUS-ONE-CATEGORY",
+      "path": "cases/STATS-UNANIMOUS-ONE-CATEGORY.json",
+      "content_hash": "sha256:8e6124c2a8f71917d839a87a859c8e8d38bbd8e843567d15d5deec41c4c961eb"
+    },
+    {
+      "id": "STATS-UNANIMOUS-TWO-CATEGORIES",
+      "path": "cases/STATS-UNANIMOUS-TWO-CATEGORIES.json",
+      "content_hash": "sha256:0105dd953af791cab2850380549852b1ce10515b9f3cf56c12a7b4032d21a8f6"
+    },
+    {
+      "id": "STATS-TWO-BAND-95-BASE-RATE",
+      "path": "cases/STATS-TWO-BAND-95-BASE-RATE.json",
+      "content_hash": "sha256:993275b3c96bf996828f6c8dc854ca30b09e5d7c7bc9faa2aa350122fa5e8515"
+    },
+    {
+      "id": "STATS-EMPTY-BLIND-POPULATION",
+      "path": "cases/STATS-EMPTY-BLIND-POPULATION.json",
+      "content_hash": "sha256:b4a3dabf7877e762efcceefa9e024a602df2cda40fd0eeec7b6e7f78edf9d9bf"
+    },
+    {
+      "id": "STATS-MAXIMAL-DISAGREEMENT",
+      "path": "cases/STATS-MAXIMAL-DISAGREEMENT.json",
+      "content_hash": "sha256:d724772832cd475449b91e907628d7f33527886c36258d1f0d5001f4cb2f04be"
+    }
+  ]
+}

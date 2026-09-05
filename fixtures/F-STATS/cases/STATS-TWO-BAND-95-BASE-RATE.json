@@ -1,0 +1,35 @@
+{
+  "case_id": "STATS-TWO-BAND-95-BASE-RATE",
+  "description": "A two-band criterion where 94-95% of labels are `met`. Observed agreement is 0.91 and κ is 7/52 — the base-rate paradox NFR-STATS-01's two-band case exists to pin down.",
+  "scale": "two_band",
+  "raters": 2,
+  "units": 100,
+  "cross_tabulation": {
+    "1,1": 90,
+    "1,0": 5,
+    "0,1": 4,
+    "0,0": 1
+  },
+  "figures": {
+    "cohens_kappa": {
+      "value": 0.1346153846153846,
+      "exact": "7/52"
+    },
+    "quadratic_weighted_kappa": {
+      "value": 0.1346153846153846,
+      "exact": "7/52"
+    },
+    "ordinal_alpha": {
+      "value": 0.13852813852813853,
+      "exact": "32/231"
+    },
+    "entropy_bits": {
+      "value": 0.30726835986075973,
+      "closed_form": "-(0.945*log2(0.945) + 0.055*log2(0.055))"
+    },
+    "interior_rate": {
+      "value": 0.0,
+      "exact": "0/1"
+    }
+  }
+}

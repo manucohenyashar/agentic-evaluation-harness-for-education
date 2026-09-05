@@ -1,0 +1,108 @@
+{
+  "corpus": "F-GRAPHIC",
+  "version": "1",
+  "seed": null,
+  "generator": "harness.corpora.graphic",
+  "description": "One page per FR-INGEST-10 element kind, plus the page whose correct description is easily confusable with a verdict (FR-INGEST-11).",
+  "element_kinds": [
+    "free_body_diagram",
+    "geometry_construction",
+    "graph_or_plot",
+    "table",
+    "label_or_annotation",
+    "spatial_relation"
+  ],
+  "evaluative_terms": [
+    "correct",
+    "valid",
+    "appropriate",
+    "properly",
+    "as expected",
+    "should be"
+  ],
+  "submissions": [
+    {
+      "id": "GR-01-free-body-diagram",
+      "path": "pages/GR-01-free-body-diagram.md",
+      "content_hash": "sha256:195b2b6bfbec364030de382e10876e947225f6f14f95d55cc45e21e80a13e1be",
+      "element_kind": "free_body_diagram",
+      "question_id": "Q1",
+      "required_fields": [
+        "arrow_label",
+        "arrow_origin",
+        "arrow_direction"
+      ]
+    },
+    {
+      "id": "GR-02-geometry-construction",
+      "path": "pages/GR-02-geometry-construction.md",
+      "content_hash": "sha256:9b835ba8f609754c825b349fc3acffefa07235d915842466dddb19d33da7bdd6",
+      "element_kind": "geometry_construction",
+      "question_id": "Q2",
+      "required_fields": [
+        "named_points",
+        "marked_relations"
+      ]
+    },
+    {
+      "id": "GR-03-graph-or-plot",
+      "path": "pages/GR-03-graph-or-plot.md",
+      "content_hash": "sha256:473fdf7f520b950d95e87c8ee4d0cc0e94b8e50efc30e4a5fd754ae60a9d53f0",
+      "element_kind": "graph_or_plot",
+      "question_id": "Q3",
+      "required_fields": [
+        "axis_labels",
+        "units",
+        "intercepts",
+        "turning_points"
+      ]
+    },
+    {
+      "id": "GR-04-table",
+      "path": "pages/GR-04-table.md",
+      "content_hash": "sha256:bba6688201f0a137e5c10dafca7d2e6eb5a76ffaa598f4e8cd6d280397a776d9",
+      "element_kind": "table",
+      "question_id": "Q4",
+      "required_fields": [
+        "markdown_table"
+      ]
+    },
+    {
+      "id": "GR-05-label-or-annotation",
+      "path": "pages/GR-05-label-or-annotation.md",
+      "content_hash": "sha256:082d301848ef2fcf55c0ea4ddb23ef76cb0c6e74b8cf2b61ed2cabd52be7bf49",
+      "element_kind": "label_or_annotation",
+      "question_id": "Q1",
+      "required_fields": [
+        "attachment_object",
+        "attachment_means"
+      ]
+    },
+    {
+      "id": "GR-06-spatial-relation",
+      "path": "pages/GR-06-spatial-relation.md",
+      "content_hash": "sha256:9750b7f721c39f9efa7be2b332acad6b490bd89a45880dfafc2742c087e7635f",
+      "element_kind": "spatial_relation",
+      "question_id": "Q2",
+      "required_fields": [
+        "explicit_relation_statement"
+      ]
+    },
+    {
+      "id": "GR-07-confusable-with-a-verdict",
+      "path": "pages/GR-07-confusable-with-a-verdict.md",
+      "content_hash": "sha256:9622170fc9f510e73f74fa1cc6dfa4fb25475a49e0670c9290cb73a6d0b720e8",
+      "element_kind": "free_body_diagram",
+      "question_id": "Q1",
+      "required_fields": [
+        "arrow_label",
+        "arrow_origin",
+        "arrow_direction"
+      ],
+      "confusable_with_verdict": true,
+      "requirement": "FR-INGEST-11",
+      "acceptable_description": "An arrow labelled N leaves the centre of the crate and points vertically upward, perpendicular to the horizontal ground rather than to the ramp surface. The label N is circled.",
+      "evaluative_description": "An arrow labelled N leaves the centre of the crate but is not drawn properly: it should be perpendicular to the ramp surface, so the normal force is not correct here."
+    }
+  ]
+}

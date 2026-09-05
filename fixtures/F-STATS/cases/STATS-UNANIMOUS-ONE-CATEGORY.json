@@ -1,0 +1,134 @@
+{
+  "case_id": "STATS-UNANIMOUS-ONE-CATEGORY",
+  "description": "Two raters agree on every unit and use a single category. Expected agreement is 1, so κ is 0/0 — the case where returning 0.0 reports perfect agreement as none.",
+  "scale": "open_four_band",
+  "raters": 2,
+  "units": 10,
+  "labels": [
+    {
+      "unit": "u1",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u1",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u2",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u2",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u3",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u3",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u4",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u4",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u5",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u5",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u6",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u6",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u7",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u7",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u8",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u8",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u9",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u9",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u10",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u10",
+      "rater": "r2",
+      "ordinal": 3
+    }
+  ],
+  "figures": {
+    "cohens_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "expected agreement is 1, so κ = (1-1)/(1-1) is 0/0"
+    },
+    "quadratic_weighted_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "expected disagreement is 0, so QWK = 1 - 0/0 is undefined"
+    },
+    "ordinal_alpha": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "D_e = 0 with one category in use, so α = 1 - 0/0 is undefined"
+    },
+    "entropy_bits": {
+      "value": 0.0,
+      "closed_form": "-1*log2(1)"
+    },
+    "interior_rate": {
+      "value": 0.0,
+      "exact": "0/1"
+    }
+  }
+}
