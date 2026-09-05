@@ -294,11 +294,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{STORE_MODULE}:blob_store_stats,{STORE_MODULE}:STATEMENTS",
         ("tests/artifact/test_tc_store_15_no_search_surface.py",),
     ),
-    "#13 StudentNameInTierDError": (
-        "symbol",
-        f"{STORE_MODULE}:StudentNameInTierDError",
-        ("tests/integration/store/test_tier_d_pseudonymity.py",),
-    ),
+    # The `"#13 StudentNameInTierDError"` entry that stood here is gone: #13 landed the error,
+    # the Tier D write guard (`FR-STORE-12`) and the `STATEMENTS` registry (`FR-STORE-08`), so
+    # `TC-STORE-12` lost the marker and runs in the integration tier again -- out of
+    # `TEST_CMD` on its own `integration` marker, back in `pytest -q`, the honest full picture.
+    # Two fixture adaptations came with it (the #177 situation: the landing disproved the
+    # fixture, not the assertions) -- limb 2 now inserts into the landed `label` table rather
+    # than creating an `audit_record` that collided with migration 001, and `schema_version`
+    # is excluded from the sweep as bookkeeping. See the case's docstring.
+    # `TC-STORE-15` stays behind under the `symbols` entry above: #13 landed `STATEMENTS`, so
+    # the conjunction's #13 half now resolves, but `blob_store_stats` is still #12's and the
+    # `symbols` kind resolves only when both do -- exactly the split the conjunction exists for.
     # --- TS-01 (#2), the six §6.9 baselines --------------------------------------------------
     #
     # The `#2` entry that stood here -- `path`, `fixtures/F-FROZEN/manifest.json` -- is gone

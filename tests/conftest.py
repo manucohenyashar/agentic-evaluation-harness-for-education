@@ -100,9 +100,12 @@ def store_spy() -> StoreSpy:
 def tmp_data_dir(tmp_path: Path) -> Path:
     """`HARNESS_DATA_DIR` for a single test.
 
-    Per-test and outside any world-writable temp path, which is what `FR-STORE-09` requires
-    the real store to insist on: it raises `InsecureLocationError` for a data directory
-    inside one.
+    Per-test. Safe against `FR-STORE-09`'s check on the platform this suite runs on:
+    Windows `%TEMP%` is ACL-scoped to the user, so no world-writable ancestor exists for
+    the store's POSIX-mode check to find. On POSIX the same fixture would sit inside
+    world-writable `/tmp` and every store case would red — which is the check working, not
+    the fixture breaking; `TC-STORE-10`'s insecure-location probes drive the check's
+    injectable `os_name`/`stat_fn` seams instead of relying on host paths.
     """
     data_dir = tmp_path / "data"
     (data_dir / "packages").mkdir(parents=True)
