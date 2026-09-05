@@ -47,6 +47,29 @@ FUZZ_EXAMPLES = 500
 LEDGER_ROW = "SELECT status FROM work_unit WHERE work_id = :work_id"
 RESULT_ROW = "SELECT count(*) AS n FROM result WHERE work_id = :work_id"
 
+#: The two writes each transaction makes, as declared statements.
+#:
+#: **This is a repair, made by #11 and reported against TS-56 (#149).** The case called
+#: `tx.write_result(work_id, payload=...)` and `tx.set_status(work_id, "done")` -- domain methods
+#: on `Tx` that cannot be implemented, because design 3.3 says `M-STORE` "does not own any schema
+#: meaning: table semantics belong to the module that owns the tier", and the ledger is
+#: `M-ORCH`'s. `Tx.execute(statement, **params)` is the interface a transaction body actually has,
+#: and it is what every other merged case uses. `result` likewise did not exist: #10's cohort
+#: migration creates `work_unit` but no result table, so `RESULT_ROW` read a table nothing made.
+#: The property, the abort and the both-or-neither invariant are untouched.
+RESULT_DDL = (
+    "CREATE TABLE IF NOT EXISTS result ("
+    "  work_id TEXT NOT NULL PRIMARY KEY REFERENCES work_unit(work_id),"
+    "  payload BLOB NOT NULL"
+    ")"
+)
+SEED_UNIT = (
+    "INSERT OR IGNORE INTO work_unit (work_id, stage, status) "
+    "VALUES (:work_id, 'judge', 'pending')"
+)
+WRITE_RESULT = "INSERT OR REPLACE INTO result (work_id, payload) VALUES (:work_id, :payload)"
+SET_STATUS = "UPDATE work_unit SET status = :status WHERE work_id = :work_id"
+
 
 # --- FR-STORE-06: the content-addressed blob store ----------------------------------------------
 
@@ -109,7 +132,6 @@ class _InjectedCrash(RuntimeError):
     """Raised inside a transaction body to abort it. Never escapes the test."""
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(write_interleavings())
 def test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent(
@@ -143,21 +165,30 @@ def test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent(
     handle = open_store(tmp_data_dir).cohort("c-fuzz-07")
     touched = set()
 
+    # The ledger rows exist before the property runs, and outside the transactions under test.
+    # `work_unit.status` is `NOT NULL` with a CHECK, so a transaction that only ever UPDATEs is
+    # the shape the invariant is about: the row a resuming M-ORCH reads either says 'done' with a
+    # result beside it, or does not.
+    with handle.transaction() as tx:
+        tx.execute(RESULT_DDL)
+        for unit_id, _first_write, _outcome in interleaving:
+            tx.execute(SEED_UNIT, work_id=f"w-{unit_id}")
+
     for unit_id, first_write, outcome in interleaving:
         work_id = f"w-{unit_id}"
         touched.add(work_id)
         try:
             with handle.transaction() as tx:
                 if first_write == "result":
-                    tx.write_result(work_id, payload=b"result")
+                    tx.execute(WRITE_RESULT, work_id=work_id, payload=b"result")
                     if outcome == "abort":
                         raise _InjectedCrash(work_id)
-                    tx.set_status(work_id, "done")
+                    tx.execute(SET_STATUS, work_id=work_id, status="done")
                 else:
-                    tx.set_status(work_id, "done")
+                    tx.execute(SET_STATUS, work_id=work_id, status="done")
                     if outcome == "abort":
                         raise _InjectedCrash(work_id)
-                    tx.write_result(work_id, payload=b"result")
+                    tx.execute(WRITE_RESULT, work_id=work_id, payload=b"result")
         except _InjectedCrash:
             pass  # the abort is the input, not a failure
 

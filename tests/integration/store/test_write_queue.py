@@ -31,7 +31,7 @@ import pytest
 
 from tests.support.store_api import open_store, statement, store_metrics
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#11"
 
@@ -96,7 +96,7 @@ def _is_busy_error(error: BaseException) -> bool:
     return any(marker in text for marker in BUSY_MARKERS)
 
 
-def _drain(store, handle) -> int:
+def _drain(store) -> int:
     """Wait, bounded, for the write queue to reach zero pending rows; return what it reached.
 
     `CT-STORE-02` makes `enqueue_write` asynchronous — "it returns before the row is durable" —

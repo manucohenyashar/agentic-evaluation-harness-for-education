@@ -211,14 +211,17 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #:
 #: **One entry, and that is the design rather than a coincidence.** `M-STORE` (#10) routes every
 #: statement through a single `_run()` helper, so this list stays something a reviewer reads
-#: rather than scrolls. What is passed there is `declared.sql` — an attribute of a declared
+#: rather than scrolls. #11 added the write queue, its batch `BEGIN`/`COMMIT`/`ROLLBACK` and
+#: `Tx.execute`, and the count is still one: every one of them goes through `_run`. The line
+#: number moved (710 -> 778) because the knobs `FR-STORE-04` and `FR-STORE-05` need were declared
+#: above it, which is the re-read this constant exists to force. What is passed there is `declared.sql` — an attribute of a declared
 #: `Statement`, which is the shape `sql_scan._statement_problem` sanctions — never the parameter,
 #: which would mean "whatever the caller passed reaches SQLite unchecked".
 #:
 #: The line number is part of the entry, so an edit above the site fails this case. That is
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
-KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:710"})
+KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:778"})
 
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
