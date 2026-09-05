@@ -120,12 +120,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # that raises), so either would resolve immediately -- the same Protocol trap TS-56 measured.
     # Checked: neither `ContentAddressedBlobStore` nor `WriteQueue` appears anywhere in
     # `detailed-design.md`, `test-plan.md` or `src/`.
-    "#12": (
-        "symbol",
-        f"{STORE_MODULE}:ContentAddressedBlobStore",
-        ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
-         "::test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory",),
-    ),
+    # The `"#12"` entry that stood here -- `symbol`, `aeh.store:ContentAddressedBlobStore` --
+    # is gone because #12 landed it, and `FUZZ-07`'s blob property is unmarked and in the gate.
     # The `"#11"` entry that stood here -- `symbol`, `aeh.store:WriteQueue` -- is gone because
     # #11 landed it. Its case is unmarked and inside `TEST_CMD`, and a resolved blocker left in
     # this dict fails the gate test by design.
@@ -284,16 +280,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `FUZZ-07`'s property rejoined the gate, which is why it moved 758 -> 759 rather than by six.
     # `TC-STORE-15` stayed behind under the `symbols` entry below, because `Store.blobs` and
     # `STATEMENTS` are still #12's and #13's -- exactly the split the conjunction kind exists for.
-    "#12 blob_store_stats": (
-        "symbol",
-        f"{STORE_MODULE}:blob_store_stats",
-        ("tests/integration/store/test_blob_store.py",),
-    ),
-    "#12 and #13 (Store.blobs + STATEMENTS)": (
-        "symbols",
-        f"{STORE_MODULE}:blob_store_stats,{STORE_MODULE}:STATEMENTS",
-        ("tests/artifact/test_tc_store_15_no_search_surface.py",),
-    ),
+    # …and `"#12 blob_store_stats"` with it: `TC-STORE-09` is unmarked and runs. It carries
+    # `pytest.mark.integration`, so it rejoined `pytest -q` rather than the fast tier -- the
+    # distinction the `"#11 store_metrics"` note above spells out.
+    #
+    # **`TC-STORE-15` stayed behind, and that is the conjunction working.** Its entry below names
+    # `blob_store_stats` *and* `STATEMENTS`; the first now resolves and the second does not, so
+    # `all()` is False and the marker stays on. Under the single-symbol key this file carried
+    # before #177 it would have fired here and told a reader to unmark a P0 case that still
+    # cannot run. First live exercise of the `symbols` kind, and it did the job.
+    # …and the `"#12 and #13"` conjunction with them. Both halves landed in #12 —
+    # `blob_store_stats` because the blob store is #12's, and `STATEMENTS` because #12's own
+    # write needed the declared-statement registry `tests/support/sql_scan.py` sanctions — so
+    # `TC-STORE-15` is unmarked and back in the gate. The `symbols` kind was added for this one
+    # case; it held the marker on through #11, which either single-symbol key would not have.
     "#13 StudentNameInTierDError": (
         "symbol",
         f"{STORE_MODULE}:StudentNameInTierDError",

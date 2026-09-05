@@ -24,7 +24,7 @@ import pytest
 from tests.support.store_api import blob_store_stats, open_store, statement
 from tests.support.store_vocabulary import table_names
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#12"
 
