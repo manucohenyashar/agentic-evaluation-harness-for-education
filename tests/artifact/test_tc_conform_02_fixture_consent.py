@@ -38,6 +38,7 @@ import pytest
 from tests.support import corpora
 from tests.support.adversarial import (
     COMMITTABLE_CONSENT_CLASSES,
+    COMMITTED_MEDIA_DECLARING_CORPORA,
     COMMITTED_SUBMISSION_CORPORA,
 )
 from tests.support.conf_builders import hosted_cfg
@@ -45,7 +46,7 @@ from tests.support.conf_builders import hosted_cfg
 CASE = "TC-CONFORM-02"
 
 
-@pytest.mark.parametrize("corpus_name", COMMITTED_SUBMISSION_CORPORA)
+@pytest.mark.parametrize("corpus_name", COMMITTED_MEDIA_DECLARING_CORPORA)
 def test_tc_conform_02_every_committed_fixture_declares_a_permitted_consent_class(corpus_name):
     """The manifest assertion, per corpus and per member.
 
@@ -87,7 +88,7 @@ def test_tc_conform_02_the_documents_themselves_declare_their_consent_class():
     submission changing — which is the relabelling `FR-CONF-08`'s audit record exists to make
     impossible on the other side of the boundary.
     """
-    for corpus_name in COMMITTED_SUBMISSION_CORPORA:
+    for corpus_name in COMMITTED_MEDIA_DECLARING_CORPORA:
         corpus = corpora.load(corpus_name)
         for member in corpus.members:
             declared = member.attributes["consent_class"]

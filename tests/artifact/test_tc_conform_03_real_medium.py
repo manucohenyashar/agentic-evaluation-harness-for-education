@@ -43,7 +43,7 @@ import pytest
 
 from harness.corpora import hand
 from tests.support import corpora
-from tests.support.adversarial import COMMITTED_SUBMISSION_CORPORA
+from tests.support.adversarial import COMMITTED_MEDIA_DECLARING_CORPORA
 
 CASE = "TC-CONFORM-03"
 
@@ -85,7 +85,7 @@ def test_tc_conform_03_no_committed_corpus_claims_to_be_a_real_medium():
     go green and nobody looks again. `synthetic_markdown` is the third option: present, checkable
     and true.
     """
-    for corpus_name in COMMITTED_SUBMISSION_CORPORA:
+    for corpus_name in COMMITTED_MEDIA_DECLARING_CORPORA:
         corpus = corpora.load(corpus_name)
         for member in corpus.members:
             declared = member.attributes.get("media_kind")

@@ -105,6 +105,21 @@ COMMITTED_SUBMISSION_CORPORA: tuple[str, ...] = (
     "F-ADV-INJ",
 )
 
+#: The committed corpora that hold *pages* rather than submissions: no `student_ref`, no reference
+#: bands, and so outside the submission sweeps above. `F-GRAPHIC` is the one, and it is the corpus
+#: most likely to be relabelled a real medium later — it stands in for page images. It carries the
+#: same `consent_class` and `media_kind` declarations for exactly that reason.
+COMMITTED_PAGE_CORPORA: tuple[str, ...] = ("F-GRAPHIC",)
+
+#: Every committed corpus whose members declare a medium and a consent class. Two lists joined
+#: rather than one flat list, because the two groups are swept for different things — a page has no
+#: `student_ref` to check — and a single list would have to be filtered at each use, which is how a
+#: corpus quietly falls out of one sweep while looking covered by the other.
+COMMITTED_MEDIA_DECLARING_CORPORA: tuple[str, ...] = (
+    *COMMITTED_SUBMISSION_CORPORA,
+    *COMMITTED_PAGE_CORPORA,
+)
+
 def missing_phrases(row_text: str, phrases: Iterable[str]) -> list[str]:
     """The phrases absent from a §4.4 row.
 

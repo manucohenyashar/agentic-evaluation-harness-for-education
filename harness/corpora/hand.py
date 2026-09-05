@@ -24,7 +24,7 @@ lists `F-HAND` consent as an **external prerequisite to arrange, not to discover
 failure mode is a release that ships having measured transcription on clean typed text. The
 registry makes the absence explicit and checkable: the composition requirement is written down,
 the environment knob that points at the real corpus is named, and
-`tests/integration/conform/test_tc_conform_03_real_medium.py` reads both.
+`tests/artifact/test_tc_conform_03_real_medium.py` reads both.
 
 **What is deliberately *not* here.** No synthetic corpus in this repository carries
 `media_kind: "scanned_handwriting"`. Stamping that attribute onto generated Markdown would make
@@ -32,6 +32,21 @@ the environment knob that points at the real corpus is named, and
 the measurement §6.11.18 says the clause exists to prevent. Every synthetic submission declares
 `media_kind: "synthetic_markdown"` instead, and the honest consequence is that the real-medium
 half of `FR-CONFORM-03` is unmet until the consent arrangement lands.
+
+The consequence lands on #133, and it is stated here rather than left to be found
+-------------------------------------------------------------------------------
+TS-75's `test_tc_conform_c02_the_corpus_carries_handwriting_spanning_the_legibility_range_and_
+mixed_format` requires `load_fixture_set("v1").submissions` to contain `scanned_handwriting` and
+`mixed_format`. It is `writtenahead`, keyed on **#133**. Given the paragraph above, that case
+**cannot go green in this repository** whichever way #133 composes the fixture set: from committed
+`F-FROZEN` it contradicts the sweep in `tests/artifact/test_tc_conform_03_real_medium.py`, and from
+`F-FROZEN + F-HAND` — which is what `FR-CONFORM-03` actually describes — the corpus is not here.
+
+So when #133 closes, `tests/unit/harness/test_harness.py` will correctly instruct somebody to
+unmark a test that then fails on an unarranged prerequisite. The right resolution is #133's, not
+this module's: either it arrives after the consent arrangement, or it declares the real-medium tier
+absent and the TS-75 case is re-keyed on that arrangement rather than on a symbol. Reported on
+TS-02's PR for `/plan-to-issues` rather than pre-empted here.
 """
 
 from __future__ import annotations

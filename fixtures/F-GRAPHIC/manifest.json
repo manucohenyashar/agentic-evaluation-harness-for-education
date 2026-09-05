@@ -4,8 +4,9 @@
   "seed": null,
   "generator": "harness.corpora.graphic",
   "description": "One page per FR-INGEST-10 element kind, plus the page whose correct description is easily confusable with a verdict (FR-INGEST-11).",
-  "set_content_hash": "sha256:6876c6985ed6ee5699543af890972ca54ac872a5f877449d3c7ddfeddb854542",
-  "fixture_set_id": "F-GRAPHIC@1+sha256:6876c6985ed6ee5699543af890972ca54ac872a5f877449d3c7ddfeddb854542",
+  "set_content_hash": "sha256:fbc1800ec93983d9b6df795aae33fd2e1e9b75df26a7c0d8f1638c92155dc53d",
+  "fixture_set_id": "F-GRAPHIC@1+sha256:fbc1800ec93983d9b6df795aae33fd2e1e9b75df26a7c0d8f1638c92155dc53d",
+  "consent_class": "synthetic",
   "element_kinds": [
     "free_body_diagram",
     "geometry_construction",
@@ -26,9 +27,11 @@
     {
       "id": "GR-01-free-body-diagram",
       "path": "pages/GR-01-free-body-diagram.md",
-      "content_hash": "sha256:195b2b6bfbec364030de382e10876e947225f6f14f95d55cc45e21e80a13e1be",
+      "content_hash": "sha256:fa21db55280bde53909f6e624b433f61086e5215d4ad507616de4beb2e2dbd70",
       "element_kind": "free_body_diagram",
       "question_id": "Q1",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "arrow_label",
         "arrow_origin",
@@ -38,9 +41,11 @@
     {
       "id": "GR-02-geometry-construction",
       "path": "pages/GR-02-geometry-construction.md",
-      "content_hash": "sha256:9b835ba8f609754c825b349fc3acffefa07235d915842466dddb19d33da7bdd6",
+      "content_hash": "sha256:9188c5fcb44297c6dbd3303900087c2d3fa46bb597f816f55f0ea7ac7b54b1fe",
       "element_kind": "geometry_construction",
       "question_id": "Q2",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "named_points",
         "marked_relations"
@@ -49,9 +54,11 @@
     {
       "id": "GR-03-graph-or-plot",
       "path": "pages/GR-03-graph-or-plot.md",
-      "content_hash": "sha256:473fdf7f520b950d95e87c8ee4d0cc0e94b8e50efc30e4a5fd754ae60a9d53f0",
+      "content_hash": "sha256:7c84ec7674fa4018746fc7bf40c0376ab972eaae9aca586f8548400a9d9308a5",
       "element_kind": "graph_or_plot",
       "question_id": "Q3",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "axis_labels",
         "units",
@@ -62,9 +69,11 @@
     {
       "id": "GR-04-table",
       "path": "pages/GR-04-table.md",
-      "content_hash": "sha256:bba6688201f0a137e5c10dafca7d2e6eb5a76ffaa598f4e8cd6d280397a776d9",
+      "content_hash": "sha256:53a9a26018e6d07b8a31655285a60f0aaac5a6e6b3aac73f7fc7b3c72efabd80",
       "element_kind": "table",
       "question_id": "Q4",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "markdown_table"
       ]
@@ -72,9 +81,11 @@
     {
       "id": "GR-05-label-or-annotation",
       "path": "pages/GR-05-label-or-annotation.md",
-      "content_hash": "sha256:082d301848ef2fcf55c0ea4ddb23ef76cb0c6e74b8cf2b61ed2cabd52be7bf49",
+      "content_hash": "sha256:8d340b92657ed7d6d40dbd4297b63d92d8fcc2c26f4abee056af776a59cd479d",
       "element_kind": "label_or_annotation",
       "question_id": "Q1",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "attachment_object",
         "attachment_means"
@@ -83,9 +94,11 @@
     {
       "id": "GR-06-spatial-relation",
       "path": "pages/GR-06-spatial-relation.md",
-      "content_hash": "sha256:9750b7f721c39f9efa7be2b332acad6b490bd89a45880dfafc2742c087e7635f",
+      "content_hash": "sha256:d89f2378fb7e3ae7e135d07c8767762e4b1d4183803a0503df44b6f08298476a",
       "element_kind": "spatial_relation",
       "question_id": "Q2",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "explicit_relation_statement"
       ]
@@ -93,9 +106,11 @@
     {
       "id": "GR-07-confusable-with-a-verdict",
       "path": "pages/GR-07-confusable-with-a-verdict.md",
-      "content_hash": "sha256:9622170fc9f510e73f74fa1cc6dfa4fb25475a49e0670c9290cb73a6d0b720e8",
+      "content_hash": "sha256:75e77a920600317d3a2bc4c0a4cc436d1558233434e2efae6cdfeac6bc9d2439",
       "element_kind": "free_body_diagram",
       "question_id": "Q1",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "required_fields": [
         "arrow_label",
         "arrow_origin",

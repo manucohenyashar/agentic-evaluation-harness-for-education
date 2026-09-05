@@ -17,7 +17,7 @@ and the differential is only sound if the two halves really are identical but fo
 
 So that identity is a property of the **generator**, not of anyone's care: both twins render from
 one band profile through one call, and the injected half is the benign half with a payload block
-spliced in at a recorded line index. `tests/regression/test_adversarial_corpora.py` reconstructs
+spliced in at a recorded line index. `tests/artifact/test_tc_conform_09_adversarial_corpora.py` reconstructs
 the benign document from the injected one and asserts byte equality, which is what stops the pair
 drifting apart over time into two documents that merely look similar.
 

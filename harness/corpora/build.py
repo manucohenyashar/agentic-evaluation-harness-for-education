@@ -104,12 +104,19 @@ def _build_graphic(root: Path) -> None:
             as_document(
                 f"# {page.page_id}\n\n"
                 f"element_kind: {page.element_kind}\n"
-                f"question_id: {page.question_id}\n\n"
+                f"question_id: {page.question_id}\n"
+                f"consent_class: synthetic\n\n"
                 f"{page.page_source}"
             ),
             {
                 "element_kind": page.element_kind,
                 "question_id": page.question_id,
+                # The same two declarations every other committed corpus carries. F-GRAPHIC is
+                # the corpus most likely to be mislabelled a real medium later — it stands in for
+                # page *images* — and review found it sitting outside both sweeps, so neither the
+                # consent check nor the media check would have noticed.
+                "consent_class": "synthetic",
+                "media_kind": hand.SYNTHETIC_MEDIA_KIND,
                 "required_fields": list(page.required_fields),
                 **page.extra,
             },
@@ -130,6 +137,7 @@ def _build_graphic(root: Path) -> None:
             ),
             entries=entries,
             extra={
+                "consent_class": "synthetic",
                 "element_kinds": list(graphic.ELEMENT_KINDS),
                 "evaluative_terms": list(graphic.EVALUATIVE_TERMS),
             },

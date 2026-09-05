@@ -366,7 +366,13 @@ def _zero_page() -> bytes:
 
 
 def _truncated() -> bytes:
-    """A valid document cut mid-object, so the xref offsets point past the end of the file.
+    """A valid document cut mid-object: the file ends part-way through object 5.
+
+    What that leaves is a header, some complete objects, one half-written one, and then nothing —
+    **no xref table, no trailer, no `startxref`, no `%%EOF`**. A parser reaching the end of the
+    file while it is still reading an object is §4.4's *"truncated file"*; a parser that instead
+    found a table whose offsets ran past the end would be reading a different construct, and this
+    docstring said so until review measured it.
 
     Cut at a fraction rather than at a byte count, so the fixture stays correct if the writer's
     output length changes — a hard offset would silently become "cut after `%%EOF`", which is a

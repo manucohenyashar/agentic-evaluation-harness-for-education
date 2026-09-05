@@ -2,6 +2,7 @@
 
 element_kind: table
 question_id: Q4
+consent_class: synthetic
 
 A hand-ruled results table with three columns and four rows.
 Header row: Trial | Ramp angle / deg | Time to base / s

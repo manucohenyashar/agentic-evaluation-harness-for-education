@@ -107,8 +107,20 @@ def test_tc_conform_09_each_pair_is_identical_but_for_the_payload():
     text: a search-and-remove check would pass against a pair whose payload was the empty string
     — two identical documents wearing a `twin_id` — which is the degenerate corpus this assertion
     must not accept.
+
+    **And the tail is asserted too**, which is the half review found missing. Truncation alone
+    reads the *document*; the non-empty check reads the *manifest*; and nothing made the two meet.
+    A generator that stopped splicing the payload — or spliced innocuous prose of the same line
+    count while the manifest went on declaring a band-forcing directive — produced twenty pairs of
+    identical documents, passed every assertion in this file, passed `--check` after a rebuild,
+    and would then have made the integration differential green by comparing each submission to
+    itself. Measured, not theorised. The two halves are one assertion now: the lines after
+    `payload_line` must be exactly the payload the manifest declares.
     """
-    for benign, injected in corpora.injection_pairs():
+    pairs = corpora.injection_pairs()
+    assert pairs, "F-ADV-INJ yielded no pairs, so every assertion below would hold vacuously"
+
+    for benign, injected in pairs:
         benign_pages = benign.pages()
         injected_pages = injected.pages()
         assert len(benign_pages) == len(injected_pages), (
@@ -126,11 +138,21 @@ def test_tc_conform_09_each_pair_is_identical_but_for_the_payload():
             f"{injected.id} differs from {benign.id} on a page that carries no payload"
         )
 
-        # The payload must be non-empty, or the pair is two identical documents and every
-        # equality the differential asserts holds vacuously.
-        payload = injected.attributes["payload_lines"]
-        assert payload and any(line.strip() for line in payload), (
-            f"{injected.id} declares an empty payload"
+        # The other direction: what the injected document carries past `payload_line` is exactly
+        # what the manifest says it carries. Positional, so it cannot be satisfied by a payload
+        # that appears somewhere else in the document, and by equality rather than containment,
+        # so extra lines are caught as well as missing ones.
+        declared = injected.attributes["payload_lines"]
+        assert declared and any(line.strip() for line in declared), (
+            f"{injected.id} declares an empty payload, so the pair is two identical documents "
+            f"wearing a twin_id"
+        )
+        tail = injected_pages[0].split("\n")[injected.attributes["payload_line"]:]
+        assert tail == ["", *declared], (
+            f"{injected.id} declares payload {declared} and its document carries {tail!r} at "
+            f"line {injected.attributes['payload_line']}. The manifest and the bytes disagree "
+            f"about what the attack is, so the differential downstream would be comparing a "
+            f"submission to a near-copy of itself and reporting injection resistance."
         )
 
         # Same reference score on both halves. A differential between two submissions that were
@@ -149,6 +171,11 @@ def test_tc_conform_09_every_forged_citation_quotes_text_that_is_absent_from_the
     pass against a system doing no verification at all. So the corpus has to guarantee the
     quotation is not there — asserted against **both** halves of the pair, since the injected
     document contains the payload itself and only the rest of it counts as the source text.
+
+    The *present* direction is asserted first, and it is not ceremony: an absence check alone is
+    satisfied by a quotation that appears nowhere at all, which is what a corpus whose payloads
+    stopped being spliced looks like. The pair of assertions is what makes "forged" mean *claimed
+    in the document, absent from it* rather than merely *absent*.
     """
     forged = [
         (b, i)
@@ -160,6 +187,11 @@ def test_tc_conform_09_every_forged_citation_quotes_text_that_is_absent_from_the
     for benign, injected in forged:
         quote = injected.attributes["forged_quote"]
         assert quote, f"{injected.id} is a forged_citation pair and names no quote"
+        assert quote in injected.text(), (
+            f"{injected.id}'s forged quotation does not appear in its own document. A citation "
+            f"the submission never makes cannot fail verification, so TC-INTEG-13 would have "
+            f"nothing to reject."
+        )
         assert quote not in benign.text(), (
             f"{injected.id}'s 'forged' quotation appears verbatim in its benign twin, so it is "
             f"not forged: span verification would correctly succeed and TC-INTEG-13 would pass "
@@ -204,6 +236,10 @@ def test_tc_conform_09_every_pdf_construct_declares_quarantine_at_v0_and_zero_mo
     implementation to settle with the easy ones.
     """
     manifest = corpora.adv_pdf_manifest()
+    assert len(manifest["submissions"]) == len(adv_pdf.SECTION_4_4_CONSTRUCTS), (
+        "F-ADV-PDF declares the wrong number of constructs, so the sweep below would run over "
+        "the wrong set — or, at zero, over none"
+    )
     for row in manifest["submissions"]:
         assert row["expected_outcome"] == adv_pdf.EXPECTED_OUTCOME, row["id"]
         assert row["quarantine_gate"] == adv_pdf.QUARANTINE_GATE, (
@@ -228,6 +264,13 @@ def test_tc_conform_09_the_pdf_constructs_regenerate_to_exactly_their_declared_d
     written = corpora.materialize_adv_pdfs(tmp_path / "pdfs")
 
     declared = {row["id"] for row in corpora.adv_pdf_manifest()["submissions"]}
+    # Both sides counted before they are compared: `set(written) == declared` holds when both are
+    # empty, which is what a helper that silently generated nothing against a manifest that
+    # declared nothing would look like.
+    assert len(written) == len(adv_pdf.SECTION_4_4_CONSTRUCTS), (
+        f"materialized {len(written)} construct(s); §4.4 names "
+        f"{len(adv_pdf.SECTION_4_4_CONSTRUCTS)}"
+    )
     assert set(written) == declared, (
         f"materialized {sorted(written)}; the manifest declares {sorted(declared)}"
     )
