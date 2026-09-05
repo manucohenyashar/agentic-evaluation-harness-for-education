@@ -213,24 +213,25 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: through a single `_run()` helper, so this list stays something a reviewer reads rather than
 #: scrolls. #10 built that helper; #11 added the write queue, its batch `BEGIN`/`COMMIT`/
 #: `ROLLBACK` and `Tx.execute`, all of them through `_run`; #12 added the blob store and the
-#: lease clock. The line number has moved twice (710 -> 778 -> 916) as each story declared
-#: constants above it, which is the re-read this constant exists to force.
+#: lease clock; #13 added the Tier D guard, the purge machinery and the name vocabulary. The
+#: line number has moved as each story declared constants above it (710 -> 778 -> 916 -> 1493
+#: on this line), which is the re-read this constant exists to force.
 #:
 #: **The second entry is not a second place SQL reaches SQLite.**
-#: `aeh.store:1567` is `LeaseClock._persist` calling `tx.execute(STATEMENTS["upsert_lease_clock"],
+#: `aeh.store:2268` is `LeaseClock._persist` calling `tx.execute(STATEMENTS["upsert_lease_clock"],
 #: ...)` — `Tx.execute` is the module's own declared-statement API and delegates to `_run`, which
 #: is still the only site that touches a `sqlite3` cursor. The walker cannot see that, and
 #: shouldn't: it flags every `execute()` and asks a human whether the argument is a declared
 #: statement with keyword parameters. It is — from the registry, which is the shape
-#: `sql_scan._statement_problem` names as sanctioned. `aeh.store:916` is `_run` itself, moved
-#: again by #12's own declarations. What is passed there is `declared.sql` — an attribute of a declared
+#: `sql_scan._statement_problem` names as sanctioned. `aeh.store:1493` is `_run` itself, moved
+#: again by #12's and #13's own declarations. What is passed there is `declared.sql` — an attribute of a declared
 #: `Statement`, which is the shape `sql_scan._statement_problem` sanctions — never the parameter,
 #: which would mean "whatever the caller passed reaches SQLite unchecked".
 #:
 #: The line number is part of the entry, so an edit above the site fails this case. That is
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
-KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:916", "aeh.store:1567"})
+KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:1493", "aeh.store:2268"})
 
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

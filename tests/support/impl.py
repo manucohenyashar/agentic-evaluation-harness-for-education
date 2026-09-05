@@ -282,16 +282,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `pytest.mark.integration`, so it rejoined `pytest -q` rather than the fast tier -- the
     # distinction the `"#11 store_metrics"` note above spells out.
     #
-    # …and the `"#12 and #13"` conjunction with them. Both halves landed in #12 —
-    # `blob_store_stats` because the blob store is #12's, and `STATEMENTS` because #12's own
-    # write needed the declared-statement registry `tests/support/sql_scan.py` sanctions — so
+    # …and the `"#12 and #13"` conjunction with them: both halves have landed --
+    # `blob_store_stats` with the blob store (#12), and `STATEMENTS` with #13, whose guard and
+    # purge statements joined the registry #12's own write had already opened -- so
     # `TC-STORE-15` is unmarked and back in the gate. The `symbols` kind was added for this one
     # case; it held the marker on through #11, which either single-symbol key would not have.
-    "#13 StudentNameInTierDError": (
-        "symbol",
-        f"{STORE_MODULE}:StudentNameInTierDError",
-        ("tests/integration/store/test_tier_d_pseudonymity.py",),
-    ),
+    #
+    # The `"#13 StudentNameInTierDError"` entry that stood here is gone too: #13 landed the
+    # error, the Tier D write guard (`FR-STORE-12`) and the `STATEMENTS` registry
+    # (`FR-STORE-08`), so `TC-STORE-12` lost the marker and runs in the integration tier again
+    # -- out of `TEST_CMD` on its own `integration` marker, back in `pytest -q`, the honest
+    # full picture. Two fixture adaptations came with it (the #177 situation: the landing
+    # disproved the fixture, not the assertions) -- limb 2 now inserts into the landed `label`
+    # table rather than creating an `audit_record` that collided with migration 001, and
+    # `schema_version` is excluded from the sweep as bookkeeping. See the case's docstring.
     # --- TS-01 (#2), the six §6.9 baselines --------------------------------------------------
     #
     # The `#2` entry that stood here -- `path`, `fixtures/F-FROZEN/manifest.json` -- is gone

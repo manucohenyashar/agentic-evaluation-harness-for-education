@@ -12,8 +12,13 @@ permanent and is the one tier `purge_cohort` does not touch: design §3.3's tier
 name that reaches Tier D is therefore not a privacy bug that a later purge cleans up — it is
 one that outlives every retention control the system has.
 
-**Written ahead of implementation** (test plan §8.2). Registered under
-`#13 StudentNameInTierDError`.
+**Written ahead of implementation** (test plan §8.2) and registered under
+`#13 StudentNameInTierDError` until #13 landed it — the marker is gone, the case runs in the
+integration tier. Two fixture adaptations came with the landing, both the #177 situation (the
+implementation disproved the fixture, not the assertions): the original draft created its own
+`audit_record`, which collides with migration 001's table, so limb 2 uses the landed
+identity-bearing table (`label`) instead; and `schema_version` is excluded from the sweep as
+the store's own bookkeeping.
 """
 
 from __future__ import annotations
@@ -30,26 +35,24 @@ from tests.support.store_vocabulary import (
     table_names,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#13"
 
 DURABLE_FILE = "durable.sqlite"
 
-#: A Tier D table shaped the way `FR-STORE-12` requires: pseudonymous key, no name.
-_AUDIT_DDL = (
-    "CREATE TABLE audit_record ("
-    "  id INTEGER PRIMARY KEY,"
-    "  student_ref TEXT NOT NULL,"
-    "  criterion_id TEXT NOT NULL,"
-    "  decision TEXT NOT NULL"
-    ")"
+#: The Tier D table limb 2 inserts into: `label`, the one identity-bearing table migration 001
+#: actually creates — `student_ref` is its sanctioned identity column, exactly the shape
+#: `FR-STORE-12` requires (pseudonymous key, no name). The original draft created its own
+#: `audit_record` with that shape, because it was written ahead of #10's decision that
+#: migration 001 creates the tier's tables; that `CREATE TABLE` now collides with the
+#: migration, so the fixture inserts into the landed table instead. The landing disproved the
+#: fixture, not the assertions — the same situation #177 fixed for the blocker keys.
+_LABEL_INSERT = (
+    "INSERT INTO label (label_id, run_id, student_ref, criterion_id, label_type, band) "
+    "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, :band)"
 )
-_AUDIT_INSERT = (
-    "INSERT INTO audit_record (student_ref, criterion_id, decision) "
-    "VALUES (:student_ref, :criterion_id, :decision)"
-)
-_AUDIT_READ = "SELECT student_ref FROM audit_record ORDER BY id"
+_LABEL_READ = "SELECT student_ref FROM label ORDER BY label_id"
 
 #: The table limb 1 inserts into. Created **through an independent `sqlite3` connection**, not
 #: through the store, and carrying every forbidden spelling as a real column.
@@ -146,8 +149,9 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
     durable = store.durable()
     StudentNameInTierD = student_name_error(issue=ISSUE)
 
-    with durable.transaction() as tx:
-        tx.execute(statement(_AUDIT_DDL, issue=ISSUE))
+    # `label` exists here because the durable tier's migration 001 created it at open —
+    # which is itself the schema half of the guarantee: the store's own migration is what
+    # puts `student_ref` (and nothing name-shaped) on a Tier D table.
 
     # --- limb 1: every name-bearing *insert* is refused, by the exact error ------------------
     #
@@ -193,13 +197,16 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
     # --- limb 2: the pseudonymous shape is accepted, and actually lands ---------------------
     with durable.transaction() as tx:
         tx.execute(
-            statement(_AUDIT_INSERT, issue=ISSUE),
+            statement(_LABEL_INSERT, issue=ISSUE),
+            label_id="lbl-00417",
+            run_id="run-13",
             student_ref="ref-00417",
             criterion_id="CRIT-3",
-            decision="agree",
+            label_type="human",
+            band="b2",
         )
 
-    rows = [row[0] for row in durable.query(statement(_AUDIT_READ, issue=ISSUE))]
+    rows = [row[0] for row in durable.query(statement(_LABEL_READ, issue=ISSUE))]
     assert rows == ["ref-00417"], (
         "TC-STORE-12: the student_ref insert did not land. FR-STORE-12 requires Tier D rows to "
         "*carry* student_ref, not merely to reject names — a store that refuses every insert "
@@ -214,7 +221,12 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
     offenders: list[str] = []
     inspected = 0
     for table in sorted(table_names(durable_path)):
-        if table.startswith("sqlite_") or table == _POISONED_TABLE:
+        # `schema_version` is the store's own migration bookkeeping, the same category as the
+        # `sqlite_` internals: its `name` column names a *migration* ("durable_tier_initial"),
+        # not a person, and the sweep is about content tables — where a name could actually
+        # hide. The rule itself is untouched (`is_student_name_column` still flags a bare
+        # `name`); the sweep's scope is.
+        if table.startswith("sqlite_") or table == "schema_version" or table == _POISONED_TABLE:
             continue
         for column in column_names(durable_path, table):
             inspected += 1
@@ -223,8 +235,8 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
 
     assert inspected, (
         "TC-STORE-12: the sweep inspected no columns at all, so it would pass against an empty "
-        "Tier D. The audit_record table created above must be present for this limb to mean "
-        "anything."
+        "Tier D. The label table migration 001 created at open must be present for this limb "
+        "to mean anything."
     )
     assert not offenders, (
         f"TC-STORE-12: Tier D's schema declares a student-name column ({', '.join(offenders)}). "
@@ -233,9 +245,9 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
         "system (RISK-21)."
     )
 
-    columns_of_audit = column_names(durable_path, "audit_record")
-    assert TIER_D_IDENTITY_COLUMN in columns_of_audit, (
-        f"TC-STORE-12: audit_record has no {TIER_D_IDENTITY_COLUMN!r} column. The clause has "
+    columns_of_label = column_names(durable_path, "label")
+    assert TIER_D_IDENTITY_COLUMN in columns_of_label, (
+        f"TC-STORE-12: label has no {TIER_D_IDENTITY_COLUMN!r} column. The clause has "
         "two halves — reject the name *and* carry the pseudonymous key — and a Tier D that "
-        f"carries neither is not pseudonymized, it is anonymous. Columns: {columns_of_audit}"
+        f"carries neither is not pseudonymized, it is anonymous. Columns: {columns_of_label}"
     )
