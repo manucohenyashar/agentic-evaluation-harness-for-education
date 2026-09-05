@@ -1,0 +1,167 @@
+"""Tier D carries `student_ref` and refuses a student name.
+
+Case `TC-STORE-12` (`FR-STORE-12`, P0, negative), test plan §5.3. Issue #14 (TS-08);
+implemented by issue **#13**.
+
+Rung 2 — the real Tier D file, because the second half of the case is a claim about the
+*schema*, and a schema assertion against a double asserts the double.
+
+This case guards **RISK-21** ("a student name lands in Tier D") at Critical/High. Tier D is
+permanent and is the one tier `purge_cohort` does not touch: design §3.3's tier table marks it
+"permanent / pseudonymized" while C+R are "per administration / heavy PII" and purgeable. A
+name that reaches Tier D is therefore not a privacy bug that a later purge cleans up — it is
+one that outlives every retention control the system has.
+
+**Written ahead of implementation** (test plan §8.2). Registered under
+`#13 StudentNameInTierDError`.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from tests.support.store_api import open_store, statement, student_name_error
+from tests.support.store_vocabulary import (
+    TIER_D_IDENTITY_COLUMN,
+    column_names,
+    is_student_name_column,
+    table_names,
+)
+
+pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+
+ISSUE = "#13"
+
+DURABLE_FILE = "durable.sqlite"
+
+#: A Tier D table shaped the way `FR-STORE-12` requires: pseudonymous key, no name.
+_AUDIT_DDL = (
+    "CREATE TABLE audit_record ("
+    "  id INTEGER PRIMARY KEY,"
+    "  student_ref TEXT NOT NULL,"
+    "  criterion_id TEXT NOT NULL,"
+    "  decision TEXT NOT NULL"
+    ")"
+)
+_AUDIT_INSERT = (
+    "INSERT INTO audit_record (student_ref, criterion_id, decision) "
+    "VALUES (:student_ref, :criterion_id, :decision)"
+)
+_AUDIT_READ = "SELECT student_ref FROM audit_record ORDER BY id"
+
+#: The forbidden shape. Declared as literals, one per spelling, so the sweep names which one
+#: got through rather than reporting that "an insert succeeded".
+_NAME_BEARING_DDL = {
+    "student_name": (
+        "CREATE TABLE audit_with_name ("
+        "  id INTEGER PRIMARY KEY, student_name TEXT NOT NULL, decision TEXT NOT NULL)"
+    ),
+    "full_name": (
+        "CREATE TABLE audit_with_full ("
+        "  id INTEGER PRIMARY KEY, full_name TEXT NOT NULL, decision TEXT NOT NULL)"
+    ),
+    "surname": (
+        "CREATE TABLE audit_with_surname ("
+        "  id INTEGER PRIMARY KEY, surname TEXT NOT NULL, decision TEXT NOT NULL)"
+    ),
+    "pupil_forename": (
+        "CREATE TABLE audit_with_forename ("
+        "  id INTEGER PRIMARY KEY, pupil_forename TEXT NOT NULL, decision TEXT NOT NULL)"
+    ),
+}
+
+
+def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_ref(
+    tmp_data_dir,
+):
+    """`TC-STORE-12` — *"The name-bearing insert is rejected; the `student_ref` insert succeeds;
+    Tier D's schema contains no name-mapped column."*
+
+    Oracle: **exact rejection plus schema assertion**.
+
+    Three limbs, and the middle one is the one a naive implementation fails.
+
+    **Rejected**, with an exact exception. `FR-STORE-12` requires the refusal but names no
+    error, so this case pins one (`StudentNameInTierDError`) rather than accepting "something
+    raised" — a `sqlite3.OperationalError` from a typo'd table name would satisfy a bare
+    `pytest.raises(Exception)` and tell us nothing about whether the guard exists. The design
+    gap is reported in the PR.
+
+    **Accepted.** A store that rejects *every* Tier D insert also rejects every name-bearing
+    one. Without this limb the case is passed by a broken store, which is the standard failure
+    of a negative-only test. `student_ref` is the pseudonymous key `CT-STORE-09` promises
+    consumers ("a caller may rely on Tier D being pseudonymized"), so the accepted insert is
+    also read back to prove it actually landed.
+
+    **The schema itself.** Rejecting inserts is a runtime guard; a name-mapped *column* in the
+    Tier D schema means some path already created one, and a guard on one write path is not a
+    guarantee. Swept over every table and every column in the real file.
+
+    The sweep is over four spellings because the requirement names a *concept* — "a column
+    mapped as a student-name field" — and a guard matched against the single literal
+    `student_name` is one `full_name` away from useless.
+    """
+    store = open_store(tmp_data_dir, issue=ISSUE)
+    durable = store.durable()
+    StudentNameInTierD = student_name_error(issue=ISSUE)
+
+    with durable.transaction() as tx:
+        tx.execute(statement(_AUDIT_DDL, issue=ISSUE))
+
+    # --- limb 1: every name-bearing shape is refused, by the exact error --------------------
+    for spelling, ddl in sorted(_NAME_BEARING_DDL.items()):
+        with pytest.raises(StudentNameInTierD) as raised:
+            with durable.transaction() as tx:
+                tx.execute(statement(ddl, issue=ISSUE))
+        assert spelling in str(raised.value), (
+            f"TC-STORE-12: Tier D refused the {spelling!r} column but the error does not name "
+            f"it: {raised.value!r}. An operator who cannot see which column was rejected cannot "
+            "fix the caller."
+        )
+
+    # --- limb 2: the pseudonymous shape is accepted, and actually lands ---------------------
+    with durable.transaction() as tx:
+        tx.execute(
+            statement(_AUDIT_INSERT, issue=ISSUE),
+            student_ref="ref-00417",
+            criterion_id="CRIT-3",
+            decision="agree",
+        )
+
+    rows = [row[0] for row in durable.query(statement(_AUDIT_READ, issue=ISSUE))]
+    assert rows == ["ref-00417"], (
+        "TC-STORE-12: the student_ref insert did not land. FR-STORE-12 requires Tier D rows to "
+        "*carry* student_ref, not merely to reject names — a store that refuses every insert "
+        f"passes the negative limb and is useless. Got {rows!r}."
+    )
+
+    # --- limb 3: the schema, swept ------------------------------------------------------------
+    durable_path = tmp_data_dir / DURABLE_FILE
+    offenders: list[str] = []
+    inspected = 0
+    for table in sorted(table_names(durable_path)):
+        if table.startswith("sqlite_"):
+            continue
+        for column in column_names(durable_path, table):
+            inspected += 1
+            if is_student_name_column(column):
+                offenders.append(f"{table}.{column}")
+
+    assert inspected, (
+        "TC-STORE-12: the sweep inspected no columns at all, so it would pass against an empty "
+        "Tier D. The audit_record table created above must be present for this limb to mean "
+        "anything."
+    )
+    assert not offenders, (
+        f"TC-STORE-12: Tier D's schema declares a student-name column ({', '.join(offenders)}). "
+        "Design §3.3 puts the identity mapping in Tier C alone, and Tier D is the tier "
+        "purge_cohort does not touch — a name here outlives every retention control in the "
+        "system (RISK-21)."
+    )
+
+    columns_of_audit = column_names(durable_path, "audit_record")
+    assert TIER_D_IDENTITY_COLUMN in columns_of_audit, (
+        f"TC-STORE-12: audit_record has no {TIER_D_IDENTITY_COLUMN!r} column. The clause has "
+        "two halves — reject the name *and* carry the pseudonymous key — and a Tier D that "
+        f"carries neither is not pseudonymized, it is anonymous. Columns: {columns_of_audit}"
+    )
