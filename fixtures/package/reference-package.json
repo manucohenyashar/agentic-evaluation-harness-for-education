@@ -1,0 +1,499 @@
+{
+  "package_id": "PKG-REF",
+  "package_version": "1",
+  "max_points": 39.0,
+  "questions": [
+    {
+      "question_id": "Q1",
+      "prompt": "A crate rests on a ramp inclined at 25 degrees. Draw and label the forces acting on the crate, then explain why it does not slide.",
+      "element_kind": "free_body_diagram"
+    },
+    {
+      "question_id": "Q2",
+      "prompt": "Construct the perpendicular bisector of segment AB and justify each step.",
+      "element_kind": "geometry_construction"
+    },
+    {
+      "question_id": "Q3",
+      "prompt": "The plot shows the velocity of a trolley over eight seconds. Describe the motion and find the displacement over the first four seconds.",
+      "element_kind": "graph_or_plot"
+    },
+    {
+      "question_id": "Q4",
+      "prompt": "Complete the results table for the three trials and state what the pattern shows.",
+      "element_kind": "table"
+    },
+    {
+      "question_id": "Q5",
+      "prompt": "Select the best answer for each of the three items below.",
+      "element_kind": null
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "C-01",
+      "question_id": "Q1",
+      "kind": "open",
+      "text": "Identifies every force acting on the crate and no force that is absent.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-02",
+      "question_id": "Q1",
+      "kind": "open",
+      "text": "Labels each force with its direction relative to the ramp surface.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-03",
+      "question_id": "Q1",
+      "kind": "open",
+      "text": "Explains equilibrium in terms of the component along the ramp.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-04",
+      "question_id": "Q2",
+      "kind": "open",
+      "text": "Produces a construction that yields a bisector rather than an estimate.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-05",
+      "question_id": "Q2",
+      "kind": "open",
+      "text": "Names the points used and the relation each construction step establishes.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-06",
+      "question_id": "Q2",
+      "kind": "open",
+      "text": "Justifies why the construction gives a perpendicular.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-07",
+      "question_id": "Q3",
+      "kind": "open",
+      "text": "Reads the axes with their units before describing the motion.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-08",
+      "question_id": "Q3",
+      "kind": "open",
+      "text": "Describes each phase of the motion, including the turning point.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-09",
+      "question_id": "Q3",
+      "kind": "open",
+      "text": "Computes the displacement from the area under the curve.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-10",
+      "question_id": "Q4",
+      "kind": "open",
+      "text": "Records all three trials with consistent precision.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-11",
+      "question_id": "Q4",
+      "kind": "open",
+      "text": "States the relationship the table shows rather than restating the numbers.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-12",
+      "question_id": "Q4",
+      "kind": "open",
+      "text": "Notes the trial that departs from the pattern and says what to do about it.",
+      "answer_key": [],
+      "bands": [
+        {
+          "band": "absent",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "No work addressing this criterion appears."
+        },
+        {
+          "band": "emerging",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The work names the idea but does not carry it through."
+        },
+        {
+          "band": "developing",
+          "ordinal": 2,
+          "points": 2.0,
+          "descriptor": "The work carries the idea through with a stated gap."
+        },
+        {
+          "band": "secure",
+          "ordinal": 3,
+          "points": 3.0,
+          "descriptor": "The work carries the idea through completely and states its grounds."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-13",
+      "question_id": "Q5",
+      "kind": "mcq",
+      "text": "Item 5a: the direction of the net force on the crate.",
+      "answer_key": [
+        "B"
+      ],
+      "bands": [
+        {
+          "band": "not_met",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "The selected option is not the keyed option."
+        },
+        {
+          "band": "met",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The selected option is the keyed option."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-14",
+      "question_id": "Q5",
+      "kind": "mcq",
+      "text": "Item 5b: the unit of the gradient of the velocity-time plot.",
+      "answer_key": [
+        "C"
+      ],
+      "bands": [
+        {
+          "band": "not_met",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "The selected option is not the keyed option."
+        },
+        {
+          "band": "met",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The selected option is the keyed option."
+        }
+      ]
+    },
+    {
+      "criterion_id": "C-15",
+      "question_id": "Q5",
+      "kind": "mcq",
+      "text": "Item 5c: the effect of doubling the ramp angle on the normal force.",
+      "answer_key": [
+        "A"
+      ],
+      "bands": [
+        {
+          "band": "not_met",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "The selected option is not the keyed option."
+        },
+        {
+          "band": "met",
+          "ordinal": 1,
+          "points": 1.0,
+          "descriptor": "The selected option is the keyed option."
+        }
+      ]
+    }
+  ]
+}

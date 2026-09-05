@@ -1,0 +1,36 @@
+{
+  "case_id": "STATS-EMPTY-BLIND-POPULATION",
+  "description": "No blind labels were collected. Every figure is NoValidationData — not 0, not null, and not the previous administration's number (FR-STATS-11, CT-STATS-03).",
+  "scale": "open_four_band",
+  "raters": 0,
+  "units": 0,
+  "labels": [],
+  "expected_result_type": "NoValidationData",
+  "figures": {
+    "cohens_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "empty population: no labels were collected"
+    },
+    "quadratic_weighted_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "empty population: no labels were collected"
+    },
+    "ordinal_alpha": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "empty population: no labels were collected"
+    },
+    "entropy_bits": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "empty population: no labels were collected"
+    },
+    "interior_rate": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "empty population: no labels were collected"
+    }
+  }
+}

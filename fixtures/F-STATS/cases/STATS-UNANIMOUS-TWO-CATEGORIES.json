@@ -1,0 +1,131 @@
+{
+  "case_id": "STATS-UNANIMOUS-TWO-CATEGORIES",
+  "description": "Two raters agree on every unit across two categories: κ, QWK and α are all 1.",
+  "scale": "open_four_band",
+  "raters": 2,
+  "units": 10,
+  "labels": [
+    {
+      "unit": "u1",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u1",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u2",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u2",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u3",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u3",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u4",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u4",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u5",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u5",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u6",
+      "rater": "r1",
+      "ordinal": 3
+    },
+    {
+      "unit": "u6",
+      "rater": "r2",
+      "ordinal": 3
+    },
+    {
+      "unit": "u7",
+      "rater": "r1",
+      "ordinal": 0
+    },
+    {
+      "unit": "u7",
+      "rater": "r2",
+      "ordinal": 0
+    },
+    {
+      "unit": "u8",
+      "rater": "r1",
+      "ordinal": 0
+    },
+    {
+      "unit": "u8",
+      "rater": "r2",
+      "ordinal": 0
+    },
+    {
+      "unit": "u9",
+      "rater": "r1",
+      "ordinal": 0
+    },
+    {
+      "unit": "u9",
+      "rater": "r2",
+      "ordinal": 0
+    },
+    {
+      "unit": "u10",
+      "rater": "r1",
+      "ordinal": 0
+    },
+    {
+      "unit": "u10",
+      "rater": "r2",
+      "ordinal": 0
+    }
+  ],
+  "figures": {
+    "cohens_kappa": {
+      "value": 1.0,
+      "exact": "1/1"
+    },
+    "quadratic_weighted_kappa": {
+      "value": 1.0,
+      "exact": "1/1"
+    },
+    "ordinal_alpha": {
+      "value": 1.0,
+      "exact": "1/1"
+    },
+    "entropy_bits": {
+      "value": 0.9709505944546686,
+      "closed_form": "-(0.6*log2(0.6) + 0.4*log2(0.4))"
+    },
+    "interior_rate": {
+      "value": 0.0,
+      "exact": "0/1"
+    }
+  }
+}

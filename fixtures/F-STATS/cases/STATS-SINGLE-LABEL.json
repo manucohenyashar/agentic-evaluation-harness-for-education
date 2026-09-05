@@ -1,0 +1,39 @@
+{
+  "case_id": "STATS-SINGLE-LABEL",
+  "description": "One unit, one label. NFR-STATS-01's first degenerate case.",
+  "scale": "open_four_band",
+  "raters": 1,
+  "units": 1,
+  "labels": [
+    {
+      "unit": "u1",
+      "rater": "r1",
+      "ordinal": 2
+    }
+  ],
+  "figures": {
+    "cohens_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "one rater: no pair of labels exists to agree or disagree"
+    },
+    "quadratic_weighted_kappa": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "one rater: no pair of labels exists to agree or disagree"
+    },
+    "ordinal_alpha": {
+      "value": null,
+      "exact": null,
+      "undefined_reason": "no pairable values: a singly-labelled unit contributes none"
+    },
+    "entropy_bits": {
+      "value": 0.0,
+      "closed_form": "-1*log2(1)"
+    },
+    "interior_rate": {
+      "value": 1.0,
+      "exact": "1/1"
+    }
+  }
+}

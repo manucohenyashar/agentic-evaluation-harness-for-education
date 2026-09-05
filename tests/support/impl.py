@@ -42,6 +42,7 @@ CONFORM_MODULE = f"{IMPLEMENTATION_PACKAGE}.conform"
 REVIEW_MODULE = f"{IMPLEMENTATION_PACKAGE}.review"
 AGG_MODULE = f"{IMPLEMENTATION_PACKAGE}.agg"
 EXTRACT_MODULE = f"{IMPLEMENTATION_PACKAGE}.extract"
+INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -183,10 +184,49 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
          "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too",),
     ),
-    "#2": (
-        "path",
-        "fixtures/F-FROZEN/manifest.json",
-        ("tests/artifact/test_heldout_disjoint.py",),
+    # --- TS-01 (#2), the six §6.9 baselines --------------------------------------------------
+    #
+    # The `#2` entry that stood here -- `path`, `fixtures/F-FROZEN/manifest.json` -- is gone
+    # because #2 landed: the corpora exist, `tests/artifact/test_heldout_disjoint.py` runs in
+    # the gate, and a resolved blocker left in this dict fails the gate test by design.
+    #
+    # The six entries below replace it, and they are keyed on **producers, not on corpora**.
+    # That is the whole shape of TS-01: the corpora are inputs and they are here now, but every
+    # `TC-REG-*` case compares an artifact against a frozen baseline, and an artifact is the
+    # output of a module. So each case waits on the story that emits it, and each key names a
+    # symbol that story must supply rather than the module -- `aeh.ingest` existing says
+    # nothing about whether it can assemble a document yet.
+    #
+    # None of the six golden files exist either, and that is deliberate rather than an omission:
+    # `tests/support/baselines.py` explains why a baseline committed before its producer freezes
+    # a guess. `golden_bytes()` raises `NotImplementedYet` naming the same issue as the key here,
+    # so the two cannot drift.
+    "#37": (
+        # `assemble_canonical_markdown`, not `Ingestor.ingest_submission`: design §3.7 declares
+        # the `Ingestor` Protocol, so a key on any of its members resolves against a
+        # Protocol-only `aeh.ingest` with nothing behind it. Checked: this name appears nowhere
+        # in either design document. #36 creates the module and the canonical artifact; #37 adds
+        # `FR-INGEST-06`'s assembly order, and `TC-REG-01` traces to both -- so #37 is the later
+        # of the two and the one whose landing makes the case runnable.
+        "symbol",
+        f"{INGEST_MODULE}:assemble_canonical_markdown",
+        ("tests/regression/test_reg_01_canonical_markdown.py",),
+    ),
+    "#31 baselines": (
+        # The same symbol `#31 stats` keys on, under its own key so neither entry's message
+        # loses track of which suite it is unmarking.
+        "symbol",
+        f"{PKG_MODULE}:export_package",
+        ("tests/regression/test_reg_02_package_archive.py",),
+    ),
+    "#104": (
+        # `GradingService.export` is declared in design §3.14, so it is Protocol surface and
+        # cannot be the key. `export_grade_artifacts` is this suite's -- it returns the CSV and
+        # the per-student PDF set together, which is what `FR-GRADE-17` promises and what the
+        # baseline covers. Checked: absent from both design documents.
+        "symbol",
+        f"{GRADE_MODULE}:export_grade_artifacts",
+        ("tests/regression/test_reg_03_grade_exports.py",),
     ),
     # `TC-PROV-18`'s six counters (`FR-PROV-12`). Keyed on **#20** rather than #19, although
     # both must have landed: `transport_retries` cannot be implemented before there is a retry
@@ -262,8 +302,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "#57 compute_work_id": (
         "symbol",
         f"{ORCH_MODULE}:compute_work_id",
-        ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
-         "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids",),
+        (
+            "tests/property/test_fuzz_06_graphs_and_work_ids.py"
+            "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids",
+            # TS-01 (#2). `TC-REG-06`'s baseline is the `work_id` reference values, computed by
+            # the same function over the ten committed input tuples. Same blocker, same symbol —
+            # a second key would only split one unmarking instruction into two.
+            "tests/regression/test_reg_06_work_id_reference.py",
+        ),
     ),
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
     # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
@@ -352,6 +398,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "c12_the_only_writes_this_module_makes_are_records_and_its_own_report",
             "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
             "c12_the_pipelines_own_writes_stay_attributed_to_their_owning_modules",
+            # TS-01 (#2). `TC-REG-05`'s baseline is the per-criterion score distribution of
+            # `F-FROZEN` on each backend, and the assertion that carries the requirement is
+            # `FR-CONFORM-08`: a shift under an unchanged package is build substitution to be
+            # *detected*, not a baseline to update. `detect_build_substitution` is therefore the
+            # symbol the case actually drives, so it is already the right key.
+            "tests/regression/test_reg_05_score_distributions.py",
         ),
     ),
     # `TC-CONFORM-C14`'s consumer sweep splits by consumer. #29 owns the population- and
@@ -483,6 +535,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure",
             "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
             "the_blind_reservation_is_subtracted_before_ranking_not_after",
+            # TS-01 (#2). `TC-REG-04`'s baseline is the rendered HTML of *three* surfaces -- the
+            # review queue, the rollup and the student view. Keyed on #125 for the same reason
+            # `TC-CONSOLE-C19`'s measurement half above is: the queue is #124's and the rollup is
+            # #125's, they are siblings, and #125 is the one that completes the surface. Keying on
+            # #124 would unmark a test that then fails on a rollup nobody has built.
+            "tests/regression/test_reg_04_console_html.py",
         ),
     ),
     "#127": (

@@ -1,0 +1,114 @@
+{
+  "source": "docs/design/test-plan.md §6.9",
+  "policy": "Snapshot testing degrades into 'regenerate until green' unless the reviewer and the grounds are named. No golden file in this registry may be regenerated without the named reviewer and one of the stated grounds.",
+  "work_id_inputs": [
+    "run_id",
+    "stage",
+    "submission_id",
+    "criterion_id",
+    "judge_id",
+    "package_version_id",
+    "panel_config",
+    "prompt_template_version",
+    "extractor_version"
+  ],
+  "baselines": [
+    {
+      "case_id": "TC-REG-01",
+      "requirements": [
+        "FR-INGEST-04",
+        "FR-INGEST-06"
+      ],
+      "baseline": "Canonical assembled Markdown per `F-SYNTH` and `F-GRAPHIC` document",
+      "reviewer": "The ingestion owner",
+      "grounds": "Accepted only alongside a deliberate transcription-prompt version bump or a stated assembly-rule change; never \"the model changed its mind\"",
+      "oracle": "Golden file, byte for byte",
+      "golden": [
+        "TC-REG-01/F-SYNTH.canonical.md",
+        "TC-REG-01/F-GRAPHIC.canonical.md"
+      ],
+      "produced_by": "M-INGEST: one canonical Markdown artifact per logical document",
+      "blocked_on": "#37"
+    },
+    {
+      "case_id": "TC-REG-02",
+      "requirements": [
+        "FR-PKG-10"
+      ],
+      "baseline": "The exported package archive for the reference package",
+      "reviewer": "The package owner",
+      "grounds": "Accepted only with a schema-version bump or a declared export-format change",
+      "oracle": "Golden file over the archive's canonical listing and per-member digests",
+      "golden": [
+        "TC-REG-02/PKG-REF.archive.json"
+      ],
+      "produced_by": "M-PKG: single-file package export",
+      "blocked_on": "#31"
+    },
+    {
+      "case_id": "TC-REG-03",
+      "requirements": [
+        "FR-GRADE-17"
+      ],
+      "baseline": "The CSV and per-student PDF exports",
+      "reviewer": "The grading owner",
+      "grounds": "Accepted only with a declared export-mapping change; a diff in a *mark* is a defect, not a baseline update",
+      "oracle": "Golden file, with the mark columns compared separately and never accepted on diff",
+      "golden": [
+        "TC-REG-03/marks.csv",
+        "TC-REG-03/per-student-pdf.manifest.json"
+      ],
+      "produced_by": "M-GRADE: export from a specified grade revision",
+      "blocked_on": "#104"
+    },
+    {
+      "case_id": "TC-REG-04",
+      "requirements": [
+        "FR-CONSOLE-13",
+        "FR-CONSOLE-15"
+      ],
+      "baseline": "Rendered HTML of the review queue, the rollup and the student view",
+      "reviewer": "The console owner",
+      "grounds": "Accepted for deliberate layout changes; **never** for a change that removes a §11.6 invariant's rendered element",
+      "oracle": "Golden file, plus a separate invariant-element check that no diff can waive",
+      "golden": [
+        "TC-REG-04/review-queue.html",
+        "TC-REG-04/rollup.html",
+        "TC-REG-04/student-view.html"
+      ],
+      "produced_by": "M-CONSOLE: review queue, rollup and student view rendering",
+      "blocked_on": "#124"
+    },
+    {
+      "case_id": "TC-REG-05",
+      "requirements": [
+        "FR-CONFORM-01",
+        "FR-CONFORM-08"
+      ],
+      "baseline": "Per-criterion score distributions of `F-FROZEN` on each backend",
+      "reviewer": "The whole team, at release",
+      "grounds": "A shift with an unchanged package is build substitution (`FR-CONFORM-08`), not a baseline to update",
+      "oracle": "Statistical: per-criterion distribution over the frozen set, with n and threshold stated. A shift under an unchanged package must be reported as build substitution",
+      "golden": [
+        "TC-REG-05/score-distributions.json"
+      ],
+      "produced_by": "M-CONFORM: frozen-set re-run and build-substitution detection",
+      "blocked_on": "#134"
+    },
+    {
+      "case_id": "TC-REG-06",
+      "requirements": [
+        "FR-ORCH-01"
+      ],
+      "baseline": "The `work_id` reference values",
+      "reviewer": "Nobody may accept a diff casually",
+      "grounds": "A changed `work_id` means every stored result for that shape is now unreachable. Requires an explicit migration note",
+      "oracle": "Golden file over the reference input tuples, plus pairwise distinctness",
+      "golden": [
+        "TC-REG-06/work-id-reference.json"
+      ],
+      "produced_by": "M-ORCH: `compute_work_id` over FR-ORCH-01's nine inputs",
+      "blocked_on": "#57"
+    }
+  ]
+}

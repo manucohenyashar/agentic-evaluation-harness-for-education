@@ -6,3 +6,9 @@
 # Consumed by ready-issues.sh / create-issues.sh with `read`, which leaves a trailing \r on
 # the last field and makes an empty dependency list look non-empty.
 *.tsv text eol=lf
+
+# The corpora are content-addressed: every manifest declares a sha256 over the bytes of each
+# member, and `python -m harness.corpora.build --check` regenerates and diffs them. A CRLF
+# checkout on Windows would change every one of those hashes, so `fixtures/` is pinned to LF
+# in the working tree on every platform.
+fixtures/** text eol=lf

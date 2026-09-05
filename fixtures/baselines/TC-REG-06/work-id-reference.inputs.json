@@ -1,0 +1,177 @@
+{
+  "requirement": "FR-ORCH-01",
+  "inputs_in_requirement_order": [
+    "run_id",
+    "stage",
+    "submission_id",
+    "criterion_id",
+    "judge_id",
+    "package_version_id",
+    "panel_config",
+    "prompt_template_version",
+    "extractor_version"
+  ],
+  "note": "Ten tuples: a base, and one variant per input differing in exactly that one field. FR-ORCH-01 promises each variant is a different unit.",
+  "tuples": [
+    {
+      "label": "base",
+      "varied_field": null,
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:run_id",
+      "varied_field": "run_id",
+      "inputs": {
+        "run_id": "RUN-0001-variant",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:stage",
+      "varied_field": "stage",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score-variant",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:submission_id",
+      "varied_field": "submission_id",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001-variant",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:criterion_id",
+      "varied_field": "criterion_id",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01-variant",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:judge_id",
+      "varied_field": "judge_id",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a-variant",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:package_version_id",
+      "varied_field": "package_version_id",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1-variant",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:panel_config",
+      "varied_field": "panel_config",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c-variant",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:prompt_template_version",
+      "varied_field": "prompt_template_version",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4-variant",
+        "extractor_version": "extract/2"
+      },
+      "work_id": null
+    },
+    {
+      "label": "varied:extractor_version",
+      "varied_field": "extractor_version",
+      "inputs": {
+        "run_id": "RUN-0001",
+        "stage": "score",
+        "submission_id": "SYN-001",
+        "criterion_id": "C-01",
+        "judge_id": "judge-a",
+        "package_version_id": "PKG-REF@1",
+        "panel_config": "depth=3;arms=a,b,c",
+        "prompt_template_version": "judge/4",
+        "extractor_version": "extract/2-variant"
+      },
+      "work_id": null
+    }
+  ]
+}
