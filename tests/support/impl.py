@@ -126,12 +126,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
          "::test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory",),
     ),
-    "#11": (
-        "symbol",
-        f"{STORE_MODULE}:WriteQueue",
-        ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
-         "::test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent",),
-    ),
+    # The `"#11"` entry that stood here -- `symbol`, `aeh.store:WriteQueue` -- is gone because
+    # #11 landed it. Its case is unmarked and inside `TEST_CMD`, and a resolved blocker left in
+    # this dict fails the gate test by design.
     # --- TS-74 (#142), the sixteen CT-CALIB clause cases ------------------------------------
     #
     # `M-CALIB` is Phase 3/4 and three stories away: #137 (triage) -> #138 (elicitation, lock,
@@ -278,15 +275,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # without it too, the conjunction never resolves and this P0 case sits outside the gate with
     # nothing saying so. Reported in the PR for whoever owns the design and the issue graph; it
     # cannot be fixed from a test file.
-    "#11 store_metrics": (
-        "symbol",
-        f"{STORE_MODULE}:store_metrics",
-        (
-            "tests/integration/store/test_write_queue.py",
-            "tests/integration/store/test_observability.py",
-            "tests/integration/store/test_tier_handles.py",
-        ),
-    ),
+    # The `"#11 store_metrics"` entry that stood here is gone for the same reason: #11 landed
+    # `store_metrics`, so `TC-STORE-01`, `-02`, `-03`, `-07`, `-16` and `-24` lost the marker and
+    # now run. Not in `TEST_CMD`, and the distinction is worth keeping straight: they carry
+    # `pytest.mark.integration`, which `scripts/test.sh` deselects on its own account (test plan
+    # §4.7). Losing `writtenahead` puts a test back in `pytest -q`, which is the honest full
+    # picture and what a PR reports; the fast tier is a separate filter. Of the six only
+    # `FUZZ-07`'s property rejoined the gate, which is why it moved 758 -> 759 rather than by six.
+    # `TC-STORE-15` stayed behind under the `symbols` entry below, because `Store.blobs` and
+    # `STATEMENTS` are still #12's and #13's -- exactly the split the conjunction kind exists for.
     "#12 blob_store_stats": (
         "symbol",
         f"{STORE_MODULE}:blob_store_stats",

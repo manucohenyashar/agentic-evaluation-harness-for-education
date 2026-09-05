@@ -26,7 +26,7 @@ import pytest
 from tests.support.store_api import open_store, statement, store_metrics
 from tests.support.store_vocabulary import STORE_ALERTS, STORE_SIGNALS
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#11"
 

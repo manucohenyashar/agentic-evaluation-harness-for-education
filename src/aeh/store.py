@@ -53,8 +53,8 @@ guess is a suite that asserts the wrong thing.
 Configuration
 -------------
 §3.3 names `HARNESS_DATA_DIR`, `HARNESS_COMMIT_BATCH`, `HARNESS_COMMIT_INTERVAL_MS` and
-`HARNESS_WRITE_QUEUE_DEPTH`. The last three belong to #11's write queue. This file reads the
-first, plus two knobs for the environment-sensitive constants it introduces — `CLAUDE.md` seam 3:
+`HARNESS_WRITE_QUEUE_DEPTH`. All four are read here as of #11, plus knobs for the
+environment-sensitive constants this module introduces on its own account — `CLAUDE.md` seam 3:
 the production value is the default, the knob exists so a slower box need not edit code.
 
 These are **not** `M-CONF`'s six `HARNESS_*` keys. That tuple is the run-configuration snapshot
@@ -65,12 +65,16 @@ and `TC-CONF-C11` sweeps it; these are this module's own and are read here, once
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
+import threading
 import time
-from dataclasses import dataclass, field
+from collections import deque
+from contextlib import contextmanager
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, ContextManager, Mapping, Protocol, Sequence
+from typing import Any, ContextManager, Iterator, Mapping, Protocol, Sequence
 
 __all__ = [
     "BlobStore",
@@ -87,11 +91,17 @@ __all__ = [
     "Tier",
     "TierHandle",
     "TierOpened",
+    "ReadOnlyTierError",
+    "StoreLimits",
+    "Tx",
+    "WriteQueue",
+    "WriteQueueClosed",
     "WriteThroughQueryError",
     "WriteUnit",
     "current_schema_version",
     "data_dir_from_environment",
     "open_store",
+    "store_metrics",
 ]
 
 
@@ -109,6 +119,44 @@ BUSY_RETRIES_ENV = "HARNESS_SQLITE_BUSY_RETRIES"
 
 DEFAULT_BUSY_TIMEOUT_MS = 5_000
 DEFAULT_BUSY_RETRIES = 4
+
+#: §3.3 Configuration, with §3.3's own values as the defaults. `FR-STORE-04` calls 100/5000 an
+#: Assumption and `FR-STORE-05` calls 1,000 one, which is exactly what makes them knobs rather
+#: than literals: the mechanism is fixed, the numbers are calibrated per environment
+#: (`CLAUDE.md` seam 3, "production value is the default").
+COMMIT_BATCH_ENV = "HARNESS_COMMIT_BATCH"
+COMMIT_INTERVAL_MS_ENV = "HARNESS_COMMIT_INTERVAL_MS"
+WRITE_QUEUE_DEPTH_ENV = "HARNESS_WRITE_QUEUE_DEPTH"
+
+DEFAULT_COMMIT_BATCH = 100
+DEFAULT_COMMIT_INTERVAL_MS = 5_000
+DEFAULT_WRITE_QUEUE_DEPTH = 1_000
+
+#: The free-disk alert's other input (§3.3 **Alerts**: "free disk below the projected remaining-run
+#: requirement"). `M-ORCH` knows what a run will still write; this module cannot, so the figure is
+#: supplied rather than guessed. Zero — the default — means "no projection stated", and an alert
+#: with no projection behind it must stay quiet rather than invent a threshold.
+PROJECTED_RUN_BYTES_ENV = "HARNESS_PROJECTED_RUN_BYTES"
+DEFAULT_PROJECTED_RUN_BYTES = 0
+
+#: How long queue depth must stay at or above the backpressure threshold before the *alert*
+#: fires. §3.3 says "queue depth **sustained** above the backpressure threshold", and the word is
+#: load-bearing: backpressure at the boundary is normal operation and `CT-STORE-06` tells
+#: `M-ORCH` to treat it as a throttle signal, not a fault. An alert that fired on the same edge
+#: would page an operator for the system working as designed.
+QUEUE_DEPTH_SUSTAIN_MS_ENV = "HARNESS_QUEUE_DEPTH_SUSTAIN_MS"
+DEFAULT_QUEUE_DEPTH_SUSTAIN_MS = 5_000
+
+#: How long the writer sleeps between checks when it has nothing due. Bounds how late a
+#: time-triggered commit can be, so it is environment-sensitive in the same way the interval is.
+WRITER_POLL_MS_ENV = "HARNESS_WRITER_POLL_MS"
+DEFAULT_WRITER_POLL_MS = 5
+
+#: The two alerts §3.3 names under **Alerts**, spelled once. `CT-STORE-17` makes their semantics
+#: contract, so the names are part of the interface rather than log text.
+ALERT_FREE_DISK = "free_disk_below_projection"
+ALERT_QUEUE_DEPTH = "queue_depth_sustained"
+DECLARED_ALERTS: tuple[str, ...] = (ALERT_FREE_DISK, ALERT_QUEUE_DEPTH)
 
 #: Owner-only, on **each directory this module itself creates** — not on their parents, and not
 #: at all on Windows, where `mkdir`'s mode argument is ignored. So this narrows the window rather
@@ -193,6 +241,26 @@ class PurgePreconditionError(StoreError):
 
 class DiskFullError(StoreError):
     """A write failed for want of disk space (`FR-STORE-10`). Raised by #13."""
+
+
+class ReadOnlyTierError(StoreError):
+    """A write was attempted on a handle opened read-only (`FR-STORE-13`).
+
+    **The class name carries the refusal.** `TC-STORE-16` matches its evidence against the
+    exception's type name *as well as* its message, because a store-level guard is more likely to
+    say "writes are not permitted on an imported package" than to use the word "readonly" — and
+    requiring the wording alone would red a correct store. `ReadOnlyTierError` satisfies the type
+    half whatever the message says, which is why the name is not `ImportedPackageWriteError`.
+
+    Raised **before** anything opens a write connection. That ordering is the requirement, not
+    tidiness: `FR-STORE-13` exists so an imported package can be inspected *before* it is
+    trusted, and a refusal that had already created a `-wal` file beside the database would move
+    the mtime and the digest of the very file whose provenance is in question.
+    """
+
+
+class WriteQueueClosed(StoreError):
+    """The store closed while a write was queued or blocked on backpressure."""
 
 
 # --- the declared-statement type ---------------------------------------------------------------
@@ -718,7 +786,7 @@ def _run(connection: sqlite3.Connection, declared: Statement,
 
 
 def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int,
-             retries: int) -> sqlite3.Connection:
+             retries: int, check_same_thread: bool = True) -> sqlite3.Connection:
     """Open one database and enable foreign keys. **Writes nothing.**
 
     `foreign_keys` is set on **every** connection, including read-only ones: SQLite defaults it
@@ -741,13 +809,17 @@ def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int,
         # silently creates a new one — the first time a school puts its data under a directory
         # with a space in the name.
         connection = sqlite3.connect(
-            path.as_uri() + "?mode=ro", uri=True, timeout=busy_timeout_ms / 1000
+            path.as_uri() + "?mode=ro", uri=True, timeout=busy_timeout_ms / 1000,
+            check_same_thread=check_same_thread,
         )
     else:
-        connection = sqlite3.connect(path, timeout=busy_timeout_ms / 1000)
+        connection = sqlite3.connect(
+            path, timeout=busy_timeout_ms / 1000, check_same_thread=check_same_thread
+        )
     connection.row_factory = sqlite3.Row
-    # Autocommit; #11 replaces this with the single-writer queue and explicit batches. Set before
-    # any DDL so a migration's BEGIN is the only transaction in play.
+    # Autocommit at the driver level, which as of #11 is what lets this module issue its own
+    # BEGIN / COMMIT / ROLLBACK through `_run` rather than having sqlite3 open transactions
+    # behind it. Set before any DDL so a migration's BEGIN is the only transaction in play.
     connection.isolation_level = None
     _run(connection, _PRAGMA_FOREIGN_KEYS_ON, retries=retries)
     return connection
@@ -908,6 +980,418 @@ def _refuse_write(declared: Statement) -> None:
     )
 
 
+@dataclass(frozen=True)
+class StoreLimits:
+    """The environment-sensitive numbers, resolved once at `open_store`.
+
+    Resolved at construction, not per call, and that is a decision `TC-STORE-24` depends on:
+    seam 3 says "production value is the default; the knob exists so a slower test box can
+    adjust without a code change", which describes a value read when the process configures
+    itself. A store that re-read `os.environ` on every enqueue would be promising live reload,
+    which nothing requires and which makes the configured value unobservable.
+    """
+
+    commit_batch: int = DEFAULT_COMMIT_BATCH
+    commit_interval_ms: int = DEFAULT_COMMIT_INTERVAL_MS
+    write_queue_depth: int = DEFAULT_WRITE_QUEUE_DEPTH
+    projected_run_bytes: int = DEFAULT_PROJECTED_RUN_BYTES
+    queue_depth_sustain_ms: int = DEFAULT_QUEUE_DEPTH_SUSTAIN_MS
+    writer_poll_ms: int = DEFAULT_WRITER_POLL_MS
+    busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS
+    retries: int = DEFAULT_BUSY_RETRIES
+
+    def __post_init__(self) -> None:
+        """Refuse a knob whose value is meaningless, rather than hanging on it.
+
+        `_int_env` rejects a negative, which leaves zero -- and zero is not a small value here,
+        it is a different program. `commit_batch=0` makes every batch empty, so the writer spins
+        forever committing nothing while the queue never shrinks; `write_queue_depth=0` makes
+        `enqueue_write` block on its first call, since the depth is reached before anything is
+        queued. Both are silent hangs from one mistyped environment variable, and seam 3 exists
+        so a slower box can retune these -- retuning is when a typo happens.
+        """
+        for name, env, value in (
+            ("commit_batch", COMMIT_BATCH_ENV, self.commit_batch),
+            ("commit_interval_ms", COMMIT_INTERVAL_MS_ENV, self.commit_interval_ms),
+            ("write_queue_depth", WRITE_QUEUE_DEPTH_ENV, self.write_queue_depth),
+            ("writer_poll_ms", WRITER_POLL_MS_ENV, self.writer_poll_ms),
+        ):
+            if value <= 0:
+                raise ConfigurationProblem(
+                    f"{env} is {value}; it must be greater than zero. A {name} of zero does not "
+                    "mean 'no limit' — it stalls the write queue with nothing to report."
+                )
+
+    @classmethod
+    def from_environment(cls, environ: Mapping[str, str] | None = None) -> StoreLimits:
+        return cls(
+            commit_batch=_int_env(COMMIT_BATCH_ENV, DEFAULT_COMMIT_BATCH, environ),
+            commit_interval_ms=_int_env(
+                COMMIT_INTERVAL_MS_ENV, DEFAULT_COMMIT_INTERVAL_MS, environ),
+            write_queue_depth=_int_env(
+                WRITE_QUEUE_DEPTH_ENV, DEFAULT_WRITE_QUEUE_DEPTH, environ),
+            projected_run_bytes=_int_env(
+                PROJECTED_RUN_BYTES_ENV, DEFAULT_PROJECTED_RUN_BYTES, environ),
+            queue_depth_sustain_ms=_int_env(
+                QUEUE_DEPTH_SUSTAIN_MS_ENV, DEFAULT_QUEUE_DEPTH_SUSTAIN_MS, environ),
+            writer_poll_ms=_int_env(WRITER_POLL_MS_ENV, DEFAULT_WRITER_POLL_MS, environ),
+            busy_timeout_ms=_int_env(BUSY_TIMEOUT_MS_ENV, DEFAULT_BUSY_TIMEOUT_MS, environ),
+            retries=_int_env(BUSY_RETRIES_ENV, DEFAULT_BUSY_RETRIES, environ),
+        )
+
+
+class Tx:
+    """The handle a `transaction()` body writes through (`CT-STORE-03`).
+
+    Section 3.3's Interfaces block types `transaction()` as `ContextManager[Tx]` and never
+    defines `Tx`, so its one method is this module's. `execute(statement, **params)` mirrors
+    `query` deliberately: same declared-`Statement` argument, same keyword parameters, so a
+    caller moving a read into a transaction changes the method name and nothing else.
+
+    **No `commit` and no `rollback`.** The context manager owns both -- commit on a clean exit,
+    rollback on any exception -- because `CT-STORE-03`'s promise is "atomic and synchronous over
+    its whole body", and a body that could commit halfway through would make "both present or
+    both absent" a convention rather than a guarantee. `FUZZ-07` is the case that notices:
+    review proved its atomicity property vacuous against a `transaction()` that was a bare
+    `yield`, and a `Tx` exposing `commit()` is the same hole one level up.
+    """
+
+    __slots__ = ("_connection", "_retries")
+
+    def __init__(self, connection: sqlite3.Connection, retries: int) -> None:
+        self._connection = connection
+        self._retries = retries
+
+    def execute(self, statement: Statement, **params: Any) -> Sequence[Row]:
+        """Run one declared statement inside the open transaction.
+
+        Reads are allowed as well as writes -- `_refuse_write` guards `query`, not this --
+        because a transaction that could not read cannot do the read-modify-write every ledger
+        transition is. The rows come back for the same reason `query` returns them.
+        """
+        declared = statement if isinstance(statement, Statement) else Statement(statement)
+        return _run(self._connection, declared, params, retries=self._retries).fetchall()
+
+
+class WriteQueue:
+    """The single writer: one queue, one thread, batched commits, backpressure at the depth.
+
+    `FR-STORE-03` ("serialize all writes through a single writer thread fed by an in-process
+    queue; concurrent readers shall not block the writer"), `FR-STORE-04` (batch at 100 rows or
+    5 seconds, whichever comes first) and `FR-STORE-05` (backpressure above a configured depth)
+    are one mechanism, so they are one class.
+
+    **Why a second connection rather than a shared mutex.** The reader connection stays exactly
+    where #10 left it and this queue opens its own. Under WAL that is what makes `CT-STORE-04`
+    ("concurrent readers never block the writer") true *at the database level* -- a reader holds
+    no lock the writer needs. A single connection guarded by a lock would satisfy `TC-STORE-03`,
+    whose docstring says so plainly ("what this case does not catch: a per-operation shared
+    mutex"), and would fail `NFR-STORE-01` under real load. The contract is the promise; the
+    test is only what happens to be checkable.
+
+    **What "single writer" means once `transaction()` exists.** Section 3.3 hands the caller a
+    context manager, so a transaction body necessarily runs on the caller's thread -- it cannot
+    be marshalled to the writer thread without marshalling arbitrary user code. So the
+    serialization point is the write *connection*, guarded by `_write_lock`: the drain thread
+    takes it per batch, `transaction()` takes it for its whole body, and at most one write
+    transaction is ever open on the tier. One writer, in the sense the requirement is about --
+    never two writes interleaved, never a partially applied transaction observable -- and the
+    sense in which the design's own interface makes "one thread executes every statement"
+    unachievable is recorded here rather than quietly redefined.
+
+    **Ordering.** A `deque`, popped from the left, committed in slices. Single-caller FIFO holds
+    end to end, which is what `TC-STORE-03` asserts and `CT-STORE-04` promises; ordering
+    *across* callers is explicitly not promised and nothing here manufactures it.
+    """
+
+    __slots__ = (
+        "_condition", "_connect_write", "_failures", "_holder", "_last_latency_ms",
+        "_limits", "_over_since", "_pending", "_queue", "_stamps", "_stopping", "_thread",
+        "_write_lock",
+    )
+
+    def __init__(self, connect_write: Any, limits: StoreLimits) -> None:
+        self._connect_write = connect_write
+        self._limits = limits
+        self._queue: deque[WriteUnit] = deque()
+        self._stamps: deque[float] = deque()
+        self._condition = threading.Condition()
+        self._write_lock = threading.RLock()
+        self._thread: threading.Thread | None = None
+        self._stopping = False
+        self._last_latency_ms = 0.0
+        self._over_since: float | None = None
+        self._failures: list[BaseException] = []
+        # Rows enqueued and not yet durable -- queued *or* in flight. One counter rather than
+        # two terms; see `depth`.
+        self._pending = 0
+        # Whether *this* thread is inside a `transaction()` body on this queue. See `enqueue`.
+        self._holder = threading.local()
+
+    # -- what the metrics read -----------------------------------------------------------------
+
+    @property
+    def depth(self) -> int:
+        """Rows enqueued and not yet durable -- queued *or* mid-commit.
+
+        "Not yet durable" rather than "still on the deque", and the difference is what a caller
+        waiting for its writes depends on: `CT-STORE-02` makes `enqueue_write` asynchronous and
+        nothing else says when the row arrives, so polling this to zero is the only way to wait.
+        Counting the deque alone reports zero the instant the last batch is *popped*, while it is
+        still inside `COMMIT`, and the caller reads back one commit short. Measured before this
+        was a single counter: `TC-STORE-03` landed 225 of 250 rows -- in order, nothing lost,
+        the drain simply believing it had finished a batch early.
+
+        **One counter, not two terms added together.** An earlier form was
+        `len(self._queue) + self._in_flight`, incremented after the pops; review found the gap
+        between the last `popleft` and the `+=` still reads zero for a batch that is in neither
+        place. Narrower than a whole `COMMIT`, and not tripped in nine attempts -- but a window
+        the docstring claimed was closed. A single `int` read is atomic in CPython and has no
+        such gap.
+
+        No lock, deliberately. The merged `_drain` polls this in a tight loop with no sleep, and
+        a poll contending with the writer for the writer's own lock on every iteration would be
+        the reader blocking the writer, in the one place this module exists to prevent it.
+        """
+        return self._pending
+
+    @property
+    def backpressure_active(self) -> bool:
+        """`FR-STORE-05`'s level, at or above the configured depth.
+
+        At, not above. The requirement says "when the pending write queue exceeds a configured
+        depth" and `TC-STORE-07` reads that boundary as inclusive -- `N-1` clear, `N` raised. A
+        signal that first appeared at `N+1` would let the queue reach the bound
+        `NFR-STORE-02`'s durability window is computed from before saying anything.
+        """
+        return self.depth >= self._limits.write_queue_depth
+
+    @property
+    def last_commit_latency_ms(self) -> float:
+        return self._last_latency_ms
+
+    @property
+    def failures(self) -> tuple[BaseException, ...]:
+        return tuple(self._failures)
+
+    def sustained_over_threshold(self) -> bool:
+        """Whether backpressure has held long enough to be the *alert* rather than the signal."""
+        since = self._over_since
+        if since is None:
+            return False
+        return (time.monotonic() - since) * 1000.0 >= self._limits.queue_depth_sustain_ms
+
+    # -- the caller side -----------------------------------------------------------------------
+
+    def enqueue(self, unit: WriteUnit) -> None:
+        """Append, blocking while the queue is at or above the configured depth.
+
+        Blocking is one of the two behaviours `FR-STORE-05` sanctions, and it is the one that
+        cannot lie: a caller that is blocked has demonstrably reduced its dispatch rate, whereas
+        "slowing" is a promise about a duration nobody can hold. `CT-STORE-06` tells `M-ORCH` to
+        read it as a throttle signal rather than a fault, which is why this raises nothing while
+        the store is open.
+
+        The writer thread is started **before** the wait, not after. Starting it afterwards
+        deadlocks the first caller the moment the depth is reached: nothing would be draining
+        the queue it is waiting on.
+        """
+        if getattr(self._holder, "in_transaction", False):
+            # F2: this thread is inside a `transaction()` body, so it holds `_write_lock` -- the
+            # same lock the drain thread needs to commit anything. Waiting for backpressure to
+            # clear would wait for a drain that cannot start, and the process hangs with no
+            # timeout and no diagnostic.
+            #
+            # `CT-STORE-04` is the reason this is a raise rather than a docstring note: "write
+            # ordering across different `enqueue_write` calls ... is not guaranteed **except
+            # within one `transaction()`**" reads, naturally, as contemplating enqueues inside a
+            # transaction body. It cannot mean that here -- an enqueued row is committed by the
+            # *writer*, in its own transaction, so it could not be part of the caller's one even
+            # if the lock allowed it. Saying so is better than deadlocking at depth 1,000 in an
+            # M-ORCH bulk path.
+            raise WriteThroughQueryError(
+                "enqueue_write was called inside a transaction() body on the same tier. The "
+                "queue commits in its own transaction, so the row could not join this one; and "
+                "the body holds the write lock the queue's writer needs, so at the configured "
+                "depth this call would block forever on a drain that cannot start. Write it "
+                "with tx.execute() to be part of this transaction, or enqueue it after the "
+                "body exits."
+            )
+        self._ensure_writer()
+        with self._condition:
+            while self._pending >= self._limits.write_queue_depth and not self._stopping:
+                self._condition.notify_all()
+                self._condition.wait(timeout=self._limits.writer_poll_ms / 1000)
+            if self._stopping:
+                raise WriteQueueClosed(
+                    "the store closed while this write was waiting on backpressure; the row was "
+                    "not queued and has not been written"
+                )
+            self._queue.append(unit)
+            self._stamps.append(time.monotonic())
+            self._pending += 1
+            self._note_depth_locked()
+            self._condition.notify_all()
+
+    @contextmanager
+    def transaction(self) -> Iterator[Tx]:
+        """Atomic and synchronous over the whole body, within one tier (`CT-STORE-03`).
+
+        `BEGIN IMMEDIATE` rather than a deferred begin: the write lock is already held, so taking
+        the database's write lock at the same moment keeps the two in step and means a competing
+        process fails at the `BEGIN` -- where `_run`'s bounded `SQLITE_BUSY` retry can see it --
+        rather than partway through the body.
+
+        Rollback on **`BaseException`**, not `Exception`. `FUZZ-07` injects its abort as a custom
+        exception and a `KeyboardInterrupt` mid-transaction is exactly the "uncontrolled kill"
+        `NFR-STORE-02` is about; catching only `Exception` would leave a transaction open on the
+        connection for the next caller to inherit.
+        """
+        if self._stopping:
+            # Without this a transaction on a closed store reopens the write connection and
+            # commits, so `close()` refuses one write door and holds the other open.
+            raise WriteQueueClosed(
+                "transaction() was called on a closed store. Reopening the write connection "
+                "here would commit to a tier whose handle has already been released."
+            )
+        with self._write_lock:
+            connection = self._connect_write()
+            _run(connection, _BEGIN, retries=self._limits.retries)
+            self._holder.in_transaction = True
+            try:
+                yield Tx(connection, self._limits.retries)
+            except BaseException:
+                self._holder.in_transaction = False
+                try:
+                    _run(connection, _ROLLBACK, retries=self._limits.retries)
+                except sqlite3.Error:
+                    pass  # the transaction is already gone; the caller's exception is the news
+                raise
+            self._holder.in_transaction = False
+            _run(connection, _COMMIT, retries=self._limits.retries)
+
+    # -- the writer side -----------------------------------------------------------------------
+
+    def _ensure_writer(self) -> None:
+        with self._condition:
+            if self._thread is not None or self._stopping:
+                return
+            thread = threading.Thread(
+                target=self._drain_forever, name="aeh-store-writer", daemon=True
+            )
+            # Started **inside** the lock, and published only once started. Publishing first and
+            # starting after left a window in which `close()` read the attribute and called
+            # `join()` on a thread that had not begun: `RuntimeError: cannot join thread before
+            # it is started`. A shutdown racing a first `enqueue_write` is the ordinary shape of
+            # a cancelled run, not an exotic one.
+            thread.start()
+            self._thread = thread
+
+    def _note_depth_locked(self) -> None:
+        """Track how long depth has been at or above the threshold. Call under `_condition`."""
+        if self._pending >= self._limits.write_queue_depth:
+            if self._over_since is None:
+                self._over_since = time.monotonic()
+        else:
+            self._over_since = None
+
+    def _next_batch(self) -> list[WriteUnit] | None:
+        """The next batch to commit, or `None` once the queue is stopped and empty.
+
+        `FR-STORE-04`'s "at most 100 results or 5 seconds, whichever comes first" is two
+        conditions on one queue, and both are checked here so one place decides. The age is the
+        age of the **oldest** pending row, which is what makes the interval a durability bound:
+        `NFR-STORE-02` promises at most one commit window of results is lost, and a window
+        measured from the newest row would never close under steady load.
+        """
+        poll = self._limits.writer_poll_ms / 1000
+        with self._condition:
+            while True:
+                if self._queue:
+                    oldest_age_ms = (time.monotonic() - self._stamps[0]) * 1000.0
+                    due = (
+                        len(self._queue) >= self._limits.commit_batch
+                        or oldest_age_ms >= self._limits.commit_interval_ms
+                        or self._stopping
+                    )
+                    if due:
+                        take = min(len(self._queue), self._limits.commit_batch)
+                        batch = [self._queue.popleft() for _ in range(take)]
+                        for _ in range(take):
+                            self._stamps.popleft()
+                        # `_pending` is untouched here: these rows are still not durable, only
+                        # somewhere else. It drops in `_commit`'s `finally`, which is what keeps
+                        # `depth` from dipping through the gap between the deque and the COMMIT.
+                        self._note_depth_locked()
+                        # Wake anyone blocked on backpressure: the depth just dropped.
+                        self._condition.notify_all()
+                        return batch
+                elif self._stopping:
+                    return None
+                self._condition.wait(timeout=poll)
+
+    def _drain_forever(self) -> None:
+        while True:
+            batch = self._next_batch()
+            if batch is None:
+                return
+            self._commit(batch)
+
+    def _commit(self, batch: list[WriteUnit]) -> None:
+        """One batch, one transaction, one latency measurement.
+
+        A failure is **recorded, not swallowed**. The rows are already off the queue, so a writer
+        that logged and moved on would let `write_queue_depth` reach zero with the rows gone -- a
+        drain reporting success against data that was never written, which is the silent-failure
+        trap `CLAUDE.md` seam 4 names. `close()` re-raises the first one and `store_metrics`
+        counts them.
+        """
+        started = time.perf_counter()
+        try:
+            with self._write_lock:
+                connection = self._connect_write()
+                _run(connection, _BEGIN, retries=self._limits.retries)
+                try:
+                    for unit in batch:
+                        _run(connection, unit.statement, unit.params,
+                             retries=self._limits.retries)
+                except BaseException:
+                    try:
+                        _run(connection, _ROLLBACK, retries=self._limits.retries)
+                    except sqlite3.Error:
+                        pass
+                    raise
+                _run(connection, _COMMIT, retries=self._limits.retries)
+        except BaseException as error:  # noqa: BLE001 -- recorded; see the docstring
+            self._failures.append(error)
+        finally:
+            # Measured even on failure: a batch that took four seconds to fail is the number an
+            # operator needs, and `NFR-STORE-02`'s window is about elapsed time, not success.
+            self._last_latency_ms = (time.perf_counter() - started) * 1000.0
+            with self._condition:
+                self._pending -= len(batch)
+                self._note_depth_locked()
+                self._condition.notify_all()
+
+    # -- lifecycle ------------------------------------------------------------------------------
+
+    def close(self, *, timeout_s: float = 30.0) -> None:
+        """Flush what is queued, stop the thread, then re-raise the first write failure.
+
+        Flush rather than discard: `close()` is the controlled shutdown, and the bounded loss
+        `NFR-STORE-02` permits is the loss to an *uncontrolled* kill. Dropping queued rows on a
+        clean close would make the two indistinguishable.
+        """
+        with self._condition:
+            self._stopping = True
+            self._condition.notify_all()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout=timeout_s)
+        if self._failures:
+            raise self._failures[0]
+
+
 class SqliteTierHandle:
     """One tier's database. `query`, `enqueue_write`, `transaction` — and nothing else.
 
@@ -917,14 +1401,104 @@ class SqliteTierHandle:
     is a declared statement through `query`.
     """
 
-    __slots__ = ("_connection", "_opened", "_read_only", "_retries")
+    __slots__ = (
+        "_connection", "_extra_readers", "_limits", "_local", "_opened", "_owner_thread",
+        "_path", "_queue", "_read_only", "_retries", "_write_connection",
+    )
 
     def __init__(self, connection: sqlite3.Connection, opened: TierOpened, *,
-                 retries: int = DEFAULT_BUSY_RETRIES) -> None:
+                 path: Path, limits: StoreLimits | None = None,
+                 retries: int | None = None) -> None:
         self._connection = connection
         self._opened = opened
         self._read_only = opened.read_only
-        self._retries = retries
+        self._path = path
+        limits = limits if limits is not None else StoreLimits()
+        if retries is not None:
+            limits = replace(limits, retries=retries)
+        self._limits = limits
+        self._retries = limits.retries
+        self._write_connection: sqlite3.Connection | None = None
+        # One read connection per thread. `CT-STORE-04` promises concurrent readers never block
+        # the writer, and sqlite3 refuses a connection used off its creating thread at all --
+        # `ProgrammingError`, before SQLite is even reached. Passing `check_same_thread=False` and
+        # sharing one connection would silence that check and put every reader behind the GIL and
+        # behind each other's cursors, which is "readers block readers" wearing the right answer's
+        # clothes. Under WAL a per-thread connection holds no lock the writer needs, which is the
+        # property the requirement is actually about.
+        self._local = threading.local()
+        self._extra_readers: list[sqlite3.Connection] = []
+        self._owner_thread = threading.get_ident()
+        # No queue on a read-only handle, and no lazy one either. `FR-STORE-13` opens a Tier P
+        # database to inspect a package *before* it is trusted, so the write path must be absent
+        # rather than merely unused -- a queue that existed and refused later is a queue that
+        # could open a connection and move the file's mtime while refusing.
+        self._queue: WriteQueue | None = (
+            None if self._read_only else WriteQueue(self._open_write_connection, limits)
+        )
+
+    # -- the read connections ------------------------------------------------------------------
+
+    def _read_connection(self) -> sqlite3.Connection:
+        """This thread's read connection, opened on first use.
+
+        The connection `_open_tier` built is this handle's own and stays the one the constructing
+        thread uses -- it is the one migrations ran on and the one `TierOpened` describes. Every
+        other thread gets its own, recorded in `_extra_readers` so `close()` can reach it: a
+        connection nothing closes is, on Windows, a file `purge_cohort` cannot delete.
+        """
+        existing = getattr(self._local, "connection", None)
+        if existing is not None:
+            return existing
+        connection = _connect(
+            self._path, read_only=self._read_only,
+            busy_timeout_ms=self._limits.busy_timeout_ms, retries=self._limits.retries,
+            # Used by exactly one thread -- the one this branch just created it for -- so the
+            # WAL argument above is untouched. The flag is off because `close()` runs on a
+            # *different* thread, and with the check on it raised `ProgrammingError` there,
+            # aborting the loop and leaving every later reader and the handle's own connection
+            # open: precisely the locked file this list exists to prevent.
+            check_same_thread=False,
+        )
+        self._local.connection = connection
+        self._extra_readers.append(connection)
+        return connection
+
+    # -- the write connection ----------------------------------------------------------------
+
+    def _open_write_connection(self) -> sqlite3.Connection:
+        """The second connection, opened on first write and kept for the handle's life.
+
+        **Separate from the read connection, and that is `CT-STORE-04`.** Under WAL a reader
+        holds no lock a writer needs, so two connections is what makes "concurrent readers never
+        block the writer" a property of the database rather than of a mutex this module happens
+        to release often enough.
+
+        `check_same_thread=False` because two threads legitimately use it -- the drain thread for
+        batches, the caller's thread for a `transaction()` body -- and `WriteQueue._write_lock`
+        is what keeps them from doing so at once. The flag disables sqlite3's own thread check;
+        it does not make the connection safe on its own, and the lock is not decoration.
+
+        `journal_mode` is not set here: WAL lives in the file header, `_open_tier` wrote it, and
+        this connection inherits it. `foreign_keys` is the opposite -- per connection, never
+        persisted -- so `_connect` setting it is exactly what `FR-STORE-14` needs, since this is
+        the connection that actually issues every write `CT-STORE-13` promises will fail.
+        """
+        if self._write_connection is None:
+            self._write_connection = _connect(
+                self._path, read_only=False, busy_timeout_ms=self._limits.busy_timeout_ms,
+                retries=self._limits.retries, check_same_thread=False,
+            )
+        return self._write_connection
+
+    def _refuse_read_only(self, door: str) -> None:
+        if self._read_only:
+            raise ReadOnlyTierError(
+                f"{door} was called on a read-only handle for {self._path.name}. FR-STORE-13 "
+                "opens a Tier P database read-only so an imported package can be inspected "
+                "before it is trusted, and a write through that handle would alter the file "
+                "whose provenance is the question."
+            )
 
     @property
     def opened(self) -> TierOpened:
@@ -958,26 +1532,102 @@ class SqliteTierHandle:
         """
         declared = statement if isinstance(statement, Statement) else Statement(statement)
         _refuse_write(declared)
-        return _run(self._connection, declared, params, retries=self._retries).fetchall()
+        return _run(self._connection_for_this_thread(), declared, params,
+                    retries=self._retries).fetchall()
 
-    def enqueue_write(self, unit: WriteUnit) -> None:
-        """Asynchronous single-writer enqueue (`FR-STORE-03`, `CT-STORE-02`). **#11.**"""
-        raise NotImplementedError(
-            "TierHandle.enqueue_write is issue #11 (FR-STORE-03/-04/-05: the single-writer "
-            "queue, batch commits and backpressure). It is deliberately absent rather than a "
-            "synchronous stand-in: CT-STORE-02 makes this call asynchronous, and a stub that "
-            "wrote through would let every caller be written against the wrong contract."
-        )
+    def _connection_for_this_thread(self) -> sqlite3.Connection:
+        """`_connection` on the thread that opened the handle, a private one on any other.
 
-    def transaction(self) -> ContextManager[Any]:
-        """Atomic, synchronous, whole-body, within one tier (`CT-STORE-03`). **#11.**"""
-        raise NotImplementedError(
-            "TierHandle.transaction is issue #11 (FR-STORE-04). Deliberately raising rather "
-            "than yielding: FUZZ-07 records that review proved its atomicity case vacuous by "
-            "supplying a bare `yield` and watching 500/500 examples pass."
-        )
+        Compared by thread identity rather than by trying the connection and catching
+        `ProgrammingError`: a probe would be a second `execute()` in this module, and
+        `KNOWN_EXECUTE_SITES` in `tests/artifact/test_store_query_surface.py` is an exact set for
+        the good reason that every site is somewhere a statement reaches SQLite.
+        """
+        if threading.get_ident() == self._owner_thread:
+            return self._connection
+        return self._read_connection()
+
+    def enqueue_write(self, unit: WriteUnit | Statement | str, /, **params: Any) -> None:
+        """Queue one write and return. **Asynchronous** (`CT-STORE-02`).
+
+        Returns before the row is durable, and that is the clause design 3.3 calls "the single
+        most load-bearing clause in this contract and the easiest to get wrong". A caller that
+        must observe its own write reads through `transaction()` or waits for the commit batch;
+        nothing here waits on its behalf.
+
+        **Two accepted forms, because the design and the suite disagree.** 3.3's Interfaces block
+        types the parameter `WriteUnit`; every merged case calls
+        `enqueue_write(statement, **params)`. Both work: a `WriteUnit` is used as given, and a
+        statement plus keywords is packed into one. Supporting only the declared form would break
+        four merged files including a P0; supporting only the convenience form would drop the
+        signature the design states. The gap is reported against the design rather than resolved
+        by picking a side.
+
+        Blocks at the configured depth (`FR-STORE-05`) -- see `WriteQueue.enqueue`.
+        """
+        self._refuse_read_only("enqueue_write")
+        if isinstance(unit, WriteUnit):
+            if params:
+                raise TypeError(
+                    "enqueue_write got both a WriteUnit and keyword parameters. The unit already "
+                    "carries its params; passing both leaves it ambiguous which wins."
+                )
+            queued = unit
+        else:
+            declared = unit if isinstance(unit, Statement) else Statement(unit)
+            queued = WriteUnit(statement=declared, params=params)
+        assert self._queue is not None  # guaranteed by _refuse_read_only above
+        self._queue.enqueue(queued)
+
+    def transaction(self) -> ContextManager[Tx]:
+        """Atomic, synchronous, whole-body, within one tier (`CT-STORE-03`).
+
+        Within **one tier handle**. Cross-tier atomicity is deliberately not provided, and a
+        caller needing a row in Tier C and a row in Tier D together does not get it from here --
+        `CT-STORE-03` says so, and two databases cannot be committed atomically without a
+        transaction manager this design rejects along with the server process.
+        """
+        self._refuse_read_only("transaction")
+        assert self._queue is not None  # guaranteed by _refuse_read_only above
+        return self._queue.transaction()
+
+    @property
+    def metrics(self) -> dict[str, Any]:
+        """This tier's share of `CT-STORE-17`'s signals. Aggregated by `store_metrics`."""
+        queue = self._queue
+        return {
+            "write_queue_depth": 0 if queue is None else queue.depth,
+            "batch_commit_latency_ms": 0.0 if queue is None else queue.last_commit_latency_ms,
+            "backpressure_active": False if queue is None else queue.backpressure_active,
+            "queue_depth_sustained": False if queue is None else queue.sustained_over_threshold(),
+            "write_failures": 0 if queue is None else len(queue.failures),
+            "database_file_bytes": self._path.stat().st_size if self._path.exists() else 0,
+        }
 
     def close(self) -> None:
+        """Flush the queue, then close both connections.
+
+        The queue closes **first**: it is still holding rows bound for the write connection, and
+        closing that connection out from under a batch mid-flight is how a clean shutdown starts
+        losing the writes an uncontrolled kill was supposed to be the only thing that loses.
+        """
+        if self._queue is not None:
+            try:
+                self._queue.close()
+            finally:
+                if self._write_connection is not None:
+                    self._write_connection.close()
+                    self._write_connection = None
+        # Every one of them, even if one raises. A loop that stopped at the first failure would
+        # leave the rest open while reporting the problem, which on Windows is a file
+        # `purge_cohort` cannot delete -- the failure this list exists to prevent, reached by the
+        # cleanup rather than by the absence of one.
+        for reader in self._extra_readers:
+            try:
+                reader.close()
+            except sqlite3.Error:
+                pass
+        self._extra_readers.clear()
         self._connection.close()
 
 
@@ -993,12 +1643,25 @@ class SqliteStore:
     matter of which handle a caller happened to hold.
     """
 
-    __slots__ = ("_busy_timeout_ms", "_data_dir", "_handles", "_opened", "_retries")
+    __slots__ = (
+        "_busy_timeout_ms", "_data_dir", "_handles", "_limits", "_opened", "_read_only",
+        "_retries",
+    )
 
-    def __init__(self, data_dir: Path, *, busy_timeout_ms: int, retries: int) -> None:
+    def __init__(self, data_dir: Path, *, busy_timeout_ms: int | None = None,
+                 retries: int | None = None, limits: StoreLimits | None = None,
+                 read_only: bool = False) -> None:
+        self._read_only = read_only
+        if limits is None:
+            limits = StoreLimits()
+        if busy_timeout_ms is not None:
+            limits = replace(limits, busy_timeout_ms=busy_timeout_ms)
+        if retries is not None:
+            limits = replace(limits, retries=retries)
+        self._limits = limits
         self._data_dir = data_dir
-        self._busy_timeout_ms = busy_timeout_ms
-        self._retries = retries
+        self._busy_timeout_ms = limits.busy_timeout_ms
+        self._retries = limits.retries
         self._handles: dict[tuple[Tier, str, bool], SqliteTierHandle] = {}
         self._opened: list[TierOpened] = []
 
@@ -1007,6 +1670,11 @@ class SqliteStore:
     @property
     def data_dir(self) -> Path:
         return self._data_dir
+
+    @property
+    def limits(self) -> StoreLimits:
+        """The knob values this store was constructed with. See `StoreLimits`."""
+        return self._limits
 
     def package_path(self, package_id: str) -> Path:
         return self._data_dir / "packages" / f"{package_id}.pkg.sqlite"
@@ -1047,12 +1715,12 @@ class SqliteStore:
             path, tier, read_only=read_only, busy_timeout_ms=self._busy_timeout_ms,
             retries=self._retries,
         )
-        handle = SqliteTierHandle(connection, opened, retries=self._retries)
+        handle = SqliteTierHandle(connection, opened, path=path, limits=self._limits)
         self._handles[(tier, key, read_only)] = handle
         self._opened.append(opened)
         return handle
 
-    def package(self, package_id: str, *, read_only: bool = False) -> SqliteTierHandle:
+    def package(self, package_id: str, *, read_only: bool | None = None) -> SqliteTierHandle:
         """Tier P — one file per package, permanent, no PII by construction.
 
         `read_only=True` is `FR-STORE-13`: an imported package is inspected *before* it is
@@ -1060,16 +1728,19 @@ class SqliteStore:
         migrate a file whose provenance is exactly what is in question.
         """
         return self._handle(
-            Tier.PACKAGE, package_id, self.package_path(package_id), read_only=read_only
+            Tier.PACKAGE, package_id, self.package_path(package_id),
+            read_only=self._read_only if read_only is None else read_only,
         )
 
     def cohort(self, cohort_id: str) -> SqliteTierHandle:
         """Tiers C **and** R — one file, per administration, heavy PII."""
-        return self._handle(Tier.COHORT, cohort_id, self.cohort_path(cohort_id), read_only=False)
+        return self._handle(
+            Tier.COHORT, cohort_id, self.cohort_path(cohort_id), read_only=self._read_only
+        )
 
     def durable(self) -> SqliteTierHandle:
         """Tier D — one shared file, permanent, pseudonymized."""
-        return self._handle(Tier.DURABLE, "", self.durable_path(), read_only=False)
+        return self._handle(Tier.DURABLE, "", self.durable_path(), read_only=self._read_only)
 
     # -- the two surfaces later stories fill in ---------------------------------------------------
 
@@ -1092,9 +1763,22 @@ class SqliteStore:
     # -- lifecycle ---------------------------------------------------------------------------------
 
     def close(self) -> None:
+        """Close every handle, then report the first write failure any of them recorded.
+
+        Every handle is closed even if one raises. A store that abandoned the remaining tiers on
+        the first bad one would leave open connections behind while reporting the failure, and on
+        Windows an open connection is a file nothing else can delete -- which is how `close()`
+        starts breaking `purge_cohort` rather than merely reporting a problem.
+        """
+        first: BaseException | None = None
         for handle in self._handles.values():
-            handle.close()
+            try:
+                handle.close()
+            except BaseException as error:  # noqa: BLE001 -- re-raised below, after every close
+                first = first if first is not None else error
         self._handles.clear()
+        if first is not None:
+            raise first
 
     def __enter__(self) -> SqliteStore:
         return self
@@ -1103,7 +1787,7 @@ class SqliteStore:
         self.close()
 
 
-def open_store(data_dir: Path | str | None = None, *,
+def open_store(data_dir: Path | str | None = None, *, read_only: bool = False,
                environ: Mapping[str, str] | None = None) -> SqliteStore:
     """Open the store rooted at `data_dir`, or at `HARNESS_DATA_DIR` when none is given.
 
@@ -1116,6 +1800,13 @@ def open_store(data_dir: Path | str | None = None, *,
     database opens on the first call to `package()`, `cohort()` or `durable()`, which is what
     keeps `NFR-STORE-03`'s "no installation step" true — a store constructed against a fresh
     directory has created no `durable.sqlite` a caller never asked for.
+
+    `read_only=True` makes **every** handle this store hands out read-only. `FR-STORE-13` is
+    written about Tier P, and `package(id, read_only=True)` remains the narrow form — but the
+    situation the requirement describes is inspecting an untrusted import, and a store that
+    refused to write the package while happily migrating `durable.sqlite` on the way past would
+    have modified the data directory during the very session that was supposed to leave no trace.
+    The flag is the whole-store form of the same promise, and `TC-STORE-16` opens it this way.
     """
     root = Path(data_dir).expanduser() if data_dir is not None else data_dir_from_environment(
         environ
@@ -1125,7 +1816,84 @@ def open_store(data_dir: Path | str | None = None, *,
         child.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
 
     return SqliteStore(
-        root,
-        busy_timeout_ms=_int_env(BUSY_TIMEOUT_MS_ENV, DEFAULT_BUSY_TIMEOUT_MS, environ),
-        retries=_int_env(BUSY_RETRIES_ENV, DEFAULT_BUSY_RETRIES, environ),
+        root, limits=StoreLimits.from_environment(environ), read_only=read_only
     )
+
+
+# --- observability -------------------------------------------------------------------------------
+
+
+def store_metrics(store: SqliteStore) -> dict[str, Any]:
+    """`CT-STORE-17`'s five signals, the two alerts, and the configured values behind them.
+
+    *"Emits write-queue depth, batch commit latency, database file sizes, free disk space, and
+    `VACUUM` duration under those names. Free-disk and queue-depth are alert inputs and their
+    semantics are contract."* Design 3.3 names them in prose and fixes no spelling, so the
+    spelling is here and the gap is reported against the design.
+
+    A **function**, not a `Store` member, and deliberately: `CT-STORE-01` closes `Store` to
+    `package`, `cohort`, `durable`, `blobs` and `purge_cohort`, and `TC-STORE-C01` calls that
+    closed member list "the door through which every other clause here gets bypassed". Adding a
+    sixth method to read metrics would open exactly that door for the most innocuous-looking
+    reason there is.
+
+    **`database_file_bytes` is a mapping, not a scalar.** The tiers have different lifetimes --
+    Tier D is permanent, C and R are purged together -- so one aggregate number cannot answer
+    "which tier is growing", which is the only question the signal exists to answer.
+
+    **`vacuum_duration_ms` is honestly zero until a `VACUUM` runs.** The only one this module
+    performs is `purge_cohort`'s, which is #13's, so reporting anything else here would be
+    inventing a measurement.
+    """
+    depth = 0
+    latency_ms = 0.0
+    failures = 0
+    backpressure = False
+    sustained = False
+    sizes: dict[str, int] = {}
+
+    for (tier, key, _read_only), handle in store._handles.items():  # noqa: SLF001
+        share = handle.metrics
+        depth += int(share["write_queue_depth"])
+        latency_ms = max(latency_ms, float(share["batch_commit_latency_ms"]))
+        failures += int(share["write_failures"])
+        backpressure = backpressure or bool(share["backpressure_active"])
+        sustained = sustained or bool(share["queue_depth_sustained"])
+        # Keyed per open tier, so "which tier is growing" is answerable. `TC-STORE-24` reads
+        # `durable` and a key beginning `cohort`; the id is carried too, because two cohorts in
+        # one run are two files and an aggregate over them answers nothing.
+        label = tier.value if not key else f"{tier.value}:{key}"
+        sizes[label] = int(share["database_file_bytes"])
+
+    limits = store.limits
+    free_bytes = shutil.disk_usage(store.data_dir).free
+
+    firing: list[str] = []
+    # A projection of zero means "M-ORCH stated no remaining-run requirement". An alert with no
+    # projection behind it stays quiet rather than inventing a threshold -- an always-on alert is
+    # worth exactly what an always-off one is worth.
+    if limits.projected_run_bytes > 0 and free_bytes < limits.projected_run_bytes:
+        firing.append(ALERT_FREE_DISK)
+    if sustained:
+        firing.append(ALERT_QUEUE_DEPTH)
+
+    return {
+        # -- the five CT-STORE-17 signals ------------------------------------------------------
+        "write_queue_depth": depth,
+        "batch_commit_latency_ms": latency_ms,
+        "database_file_bytes": sizes,
+        "free_disk_bytes": free_bytes,
+        "vacuum_duration_ms": 0.0,
+        # -- the alerts, declared and firing ---------------------------------------------------
+        "alerts_declared": list(DECLARED_ALERTS),
+        "alerts_firing": firing,
+        # -- FR-STORE-05's level, which M-ORCH throttles on (CT-STORE-06, FR-ORCH-21) ----------
+        "backpressure_active": backpressure,
+        # -- what the knobs resolved to, so a caller can tell a boundary from a default --------
+        "configured_queue_depth": limits.write_queue_depth,
+        "configured_commit_batch": limits.commit_batch,
+        "configured_commit_interval_ms": limits.commit_interval_ms,
+        "configured_projected_run_bytes": limits.projected_run_bytes,
+        # -- writes the queue accepted and could not commit. Zero is the only healthy value ----
+        "write_failures": failures,
+    }

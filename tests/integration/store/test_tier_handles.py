@@ -32,7 +32,7 @@ from tests.support.impl import require_attr
 from tests.support.store_api import open_store, statement
 from tests.support.store_vocabulary import journal_mode, table_names
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 #: `open_store` and `Statement` are #10's and landed with it, so this constant now only appears
 #: in `require` messages that no longer fire. Kept as provenance rather than re-pointed at #11:
@@ -174,9 +174,17 @@ def test_tc_store_01_four_tiers_open_as_wal_files_in_the_layout_the_design_fixes
     # ambiguous and #10's acceptance criteria never say. The claim under test is about **file
     # topology**, not about who runs the DDL: a Tier C table and a Tier R table, written through
     # the one `cohort()` handle, must land in the one file.
+    # `IF NOT EXISTS`, because #10 answered the ambiguity the paragraph above records: its
+    # cohort migration creates `submission` and `work_unit` itself, so a bare `CREATE TABLE`
+    # raises `table submission already exists` and the case fails on its own fixture. The claim
+    # under test is unchanged either way -- a Tier C table and a Tier R table, in one file -- and
+    # this form makes it hold whether the DDL comes from the migration or from here, which is
+    # what "genuinely ambiguous" asked for.
     with cohort.transaction() as tx:
-        tx.execute(statement(f"CREATE TABLE {TIER_C_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
-        tx.execute(statement(f"CREATE TABLE {TIER_R_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
+        tx.execute(statement(
+            f"CREATE TABLE IF NOT EXISTS {TIER_C_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
+        tx.execute(statement(
+            f"CREATE TABLE IF NOT EXISTS {TIER_R_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
 
     cohort_tables = table_names(cohort_path)
     assert cohort_tables, (
