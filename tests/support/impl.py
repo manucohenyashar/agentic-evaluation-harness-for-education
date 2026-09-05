@@ -406,6 +406,32 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/regression/test_reg_05_score_distributions.py",
         ),
     ),
+    # --- TS-02 (#3), the behavioural half of `TC-CONFORM-09` ---------------------------------
+    #
+    # Its own key rather than riding on `#134` above, and the reason is the one the `#122
+    # serve_console` note states: `require()` reports whichever blocker it resolves **first**, so a
+    # test whose first call is `run_adversarial_tier` must be registered against
+    # `run_adversarial_tier`. Registering it under the existing `#134` entry (keyed on
+    # `detect_build_substitution`) would unmark it when `FR-CONFORM-08` landed, while the thing it
+    # actually drives was still absent.
+    #
+    # **Keyed on a symbol no Interfaces block declares.** Design §3.18 declares `ConformanceSuite`
+    # with two members, `run` and `compare`, plus the type names in their signatures -- so a key on
+    # any of those resolves against a Protocol-only `aeh.conform` with nothing behind it, which is
+    # the measurement TS-56 made and TS-75 repeated. `run_adversarial_tier` is `FR-CONFORM-09`'s
+    # own phrase (*"an adversarial-input tier"*) turned into a name, appears nowhere in either
+    # design document (checked: zero occurrences), and is invented and used together by the one
+    # suite that drives it.
+    #
+    # #134 rather than #133, for the same reason TS-75 keys `TC-CONFORM-C09`'s two run-halves
+    # there: #133 builds the corpus and #134 runs it, and this half is a run. The corpus half of
+    # the same case is in `tests/artifact/` and carries no marker -- it is green, because the
+    # corpora are TS-02's deliverable rather than something it waits on.
+    "#134 adversarial": (
+        "symbol",
+        f"{CONFORM_MODULE}:run_adversarial_tier",
+        ("tests/integration/conform/test_tc_conform_09_adversarial_tier.py",),
+    ),
     # `TC-CONFORM-C14`'s consumer sweep splits by consumer. #29 owns the population- and
     # backend-scoped validation records, so it is what makes the `M-PKG` half runnable; the
     # `M-CONSOLE` half is #122's and rides with the other console sweeps below.

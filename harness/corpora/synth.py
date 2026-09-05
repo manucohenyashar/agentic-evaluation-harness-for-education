@@ -171,6 +171,17 @@ class SyntheticSubmission:
         return "\n".join(header + body).rstrip("\n")
 
 
+def render_band(criterion_id: str, ordinal: int) -> str:
+    """One open criterion rendered as student prose at one band ordinal.
+
+    Public because `harness.corpora.adv_inj` renders the same way: an injection twin pair whose
+    benign half was written in a different voice from `F-SYNTH` would make the adversarial
+    differential a comparison of two corpora rather than of one payload.
+    """
+    claim, reason, condition = _PHRASING[criterion_id]
+    return _OPEN_RENDERING[ordinal].format(claim=claim, reason=reason, condition=condition)
+
+
 def _band_for(ordinal_count: int, ability: float, rng: random.Random) -> int:
     """Which band this student lands in on one criterion.
 
@@ -201,10 +212,7 @@ def _page_text(question_index: int, criteria_ids: Sequence[str], bands: Mapping[
     for cid in criteria_ids:
         criterion = BY_ID[cid]
         ordinal = next(b.ordinal for b in criterion.bands if b.band == bands[cid])
-        claim, reason, condition = _PHRASING[cid]
-        lines.append(
-            _OPEN_RENDERING[ordinal].format(claim=claim, reason=reason, condition=condition)
-        )
+        lines.append(render_band(cid, ordinal))
     if page_no == PAGES_PER_SUBMISSION:
         lines += ["", f"## {QUESTIONS[4].question_id}", ""]
         for cid, choice in mcq_choices.items():

@@ -4,6 +4,8 @@
   "seed": 20260101,
   "generator": "harness.corpora.synth:synth_cohort",
   "description": "350 generated submissions against the 5-question, 15-criterion reference package.",
+  "set_content_hash": "sha256:8c7a10a9c184190151bd4437c56a1f386bf271448223328d3dd6c5c8247354ad",
+  "fixture_set_id": "F-SYNTH@1+sha256:8c7a10a9c184190151bd4437c56a1f386bf271448223328d3dd6c5c8247354ad",
   "package_id": "PKG-REF",
   "package_version": "1",
   "consent_class": "synthetic",
@@ -15,6 +17,7 @@
       "content_hash": "sha256:de16b15226673b6b9c23c5d96f6746e2bd17c763f6215d73dd8c374e020a6469",
       "student_ref": "S-0001",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -41,6 +44,7 @@
       "content_hash": "sha256:38ee60d6c0e93307d7bfde6af2bec495ce85f62b27d87936b0b1803a9c0b824c",
       "student_ref": "S-0002",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -67,6 +71,7 @@
       "content_hash": "sha256:1c3909194479b0d36103d778cd7aba47bb18e3201ac59e9d33e8009c108415f2",
       "student_ref": "S-0003",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -93,6 +98,7 @@
       "content_hash": "sha256:431ee6eae74e17e47d447685b9348c37573e2f0f7e753c22c6ea8c0a66813bfd",
       "student_ref": "S-0004",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -119,6 +125,7 @@
       "content_hash": "sha256:1cb4dcf7d7aa5949f335a587fb5ca800bec221668eddfe1819e789379a97dd95",
       "student_ref": "S-0005",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -145,6 +152,7 @@
       "content_hash": "sha256:8074e9e266c69aee7e32f74bb069554da97ed70bd41bf85292502dead0b7da76",
       "student_ref": "S-0006",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -171,6 +179,7 @@
       "content_hash": "sha256:c01ca5955228b43340f57fc522acc5811ffb1a4103a35806dc2ca78c82527ac7",
       "student_ref": "S-0007",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -197,6 +206,7 @@
       "content_hash": "sha256:550fe68446fa46d5723173fd0ce061e7dce8d31ceaec2247d9a47641ec5dd2d4",
       "student_ref": "S-0008",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -223,6 +233,7 @@
       "content_hash": "sha256:8e1543a5d607af3e12f413709665ff3c0923a1a88c4ab3f3ec94e2ee4ac9f12b",
       "student_ref": "S-0009",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -249,6 +260,7 @@
       "content_hash": "sha256:b50cd0d7707bdbe68b3e0d436e95d3e1af2ee1dff29f394629316bf85413d0e3",
       "student_ref": "S-0010",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -275,6 +287,7 @@
       "content_hash": "sha256:d9641142099895abf265272ca768adcc6e3c399714f0caf8f95cf858e34f197e",
       "student_ref": "S-0011",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -301,6 +314,7 @@
       "content_hash": "sha256:6c9ecc894cfe8206649e46e1dbc818aebbb2fcf89c034cff21971a2c8d1b0dd7",
       "student_ref": "S-0012",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -327,6 +341,7 @@
       "content_hash": "sha256:f05531b59eeb94950532fd003676a4e40f5074273bac33de9f68f32691b92e5d",
       "student_ref": "S-0013",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -353,6 +368,7 @@
       "content_hash": "sha256:6f2628cc0f01ee71a186f65058805ac60d3105d06191232e8a0892f7103a5b1b",
       "student_ref": "S-0014",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -379,6 +395,7 @@
       "content_hash": "sha256:754ff73442d9e4f4f6921e4c7666072c36f9d89d7c405a125925a9e7435fb7e9",
       "student_ref": "S-0015",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -405,6 +422,7 @@
       "content_hash": "sha256:bb4b17851befc88b40c2ba7e3c41f83775f2733aa57e99e53472a22693902fd1",
       "student_ref": "S-0016",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -431,6 +449,7 @@
       "content_hash": "sha256:2583d1a6153b2ed3f2273e007d7d45ef28999868492bc94ed5380e4059758c5b",
       "student_ref": "S-0017",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -457,6 +476,7 @@
       "content_hash": "sha256:9b13223cd4b48e4822704657f6501dad9d1e5d5da6f763045b3539840052902e",
       "student_ref": "S-0018",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -483,6 +503,7 @@
       "content_hash": "sha256:c9273863ecaf7c0be9f5f67b9276b90b0853adbce60362efb49e68628b63dac0",
       "student_ref": "S-0019",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -509,6 +530,7 @@
       "content_hash": "sha256:0a6924974e25b9989a9210a0a5cbdd401c0d068f78050694099dd14e3353a8dd",
       "student_ref": "S-0020",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -535,6 +557,7 @@
       "content_hash": "sha256:d0d814a32256476f1e027937abd50ea8204dc31c9824436ca07a823740bbeff4",
       "student_ref": "S-0021",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -561,6 +584,7 @@
       "content_hash": "sha256:2786b8b572cc28adf9697dc80e92838b26ee4e9836dee0659952fe7a0234f5da",
       "student_ref": "S-0022",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -587,6 +611,7 @@
       "content_hash": "sha256:c3a2a2c4d594af33d206208948d1b0c81a58da0001ec603512b6d49b12142ed9",
       "student_ref": "S-0023",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -613,6 +638,7 @@
       "content_hash": "sha256:cf538a0fbf819d1ebb4446f7279983ae9ff70a302565258e8711bdbe253dccca",
       "student_ref": "S-0024",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -639,6 +665,7 @@
       "content_hash": "sha256:08fdf13c20e9ea1c5de4da19ea098410a268da8bc83f1c4b977933ab8e01fca6",
       "student_ref": "S-0025",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -665,6 +692,7 @@
       "content_hash": "sha256:c4d3c734fdfa4bc18c891483df5b76e7740d5b4d1c18d9b26bd6a3d32b4e582f",
       "student_ref": "S-0026",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -691,6 +719,7 @@
       "content_hash": "sha256:3eeb831f3f3374e5b32b3ee3e6778a4fccc9d73e8ee81d3465f2a9de13f56c8b",
       "student_ref": "S-0027",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -717,6 +746,7 @@
       "content_hash": "sha256:49204ca98211c9e3ce9d9dda7123af81a23600a4d809f5f64e20c153b13fd4de",
       "student_ref": "S-0028",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -743,6 +773,7 @@
       "content_hash": "sha256:ead33c3c19cd2294253cd63ae8d2b88ab9e08ac618f4e31d543a1a2ba5ba74b4",
       "student_ref": "S-0029",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -769,6 +800,7 @@
       "content_hash": "sha256:21421173ce840cf9a825849374eb50a05286036e28aaffe1a860a7002d52c473",
       "student_ref": "S-0030",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -795,6 +827,7 @@
       "content_hash": "sha256:7bc4039c6c1b9acd75b9f3bf3cfe628c9021f97a9d067a6f2b6ec169999b673b",
       "student_ref": "S-0031",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -821,6 +854,7 @@
       "content_hash": "sha256:b636be11ec634d516123cbe5cf34e623bd9ebfd7af806803d1cbe63961de98d9",
       "student_ref": "S-0032",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -847,6 +881,7 @@
       "content_hash": "sha256:e48c182292aa6477448a8bdfdd5302057ce49d0b16e276d3b6ef5d366490ba60",
       "student_ref": "S-0033",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -873,6 +908,7 @@
       "content_hash": "sha256:1c758a32fd8be8deab0193ba0d9b1ade05e4b0e4754f9e06e75394fa53e49a1b",
       "student_ref": "S-0034",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -899,6 +935,7 @@
       "content_hash": "sha256:db3f8df9c9dcff59a611f0044b632d1a22b686047bcd3b1f10004f011c047ce3",
       "student_ref": "S-0035",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -925,6 +962,7 @@
       "content_hash": "sha256:7478c55dd8b9084743454fcfb804b95c5cb6331668c95fa7f4828c4a6a213860",
       "student_ref": "S-0036",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -951,6 +989,7 @@
       "content_hash": "sha256:ff5f8fecdb8e387e85e7a5ba3551c26904a3957066d954cac2c9b5b485ca9d3c",
       "student_ref": "S-0037",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -977,6 +1016,7 @@
       "content_hash": "sha256:24fd6b119208fe7404dc5466ba14a3126b564946bae5f94e9581b2815c9833ea",
       "student_ref": "S-0038",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1003,6 +1043,7 @@
       "content_hash": "sha256:23b379c24b860242a33a52657e72c12e215dd4736407a73b7c28f6d42644c616",
       "student_ref": "S-0039",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1029,6 +1070,7 @@
       "content_hash": "sha256:5a5932414bca3be4dc12c520b71af8e59fe10dd213bd8ee5b251cd3c8f1a384f",
       "student_ref": "S-0040",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1055,6 +1097,7 @@
       "content_hash": "sha256:e572cf223f3f2c2d8cdcc87ad9036211b7f7cd90f8477b6003f268936a83ad48",
       "student_ref": "S-0041",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1081,6 +1124,7 @@
       "content_hash": "sha256:d10da3db52a9f680f57e0d2b3c143fcb442fd5e47e03158d1c991289e84cec55",
       "student_ref": "S-0042",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1107,6 +1151,7 @@
       "content_hash": "sha256:078becef98c2d04ce7bf9cb77b2b8bf145aac6c41b6b6ea53246ab271ab6cad7",
       "student_ref": "S-0043",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1133,6 +1178,7 @@
       "content_hash": "sha256:d364e500301de97a29608b722ef63ff910004f694336aaf16a539e57cba7f6de",
       "student_ref": "S-0044",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1159,6 +1205,7 @@
       "content_hash": "sha256:4ce7acba0c4ebbb166a8eca0ccb403667ac932052c549275784526e93262318b",
       "student_ref": "S-0045",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1185,6 +1232,7 @@
       "content_hash": "sha256:4c53afbb43b97776ff43671943eda600fa0ac9e5f3e6e4746890eb81d7f4a47a",
       "student_ref": "S-0046",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1211,6 +1259,7 @@
       "content_hash": "sha256:4aff514bcf4e1d712a6ae498883e494dd079e5b4b6b912569f51c7d969e176a3",
       "student_ref": "S-0047",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1237,6 +1286,7 @@
       "content_hash": "sha256:d572ca33de92eca36851a906099d53784ee3bd2ae68acb9d304e22be11a891fc",
       "student_ref": "S-0048",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1263,6 +1313,7 @@
       "content_hash": "sha256:d040512f6bf5f5467c48283d95fdd4cc027080a2a56d09333914a716f48d55e7",
       "student_ref": "S-0049",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1289,6 +1340,7 @@
       "content_hash": "sha256:62b83e92120a35dc711b5b9ec33869766422a7565aa2891076a4da15fd62fc98",
       "student_ref": "S-0050",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1315,6 +1367,7 @@
       "content_hash": "sha256:60ae0d8fb67909620833004de5b31dfbef50e8eec4e161f42f8ed1a8f92b5c89",
       "student_ref": "S-0051",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1341,6 +1394,7 @@
       "content_hash": "sha256:a00ecff03aa3170f38d8a1af33afab3a14bf266a8a37026294c02ec86fe60574",
       "student_ref": "S-0052",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1367,6 +1421,7 @@
       "content_hash": "sha256:613d2f9ed3540c0969cb38b626b32fbf624f2677dea7cb5b847636291381dab4",
       "student_ref": "S-0053",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1393,6 +1448,7 @@
       "content_hash": "sha256:a389c57b99ea97eb123c7b50b0989074e2daa65b99658b83c7bb817298feaf4b",
       "student_ref": "S-0054",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1419,6 +1475,7 @@
       "content_hash": "sha256:ab6ed014ee3449212f97842f4b59f76750daa6618b13a189a005a14415ce1de3",
       "student_ref": "S-0055",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1445,6 +1502,7 @@
       "content_hash": "sha256:54c563f78c8063f46b13a1c725784c2b6dca92e14984d1ceddce30ac78abb101",
       "student_ref": "S-0056",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1471,6 +1529,7 @@
       "content_hash": "sha256:e3070fb584a5631b14b176bf2ea079910295252a8fdca847368a3cf49727bccb",
       "student_ref": "S-0057",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1497,6 +1556,7 @@
       "content_hash": "sha256:464beb3070a3e380f2a21e78d4a6b745437714d6873d768517f2582b34197441",
       "student_ref": "S-0058",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1523,6 +1583,7 @@
       "content_hash": "sha256:58d13adaaa1121ba7f5ad3d9556e93e1a8588e26d524f0e024bf98a8177c1bd1",
       "student_ref": "S-0059",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1549,6 +1610,7 @@
       "content_hash": "sha256:1249ab22d87c2d3f5a3a5310921a23429fad88714a0157bd5fffec63b871705c",
       "student_ref": "S-0060",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1575,6 +1637,7 @@
       "content_hash": "sha256:b9ee436e657dbb640a2c2d4d233be5ba9fa75c0196095673aafa201fe8a1ebcb",
       "student_ref": "S-0061",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1601,6 +1664,7 @@
       "content_hash": "sha256:24331c58f40842cf62ad496fdf1feb7387be2bf230083526c4fbbc67b5deb81a",
       "student_ref": "S-0062",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1627,6 +1691,7 @@
       "content_hash": "sha256:327a0a21548f773635ee7ec156bd4c968b851fd0c457995fcf8d1b37f2721a86",
       "student_ref": "S-0063",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1653,6 +1718,7 @@
       "content_hash": "sha256:0b61597adc8ef284a73dd8a3c7e4e3f2bf02af3de3c9faf1ac0246ef08bd6221",
       "student_ref": "S-0064",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1679,6 +1745,7 @@
       "content_hash": "sha256:ea81ece24be5add9438a4f92c7d2047b9e8cca5eb95b1e00e48dd0379d624ecb",
       "student_ref": "S-0065",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1705,6 +1772,7 @@
       "content_hash": "sha256:3327dbad53e104e75a6b2a03083bd362d31124e7e5f4a6d1034f7c749c818165",
       "student_ref": "S-0066",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1731,6 +1799,7 @@
       "content_hash": "sha256:1342f9df45230458268f2868b45b8868f0bb622906c988673aa77357cce4be93",
       "student_ref": "S-0067",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1757,6 +1826,7 @@
       "content_hash": "sha256:9baf68105a74203049bbc4942797ec6f8dbe130ef27abf0aa686c797a1581b90",
       "student_ref": "S-0068",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1783,6 +1853,7 @@
       "content_hash": "sha256:b855341b2101889b9704d79933c8bf67b528866dec0fdfeb8a305d958a1d8c4d",
       "student_ref": "S-0069",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1809,6 +1880,7 @@
       "content_hash": "sha256:e1732040d222db23160aa1769ade11b1056b8266b3f8a2322f12ce9b0e7e75d9",
       "student_ref": "S-0070",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1835,6 +1907,7 @@
       "content_hash": "sha256:f8962a266ff8d4a39d774dd94305ef4cb99ef85cf4718b9178461bd8eb6bea81",
       "student_ref": "S-0071",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1861,6 +1934,7 @@
       "content_hash": "sha256:59d41dba3ca601dcd9190c42f95fbcad89912b831de2aa2a41d3194b9fed4679",
       "student_ref": "S-0072",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -1887,6 +1961,7 @@
       "content_hash": "sha256:fc84133a37657e59255c26952e4502e19da782298a764e41da646a844809f7bd",
       "student_ref": "S-0073",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -1913,6 +1988,7 @@
       "content_hash": "sha256:ae7121c2f1de24953854bc2f2d2a7bb9768078cc1b5c17a9d06ba8584e2ece16",
       "student_ref": "S-0074",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1939,6 +2015,7 @@
       "content_hash": "sha256:37176a88e52fb0655b008a8bdaf2ab1eb0b338433e48ce8dc79073a147e92bd3",
       "student_ref": "S-0075",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -1965,6 +2042,7 @@
       "content_hash": "sha256:18c9169d999317fa8556274eb356d7f41e6c6a2851277a7efdd4c57f05037493",
       "student_ref": "S-0076",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -1991,6 +2069,7 @@
       "content_hash": "sha256:4a3b383954e6f0c051a84fa0391f162aec0349c4bcfff1b36133ff9cf3836083",
       "student_ref": "S-0077",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2017,6 +2096,7 @@
       "content_hash": "sha256:96949b6ad39d1c6d2d0488c672e87db3328be958baaaaecc83bb149900a1b52c",
       "student_ref": "S-0078",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2043,6 +2123,7 @@
       "content_hash": "sha256:558f35f3b4e1c49e942198feca8b855950e525ff5318713a0acea17b9e742bd2",
       "student_ref": "S-0079",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2069,6 +2150,7 @@
       "content_hash": "sha256:d5a0b3d0a05ce41de06bbd54263adbb6e60b5e74f530c2a5d05be81d013467a9",
       "student_ref": "S-0080",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2095,6 +2177,7 @@
       "content_hash": "sha256:f5febd02a15ab83663eadc5d984fd44049d94bcaf98cdd38959d8a51b2cb8232",
       "student_ref": "S-0081",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2121,6 +2204,7 @@
       "content_hash": "sha256:c6fabc573815d8e184a7b6bdeef70fed5aed4ac82cfa59880a0b3d2191dfe577",
       "student_ref": "S-0082",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2147,6 +2231,7 @@
       "content_hash": "sha256:fc9f855d40eb7d1211b3bdf55815ffd61c2bdfafa2db3f008e0af9d7d53dd856",
       "student_ref": "S-0083",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2173,6 +2258,7 @@
       "content_hash": "sha256:3f7d48624f129953a9b0548ce4be449eec3c635c15bfbce194c5379b318da87b",
       "student_ref": "S-0084",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2199,6 +2285,7 @@
       "content_hash": "sha256:11ecfd5c57ee3b8affb8d77a0cf8c74749f6003d91340446f70d806a44de7117",
       "student_ref": "S-0085",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2225,6 +2312,7 @@
       "content_hash": "sha256:dc39f1036426ae8a4f82dbc99b3be3c60a3fafc0c8faa403fd0581444f3abc07",
       "student_ref": "S-0086",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2251,6 +2339,7 @@
       "content_hash": "sha256:d9376ac621038144d50a7de70c58ce8c92c4801b90d996ce3c68b94461755712",
       "student_ref": "S-0087",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -2277,6 +2366,7 @@
       "content_hash": "sha256:b0c9e6532be5df13f7e5efefc7d8a47f16572735c0bfab0665586b4f4e0f2fcd",
       "student_ref": "S-0088",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2303,6 +2393,7 @@
       "content_hash": "sha256:e078ac5babd2b49f614e90c555158bbd7ffecba93bd6fe0585c72bf863170645",
       "student_ref": "S-0089",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2329,6 +2420,7 @@
       "content_hash": "sha256:3bb41985be1956dad2d8ce8dd26090a418d09615822f6c0e249393ecda7a2f92",
       "student_ref": "S-0090",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2355,6 +2447,7 @@
       "content_hash": "sha256:f840cedf5e935abe3665f3184d6dd41c7ff68b607df62c78b57fd77d2e8737aa",
       "student_ref": "S-0091",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2381,6 +2474,7 @@
       "content_hash": "sha256:72ffc14d02b70911511072c248f661f79e283afcd88f842665f2526a0faa88b2",
       "student_ref": "S-0092",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2407,6 +2501,7 @@
       "content_hash": "sha256:1019f8783a9f2f61cfe091b03fb6a9bc441a7a82dcb7ce32c6238e22155c27e3",
       "student_ref": "S-0093",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2433,6 +2528,7 @@
       "content_hash": "sha256:bab658f970b615f0f4c89eada298c3291167f2b4634ed8d0da3ee0c6e7343873",
       "student_ref": "S-0094",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2459,6 +2555,7 @@
       "content_hash": "sha256:15954184071015d17b803f2170c28830f289fc6f59b52f9de3e2161ef5392283",
       "student_ref": "S-0095",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2485,6 +2582,7 @@
       "content_hash": "sha256:534b0cde68a2a9fb8710f9546ab0739adfc880d382b19b943b0084ec9cc71c84",
       "student_ref": "S-0096",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2511,6 +2609,7 @@
       "content_hash": "sha256:fc040c9854ce09934c5705e3bffa0860bd1f701edce376a459bdf37eb4091733",
       "student_ref": "S-0097",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2537,6 +2636,7 @@
       "content_hash": "sha256:3d47bf79cac976f6e89b8e4fcd08b31855bca820126764f5adac73dc2abcc85a",
       "student_ref": "S-0098",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2563,6 +2663,7 @@
       "content_hash": "sha256:52aa50735348df0c174b2012662af81d1ab969d618b1c770e5854a8c6e00008b",
       "student_ref": "S-0099",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2589,6 +2690,7 @@
       "content_hash": "sha256:73daf160099fdce30d13b344bcd4dfb9384809756b7245c8a2ad7a4c87e925a2",
       "student_ref": "S-0100",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2615,6 +2717,7 @@
       "content_hash": "sha256:59d8050896c34ef176220862f0374c08ca858cc28487410de7a7529f64d6019e",
       "student_ref": "S-0101",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2641,6 +2744,7 @@
       "content_hash": "sha256:5f6b3b3f5a0051d90a7a6762988da544afc44503de35eac3c4272f4b302b2f4c",
       "student_ref": "S-0102",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2667,6 +2771,7 @@
       "content_hash": "sha256:f1a1e8665e65c68d633d78174e407f1e95aafd3876f9c7937813b19d36323f75",
       "student_ref": "S-0103",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2693,6 +2798,7 @@
       "content_hash": "sha256:e2b3cb38ae54477cf7a3fd076c5ac532a6510990de5a1464c58c01803fc604f5",
       "student_ref": "S-0104",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2719,6 +2825,7 @@
       "content_hash": "sha256:9eabe8f11a92952c93bd5306e71956d219b357ced94ffaa5ffbae65f4d0c56c6",
       "student_ref": "S-0105",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2745,6 +2852,7 @@
       "content_hash": "sha256:3090357573c43e1577a2d5fc339772a2c1d0be5b7582f8d778f7a0832b7032ec",
       "student_ref": "S-0106",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2771,6 +2879,7 @@
       "content_hash": "sha256:0f79dd41871a93ccd0a582e4b91fcf1fb0ab0045acaf4e1776c49d0de5a4c0b4",
       "student_ref": "S-0107",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2797,6 +2906,7 @@
       "content_hash": "sha256:375ca25d26343a3e3a46c2f28cd42a336a02ce5d7d884148bb00b16c91046a29",
       "student_ref": "S-0108",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2823,6 +2933,7 @@
       "content_hash": "sha256:e32ad6be54a968581ee45320f520bdf7d55570b984c5223fc28de071c8613060",
       "student_ref": "S-0109",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2849,6 +2960,7 @@
       "content_hash": "sha256:25fb1df497e55c842facd0daa71791d89972051210de955b677bdb989bf3a016",
       "student_ref": "S-0110",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2875,6 +2987,7 @@
       "content_hash": "sha256:5bc3c56793b6075c11e1fb5c943d4e6740a887c7378c33da81234724a6e6b187",
       "student_ref": "S-0111",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -2901,6 +3014,7 @@
       "content_hash": "sha256:242170dc0018a95d616fc5cb43b2328828cd896ad57d2ab775f571018b48e976",
       "student_ref": "S-0112",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -2927,6 +3041,7 @@
       "content_hash": "sha256:0dccd970b2c5b695b79f34cc6c7306affef93879b9a449f8268d8b98bb47f35b",
       "student_ref": "S-0113",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -2953,6 +3068,7 @@
       "content_hash": "sha256:9aa54fe4df903fc2b12e7d9878c300535af0260ac7795614d59e5853f9808803",
       "student_ref": "S-0114",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -2979,6 +3095,7 @@
       "content_hash": "sha256:7d1b420503f0f84ef46c24df104782bad08f02234362baffed8fca03952e0b0f",
       "student_ref": "S-0115",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3005,6 +3122,7 @@
       "content_hash": "sha256:1920911fa9ee12865a2f9646591335b6c7e22fc2f6879a647431d0c5e52895f1",
       "student_ref": "S-0116",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3031,6 +3149,7 @@
       "content_hash": "sha256:89ee64ec9e388b600089bf3126577a5e8bfd6ae639a8213a1eefd50f2d674b53",
       "student_ref": "S-0117",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3057,6 +3176,7 @@
       "content_hash": "sha256:3f464199b3b09d175de1396b34ec9f57035cfabd243db8e3eb0d05ee4a21bb28",
       "student_ref": "S-0118",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3083,6 +3203,7 @@
       "content_hash": "sha256:57b5955fa414e22cecc078330c25106678fdc243fbd7b2754dcb767621cb4562",
       "student_ref": "S-0119",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3109,6 +3230,7 @@
       "content_hash": "sha256:1a69e2b8042f1bb86cce2c12707d7b7304ed8aa35b6b3ecfcc078d09a988e83b",
       "student_ref": "S-0120",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3135,6 +3257,7 @@
       "content_hash": "sha256:b10eac7a822090f5c1a2eba07e5fc351ccb1d86f30a893fb5bc4b171d61ae387",
       "student_ref": "S-0121",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3161,6 +3284,7 @@
       "content_hash": "sha256:1727b047c354d9cd502b928cc7fd37b9ba5aa981c309be4eaeae8fed055673c2",
       "student_ref": "S-0122",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3187,6 +3311,7 @@
       "content_hash": "sha256:c03e7563db3e6d9261ad67d37938f13c1e2afdeff0c8bc2cb04f594fd1515ea7",
       "student_ref": "S-0123",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3213,6 +3338,7 @@
       "content_hash": "sha256:05a8bdd9dea9e9979c08ed1ecf2ce6ef0dc10070325f3cbac2b57babf4d1f704",
       "student_ref": "S-0124",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3239,6 +3365,7 @@
       "content_hash": "sha256:7450147d5a66c85e41745c66c5b98a87805084c84efa98232c81b075d8b0f71f",
       "student_ref": "S-0125",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3265,6 +3392,7 @@
       "content_hash": "sha256:c51ffe9cff4fabe6f1d9ab8c983b1b05ecd53d53d7e2f755380eaf0b3dcfac9b",
       "student_ref": "S-0126",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3291,6 +3419,7 @@
       "content_hash": "sha256:06a9434e4a160010e199c52576a0c4b31c131b9327ca116b92efc4ec7af6f543",
       "student_ref": "S-0127",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3317,6 +3446,7 @@
       "content_hash": "sha256:1b31cd87d010c1327dc36d7a557eab207e8beb14cf09bd21e85b10386182a8ee",
       "student_ref": "S-0128",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3343,6 +3473,7 @@
       "content_hash": "sha256:ab929851db8e874edd9d388a97eea001c568f02374b96d0e9d8248d5ee979d28",
       "student_ref": "S-0129",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -3369,6 +3500,7 @@
       "content_hash": "sha256:d79fd2a4c77d7f4796b72f5f7974137872785d987f277ae17b03365d27d5da61",
       "student_ref": "S-0130",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3395,6 +3527,7 @@
       "content_hash": "sha256:4205df8b40c3c30a8fa8572ef3c93a5b36afa904d75c6aef6c6f9ec856e69155",
       "student_ref": "S-0131",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3421,6 +3554,7 @@
       "content_hash": "sha256:2c2c754826b0ddd3fe120a0f791392e5b77a740e959921661126d1c45a187dd1",
       "student_ref": "S-0132",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3447,6 +3581,7 @@
       "content_hash": "sha256:456baa260af9dbc6526483eed64339818a1b09ee2ea5a871c4128180cbb9f322",
       "student_ref": "S-0133",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3473,6 +3608,7 @@
       "content_hash": "sha256:7e35021d1f95a8550987103c4f3dba3a7234c99f7d066dc0a8d8e9fe8d45a887",
       "student_ref": "S-0134",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3499,6 +3635,7 @@
       "content_hash": "sha256:de1f57ecfa95cd9d17009b68b4443b9b7101cc8f1b656806d4b1386e9f873b6e",
       "student_ref": "S-0135",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3525,6 +3662,7 @@
       "content_hash": "sha256:e3d689b0d675d32e6f37f0e972e11f097ebff15cf476600aba24ceea4c829211",
       "student_ref": "S-0136",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3551,6 +3689,7 @@
       "content_hash": "sha256:4e96e72c1ba840bc7f9bd2e512e7033dec22a8005a07b04e0c588f937753e7f9",
       "student_ref": "S-0137",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -3577,6 +3716,7 @@
       "content_hash": "sha256:e3e78cb2d1f04af8923339b8a96e6738546a42b3dcc7d9954ac8cab1b84587b5",
       "student_ref": "S-0138",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3603,6 +3743,7 @@
       "content_hash": "sha256:c142312f52389fc9481b9df3e2e8fb0f1a451991bcbfc8e309052ea2830bf318",
       "student_ref": "S-0139",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3629,6 +3770,7 @@
       "content_hash": "sha256:a33e76a518318147d6e82a4d42607b5f3fe17b48de933ef0ec96e8ccdb40dba4",
       "student_ref": "S-0140",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3655,6 +3797,7 @@
       "content_hash": "sha256:e199004319503a260e9c33c37dd0cfe0aa3cc63886348bf04da0ba149225f19a",
       "student_ref": "S-0141",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3681,6 +3824,7 @@
       "content_hash": "sha256:4490213ad5c1cc427a9258f34013c037e77ffe7a7ba7774a762b8e8c1ce30c5f",
       "student_ref": "S-0142",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3707,6 +3851,7 @@
       "content_hash": "sha256:5266d41066d24d2c823b33e7925fd9be09b6450246db7c7c238752854f226914",
       "student_ref": "S-0143",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3733,6 +3878,7 @@
       "content_hash": "sha256:2df568e9833964079be4d7fc3d7ccf7df76d361e2a81ec21f83d459a323da4f9",
       "student_ref": "S-0144",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3759,6 +3905,7 @@
       "content_hash": "sha256:9e2bbb2a4f98ef69738e40019bddacecc31f421275203309ab40364190f12468",
       "student_ref": "S-0145",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -3785,6 +3932,7 @@
       "content_hash": "sha256:1e5b12f794ae5c25d41a1a17138af5c150b3a1ba0adadb8e9d59e9b8d43c8791",
       "student_ref": "S-0146",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3811,6 +3959,7 @@
       "content_hash": "sha256:b5de12208b50830d4c0e3e16aba9710c1d2ba112f480c3eb28b1730c3c67fc20",
       "student_ref": "S-0147",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -3837,6 +3986,7 @@
       "content_hash": "sha256:5d70020788312143bd89721750c66aa0d1f05d2240b1270f7597fee147917d76",
       "student_ref": "S-0148",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3863,6 +4013,7 @@
       "content_hash": "sha256:159a93332c30a30dca4a339734e3289eac3f83be96b28c529a9d553c5fe95ad2",
       "student_ref": "S-0149",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3889,6 +4040,7 @@
       "content_hash": "sha256:b9e3d93eb6e0b4bdf01e78643a399c8513a39efef85427d783a9096ad505f3b6",
       "student_ref": "S-0150",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3915,6 +4067,7 @@
       "content_hash": "sha256:8b86d416e360a89139867137991b74473938837b7b73432d8dda34f5e9c550f0",
       "student_ref": "S-0151",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -3941,6 +4094,7 @@
       "content_hash": "sha256:86960de60d68f29395ad28939878abad106dead532c7eabfdab13115e61da621",
       "student_ref": "S-0152",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -3967,6 +4121,7 @@
       "content_hash": "sha256:55657d37dd5e445ce8402a9619623c52568b895b23258c4f96c2ff357c99cce7",
       "student_ref": "S-0153",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -3993,6 +4148,7 @@
       "content_hash": "sha256:42e0568d010128770f2b91f5c9685833b568a11c0e81b3e8ca26221aa1f828df",
       "student_ref": "S-0154",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4019,6 +4175,7 @@
       "content_hash": "sha256:9eb27c2e08a4e9706dbd95119187ce35bb7eb40982b3c3dfa84f7a6eceeba79f",
       "student_ref": "S-0155",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4045,6 +4202,7 @@
       "content_hash": "sha256:781472c35edc0af123f28e83f9a1941cbe4d685d999c01a521b5abbeed46b819",
       "student_ref": "S-0156",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -4071,6 +4229,7 @@
       "content_hash": "sha256:ccb43aa6b734627435f80cfbf94c819b8c94de13f61b94fdf33bf59e1f831a6f",
       "student_ref": "S-0157",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -4097,6 +4256,7 @@
       "content_hash": "sha256:1011e29720e2c0e507a698e1a3be0c6cd9cef8b74eae03e62904845c9ba11aa5",
       "student_ref": "S-0158",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4123,6 +4283,7 @@
       "content_hash": "sha256:769905a091bdd5e94048ae3e29bc3f89b97dabe64a953c57a2e3df60bf47988e",
       "student_ref": "S-0159",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -4149,6 +4310,7 @@
       "content_hash": "sha256:79f3f2ac967c3e9a38c70f34fad525781ba842cce4a07fdd7aa1ff552ad09dc8",
       "student_ref": "S-0160",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4175,6 +4337,7 @@
       "content_hash": "sha256:191de2927cb62f023bf53f09bc3eb071af755997fbfeb5f540bec6e95d038af2",
       "student_ref": "S-0161",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4201,6 +4364,7 @@
       "content_hash": "sha256:a5ebdb53eb0fee2331f433860e96f3cb5dcf9cc2595b622ab7879f426fb3fedb",
       "student_ref": "S-0162",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -4227,6 +4391,7 @@
       "content_hash": "sha256:706e03fc3d4366df90ee684b7654196529cab687f5d9d85acab2c519193cdda3",
       "student_ref": "S-0163",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -4253,6 +4418,7 @@
       "content_hash": "sha256:f633ac993f7fb4a8a7aca7268e8b407eb8ce8da82a438ac909ca920584cc9cc8",
       "student_ref": "S-0164",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -4279,6 +4445,7 @@
       "content_hash": "sha256:f106d1a36554ffd0cddb4b5e74a1082403a029b8e8db2275b44b7297f4bc934b",
       "student_ref": "S-0165",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4305,6 +4472,7 @@
       "content_hash": "sha256:d6ef64b729927ccef60e9ae0cbd5e73d1252e28c9f0cd3c5337fa1a9f85cdbc3",
       "student_ref": "S-0166",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4331,6 +4499,7 @@
       "content_hash": "sha256:da6026baedbb0fb8ac181fb359613f8a82df1dd9f946bfbcbf150763644ee7af",
       "student_ref": "S-0167",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4357,6 +4526,7 @@
       "content_hash": "sha256:aa83227fd1ac9a5dc13af13cfc7d2b8b9a89f63b4cea06227bd6745c0776d306",
       "student_ref": "S-0168",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4383,6 +4553,7 @@
       "content_hash": "sha256:2d2cbf31671b9f8fb8f5e053b9a076237dea98ee46426d48bc7e35524d4197ed",
       "student_ref": "S-0169",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -4409,6 +4580,7 @@
       "content_hash": "sha256:774e09bb89b640b974a8b6114a060818f865e312cb556f7f69f6993f5c8bc356",
       "student_ref": "S-0170",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4435,6 +4607,7 @@
       "content_hash": "sha256:2310d7ec66cf426297cf1faa43417778ad50d75298c9c97952cfca0c5a7fde55",
       "student_ref": "S-0171",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4461,6 +4634,7 @@
       "content_hash": "sha256:4afabe93213816ddfe72a99f4e31076f0f9627d99d49bf3e896d8371e6250356",
       "student_ref": "S-0172",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4487,6 +4661,7 @@
       "content_hash": "sha256:b456a1b4ade5a18e131bf8aa747e6f8fa6fd88b4beb1e66711c6ce763d3148c3",
       "student_ref": "S-0173",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -4513,6 +4688,7 @@
       "content_hash": "sha256:d7bc3a49b5c7a482456f082356cfae1b8e169c1c1b225995d2072dad03359f52",
       "student_ref": "S-0174",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4539,6 +4715,7 @@
       "content_hash": "sha256:8c38d7ec920c42395f60e39286df2ac3c92f1e9d677d2c0653af62a3cd1ca5a9",
       "student_ref": "S-0175",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4565,6 +4742,7 @@
       "content_hash": "sha256:cc96b346004216b8cd82abe49f5e6eab43391d479cace04fe43a0a876018df20",
       "student_ref": "S-0176",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4591,6 +4769,7 @@
       "content_hash": "sha256:ea979115e8688d9534498e470e46e72fb4364b1160a4fe52031ab8228ca99fda",
       "student_ref": "S-0177",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4617,6 +4796,7 @@
       "content_hash": "sha256:e5711bf1a89122b487340906bcbd96e6026ce9185d5cb4bb356c33a8b5e3d36e",
       "student_ref": "S-0178",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4643,6 +4823,7 @@
       "content_hash": "sha256:06a9928ae359a03b55bb7a320fe9a6354ea3e56e0beff01e6d594e8ba6da8ac4",
       "student_ref": "S-0179",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4669,6 +4850,7 @@
       "content_hash": "sha256:3249d692e32d4a0cac6cac3f4908a3e8daeef8dd7095d4cae32eeb01d433f855",
       "student_ref": "S-0180",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4695,6 +4877,7 @@
       "content_hash": "sha256:725927287561d3e6a6f9ecb523c4df105b19c991d20c1f72c03819d950d73f4b",
       "student_ref": "S-0181",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4721,6 +4904,7 @@
       "content_hash": "sha256:8e4946e9a07215dc223e18e186f8fcfa5c72335bc669ca81166deaf997342520",
       "student_ref": "S-0182",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4747,6 +4931,7 @@
       "content_hash": "sha256:b44b299567a52ed69b57731ed9eacc1647a3d178777f1dde54fb8d249df24ae9",
       "student_ref": "S-0183",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4773,6 +4958,7 @@
       "content_hash": "sha256:de7b8377b36943a4793b4ab323025dac69fce404ec806824fb1d6c7b0bb9ac15",
       "student_ref": "S-0184",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4799,6 +4985,7 @@
       "content_hash": "sha256:60ae9abdc699b0be3946d44db8d043443ed1c83e65415503803605f22ecf9abb",
       "student_ref": "S-0185",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -4825,6 +5012,7 @@
       "content_hash": "sha256:8a952c0c572910a8e1e6f74f0c338fcab87170774b5bd7bc12f53b77b6d0e658",
       "student_ref": "S-0186",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4851,6 +5039,7 @@
       "content_hash": "sha256:7064adc34d85489c2555768c75bd9eb793eefdd29ad620211bb7992ffe75731d",
       "student_ref": "S-0187",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4877,6 +5066,7 @@
       "content_hash": "sha256:a2372e078fe916b08ca73f00214eb9eef1b118985d367404b7a60fcf34516b7a",
       "student_ref": "S-0188",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4903,6 +5093,7 @@
       "content_hash": "sha256:c2a4e230697cd1baf7295b738d1cc2ab5db0ae46c54e69e9e523396bd0e99ad6",
       "student_ref": "S-0189",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -4929,6 +5120,7 @@
       "content_hash": "sha256:84e674f11465a18fce9286e819299a7be13711da3992b667ee6f6f8563dd5151",
       "student_ref": "S-0190",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -4955,6 +5147,7 @@
       "content_hash": "sha256:552ce06e69edbb8af1dc47e6ef532fe2451c6e198dcdf799e944c4c8c4082e87",
       "student_ref": "S-0191",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -4981,6 +5174,7 @@
       "content_hash": "sha256:98166d6f9fb7c4a50e24bd290ce7649feeb7344eba1226cda4c0ea6e7a29ee2f",
       "student_ref": "S-0192",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -5007,6 +5201,7 @@
       "content_hash": "sha256:f03f1ab6e25ed4487c8c7dddeb4ac6919d7d92288a7ef08199aedb95a65273b4",
       "student_ref": "S-0193",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5033,6 +5228,7 @@
       "content_hash": "sha256:3276dbe8e63925f119e4fc86461c56282cd9ca5982e7d24fcd2b74c7d90ca971",
       "student_ref": "S-0194",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5059,6 +5255,7 @@
       "content_hash": "sha256:50025fcb80532411cf726676f45addc38013e8979dcb3e1bd94f75b4c32dd307",
       "student_ref": "S-0195",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5085,6 +5282,7 @@
       "content_hash": "sha256:5036dcee727702c801b35aa796be9fb35b0832eef2a8fb3a4d368bf755ac6d04",
       "student_ref": "S-0196",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5111,6 +5309,7 @@
       "content_hash": "sha256:efcaaa83113a40d81de2244fd25c9cc8c1a1531401df100dc855771e730ebf41",
       "student_ref": "S-0197",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5137,6 +5336,7 @@
       "content_hash": "sha256:db8bab2b1b79102a4bfbaee044236ea8db2ab3a25db64109ae73760b3de7eaa0",
       "student_ref": "S-0198",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5163,6 +5363,7 @@
       "content_hash": "sha256:ad69c0b01d43e80eed0d3aff8f8b4cf00a1656f0a4743db8d0207be25fa993f1",
       "student_ref": "S-0199",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -5189,6 +5390,7 @@
       "content_hash": "sha256:0b7ec3b5769a69c17e82f0325490a02dd63bcf0204b4d21ad51d634e9983a432",
       "student_ref": "S-0200",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5215,6 +5417,7 @@
       "content_hash": "sha256:827a4d1082a2bfcb55038f5568d4a7f2f856c0e11dd0d526214bbf04d76e0407",
       "student_ref": "S-0201",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5241,6 +5444,7 @@
       "content_hash": "sha256:d6fd2649acaa6b1df4a1e848e53610bab0d29fcb86fc0055165f87164c1736d8",
       "student_ref": "S-0202",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5267,6 +5471,7 @@
       "content_hash": "sha256:515dd06ab403181c97715a6594057f36e0aff960520a93ace89a6947cc7cb847",
       "student_ref": "S-0203",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -5293,6 +5498,7 @@
       "content_hash": "sha256:cfb6a3c834b3accf71ec24804d79413e8d9ae595b414fb9fa7cba81cde9a55dc",
       "student_ref": "S-0204",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5319,6 +5525,7 @@
       "content_hash": "sha256:9431698e88a86342caebd22bc425cdebda633e5e9baad850f7f0f87b8be88265",
       "student_ref": "S-0205",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -5345,6 +5552,7 @@
       "content_hash": "sha256:c1f5514450882134b07002fdf99b63ad84bd0be7b4e8bb3a10637c943049fe1b",
       "student_ref": "S-0206",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5371,6 +5579,7 @@
       "content_hash": "sha256:f77bd47e2800efaa287aff7ec8a85a54ed50e61beb37b4549ff0b65c869094c0",
       "student_ref": "S-0207",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5397,6 +5606,7 @@
       "content_hash": "sha256:66d4b8c18271a7ac7a7a6018a2cce5d0dd1104c1e0cd300ca00641fe5eea54ba",
       "student_ref": "S-0208",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -5423,6 +5633,7 @@
       "content_hash": "sha256:b1f12632eccc268c8b31ec4201f4a50fa23a5787cdb8a7b8fddce7206b8b6c8d",
       "student_ref": "S-0209",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5449,6 +5660,7 @@
       "content_hash": "sha256:a9a2bc0fb79e9e0679cfc01de6d497610b4fc9b774ebacd880ede66526801cab",
       "student_ref": "S-0210",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5475,6 +5687,7 @@
       "content_hash": "sha256:1db5f3761ab8eabf609d96c09258b76a78d58a97973655188255b6f46ccfcf71",
       "student_ref": "S-0211",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -5501,6 +5714,7 @@
       "content_hash": "sha256:b94774b527b697e9e3af327477548e24568f37fc231bad7ee0fd1cad0c4de9d0",
       "student_ref": "S-0212",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5527,6 +5741,7 @@
       "content_hash": "sha256:348a4109ecdb4d3b4792fd58303a71a785b56ba6693c6cb456ae0038a04d5386",
       "student_ref": "S-0213",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5553,6 +5768,7 @@
       "content_hash": "sha256:ba686b0c0e54920881fba66078213c851c92b9930bf56edc334f961bec1d4f82",
       "student_ref": "S-0214",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5579,6 +5795,7 @@
       "content_hash": "sha256:d2806736409416f2a545bd50a35a872dbfb28c380a587c351174dacd842aa0aa",
       "student_ref": "S-0215",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5605,6 +5822,7 @@
       "content_hash": "sha256:5ed20d0c03a87f4571c4c70e325d2fc2cfd5b2c3c4c7dfaea66ee87d41b80588",
       "student_ref": "S-0216",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5631,6 +5849,7 @@
       "content_hash": "sha256:1f5706ca098ac654772764a4521b514b4dcf23b160cc7b341664dde49d8fdce0",
       "student_ref": "S-0217",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5657,6 +5876,7 @@
       "content_hash": "sha256:612f693a140f699c80a7c0abddfe2100beac0828e8069233b040d6de0a3b3293",
       "student_ref": "S-0218",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -5683,6 +5903,7 @@
       "content_hash": "sha256:90352865b390f77ffaca93eb21066d711d0b39307df24fbc46653994adb2155a",
       "student_ref": "S-0219",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5709,6 +5930,7 @@
       "content_hash": "sha256:ba211c097bd5b5c24be0066cf832a3db1d4e9dc51449dcb48358eb954886d906",
       "student_ref": "S-0220",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5735,6 +5957,7 @@
       "content_hash": "sha256:a5ab701ecc14edc3d3101fe160f7543a321ba4b868ce3ad2d25fcb514637cdd3",
       "student_ref": "S-0221",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5761,6 +5984,7 @@
       "content_hash": "sha256:d4eebad93a9140819a86764debe291c4adb8ad22a2e240dafc4a9f95ce83e8c3",
       "student_ref": "S-0222",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5787,6 +6011,7 @@
       "content_hash": "sha256:47a9020cf3ee1cc66b8838a4345031a888d7835d29646852fd252ce02cf0b5e4",
       "student_ref": "S-0223",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5813,6 +6038,7 @@
       "content_hash": "sha256:cb96380f7d9eb1222fcf15a6a9fbebb734399133d2ae7042be79890fe627a17b",
       "student_ref": "S-0224",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -5839,6 +6065,7 @@
       "content_hash": "sha256:450ff618db668199ef861421826fc89b7eb5d6183869596b739ca35446198d0d",
       "student_ref": "S-0225",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5865,6 +6092,7 @@
       "content_hash": "sha256:c3d4420286067653132ae8b61c267780b6d0b2f6b84ea1231d62a6a1d9167258",
       "student_ref": "S-0226",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5891,6 +6119,7 @@
       "content_hash": "sha256:2a2384f88ac68f8e9010fa11e94d5039b76ca089e32ebcb372871880271797f1",
       "student_ref": "S-0227",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -5917,6 +6146,7 @@
       "content_hash": "sha256:6fc8c9212d0d38de9d1386f07f3c3db022cd28b86d497021b4cc88c8c2519d10",
       "student_ref": "S-0228",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5943,6 +6173,7 @@
       "content_hash": "sha256:21239931d3b4a3fca23cdcbf91506663114874c50a0481249fff3ecb0d3deea0",
       "student_ref": "S-0229",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -5969,6 +6200,7 @@
       "content_hash": "sha256:268b0537b124bdd9fff3120a41128456a17cafc854ddb49b963b7f6df719d5a0",
       "student_ref": "S-0230",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -5995,6 +6227,7 @@
       "content_hash": "sha256:91b000c280eeb3726003d366e7408fde5e64a4d5a2e22336c2a0a59fdba25326",
       "student_ref": "S-0231",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6021,6 +6254,7 @@
       "content_hash": "sha256:234b970b9d47ec472cc4f3e94a42e0d000246399076028ff8dd5c816754a28f3",
       "student_ref": "S-0232",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6047,6 +6281,7 @@
       "content_hash": "sha256:bdfddebf38e878d6291f835d2cb8823e402ea63ec8aaf235a4e657534772b07d",
       "student_ref": "S-0233",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6073,6 +6308,7 @@
       "content_hash": "sha256:fd4ce00473f38e74c13aba945c4d0849a97829a102c2b6497465a4991b296a24",
       "student_ref": "S-0234",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6099,6 +6335,7 @@
       "content_hash": "sha256:845cdb42fbff0e491f82f4823208fe5575c4cf038655416e266dd130bfbd5c22",
       "student_ref": "S-0235",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6125,6 +6362,7 @@
       "content_hash": "sha256:2b9cac0c3da0e56fdc9a09417338a1a2bb8d9bcfdbb698c629160fd7da6e169b",
       "student_ref": "S-0236",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6151,6 +6389,7 @@
       "content_hash": "sha256:a12577f12e678dfd5a971a5525140cc49f7654b34ba5ae57d5c11c1c2ba2494a",
       "student_ref": "S-0237",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6177,6 +6416,7 @@
       "content_hash": "sha256:775d9f4719c341e19bcea3d4a1d39329f34818c8d78c58cd2989b08558d232c9",
       "student_ref": "S-0238",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6203,6 +6443,7 @@
       "content_hash": "sha256:d4c5bc30098fb0c517ed2143ffdbda287221467b3e16aee1329dd8a50ec0073b",
       "student_ref": "S-0239",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6229,6 +6470,7 @@
       "content_hash": "sha256:cc12cd0a3e0bee59d4ea5412fda3851b127259f0eea632461eaa6a2951dd4396",
       "student_ref": "S-0240",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6255,6 +6497,7 @@
       "content_hash": "sha256:78763a0ed4be49169d5c5492c23136952e940218f95c978ff8fc57df5458a754",
       "student_ref": "S-0241",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6281,6 +6524,7 @@
       "content_hash": "sha256:6b02ae5a3dbfd0bb5d106d70c99d518be175d3b8bdb981c9ab02b16f4ede458e",
       "student_ref": "S-0242",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6307,6 +6551,7 @@
       "content_hash": "sha256:17cc2264c58cf906954daed89f1833dc0c9bef3ea59afa18a3c8b920600067d5",
       "student_ref": "S-0243",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6333,6 +6578,7 @@
       "content_hash": "sha256:b216c5d832f0aaf181fc27b21db2b438b805dfc5ff61102bc3501bd0fc65838a",
       "student_ref": "S-0244",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6359,6 +6605,7 @@
       "content_hash": "sha256:284c2fb7a6c4291c54bb5c7a9930a187263f6c1138f59f536cea16dc3b7085b5",
       "student_ref": "S-0245",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6385,6 +6632,7 @@
       "content_hash": "sha256:c89482d825f85d9b4d28dfc6c0788a8f939a363a9933711f2fc604e302561ac9",
       "student_ref": "S-0246",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6411,6 +6659,7 @@
       "content_hash": "sha256:6f352d756889b92651a2e114ce16bd7cf0f4c62a625a3c9192cf2799e5abf22b",
       "student_ref": "S-0247",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6437,6 +6686,7 @@
       "content_hash": "sha256:f872afa6c8787fd786b89cb2df2123b0fc1c9428b5629a7a5338c05605234ee2",
       "student_ref": "S-0248",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6463,6 +6713,7 @@
       "content_hash": "sha256:19740aa1d64ee5c0c955754bb23dc1dc3766521e752af2845c7b53c6831ad24d",
       "student_ref": "S-0249",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6489,6 +6740,7 @@
       "content_hash": "sha256:c4397b11b5abd1500420af47c7ae2704a6fd29142beab52ff43d977d75b83b65",
       "student_ref": "S-0250",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6515,6 +6767,7 @@
       "content_hash": "sha256:456496a4a0d308ea74256dd1a799ed32daacdec8f18b0f3007c4604845e5f3f3",
       "student_ref": "S-0251",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6541,6 +6794,7 @@
       "content_hash": "sha256:6b88ae6ef39c755207dc8a8be50166d0c68ffc2122643c926687c4e73f3ab59b",
       "student_ref": "S-0252",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6567,6 +6821,7 @@
       "content_hash": "sha256:2b6a1c374e0f4fcd2c5fb804a4e44ea66e8b448695ea7a2fafca8f223584aa5e",
       "student_ref": "S-0253",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6593,6 +6848,7 @@
       "content_hash": "sha256:cd7752771395574c5ee74b62618776af26742f3bc5c8c7ef12d6a25d39d47d86",
       "student_ref": "S-0254",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6619,6 +6875,7 @@
       "content_hash": "sha256:25ca845d1e4cd9f1d6042d2144b5aafbc964438154276c91b82f113589bfa590",
       "student_ref": "S-0255",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6645,6 +6902,7 @@
       "content_hash": "sha256:2fc6e465d90b4a0aae4b73e1e6e7fcbe31fbb88520700d2891a139801778a140",
       "student_ref": "S-0256",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6671,6 +6929,7 @@
       "content_hash": "sha256:5f4feaf1c54338615c76c8373beda9bf04174bf4bf236919c4a1baaf612084db",
       "student_ref": "S-0257",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6697,6 +6956,7 @@
       "content_hash": "sha256:2e3f0bd6354024f07a67419c0bfe641ed8fe9ce02e3ac9ffd424d5e2f2d28bc3",
       "student_ref": "S-0258",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -6723,6 +6983,7 @@
       "content_hash": "sha256:032d7bcf76ef2f5e727c51c2f80ebaf2bdd12f697173a2669c68d94e11c8a7ad",
       "student_ref": "S-0259",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6749,6 +7010,7 @@
       "content_hash": "sha256:2948714babc2d305ac2b603989e6206c3af8e47273081c4b4e0522725be070c8",
       "student_ref": "S-0260",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6775,6 +7037,7 @@
       "content_hash": "sha256:43f8b77506c687c19bb556c39ba98057089eb66c61ca951476c69b2d8169cbcd",
       "student_ref": "S-0261",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6801,6 +7064,7 @@
       "content_hash": "sha256:1a3f46d3c291ece41716b3de6979aaf82eec49e8a45e3e43e02cfb0937374d77",
       "student_ref": "S-0262",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6827,6 +7091,7 @@
       "content_hash": "sha256:f2bc551d37d99ea848b6eae66d6c7300cfdcb25b6098e2228f78faeb7f0c6b96",
       "student_ref": "S-0263",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6853,6 +7118,7 @@
       "content_hash": "sha256:1a0b923405131da3e856eaa58c4ef70eb5f56b29ec23ac9e49f05ed5b1f851e6",
       "student_ref": "S-0264",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -6879,6 +7145,7 @@
       "content_hash": "sha256:5fadc8faef694705c434dbc6e22dc9a4d0fbe4a66c72f5ed3b69e56e8c931b21",
       "student_ref": "S-0265",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6905,6 +7172,7 @@
       "content_hash": "sha256:6d985ed83ac3ec68e09231b37bb55cf3e5c81e44598ec313deee347e64724c62",
       "student_ref": "S-0266",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6931,6 +7199,7 @@
       "content_hash": "sha256:3490f951aaafe5cd012dafa4663814f9efd45c74f2bde65e4386daf0ff473ecb",
       "student_ref": "S-0267",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -6957,6 +7226,7 @@
       "content_hash": "sha256:7cda4e15a29600ec2caea5546d9cc7576ff8c37271fd9fed89747aa97843248a",
       "student_ref": "S-0268",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -6983,6 +7253,7 @@
       "content_hash": "sha256:33950356963470dde1ead649220bd648b8f69a17c389cf48e8c5205db8cce2df",
       "student_ref": "S-0269",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -7009,6 +7280,7 @@
       "content_hash": "sha256:adb03fe424bcfb4ec0c332b6b619dd582002fd0af158f47dc3e55a1b4005c40c",
       "student_ref": "S-0270",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7035,6 +7307,7 @@
       "content_hash": "sha256:26ee845200042188f4bab24cf68d6970d4f901d7c5d3442ef82b89643594aff5",
       "student_ref": "S-0271",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7061,6 +7334,7 @@
       "content_hash": "sha256:21f48ef3e65889309105e99bab9a4a020529363d1e6e2132f7dcc46f9d876f16",
       "student_ref": "S-0272",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -7087,6 +7361,7 @@
       "content_hash": "sha256:07e45531278c053dc2582bfc723f055233a49a80e376bc2ac71f3b7c489b1526",
       "student_ref": "S-0273",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7113,6 +7388,7 @@
       "content_hash": "sha256:59c200033ba109e6f350f29d470696cf78cc2e160ad099f4e6f96942a72c6637",
       "student_ref": "S-0274",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7139,6 +7415,7 @@
       "content_hash": "sha256:387729d26b768d44d428ef232ea187db16dbf4fb534f2c1b7430057f86d62508",
       "student_ref": "S-0275",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7165,6 +7442,7 @@
       "content_hash": "sha256:e5c45026022d44c312ee4fcd79d00834702a14e811db4a5c511c85877265acb2",
       "student_ref": "S-0276",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7191,6 +7469,7 @@
       "content_hash": "sha256:2494c8a4e4065c890d5cd04bbac2c7733e2981258c65627356a04711c56c48e1",
       "student_ref": "S-0277",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7217,6 +7496,7 @@
       "content_hash": "sha256:24ac2c5f9fffc4754f14bdcbdad346d3facc7f21070312e8b15e20f1ef3896f2",
       "student_ref": "S-0278",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7243,6 +7523,7 @@
       "content_hash": "sha256:c5c406de38c467501869f7a5eb9ab2b8a377b8a81b8543f2f1d4683601ffcdef",
       "student_ref": "S-0279",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -7269,6 +7550,7 @@
       "content_hash": "sha256:4285cc2f030e5d14b021939116189ed831f9ecfa7d48811eeb780b97023b6af7",
       "student_ref": "S-0280",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7295,6 +7577,7 @@
       "content_hash": "sha256:35b957da5061bc582f4ff62daa514658e14c3059fdb84e529479cef0393dcf6d",
       "student_ref": "S-0281",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7321,6 +7604,7 @@
       "content_hash": "sha256:491db19245537961adba00154144e852f0901894f199acb24c634a03d3e56a9f",
       "student_ref": "S-0282",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7347,6 +7631,7 @@
       "content_hash": "sha256:cedc8cae0a8ee067e25702d06cfa37594d70704d6c86e74d54758a27e54f8049",
       "student_ref": "S-0283",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7373,6 +7658,7 @@
       "content_hash": "sha256:2ee23a1f84b2ea2d86ecd1e343cf2b136f25863eae827fcc79f6d3a29b2c8449",
       "student_ref": "S-0284",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7399,6 +7685,7 @@
       "content_hash": "sha256:74cb57938b25b179c8de9ff698798311603635debd2270db59c01baa548a28c2",
       "student_ref": "S-0285",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7425,6 +7712,7 @@
       "content_hash": "sha256:2843c3395f8180698b7b8fc712b6e8331c71326d6b02497b17e37c24b8adea15",
       "student_ref": "S-0286",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -7451,6 +7739,7 @@
       "content_hash": "sha256:40c1c268136c74fc7976bda797235adbe56813097e377e09ff69519cf01e4c8b",
       "student_ref": "S-0287",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7477,6 +7766,7 @@
       "content_hash": "sha256:016e4acf0be4d420dde7fa1e160160ba21f402f602412cfee369429396d165a0",
       "student_ref": "S-0288",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7503,6 +7793,7 @@
       "content_hash": "sha256:43fb159c91b7818b089af0187ea16039054d38f28b5296f98ef8462ab0ca76dc",
       "student_ref": "S-0289",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -7529,6 +7820,7 @@
       "content_hash": "sha256:8f0eb5cd3f690cc2d576426717a30ae41575d3f49f2c21d5c59e433627fe3a31",
       "student_ref": "S-0290",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7555,6 +7847,7 @@
       "content_hash": "sha256:6b3a757f5b5e833752a03f999ca0a67511ede9ed830fbb175486a2467a794700",
       "student_ref": "S-0291",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7581,6 +7874,7 @@
       "content_hash": "sha256:1eeb08c333efe2ee687a92a6e6560cdf6c1760e7d71d295e72bde176b0a2acdb",
       "student_ref": "S-0292",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7607,6 +7901,7 @@
       "content_hash": "sha256:9f12f26daf75868f473425c5f113d758692a484575cad4c72cd670165b82cc12",
       "student_ref": "S-0293",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7633,6 +7928,7 @@
       "content_hash": "sha256:34d94a4779684b30b4444007e68157448ed3cb91f7b5c0c0f0c4091c182f1260",
       "student_ref": "S-0294",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7659,6 +7955,7 @@
       "content_hash": "sha256:82fc73634884ba4b9b1957de1adc41bacdcf93d4884c1240db8da18a2ec5c631",
       "student_ref": "S-0295",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7685,6 +7982,7 @@
       "content_hash": "sha256:9dc5977fab9955475c6cf5840b65eaf2902124dcc9cc9fd8c9aedbe5efa7663c",
       "student_ref": "S-0296",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7711,6 +8009,7 @@
       "content_hash": "sha256:e1300c383db01d3d571a1774b3cd12d57c1651810253dfbfd2285dd62c9f50cc",
       "student_ref": "S-0297",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7737,6 +8036,7 @@
       "content_hash": "sha256:62b389c30005572ee236c34e1a67a15bc26906b1a995798a4c6f568ad9299be8",
       "student_ref": "S-0298",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7763,6 +8063,7 @@
       "content_hash": "sha256:8f7678199e2b47dd1d4218f14516860c508d63831e38d57b4d5e7b015c6e4ecb",
       "student_ref": "S-0299",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -7789,6 +8090,7 @@
       "content_hash": "sha256:02006b569b750f8ee4ee3c1931414e103b4472b4f42e1d53f4c476f4f94e0c42",
       "student_ref": "S-0300",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -7815,6 +8117,7 @@
       "content_hash": "sha256:f8ab205ea9cb4ee0795f39148839c88e584ee41991f8920b0345e57f39a9ca23",
       "student_ref": "S-0301",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7841,6 +8144,7 @@
       "content_hash": "sha256:dcfae38b1dc2176990338199df1d4deb7f1fcb4c54d5faeecb5ffeb7550e8305",
       "student_ref": "S-0302",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -7867,6 +8171,7 @@
       "content_hash": "sha256:3fa7161bfcda6554416799c62c9e7e54e9085146548afaf7502d700a496797bf",
       "student_ref": "S-0303",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -7893,6 +8198,7 @@
       "content_hash": "sha256:8b6af2dfc3efc091d06afd2469109f41da47b1cba991fe3317f7f9572b74e711",
       "student_ref": "S-0304",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7919,6 +8225,7 @@
       "content_hash": "sha256:8c708019b40a04ee9cffe6343dcac1864c9975b0e272c79d2f31d44ca8879367",
       "student_ref": "S-0305",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -7945,6 +8252,7 @@
       "content_hash": "sha256:14d20cc9917fe1fd26e26926048e77d21d782ef63e08579694306f0cc4210bc4",
       "student_ref": "S-0306",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -7971,6 +8279,7 @@
       "content_hash": "sha256:5a2d48226a5c6258281d95693e2c43a034c24dd0c881b57921d65550a38ab6ed",
       "student_ref": "S-0307",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -7997,6 +8306,7 @@
       "content_hash": "sha256:6e06bc080bc8c05ac3c76313a69a4c2dac6687617deefb66ce5026b2f6074bd1",
       "student_ref": "S-0308",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8023,6 +8333,7 @@
       "content_hash": "sha256:bf5390597166b07a8bea0aaabc49f081ffbc9394fa6b9e20f702282f1d98fb40",
       "student_ref": "S-0309",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8049,6 +8360,7 @@
       "content_hash": "sha256:6a56cd03932aaf5b837af5262d97c893d686c4b4924241e26febceee93d2d811",
       "student_ref": "S-0310",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8075,6 +8387,7 @@
       "content_hash": "sha256:be463cfa6c7454025b719e9de37826ebdee9e730844655911ddceddf8f4689e0",
       "student_ref": "S-0311",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8101,6 +8414,7 @@
       "content_hash": "sha256:333329eb1d468805e30e6f1ccefae7e8f47775e34047c84cd3945a48bf11d2d0",
       "student_ref": "S-0312",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8127,6 +8441,7 @@
       "content_hash": "sha256:a3bcc24660a18ae6cedfef0a3ae96cd94641c7b3fe902c8c9ad24f1fac76d842",
       "student_ref": "S-0313",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8153,6 +8468,7 @@
       "content_hash": "sha256:4d81b03403e742f80f6d116dcded4ce7ef43220dfebfaa84c1910bb54b01dfbf",
       "student_ref": "S-0314",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8179,6 +8495,7 @@
       "content_hash": "sha256:168b4245e4e5b8cef13aaaccc2f23c86db62338cd1d9e53877005848a15dc306",
       "student_ref": "S-0315",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -8205,6 +8522,7 @@
       "content_hash": "sha256:bfb0199cee11ff129d3ec1221604a228f9252fc155932d6fc83641a7961cce77",
       "student_ref": "S-0316",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8231,6 +8549,7 @@
       "content_hash": "sha256:f4e2961a1ea33f2df6581588f7427a6f993cacebeccb79011e776262a97489b0",
       "student_ref": "S-0317",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8257,6 +8576,7 @@
       "content_hash": "sha256:b30f09b5d3661cef71b3098c63655c31f05568f9c8798d3c769228e7bc9f7cb5",
       "student_ref": "S-0318",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8283,6 +8603,7 @@
       "content_hash": "sha256:e4b736d82e5fca28d9dd31256c0e4e8d2b5dba29c45c7ed16ecbfb937f517577",
       "student_ref": "S-0319",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8309,6 +8630,7 @@
       "content_hash": "sha256:762a069b17f1ab66ab8f5b5688dd65856c409f6bfc9bc604cd1545682c5a984c",
       "student_ref": "S-0320",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8335,6 +8657,7 @@
       "content_hash": "sha256:b0a64b984229ddcf82893569097d58dc29a144bbcfcb4f5c8b5747922b02386b",
       "student_ref": "S-0321",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8361,6 +8684,7 @@
       "content_hash": "sha256:b6ca650841380bfa2166c343b218a1cda840f625dd7bba983c287f2cfb6977ba",
       "student_ref": "S-0322",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8387,6 +8711,7 @@
       "content_hash": "sha256:363167e07bb113647243b2661915ecab8427e3ef49e39d3f63e6df374490cc5f",
       "student_ref": "S-0323",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8413,6 +8738,7 @@
       "content_hash": "sha256:a0b47e359c60bb2525b176197f2ed98f3bc90637ee91b58032b48ecdc31ac82a",
       "student_ref": "S-0324",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8439,6 +8765,7 @@
       "content_hash": "sha256:cee24a5de3357003a154d6c771cf0bffce0c82ea76693021685622e57a78c576",
       "student_ref": "S-0325",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8465,6 +8792,7 @@
       "content_hash": "sha256:f3fbb2b483b6e22321317ca5d06bd07569eda7cc0ffa80c391a2b7f5b25f5835",
       "student_ref": "S-0326",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8491,6 +8819,7 @@
       "content_hash": "sha256:cc95d2d81888bdec4322b7a130109c38894263ad40083f5ae8824881fa3ce1d3",
       "student_ref": "S-0327",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8517,6 +8846,7 @@
       "content_hash": "sha256:253026cea60c1a8784c104bffacebd40df91b2f5dfdf0d2d3b7af287cb2475f8",
       "student_ref": "S-0328",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8543,6 +8873,7 @@
       "content_hash": "sha256:5c3e187913b9a939c2a4daeef8147f0f276dd22fe7062a1e4cab56f32c45e459",
       "student_ref": "S-0329",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8569,6 +8900,7 @@
       "content_hash": "sha256:68c90deccab938edb4faf4813193613f5371c3e8bf080179b2fb0e899605063e",
       "student_ref": "S-0330",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8595,6 +8927,7 @@
       "content_hash": "sha256:169f6a82a28933e2647db67e2b9f472bc4d0f33b28c8791961a6de8ddde104db",
       "student_ref": "S-0331",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -8621,6 +8954,7 @@
       "content_hash": "sha256:5824821eee0dbad25146384dd211b8a26d8400d9632c804871424bfa78718067",
       "student_ref": "S-0332",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8647,6 +8981,7 @@
       "content_hash": "sha256:8848e5088355705bb5cada42e6ede19ad8f3c9f0886d13e5263b842a1d80f412",
       "student_ref": "S-0333",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8673,6 +9008,7 @@
       "content_hash": "sha256:fd5925516fc185a3319ea78a18038b1cd5248560198f8845406ae2d7a00a41dc",
       "student_ref": "S-0334",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -8699,6 +9035,7 @@
       "content_hash": "sha256:1be284b6f58f6d2c366f87a44b90c2c6fd4e2dcc69262ae7ab246ac81f27eb21",
       "student_ref": "S-0335",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8725,6 +9062,7 @@
       "content_hash": "sha256:25228ec41e3fc3e221639d9d2486685b27a0c9b3c340f8782b89dfbb185aaeb9",
       "student_ref": "S-0336",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8751,6 +9089,7 @@
       "content_hash": "sha256:a2f3cb45fef3f45277358259b10ec54e41a5575eb90aecc45ead1691faf38bba",
       "student_ref": "S-0337",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -8777,6 +9116,7 @@
       "content_hash": "sha256:fd55deee47ad2a2ed2ac0990678481bf589d62cc3451ad65cb13d1813c99c9f5",
       "student_ref": "S-0338",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8803,6 +9143,7 @@
       "content_hash": "sha256:81f1dbbfad0839f16cbe5dfba6c9e2c6c936ac517b18cf8c3fe1cf3f5332d9e7",
       "student_ref": "S-0339",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8829,6 +9170,7 @@
       "content_hash": "sha256:fdaaca842562b13ca03775bd462f33249c18215ba4c5f0e94542ec385109e95d",
       "student_ref": "S-0340",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8855,6 +9197,7 @@
       "content_hash": "sha256:1de77505fb983f13b1cd94527d14586963cd48fb697e775759cc6e16e720f877",
       "student_ref": "S-0341",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8881,6 +9224,7 @@
       "content_hash": "sha256:821b2d76db1cfd1b56e567412996617bdb11c5759988ba0b145a723f5cf0a4ba",
       "student_ref": "S-0342",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8907,6 +9251,7 @@
       "content_hash": "sha256:c50cb3359d10153d88ba4b412e14eae8e528ac3e79dc23b12a32201e36262b9b",
       "student_ref": "S-0343",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "emerging",
@@ -8933,6 +9278,7 @@
       "content_hash": "sha256:bf6e7d5fd00ed011578f2e3abc0bbb5c2e5fae27aa728be5e1fa919c70bf9671",
       "student_ref": "S-0344",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -8959,6 +9305,7 @@
       "content_hash": "sha256:03b2153aa61f7ca0fcd40162e59a5335e957cc6656ad214d0107ba4c5e0ab7ed",
       "student_ref": "S-0345",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -8985,6 +9332,7 @@
       "content_hash": "sha256:4a176f3385d13de7264376ddc49adfb7cfb9ab2e68a8a3475fd5de62a005782a",
       "student_ref": "S-0346",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -9011,6 +9359,7 @@
       "content_hash": "sha256:457034ba510426d2d6afe6f9569c9aa3c3804a1e5bfdfdfd279309e5b3c3ec88",
       "student_ref": "S-0347",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "developing",
@@ -9037,6 +9386,7 @@
       "content_hash": "sha256:c4cf2f0eab0cf64fe00aff826d35cd1c3af5ab2953744d91c75752283c44595e",
       "student_ref": "S-0348",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "absent",
@@ -9063,6 +9413,7 @@
       "content_hash": "sha256:5d637a21fda4eaefa61b80554f5f28027c440f172ac83d5124a87a6ec64f6ab6",
       "student_ref": "S-0349",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",
@@ -9089,6 +9440,7 @@
       "content_hash": "sha256:5f275d32b85a300d48524a774685a1ffc217adf6d8ff8b7468c0b3b80f20bfe3",
       "student_ref": "S-0350",
       "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
       "pages": 4,
       "reference_bands": {
         "C-01": "secure",

@@ -2,6 +2,7 @@
 
 element_kind: free_body_diagram
 question_id: Q1
+consent_class: synthetic
 
 A crate is drawn as a square resting on a line inclined 25 degrees above the horizontal.
 Three arrows leave the centre of the square:

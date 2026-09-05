@@ -4,6 +4,8 @@
   "seed": null,
   "generator": "harness.corpora.stats",
   "description": "Label sets whose kappa, QWK, ordinal alpha, entropy and interior rate were worked out by hand, including every degenerate case NFR-STATS-01 names.",
+  "set_content_hash": "sha256:3026e47cb9a686128b9ce23afc695fcec4693bfa5ba0cf1feeb46f7fbd5bef76",
+  "fixture_set_id": "F-STATS@1+sha256:3026e47cb9a686128b9ce23afc695fcec4693bfa5ba0cf1feeb46f7fbd5bef76",
   "note": "Undefined figures are null with a stated reason, never 0 (CT-STATS-03).",
   "submissions": [
     {

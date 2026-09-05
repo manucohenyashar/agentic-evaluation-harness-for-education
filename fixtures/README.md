@@ -17,7 +17,18 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-DEV/` | The 8 submissions development iterates against, disjoint from `F-FROZEN` (`TC-CONFORM-10`) |
 | `F-GRAPHIC/` | One page per `FR-INGEST-10` element kind, plus the confusable-with-a-verdict page |
 | `F-STATS/` | Label sets whose statistics were worked out by hand (`NFR-STATS-01`) |
+| `F-ADV-INJ/` | Injection twin pairs: each payload paired with a benign twin (`FR-CONFORM-09`) |
+| `F-ADV-PDF/` | **Manifest only.** One entry per malicious/malformed construct, with the digest of the bytes the generator emits |
+| `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
+
+`F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not
+committed as binaries"*. `tests.support.corpora.materialize_adv_pdfs()` writes them into a
+temp directory on demand and verifies each against the digest in the manifest.
+
+`F-HAND/` holds no student work and never will. §4.4's PII rules make it the only corpus
+containing real work and forbid committing it; `registry.json` is the committed declaration of
+what it must contain and where a machine that has it keeps the corpus.
 
 `baselines/` holds no golden files yet. A baseline is the output of a producer and no producer
 exists; see `tests/support/baselines.py` for why committing one early would be worse than

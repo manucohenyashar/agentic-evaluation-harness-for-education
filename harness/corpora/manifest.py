@@ -86,6 +86,34 @@ class ManifestEntry:
         return entry
 
 
+def set_content_hash(entries: Iterable[ManifestEntry]) -> str:
+    """One digest over the whole corpus: the ordered `(id, content_hash)` pairs.
+
+    `NFR-CONFORM-01` addresses the **set**, not its members: *"the fixture set shall be
+    content-addressed and version-pinned, so a conformance result names exactly which fixtures
+    produced it."* Per-member hashes cannot do that job — a result citing thirty-six of them is
+    citing a list nobody will compare, and a result citing the version *label* is citing a string
+    that stays the same when somebody edits a fixture.
+
+    Over `(id, content_hash)` rather than over the bytes, so the digest changes when a member is
+    renamed, reordered, added or removed as well as when its content changes. A digest over
+    concatenated bytes alone would be identical for two corpora that differ only in which
+    submission is called what — and a conformance result is keyed by submission id.
+    """
+    joined = "\n".join(f"{e.id}\t{e.content_hash}" for e in entries)
+    return content_hash(joined.encode("utf-8"))
+
+
+def fixture_set_id(corpus: str, version: str, digest: str) -> str:
+    """The citable identity of a corpus: `F-FROZEN@1+sha256:...`.
+
+    One string, so a conformance result can carry the whole answer to *"which fixtures produced
+    this?"* in a single field. The version is in it because `FR-CONFORM-01` requires the set to be
+    versioned; the digest is in it because a version alone is a promise rather than a check.
+    """
+    return f"{corpus}@{version}+{digest}"
+
+
 @dataclass(frozen=True)
 class Manifest:
     corpus: str
@@ -96,6 +124,10 @@ class Manifest:
     entries: tuple[ManifestEntry, ...]
     extra: Mapping[str, Any] | None = None
 
+    @property
+    def set_hash(self) -> str:
+        return set_content_hash(self.entries)
+
     def as_json(self) -> dict[str, Any]:
         doc: dict[str, Any] = {
             "corpus": self.corpus,
@@ -103,6 +135,9 @@ class Manifest:
             "seed": self.seed,
             "generator": self.generator,
             "description": self.description,
+            # `NFR-CONFORM-01`'s content addressing, at the level the requirement states it.
+            "set_content_hash": self.set_hash,
+            "fixture_set_id": fixture_set_id(self.corpus, self.version, self.set_hash),
         }
         if self.extra:
             doc.update(self.extra)
