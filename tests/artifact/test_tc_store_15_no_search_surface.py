@@ -1,7 +1,7 @@
 """No search surface — over the *concrete* store, its statements, and its schema.
 
 Case `TC-STORE-15` (`FR-STORE-08`, P0, Artifact assertion), test plan §5.3. Issue #14 (TS-08);
-blocked on **#13**, and on #12 before it.
+blocked on **#12 and #13** together.
 
 **This is the half `SEC-15` deliberately left open, not a duplicate of it.**
 `tests/artifact/test_store_query_surface.py` asserts the same requirement over the `Protocol`s
@@ -29,10 +29,13 @@ scored work influence another's, silently, with every functional case still gree
 reasoning that all three limbs need a constructible store. #10 landed and disproved that: a
 constructible store is necessary and nowhere near sufficient. Limb 1 sweeps every tier and
 `Store.blobs()` is one of them, which #10 ships as a stub naming **#12**; limb 2 reads
-`aeh.store:STATEMENTS`, which no story owns at all. `WRITTEN_AHEAD_BLOCKERS` takes one target
-per entry, so the key is whichever lands last — `STATEMENTS`, presumed #13's since
-`FR-STORE-08` is — and the ownership gap is reported in the PR rather than hidden behind a key
-that looks settled. `SEC-15` asks the same question this file does and is free to reach a
+`aeh.store:STATEMENTS`, which no story owns at all. `WRITTEN_AHEAD_BLOCKERS` took one target per
+entry, and the graph does not order #12 against #13 — both carry `Depends on: #10` and nothing
+else — so no single symbol is the right key and picking one is a coin flip between firing early
+and never firing. Hence the registry's `symbols` kind, added for this case: the entry names both
+`blob_store_stats` and `STATEMENTS` and resolves only when both do. `STATEMENTS` is attributed
+to #13 because `FR-STORE-08` is, and that attribution is a presumption reported in the PR rather
+than a settled question hidden behind a key. `SEC-15` asks the same question this file does and is free to reach a
 different issue answering it; what the two must not do is disagree about the question.
 
 Rung note, reported as a finding: the plan puts `TC-STORE-15` at **rung 0**. Limbs 1 and 3 need

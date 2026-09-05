@@ -61,6 +61,8 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 #   "module"  importable module path            -- the module does not exist yet
 #   "path"    repo-relative file or directory   -- a data artifact does not exist yet
 #   "symbol"  "module:dotted.attr"              -- the module exists; this name in it does not
+#   "symbols" "mod:a,mod:b" (comma-separated)   -- a test with more than one blocker; resolved
+#                                                  only when every one of them is
 #
 # `symbol` is what a module split across several stories needs. `aeh.conf` landed with #4, so
 # `find_spec` has said "resolved" since then — but `RunConfig.profile_summary` arrives with #5
@@ -262,13 +264,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # takes one target, so the key must be whichever lands *last*, or the gate fires early and
     # a reader unmarks a test that then reds inside `TEST_CMD`.
     #
-    # `STATEMENTS` is that one. It is keyed to **#13** as the presumed owner -- `FR-STORE-08`
-    # ("no search") is #13's requirement and a declared-statement registry is how a store keeps
-    # that promise checkable -- and #13 lands after #12 either way. But no issue's acceptance
-    # criteria mention `STATEMENTS`, so this is an ownership gap, not a resolved question: if
-    # #13 closes without it, this P0 case sits outside the gate with nothing saying so. Reported
-    # in the PR for whoever owns the design and the issue graph; it cannot be fixed from a test
-    # file.
+    # An earlier draft of this commit keyed it on `STATEMENTS` alone, reasoning that #13 lands
+    # after #12 "either way". Checked against the graph rather than the issue numbers, that is
+    # false: **#12 and #13 both carry `Depends on: #10` and nothing else**, so nothing orders
+    # them and both are in the ready set today. Picking either symbol is a coin flip between the
+    # two failure directions, which is how this whole branch started. Hence the `symbols` kind:
+    # the entry names both and resolves only when both do.
+    #
+    # `STATEMENTS` is attributed to **#13** because `FR-STORE-08` ("no search") is #13's
+    # requirement and a declared-statement registry is how a store keeps that promise checkable.
+    # That is a presumption, not a resolution -- no issue's acceptance criteria mention
+    # `STATEMENTS`, and `store_api.py` guessed #10 before #10 closed without it. If #13 closes
+    # without it too, the conjunction never resolves and this P0 case sits outside the gate with
+    # nothing saying so. Reported in the PR for whoever owns the design and the issue graph; it
+    # cannot be fixed from a test file.
     "#11 store_metrics": (
         "symbol",
         f"{STORE_MODULE}:store_metrics",
@@ -283,9 +292,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{STORE_MODULE}:blob_store_stats",
         ("tests/integration/store/test_blob_store.py",),
     ),
-    "#13 STATEMENTS": (
-        "symbol",
-        f"{STORE_MODULE}:STATEMENTS",
+    "#12 and #13 (Store.blobs + STATEMENTS)": (
+        "symbols",
+        f"{STORE_MODULE}:blob_store_stats,{STORE_MODULE}:STATEMENTS",
         ("tests/artifact/test_tc_store_15_no_search_surface.py",),
     ),
     "#13 StudentNameInTierDError": (
@@ -1291,6 +1300,26 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
             if obj is None:
                 return False
         return True
+    if kind == "symbols":
+        # Conjunction: resolved only when **every** listed symbol is. A comma-separated list of
+        # `module:dotted.attr`, since a target already contains `:`.
+        #
+        # `symbol` assumes one test file has one blocker, which is true of nearly every entry
+        # above and false for `TC-STORE-15`: limb 1 sweeps `Store.blobs()` (#12) and limb 2
+        # reads `aeh.store:STATEMENTS` (#13). Neither issue depends on the other -- both carry
+        # `Depends on: #10` and nothing else -- so the graph does not say which lands first, and
+        # a single-symbol key is a coin flip between the two failure directions this registry
+        # exists to prevent. Keying on the earlier one fires the gate while the later blocker is
+        # still a stub, and a reader who does as instructed puts a red P0 case inside `TEST_CMD`.
+        #
+        # Conjunction is the honest encoding: the case becomes runnable when its *last* blocker
+        # lands, whichever that turns out to be. It is deliberately not disjunction -- an "any"
+        # kind would fire early by construction.
+        return all(
+            blocker_is_resolved("symbol", one.strip(), repo_root)
+            for one in target.split(",")
+            if one.strip()
+        )
     if kind == "path":
         return (repo_root / target).exists()
     raise ValueError(

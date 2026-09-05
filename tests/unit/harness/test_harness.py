@@ -354,6 +354,32 @@ def test_blocker_is_resolved_detects_a_symbol_landing_inside_an_existing_module(
     assert blocker_is_resolved("symbol", "aeh.does_not_exist:anything", repo_root) is False
 
 
+def test_blocker_is_resolved_symbols_requires_every_listed_name(repo_root):
+    """The `symbols` kind, which is what a test with more than one blocker needs.
+
+    `TC-STORE-15` is the case that forced it: limb 1 sweeps `Store.blobs()` (#12) and limb 2
+    reads `aeh.store:STATEMENTS` (#13), and **neither issue depends on the other** — both carry
+    `Depends on: #10`. A single-symbol key is therefore a coin flip. Keying on whichever lands
+    first fires the gate while the other blocker is still a stub, and a reader who does as the
+    failure instructs moves a red P0 case *inside* `TEST_CMD`. That already happened once at
+    #10, which is why this kind exists.
+
+    Conjunction, never disjunction: an "any" kind would fire early by construction.
+    """
+    landed = f"{CONF_MODULE}:resolve_run_config"
+    absent = f"{CONF_MODULE}:not_a_real_name"
+
+    assert blocker_is_resolved("symbols", f"{landed},{landed}", repo_root) is True
+    assert blocker_is_resolved("symbols", f"{landed},{absent}", repo_root) is False
+    assert blocker_is_resolved("symbols", f"{absent},{landed}", repo_root) is False
+    assert blocker_is_resolved("symbols", f"{absent},{absent}", repo_root) is False
+
+    # A single entry and stray whitespace both behave, so the registry can be written for
+    # legibility rather than to a parser's taste.
+    assert blocker_is_resolved("symbols", landed, repo_root) is True
+    assert blocker_is_resolved("symbols", f" {landed} , {absent} ", repo_root) is False
+
+
 def test_blocker_is_resolved_refuses_an_unknown_kind(repo_root):
     """A `kind` with no branch must raise, not read as unresolved.
 
