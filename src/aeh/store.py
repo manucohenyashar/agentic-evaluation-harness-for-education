@@ -76,7 +76,10 @@ and `TC-CONF-C11` sweeps it; these are this module's own and are read here, once
 from __future__ import annotations
 
 import errno
+import hashlib
 import os
+import re
+import secrets
 import re
 import shutil
 import sqlite3
@@ -86,6 +89,7 @@ import time
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, ContextManager, Iterator, Mapping, Protocol, Sequence
@@ -109,8 +113,16 @@ __all__ = [
     "Tier",
     "TierHandle",
     "TierOpened",
+    "BLOB_HASH_PATTERN",
+    "STATEMENTS",
+    "Clock",
+    "ContentAddressedBlobStore",
+    "InvalidContentHashError",
+    "Lease",
+    "LeaseClock",
     "ReadOnlyTierError",
     "StoreLimits",
+    "SystemClock",
     "Tx",
     "WriteQueue",
     "WriteQueueClosed",
@@ -118,6 +130,8 @@ __all__ = [
     "WriteUnit",
     "current_schema_version",
     "data_dir_from_environment",
+    "blob_store_stats",
+    "lease_clock",
     "is_student_name_column",
     "open_store",
     "store_metrics",
@@ -170,6 +184,25 @@ DEFAULT_QUEUE_DEPTH_SUSTAIN_MS = 5_000
 #: time-triggered commit can be, so it is environment-sensitive in the same way the interval is.
 WRITER_POLL_MS_ENV = "HARNESS_WRITER_POLL_MS"
 DEFAULT_WRITER_POLL_MS = 5
+
+#: `NFR-STORE-06`: *"a 350-student run shall occupy under 500 MB including blobs"*, which §3.3
+#: records as an Assumption ("the HLD estimates tens of megabytes for rows; page rasters and crops
+#: dominate"). A knob rather than a literal, because #12's own technical note asks for "a measured,
+#: knob-adjustable expectation rather than a hard-coded literal" — a cohort of 800 or a school that
+#: rasterises at 600 dpi is a different number, and re-deriving it must not need a code change.
+CAPACITY_BUDGET_BYTES_ENV = "HARNESS_CAPACITY_BUDGET_BYTES"
+DEFAULT_CAPACITY_BUDGET_BYTES = 500 * 1024 * 1024
+
+#: How far the restored lease counter is pushed past the last expiry it recorded, so a lease
+#: issued in the instant before an uncontrolled kill cannot come back live on a rounding edge.
+#: Seconds; environment-sensitive because it trades reclaim latency against that edge.
+LEASE_RESTORE_MARGIN_S_ENV = "HARNESS_LEASE_RESTORE_MARGIN_S"
+DEFAULT_LEASE_RESTORE_MARGIN_S = 1
+
+#: How old a staging file must be before an opening store reaps it. Generous by default, because
+#: the thing it must never do is delete a blob another process is writing this second.
+STAGED_BLOB_TTL_S_ENV = "HARNESS_STAGED_BLOB_TTL_S"
+DEFAULT_STAGED_BLOB_TTL_S = 3600
 
 #: The two alerts §3.3 names under **Alerts**, spelled once. `CT-STORE-17` makes their semantics
 #: contract, so the names are part of the interface rather than log text.
@@ -749,6 +782,20 @@ def _refuse_tier_d_schema(action: int, arg1: Any, arg2: Any, db_name: Any,
     return _SQLITE_OK
 
 
+class InvalidContentHashError(StoreError):
+    """A `content_hash` that `put` could not have returned (`FR-STORE-06`, `SEC-09`).
+
+    Raised **before the filesystem is touched**, which is the requirement rather than the
+    implementation detail it looks like. Test plan `TC-STORE-22` fixes the rule: *"`get()` and
+    `path()` reject any argument that is not 64 lowercase hex characters, before touching the
+    filesystem"*. `SEC-09` is why -- it attacks `path()` with `../`, an absolute path, a wrong
+    length and mixed case, and a check performed after building the path has already asked the
+    operating system to resolve whatever the attacker wrote.
+
+    Design §3.3 names no error for this. The name is this module's and is reported as a gap.
+    """
+
+
 # --- the declared-statement type ---------------------------------------------------------------
 
 
@@ -1178,11 +1225,57 @@ class Migration:
     statements: tuple[Statement, ...]
 
 
+#: Migration 2 for Tier D: the monotonic lease counter (`FR-STORE-11`), added by #12.
+#:
+#: **Tier D, and forward-only as a second numbered migration** rather than an edit to
+#: `_DURABLE_001`. `FR-STORE-02` makes migrations forward-only and numbered and `NFR-STORE-04`
+#: says a migration is "reversible only by restoring a copy", so editing the first one would
+#: silently disagree with every database already at version 1. Tier D because the counter must
+#: outlive a cohort: it is the one tier `purge_cohort` does not touch (§3.3), and a lease counter
+#: reset by a purge is a lease counter that can move backwards.
+#:
+#: This is `M-STORE`'s own bookkeeping, not schema *meaning* — the same footing as
+#: `schema_version`. Nothing here says what a lease is *for*; that is `M-ORCH`'s ledger.
+#:
+#: One row, enforced by the CHECK. A second row would make "the persisted counter" ambiguous at
+#: exactly the moment it has to be trusted.
+_DURABLE_002: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE store_lease_clock (
+            id         INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+            ticks      REAL    NOT NULL,
+            wall_clock TEXT    NOT NULL
+        )
+        """
+    ),
+)
+
 TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = {
     Tier.PACKAGE: (Migration(1, "package_tier_initial", _PACKAGE_001),),
     Tier.COHORT: (Migration(1, "cohort_tier_initial", _COHORT_001),),
-    Tier.DURABLE: (Migration(1, "durable_tier_initial", _DURABLE_001),),
+    Tier.DURABLE: (
+        Migration(1, "durable_tier_initial", _DURABLE_001),
+        Migration(2, "durable_lease_clock", _DURABLE_002),
+    ),
 }
+
+#: The two statements the lease counter is read and written with. Module-level literals, never
+#: assembled — `SEC-15`, and the same discipline every other statement in this file follows.
+_SELECT_LEASE_CLOCK = Statement("SELECT ticks, wall_clock FROM store_lease_clock WHERE id = 1")
+#: One literal, not two adjacent ones. `tests/support/sql_scan.py` reads implicit string
+#: concatenation as a *computed* statement and refuses it, which is the right call: "declared"
+#: has to mean a reader can see the whole statement in one place, and a statement assembled from
+#: parts is one `+` away from being assembled from a variable.
+_UPSERT_LEASE_CLOCK = Statement(
+    """
+    INSERT INTO store_lease_clock (id, ticks, wall_clock)
+    VALUES (1, :ticks, :wall_clock)
+    ON CONFLICT(id) DO UPDATE SET
+        ticks      = MAX(excluded.ticks, store_lease_clock.ticks),
+        wall_clock = excluded.wall_clock
+    """
+)
 
 
 def current_schema_version(tier: Tier) -> int:
@@ -1627,6 +1720,9 @@ class StoreLimits:
     projected_run_bytes: int = DEFAULT_PROJECTED_RUN_BYTES
     queue_depth_sustain_ms: int = DEFAULT_QUEUE_DEPTH_SUSTAIN_MS
     writer_poll_ms: int = DEFAULT_WRITER_POLL_MS
+    capacity_budget_bytes: int = DEFAULT_CAPACITY_BUDGET_BYTES
+    lease_restore_margin_s: int = DEFAULT_LEASE_RESTORE_MARGIN_S
+    staged_blob_ttl_s: int = DEFAULT_STAGED_BLOB_TTL_S
     busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS
     retries: int = DEFAULT_BUSY_RETRIES
 
@@ -1645,6 +1741,7 @@ class StoreLimits:
             ("commit_interval_ms", COMMIT_INTERVAL_MS_ENV, self.commit_interval_ms),
             ("write_queue_depth", WRITE_QUEUE_DEPTH_ENV, self.write_queue_depth),
             ("writer_poll_ms", WRITER_POLL_MS_ENV, self.writer_poll_ms),
+            ("capacity_budget_bytes", CAPACITY_BUDGET_BYTES_ENV, self.capacity_budget_bytes),
         ):
             if value <= 0:
                 raise ConfigurationProblem(
@@ -1665,6 +1762,12 @@ class StoreLimits:
             queue_depth_sustain_ms=_int_env(
                 QUEUE_DEPTH_SUSTAIN_MS_ENV, DEFAULT_QUEUE_DEPTH_SUSTAIN_MS, environ),
             writer_poll_ms=_int_env(WRITER_POLL_MS_ENV, DEFAULT_WRITER_POLL_MS, environ),
+            capacity_budget_bytes=_int_env(
+                CAPACITY_BUDGET_BYTES_ENV, DEFAULT_CAPACITY_BUDGET_BYTES, environ),
+            lease_restore_margin_s=_int_env(
+                LEASE_RESTORE_MARGIN_S_ENV, DEFAULT_LEASE_RESTORE_MARGIN_S, environ),
+            staged_blob_ttl_s=_int_env(
+                STAGED_BLOB_TTL_S_ENV, DEFAULT_STAGED_BLOB_TTL_S, environ),
             busy_timeout_ms=_int_env(BUSY_TIMEOUT_MS_ENV, DEFAULT_BUSY_TIMEOUT_MS, environ),
             retries=_int_env(BUSY_RETRIES_ENV, DEFAULT_BUSY_RETRIES, environ),
         )
@@ -1817,6 +1920,353 @@ def _as_disk_full(error: BaseException, *, include_os_errors: bool = True) -> Di
         failure.__cause__ = error
         return failure
     return None
+
+
+#: What a `content_hash` must look like: exactly 64 lowercase hex characters, anchored.
+#:
+#: Anchored, and lowercase-only. `re.match` without `$` would accept
+#: `"a"*64 + "/../../etc/passwd"`, and `hexdigest()` returns lowercase -- so accepting uppercase
+#: would mean two spellings of one blob, which is a second copy of the file the whole module
+#: exists to store once. `TC-STORE-22` generates mixed case as a rejection input for exactly that
+#: reason.
+BLOB_HASH_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z")
+
+#: Where an in-progress blob is written before it is renamed into place. **Outside `blobs/`**, and
+#: that is not tidiness: `TC-STORE-09` counts every file under the blob root and asserts that
+#: storing one blob created exactly one file, so a temp file that lived there -- or was left there
+#: by a crash -- would fail a correct store.
+INCOMING_DIR = ".incoming"
+
+#: Owner-only, on the blob files themselves (`FR-STORE-09`). Ignored on Windows, like the
+#: directory mode #10 records; #13 owns the full rule.
+OWNER_ONLY_FILE = 0o600
+
+
+class ContentAddressedBlobStore:
+    """Blobs keyed by the SHA-256 of their content (`FR-STORE-06`, `CT-STORE-07`).
+
+    **Content-addressed means idempotent for free.** `put` computes the digest, and the digest
+    *is* the location, so storing the same bytes twice writes to the same path and the second
+    write is skipped rather than deduplicated afterwards by a comparison. There is no index to
+    fall out of step with the directory, which is also why `stats()` walks.
+
+    **Two-level fan-out**, `blobs/<aa>/<bb>/<hash>`. A 350-student run's page rasters and crops
+    run to tens of thousands of files (`NFR-STORE-06`), and tens of thousands of entries in one
+    directory is where `readdir` and most filesystem tools start to degrade. The path is derived
+    from the hash alone, so it is reproducible from the content and nothing needs to record it.
+
+    **Written to a temp file and renamed.** A crash partway through a 3 MB page raster would
+    otherwise leave a truncated file *at its own content address* -- the one state this design
+    cannot detect, since the address no longer describes the bytes. `os.replace` is atomic within
+    a filesystem, and the temp lives under the data directory rather than the system temp so it
+    is on that same filesystem (and outside a world-writable path, `FR-STORE-09`).
+    """
+
+    __slots__ = ("_incoming", "_root")
+
+    def __init__(self, root: Path, incoming: Path) -> None:
+        self._root = root
+        self._incoming = incoming
+
+    # -- the three members §3.3 declares --------------------------------------------------------
+
+    def put(self, data: bytes) -> str:
+        """Store `data`, returning its SHA-256 hex digest. Idempotent (`CT-STORE-07`)."""
+        if isinstance(data, (bytearray, memoryview)):
+            data = bytes(data)
+        if not isinstance(data, bytes):
+            raise InvalidContentHashError(
+                f"put() takes bytes, got {type(data).__name__}. A blob is the source PDF, the "
+                "page raster or the crop; encoding is the caller's decision, not this module's."
+            )
+        content_hash = hashlib.sha256(data).hexdigest()
+        target = self._path_for(content_hash)
+        if target.exists():
+            # FR-STORE-06's "deduplicate identical content on write". Not an optimisation: this
+            # is what makes `put` idempotent, and rewriting would also mean a window in which an
+            # existing, valid blob is replaced by a partial one.
+            return content_hash
+        target.parent.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
+        self._incoming.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
+        staged = self._incoming / f"{content_hash}.{secrets.token_hex(8)}"
+        try:
+            staged.write_bytes(data)
+            try:
+                staged.chmod(OWNER_ONLY_FILE)
+            except OSError:
+                pass  # Windows ignores the mode; #13 owns the full FR-STORE-09 rule
+            try:
+                os.replace(staged, target)
+            except OSError:
+                # Two threads storing the same bytes both passed the `exists()` check above and
+                # both staged a copy; on Windows the loser's `os.replace` hits an open or newly
+                # created target and raises `PermissionError` (measured: 2 of 16 racing puts, and
+                # again with a reader holding the target open, since CPython's `open()` does not
+                # pass FILE_SHARE_DELETE). POSIX would not raise at all.
+                #
+                # Losing the race is not a failure here, and content addressing is why: whatever
+                # is at the target has the same SHA-256, so it has the same bytes. `put` is
+                # documented as idempotent without qualification, so it must not raise for the
+                # one case where idempotency is doing its job.
+                if not target.exists():
+                    raise
+        finally:
+            # A failed write must not leave the staging file behind: `TC-STORE-09` counts every
+            # file under the data directory's blob root, and an operator counting disk usage
+            # would be reading a number that includes rubbish.
+            if staged.exists():
+                staged.unlink()
+        return content_hash
+
+    def get(self, content_hash: str) -> bytes:
+        """The bytes `put` stored under `content_hash`."""
+        path = self.path(content_hash)
+        try:
+            return path.read_bytes()
+        except FileNotFoundError as error:
+            raise KeyError(
+                f"no blob stored under {content_hash}. `put` returns the hash it stored; a hash "
+                "that is well-formed but absent means the blob belongs to a different data "
+                "directory, or to a cohort that has been purged."
+            ) from error
+
+    def path(self, content_hash: str) -> Path:
+        """Where `content_hash` lives on disk. **Validated before the filesystem is touched.**
+
+        `SEC-09` attacks this with a crafted hash, and the order of the two lines below is the
+        defence: the pattern is checked first, so `../`, an absolute path and a wrong length are
+        all rejected without the operating system ever being asked to resolve them. The
+        containment assertion after it is belt and braces against a future change to the layout
+        -- 64 hex characters cannot escape `_root`, and the day the fan-out changes is the day
+        that stops being obvious.
+        """
+        self._validate(content_hash)
+        resolved = self._path_for(content_hash)
+        root = self._root.resolve()
+        if not resolved.resolve().is_relative_to(root):
+            raise InvalidContentHashError(
+                f"{content_hash} resolves outside the blob directory ({resolved}). This cannot "
+                "happen for 64 hex characters and is asserted anyway: FR-STORE-09 requires "
+                "resolution to stay inside the data directory, and SEC-09 attacks exactly here."
+            )
+        return resolved
+
+    # -- accounting -------------------------------------------------------------------------------
+
+    def reap_staged(self, older_than_s: float) -> int:
+        """Delete staging files left by a crash between `write_bytes` and `os.replace`.
+
+        Bounded by age rather than unconditional: a data directory can legitimately have a second
+        process staging a blob right now, and deleting its file mid-write would turn one crash
+        into two. `older_than_s` is a knob for that reason.
+
+        `stats()` walks `blobs/` and never saw these, but `store_metrics`'s `data_dir_bytes`
+        counts every file under the data directory — and that is the number `NFR-STORE-06`'s
+        500 MB is measured against, so an orphan inflates the one figure the Assumption is
+        revisited from.
+        """
+        if not self._incoming.is_dir():
+            return 0
+        cutoff = time.time() - older_than_s
+        reaped = 0
+        for entry in self._incoming.iterdir():
+            try:
+                if entry.is_file() and entry.stat().st_mtime < cutoff:
+                    entry.unlink()
+                    reaped += 1
+            except OSError:
+                pass  # in use by another process, or already gone: both mean leave it alone
+        return reaped
+
+    def stats(self) -> dict[str, Any]:
+        """File count and bytes on disk, **by walking the directory**.
+
+        A walk rather than a counter this module maintains. `TC-STORE-09` cross-checks this
+        against its own walk and says why: *"a stats accessor that disagrees with the filesystem
+        is reporting on something other than the filesystem"*. A maintained counter has to be
+        right across every restart, every purge and every crash; a walk cannot drift because
+        there is nothing to drift from.
+        """
+        file_count = 0
+        bytes_on_disk = 0
+        for entry in self._root.rglob("*"):
+            if entry.is_file():
+                file_count += 1
+                bytes_on_disk += entry.stat().st_size
+        return {
+            "file_count": file_count,
+            "bytes_on_disk": bytes_on_disk,
+            "root": self._root,
+        }
+
+    # -- internals ----------------------------------------------------------------------------------
+
+    @staticmethod
+    def _validate(content_hash: Any) -> None:
+        if not isinstance(content_hash, str) or not BLOB_HASH_PATTERN.match(content_hash):
+            raise InvalidContentHashError(
+                f"{content_hash!r} is not a content hash. `put` returns 64 lowercase hex "
+                "characters (SHA-256, CT-STORE-07); anything else was not produced by this "
+                "store and is refused before the filesystem is touched (TC-STORE-22, SEC-09)."
+            )
+
+    def _path_for(self, content_hash: str) -> Path:
+        return self._root / content_hash[:2] / content_hash[2:4] / content_hash
+
+
+# --- the monotonic lease clock -------------------------------------------------------------------
+
+
+class Clock(Protocol):
+    """Wall time and monotonic time, separately (`FR-STORE-11`).
+
+    Two methods rather than one because the requirement is about the difference between them:
+    lease expiry derives from the monotonic counter, and the wall clock is recorded beside it for
+    an operator reading the row. A single `now()` cannot express that.
+
+    Declared here rather than imported: `tests/support/clock.py` has the matching `FrozenClock`,
+    but that is test support and production code cannot import it. Structural typing means the
+    test double satisfies this without either file knowing about the other, which is what
+    `CLAUDE.md` seam 2 asks for.
+    """
+
+    def now(self) -> datetime: ...
+
+    def monotonic(self) -> float: ...
+
+
+class SystemClock:
+    """The production `Clock`. UTC, and `time.monotonic` for the counter."""
+
+    __slots__ = ()
+
+    def now(self) -> datetime:
+        return datetime.now(timezone.utc)
+
+    def monotonic(self) -> float:
+        return time.monotonic()
+
+
+@dataclass(frozen=True)
+class Lease:
+    """A claim with an expiry, expressed in the store's own monotonic ticks.
+
+    `expires_ticks` is what `expired()` compares. `issued_at` is the wall clock at issue and is
+    for an operator reading a ledger row -- it is deliberately *not* what expiry is computed
+    from, which is the whole of `FR-STORE-11`.
+    """
+
+    expires_ticks: float
+    issued_ticks: float
+    issued_at: datetime
+    ttl_seconds: float
+
+
+class LeaseClock:
+    """Lease expiry from a monotonic counter persisted alongside wall clock (`FR-STORE-11`).
+
+    `CT-STORE-14` states the failure this exists to prevent: NTP corrects the host clock
+    backwards while a run is resumed, and every expired lease reads as live -- so `M-ORCH`'s
+    sweeper reclaims nothing and the work is stranded, or it reclaims twice and the work is
+    duplicated. The test plan calls the bug *"a 'simplification' to `datetime.now()`"*.
+
+    **What is persisted is the furthest expiry ever issued**, not the current tick. Persisting
+    the current tick is the obvious design and it is wrong: a lease issued at tick 100 with a
+    60-second TTL expires at 160, the process runs on to tick 200 and is killed, and a restore
+    from 100 reads that lease as live again. Recording 160 at the moment of issue means the
+    restored counter is at or past every expiry that was ever issued.
+
+    **So a restart expires every outstanding lease, and that is the correct direction.** There is
+    no server process here (§3.3, `NFR-STORE-03`), so a lease outstanding at restart was held by
+    a process that is gone. Reclaiming it is recoverable; believing it live is the stranded work
+    `CT-STORE-14` names. The conservatism is stated rather than hidden because it is a real
+    behaviour a caller can observe.
+
+    The write is **synchronous, through `transaction()`**, not `enqueue_write`. `CT-STORE-02`
+    makes the queue asynchronous, and a counter that an uncontrolled kill can lose is a counter
+    that restores lower than the leases it was supposed to outlive -- which is the bug, arrived
+    at from the other side.
+    """
+
+    __slots__ = ("_clock", "_durable", "_margin_s", "_origin", "_persisted_ticks")
+
+    #: The injected clock, so `lease_clock` can tell a repeat call from a conflicting one.
+
+    def __init__(self, store: SqliteStore, clock: Clock | None = None) -> None:
+        self._clock = clock if clock is not None else SystemClock()
+        self._durable = store.durable()
+        self._margin_s = store.limits.lease_restore_margin_s
+        restored = self._restore()
+        # The margin covers the instant between computing an expiry and committing it: a kill
+        # in that window would otherwise restore just short of a lease that had been issued.
+        self._persisted_ticks = restored + (self._margin_s if restored else 0.0)
+        self._origin = self._clock.monotonic()
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
+
+    # -- the counter --------------------------------------------------------------------------
+
+    def ticks(self) -> float:
+        """The current monotonic tick: what was persisted, plus this process's own elapsed time.
+
+        Never derived from the wall clock, in either term. Moving the host clock backwards
+        changes `now()` and changes nothing here, which is `CT-STORE-14`'s assertion.
+        """
+        return self._persisted_ticks + (self._clock.monotonic() - self._origin)
+
+    def issue(self, ttl_seconds: float) -> Lease:
+        """Issue a lease expiring `ttl_seconds` from now, and persist its expiry first."""
+        if ttl_seconds <= 0:
+            raise ConfigurationProblem(
+                f"a lease TTL must be positive, got {ttl_seconds}. A lease that expires on issue "
+                "is a work unit M-ORCH reclaims from itself."
+            )
+        issued_ticks = self.ticks()
+        expires_ticks = issued_ticks + ttl_seconds
+        issued_at = self._clock.now()
+        # Persisted *before* the lease is returned. A lease handed to a caller and then lost to a
+        # kill before its expiry reached the database is the one case that could come back live.
+        self._persist(expires_ticks, issued_at)
+        return Lease(
+            expires_ticks=expires_ticks, issued_ticks=issued_ticks, issued_at=issued_at,
+            ttl_seconds=float(ttl_seconds),
+        )
+
+    def expired(self, lease: Lease) -> bool:
+        """Whether `lease` has expired. The comparison `M-ORCH`'s sweeper trusts."""
+        return self.ticks() >= lease.expires_ticks
+
+    # -- persistence ---------------------------------------------------------------------------
+
+    def _restore(self) -> float:
+        rows = self._durable.query(STATEMENTS["select_lease_clock"])
+        return float(rows[0]["ticks"]) if rows else 0.0
+
+    def _persist(self, ticks: float, wall: datetime) -> None:
+        """Raise the persisted high water to `ticks`. **The max is SQL's, not Python's.**
+
+        An earlier form read the stored value, took `max()` in Python and wrote the result. That
+        is a TOCTOU, and review measured it: eight threads issuing leases interleave read /
+        read / write-high / write-low, the furthest expiry is lost, and forty leases that were
+        outstanding at the kill come back reading *live* after the restart — verbatim the
+        `CT-STORE-14` failure this class exists to prevent, arrived at through the one operation
+        that was supposed to guarantee against it.
+
+        `MAX(excluded.ticks, store_lease_clock.ticks)` inside the upsert makes the comparison and
+        the write one statement under one `BEGIN IMMEDIATE`, so the counter cannot go backwards
+        however many threads are issuing. The wall clock is *not* maxed: it is the human-readable
+        note beside the counter, and the most recent one is the useful one.
+        """
+        with self._durable.transaction() as tx:
+            # Through the registry rather than the module constant, which is the shape
+            # `sql_scan` sanctions for an execute path — see `STATEMENTS`. `Tx.execute` is this
+            # module's own declared-statement API and delegates to `_run`, so the number of
+            # places a statement actually reaches SQLite is still one; the *call* is a second
+            # site the walker can see, and it is listed in `KNOWN_EXECUTE_SITES` with this note.
+            tx.execute(STATEMENTS["upsert_lease_clock"], ticks=ticks,
+                       wall_clock=wall.isoformat())
 
 
 class WriteQueue:
@@ -2302,7 +2752,7 @@ class SqliteTierHandle:
         # could open a connection and move the file's mtime while refusing.
         #
         # The tier write guard exists only on Tier D (`FR-STORE-12`: reject a student-name
-        # insert) — the other tiers have no guard, because the requirement is about the one
+        # insert) -- the other tiers have no guard, because the requirement is about the one
         # tier that is permanent and pseudonymized, not about SQL in general.
         guard = None if opened.tier is not Tier.DURABLE else _reject_tier_d_student_name_insert
         self._queue: WriteQueue | None = (
@@ -2366,7 +2816,7 @@ class SqliteTierHandle:
                 # Schema DDL refused at the SQLite layer (see `_refuse_tier_d_schema`): the
                 # name guard reads statements, but a CREATE TABLE through a transaction()
                 # body would create the very name-bearing column the guard's schema sweep
-                # is trusted to have excluded — and fill it with a no-column-list INSERT
+                # is trusted to have excluded -- and fill it with a no-column-list INSERT
                 # the guard cannot see. On the durable tier, schema belongs to migrations.
                 self._write_connection.set_authorizer(_refuse_tier_d_schema)
         return self._write_connection
@@ -2489,8 +2939,16 @@ class SqliteTierHandle:
             "database_file_bytes": self._path.stat().st_size if self._path.exists() else 0,
         }
 
-    def close(self) -> None:
+    def _close(self) -> None:
         """Flush the queue, then close both connections.
+
+        **Private, and `CT-STORE-01` is why.** Design §3.3 fixes the `TierHandle` surface at
+        `query`, `enqueue_write` and `transaction` — *"and nothing else"* — and `TC-STORE-15`
+        asserts that over the concrete class rather than the Protocol, precisely because a fourth
+        public method is where an off-protocol search arrives. #10 shipped this as `close()`,
+        which made the handle a four-member object; the written-ahead case caught it the moment
+        `blobs()` let the case run. Lifecycle belongs to `Store.close()`, which is the only
+        caller and is where `TC-STORE-16`'s `require_attr(store, "close")` looks for it.
 
         The queue closes **first**: it is still holding rows bound for the write connection, and
         closing that connection out from under a batch mid-flight is how a clean shutdown starts
@@ -2529,8 +2987,8 @@ class SqliteStore:
     """
 
     __slots__ = (
-        "_busy_timeout_ms", "_data_dir", "_handles", "_last_vacuum_ms", "_limits", "_opened",
-        "_read_only", "_retries",
+        "_blobs", "_busy_timeout_ms", "_data_dir", "_handles", "_last_vacuum_ms",
+        "_lease_clock", "_limits", "_opened", "_read_only", "_retries",
     )
 
     def __init__(self, data_dir: Path, *, busy_timeout_ms: int | None = None,
@@ -2549,6 +3007,8 @@ class SqliteStore:
         self._retries = limits.retries
         self._handles: dict[tuple[Tier, str, bool], SqliteTierHandle] = {}
         self._opened: list[TierOpened] = []
+        self._blobs: ContentAddressedBlobStore | None = None
+        self._lease_clock: Any = None
         # The last `purge_cohort`'s VACUUM duration, honestly 0.0 until one runs — the
         # CT-STORE-17 signal `store_metrics` reports.
         self._last_vacuum_ms = 0.0
@@ -2563,6 +3023,15 @@ class SqliteStore:
     def limits(self) -> StoreLimits:
         """The knob values this store was constructed with. See `StoreLimits`."""
         return self._limits
+
+    @property
+    def lease_clock_instance(self) -> Any:
+        """This store's `LeaseClock`, or `None`. Set by `lease_clock()`; see why it is cached."""
+        return self._lease_clock
+
+    def attach_lease_clock(self, clock: Any) -> None:
+        """Record the store's one lease clock. Called by `lease_clock()`, not by callers."""
+        self._lease_clock = clock
 
     def package_path(self, package_id: str) -> Path:
         return self._data_dir / "packages" / f"{package_id}.pkg.sqlite"
@@ -2632,13 +3101,21 @@ class SqliteStore:
 
     # -- the two surfaces later stories fill in ---------------------------------------------------
 
-    def blobs(self) -> BlobStore:
-        """Content-addressed blob directory (`FR-STORE-06`). **#12.**"""
-        raise NotImplementedError(
-            "Store.blobs is issue #12 (FR-STORE-06: content-addressed on SHA-256, deduplicating "
-            "identical content). The directory is created by open_store so #12 adds a store "
-            "rather than a layout."
-        )
+    def blobs(self) -> ContentAddressedBlobStore:
+        """The content-addressed blob directory (`FR-STORE-06`).
+
+        Cached, so two calls return one store over one directory — the same reason handles are
+        cached. It holds no connection and no thread, so this is about identity rather than
+        resources: `blobs() is blobs()` keeps "the blob store" a thing a caller can talk about.
+        """
+        if self._blobs is None:
+            self._blobs = ContentAddressedBlobStore(
+                self._data_dir / "blobs", self._data_dir / INCOMING_DIR
+            )
+            if not self._read_only:
+                # Once, on first use. A read-only store must touch nothing (`FR-STORE-13`).
+                self._blobs.reap_staged(self._limits.staged_blob_ttl_s)
+        return self._blobs
 
     def purge_cohort(self, cohort_id: str) -> PurgeReport:
         """Delete Tiers C and R and `VACUUM` (`FR-STORE-07`, `CT-STORE-10`).
@@ -2705,7 +3182,7 @@ class SqliteStore:
         # object holding open connections on the very file a retry will need to delete.
         handle = self._handles.get((Tier.COHORT, cohort_id, False))
         if handle is not None:
-            handle.close()  # flush queued writes; a failure propagates — nothing deleted
+            handle._close()  # noqa: SLF001 -- flush queued writes; a failure propagates — nothing deleted
             self._handles.pop((Tier.COHORT, cohort_id, False), None)
 
         rows: dict[str, int] = {}
@@ -2853,7 +3330,7 @@ class SqliteStore:
         first: BaseException | None = None
         for handle in self._handles.values():
             try:
-                handle.close()
+                handle._close()  # noqa: SLF001 -- Store owns handle lifecycle; see _close
             except BaseException as error:  # noqa: BLE001 -- re-raised below, after every close
                 first = first if first is not None else error
         self._handles.clear()
@@ -2914,6 +3391,55 @@ def open_store(data_dir: Path | str | None = None, *, read_only: bool = False,
 # --- observability -------------------------------------------------------------------------------
 
 
+def blob_store_stats(blobs: ContentAddressedBlobStore) -> dict[str, Any]:
+    """`file_count` and `bytes_on_disk` for a blob directory, by walking it.
+
+    A function rather than a `BlobStore` member for the reason `store_metrics` is one:
+    `CT-STORE-07` fixes that protocol at `put` / `get` / `path`, and `TC-STORE-C07` asserts the
+    surface. Accounting is not one of the three.
+    """
+    return blobs.stats()
+
+
+def lease_clock(store: SqliteStore, clock: Clock | None = None) -> LeaseClock:  # noqa: D401
+    """The store's monotonic lease clock (`FR-STORE-11`, `CT-STORE-14`).
+
+    `clock` is the injection point (`CLAUDE.md` seam 2, test plan §4.2): a `FrozenClock` whose
+    wall time can be moved backwards while its monotonic counter is not is the only way to assert
+    `CT-STORE-14`, and a module that reached for `time.monotonic()` directly could not be told to.
+
+    Not a `Store` member: §3.3 closes that protocol at five, and `TC-STORE-C01` calls the closed
+    list "the door through which every other clause here gets bypassed". Design §3.3 names no
+    accessor for the lease clock at all, which is reported as a gap — see
+    `tests/support/store_api.py`.
+
+    **One clock per store, cached.** Constructing a second one is not a cheap repeat of the
+    first: the restore deliberately starts the counter *past* the furthest expiry ever issued,
+    so a fresh instance in a live process reads every outstanding lease as expired — review
+    measured a one-hour lease held by a live clock reading expired through a clock built one
+    line later. That is the other half of `CT-STORE-14`'s sentence, "it reclaims twice and the
+    work is duplicated". Reading as an accessor by analogy with `store_metrics` is exactly why
+    it has to behave like one.
+
+    Passing a *different* `clock` to a store that already has one raises rather than silently
+    ignoring it: the second caller would otherwise believe it had injected a clock and be
+    reading a counter driven by the first.
+    """
+    existing = store.lease_clock_instance
+    if existing is not None:
+        if clock is not None and clock is not existing.clock:
+            raise ConfigurationProblem(
+                "this store already has a lease clock, driven by a different Clock. A second "
+                "instance would restore its counter past every outstanding lease and reclaim "
+                "work that is genuinely held (CT-STORE-14). Pass the clock on the first call, "
+                "or open a separate store."
+            )
+        return existing
+    created = LeaseClock(store, clock)
+    store.attach_lease_clock(created)
+    return created
+
+
 def store_metrics(store: SqliteStore) -> dict[str, Any]:
     """`CT-STORE-17`'s five signals, the two alerts, and the configured values behind them.
 
@@ -2960,6 +3486,15 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
     limits = store.limits
     free_bytes = shutil.disk_usage(store.data_dir).free
 
+    # `NFR-STORE-06`'s 500 MB, measured rather than assumed. §3.3 records the figure as an
+    # Assumption and #12 asks for "a measured, knob-adjustable expectation": reporting the actual
+    # footprint next to the budget is what lets `TC-STORE-20` state the number so the Assumption
+    # can be revisited, instead of asserting a literal nobody re-derived.
+    blob_bytes = store.blobs().stats()["bytes_on_disk"]
+    data_dir_bytes = sum(
+        entry.stat().st_size for entry in store.data_dir.rglob("*") if entry.is_file()
+    )
+
     firing: list[str] = []
     # A projection of zero means "M-ORCH stated no remaining-run requirement". An alert with no
     # projection behind it stays quiet rather than inventing a threshold -- an always-on alert is
@@ -2976,6 +3511,10 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
         "database_file_bytes": sizes,
         "free_disk_bytes": free_bytes,
         "vacuum_duration_ms": float(store._last_vacuum_ms),  # noqa: SLF001 -- module-internal
+        # -- NFR-STORE-06's capacity Assumption, measured (#12) ---------------------------------
+        "blob_bytes_on_disk": blob_bytes,
+        "data_dir_bytes": data_dir_bytes,
+        "capacity_budget_bytes": limits.capacity_budget_bytes,
         # -- the alerts, declared and firing ---------------------------------------------------
         "alerts_declared": list(DECLARED_ALERTS),
         "alerts_firing": firing,
@@ -3000,11 +3539,9 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
 # property — a search capability added through a new statement is a contract breach this
 # registry makes visible in one place.
 #
-# **Every non-migration statement the module executes is registered here.** A new statement
-# added without registering it is a statement the no-search sweep cannot see, which is the
-# exact hole the registry exists to close. Migration DDL is the one deliberate exclusion: it
-# is versioned data in `TIER_MIGRATIONS` (a CREATE TABLE cannot search), and the schema limb
-# of `TC-STORE-15` sweeps the real files for FTS virtual tables anyway.
+# **Every statement the module can issue is registered here**, migration DDL included (see
+# the entry block below for why). A new statement added without registering it is a statement
+# the no-search sweep cannot see, which is the exact hole the registry exists to close.
 #
 # Every entry today is free of the search shapes; the registry's own first entry rule is that
 # it stays that way.
@@ -3046,5 +3583,18 @@ STATEMENTS: Mapping[str, Statement] = {
     "purge_delete_document": _PURGE_DELETES["document"],
     "purge_delete_submission": _PURGE_DELETES["submission"],
     "purge_delete_roster": _PURGE_DELETES["roster"],
-    "purge_delete_cohort": _PURGE_DELETES["cohort"],
+    # -- the lease clock (FR-STORE-11, #12) ------------------------------------------------------
+    "select_lease_clock": _SELECT_LEASE_CLOCK,
+    "upsert_lease_clock": _UPSERT_LEASE_CLOCK,
+    # -- migration DDL, included deliberately ----------------------------------------------------
+    # `TC-STORE-15`'s sweep is over what the module can *issue*, and a `CREATE VIRTUAL TABLE
+    # ... USING fts5` hidden in a migration is precisely the full-text index the schema limb
+    # exists to catch — reachable through no method anybody would call `search`. Keyed by
+    # tier, version and position so a registry entry names the migration it came from.
+    **{
+        f"migrate_{tier.value}_{migration.version:03d}_{index:02d}": statement
+        for tier, migrations in TIER_MIGRATIONS.items()
+        for migration in migrations
+        for index, statement in enumerate(migration.statements)
+    },
 }

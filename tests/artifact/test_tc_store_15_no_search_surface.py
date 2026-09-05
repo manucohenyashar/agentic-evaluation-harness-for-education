@@ -1,7 +1,7 @@
 """No search surface — over the *concrete* store, its statements, and its schema.
 
 Case `TC-STORE-15` (`FR-STORE-08`, P0, Artifact assertion), test plan §5.3. Issue #14 (TS-08);
-blocked on **#12 and #13** together.
+implemented by **#12**.
 
 **This is the half `SEC-15` deliberately left open, not a duplicate of it.**
 `tests/artifact/test_store_query_surface.py` asserts the same requirement over the `Protocol`s
@@ -25,17 +25,17 @@ a convenience". `R15` and HLD §9.1/§9.8 are the same rule seen from above. The
 rather than a hygiene check is that a similarity lookup over Tier R would let one student's
 scored work influence another's, silently, with every functional case still green.
 
-**Registered on #13, and this file has two blockers.** An earlier draft registered it on #10,
-reasoning that all three limbs need a constructible store. #10 landed and disproved that: a
-constructible store is necessary and nowhere near sufficient. Limb 1 sweeps every tier and
-`Store.blobs()` is one of them, which #10 ships as a stub naming **#12**; limb 2 reads
-`aeh.store:STATEMENTS`, which no story owns at all. `WRITTEN_AHEAD_BLOCKERS` took one target per
-entry, and the graph does not order #12 against #13 — both carry `Depends on: #10` and nothing
-else — so no single symbol is the right key and picking one is a coin flip between firing early
-and never firing. Hence the registry's `symbols` kind, added for this case: the entry names both
-`blob_store_stats` and `STATEMENTS` and resolves only when both do. `STATEMENTS` is attributed
-to #13 because `FR-STORE-08` is, and that attribution is a presumption reported in the PR rather
-than a settled question hidden behind a key. `SEC-15` asks the same question this file does and is free to reach a
+**It took three keys to register this case, and the third was right.** #10 first, on the
+reasoning that all three limbs need a constructible store — disproved when #10 landed and the
+case still failed. Then a conjunction over `blob_store_stats` (#12) *and* `STATEMENTS`, because
+limb 1 sweeps `Store.blobs()` and limb 2 reads the declared-statement registry, and the graph
+does not order #12 against #13 — both carry `Depends on: #10` and nothing else, so any single
+symbol was a coin flip between firing early and never firing. That conjunction held the marker
+on through #11 and released it at #12, when both halves landed together: `blobs()` because the
+blob store is #12's, and `STATEMENTS` because #12's own write needed the declared-statement
+registry `tests/support/sql_scan.py` sanctions. `STATEMENTS` had been attributed to #13 as a
+presumption and reported as an ownership gap; it arrived one story earlier instead.
+`SEC-15` asks the same question this file does and is free to reach a
 different issue answering it; what the two must not do is disagree about the question.
 
 Rung note, reported as a finding: the plan puts `TC-STORE-15` at **rung 0**. Limbs 1 and 3 need
@@ -55,16 +55,19 @@ from tests.support.sql_scan import is_search_name
 from tests.support.store_api import open_store, statement
 from tests.support.store_vocabulary import virtual_table_definitions
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 #: `open_store` and `Statement` are #10's and landed with it, so this only ever appears in a
 #: message that no longer fires. Kept as provenance for where those two names came from.
 ISSUE = "#10"
 
-#: Limb 2's blocker, and the file's registry key. Separate from `ISSUE` because a
-#: `NotImplementedYet` naming a *closed* issue sends its reader to the wrong story — which is
-#: exactly what a single `ISSUE` constant did here until #10 closed.
-REGISTRY_ISSUE = "#13"
+#: Limb 2's blocker: the declared-statement registry, which arrived with #12. Separate from
+#: `ISSUE` because a `NotImplementedYet` naming a *closed* issue sends its reader to the wrong
+#: story — which is exactly what a single `ISSUE` constant did here until #10 closed. It now
+#: names a closed issue too, and harmlessly: `STATEMENTS` exists, so the `require` never fires.
+#: Kept as provenance rather than deleted, since the message is what a future regression would
+#: print.
+REGISTRY_ISSUE = "#12"
 
 #: The SQL shapes that perform a free-text or similarity search. `FR-STORE-08` names
 #: "similarity, embedding, or free-text search"; `TC-STORE-15` adds content `LIKE` explicitly,
@@ -162,15 +165,15 @@ def test_tc_store_15_a_real_store_exposes_no_search_surface_no_search_statement_
 
     # --- limb 2: the declared statement registry ---------------------------------------------
     #
-    # `STATEMENTS` is a fifth invented name, and the only one of the five that **no story owns**.
+    # `STATEMENTS` is a fifth invented name, and the one whose ownership took three attempts.
     # The plan requires "the registry contains no such statement" and design §3.3 types `query`'s
-    # argument as `Statement` rather than `str` — but nothing declares where the declared
-    # statements live, `tests/support/store_api.py` guessed #10, and #10 closed without it.
-    # Attributed to #13 here because `FR-STORE-08` is #13's and a declared-statement registry is
-    # how a store makes "no search" checkable; reported in the PR as an ownership gap, since no
-    # issue's acceptance criteria mention it. Resolved through `require` so its absence reads as
-    # a written-ahead gap naming a story that can still act on it, not as a bare assertion
-    # failure about an attribute nobody promised.
+    # argument as `Statement` rather than `str` — but nothing declared where the declared
+    # statements live. `tests/support/store_api.py` guessed #10; #10 closed without it; #177
+    # attributed it to #13 as a presumption and reported the gap. **#12 supplied it**, because
+    # `tests/support/sql_scan.py` sanctions exactly one shape for handing a statement to an
+    # execute path — "a table of declared statements" — so #12's own lease-counter write needed
+    # the registry to exist first. Still resolved through `require`, so a future regression that
+    # removed it reads as a named gap rather than an `AttributeError`.
     registry = require(STORE_MODULE, "STATEMENTS", issue=REGISTRY_ISSUE)
     declared = list(registry.values() if hasattr(registry, "values") else registry)
     assert declared, (
@@ -210,10 +213,11 @@ def test_tc_store_15_the_search_sql_patterns_catch_what_they_claim_to():
     result cannot tell apart. `SEC-15` learned this the expensive way and says so in its own
     docstring; the same reasoning applies to a regex list nobody has ever seen fire.
 
-    Runs today, with no implementation, because it asserts about the patterns rather than about
-    the store. It carries the module's `writtenahead` marker all the same: splitting one case
-    across two markers would put half of `TC-STORE-15` in the gate and half outside it, and the
-    registry's file-level accounting could not describe that.
+    Asserts about the patterns rather than about the store, so it ran throughout the period the
+    case above was written-ahead — it carried the module's `writtenahead` marker anyway, because
+    splitting one case across two markers would have put half of `TC-STORE-15` in the gate and
+    half outside it, and the registry's file-level accounting could not describe that. #12 landed
+    both of the case's blockers and the marker came off the module.
     """
     probes = {
         "LIKE": "SELECT id FROM evidence WHERE lower(body) LIKE lower(:needle)",

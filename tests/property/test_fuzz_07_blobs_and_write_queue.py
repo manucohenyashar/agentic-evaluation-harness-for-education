@@ -74,7 +74,6 @@ SET_STATUS = "UPDATE work_unit SET status = :status WHERE work_id = :work_id"
 # --- FR-STORE-06: the content-addressed blob store ----------------------------------------------
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(blob_payloads())
 def test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory(
