@@ -76,12 +76,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # class exists; keying on #13 (which depends on #10) would hold it outside the gate for two
     # further stories. `symbol` rather than `module` for the same precision — `aeh.store` could
     # exist as an empty module.
-    "#10": (
-        "symbol",
-        f"{STORE_MODULE}:Store",
-        ("tests/artifact/test_store_query_surface.py"
-         "::test_sec_15_no_tier_exposes_a_free_text_or_similarity_query",),
-    ),
+    # The `"#10"` and `"#10 tier_d"` entries that stood here are gone because #10 landed:
+    # `aeh.store` exists, `SEC-15`'s reflective probe and `TC-STATS-C18`'s Tier D column sweep
+    # both run in the gate, and a resolved blocker left in this dict fails the gate test by
+    # design.
     # --- TS-56 (#149), the two cross-module fuzz cases -------------------------------------
     #
     # Each of the four is keyed on the story that makes *it* runnable, rather than all four on the
@@ -107,15 +105,28 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "tests/property/test_fuzz_06_graphs_and_work_ids.py"
          "::test_fuzz_06_topological_order_always_satisfies_every_edge"),
     ),
+    # **Re-keyed off `open_store` by #10.** Both entries stood on `open_store` because, when they
+    # were written, `M-STORE` was one unbuilt module and any name in it was as good as any other.
+    # #10 has now landed `open_store` while the blob store and the write queue are still #12's and
+    # #11's -- so the old keys fired the gate telling a reader to unmark two tests that then fail
+    # on `NotImplementedError`, which is the precise trap this registry exists to avoid. The
+    # discriminating question is unchanged: *which single blocker, resolved, makes this test
+    # runnable*.
+    #
+    # Both new targets are **implementation** names, not the Protocols design §3.3 declares:
+    # `BlobStore` and `TierHandle.transaction` both exist today (as a Protocol and as a method
+    # that raises), so either would resolve immediately -- the same Protocol trap TS-56 measured.
+    # Checked: neither `ContentAddressedBlobStore` nor `WriteQueue` appears anywhere in
+    # `detailed-design.md`, `test-plan.md` or `src/`.
     "#12": (
         "symbol",
-        f"{STORE_MODULE}:open_store",
+        f"{STORE_MODULE}:ContentAddressedBlobStore",
         ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
          "::test_fuzz_07_a_blob_round_trips_and_its_path_stays_inside_the_data_directory",),
     ),
     "#11": (
         "symbol",
-        f"{STORE_MODULE}:open_store",
+        f"{STORE_MODULE}:WriteQueue",
         ("tests/property/test_fuzz_07_blobs_and_write_queue.py"
          "::test_fuzz_07_a_result_and_its_status_are_both_present_or_both_absent",),
     ),
@@ -860,14 +871,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c06_promote_increments_the_three_counters_separately",
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
             "::test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_zero_rate",
-        ),
-    ),
-    "#10 tier_d": (
-        "symbol",
-        f"{STORE_MODULE}:open_store",
-        (
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c18_tier_d_holds_no_student_name_column_reachable_from_here",
         ),
     ),
     "#29 stats": (

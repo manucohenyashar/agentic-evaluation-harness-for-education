@@ -351,7 +351,6 @@ def test_tc_stats_c18_reads_only_tier_d_and_the_current_cohorts_labels(tmp_data_
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c18_tier_d_holds_no_student_name_column_reachable_from_here(tmp_data_dir):
     """The pairing with `CT-STORE-C09`, asserted from this side.
