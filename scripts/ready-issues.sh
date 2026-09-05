@@ -7,7 +7,10 @@
 # in sync.
 #
 # Usage:   ./ready-issues.sh [max_count]
-# Output:  stdout — JSON array like [{"number":12,"type":"story"},...]
+# Output:  stdout — JSON array like [{"number":12,"type":"story"},...], ascending by issue
+#          number. That order is a guarantee, not an accident: `/plan-to-issues` creates
+#          issues in topological order, so a lower number is never downstream of a higher
+#          one, and taking the first N is taking the N the backlog meant to come first.
 #          stderr — warnings about issues that were skipped and why
 # Requires: gh (authenticated), jq
 
@@ -68,6 +71,7 @@ echo "$CLASSIFIED" | jq -c --argjson max "$MAX_COUNT" '
     | select(.malformed | not)
     | select(.unblocked)
   ]
+  | sort_by(.number)
   | .[:$max]
   | map({number, type})
 '
