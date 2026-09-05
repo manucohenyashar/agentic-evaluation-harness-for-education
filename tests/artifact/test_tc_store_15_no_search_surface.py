@@ -61,10 +61,13 @@ pytestmark = [pytest.mark.contract]
 #: message that no longer fires. Kept as provenance for where those two names came from.
 ISSUE = "#10"
 
-#: Limb 2's blocker, and the file's registry key. Separate from `ISSUE` because a
-#: `NotImplementedYet` naming a *closed* issue sends its reader to the wrong story — which is
-#: exactly what a single `ISSUE` constant did here until #10 closed.
-REGISTRY_ISSUE = "#13"
+#: Limb 2's blocker: the declared-statement registry, which arrived with #12. Separate from
+#: `ISSUE` because a `NotImplementedYet` naming a *closed* issue sends its reader to the wrong
+#: story — which is exactly what a single `ISSUE` constant did here until #10 closed. It now
+#: names a closed issue too, and harmlessly: `STATEMENTS` exists, so the `require` never fires.
+#: Kept as provenance rather than deleted, since the message is what a future regression would
+#: print.
+REGISTRY_ISSUE = "#12"
 
 #: The SQL shapes that perform a free-text or similarity search. `FR-STORE-08` names
 #: "similarity, embedding, or free-text search"; `TC-STORE-15` adds content `LIKE` explicitly,
@@ -162,15 +165,15 @@ def test_tc_store_15_a_real_store_exposes_no_search_surface_no_search_statement_
 
     # --- limb 2: the declared statement registry ---------------------------------------------
     #
-    # `STATEMENTS` is a fifth invented name, and the only one of the five that **no story owns**.
+    # `STATEMENTS` is a fifth invented name, and the one whose ownership took three attempts.
     # The plan requires "the registry contains no such statement" and design §3.3 types `query`'s
-    # argument as `Statement` rather than `str` — but nothing declares where the declared
-    # statements live, `tests/support/store_api.py` guessed #10, and #10 closed without it.
-    # Attributed to #13 here because `FR-STORE-08` is #13's and a declared-statement registry is
-    # how a store makes "no search" checkable; reported in the PR as an ownership gap, since no
-    # issue's acceptance criteria mention it. Resolved through `require` so its absence reads as
-    # a written-ahead gap naming a story that can still act on it, not as a bare assertion
-    # failure about an attribute nobody promised.
+    # argument as `Statement` rather than `str` — but nothing declared where the declared
+    # statements live. `tests/support/store_api.py` guessed #10; #10 closed without it; #177
+    # attributed it to #13 as a presumption and reported the gap. **#12 supplied it**, because
+    # `tests/support/sql_scan.py` sanctions exactly one shape for handing a statement to an
+    # execute path — "a table of declared statements" — so #12's own lease-counter write needed
+    # the registry to exist first. Still resolved through `require`, so a future regression that
+    # removed it reads as a named gap rather than an `AttributeError`.
     registry = require(STORE_MODULE, "STATEMENTS", issue=REGISTRY_ISSUE)
     declared = list(registry.values() if hasattr(registry, "values") else registry)
     assert declared, (

@@ -278,17 +278,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # §4.7). Losing `writtenahead` puts a test back in `pytest -q`, which is the honest full
     # picture and what a PR reports; the fast tier is a separate filter. Of the six only
     # `FUZZ-07`'s property rejoined the gate, which is why it moved 758 -> 759 rather than by six.
-    # `TC-STORE-15` stayed behind under the `symbols` entry below, because `Store.blobs` and
-    # `STATEMENTS` are still #12's and #13's -- exactly the split the conjunction kind exists for.
     # …and `"#12 blob_store_stats"` with it: `TC-STORE-09` is unmarked and runs. It carries
     # `pytest.mark.integration`, so it rejoined `pytest -q` rather than the fast tier -- the
     # distinction the `"#11 store_metrics"` note above spells out.
     #
-    # **`TC-STORE-15` stayed behind, and that is the conjunction working.** Its entry below names
-    # `blob_store_stats` *and* `STATEMENTS`; the first now resolves and the second does not, so
-    # `all()` is False and the marker stays on. Under the single-symbol key this file carried
-    # before #177 it would have fired here and told a reader to unmark a P0 case that still
-    # cannot run. First live exercise of the `symbols` kind, and it did the job.
     # …and the `"#12 and #13"` conjunction with them. Both halves landed in #12 —
     # `blob_store_stats` because the blob store is #12's, and `STATEMENTS` because #12's own
     # write needed the declared-statement registry `tests/support/sql_scan.py` sanctions — so

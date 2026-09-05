@@ -180,6 +180,11 @@ DEFAULT_CAPACITY_BUDGET_BYTES = 500 * 1024 * 1024
 LEASE_RESTORE_MARGIN_S_ENV = "HARNESS_LEASE_RESTORE_MARGIN_S"
 DEFAULT_LEASE_RESTORE_MARGIN_S = 1
 
+#: How old a staging file must be before an opening store reaps it. Generous by default, because
+#: the thing it must never do is delete a blob another process is writing this second.
+STAGED_BLOB_TTL_S_ENV = "HARNESS_STAGED_BLOB_TTL_S"
+DEFAULT_STAGED_BLOB_TTL_S = 3600
+
 #: The two alerts §3.3 names under **Alerts**, spelled once. `CT-STORE-17` makes their semantics
 #: contract, so the names are part of the interface rather than log text.
 ALERT_FREE_DISK = "free_disk_below_projection"
@@ -780,7 +785,9 @@ _UPSERT_LEASE_CLOCK = Statement(
     """
     INSERT INTO store_lease_clock (id, ticks, wall_clock)
     VALUES (1, :ticks, :wall_clock)
-    ON CONFLICT(id) DO UPDATE SET ticks = :ticks, wall_clock = :wall_clock
+    ON CONFLICT(id) DO UPDATE SET
+        ticks      = MAX(excluded.ticks, store_lease_clock.ticks),
+        wall_clock = excluded.wall_clock
     """
 )
 
@@ -1130,6 +1137,7 @@ class StoreLimits:
     writer_poll_ms: int = DEFAULT_WRITER_POLL_MS
     capacity_budget_bytes: int = DEFAULT_CAPACITY_BUDGET_BYTES
     lease_restore_margin_s: int = DEFAULT_LEASE_RESTORE_MARGIN_S
+    staged_blob_ttl_s: int = DEFAULT_STAGED_BLOB_TTL_S
     busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS
     retries: int = DEFAULT_BUSY_RETRIES
 
@@ -1173,6 +1181,8 @@ class StoreLimits:
                 CAPACITY_BUDGET_BYTES_ENV, DEFAULT_CAPACITY_BUDGET_BYTES, environ),
             lease_restore_margin_s=_int_env(
                 LEASE_RESTORE_MARGIN_S_ENV, DEFAULT_LEASE_RESTORE_MARGIN_S, environ),
+            staged_blob_ttl_s=_int_env(
+                STAGED_BLOB_TTL_S_ENV, DEFAULT_STAGED_BLOB_TTL_S, environ),
             busy_timeout_ms=_int_env(BUSY_TIMEOUT_MS_ENV, DEFAULT_BUSY_TIMEOUT_MS, environ),
             retries=_int_env(BUSY_RETRIES_ENV, DEFAULT_BUSY_RETRIES, environ),
         )
@@ -1284,7 +1294,21 @@ class ContentAddressedBlobStore:
                 staged.chmod(OWNER_ONLY_FILE)
             except OSError:
                 pass  # Windows ignores the mode; #13 owns the full FR-STORE-09 rule
-            os.replace(staged, target)
+            try:
+                os.replace(staged, target)
+            except OSError:
+                # Two threads storing the same bytes both passed the `exists()` check above and
+                # both staged a copy; on Windows the loser's `os.replace` hits an open or newly
+                # created target and raises `PermissionError` (measured: 2 of 16 racing puts, and
+                # again with a reader holding the target open, since CPython's `open()` does not
+                # pass FILE_SHARE_DELETE). POSIX would not raise at all.
+                #
+                # Losing the race is not a failure here, and content addressing is why: whatever
+                # is at the target has the same SHA-256, so it has the same bytes. `put` is
+                # documented as idempotent without qualification, so it must not raise for the
+                # one case where idempotency is doing its job.
+                if not target.exists():
+                    raise
         finally:
             # A failed write must not leave the staging file behind: `TC-STORE-09` counts every
             # file under the data directory's blob root, and an operator counting disk usage
@@ -1327,6 +1351,31 @@ class ContentAddressedBlobStore:
         return resolved
 
     # -- accounting -------------------------------------------------------------------------------
+
+    def reap_staged(self, older_than_s: float) -> int:
+        """Delete staging files left by a crash between `write_bytes` and `os.replace`.
+
+        Bounded by age rather than unconditional: a data directory can legitimately have a second
+        process staging a blob right now, and deleting its file mid-write would turn one crash
+        into two. `older_than_s` is a knob for that reason.
+
+        `stats()` walks `blobs/` and never saw these, but `store_metrics`'s `data_dir_bytes`
+        counts every file under the data directory — and that is the number `NFR-STORE-06`'s
+        500 MB is measured against, so an orphan inflates the one figure the Assumption is
+        revisited from.
+        """
+        if not self._incoming.is_dir():
+            return 0
+        cutoff = time.time() - older_than_s
+        reaped = 0
+        for entry in self._incoming.iterdir():
+            try:
+                if entry.is_file() and entry.stat().st_mtime < cutoff:
+                    entry.unlink()
+                    reaped += 1
+            except OSError:
+                pass  # in use by another process, or already gone: both mean leave it alone
+        return reaped
 
     def stats(self) -> dict[str, Any]:
         """File count and bytes on disk, **by walking the directory**.
@@ -1440,6 +1489,8 @@ class LeaseClock:
 
     __slots__ = ("_clock", "_durable", "_margin_s", "_origin", "_persisted_ticks")
 
+    #: The injected clock, so `lease_clock` can tell a repeat call from a conflicting one.
+
     def __init__(self, store: SqliteStore, clock: Clock | None = None) -> None:
         self._clock = clock if clock is not None else SystemClock()
         self._durable = store.durable()
@@ -1449,6 +1500,10 @@ class LeaseClock:
         # in that window would otherwise restore just short of a lease that had been issued.
         self._persisted_ticks = restored + (self._margin_s if restored else 0.0)
         self._origin = self._clock.monotonic()
+
+    @property
+    def clock(self) -> Clock:
+        return self._clock
 
     # -- the counter --------------------------------------------------------------------------
 
@@ -1489,19 +1544,28 @@ class LeaseClock:
         return float(rows[0]["ticks"]) if rows else 0.0
 
     def _persist(self, ticks: float, wall: datetime) -> None:
-        highest = max(ticks, self._persisted_high_water())
+        """Raise the persisted high water to `ticks`. **The max is SQL's, not Python's.**
+
+        An earlier form read the stored value, took `max()` in Python and wrote the result. That
+        is a TOCTOU, and review measured it: eight threads issuing leases interleave read /
+        read / write-high / write-low, the furthest expiry is lost, and forty leases that were
+        outstanding at the kill come back reading *live* after the restart — verbatim the
+        `CT-STORE-14` failure this class exists to prevent, arrived at through the one operation
+        that was supposed to guarantee against it.
+
+        `MAX(excluded.ticks, store_lease_clock.ticks)` inside the upsert makes the comparison and
+        the write one statement under one `BEGIN IMMEDIATE`, so the counter cannot go backwards
+        however many threads are issuing. The wall clock is *not* maxed: it is the human-readable
+        note beside the counter, and the most recent one is the useful one.
+        """
         with self._durable.transaction() as tx:
             # Through the registry rather than the module constant, which is the shape
             # `sql_scan` sanctions for an execute path — see `STATEMENTS`. `Tx.execute` is this
             # module's own declared-statement API and delegates to `_run`, so the number of
             # places a statement actually reaches SQLite is still one; the *call* is a second
             # site the walker can see, and it is listed in `KNOWN_EXECUTE_SITES` with this note.
-            tx.execute(STATEMENTS["upsert_lease_clock"], ticks=highest,
+            tx.execute(STATEMENTS["upsert_lease_clock"], ticks=ticks,
                        wall_clock=wall.isoformat())
-
-    def _persisted_high_water(self) -> float:
-        rows = self._durable.query(STATEMENTS["select_lease_clock"])
-        return float(rows[0]["ticks"]) if rows else 0.0
 
 
 class WriteQueue:
@@ -2083,8 +2147,8 @@ class SqliteStore:
     """
 
     __slots__ = (
-        "_blobs", "_busy_timeout_ms", "_data_dir", "_handles", "_limits", "_opened",
-        "_read_only", "_retries",
+        "_blobs", "_busy_timeout_ms", "_data_dir", "_handles", "_lease_clock", "_limits",
+        "_opened", "_read_only", "_retries",
     )
 
     def __init__(self, data_dir: Path, *, busy_timeout_ms: int | None = None,
@@ -2104,6 +2168,7 @@ class SqliteStore:
         self._handles: dict[tuple[Tier, str, bool], SqliteTierHandle] = {}
         self._opened: list[TierOpened] = []
         self._blobs: ContentAddressedBlobStore | None = None
+        self._lease_clock: Any = None
 
     # -- layout, verbatim from §3.3's data model ------------------------------------------------
 
@@ -2115,6 +2180,15 @@ class SqliteStore:
     def limits(self) -> StoreLimits:
         """The knob values this store was constructed with. See `StoreLimits`."""
         return self._limits
+
+    @property
+    def lease_clock_instance(self) -> Any:
+        """This store's `LeaseClock`, or `None`. Set by `lease_clock()`; see why it is cached."""
+        return self._lease_clock
+
+    def attach_lease_clock(self, clock: Any) -> None:
+        """Record the store's one lease clock. Called by `lease_clock()`, not by callers."""
+        self._lease_clock = clock
 
     def package_path(self, package_id: str) -> Path:
         return self._data_dir / "packages" / f"{package_id}.pkg.sqlite"
@@ -2195,6 +2269,9 @@ class SqliteStore:
             self._blobs = ContentAddressedBlobStore(
                 self._data_dir / "blobs", self._data_dir / INCOMING_DIR
             )
+            if not self._read_only:
+                # Once, on first use. A read-only store must touch nothing (`FR-STORE-13`).
+                self._blobs.reap_staged(self._limits.staged_blob_ttl_s)
         return self._blobs
 
     def purge_cohort(self, cohort_id: str) -> Any:
@@ -2278,7 +2355,7 @@ def blob_store_stats(blobs: ContentAddressedBlobStore) -> dict[str, Any]:
     return blobs.stats()
 
 
-def lease_clock(store: SqliteStore, clock: Clock | None = None) -> LeaseClock:
+def lease_clock(store: SqliteStore, clock: Clock | None = None) -> LeaseClock:  # noqa: D401
     """The store's monotonic lease clock (`FR-STORE-11`, `CT-STORE-14`).
 
     `clock` is the injection point (`CLAUDE.md` seam 2, test plan §4.2): a `FrozenClock` whose
@@ -2289,8 +2366,32 @@ def lease_clock(store: SqliteStore, clock: Clock | None = None) -> LeaseClock:
     list "the door through which every other clause here gets bypassed". Design §3.3 names no
     accessor for the lease clock at all, which is reported as a gap — see
     `tests/support/store_api.py`.
+
+    **One clock per store, cached.** Constructing a second one is not a cheap repeat of the
+    first: the restore deliberately starts the counter *past* the furthest expiry ever issued,
+    so a fresh instance in a live process reads every outstanding lease as expired — review
+    measured a one-hour lease held by a live clock reading expired through a clock built one
+    line later. That is the other half of `CT-STORE-14`'s sentence, "it reclaims twice and the
+    work is duplicated". Reading as an accessor by analogy with `store_metrics` is exactly why
+    it has to behave like one.
+
+    Passing a *different* `clock` to a store that already has one raises rather than silently
+    ignoring it: the second caller would otherwise believe it had injected a clock and be
+    reading a counter driven by the first.
     """
-    return LeaseClock(store, clock)
+    existing = store.lease_clock_instance
+    if existing is not None:
+        if clock is not None and clock is not existing.clock:
+            raise ConfigurationProblem(
+                "this store already has a lease clock, driven by a different Clock. A second "
+                "instance would restore its counter past every outstanding lease and reclaim "
+                "work that is genuinely held (CT-STORE-14). Pass the clock on the first call, "
+                "or open a separate store."
+            )
+        return existing
+    created = LeaseClock(store, clock)
+    store.attach_lease_clock(created)
+    return created
 
 
 def store_metrics(store: SqliteStore) -> dict[str, Any]:
