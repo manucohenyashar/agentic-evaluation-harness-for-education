@@ -195,6 +195,62 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
          "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too",),
     ),
+    # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
+    #
+    # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens
+    # the tiers, #11 builds the write queue, #12 the blob store, #13 the no-search and Tier D
+    # guarantees — and a single key would hold six cases outside the gate until the last of the
+    # four landed.
+    #
+    # **Keyed on names that appear in no Interfaces block**, for the reason TS-74 records at
+    # length above: design §3.3 declares `Store`, `TierHandle`, `BlobStore` and every one of
+    # their members in one block that #10 creates, so a key on any of them — or on any member —
+    # resolves against a Protocol-only module and fires the gate up to three stories early.
+    # `open_store`, `store_metrics`, `blob_store_stats` and `StudentNameInTierDError` are the
+    # constructors and accessors these tests actually call (see `tests/support/store_api.py`,
+    # which is also where the design gaps they represent are written down), and none can exist
+    # before an implementation of the story that owns it does.
+    #
+    # File paths, not `::nodeid`s: `test_every_registered_blocker_names_a_file_that_exists`
+    # checks only `path.split("::")[0]`, so a typo'd nodeid names nothing and nothing says so.
+    # Each file here has exactly one blocker, so the file path loses no precision.
+    # **Known collision, reported rather than silently rewritten.** TS-56 keyed both `"#11"` and
+    # `"#12"` above on this same `aeh.store:open_store`. If `open_store` is #10's — and the entry
+    # below asserts it is, since #10's Goal is "`Store` opens the four lifetime tiers" — then all
+    # three entries fire on #10's first commit, and two of them will name `fuzz_07` tests for
+    # stories that have not shipped. Correcting the other two means choosing symbols for TS-56's
+    # tests, which belongs to whoever owns them; this entry is what makes the conflict visible.
+    # See the PR for #14.
+    "#10 open_store": (
+        "symbol",
+        f"{STORE_MODULE}:open_store",
+        (
+            "tests/integration/store/test_tier_handles.py",
+            "tests/artifact/test_tc_store_15_no_search_surface.py",
+        ),
+    ),
+    # `TC-STORE-15` sits under #10 although `FR-STORE-08` is #13's, which is the same call
+    # `SEC-15` makes for the same requirement one file away: the discriminating question is
+    # which single blocker makes the test runnable and non-vacuous, and all three of its limbs
+    # need a constructible store. The two files must not disagree about this.
+    "#11 store_metrics": (
+        "symbol",
+        f"{STORE_MODULE}:store_metrics",
+        (
+            "tests/integration/store/test_write_queue.py",
+            "tests/integration/store/test_observability.py",
+        ),
+    ),
+    "#12 blob_store_stats": (
+        "symbol",
+        f"{STORE_MODULE}:blob_store_stats",
+        ("tests/integration/store/test_blob_store.py",),
+    ),
+    "#13 StudentNameInTierDError": (
+        "symbol",
+        f"{STORE_MODULE}:StudentNameInTierDError",
+        ("tests/integration/store/test_tier_d_pseudonymity.py",),
+    ),
     # --- TS-01 (#2), the six §6.9 baselines --------------------------------------------------
     #
     # The `#2` entry that stood here -- `path`, `fixtures/F-FROZEN/manifest.json` -- is gone
