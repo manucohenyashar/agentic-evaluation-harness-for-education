@@ -255,6 +255,32 @@ def build(root: Path) -> None:
     _build_baselines(root / "baselines")
 
 
+# The two files under `baselines/` that this module *does* emit. Everything else there is a
+# recorded golden artifact.
+_GENERATED_UNDER_BASELINES = frozenset(
+    {"baselines/registry.json", "baselines/TC-REG-06/work-id-reference.inputs.json"}
+)
+
+
+def _is_recorded_baseline(path: str) -> bool:
+    """Is this a §6.9 golden that a producer recorded, rather than generated corpus data?
+
+    `--check` asks "is `fixtures/` still what the generators emit". Golden baselines are not
+    emitted by anything here — they are the *output of a producer*, captured deliberately by
+    the story that builds it, and every `TC-REG-*` docstring instructs exactly that. Without
+    this exemption the first recorded baseline would turn
+    `test_the_committed_corpora_are_exactly_what_the_generators_emit` red, and the fix a reader
+    would reach for is deleting the golden.
+
+    Only the *unexpected file* direction is exempted. A golden that differs from a generated
+    file of the same name would still be reported, and the two files this module does write
+    under `baselines/` are checked like everything else. Nothing checks that a golden is
+    *registered* here — `tests/support/baselines.py` does, by refusing to compare against a
+    path the registry does not list.
+    """
+    return path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES
+
+
 def _tree(root: Path) -> dict[str, bytes]:
     return {
         str(p.relative_to(root)).replace("\\", "/"): p.read_bytes()
@@ -274,6 +300,8 @@ def check(committed_root: Path) -> list[str]:
     for path in sorted(set(fresh) - set(committed)):
         problems.append(f"missing from the repo: {path}")
     for path in sorted(set(committed) - set(fresh)):
+        if _is_recorded_baseline(path):
+            continue
         problems.append(f"in the repo but not emitted by the generator: {path}")
     for path in sorted(set(fresh) & set(committed)):
         if fresh[path] != committed[path]:

@@ -123,8 +123,13 @@ BASELINES: tuple[Baseline, ...] = (
             "TC-REG-04/rollup.html",
             "TC-REG-04/student-view.html",
         ),
-        produced_by="M-CONSOLE: review queue, rollup and student view rendering",
-        blocked_on="#124",
+        # #125, not #124, and the two are worth distinguishing: `FR-CONSOLE-13` and `-15` are
+        # #124's, but the baseline covers *three* surfaces and the rollup is #125's. The
+        # `WRITTEN_AHEAD_BLOCKERS` entry keys on #125 for the same reason, and this field is
+        # what the failure message prints — the two naming different issues is exactly the
+        # drift the registry exists to prevent.
+        produced_by="M-CONSOLE: review queue (#124), rollup and student view (#125)",
+        blocked_on="#125",
     ),
     Baseline(
         case_id="TC-REG-05",

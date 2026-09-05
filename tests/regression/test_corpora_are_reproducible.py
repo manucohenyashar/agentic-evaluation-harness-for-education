@@ -219,6 +219,50 @@ def test_pages_materialize_in_printed_order_and_not_in_directory_order(tmp_path)
     )
 
 
+def test_a_marker_less_page_materializes_as_one_page_rather_than_none(tmp_path):
+    """`F-GRAPHIC` members carry no page marker, and are one-page documents.
+
+    Regression: `CorpusMember.pages()` split on the marker and returned `()` for them, so
+    `TC-REG-01`'s `F-GRAPHIC` half would have assembled an empty page list the moment #37
+    landed — failing for a reason with nothing to do with `FR-INGEST-04` or `-06`, which is the
+    kind of failure someone "fixes" by dropping the corpus from the case.
+    """
+    for member in corpora.load("F-GRAPHIC").members:
+        assert len(member.pages()) == 1, f"{member.id} split into {len(member.pages())} pages"
+        pages = corpora.materialize_pages(member, tmp_path / member.id)
+        assert len(pages) == 1
+        assert member.attributes["element_kind"] in pages[0].read_text(encoding="utf-8")
+
+
+def test_check_tolerates_a_recorded_baseline_but_still_catches_a_hand_edit(tmp_path):
+    """`--check` distinguishes a recorded golden from a hand-edited corpus.
+
+    Both directions, because they pull against each other. Every `TC-REG-*` docstring tells the
+    implementing story to record its baseline under `fixtures/baselines/`, and a check that
+    reported any unexpected file would go red on the first story that did so — while a check
+    that ignored *everything* under `fixtures/` would stop being the reproducibility assertion
+    it exists to be.
+    """
+    root = tmp_path / "fixtures"
+    corpora_build.build(root)
+    assert corpora_build.check(root) == []
+
+    recorded = root / "baselines" / "TC-REG-01" / "F-SYNTH.canonical.md"
+    recorded.parent.mkdir(parents=True, exist_ok=True)
+    recorded.write_bytes(b"a baseline some producer recorded\n")
+    assert corpora_build.check(root) == [], (
+        "a recorded golden baseline was reported as an unexpected file; the first story to "
+        "follow its own instructions would turn this suite red"
+    )
+
+    edited = root / "F-DEV" / "submissions" / "DEV-1.md"
+    edited.write_bytes(edited.read_bytes() + b"edited by hand\n")
+    problems = corpora_build.check(root)
+    assert any("F-DEV/submissions/DEV-1.md" in p for p in problems), (
+        f"a hand-edited corpus file was not reported: {problems}"
+    )
+
+
 def test_the_generators_are_deterministic_across_two_runs_in_one_process():
     """Same seed, same corpus. The `--check` test covers the committed bytes; this covers the
     generator itself, so a generator that reached for the module-global `random` (§4.6 forbids

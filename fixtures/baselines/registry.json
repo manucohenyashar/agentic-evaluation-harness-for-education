@@ -76,8 +76,8 @@
         "TC-REG-04/rollup.html",
         "TC-REG-04/student-view.html"
       ],
-      "produced_by": "M-CONSOLE: review queue, rollup and student view rendering",
-      "blocked_on": "#124"
+      "produced_by": "M-CONSOLE: review queue (#124), rollup and student view (#125)",
+      "blocked_on": "#125"
     },
     {
       "case_id": "TC-REG-05",

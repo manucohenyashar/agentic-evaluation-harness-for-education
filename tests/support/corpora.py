@@ -43,8 +43,18 @@ class CorpusMember:
         return self.path.read_text(encoding="utf-8")
 
     def pages(self) -> tuple[str, ...]:
-        """The submission split at its page markers, in printed order."""
-        parts = _PAGE_MARKER.split(self.text())
+        """The member split at its page markers, in printed order.
+
+        A member carrying **no** marker is a one-page document, and comes back as one page
+        rather than as none. `F-GRAPHIC` is exactly that — one page per element kind, nothing
+        to split on — and returning `()` for it would leave `TC-REG-01`'s `F-GRAPHIC` half
+        assembling an empty page list, failing for a reason that has nothing to do with
+        `FR-INGEST-04` or `-06`.
+        """
+        text = self.text()
+        parts = _PAGE_MARKER.split(text)
+        if len(parts) == 1:
+            return (text.strip("\n"),)
         # split() yields [preamble, no, of, body, no, of, body, ...]
         bodies = parts[3::3]
         return tuple(body.strip("\n") for body in bodies)

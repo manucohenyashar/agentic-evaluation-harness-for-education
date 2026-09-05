@@ -47,6 +47,7 @@ def _canonical_report(assemble, corpus: corpora.Corpus, tmp_path) -> bytes:
     sections: list[str] = []
     for member in corpus.members:
         pages = corpora.materialize_pages(member, tmp_path / corpus.name / member.id)
+        assert pages, f"{member.id} materialized no pages, so there is nothing to assemble"
         document = assemble(pages)
         sections.append(
             "\n".join(
@@ -54,7 +55,11 @@ def _canonical_report(assemble, corpus: corpora.Corpus, tmp_path) -> bytes:
                     f"## {member.id}",
                     f"content_hash: {document.content_hash}",
                     f"transcriber_ref: {document.transcriber_ref}",
-                    f"order_source: {document.order_source}",
+                    # `FR-INGEST-06` records *which* source decided assembly order, and it names
+                    # the field: `document.source_blobs`. Read under that name rather than a
+                    # tidier invented one — the requirement is concrete here, and an implementer
+                    # following it would otherwise hit an AttributeError instead of a diff.
+                    f"source_blobs: {document.source_blobs}",
                     "",
                     document.canonical_markdown.rstrip("\n"),
                     "",

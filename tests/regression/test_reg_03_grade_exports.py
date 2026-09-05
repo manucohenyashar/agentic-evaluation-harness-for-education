@@ -22,8 +22,10 @@ marker — never the test — when #104 closes, and record the baselines in that
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import json
+import re
 
 import pytest
 
@@ -45,6 +47,36 @@ REVISION = 1
 # the grading owner *is* allowed to make.
 MARK_COLUMN = "mark"
 STUDENT_COLUMN = "student_ref"
+
+
+# The PDF fields that differ between two exports of identical content. Normalized out before
+# digesting, so the baseline is about the document and not about when it was written.
+_VOLATILE_PDF_FIELDS = (
+    rb"/CreationDate\s*\([^)]*\)",
+    rb"/ModDate\s*\([^)]*\)",
+    rb"/Producer\s*\([^)]*\)",
+    rb"/Creator\s*\([^)]*\)",
+    rb"/ID\s*\[[^\]]*\]",
+)
+
+
+def _canonical_pdf(path) -> dict[str, object]:
+    """A PDF as {page count, size, digest of the normalized bytes}.
+
+    The same move `TC-REG-02` makes for the archive: strip what is genuinely non-reproducible,
+    then digest the rest. If a producer buries a timestamp inside a compressed object stream
+    this will be unstable — and that instability is itself a finding worth surfacing, because a
+    per-student export nobody can reproduce cannot be a regression baseline at all.
+    """
+    raw = path.read_bytes()
+    normalized = raw
+    for pattern in _VOLATILE_PDF_FIELDS:
+        normalized = re.sub(pattern, b"", normalized)
+    return {
+        "pages": len(re.findall(rb"/Type\s*/Page[^s]", raw)),
+        "bytes": len(raw),
+        "sha256": hashlib.sha256(normalized).hexdigest(),
+    }
 
 
 def _marks(csv_bytes: bytes) -> dict[str, str]:
@@ -89,13 +121,34 @@ def test_tc_reg_03_the_csv_and_per_student_pdf_exports_match_their_baselines(tmp
     # Then the export mapping, which the grading owner *may* accept on a declared change.
     assert_matches_golden(CASE, CSV_GOLDEN, produced_csv)
 
-    # One PDF per student (FR-GRADE-17). The baseline is a manifest of them rather than the PDF
-    # bytes: a PDF carries a creation timestamp and a producer string, so byte equality would
-    # fail on every run and the baseline would be deleted rather than read.
+    # One PDF per student (FR-GRADE-17), and every student in the CSV has one.
+    stems = sorted(p.stem for p in artifacts.pdf_paths)
+    assert stems == sorted(produced_marks), (
+        f"the CSV carries {len(produced_marks)} students and the export wrote {len(stems)} "
+        f"PDFs. FR-GRADE-17 is one PDF per student; a student with a mark and no feedback "
+        f"document has been dropped silently."
+    )
+
+    # The baseline is a canonical projection of each PDF, not its raw bytes: a PDF carries a
+    # creation timestamp, a producer string and a file ID, so byte equality would fail on every
+    # run and the baseline would be deleted rather than read. The projection is the same move
+    # TC-REG-02 makes for the archive container — normalize the volatile fields, then digest
+    # what is left — and it keeps the oracle pointed at the *content*. A manifest of filenames
+    # alone would pass with every PDF empty or all of them identical.
     manifest = {
         "count": len(artifacts.pdf_paths),
-        "students": sorted(p.stem for p in artifacts.pdf_paths),
+        "students": {p.stem: _canonical_pdf(p) for p in sorted(artifacts.pdf_paths)},
     }
+    for stem, projection in manifest["students"].items():
+        assert projection["bytes"] > 0, f"{stem}'s PDF is empty"
+        assert projection["pages"] >= 1, f"{stem}'s PDF declares no page"
+    digests = [p["sha256"] for p in manifest["students"].values()]
+    assert len(set(digests)) == len(digests), (
+        "two or more per-student PDFs are byte-identical after normalization. Feedback is "
+        "per-student (FR-GRADE-17); identical documents mean the export is not reading the "
+        "student it names."
+    )
+
     assert_matches_golden(
         CASE,
         PDF_GOLDEN,
