@@ -42,10 +42,12 @@ guess is a suite that asserts the wrong thing.
 | Migration 001 creates the tier's tables | Yes — the table *names* from §3.3's data model, with a minimal column set | `TC-STATS-C18` asserts Tier D has tables and would be vacuous over an empty database; `FR-STORE-14` needs a real FK to enforce |
 | Later columns | `ALTER TABLE ADD COLUMN` in a later numbered migration, contributed by the owning module | §3.3: this module owns migrations, not table semantics |
 | `result` table | **Not** created here | It is not in §3.3's data model; `FUZZ-07` reads it and is keyed on #11, which is the story that builds the write path |
-| Schema version is per tier | One `schema_version` table per database, `MAX(version)` is current | `FR-STORE-02` says "per tier"; Tier P files are handed between schools and version independently of Tier D |
+| Schema version is per tier | One `schema_version` table per database; the **set** of applied versions is what pending work is measured against | `FR-STORE-02` says "per tier"; Tier P files are handed between schools and version independently of Tier D |
 | Read-only Tier P | `package(id, read_only=True)` over a `file:...?mode=ro` URI | `FR-STORE-13`; a read-only handle never migrates, because migrating is a write |
 | Too-new is checked before anything else | `SchemaTooNewError` raised before the first migration and before any row is read | `CT-STORE-11`: "refuses to open, **no partial read**" |
-| `SQLITE_BUSY` retry | Internal, bounded, never surfaced | §3.3 Error handling; `CT-STORE-11` says it never reaches a caller |
+| `SQLITE_BUSY` retry | Internal and **bounded**; exhausting it re-raises SQLite's own error | §3.3 says busy "should not occur" under WAL. No retry loop can promise *never*, and a helper claiming to would be lying about a lock held outside this process |
+| `query` refuses a write | The connection is in autocommit, so it would otherwise be a synchronous write channel | `CT-STORE-02` makes writing asynchronous; #11 owns both write paths |
+| One file, one mode | A read-only and a writable handle on the same file cannot both be open | `FR-STORE-13` inspects a file whose provenance is in question; two live connections make that inspection meaningless |
 | Open-time observability | `Store.opened` — one `TierOpened` per database | `CLAUDE.md` seam 4: a bare success on top of an empty result is the top silent-failure trap |
 
 Configuration
@@ -85,6 +87,7 @@ __all__ = [
     "Tier",
     "TierHandle",
     "TierOpened",
+    "WriteThroughQueryError",
     "WriteUnit",
     "current_schema_version",
     "data_dir_from_environment",
@@ -107,10 +110,12 @@ BUSY_RETRIES_ENV = "HARNESS_SQLITE_BUSY_RETRIES"
 DEFAULT_BUSY_TIMEOUT_MS = 5_000
 DEFAULT_BUSY_RETRIES = 4
 
-#: Owner-only, on the directories this module creates. `FR-STORE-09`'s full rule — refusing a
-#: world-writable location with `InsecureLocationError` — is #13's; creating the tree private in
-#: the first place is a one-line default that would be strange to defer, and doing it now means
-#: #13 tightens a check rather than migrating existing data out of a public directory.
+#: Owner-only, on **each directory this module itself creates** — not on their parents, and not
+#: at all on Windows, where `mkdir`'s mode argument is ignored. So this narrows the window rather
+#: than closing it, which is worth saying plainly: `FR-STORE-09`'s full rule (refuse a
+#: world-writable location with `InsecureLocationError`, and set the mode explicitly) is #13's.
+#: Doing this much now means #13 tightens a check rather than migrating existing data out of a
+#: directory that was public while it sat there.
 OWNER_ONLY_DIR = 0o700
 
 
@@ -176,6 +181,10 @@ class InsecureLocationError(StoreError):
     **Nothing raises it yet** — the check is #13's, and this module creates its directories
     owner-only in the meantime.
     """
+
+
+class WriteThroughQueryError(StoreError):
+    """A write was passed to `query`, which reads (`CT-STORE-02`). See `SqliteTierHandle.query`."""
 
 
 class PurgePreconditionError(StoreError):
@@ -655,7 +664,7 @@ class TierOpened:
     foreign_keys: bool
 
 
-_SELECT_MAX_VERSION = Statement("SELECT MAX(version) FROM schema_version")
+_SELECT_APPLIED_VERSIONS = Statement("SELECT version FROM schema_version")
 _SELECT_SCHEMA_VERSION_TABLE = Statement(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'"
 )
@@ -686,9 +695,14 @@ def _run(connection: sqlite3.Connection, declared: Statement,
     would mean "whatever the caller passed reaches SQLite unchecked", and the scanner is right
     that that is a different interface from the one §3.3 declares.
 
-    `SQLITE_BUSY` is retried here and **never surfaces** (`CT-STORE-11`). Under WAL with one
-    writer it should not occur at all; "should not" is why the retry is bounded and why exhausting
-    it raises the original error rather than a new one.
+    `SQLITE_BUSY` is retried here rather than at any call site (`CT-STORE-11`). Under WAL with one
+    writer it should not occur at all, and "should not" is why the retry is bounded: a lock held
+    by something outside this process is not a condition an unbounded retry improves.
+
+    So it is **bounded, not never** — exhausting the retries re-raises SQLite's own error rather
+    than a new one, and the caller sees `OperationalError` exactly as it would have without the
+    retry. §3.3 says busy "should not occur"; a helper that promised it could not would be
+    promising something no retry loop can deliver.
     """
     attempt = 0
     while True:
@@ -703,15 +717,22 @@ def _run(connection: sqlite3.Connection, declared: Statement,
             time.sleep(0.02 * attempt)
 
 
-def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int) -> sqlite3.Connection:
-    """Open one database with the two settings `FR-STORE-01` and `FR-STORE-14` require.
+def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int,
+             retries: int) -> sqlite3.Connection:
+    """Open one database and enable foreign keys. **Writes nothing.**
 
     `foreign_keys` is set on **every** connection, including read-only ones: SQLite defaults it
     off and the setting is per-connection, not per-database, so the CHECK and FOREIGN KEY
     constraints the HLD relies on as guarantees are only guarantees if this line runs every time.
+    It is a connection setting and touches no byte of the file.
 
-    `journal_mode = WAL` is persistent in the file header, which is why a read-only connection
-    does not set it — and why it does not need to.
+    **`journal_mode = WAL` is deliberately not set here**, and the ordering is the whole point.
+    Setting WAL rewrites bytes 18 and 19 of the file header — so a version check performed *after*
+    it has already modified a database the store is about to refuse to open. Review measured
+    exactly that: a v99 database came back with a changed mtime and a changed content hash after
+    `SchemaTooNewError`, which is what `TC-STORE-05`'s oracle ("the file is unmodified, asserted
+    by mtime and content hash") exists to catch, and what `CT-STORE-11`'s "no partial read" means
+    in practice. `_open_tier` sets WAL after the check, on the writable path only.
     """
     if read_only:
         # `as_uri()` rather than a hand-built string: it produces the canonical `file:///...`
@@ -728,37 +749,52 @@ def _connect(path: Path, *, read_only: bool, busy_timeout_ms: int) -> sqlite3.Co
     # Autocommit; #11 replaces this with the single-writer queue and explicit batches. Set before
     # any DDL so a migration's BEGIN is the only transaction in play.
     connection.isolation_level = None
-    _run(connection, _PRAGMA_FOREIGN_KEYS_ON)
-    if not read_only:
-        _run(connection, _PRAGMA_JOURNAL_WAL)
+    _run(connection, _PRAGMA_FOREIGN_KEYS_ON, retries=retries)
     return connection
 
 
-def _read_schema_version(connection: sqlite3.Connection) -> int:
-    """The database's current schema version, or 0 if it has never been migrated."""
-    if not _run(connection, _SELECT_SCHEMA_VERSION_TABLE).fetchall():
-        return 0
-    row = _run(connection, _SELECT_MAX_VERSION).fetchone()
-    return int(row[0]) if row is not None and row[0] is not None else 0
+def _applied_versions(connection: sqlite3.Connection, retries: int) -> frozenset[int]:
+    """Every migration version this database has recorded, as a set.
+
+    A **set**, not `MAX(version)`, and review is what forced the difference. `schema_version`
+    carries one row per applied migration, so a database at 1 and 3 — the shape a withdrawn
+    migration 2 leaves behind, or a branch merged in the wrong order — reports a maximum of 3.
+    Filtering pending work by `version > 3` then skips 2 forever, silently, and the tier opens
+    reporting a version whose schema it does not have. Measured: `migration 2 SKIPPED = True`,
+    its table absent.
+
+    The set makes "pending" mean what it says: any numbered migration this database has not
+    recorded. `NFR-STORE-04`'s migrate-every-prior-version suite is the thing that would have
+    caught this, and it cannot exist until there is more than one version — see the PR.
+    """
+    if not _run(connection, _SELECT_SCHEMA_VERSION_TABLE, retries=retries).fetchall():
+        return frozenset()
+    rows = _run(connection, _SELECT_APPLIED_VERSIONS, retries=retries).fetchall()
+    return frozenset(int(row[0]) for row in rows if row[0] is not None)
 
 
-def _migrate(connection: sqlite3.Connection, tier: Tier, present: int) -> tuple[int, ...]:
-    """Apply every migration above `present`, in order, each in its own transaction.
+def _migrate(connection: sqlite3.Connection, tier: Tier, already: frozenset[int],
+             retries: int) -> tuple[int, ...]:
+    """Apply every migration this database has not recorded, in version order.
 
-    Per migration rather than one transaction for all of them: SQLite can roll back DDL, so a
-    failure leaves the database at the last **complete** migration rather than at an intermediate
-    state no version number describes. That is what makes re-running the open safe.
+    Pending is "not in `already`" rather than "above the maximum", so a database carrying 1 and 3
+    still gets 2 when the binary supplies it. See `_applied_versions`.
+
+    One transaction **per migration** rather than one for all of them: SQLite can roll back DDL,
+    so a failure leaves the database at the last *complete* migration rather than at an
+    intermediate state no version number describes. That is what makes re-running the open safe,
+    and it is why `applied` is returned as the versions that actually landed.
     """
     applied: list[int] = []
     pending = sorted(
-        (m for m in TIER_MIGRATIONS[tier] if m.version > present), key=lambda m: m.version
+        (m for m in TIER_MIGRATIONS[tier] if m.version not in already), key=lambda m: m.version
     )
     for migration in pending:
-        _run(connection, _BEGIN)
+        _run(connection, _BEGIN, retries=retries)
         try:
-            _run(connection, _SCHEMA_VERSION_TABLE)
+            _run(connection, _SCHEMA_VERSION_TABLE, retries=retries)
             for statement in migration.statements:
-                _run(connection, statement)
+                _run(connection, statement, retries=retries)
             _run(
                 connection,
                 _INSERT_VERSION,
@@ -767,18 +803,34 @@ def _migrate(connection: sqlite3.Connection, tier: Tier, present: int) -> tuple[
                     "name": migration.name,
                     "applied_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 },
+                retries=retries,
             )
+            _run(connection, _COMMIT, retries=retries)
         except Exception:
-            _run(connection, _ROLLBACK)
+            # The rollback is best-effort and its failure is **swallowed**, deliberately. SQLite
+            # rolls a statement-level failure back on its own, so the explicit ROLLBACK then
+            # raises "cannot rollback - no transaction is active" — and letting that propagate
+            # replaces the real finding (an IntegrityError, or ENOSPC, which is exactly what #13's
+            # DiskFullError has to classify) with a message about transaction bookkeeping. Review
+            # measured the swap.
+            try:
+                _run(connection, _ROLLBACK, retries=retries)
+            except sqlite3.Error:
+                pass
             raise
-        _run(connection, _COMMIT)
         applied.append(migration.version)
     return tuple(applied)
 
 
-def _open_tier(path: Path, tier: Tier, *, read_only: bool,
-               busy_timeout_ms: int) -> tuple[sqlite3.Connection, TierOpened]:
-    """Open, refuse if too new, migrate if behind, and report what happened."""
+def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
+               retries: int) -> tuple[sqlite3.Connection, TierOpened]:
+    """Open, refuse if too new, migrate if behind, and report what happened.
+
+    The order is the requirement. Nothing writes to the file until the version check has passed,
+    so `CT-STORE-11`'s *"refuses to open, no partial read"* and `TC-STORE-05`'s *"the file is
+    unmodified, asserted by mtime and content hash"* are both properties of the control flow
+    rather than of anyone's care.
+    """
     if read_only and not path.exists():
         raise ConfigurationProblem(
             f"{path} does not exist, so it cannot be opened read-only. FR-STORE-13 is about "
@@ -786,10 +838,13 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool,
         )
 
     path.parent.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
-    connection = _connect(path, read_only=read_only, busy_timeout_ms=busy_timeout_ms)
+    connection = _connect(
+        path, read_only=read_only, busy_timeout_ms=busy_timeout_ms, retries=retries
+    )
 
     try:
-        present = _read_schema_version(connection)
+        already = _applied_versions(connection, retries)
+        present = max(already, default=0)
         implemented = current_schema_version(tier)
 
         # Before anything is read out of a table and before the first migration: `CT-STORE-11`
@@ -806,11 +861,15 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool,
         if read_only:
             applied: tuple[int, ...] = ()
         else:
-            applied = _migrate(connection, tier, present)
+            # The first write to the file, and it happens **after** the refusal above.
+            # `journal_mode = WAL` rewrites the header, so setting it earlier would modify a
+            # database the store was about to refuse — see `_connect`.
+            _run(connection, _PRAGMA_JOURNAL_WAL, retries=retries)
+            applied = _migrate(connection, tier, already, retries)
 
-        after = _read_schema_version(connection)
-        journal_mode = str(_run(connection, _PRAGMA_JOURNAL_MODE).fetchone()[0])
-        foreign_keys = bool(_run(connection, _PRAGMA_FOREIGN_KEYS).fetchone()[0])
+        after = max(_applied_versions(connection, retries), default=0)
+        journal_mode = str(_run(connection, _PRAGMA_JOURNAL_MODE, retries=retries).fetchone()[0])
+        foreign_keys = bool(_run(connection, _PRAGMA_FOREIGN_KEYS, retries=retries).fetchone()[0])
     except Exception:
         connection.close()
         raise
@@ -828,6 +887,25 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool,
 
 
 # --- the handles ----------------------------------------------------------------------------------
+
+
+#: The statement verbs `query` accepts. Everything else is a write and belongs on the queue
+#: (`CT-STORE-02`) or inside a transaction (`CT-STORE-03`), both of which are #11's.
+READ_VERBS: frozenset[str] = frozenset({"select", "with", "values", "explain", "pragma"})
+
+
+def _refuse_write(declared: Statement) -> None:
+    """Raise unless `declared` starts with a read verb. See `SqliteTierHandle.query`."""
+    words = declared.sql.lstrip().lstrip("(").split(None, 1)
+    first = words[0].lower() if words else ""
+    if first in READ_VERBS:
+        return
+    raise WriteThroughQueryError(
+        f"query() was given a {first.upper() or 'blank'} statement. It reads; writing goes "
+        f"through enqueue_write (asynchronous, CT-STORE-02) or transaction() (atomic, "
+        f"CT-STORE-03), both of which are issue #11. A synchronous write named query() would "
+        f"let callers be written against the opposite of the contract."
+    )
 
 
 class SqliteTierHandle:
@@ -854,14 +932,32 @@ class SqliteTierHandle:
         return self._opened
 
     def query(self, statement: Statement, **params: Any) -> Sequence[Row]:
-        """Run a declared statement and return its rows.
+        """Run a declared **read** and return its rows.
 
         **No order is promised** (`CT-STORE-18`): rows come back in whatever order SQLite
         produces, and a caller needing an order states it in the statement. Nothing here sorts,
         because a module that sorted would make every caller's unstated assumption work until the
         day it did not.
+
+        **A write through here is refused**, and that is not tidiness. The connection is in
+        autocommit, so before this guard `query(Statement("INSERT ..."))` wrote and committed
+        synchronously — review used exactly that to seed every fixture it needed.
+        `CT-STORE-02` makes writing *asynchronous*, through `enqueue_write`; a synchronous write
+        channel wearing the name `query` is the contract violation that clause exists to prevent.
+        Today it is the only write path there is, so every caller written before #11 lands would
+        be written against it. `TC-STORE-C01` says the closed member list matters *"because it is
+        the door through which every other clause here gets bypassed"* — this is that door, one
+        level below the member list.
+
+        The test is the statement's first keyword. Reads are `SELECT`, `WITH`, `VALUES`,
+        `EXPLAIN` and `PRAGMA` — `PRAGMA` because schema introspection is how a caller inspects an
+        imported package (`FR-STORE-13`) and how `TC-STATS-C18` sweeps Tier D for a name column.
+        It is a keyword check and not a parser: it stops a caller reaching for the wrong method,
+        which is the only thing that needs stopping, because every caller is in-process trusted
+        code and there is no untrusted path into a statement.
         """
         declared = statement if isinstance(statement, Statement) else Statement(statement)
+        _refuse_write(declared)
         return _run(self._connection, declared, params, retries=self._retries).fetchall()
 
     def enqueue_write(self, unit: WriteUnit) -> None:
@@ -932,8 +1028,24 @@ class SqliteStore:
         cached = self._handles.get((tier, key, read_only))
         if cached is not None:
             return cached
+        # One file, one mode. Review measured the alternative: with both cached, two connections
+        # were live on one package and the read-only handle observed the writable one's migration
+        # — so "inspect an imported package before it is trusted" (`FR-STORE-13`) was inspecting a
+        # file this same process had just changed. Refusing is the honest answer: the two modes
+        # answer different questions, and holding both at once means neither answer is the one the
+        # caller thinks it has.
+        conflict = self._handles.get((tier, key, not read_only))
+        if conflict is not None:
+            raise ConfigurationProblem(
+                f"{path} is already open {'read-write' if read_only else 'read-only'} in this "
+                f"store. FR-STORE-13's read-only handle exists to inspect a file whose "
+                f"provenance is in question, and a writable handle on the same file in the same "
+                f"process is what makes that inspection meaningless. Close the store, or inspect "
+                f"through the handle you already hold."
+            )
         connection, opened = _open_tier(
-            path, tier, read_only=read_only, busy_timeout_ms=self._busy_timeout_ms
+            path, tier, read_only=read_only, busy_timeout_ms=self._busy_timeout_ms,
+            retries=self._retries,
         )
         handle = SqliteTierHandle(connection, opened, retries=self._retries)
         self._handles[(tier, key, read_only)] = handle

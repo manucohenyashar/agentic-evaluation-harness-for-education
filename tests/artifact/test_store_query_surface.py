@@ -218,7 +218,7 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: The line number is part of the entry, so an edit above the site fails this case. That is
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
-KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:696"})
+KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:710"})
 
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
