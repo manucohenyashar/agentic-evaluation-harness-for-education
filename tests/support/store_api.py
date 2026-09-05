@@ -54,22 +54,17 @@ BLOB_STORE_STATS = "blob_store_stats"
 #: here and reported as a design gap.
 STUDENT_NAME_ERROR = "StudentNameInTierDError"
 
-#: **Unowned** — the declared-statement registry `TC-STORE-15` sweeps, and the one name of the
-#: five that belongs to no story. The plan requires that "the registry contains no such
-#: statement" and §3.3 types `query`'s argument as `Statement` rather than `str`, but nothing
-#: says where the declared set lives. This comment said "#10" until #10 closed without it, which
-#: is how the gap surfaced: the case's `require` then named a *closed* issue, sending its reader
-#: to a story that could no longer act.
+#: #12 — the declared-statement registry `TC-STORE-15` sweeps, and the one name of the five whose
+#: ownership took three attempts to settle. The plan requires that "the registry contains no such
+#: statement" and §3.3 types `query`'s argument as `Statement` rather than `str`, but nothing said
+#: where the declared set lives. This comment said "#10" until #10 closed without it; #177
+#: re-attributed it to #13 as a presumption and reported the gap.
 #:
-#: Now attributed to **#13** — `FR-STORE-08` ("no search") is #13's, and a declared-statement
-#: registry is how a store makes that promise checkable — and keyed there in
-#: `WRITTEN_AHEAD_BLOCKERS`. That is a presumption, not a resolution: no issue's acceptance
-#: criteria mention `STATEMENTS`, so if #13 closes without it this P0 case sits outside the gate
-#: with nothing saying so. Reported in the PR; it needs an owner in the design or the issue
-#: graph, and cannot be fixed from a test file.
-#:
-#: Resolved in `tests/artifact/test_tc_store_15_no_search_surface.py` rather than here, since
-#: only that case needs it — listed here so the gap accounting stays in one place.
+#: **#12 supplied it, one story earlier than presumed, and for a reason nobody predicted.**
+#: `tests/support/sql_scan.py` sanctions exactly one shape for handing a statement to an execute
+#: path — "a table of declared statements" — so #12's own `store_lease_clock` write needed the
+#: registry to exist before it could be written at all. The gap closed as a side effect of the
+#: discipline it was meant to make checkable.
 STATEMENT_REGISTRY = "STATEMENTS"
 
 # --- two invented *signatures*, which are a different kind of gap ----------------------------
@@ -93,6 +88,24 @@ STATEMENT_REGISTRY = "STATEMENTS"
 # concurrency at the store, not necessarily through a single handle object. If #11 decides a
 # handle is per-thread, that case needs one handle per reader and the PR flags it now rather
 # than leaving the next reader to discover it from a segfault.
+
+
+#: #12 — three more names design §3.3 does not supply, recorded here so TS-09 (#15) adopts these
+#: rather than inventing a second set. #15 is in the ready set, so that choice is imminent.
+#:
+#: `InvalidContentHashError` is what `get()` and `path()` raise for anything that is not 64
+#: lowercase hex. `TC-STORE-22` requires the rejection and names no exception, and "something
+#: raised" is not an oracle — a `FileNotFoundError` from a traversing path satisfies it while
+#: proving the guard absent.
+#:
+#: `lease_clock(store, clock=None)` is the accessor for `FR-STORE-11`'s monotonic counter, and
+#: `Lease` the value it issues. §3.3's Interfaces block has no lease member at all, and it cannot
+#: gain one: `CT-STORE-01` closes `Store` at five members and `TC-STORE-C01` calls that closed
+#: list "the door through which every other clause here gets bypassed". A module function is the
+#: same answer `store_metrics` reached, for the same reason.
+CONTENT_HASH_ERROR = "InvalidContentHashError"
+LEASE_CLOCK = "lease_clock"
+LEASE = "Lease"
 
 
 def open_store(data_dir, issue: str = "#10", **kwargs: Any):
