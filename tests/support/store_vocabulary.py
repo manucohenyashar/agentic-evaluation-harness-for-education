@@ -7,6 +7,14 @@ and `stats_vocabulary` exist.
 Search-surface names are **not** here: `tests.support.sql_scan.is_search_name` already owns
 that vocabulary and `SEC-15` asserts against it. `TC-STORE-15` reuses it rather than growing a
 second list that could drift from the first.
+
+**The FR-STORE-12 name rule moved to `aeh.store` when #13 landed.** It is runtime behaviour
+now — the Tier D write guard executes it on every insert — so the canonical rule, its token
+sets and its rationale live in `src/aeh/store.py`, and this module re-exports them. A rule
+asserted from one copy and enforced from another is two rules waiting to disagree; importing
+the store's own rule here is what keeps the sweep (`TC-STORE-12`'s third limb) asserting the
+same mapping the guard applies. `NON_STUDENT_NAME_COLUMNS` stays here: it is the negative
+control set for `tests/unit/harness/test_store_vocabulary.py`, a test-side concern.
 """
 
 from __future__ import annotations
@@ -15,75 +23,16 @@ import re
 from pathlib import Path
 import sqlite3
 
-# --- FR-STORE-12: what a "column mapped as a student-name field" looks like -----------------
-#
-# `FR-STORE-12` says Tier D "shall reject any insert containing a column mapped as a
-# student-name field", and design §3.3 puts the identity mapping in Tier C alone. The
-# requirement names the *concept*, not the spellings, so the case needs a list — and a list is
-# only as good as its worst omission, since a name-bearing column that no pattern matches is
-# precisely the leak `CT-STORE-09` promises callers cannot happen.
-#
-# **Not a `*_name` rule.** The obvious version — flag any column whose name contains `name` —
-# was measured against this module and flagged `criterion_name`, `stat_name`, `scope_name`,
-# `run_name`, `metric_name`, `display_name` and nine more. Tier D holds `criterion_stats`,
-# `mcq_item_stats` and `run_metrics` (design §3.3), so those are not hypothetical columns: that
-# rule reds the build against a *correct* store, and a rule that does that is one the first
-# `M-STORE` commit switches off. A switched-off rule catches nothing at all, which is strictly
-# worse than the leak it was guarding.
-#
-# So the rule is **person + name**, not name alone: a column is a student-name column when it
-# names a *person* and names their *name*. Two token sets, and the intersection is the finding.
-
-#: Who the column is about. Absent these, `*_name` is a criterion, a run or a metric.
-PERSON_TOKENS: frozenset[str] = frozenset({"student", "pupil", "learner", "candidate", "child"})
-
-#: What about them, in two strengths — and the split is the whole rule.
-#:
-#: **Strong** tokens mean a name wherever they appear next to a person token. **Weak** ones do
-#: not: `first`, `last`, `family`, `display` and the rest are ordinary English that Tier D has
-#: every reason to use. Measured against a rule that treated them as strong,
-#: `student_first_seen`, `student_last_seen_at`, `student_family_income`,
-#: `student_display_order`, `learner_given_consent`, `student_preferred_language` and
-#: `pupil_last_updated` were all flagged — longitudinal per-student columns, which is precisely
-#: what a permanent pseudonymous tier is *for*. Redding the build against those is the same
-#: failure the `*_name` rule had, wearing different clothes.
-#:
-#: So a weak token counts only when it is **terminal** (`student_first` is as identifying as
-#: `student_first_name`) or **immediately followed by a strong token** (`student_first_name`,
-#: `student_display_name`).
-STRONG_NAME_TOKENS: frozenset[str] = frozenset(
-    {
-        "name", "names", "fullname", "firstname", "lastname", "surname", "forename",
-        "givenname", "familyname", "initials",
-    }
+from aeh.store import (
+    BARE_NAME_COLUMNS,
+    NAME_TOKENS,
+    PERSON_TOKENS,
+    PSEUDONYM_TOKENS,
+    STRONG_NAME_TOKENS,
+    TIER_D_IDENTITY_COLUMN,
+    WEAK_NAME_TOKENS,
+    is_student_name_column,
 )
-
-WEAK_NAME_TOKENS: frozenset[str] = frozenset(
-    {"first", "last", "given", "family", "middle", "preferred", "display"}
-)
-
-#: Kept as the union for readers and for callers that want the whole vocabulary.
-NAME_TOKENS: frozenset[str] = STRONG_NAME_TOKENS | WEAK_NAME_TOKENS
-
-#: The pseudonymous shape `FR-STORE-12` *requires*. A person token with one of these is the
-#: sanctioned Tier D column, not a violation — `student_ref` is the whole point of the clause,
-#: and a rule that flagged it would flag the correct implementation.
-PSEUDONYM_TOKENS: frozenset[str] = frozenset(
-    {"ref", "id", "key", "uuid", "hash", "token", "code", "pseudonym", "anon"}
-)
-
-#: Spellings that identify a person with no person token attached, so the person+name rule
-#: cannot see them. A bare `name` column in a Tier D table is a finding on its own.
-BARE_NAME_COLUMNS: frozenset[str] = frozenset(
-    {
-        "name", "names", "full_name", "fullname", "first_name", "firstname", "last_name",
-        "lastname", "surname", "forename", "given_name", "givenname", "family_name",
-        "familyname", "middle_name", "preferred_name", "legal_name", "maiden_name",
-    }
-)
-
-#: The pseudonymous key Tier D is allowed to carry instead (`FR-STORE-12`).
-TIER_D_IDENTITY_COLUMN = "student_ref"
 
 #: Legitimate columns that a careless rule flags. Not used by `is_student_name_column` — it is
 #: the **negative control set** for `tests/unit/harness/test_store_vocabulary.py`, which is what
@@ -110,46 +59,6 @@ NON_STUDENT_NAME_COLUMNS: frozenset[str] = frozenset(
         "learner_given_consent", "student_preferred_language", "candidate_first_language",
     }
 )
-
-
-def is_student_name_column(column: str) -> bool:
-    """Does this column name a student's name?
-
-    `person token AND name token`, with a pseudonym token vetoing the match. See the block
-    comment above for why this is not a `*_name` rule.
-
-    Known limit, stated rather than hidden: an unsegmented abbreviation like `sname` or `fname`
-    matches nothing here. Catching those needs guessing at abbreviations, and every guess is a
-    false positive against some legitimate column. `TC-STORE-12`'s third limb is a sweep over a
-    real schema, so the residual risk is a column somebody deliberately obfuscated — which is a
-    different threat from the one `FR-STORE-12` describes.
-    """
-    lowered = column.lower().strip()
-    words = re.split(r"[_\s-]+", lowered)
-    unique = set(words)
-
-    if lowered in BARE_NAME_COLUMNS:
-        return True
-
-    if unique & PERSON_TOKENS:
-        # `student_ref`, `pupil_id`, `learner_uuid` — the shape the clause requires.
-        if unique & PSEUDONYM_TOKENS:
-            return False
-        for position, word in enumerate(words):
-            if word in STRONG_NAME_TOKENS:
-                return True
-            if word in WEAK_NAME_TOKENS:
-                terminal = position == len(words) - 1
-                before_strong = (
-                    position + 1 < len(words) and words[position + 1] in STRONG_NAME_TOKENS
-                )
-                if terminal or before_strong:
-                    return True
-
-    # `studentname`, `pupilForename` — a person and a name glued into one token.
-    return bool(
-        re.search(r"(student|pupil|learner|candidate|child)\w*(name|forename|surname)", lowered)
-    )
 
 
 # --- design §3.3 Observability / CT-STORE-17: the five signals ------------------------------
