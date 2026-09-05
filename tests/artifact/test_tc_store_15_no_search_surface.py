@@ -1,7 +1,8 @@
 """No search surface — over the *concrete* store, its statements, and its schema.
 
 Case `TC-STORE-15` (`FR-STORE-08`, P0, Artifact assertion), test plan §5.3. Issue #14 (TS-08);
-blocked on issue **#10**.
+blocked on issue **#12** — limb 1 sweeps every tier and `Store.blobs()` is one of
+them, which #10 ships as a stub.
 
 **This is the half `SEC-15` deliberately left open, not a duplicate of it.**
 `tests/artifact/test_store_query_surface.py` asserts the same requirement over the `Protocol`s

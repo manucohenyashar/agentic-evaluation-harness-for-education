@@ -1,7 +1,8 @@
 """The four tier handles: WAL, foreign keys, and the read-only import path.
 
 Cases `TC-STORE-01` (`FR-STORE-01`, P0), `TC-STORE-02` (`FR-STORE-14`, P0) and `TC-STORE-16`
-(`FR-STORE-13`, P2), test plan §5.3. Issue #14 (TS-08); implemented by issue **#10**.
+(`FR-STORE-13`, P2), test plan §5.3. Issue #14 (TS-08); opened by issue #10, but blocked on
+**#11** — all three cases write through `TierHandle.transaction`, which #10 ships as a stub.
 
 Rung 2 throughout — real SQLite files in a real directory. §4.10 is explicit that consumers
 test against a real temporary store rather than a double: "an in-memory fake that commits
@@ -9,9 +10,10 @@ synchronously would hide every `CT-STORE-02` violation". The same reasoning appl
 `journal_mode` and `foreign_keys` are properties of a real connection to a real file, and a
 double reports whatever it was written to report.
 
-**Written ahead of implementation** (issue field; test plan §8.2). `aeh.store` does not exist,
-so all three are expected to fail with `NotImplementedYet` naming #10. They carry
-`writtenahead` and are registered in `WRITTEN_AHEAD_BLOCKERS` under `#10 open_store`.
+**Written ahead of implementation** (issue field; test plan §8.2). `aeh.store` exists since
+#10, so these no longer red with `NotImplementedYet` from `require()` — they red with the
+`NotImplementedError` #10 deliberately put in `TierHandle.transaction`, naming #11. They carry
+`writtenahead` and are registered in `WRITTEN_AHEAD_BLOCKERS` under `#11 store_metrics`.
 
 Every oracle here reads through an **independent** `sqlite3` connection to the file rather than
 through the module under test — except where the requirement is explicitly about the connection

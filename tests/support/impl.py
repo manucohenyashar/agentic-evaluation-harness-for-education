@@ -214,37 +214,59 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # File paths, not `::nodeid`s: `test_every_registered_blocker_names_a_file_that_exists`
     # checks only `path.split("::")[0]`, so a typo'd nodeid names nothing and nothing says so.
     # Each file here has exactly one blocker, so the file path loses no precision.
-    # **Known collision, reported rather than silently rewritten.** TS-56 keyed both `"#11"` and
-    # `"#12"` above on this same `aeh.store:open_store`. If `open_store` is #10's — and the entry
-    # below asserts it is, since #10's Goal is "`Store` opens the four lifetime tiers" — then all
-    # three entries fire on #10's first commit, and two of them will name `fuzz_07` tests for
-    # stories that have not shipped. Correcting the other two means choosing symbols for TS-56's
-    # tests, which belongs to whoever owns them; this entry is what makes the conflict visible.
-    # See the PR for #14.
-    "#10 open_store": (
-        "symbol",
-        f"{STORE_MODULE}:open_store",
-        (
-            "tests/integration/store/test_tier_handles.py",
-            "tests/artifact/test_tc_store_15_no_search_surface.py",
-        ),
-    ),
-    # `TC-STORE-15` sits under #10 although `FR-STORE-08` is #13's, which is the same call
-    # `SEC-15` makes for the same requirement one file away: the discriminating question is
-    # which single blocker makes the test runnable and non-vacuous, and all three of its limbs
-    # need a constructible store. The two files must not disagree about this.
+    # **The `"#10 open_store"` entry that stood here was mis-keyed, and #10 landing proved it.**
+    # It keyed `test_tier_handles.py` and `test_tc_store_15_no_search_surface.py` on
+    # `aeh.store:open_store`, on the reasoning that a *constructible* store is what makes them
+    # runnable. #10 landed `open_store` (PR #175), the gate fired on schedule -- and all four
+    # cases it told a reader to unmark fail, because `open_store` is not what they need:
+    #
+    #   `TC-STORE-01`, `-02`, `-16` (`test_tier_handles.py`) call `TierHandle.transaction`,
+    #     which #10 ships as `raise NotImplementedError("... is issue #11 (FR-STORE-04)")`.
+    #   `TC-STORE-15` (`test_tc_store_15_no_search_surface.py`) calls `Store.blobs()`, which
+    #     #10 ships as `raise NotImplementedError("... is issue #12 (FR-STORE-06)")`.
+    #
+    # So both files move to the entries for the stories that actually unblock them. The right
+    # question was never "does a store exist" but "does every symbol this file calls exist",
+    # and a constructor is the weakest available proxy for that when the constructor's own
+    # story deliberately stubs its siblings. Measured, not argued: those four failures are what
+    # `pytest tests/integration/store/test_tier_handles.py
+    # tests/artifact/test_tc_store_15_no_search_surface.py` prints against `main` @ `576157b`.
+    #
+    # The collision that entry existed to report is gone -- #10's PR re-keyed TS-56's `"#11"`
+    # and `"#12"` off `open_store` onto `WriteQueue` and `ContentAddressedBlobStore` -- which is
+    # why this was the only entry that fired.
+    #
+    # A residual weakness this move does not close, recorded rather than papered over: `symbol`
+    # cannot tell a name that is absent from one that is present and raises. `transaction` and
+    # `blobs` both *exist* today; only their bodies are #11's and #12's. The keys below are
+    # therefore still proxies -- invented accessors that stand in for "the story landed" -- and
+    # if #11 spells its metrics accessor differently these files stay outside the gate silently,
+    # which is the failure mode this whole registry exists to prevent. A fourth kind
+    # (`"implemented"`: the symbol resolves *and* calling it does not raise `NotImplementedError`)
+    # would close it. That is a change to the harness rather than to TS-08, so it is a finding in
+    # the PR, not a change here.
+    #
+    # `TC-STORE-15` sits under **#12** although `FR-STORE-08` is #13's -- the same call `SEC-15`
+    # makes for the same requirement one file away. The discriminating question is unchanged:
+    # which single blocker makes the test runnable and non-vacuous. For this file it is the blob
+    # store, because limb 1 sweeps every tier and `blobs()` is one of them. The two files must
+    # agree about the *question*; they are free to reach different issues answering it.
     "#11 store_metrics": (
         "symbol",
         f"{STORE_MODULE}:store_metrics",
         (
             "tests/integration/store/test_write_queue.py",
             "tests/integration/store/test_observability.py",
+            "tests/integration/store/test_tier_handles.py",
         ),
     ),
     "#12 blob_store_stats": (
         "symbol",
         f"{STORE_MODULE}:blob_store_stats",
-        ("tests/integration/store/test_blob_store.py",),
+        (
+            "tests/integration/store/test_blob_store.py",
+            "tests/artifact/test_tc_store_15_no_search_surface.py",
+        ),
     ),
     "#13 StudentNameInTierDError": (
         "symbol",
