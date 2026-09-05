@@ -276,10 +276,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # nothing saying so. Reported in the PR for whoever owns the design and the issue graph; it
     # cannot be fixed from a test file.
     # The `"#11 store_metrics"` entry that stood here is gone for the same reason: #11 landed
-    # `store_metrics`, and `TC-STORE-01`, `-02`, `-03`, `-07`, `-16` and `-24` are unmarked and in
-    # the gate. `TC-STORE-15` stayed behind under the `symbols` entry below, because `Store.blobs`
-    # and `STATEMENTS` are still #12's and #13's -- which is exactly the split this file gained
-    # the conjunction kind for.
+    # `store_metrics`, so `TC-STORE-01`, `-02`, `-03`, `-07`, `-16` and `-24` lost the marker and
+    # now run. Not in `TEST_CMD`, and the distinction is worth keeping straight: they carry
+    # `pytest.mark.integration`, which `scripts/test.sh` deselects on its own account (test plan
+    # §4.7). Losing `writtenahead` puts a test back in `pytest -q`, which is the honest full
+    # picture and what a PR reports; the fast tier is a separate filter. Of the six only
+    # `FUZZ-07`'s property rejoined the gate, which is why it moved 758 -> 759 rather than by six.
+    # `TC-STORE-15` stayed behind under the `symbols` entry below, because `Store.blobs` and
+    # `STATEMENTS` are still #12's and #13's -- exactly the split the conjunction kind exists for.
     "#12 blob_store_stats": (
         "symbol",
         f"{STORE_MODULE}:blob_store_stats",

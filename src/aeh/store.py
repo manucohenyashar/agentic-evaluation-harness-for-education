@@ -1000,6 +1000,28 @@ class StoreLimits:
     busy_timeout_ms: int = DEFAULT_BUSY_TIMEOUT_MS
     retries: int = DEFAULT_BUSY_RETRIES
 
+    def __post_init__(self) -> None:
+        """Refuse a knob whose value is meaningless, rather than hanging on it.
+
+        `_int_env` rejects a negative, which leaves zero -- and zero is not a small value here,
+        it is a different program. `commit_batch=0` makes every batch empty, so the writer spins
+        forever committing nothing while the queue never shrinks; `write_queue_depth=0` makes
+        `enqueue_write` block on its first call, since the depth is reached before anything is
+        queued. Both are silent hangs from one mistyped environment variable, and seam 3 exists
+        so a slower box can retune these -- retuning is when a typo happens.
+        """
+        for name, env, value in (
+            ("commit_batch", COMMIT_BATCH_ENV, self.commit_batch),
+            ("commit_interval_ms", COMMIT_INTERVAL_MS_ENV, self.commit_interval_ms),
+            ("write_queue_depth", WRITE_QUEUE_DEPTH_ENV, self.write_queue_depth),
+            ("writer_poll_ms", WRITER_POLL_MS_ENV, self.writer_poll_ms),
+        ):
+            if value <= 0:
+                raise ConfigurationProblem(
+                    f"{env} is {value}; it must be greater than zero. A {name} of zero does not "
+                    "mean 'no limit' — it stalls the write queue with nothing to report."
+                )
+
     @classmethod
     def from_environment(cls, environ: Mapping[str, str] | None = None) -> StoreLimits:
         return cls(
@@ -1083,8 +1105,9 @@ class WriteQueue:
     """
 
     __slots__ = (
-        "_condition", "_connect_write", "_failures", "_in_flight", "_last_latency_ms",
-        "_limits", "_over_since", "_queue", "_stamps", "_stopping", "_thread", "_write_lock",
+        "_condition", "_connect_write", "_failures", "_holder", "_last_latency_ms",
+        "_limits", "_over_since", "_pending", "_queue", "_stamps", "_stopping", "_thread",
+        "_write_lock",
     )
 
     def __init__(self, connect_write: Any, limits: StoreLimits) -> None:
@@ -1099,31 +1122,38 @@ class WriteQueue:
         self._last_latency_ms = 0.0
         self._over_since: float | None = None
         self._failures: list[BaseException] = []
-        # Rows off the queue but not yet committed. Counted as pending, because "pending" means
-        # "not yet durable" -- see `depth`.
-        self._in_flight = 0
+        # Rows enqueued and not yet durable -- queued *or* in flight. One counter rather than
+        # two terms; see `depth`.
+        self._pending = 0
+        # Whether *this* thread is inside a `transaction()` body on this queue. See `enqueue`.
+        self._holder = threading.local()
 
     # -- what the metrics read -----------------------------------------------------------------
 
     @property
     def depth(self) -> int:
-        """Pending rows: queued **plus in flight**.
+        """Rows enqueued and not yet durable -- queued *or* mid-commit.
 
-        The second term is not bookkeeping. A caller waiting for its writes polls this to zero --
-        that is what `CT-STORE-02` leaves it to do, since `enqueue_write` returns before
-        durability and nothing else says when the row arrives. Counting only the queue reports
-        zero the instant the last batch is *popped*, while it is still inside `COMMIT`, so the
-        caller reads back one commit short. Measured: `TC-STORE-03` landed 225 of 250 rows
-        against exactly that definition, in order, with nothing lost -- the drain simply believed
-        it was finished a batch early.
+        "Not yet durable" rather than "still on the deque", and the difference is what a caller
+        waiting for its writes depends on: `CT-STORE-02` makes `enqueue_write` asynchronous and
+        nothing else says when the row arrives, so polling this to zero is the only way to wait.
+        Counting the deque alone reports zero the instant the last batch is *popped*, while it is
+        still inside `COMMIT`, and the caller reads back one commit short. Measured before this
+        was a single counter: `TC-STORE-03` landed 225 of 250 rows -- in order, nothing lost,
+        the drain simply believing it had finished a batch early.
 
-        `len(deque)` and an `int` read are both atomic in CPython, so this takes no lock. Taking
-        `_condition` would be worse than redundant: the merged `_drain` polls this in a tight
-        loop with no sleep, and a poll contending with the writer for the writer's own lock on
-        every iteration would be the reader blocking the writer, in the one place this module
-        exists to prevent it.
+        **One counter, not two terms added together.** An earlier form was
+        `len(self._queue) + self._in_flight`, incremented after the pops; review found the gap
+        between the last `popleft` and the `+=` still reads zero for a batch that is in neither
+        place. Narrower than a whole `COMMIT`, and not tripped in nine attempts -- but a window
+        the docstring claimed was closed. A single `int` read is atomic in CPython and has no
+        such gap.
+
+        No lock, deliberately. The merged `_drain` polls this in a tight loop with no sleep, and
+        a poll contending with the writer for the writer's own lock on every iteration would be
+        the reader blocking the writer, in the one place this module exists to prevent it.
         """
-        return len(self._queue) + self._in_flight
+        return self._pending
 
     @property
     def backpressure_active(self) -> bool:
@@ -1166,10 +1196,30 @@ class WriteQueue:
         deadlocks the first caller the moment the depth is reached: nothing would be draining
         the queue it is waiting on.
         """
+        if getattr(self._holder, "in_transaction", False):
+            # F2: this thread is inside a `transaction()` body, so it holds `_write_lock` -- the
+            # same lock the drain thread needs to commit anything. Waiting for backpressure to
+            # clear would wait for a drain that cannot start, and the process hangs with no
+            # timeout and no diagnostic.
+            #
+            # `CT-STORE-04` is the reason this is a raise rather than a docstring note: "write
+            # ordering across different `enqueue_write` calls ... is not guaranteed **except
+            # within one `transaction()`**" reads, naturally, as contemplating enqueues inside a
+            # transaction body. It cannot mean that here -- an enqueued row is committed by the
+            # *writer*, in its own transaction, so it could not be part of the caller's one even
+            # if the lock allowed it. Saying so is better than deadlocking at depth 1,000 in an
+            # M-ORCH bulk path.
+            raise WriteThroughQueryError(
+                "enqueue_write was called inside a transaction() body on the same tier. The "
+                "queue commits in its own transaction, so the row could not join this one; and "
+                "the body holds the write lock the queue's writer needs, so at the configured "
+                "depth this call would block forever on a drain that cannot start. Write it "
+                "with tx.execute() to be part of this transaction, or enqueue it after the "
+                "body exits."
+            )
         self._ensure_writer()
         with self._condition:
-            while (len(self._queue) + self._in_flight >= self._limits.write_queue_depth
-                   and not self._stopping):
+            while self._pending >= self._limits.write_queue_depth and not self._stopping:
                 self._condition.notify_all()
                 self._condition.wait(timeout=self._limits.writer_poll_ms / 1000)
             if self._stopping:
@@ -1179,6 +1229,7 @@ class WriteQueue:
                 )
             self._queue.append(unit)
             self._stamps.append(time.monotonic())
+            self._pending += 1
             self._note_depth_locked()
             self._condition.notify_all()
 
@@ -1196,17 +1247,27 @@ class WriteQueue:
         `NFR-STORE-02` is about; catching only `Exception` would leave a transaction open on the
         connection for the next caller to inherit.
         """
+        if self._stopping:
+            # Without this a transaction on a closed store reopens the write connection and
+            # commits, so `close()` refuses one write door and holds the other open.
+            raise WriteQueueClosed(
+                "transaction() was called on a closed store. Reopening the write connection "
+                "here would commit to a tier whose handle has already been released."
+            )
         with self._write_lock:
             connection = self._connect_write()
             _run(connection, _BEGIN, retries=self._limits.retries)
+            self._holder.in_transaction = True
             try:
                 yield Tx(connection, self._limits.retries)
             except BaseException:
+                self._holder.in_transaction = False
                 try:
                     _run(connection, _ROLLBACK, retries=self._limits.retries)
                 except sqlite3.Error:
                     pass  # the transaction is already gone; the caller's exception is the news
                 raise
+            self._holder.in_transaction = False
             _run(connection, _COMMIT, retries=self._limits.retries)
 
     # -- the writer side -----------------------------------------------------------------------
@@ -1215,14 +1276,20 @@ class WriteQueue:
         with self._condition:
             if self._thread is not None or self._stopping:
                 return
-            self._thread = threading.Thread(
+            thread = threading.Thread(
                 target=self._drain_forever, name="aeh-store-writer", daemon=True
             )
-        self._thread.start()
+            # Started **inside** the lock, and published only once started. Publishing first and
+            # starting after left a window in which `close()` read the attribute and called
+            # `join()` on a thread that had not begun: `RuntimeError: cannot join thread before
+            # it is started`. A shutdown racing a first `enqueue_write` is the ordinary shape of
+            # a cancelled run, not an exotic one.
+            thread.start()
+            self._thread = thread
 
     def _note_depth_locked(self) -> None:
         """Track how long depth has been at or above the threshold. Call under `_condition`."""
-        if len(self._queue) + self._in_flight >= self._limits.write_queue_depth:
+        if self._pending >= self._limits.write_queue_depth:
             if self._over_since is None:
                 self._over_since = time.monotonic()
         else:
@@ -1252,9 +1319,9 @@ class WriteQueue:
                         batch = [self._queue.popleft() for _ in range(take)]
                         for _ in range(take):
                             self._stamps.popleft()
-                        # Counted before the lock is released, so `depth` never dips through the
-                        # gap between leaving the queue and entering the transaction.
-                        self._in_flight += take
+                        # `_pending` is untouched here: these rows are still not durable, only
+                        # somewhere else. It drops in `_commit`'s `finally`, which is what keeps
+                        # `depth` from dipping through the gap between the deque and the COMMIT.
                         self._note_depth_locked()
                         # Wake anyone blocked on backpressure: the depth just dropped.
                         self._condition.notify_all()
@@ -1302,7 +1369,7 @@ class WriteQueue:
             # operator needs, and `NFR-STORE-02`'s window is about elapsed time, not success.
             self._last_latency_ms = (time.perf_counter() - started) * 1000.0
             with self._condition:
-                self._in_flight -= len(batch)
+                self._pending -= len(batch)
                 self._note_depth_locked()
                 self._condition.notify_all()
 
@@ -1386,6 +1453,12 @@ class SqliteTierHandle:
         connection = _connect(
             self._path, read_only=self._read_only,
             busy_timeout_ms=self._limits.busy_timeout_ms, retries=self._limits.retries,
+            # Used by exactly one thread -- the one this branch just created it for -- so the
+            # WAL argument above is untouched. The flag is off because `close()` runs on a
+            # *different* thread, and with the check on it raised `ProgrammingError` there,
+            # aborting the loop and leaving every later reader and the handle's own connection
+            # open: precisely the locked file this list exists to prevent.
+            check_same_thread=False,
         )
         self._local.connection = connection
         self._extra_readers.append(connection)
@@ -1545,8 +1618,15 @@ class SqliteTierHandle:
                 if self._write_connection is not None:
                     self._write_connection.close()
                     self._write_connection = None
+        # Every one of them, even if one raises. A loop that stopped at the first failure would
+        # leave the rest open while reporting the problem, which on Windows is a file
+        # `purge_cohort` cannot delete -- the failure this list exists to prevent, reached by the
+        # cleanup rather than by the absence of one.
         for reader in self._extra_readers:
-            reader.close()
+            try:
+                reader.close()
+            except sqlite3.Error:
+                pass
         self._extra_readers.clear()
         self._connection.close()
 
