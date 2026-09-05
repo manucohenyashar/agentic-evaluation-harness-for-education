@@ -61,6 +61,8 @@ FIXTURE_PROVIDER_CLASS = "RecordedFixtureProvider"
 #   "module"  importable module path            -- the module does not exist yet
 #   "path"    repo-relative file or directory   -- a data artifact does not exist yet
 #   "symbol"  "module:dotted.attr"              -- the module exists; this name in it does not
+#   "symbols" "mod:a,mod:b" (comma-separated)   -- a test with more than one blocker; resolved
+#                                                  only when every one of them is
 #
 # `symbol` is what a module split across several stories needs. `aeh.conf` landed with #4, so
 # `find_spec` has said "resolved" since then — but `RunConfig.profile_summary` arrives with #5
@@ -214,37 +216,86 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # File paths, not `::nodeid`s: `test_every_registered_blocker_names_a_file_that_exists`
     # checks only `path.split("::")[0]`, so a typo'd nodeid names nothing and nothing says so.
     # Each file here has exactly one blocker, so the file path loses no precision.
-    # **Known collision, reported rather than silently rewritten.** TS-56 keyed both `"#11"` and
-    # `"#12"` above on this same `aeh.store:open_store`. If `open_store` is #10's — and the entry
-    # below asserts it is, since #10's Goal is "`Store` opens the four lifetime tiers" — then all
-    # three entries fire on #10's first commit, and two of them will name `fuzz_07` tests for
-    # stories that have not shipped. Correcting the other two means choosing symbols for TS-56's
-    # tests, which belongs to whoever owns them; this entry is what makes the conflict visible.
-    # See the PR for #14.
-    "#10 open_store": (
-        "symbol",
-        f"{STORE_MODULE}:open_store",
-        (
-            "tests/integration/store/test_tier_handles.py",
-            "tests/artifact/test_tc_store_15_no_search_surface.py",
-        ),
-    ),
-    # `TC-STORE-15` sits under #10 although `FR-STORE-08` is #13's, which is the same call
-    # `SEC-15` makes for the same requirement one file away: the discriminating question is
-    # which single blocker makes the test runnable and non-vacuous, and all three of its limbs
-    # need a constructible store. The two files must not disagree about this.
+    # **The `"#10 open_store"` entry that stood here was mis-keyed, and #10 landing proved it.**
+    # It keyed `test_tier_handles.py` and `test_tc_store_15_no_search_surface.py` on
+    # `aeh.store:open_store`, on the reasoning that a *constructible* store is what makes them
+    # runnable. #10 landed `open_store` (PR #175), the gate fired on schedule -- and all four
+    # cases it told a reader to unmark fail, because `open_store` is not what they need:
+    #
+    #   `TC-STORE-01`, `-02`, `-16` (`test_tier_handles.py`) call `TierHandle.transaction`,
+    #     which #10 ships as `raise NotImplementedError("... is issue #11 (FR-STORE-04)")`.
+    #   `TC-STORE-15` (`test_tc_store_15_no_search_surface.py`) calls `Store.blobs()`, which
+    #     #10 ships as `raise NotImplementedError("... is issue #12 (FR-STORE-06)")`.
+    #
+    # So both files move to the entries for the stories that actually unblock them. The right
+    # question was never "does a store exist" but "does every symbol this file calls exist",
+    # and a constructor is the weakest available proxy for that when the constructor's own
+    # story deliberately stubs its siblings. Measured, not argued: those four failures are what
+    # `pytest tests/integration/store/test_tier_handles.py
+    # tests/artifact/test_tc_store_15_no_search_surface.py` prints against `main` @ `576157b`.
+    #
+    # The collision that entry existed to report is gone -- #10's PR re-keyed TS-56's `"#11"`
+    # and `"#12"` off `open_store` onto `WriteQueue` and `ContentAddressedBlobStore` -- which is
+    # why this was the only entry that fired.
+    #
+    # A residual weakness this move does not close, recorded rather than papered over: `symbol`
+    # cannot tell a name that is absent from one that is present and raises. `transaction` and
+    # `blobs` both *exist* today; only their bodies are #11's and #12's. The keys below are
+    # therefore proxies -- names that stand in for "the story landed" -- and neither is called by
+    # the file it now guards. That cuts both ways, and the second direction is the worse one:
+    #
+    #   late  -- if #11 spells its metrics accessor something other than `store_metrics`,
+    #            `test_tier_handles.py` sits outside the gate silently, forever.
+    #   early -- if #11 lands `store_metrics` while `transaction` is still a stub, the gate fires,
+    #            a reader unmarks, and three cases fail *inside* `TEST_CMD`. That is the failure
+    #            this commit is repairing, one story further on.
+    #
+    # A fourth kind -- `"implemented"`: resolves *and* does not raise `NotImplementedError` --
+    # narrows it but does not close it for these two targets, because `TierHandle.transaction`
+    # and `Store.blobs` cannot be called without a constructed store over a real data directory,
+    # and `blocker_is_resolved` is handed only `repo_root`. Sizing that probe is a change to the
+    # harness rather than to TS-08, so it is a finding in the PR, not a change here.
+    #
+    # `TC-STORE-15` has **two** blockers, which is why it gets its own entry rather than riding
+    # along with the blob store. Limb 1 sweeps every tier and `Store.blobs()` is one of them
+    # (#12); limb 2 reads the declared statement registry `aeh.store:STATEMENTS`, which is a
+    # fifth invented name and, unlike the other four, **belongs to no story at all** --
+    # `tests/support/store_api.py` attributed it to #10, and #10 closed without it. One entry
+    # takes one target, so the key must be whichever lands *last*, or the gate fires early and
+    # a reader unmarks a test that then reds inside `TEST_CMD`.
+    #
+    # An earlier draft of this commit keyed it on `STATEMENTS` alone, reasoning that #13 lands
+    # after #12 "either way". Checked against the graph rather than the issue numbers, that is
+    # false: **#12 and #13 both carry `Depends on: #10` and nothing else**, so nothing orders
+    # them and both are in the ready set today. Picking either symbol is a coin flip between the
+    # two failure directions, which is how this whole branch started. Hence the `symbols` kind:
+    # the entry names both and resolves only when both do.
+    #
+    # `STATEMENTS` is attributed to **#13** because `FR-STORE-08` ("no search") is #13's
+    # requirement and a declared-statement registry is how a store keeps that promise checkable.
+    # That is a presumption, not a resolution -- no issue's acceptance criteria mention
+    # `STATEMENTS`, and `store_api.py` guessed #10 before #10 closed without it. If #13 closes
+    # without it too, the conjunction never resolves and this P0 case sits outside the gate with
+    # nothing saying so. Reported in the PR for whoever owns the design and the issue graph; it
+    # cannot be fixed from a test file.
     "#11 store_metrics": (
         "symbol",
         f"{STORE_MODULE}:store_metrics",
         (
             "tests/integration/store/test_write_queue.py",
             "tests/integration/store/test_observability.py",
+            "tests/integration/store/test_tier_handles.py",
         ),
     ),
     "#12 blob_store_stats": (
         "symbol",
         f"{STORE_MODULE}:blob_store_stats",
         ("tests/integration/store/test_blob_store.py",),
+    ),
+    "#12 and #13 (Store.blobs + STATEMENTS)": (
+        "symbols",
+        f"{STORE_MODULE}:blob_store_stats,{STORE_MODULE}:STATEMENTS",
+        ("tests/artifact/test_tc_store_15_no_search_surface.py",),
     ),
     "#13 StudentNameInTierDError": (
         "symbol",
@@ -1249,6 +1300,26 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
             if obj is None:
                 return False
         return True
+    if kind == "symbols":
+        # Conjunction: resolved only when **every** listed symbol is. A comma-separated list of
+        # `module:dotted.attr`, since a target already contains `:`.
+        #
+        # `symbol` assumes one test file has one blocker, which is true of nearly every entry
+        # above and false for `TC-STORE-15`: limb 1 sweeps `Store.blobs()` (#12) and limb 2
+        # reads `aeh.store:STATEMENTS` (#13). Neither issue depends on the other -- both carry
+        # `Depends on: #10` and nothing else -- so the graph does not say which lands first, and
+        # a single-symbol key is a coin flip between the two failure directions this registry
+        # exists to prevent. Keying on the earlier one fires the gate while the later blocker is
+        # still a stub, and a reader who does as instructed puts a red P0 case inside `TEST_CMD`.
+        #
+        # Conjunction is the honest encoding: the case becomes runnable when its *last* blocker
+        # lands, whichever that turns out to be. It is deliberately not disjunction -- an "any"
+        # kind would fire early by construction.
+        return all(
+            blocker_is_resolved("symbol", one.strip(), repo_root)
+            for one in target.split(",")
+            if one.strip()
+        )
     if kind == "path":
         return (repo_root / target).exists()
     raise ValueError(

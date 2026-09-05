@@ -1,7 +1,7 @@
 """No search surface — over the *concrete* store, its statements, and its schema.
 
 Case `TC-STORE-15` (`FR-STORE-08`, P0, Artifact assertion), test plan §5.3. Issue #14 (TS-08);
-blocked on issue **#10**.
+blocked on **#12 and #13** together.
 
 **This is the half `SEC-15` deliberately left open, not a duplicate of it.**
 `tests/artifact/test_store_query_surface.py` asserts the same requirement over the `Protocol`s
@@ -25,10 +25,18 @@ a convenience". `R15` and HLD §9.1/§9.8 are the same rule seen from above. The
 rather than a hygiene check is that a similarity lookup over Tier R would let one student's
 scored work influence another's, silently, with every functional case still green.
 
-**Registered on #10, not #13.** `FR-STORE-08` is #13's requirement, but the discriminating
-question the registry asks is *which single blocker, resolved, makes this test runnable and
-non-vacuous* — and all three limbs need a constructible store, which is #10. `SEC-15` records
-the same reasoning for the same requirement, and the two files must not disagree about it.
+**Registered on #13, and this file has two blockers.** An earlier draft registered it on #10,
+reasoning that all three limbs need a constructible store. #10 landed and disproved that: a
+constructible store is necessary and nowhere near sufficient. Limb 1 sweeps every tier and
+`Store.blobs()` is one of them, which #10 ships as a stub naming **#12**; limb 2 reads
+`aeh.store:STATEMENTS`, which no story owns at all. `WRITTEN_AHEAD_BLOCKERS` took one target per
+entry, and the graph does not order #12 against #13 — both carry `Depends on: #10` and nothing
+else — so no single symbol is the right key and picking one is a coin flip between firing early
+and never firing. Hence the registry's `symbols` kind, added for this case: the entry names both
+`blob_store_stats` and `STATEMENTS` and resolves only when both do. `STATEMENTS` is attributed
+to #13 because `FR-STORE-08` is, and that attribution is a presumption reported in the PR rather
+than a settled question hidden behind a key. `SEC-15` asks the same question this file does and is free to reach a
+different issue answering it; what the two must not do is disagree about the question.
 
 Rung note, reported as a finding: the plan puts `TC-STORE-15` at **rung 0**. Limbs 1 and 3 need
 a real instance and a real file, so they are rung 2. The plan's rung is achievable only for a
@@ -49,7 +57,14 @@ from tests.support.store_vocabulary import virtual_table_definitions
 
 pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
 
+#: `open_store` and `Statement` are #10's and landed with it, so this only ever appears in a
+#: message that no longer fires. Kept as provenance for where those two names came from.
 ISSUE = "#10"
+
+#: Limb 2's blocker, and the file's registry key. Separate from `ISSUE` because a
+#: `NotImplementedYet` naming a *closed* issue sends its reader to the wrong story — which is
+#: exactly what a single `ISSUE` constant did here until #10 closed.
+REGISTRY_ISSUE = "#13"
 
 #: The SQL shapes that perform a free-text or similarity search. `FR-STORE-08` names
 #: "similarity, embedding, or free-text search"; `TC-STORE-15` adds content `LIKE` explicitly,
@@ -147,13 +162,16 @@ def test_tc_store_15_a_real_store_exposes_no_search_surface_no_search_statement_
 
     # --- limb 2: the declared statement registry ---------------------------------------------
     #
-    # `STATEMENTS` is a fifth invented name, on the same footing as the four in
-    # `tests/support/store_api.py` and reported with them: the plan requires "the registry
-    # contains no such statement", and design §3.3 requires `query` to take a `Statement` rather
-    # than a string — but nothing declares where the declared statements live. Resolved through
-    # `require` so a missing registry reads as a written-ahead gap naming #10, not as a bare
-    # assertion failure about an attribute nobody promised.
-    registry = require(STORE_MODULE, "STATEMENTS", issue=ISSUE)
+    # `STATEMENTS` is a fifth invented name, and the only one of the five that **no story owns**.
+    # The plan requires "the registry contains no such statement" and design §3.3 types `query`'s
+    # argument as `Statement` rather than `str` — but nothing declares where the declared
+    # statements live, `tests/support/store_api.py` guessed #10, and #10 closed without it.
+    # Attributed to #13 here because `FR-STORE-08` is #13's and a declared-statement registry is
+    # how a store makes "no search" checkable; reported in the PR as an ownership gap, since no
+    # issue's acceptance criteria mention it. Resolved through `require` so its absence reads as
+    # a written-ahead gap naming a story that can still act on it, not as a bare assertion
+    # failure about an attribute nobody promised.
+    registry = require(STORE_MODULE, "STATEMENTS", issue=REGISTRY_ISSUE)
     declared = list(registry.values() if hasattr(registry, "values") else registry)
     assert declared, (
         "TC-STORE-15: the statement registry is empty, so the sweep below asserts nothing. A "
