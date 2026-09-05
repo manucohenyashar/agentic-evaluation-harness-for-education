@@ -78,10 +78,13 @@ HARNESS_FAILURE_TYPES = (
     AssertionError, AttributeError, TypeError, NameError, ImportError, SyntaxError,
 )
 
-#: What a genuine read-only refusal says. SQLite's own wording is "attempt to write a readonly
-#: database"; a store-level guard would name the tier or the mode. Either is a refusal; an
-#: `AttributeError` on a `None` is not.
-READ_ONLY_MARKERS = ("readonly", "read-only", "read only", "not writable", "immutable")
+#: What a genuine read-only refusal says — matched against the exception's **type name as well
+#: as its message**. SQLite's own wording is "attempt to write a readonly database"; a
+#: store-level guard is more likely to be a `ReadOnlyTierError` whose message never uses the
+#: word. Either is a refusal; an `AttributeError` on a `None` is not.
+READ_ONLY_MARKERS = (
+    "readonly", "read-only", "read only", "not writable", "immutable", "notwritable",
+)
 
 
 def _close(store) -> None:
@@ -181,6 +184,16 @@ def test_tc_store_01_four_tiers_open_as_wal_files_in_the_layout_the_design_fixes
         "`purge_cohort` is a VACUUM on one database rather than a two-file consistency "
         f"problem. Found: {sorted(cohort_tables)}"
     )
+    # The assertion above is close to tautological on its own — both tables were written through
+    # the one `cohort()` handle, so of course they landed together. The load-bearing half is the
+    # *file count*: one cohort must produce exactly one database. A store that split R into
+    # `cohorts/COH-1.r.sqlite` would pass everything above and make purge the two-file
+    # consistency problem design §3.3 chose this layout to avoid.
+    cohort_files = sorted(p.name for p in (tmp_data_dir / "cohorts").glob("*.sqlite"))
+    assert cohort_files == ["COH-1.sqlite"], (
+        f"TC-STORE-01: one cohort produced {cohort_files}. Tiers C and R share a single file; "
+        "any second file here is the split the design rejects."
+    )
 
     # (4) WAL, exactly, on every tier file.
     for label, path in tiers:
@@ -216,11 +229,14 @@ def test_tc_store_02_foreign_keys_are_on_for_every_connection_including_after_re
     `foreign_keys` is off — the behavioural assertion alone would pass. So the second half
     asserts the *reason*, not just the failure.
     """
-    seen_handles: list[int] = []
+    # The handle objects themselves, kept alive for the whole case. An earlier draft compared
+    # `id()` values, which is correct here only because the first handle happens to still be
+    # referenced when the second is allocated — a property no reader should have to verify.
+    seen_handles: list[object] = []
     for attempt, phase in enumerate(("first open", "after reconnect")):
         store = open_store(tmp_data_dir, issue=ISSUE)
         handle = store.package("PKG-FK")
-        seen_handles.append(id(handle))
+        seen_handles.append(handle)
 
         if attempt == 0:
             with handle.transaction() as tx:
@@ -251,11 +267,15 @@ def test_tc_store_02_foreign_keys_are_on_for_every_connection_including_after_re
     # at construction — forgetting it on every connection opened later — would hand back the
     # same handle twice, and both loop iterations would probe the one connection that happens to
     # be correct. That is the precise defect this case exists to catch, so it is asserted.
-    assert seen_handles[0] != seen_handles[1], (
+    assert seen_handles[0] is not seen_handles[1], (
         "TC-STORE-02: reopening the store returned the same TierHandle object, so the second "
         "iteration probed the first connection and 'after reconnect' asserted nothing. "
         "FR-STORE-14 is about *every* connection the module hands out."
     )
+    # Object identity is a proxy, not the thing itself: a fresh handle wrapping a memoized
+    # connection still passes. The behavioural half above — the pragma read and the FK-violating
+    # insert, both re-run on the second handle — is what actually probes the connection, and
+    # this assertion only guarantees there was a second handle to probe.
 
 
 def test_tc_store_16_an_imported_tier_p_opens_read_only_and_is_not_touched(tmp_data_dir):
@@ -310,12 +330,16 @@ def test_tc_store_16_an_imported_tier_p_opens_read_only_and_is_not_touched(tmp_d
             "never builds a write queue raises AttributeError on a None, writes nothing, and "
             "leaves mtime and digest intact — so a bare `pytest.raises(Exception)` passes it."
         )
-        message = str(raised.value).lower()
-        assert any(marker in message for marker in READ_ONLY_MARKERS), (
-            f"TC-STORE-16: {door} raised {type(raised.value).__name__}({raised.value!r}), which "
-            "does not say the tier is read-only. The plan's oracle is an *exact* exception; "
-            f"one of {READ_ONLY_MARKERS} must appear so the refusal is distinguishable from an "
-            "unrelated failure that happened to leave the file alone."
+        # The exception's *type name* counts as well as its message. SQLite says "attempt to
+        # write a readonly database"; a store-level guard would more likely raise
+        # `ReadOnlyTierError("writes are not permitted on an imported package")`, whose message
+        # says nothing matching. Requiring the wording alone would red that correct store.
+        evidence = f"{type(raised.value).__name__} {raised.value}".lower()
+        assert any(marker in evidence for marker in READ_ONLY_MARKERS), (
+            f"TC-STORE-16: {door} raised {type(raised.value).__name__}({raised.value!r}), and "
+            "neither its type nor its message says the tier is read-only. The plan's oracle is "
+            f"an *exact* exception; one of {READ_ONLY_MARKERS} must appear so the refusal is "
+            "distinguishable from an unrelated failure that happened to leave the file alone."
         )
 
     _close(store)

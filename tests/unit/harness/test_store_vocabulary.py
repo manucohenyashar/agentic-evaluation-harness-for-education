@@ -52,6 +52,14 @@ STUDENT_NAME_COLUMNS = (
     "family_name",
     "preferred_name",
     "legal_name",
+    # A weak token immediately before a strong one, and a strong token in medial position.
+    # Both survive the strong/weak split that cleared `student_first_seen` and friends — the
+    # split must not have bought its false-positive fix with a false negative.
+    "student_first_name",
+    "student_display_name",
+    "student_name_raw",
+    "student_name_at_enrolment",
+    "pupil_surname_alt",
 )
 
 

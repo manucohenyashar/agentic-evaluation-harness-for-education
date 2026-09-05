@@ -68,6 +68,13 @@ BLOCK_OBSERVATION_S = float(os.environ.get("HARNESS_TEST_BLOCK_OBSERVATION_S", "
 #: backpressure clears it about half the time purely on timing noise, which is not an oracle.
 SLOWDOWN_FACTOR = float(os.environ.get("HARNESS_TEST_SLOWDOWN_FACTOR", "5"))
 
+#: …and a factor alone is not enough either. Seven enqueues of a pure-Python queue `put` each
+#: take single-digit microseconds, so `5x` is a bar of about 10 µs that one GC pause or context
+#: switch clears. The absolute floor is what makes the limb mean "a human-visible slowdown"
+#: rather than "noise in the right direction". Env-gated, since it is a wall-clock figure and
+#: therefore environment-sensitive (`CLAUDE.md` seam 3).
+SLOWDOWN_FLOOR_S = float(os.environ.get("HARNESS_TEST_SLOWDOWN_FLOOR_S", "0.001"))
+
 #: A queue depth small enough to reach deterministically. `TC-STORE-07`'s 999/1000/1001 are the
 #: *default* depth ±1; the case asserts the boundary relative to the **configured** depth, which
 #: is strictly stronger — it fails an implementation that hard-codes 1000 and ignores the knob,
@@ -98,15 +105,14 @@ def _drain(store, handle) -> int:
     this sleep-free: there is no interval to guess, and the bound is a knob.
     """
     deadline = time.monotonic() + THREAD_TIMEOUT_S
-    depth = -1
-    while time.monotonic() < deadline:
+    while True:
         depth = int(store_metrics(store, issue=ISSUE)["write_queue_depth"])
-        if depth == 0:
-            return 0
+        if depth == 0 or time.monotonic() >= deadline:
+            return depth
     # Deliberately no `time.sleep` anywhere in the loop, not even `sleep(0)`: §4.6 sanctions
     # exactly one sleep in this suite and it is TC-ORCH-09's. The poll is bounded by the
-    # deadline instead, and each iteration makes a real call that releases the GIL.
-    return depth
+    # deadline instead, and each iteration makes a real call that releases the GIL — which is
+    # also what lets reader threads be scheduled while this runs (see TC-STORE-03).
 
 
 def test_tc_store_03_readers_never_block_the_writer_and_writes_land_in_enqueue_order(
@@ -126,21 +132,32 @@ def test_tc_store_03_readers_never_block_the_writer_and_writes_land_in_enqueue_o
     everyone together, the second holds the writer until every reader has completed at least one
     query — which is what stops the writer racing to the end before a reader has run at all, and
     makes "a reader completed zero queries" impossible rather than unlikely. The writer then
-    snapshots every counter, does its writes, and snapshots again.
+    snapshots every counter, enqueues, **drains the queue while the readers are still
+    spinning**, and snapshots again.
 
-    The assertion is that **every reader advanced between those two snapshots** — reads
-    completed *during* the write phase, on the far side of a scheduler, which is what "readers
-    do not block the writer and the writer does not block readers" actually looks like from
-    outside. A store that serializes reads and writes behind one mutex, or a rollback-journal
-    database where a reader's shared lock stalls the writer, produces a zero delta for at least
-    one reader and fails here. The previous form of this assertion — "readers were still in
-    their loop when the writer finished" — was true by construction, since the loop exits *on*
-    that event, and asserted nothing.
+    *Writer side* — the drain must complete under read load. This is the limb that names
+    `FR-STORE-03`'s promise: a rollback-journal database whose writer cannot take EXCLUSIVE past
+    eight SHARED locks times out here. Draining after the readers exit would say nothing, since
+    a writer that starves behind reader locks drains perfectly once they stop.
+
+    *Reader side* — no reader shows a zero delta across the write phase, so reads and writes
+    genuinely interleaved.
+
+    Two earlier forms of this assertion were wrong, and both reasons are worth keeping. "Readers
+    were still in their loop when the writer finished" was true by construction, since the loop
+    exits *on* that event. Snapshotting around the enqueues alone was worse: 250 `enqueue_write`
+    calls are pure Python and finish inside CPython's 5 ms switch interval, so the writer held
+    the GIL across both snapshots and every reader showed a zero delta — a false red against a
+    *correct* store, measured in 20 runs out of 20. The drain is what puts real, GIL-releasing
+    work between the snapshots.
+
+    What this case does **not** catch, stated rather than implied: a per-operation shared mutex,
+    where readers and the writer simply alternate and every counter advances. Throughput under
+    contention is `TC-STORE-17`'s (`NFR-STORE-01`, 200 write units/second), not this case's.
 
     **Enqueue order** is read with an explicit `ORDER BY`, because `CT-STORE-18` says the module
     chooses no order and "a caller needing an order states it in the statement", and only after
-    a bounded drain, because `CT-STORE-02` says the rows are not durable when `enqueue_write`
-    returns.
+    the drain, because `CT-STORE-02` says the rows are not durable when `enqueue_write` returns.
 
     **No `SQLITE_BUSY`** (`CT-STORE-11`: "retried internally and never surfaces") is swept over
     every thread. Eight concurrent readers against an active writer is exactly the condition
@@ -182,6 +199,17 @@ def test_tc_store_03_readers_never_block_the_writer_and_writes_land_in_enqueue_o
             snapshots["before"] = list(progress)
             for seq in range(ORDERED_WRITES):
                 handle.enqueue_write(statement(_ORDERED_INSERT, issue=ISSUE), seq=seq)
+            # The drain happens **here**, inside the write phase, while the readers are still
+            # spinning. Two reasons, and the first is why an earlier draft was wrong:
+            #
+            # 1. 250 `enqueue_write` calls are pure Python and return in well under CPython's
+            #    5 ms switch interval, so the writer would hold the GIL across both snapshots
+            #    and every reader would show a zero delta — a deterministic false red against a
+            #    *correct* WAL store, measured at 20 runs out of 20.
+            # 2. Draining under read load is the only place writer-side progress is observed
+            #    while readers hold locks. Draining after they exit tells us nothing: a store
+            #    whose writer starves behind reader locks drains perfectly once the readers stop.
+            snapshots["drained"] = _drain(store)
             snapshots["after"] = list(progress)
         except BaseException as error:  # noqa: BLE001
             errors.append(error)
@@ -216,23 +244,27 @@ def test_tc_store_03_readers_never_block_the_writer_and_writes_land_in_enqueue_o
         "TC-STORE-03: the writer never reached its sampling points, so the interleaving "
         "assertion below would pass vacuously."
     )
+
+    # The writer-side half, and the one that names FR-STORE-03's actual promise.
+    assert snapshots["drained"] == 0, (
+        f"TC-STORE-03: the writer could not drain its queue while {READER_THREADS} readers were "
+        f"active — {snapshots['drained']} rows still pending after {THREAD_TIMEOUT_S}s. That is "
+        "'readers block the writer', which FR-STORE-03 forbids and CT-STORE-04 promises every "
+        "writer. It is a rollback-journal database whose writer cannot take EXCLUSIVE past the "
+        "readers' SHARED locks; it is not a slow box, and raising THREAD_TIMEOUT_S is not the "
+        "fix."
+    )
+
+    # The reader-side half: no reader was starved for the whole write phase.
     stalled = [
         index
         for index in range(READER_THREADS)
         if snapshots["after"][index] <= snapshots["before"][index]
     ]
     assert not stalled, (
-        f"TC-STORE-03: readers {stalled} completed no query while the writer was writing "
-        f"(before={snapshots['before']}, after={snapshots['after']}). Reads and writes did not "
-        "interleave — which is what a shared mutex, or a rollback journal where a reader's "
-        "shared lock stalls the writer, looks like from outside. FR-STORE-03: 'concurrent "
-        "readers shall not block the writer'; CT-STORE-04 makes it a promise to every writer."
-    )
-
-    remaining = _drain(store, handle)
-    assert remaining == 0, (
-        f"TC-STORE-03: the write queue still held {remaining} rows after {THREAD_TIMEOUT_S}s. "
-        "The ordering assertion below cannot run against a queue that never drained."
+        f"TC-STORE-03: readers {stalled} completed no query while the writer was writing and "
+        f"draining (before={snapshots['before']}, after={snapshots['after']}). Reads and writes "
+        "did not interleave at all, so the two are serialized against each other."
     )
 
     rows = list(handle.query(statement(_ORDERED_READ, issue=ISSUE)))
@@ -353,12 +385,14 @@ def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_dept
         finished.wait(timeout=THREAD_TIMEOUT_S)
         baseline = statistics.median(below_durations) if below_durations else 0.0
         duration = over["duration"]
-        assert duration is not None and duration > baseline * SLOWDOWN_FACTOR, (
+        bar = max(baseline * SLOWDOWN_FACTOR, SLOWDOWN_FLOOR_S)
+        assert duration is not None and duration > bar, (
             "TC-STORE-07: the enqueue above the threshold neither blocked nor slowed "
-            f"meaningfully — {duration:.6f}s against a sub-threshold median of {baseline:.6f}s, "
-            f"which is under the {SLOWDOWN_FACTOR}x this case requires before it believes a "
-            "slowdown. FR-STORE-05 requires blocking or slowing; an enqueue that sails through "
-            "above the depth applies no backpressure at all, whatever the signal says."
+            f"meaningfully — {duration:.6f}s against a bar of {bar:.6f}s "
+            f"(max of {SLOWDOWN_FACTOR}x the sub-threshold median {baseline:.6f}s, and the "
+            f"{SLOWDOWN_FLOOR_S:.6f}s absolute floor). FR-STORE-05 requires blocking or "
+            "slowing; an enqueue that sails through above the depth applies no backpressure at "
+            "all, whatever the signal says."
         )
 
     thread.join(timeout=BLOCK_OBSERVATION_S)

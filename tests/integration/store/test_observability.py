@@ -19,6 +19,7 @@ window has lost the window; the alert is the only thing that says so in time.
 from __future__ import annotations
 
 import os
+import time
 
 import pytest
 
@@ -40,6 +41,10 @@ SATURATION_WRITES = int(os.environ.get("HARNESS_TEST_SATURATION_WRITES", "400"))
 #: projected remaining-run requirement." Expressed as a projection larger than any real disk, so
 #: the breach is a property of the arithmetic rather than of whatever machine runs the suite.
 IMPOSSIBLE_PROJECTION_BYTES = 1 << 60  # 1 EiB
+
+#: Bound on the drain poll before reading commit latency. A ceiling, not a sleep — §4.6
+#: sanctions one sleep in this suite and it is TC-ORCH-09's.
+DRAIN_TIMEOUT_S = float(os.environ.get("HARNESS_TEST_THREAD_TIMEOUT_S", "30"))
 ENV_PROJECTED_REMAINING = "HARNESS_PROJECTED_RUN_BYTES"
 
 _DDL = "CREATE TABLE metric_rows (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)"
@@ -86,13 +91,28 @@ def test_tc_store_24_every_named_signal_is_emitted_and_the_free_disk_alert_fires
     with durable.transaction() as tx:
         tx.execute(statement(_DDL, issue=ISSUE))
 
+    # Sampled *during* saturation, because that is the only moment a queue-depth signal can be
+    # distinguished from a hard-coded zero. Reading it after the queue drains reports 0 whether
+    # the store counts pending rows or returns a constant.
+    peak_depth = 0
     for index in range(SATURATION_WRITES):
         cohort.enqueue_write(statement(_INSERT, issue=ISSUE), payload=f"row-{index:05d}")
+        if index % 50 == 0:
+            peak_depth = max(
+                peak_depth, int(store_metrics(store, issue=ISSUE)["write_queue_depth"])
+            )
 
     # CT-STORE-02: enqueue_write returns before the row is durable, so a caller that must
     # observe its own writes goes through a transaction rather than waiting.
     with cohort.transaction() as tx:
         tx.execute(statement(_INSERT, issue=ISSUE), payload="flush")
+
+    # Let the batches actually commit before reading commit latency: nothing else in this case
+    # waits for one, and a metric read before any commit honestly reports nothing.
+    deadline = time.monotonic() + DRAIN_TIMEOUT_S
+    while int(store_metrics(store, issue=ISSUE)["write_queue_depth"]) > 0:
+        if time.monotonic() >= deadline:
+            break
 
     metrics = store_metrics(store, issue=ISSUE)
 
@@ -131,13 +151,17 @@ def test_tc_store_24_every_named_signal_is_emitted_and_the_free_disk_alert_fires
     )
     assert metrics["batch_commit_latency_ms"] > 0, (
         f"TC-STORE-24: batch commit latency is {metrics['batch_commit_latency_ms']!r} after "
-        f"{SATURATION_WRITES} writes across a 50 ms commit interval. Commits demonstrably "
-        "happened, so a zero means nothing observed the commit path — the path NFR-STORE-02's "
-        "five-second durability window is measured against."
+        f"{SATURATION_WRITES} writes across a 50 ms commit interval, and after waiting for the "
+        "queue to drain. Commits demonstrably happened, so a zero means nothing observed the "
+        "commit path — the path NFR-STORE-02's five-second durability window is measured "
+        "against."
     )
-    assert isinstance(metrics["write_queue_depth"], int), (
-        "TC-STORE-24: write_queue_depth is not an integer count of pending rows. It is the "
-        "other alert input CT-STORE-17 makes contract, and M-ORCH throttles on it."
+    assert peak_depth > 0, (
+        f"TC-STORE-24: write_queue_depth never rose above zero while {SATURATION_WRITES} writes "
+        "were being enqueued, so it is not counting pending rows. An `isinstance(..., int)` "
+        "check here would be satisfied by the hard-coded zero this assertion exists to rule "
+        "out. It is one of the two alert inputs CT-STORE-17 makes contract, and M-ORCH "
+        "throttles on it."
     )
     # `vacuum_duration_ms` is deliberately asserted only for presence and type here: no VACUUM
     # has run, so zero is the *honest* value, and demanding a positive one would require a

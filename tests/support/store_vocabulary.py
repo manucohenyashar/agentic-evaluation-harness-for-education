@@ -37,15 +37,33 @@ import sqlite3
 #: Who the column is about. Absent these, `*_name` is a criterion, a run or a metric.
 PERSON_TOKENS: frozenset[str] = frozenset({"student", "pupil", "learner", "candidate", "child"})
 
-#: What about them. `first`/`last`/`middle`/`preferred` are here without `name` because
-#: `student_first` is exactly as identifying as `student_first_name`.
-NAME_TOKENS: frozenset[str] = frozenset(
+#: What about them, in two strengths — and the split is the whole rule.
+#:
+#: **Strong** tokens mean a name wherever they appear next to a person token. **Weak** ones do
+#: not: `first`, `last`, `family`, `display` and the rest are ordinary English that Tier D has
+#: every reason to use. Measured against a rule that treated them as strong,
+#: `student_first_seen`, `student_last_seen_at`, `student_family_income`,
+#: `student_display_order`, `learner_given_consent`, `student_preferred_language` and
+#: `pupil_last_updated` were all flagged — longitudinal per-student columns, which is precisely
+#: what a permanent pseudonymous tier is *for*. Redding the build against those is the same
+#: failure the `*_name` rule had, wearing different clothes.
+#:
+#: So a weak token counts only when it is **terminal** (`student_first` is as identifying as
+#: `student_first_name`) or **immediately followed by a strong token** (`student_first_name`,
+#: `student_display_name`).
+STRONG_NAME_TOKENS: frozenset[str] = frozenset(
     {
         "name", "names", "fullname", "firstname", "lastname", "surname", "forename",
-        "givenname", "familyname", "initials", "first", "last", "given", "family",
-        "middle", "preferred", "display",
+        "givenname", "familyname", "initials",
     }
 )
+
+WEAK_NAME_TOKENS: frozenset[str] = frozenset(
+    {"first", "last", "given", "family", "middle", "preferred", "display"}
+)
+
+#: Kept as the union for readers and for callers that want the whole vocabulary.
+NAME_TOKENS: frozenset[str] = STRONG_NAME_TOKENS | WEAK_NAME_TOKENS
 
 #: The pseudonymous shape `FR-STORE-12` *requires*. A person token with one of these is the
 #: sanctioned Tier D column, not a violation — `student_ref` is the whole point of the clause,
@@ -81,6 +99,15 @@ NON_STUDENT_NAME_COLUMNS: frozenset[str] = frozenset(
         "display_name", "name_hash", "renamed_at", "nametag",
         # The pseudonymous shapes the clause *requires*, which an over-eager rule flags.
         "student_ref", "pupil_id", "learner_ref", "candidate_code", "student_uuid",
+        # Longitudinal per-student columns — the reason Tier D exists. Every one of these was
+        # flagged by the person+name rule before `NAME_TOKENS` was split into strong and weak,
+        # and none of the 33 entries above has this shape: they were all written against the
+        # *previous* rule's failure mode, so 57 green controls said nothing about this one. A
+        # control set that does not cover its rule's own risk surface is decoration.
+        "student_first_seen", "student_last_seen_at", "learner_last_active",
+        "candidate_last_attempt", "student_family_income", "student_family_size",
+        "student_display_order", "pupil_last_updated", "student_middle_school",
+        "learner_given_consent", "student_preferred_language", "candidate_first_language",
     }
 )
 
@@ -98,17 +125,26 @@ def is_student_name_column(column: str) -> bool:
     different threat from the one `FR-STORE-12` describes.
     """
     lowered = column.lower().strip()
-    words = set(re.split(r"[_\s-]+", lowered))
+    words = re.split(r"[_\s-]+", lowered)
+    unique = set(words)
 
     if lowered in BARE_NAME_COLUMNS:
         return True
 
-    if words & PERSON_TOKENS:
+    if unique & PERSON_TOKENS:
         # `student_ref`, `pupil_id`, `learner_uuid` — the shape the clause requires.
-        if words & PSEUDONYM_TOKENS:
+        if unique & PSEUDONYM_TOKENS:
             return False
-        if words & NAME_TOKENS:
-            return True
+        for position, word in enumerate(words):
+            if word in STRONG_NAME_TOKENS:
+                return True
+            if word in WEAK_NAME_TOKENS:
+                terminal = position == len(words) - 1
+                before_strong = (
+                    position + 1 < len(words) and words[position + 1] in STRONG_NAME_TOKENS
+                )
+                if terminal or before_strong:
+                    return True
 
     # `studentname`, `pupilForename` — a person and a name glued into one token.
     return bool(

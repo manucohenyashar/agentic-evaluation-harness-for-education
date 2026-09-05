@@ -18,6 +18,8 @@ one that outlives every retention control the system has.
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from tests.support.store_api import open_store, statement, student_name_error
@@ -49,33 +51,49 @@ _AUDIT_INSERT = (
 )
 _AUDIT_READ = "SELECT student_ref FROM audit_record ORDER BY id"
 
-#: The forbidden shape, as **inserts**. `FR-STORE-12` is precise about this: Tier D "shall
-#: reject any *insert* containing a column mapped as a student-name field". So the guard reads
-#: the column list of the statement it is asked to execute, and refuses — whether or not the
-#: table happens to have such a column. An earlier draft asserted on `CREATE TABLE` instead,
-#: which tests a schema guard the requirement never asks for and never exercises the write path
-#: it does: an implementation doing exactly what FR-STORE-12 says would have failed it.
+#: The table limb 1 inserts into. Created **through an independent `sqlite3` connection**, not
+#: through the store, and carrying every forbidden spelling as a real column.
 #:
+#: That indirection is the whole point. `FR-STORE-12` requires the *insert* to be rejected, so
+#: the insert must be valid SQL — otherwise SQLite raises `OperationalError: table audit_record
+#: has no column named student_name` and the case is broken in both directions at once. A
+#: correct guard that runs after SQLite prepares the statement would red, because the schema
+#: error arrives first; and a store with **no** name guard at all would pass, because SQLite's
+#: own message contains the spelling the assertion looks for. Against a well-formed insert into
+#: a table that really has the column, an unguarded store *succeeds* — which is the failure the
+#: case needs to be able to see.
+_POISONED_TABLE = "audit_with_names"
+_POISONED_DDL = (
+    f"CREATE TABLE {_POISONED_TABLE} ("
+    "  id INTEGER PRIMARY KEY,"
+    "  student_ref TEXT NOT NULL,"
+    "  criterion_id TEXT NOT NULL,"
+    "  decision TEXT NOT NULL,"
+    "  student_name TEXT,"
+    "  full_name TEXT,"
+    "  surname TEXT,"
+    "  pupil_forename TEXT"
+    ")"
+)
+
 #: One literal per spelling, so a failure names the spelling that got through rather than
 #: reporting that "an insert succeeded".
 _NAME_BEARING_INSERTS = {
-    "student_name": (
-        "INSERT INTO audit_record (student_ref, student_name, criterion_id, decision) "
-        "VALUES (:student_ref, :student_name, :criterion_id, :decision)"
-    ),
-    "full_name": (
-        "INSERT INTO audit_record (student_ref, full_name, criterion_id, decision) "
-        "VALUES (:student_ref, :full_name, :criterion_id, :decision)"
-    ),
-    "surname": (
-        "INSERT INTO audit_record (student_ref, surname, criterion_id, decision) "
-        "VALUES (:student_ref, :surname, :criterion_id, :decision)"
-    ),
-    "pupil_forename": (
-        "INSERT INTO audit_record (student_ref, pupil_forename, criterion_id, decision) "
-        "VALUES (:student_ref, :pupil_forename, :criterion_id, :decision)"
-    ),
+    spelling: (
+        f"INSERT INTO {_POISONED_TABLE} (student_ref, criterion_id, decision, {spelling}) "
+        f"VALUES (:student_ref, :criterion_id, :decision, :{spelling})"
+    )
+    for spelling in ("student_name", "full_name", "surname", "pupil_forename")
 }
+
+#: The control that tells a *guard* apart from a blanket wrapper. A store that simply re-raises
+#: every Tier D `OperationalError` as `StudentNameInTierDError` passes limb 1 without inspecting
+#: a single column name; this insert names a column that does not exist and is not a name, so it
+#: must fail as something else.
+_UNKNOWN_COLUMN_INSERT = (
+    f"INSERT INTO {_POISONED_TABLE} (student_ref, criterion_label) "
+    "VALUES (:student_ref, :criterion_label)"
+)
 
 #: The values each forbidden insert would carry. A real name, because the guard must key on the
 #: *column*, not on anything about the value — `FR-STORE-12` says "a column mapped as a
@@ -132,6 +150,13 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
         tx.execute(statement(_AUDIT_DDL, issue=ISSUE))
 
     # --- limb 1: every name-bearing *insert* is refused, by the exact error ------------------
+    #
+    # The table is created outside the store so that no DDL guard can pre-empt the case: the
+    # question is what happens to the *insert*.
+    durable_path = tmp_data_dir / DURABLE_FILE
+    with sqlite3.connect(durable_path) as raw:
+        raw.execute(_POISONED_DDL)
+
     for spelling, sql in sorted(_NAME_BEARING_INSERTS.items()):
         params = {
             "student_ref": "ref-00417",
@@ -147,6 +172,23 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
             f"it: {raised.value!r}. An operator who cannot see which column was rejected cannot "
             "fix the caller."
         )
+
+    # The control: an unknown, innocuous column must fail as something *other* than the name
+    # guard. Without it, a store that wraps every Tier D error in StudentNameInTierDError passes
+    # every assertion above while inspecting no column names at all.
+    with pytest.raises(Exception) as unrelated:
+        with durable.transaction() as tx:
+            tx.execute(
+                statement(_UNKNOWN_COLUMN_INSERT, issue=ISSUE),
+                student_ref="ref-00418",
+                criterion_label="legible",
+            )
+    assert not isinstance(unrelated.value, StudentNameInTierD), (
+        "TC-STORE-12: an insert naming `criterion_label` — a column that does not exist and is "
+        f"not a name — was rejected as a student-name violation: {unrelated.value!r}. That is a "
+        "blanket wrapper around Tier D errors, not the FR-STORE-12 guard, and it would report "
+        "every schema typo as a privacy incident while catching no actual name."
+    )
 
     # --- limb 2: the pseudonymous shape is accepted, and actually lands ---------------------
     with durable.transaction() as tx:
@@ -165,11 +207,14 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
     )
 
     # --- limb 3: the schema, swept ------------------------------------------------------------
-    durable_path = tmp_data_dir / DURABLE_FILE
+    #
+    # `_POISONED_TABLE` is excluded by name: this case created it itself, behind the store's
+    # back, precisely so limb 1 had a valid insert to make. Sweeping it would be asserting on
+    # the test's own fixture. Everything the *store* created is in scope.
     offenders: list[str] = []
     inspected = 0
     for table in sorted(table_names(durable_path)):
-        if table.startswith("sqlite_"):
+        if table.startswith("sqlite_") or table == _POISONED_TABLE:
             continue
         for column in column_names(durable_path, table):
             inspected += 1

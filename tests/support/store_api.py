@@ -68,6 +68,13 @@ STATEMENT_REGISTRY = "STATEMENTS"
 #
 # Both are reported in the PR against the design rather than resolved here. If #10 lands
 # `WriteUnit` and `Tx` with real shapes, the two helpers below are where the tests adapt.
+#
+# A third assumption, of a different kind: `TC-STORE-03` shares **one** `TierHandle` across nine
+# threads. Neither §3.3 nor `FR-STORE-03` says a handle is safe for concurrent `query`, and
+# `CT-STORE-04` promises only that "concurrent readers never block the writer" — which implies
+# concurrency at the store, not necessarily through a single handle object. If #11 decides a
+# handle is per-thread, that case needs one handle per reader and the PR flags it now rather
+# than leaving the next reader to discover it from a segfault.
 
 
 def open_store(data_dir, issue: str = "#10", **kwargs: Any):
