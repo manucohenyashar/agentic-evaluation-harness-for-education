@@ -239,18 +239,36 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # A residual weakness this move does not close, recorded rather than papered over: `symbol`
     # cannot tell a name that is absent from one that is present and raises. `transaction` and
     # `blobs` both *exist* today; only their bodies are #11's and #12's. The keys below are
-    # therefore still proxies -- invented accessors that stand in for "the story landed" -- and
-    # if #11 spells its metrics accessor differently these files stay outside the gate silently,
-    # which is the failure mode this whole registry exists to prevent. A fourth kind
-    # (`"implemented"`: the symbol resolves *and* calling it does not raise `NotImplementedError`)
-    # would close it. That is a change to the harness rather than to TS-08, so it is a finding in
-    # the PR, not a change here.
+    # therefore proxies -- names that stand in for "the story landed" -- and neither is called by
+    # the file it now guards. That cuts both ways, and the second direction is the worse one:
     #
-    # `TC-STORE-15` sits under **#12** although `FR-STORE-08` is #13's -- the same call `SEC-15`
-    # makes for the same requirement one file away. The discriminating question is unchanged:
-    # which single blocker makes the test runnable and non-vacuous. For this file it is the blob
-    # store, because limb 1 sweeps every tier and `blobs()` is one of them. The two files must
-    # agree about the *question*; they are free to reach different issues answering it.
+    #   late  -- if #11 spells its metrics accessor something other than `store_metrics`,
+    #            `test_tier_handles.py` sits outside the gate silently, forever.
+    #   early -- if #11 lands `store_metrics` while `transaction` is still a stub, the gate fires,
+    #            a reader unmarks, and three cases fail *inside* `TEST_CMD`. That is the failure
+    #            this commit is repairing, one story further on.
+    #
+    # A fourth kind -- `"implemented"`: resolves *and* does not raise `NotImplementedError` --
+    # narrows it but does not close it for these two targets, because `TierHandle.transaction`
+    # and `Store.blobs` cannot be called without a constructed store over a real data directory,
+    # and `blocker_is_resolved` is handed only `repo_root`. Sizing that probe is a change to the
+    # harness rather than to TS-08, so it is a finding in the PR, not a change here.
+    #
+    # `TC-STORE-15` has **two** blockers, which is why it gets its own entry rather than riding
+    # along with the blob store. Limb 1 sweeps every tier and `Store.blobs()` is one of them
+    # (#12); limb 2 reads the declared statement registry `aeh.store:STATEMENTS`, which is a
+    # fifth invented name and, unlike the other four, **belongs to no story at all** --
+    # `tests/support/store_api.py` attributed it to #10, and #10 closed without it. One entry
+    # takes one target, so the key must be whichever lands *last*, or the gate fires early and
+    # a reader unmarks a test that then reds inside `TEST_CMD`.
+    #
+    # `STATEMENTS` is that one. It is keyed to **#13** as the presumed owner -- `FR-STORE-08`
+    # ("no search") is #13's requirement and a declared-statement registry is how a store keeps
+    # that promise checkable -- and #13 lands after #12 either way. But no issue's acceptance
+    # criteria mention `STATEMENTS`, so this is an ownership gap, not a resolved question: if
+    # #13 closes without it, this P0 case sits outside the gate with nothing saying so. Reported
+    # in the PR for whoever owns the design and the issue graph; it cannot be fixed from a test
+    # file.
     "#11 store_metrics": (
         "symbol",
         f"{STORE_MODULE}:store_metrics",
@@ -263,10 +281,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "#12 blob_store_stats": (
         "symbol",
         f"{STORE_MODULE}:blob_store_stats",
-        (
-            "tests/integration/store/test_blob_store.py",
-            "tests/artifact/test_tc_store_15_no_search_surface.py",
-        ),
+        ("tests/integration/store/test_blob_store.py",),
+    ),
+    "#13 STATEMENTS": (
+        "symbol",
+        f"{STORE_MODULE}:STATEMENTS",
+        ("tests/artifact/test_tc_store_15_no_search_surface.py",),
     ),
     "#13 StudentNameInTierDError": (
         "symbol",

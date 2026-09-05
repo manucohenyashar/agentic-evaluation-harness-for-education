@@ -34,6 +34,10 @@ from tests.support.store_vocabulary import journal_mode, table_names
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
+#: `open_store` and `Statement` are #10's and landed with it, so this constant now only appears
+#: in `require` messages that no longer fire. Kept as provenance rather than re-pointed at #11:
+#: the three cases are *blocked* on #11, but the two names this constant labels are not #11's,
+#: and a message that says otherwise sends its reader to the wrong story.
 ISSUE = "#10"
 
 #: Design §3.3's data model, verbatim. The file mapping *is* the requirement — "P (per package

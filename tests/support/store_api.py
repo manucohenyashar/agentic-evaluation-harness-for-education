@@ -17,9 +17,16 @@ them across six test files does three things:
 
 The invented names are also the `WRITTEN_AHEAD_BLOCKERS` keys, for the reason TS-74 records:
 a key on a **protocol member** resolves the moment #10 creates the `Protocol`, firing the gate
-two or three stories before the test could possibly run. `open_store`, `store_metrics`,
-`blob_store_stats` and `StudentNameInTierDError` appear in no Interfaces block, so none can
-exist before an implementation of the story that owns it does.
+two or three stories before the test could possibly run. `store_metrics`, `blob_store_stats`,
+`StudentNameInTierDError` and `STATEMENTS` appear in no Interfaces block, so none can exist
+before an implementation of the story that owns it does.
+
+**`open_store` is no longer one of them, and #10 is why.** It was a key until #10 landed it and
+the gate fired -- correctly -- on four cases that then all failed, because they call
+`TierHandle.transaction` (#11) and `Store.blobs()` (#12), which #10 ships as deliberate stubs.
+A constructor is the weakest available proxy for "every symbol this file calls exists" precisely
+when the constructor's own story stubs its siblings. The lesson is recorded at length in
+`tests/support/impl.py`; what it costs here is one line of this docstring.
 """
 
 from __future__ import annotations
@@ -47,11 +54,22 @@ BLOB_STORE_STATS = "blob_store_stats"
 #: here and reported as a design gap.
 STUDENT_NAME_ERROR = "StudentNameInTierDError"
 
-#: #10 — the declared-statement registry `TC-STORE-15` sweeps. The plan requires that "the
-#: registry contains no such statement" and §3.3 types `query`'s argument as `Statement` rather
-#: than `str`, but nothing says where the declared set lives. Resolved in
-#: `tests/artifact/test_tc_store_15_no_search_surface.py` rather than here, since only that case
-#: needs it — listed here so the gap accounting is in one place.
+#: **Unowned** — the declared-statement registry `TC-STORE-15` sweeps, and the one name of the
+#: five that belongs to no story. The plan requires that "the registry contains no such
+#: statement" and §3.3 types `query`'s argument as `Statement` rather than `str`, but nothing
+#: says where the declared set lives. This comment said "#10" until #10 closed without it, which
+#: is how the gap surfaced: the case's `require` then named a *closed* issue, sending its reader
+#: to a story that could no longer act.
+#:
+#: Now attributed to **#13** — `FR-STORE-08` ("no search") is #13's, and a declared-statement
+#: registry is how a store makes that promise checkable — and keyed there in
+#: `WRITTEN_AHEAD_BLOCKERS`. That is a presumption, not a resolution: no issue's acceptance
+#: criteria mention `STATEMENTS`, so if #13 closes without it this P0 case sits outside the gate
+#: with nothing saying so. Reported in the PR; it needs an owner in the design or the issue
+#: graph, and cannot be fixed from a test file.
+#:
+#: Resolved in `tests/artifact/test_tc_store_15_no_search_surface.py` rather than here, since
+#: only that case needs it — listed here so the gap accounting stays in one place.
 STATEMENT_REGISTRY = "STATEMENTS"
 
 # --- two invented *signatures*, which are a different kind of gap ----------------------------
