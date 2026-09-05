@@ -157,7 +157,16 @@ def test_tc_store_09_identical_content_is_stored_once_and_the_database_holds_onl
 
     cohort_path = tmp_data_dir / "cohorts" / "COH-BLOB.sqlite"
     needle = original[len(b"%PDF-1.7\n"): len(b"%PDF-1.7\n") + 512]
-    offenders = _columns_containing(cohort_path, needle)
+    offenders, inspected = _columns_containing(cohort_path, needle)
+
+    # Without this the limb is passed by a sweep that read nothing at all — an independent
+    # `mode=ro` reader that could not see the WAL-resident row would return zero offenders and
+    # look identical to a clean database. TC-STORE-12's schema sweep carries the same guard.
+    assert inspected, (
+        "TC-STORE-09: the content sweep inspected no rows, so it would report 'no blob content "
+        "in the database' against a database it never read. The row inserted above committed "
+        "through a transaction and must be visible to an independent reader."
+    )
     assert not offenders, (
         "TC-STORE-09: blob content is stored in the database as well as on disk "
         f"({', '.join(offenders)}). FR-STORE-06 stores 'only the hash and relative path in the "
@@ -166,9 +175,19 @@ def test_tc_store_09_identical_content_is_stored_once_and_the_database_holds_onl
     )
 
 
-def _columns_containing(db_path, needle: bytes) -> list[str]:
-    """Every `table.column` whose values contain `needle`, read independently."""
+def _columns_containing(db_path, needle: bytes) -> tuple[list[str], int]:
+    """Every `table.column` whose values contain `needle`, plus how many values were read.
+
+    The count is the non-vacuity guard: a sweep that inspected nothing reports no offenders and
+    is indistinguishable from a clean database.
+
+    Identifiers are interpolated because `PRAGMA table_info` and a per-column `SELECT` cannot
+    take them as parameters. They come from `sqlite_master` in a file this test just created, so
+    there is no untrusted input — and this is test code, which `SEC-15`'s walker does not scan
+    (it walks `src/` and `harness/`). `tests/support/store_vocabulary.py` does the same.
+    """
     found: list[str] = []
+    inspected = 0
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
         connection.text_factory = bytes
         for table in sorted(table_names(db_path)):
@@ -177,7 +196,8 @@ def _columns_containing(db_path, needle: bytes) -> list[str]:
             columns = [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
             for column in columns:
                 for (value,) in connection.execute(f'SELECT "{column}" FROM "{table}"'):
+                    inspected += 1
                     if isinstance(value, (bytes, bytearray)) and needle in value:
                         found.append(f"{table}.{column}")
                         break
-    return found
+    return found, inspected

@@ -203,6 +203,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # File paths, not `::nodeid`s: `test_every_registered_blocker_names_a_file_that_exists`
     # checks only `path.split("::")[0]`, so a typo'd nodeid names nothing and nothing says so.
     # Each file here has exactly one blocker, so the file path loses no precision.
+    # **Known collision, reported rather than silently rewritten.** TS-56 keyed both `"#11"` and
+    # `"#12"` above on this same `aeh.store:open_store`. If `open_store` is #10's — and the entry
+    # below asserts it is, since #10's Goal is "`Store` opens the four lifetime tiers" — then all
+    # three entries fire on #10's first commit, and two of them will name `fuzz_07` tests for
+    # stories that have not shipped. Correcting the other two means choosing symbols for TS-56's
+    # tests, which belongs to whoever owns them; this entry is what makes the conflict visible.
+    # See the PR for #14.
     "#10 open_store": (
         "symbol",
         f"{STORE_MODULE}:open_store",

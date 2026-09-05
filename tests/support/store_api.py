@@ -47,6 +47,28 @@ BLOB_STORE_STATS = "blob_store_stats"
 #: here and reported as a design gap.
 STUDENT_NAME_ERROR = "StudentNameInTierDError"
 
+#: #10 — the declared-statement registry `TC-STORE-15` sweeps. The plan requires that "the
+#: registry contains no such statement" and §3.3 types `query`'s argument as `Statement` rather
+#: than `str`, but nothing says where the declared set lives. Resolved in
+#: `tests/artifact/test_tc_store_15_no_search_surface.py` rather than here, since only that case
+#: needs it — listed here so the gap accounting is in one place.
+STATEMENT_REGISTRY = "STATEMENTS"
+
+# --- two invented *signatures*, which are a different kind of gap ----------------------------
+#
+# The names above are things the design does not mention. These two are places the tests
+# **contradict** what it does say, which is worth stating separately rather than burying:
+#
+# 1. `TierHandle.enqueue_write(self, unit: WriteUnit) -> None` (§3.3). Every case here calls
+#    `enqueue_write(statement(...), **params)` instead, because `WriteUnit` is declared nowhere
+#    — it appears in that one signature and in no data-model or Interfaces block. A test cannot
+#    construct a type the design only names.
+# 2. `transaction() -> ContextManager[Tx]` (§3.3). `Tx` is likewise never defined, so the cases
+#    assume `tx.execute(stmt, **params)` by analogy with `query`.
+#
+# Both are reported in the PR against the design rather than resolved here. If #10 lands
+# `WriteUnit` and `Tx` with real shapes, the two helpers below are where the tests adapt.
+
 
 def open_store(data_dir, issue: str = "#10", **kwargs: Any):
     """Open a `Store` rooted at `data_dir`.

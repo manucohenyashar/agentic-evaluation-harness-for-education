@@ -54,8 +54,12 @@ ISSUE = "#10"
 #: The SQL shapes that perform a free-text or similarity search. `FR-STORE-08` names
 #: "similarity, embedding, or free-text search"; `TC-STORE-15` adds content `LIKE` explicitly,
 #: which is the one an author reaches for without thinking of it as search at all.
+#: `LIKE` is matched as a bare word, not as `like\s+[:?']`. The narrower form missed
+#: `WHERE lower(body) LIKE lower(:q)` — a function-wrapped comparison, which is the *more*
+#: likely spelling for a case-insensitive content search and precisely the shape the plan
+#: describes as the one "an author reaches for without thinking of it as search".
 SEARCH_SQL_PATTERNS: dict[str, str] = {
-    "LIKE": r"\blike\s+[:?']",
+    "LIKE": r"\blike\b",
     "GLOB": r"\bglob\b",
     "MATCH": r"\bmatch\b",
     "FTS virtual table": r"\bcreate\s+virtual\s+table\b",
@@ -142,13 +146,20 @@ def test_tc_store_15_a_real_store_exposes_no_search_surface_no_search_statement_
             )
 
     # --- limb 2: the declared statement registry ---------------------------------------------
-    registry = getattr(store_module, "STATEMENTS", None)
-    assert registry is not None, (
-        "TC-STORE-15: the module declares no statement registry. `TierHandle.query` takes a "
-        "`Statement`, not a string (design §3.3), so the set of statements the store can issue "
-        "is meant to be enumerable — and a set nobody can enumerate is one nobody can check."
+    #
+    # `STATEMENTS` is a fifth invented name, on the same footing as the four in
+    # `tests/support/store_api.py` and reported with them: the plan requires "the registry
+    # contains no such statement", and design §3.3 requires `query` to take a `Statement` rather
+    # than a string — but nothing declares where the declared statements live. Resolved through
+    # `require` so a missing registry reads as a written-ahead gap naming #10, not as a bare
+    # assertion failure about an attribute nobody promised.
+    registry = require(STORE_MODULE, "STATEMENTS", issue=ISSUE)
+    declared = list(registry.values() if hasattr(registry, "values") else registry)
+    assert declared, (
+        "TC-STORE-15: the statement registry is empty, so the sweep below asserts nothing. A "
+        "store that issues no declared statement at all cannot be the one under test — "
+        "`TierHandle.query` takes a `Statement` and every read goes through one."
     )
-    declared = registry.values() if hasattr(registry, "values") else registry
     for entry in declared:
         text = str(getattr(entry, "sql", entry)).lower()
         for shape, pattern in SEARCH_SQL_PATTERNS.items():
@@ -187,8 +198,9 @@ def test_tc_store_15_the_search_sql_patterns_catch_what_they_claim_to():
     registry's file-level accounting could not describe that.
     """
     probes = {
-        "LIKE": "SELECT id FROM evidence WHERE body LIKE :needle",
+        "LIKE": "SELECT id FROM evidence WHERE lower(body) LIKE lower(:needle)",
         "GLOB": "SELECT id FROM evidence WHERE body GLOB '*essay*'",
+        # The function-wrapped form, which the narrower `like\s+[:?']` pattern walked past.
         "MATCH": "SELECT id FROM evidence_fts WHERE evidence_fts MATCH :q",
         "FTS virtual table": "CREATE VIRTUAL TABLE evidence_fts USING fts5(body)",
         "fts module": "CREATE VIRTUAL TABLE x USING fts4(body)",

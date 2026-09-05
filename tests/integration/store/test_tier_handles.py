@@ -26,6 +26,7 @@ import sqlite3
 
 import pytest
 
+from tests.support.impl import require_attr
 from tests.support.store_api import open_store, statement
 from tests.support.store_vocabulary import journal_mode, table_names
 
@@ -70,16 +71,31 @@ def _digest(path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _close(store) -> None:
-    """Close a store if it offers a close; design §3.3 declares no lifecycle method.
+#: Exception types that mean *the test harness broke*, never *the store refused*. Catching a
+#: bare `Exception` and calling it a refusal is how a read-only assertion passes against a store
+#: that raised `AttributeError` because its read-only path never built a write queue.
+HARNESS_FAILURE_TYPES = (
+    AssertionError, AttributeError, TypeError, NameError, ImportError, SyntaxError,
+)
 
-    Reported as a finding rather than assumed: `Store` has `package`, `cohort`, `durable`,
-    `blobs` and `purge_cohort` and nothing that releases a file handle, which `TC-STORE-16`
-    needs in order to reopen read-only.
+#: What a genuine read-only refusal says. SQLite's own wording is "attempt to write a readonly
+#: database"; a store-level guard would name the tier or the mode. Either is a refusal; an
+#: `AttributeError` on a `None` is not.
+READ_ONLY_MARKERS = ("readonly", "read-only", "read only", "not writable", "immutable")
+
+
+def _close(store) -> None:
+    """Close a store, requiring the method to exist.
+
+    Deliberately **not** a `getattr(..., None)` no-op. Design §3.3 declares no lifecycle method
+    on `Store` — it has `package`, `cohort`, `durable`, `blobs` and `purge_cohort` and nothing
+    that releases a file handle — so an implementation may well ship without one. But
+    `TC-STORE-02` is *about* the second connection and `TC-STORE-16` needs the file closed
+    before it reopens read-only, and a silent no-op turns both into tests of one connection that
+    still report green. `require_attr` states the gap as a failure instead, which is what puts it
+    in front of whoever implements #10.
     """
-    closer = getattr(store, "close", None)
-    if closer is not None:
-        closer()
+    require_attr(store, "close", issue=ISSUE)()
 
 
 def test_tc_store_01_four_tiers_open_as_wal_files_in_the_layout_the_design_fixes(tmp_data_dir):
@@ -142,7 +158,23 @@ def test_tc_store_01_four_tiers_open_as_wal_files_in_the_layout_the_design_fixes
     )
 
     # (3) the shared C+R file — the clause nothing else in the suite witnesses.
+    #
+    # The two tables are created here rather than assumed to exist. Design §3.3 says M-STORE
+    # "does not own any schema meaning — table semantics belong to the module that owns the
+    # tier", so whether #10's migrations create `submission` and `work_unit` is genuinely
+    # ambiguous and #10's acceptance criteria never say. The claim under test is about **file
+    # topology**, not about who runs the DDL: a Tier C table and a Tier R table, written through
+    # the one `cohort()` handle, must land in the one file.
+    with cohort.transaction() as tx:
+        tx.execute(statement(f"CREATE TABLE {TIER_C_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
+        tx.execute(statement(f"CREATE TABLE {TIER_R_TABLE} (id INTEGER PRIMARY KEY)", issue=ISSUE))
+
     cohort_tables = table_names(cohort_path)
+    assert cohort_tables, (
+        f"TC-STORE-01: {cohort_path.name} reports no tables at all, so the assertion below "
+        "would pass against an empty file. The two CREATE TABLEs above committed through a "
+        "transaction and must be visible to an independent reader."
+    )
     assert {TIER_C_TABLE, TIER_R_TABLE} <= cohort_tables, (
         f"TC-STORE-01: Tier C ({TIER_C_TABLE}) and Tier R ({TIER_R_TABLE}) are not both in "
         f"{cohort_path.name}. Design §3.3: they share one file deliberately, so that "
@@ -184,9 +216,11 @@ def test_tc_store_02_foreign_keys_are_on_for_every_connection_including_after_re
     `foreign_keys` is off — the behavioural assertion alone would pass. So the second half
     asserts the *reason*, not just the failure.
     """
+    seen_handles: list[int] = []
     for attempt, phase in enumerate(("first open", "after reconnect")):
         store = open_store(tmp_data_dir, issue=ISSUE)
         handle = store.package("PKG-FK")
+        seen_handles.append(id(handle))
 
         if attempt == 0:
             with handle.transaction() as tx:
@@ -211,6 +245,17 @@ def test_tc_store_02_foreign_keys_are_on_for_every_connection_including_after_re
         )
 
         _close(store)
+
+    # The plan's "including one created after a reconnect" is only tested if a reconnect
+    # actually happened. A store that memoizes per data directory and sets `foreign_keys` once
+    # at construction — forgetting it on every connection opened later — would hand back the
+    # same handle twice, and both loop iterations would probe the one connection that happens to
+    # be correct. That is the precise defect this case exists to catch, so it is asserted.
+    assert seen_handles[0] != seen_handles[1], (
+        "TC-STORE-02: reopening the store returned the same TierHandle object, so the second "
+        "iteration probed the first connection and 'after reconnect' asserted nothing. "
+        "FR-STORE-14 is about *every* connection the module hands out."
+    )
 
 
 def test_tc_store_16_an_imported_tier_p_opens_read_only_and_is_not_touched(tmp_data_dir):
@@ -259,9 +304,18 @@ def test_tc_store_16_an_imported_tier_p_opens_read_only_and_is_not_touched(tmp_d
     ):
         with pytest.raises(Exception) as raised:
             attempt()
-        assert raised.type is not AssertionError, (
-            f"TC-STORE-16: {door} raised an AssertionError rather than refusing the write — a "
-            "test-harness failure being read as a passing refusal."
+        assert not isinstance(raised.value, HARNESS_FAILURE_TYPES), (
+            f"TC-STORE-16: {door} raised {type(raised.value).__name__}, which means the harness "
+            f"broke rather than the store refusing: {raised.value!r}. A read-only path that "
+            "never builds a write queue raises AttributeError on a None, writes nothing, and "
+            "leaves mtime and digest intact — so a bare `pytest.raises(Exception)` passes it."
+        )
+        message = str(raised.value).lower()
+        assert any(marker in message for marker in READ_ONLY_MARKERS), (
+            f"TC-STORE-16: {door} raised {type(raised.value).__name__}({raised.value!r}), which "
+            "does not say the tier is read-only. The plan's oracle is an *exact* exception; "
+            f"one of {READ_ONLY_MARKERS} must appear so the refusal is distinguishable from an "
+            "unrelated failure that happened to leave the file alone."
         )
 
     _close(store)

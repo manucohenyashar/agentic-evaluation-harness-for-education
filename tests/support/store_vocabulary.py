@@ -23,26 +23,64 @@ import sqlite3
 # only as good as its worst omission, since a name-bearing column that no pattern matches is
 # precisely the leak `CT-STORE-09` promises callers cannot happen.
 #
-# Matched as whole `_`-separated words against the column name, so `student_name` and
-# `name_of_student` match while `nametag` and `renamed_at` do not.
-STUDENT_NAME_COLUMN_STEMS: frozenset[str] = frozenset(
+# **Not a `*_name` rule.** The obvious version — flag any column whose name contains `name` —
+# was measured against this module and flagged `criterion_name`, `stat_name`, `scope_name`,
+# `run_name`, `metric_name`, `display_name` and nine more. Tier D holds `criterion_stats`,
+# `mcq_item_stats` and `run_metrics` (design §3.3), so those are not hypothetical columns: that
+# rule reds the build against a *correct* store, and a rule that does that is one the first
+# `M-STORE` commit switches off. A switched-off rule catches nothing at all, which is strictly
+# worse than the leak it was guarding.
+#
+# So the rule is **person + name**, not name alone: a column is a student-name column when it
+# names a *person* and names their *name*. Two token sets, and the intersection is the finding.
+
+#: Who the column is about. Absent these, `*_name` is a criterion, a run or a metric.
+PERSON_TOKENS: frozenset[str] = frozenset({"student", "pupil", "learner", "candidate", "child"})
+
+#: What about them. `first`/`last`/`middle`/`preferred` are here without `name` because
+#: `student_first` is exactly as identifying as `student_first_name`.
+NAME_TOKENS: frozenset[str] = frozenset(
     {
-        "name", "names", "fullname", "firstname", "lastname", "surname",
-        "forename", "givenname", "familyname", "pupil", "learner",
+        "name", "names", "fullname", "firstname", "lastname", "surname", "forename",
+        "givenname", "familyname", "initials", "first", "last", "given", "family",
+        "middle", "preferred", "display",
+    }
+)
+
+#: The pseudonymous shape `FR-STORE-12` *requires*. A person token with one of these is the
+#: sanctioned Tier D column, not a violation — `student_ref` is the whole point of the clause,
+#: and a rule that flagged it would flag the correct implementation.
+PSEUDONYM_TOKENS: frozenset[str] = frozenset(
+    {"ref", "id", "key", "uuid", "hash", "token", "code", "pseudonym", "anon"}
+)
+
+#: Spellings that identify a person with no person token attached, so the person+name rule
+#: cannot see them. A bare `name` column in a Tier D table is a finding on its own.
+BARE_NAME_COLUMNS: frozenset[str] = frozenset(
+    {
+        "name", "names", "full_name", "fullname", "first_name", "firstname", "last_name",
+        "lastname", "surname", "forename", "given_name", "givenname", "family_name",
+        "familyname", "middle_name", "preferred_name", "legal_name", "maiden_name",
     }
 )
 
 #: The pseudonymous key Tier D is allowed to carry instead (`FR-STORE-12`).
 TIER_D_IDENTITY_COLUMN = "student_ref"
 
-#: Columns that contain the word "name" but are not a *student* name, so a blanket "no column
-#: containing `name`" rule would red the build on the first ordinary Tier D table. Each is a
-#: name the design's own §3.3 Tier D table list implies — a criterion, a package, a run.
+#: Legitimate columns that a careless rule flags. Not used by `is_student_name_column` — it is
+#: the **negative control set** for `tests/unit/harness/test_store_vocabulary.py`, which is what
+#: keeps the false-positive half of this rule honest. Every entry was produced by measuring an
+#: earlier draft of the rule against plausible Tier D columns.
 NON_STUDENT_NAME_COLUMNS: frozenset[str] = frozenset(
     {
         "criterion_name", "package_name", "run_name", "cohort_name", "school_name",
         "model_name", "policy_name", "table_name", "column_name", "file_name",
         "label_name", "band_name", "rubric_name", "question_name", "metric_name",
+        "stat_name", "scope_name", "stage_name", "backend_name", "signal_name",
+        "event_name", "constraint_name", "field_name", "dataset_name", "population_name",
+        "display_name", "name_hash", "renamed_at", "nametag",
+        # The pseudonymous shapes the clause *requires*, which an over-eager rule flags.
+        "student_ref", "pupil_id", "learner_ref", "candidate_code", "student_uuid",
     }
 )
 
@@ -50,19 +88,32 @@ NON_STUDENT_NAME_COLUMNS: frozenset[str] = frozenset(
 def is_student_name_column(column: str) -> bool:
     """Does this column name a student's name?
 
-    Whole-word stem matching over the `_`-separated parts, with `NON_STUDENT_NAME_COLUMNS`
-    taking precedence — the false-positive half matters as much as the true-positive half.
-    A rule that flags `criterion_name` is one the first `M-STORE` commit switches off, and a
-    switched-off rule catches nothing at all.
+    `person token AND name token`, with a pseudonym token vetoing the match. See the block
+    comment above for why this is not a `*_name` rule.
+
+    Known limit, stated rather than hidden: an unsegmented abbreviation like `sname` or `fname`
+    matches nothing here. Catching those needs guessing at abbreviations, and every guess is a
+    false positive against some legitimate column. `TC-STORE-12`'s third limb is a sweep over a
+    real schema, so the residual risk is a column somebody deliberately obfuscated — which is a
+    different threat from the one `FR-STORE-12` describes.
     """
     lowered = column.lower().strip()
-    if lowered in NON_STUDENT_NAME_COLUMNS:
-        return False
     words = set(re.split(r"[_\s-]+", lowered))
-    if words & STUDENT_NAME_COLUMN_STEMS:
+
+    if lowered in BARE_NAME_COLUMNS:
         return True
-    # `studentname`, `student_full_name`, `pupilName` after normalization.
-    return bool(re.search(r"(student|pupil|learner|candidate)\w*(name|forename|surname)", lowered))
+
+    if words & PERSON_TOKENS:
+        # `student_ref`, `pupil_id`, `learner_uuid` — the shape the clause requires.
+        if words & PSEUDONYM_TOKENS:
+            return False
+        if words & NAME_TOKENS:
+            return True
+
+    # `studentname`, `pupilForename` — a person and a name glued into one token.
+    return bool(
+        re.search(r"(student|pupil|learner|candidate|child)\w*(name|forename|surname)", lowered)
+    )
 
 
 # --- design §3.3 Observability / CT-STORE-17: the five signals ------------------------------

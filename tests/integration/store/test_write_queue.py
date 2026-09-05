@@ -11,13 +11,13 @@ that would hide them.
 
 **No sleeps.** The marker registry records that `TC-ORCH-09` is the only sanctioned sleep in
 this suite (§4.6), so coordination here is by `threading.Barrier` and `threading.Event`, and
-every wait is bounded by a knob rather than by a guessed duration. A test that sleeps to let
-a queue drain passes on a fast box and flakes on a slow one, which §4.6's flake policy makes
-a P1 defect rather than an inconvenience.
+every wait is bounded by a knob rather than by a guessed duration. A test that sleeps to let a
+queue drain passes on a fast box and flakes on a slow one, which §4.6's flake policy makes a P1
+defect rather than an inconvenience.
 
 **Written ahead of implementation** (test plan §8.2): expected to fail with `NotImplementedYet`
-naming #11 — or #10, whichever is missing first, since a write queue needs a store to write
-to. Registered under `#11 store_metrics`.
+naming #11 — or #10, whichever is missing first, since a write queue needs a store to write to.
+Registered under `#11 store_metrics`.
 """
 
 from __future__ import annotations
@@ -52,17 +52,21 @@ DEFAULT_COMMIT_INTERVAL_MS = 5000
 #: schedules them differently, and the case is about independence, not about eight specifically.
 READER_THREADS = int(os.environ.get("HARNESS_TEST_READER_THREADS", "8"))
 
-#: Writes the ordering half enqueues. Enough that an out-of-order commit is visible and a
-#: batch boundary is crossed; small enough to stay inside the integration tier's budget.
+#: Writes the ordering half enqueues. Enough that an out-of-order commit is visible and a batch
+#: boundary is crossed; small enough to stay inside the integration tier's budget.
 ORDERED_WRITES = int(os.environ.get("HARNESS_TEST_ORDERED_WRITES", "250"))
 
 #: Every bounded wait in this file. Not a sleep: nothing waits for this to elapse on the happy
 #: path — it is the ceiling past which a hang is reported as a failure instead of hanging CI.
 THREAD_TIMEOUT_S = float(os.environ.get("HARNESS_TEST_THREAD_TIMEOUT_S", "30"))
 
-#: How long a *blocked* `enqueue_write` must stay blocked before the case believes it. Short,
-#: because the assertion is "did not return promptly" and a long value only slows the suite.
+#: How long a *blocked* `enqueue_write` must stay blocked before the case believes it.
 BLOCK_OBSERVATION_S = float(os.environ.get("HARNESS_TEST_BLOCK_OBSERVATION_S", "0.5"))
+
+#: How much slower an above-threshold `enqueue_write` must be before "slowed" is believed.
+#: A bare `>` against the sub-threshold median is a coin flip — an implementation applying *no*
+#: backpressure clears it about half the time purely on timing noise, which is not an oracle.
+SLOWDOWN_FACTOR = float(os.environ.get("HARNESS_TEST_SLOWDOWN_FACTOR", "5"))
 
 #: A queue depth small enough to reach deterministically. `TC-STORE-07`'s 999/1000/1001 are the
 #: *default* depth ±1; the case asserts the boundary relative to the **configured** depth, which
@@ -85,128 +89,160 @@ def _is_busy_error(error: BaseException) -> bool:
     return any(marker in text for marker in BUSY_MARKERS)
 
 
+def _drain(store, handle) -> int:
+    """Wait, bounded, for the write queue to reach zero pending rows; return what it reached.
+
+    `CT-STORE-02` makes `enqueue_write` asynchronous — "it returns before the row is durable" —
+    so reading back enqueued rows without waiting asserts a promise the contract does not make,
+    and would red a *correct* async store. Polling the module's own depth signal is what keeps
+    this sleep-free: there is no interval to guess, and the bound is a knob.
+    """
+    deadline = time.monotonic() + THREAD_TIMEOUT_S
+    depth = -1
+    while time.monotonic() < deadline:
+        depth = int(store_metrics(store, issue=ISSUE)["write_queue_depth"])
+        if depth == 0:
+            return 0
+    # Deliberately no `time.sleep` anywhere in the loop, not even `sleep(0)`: §4.6 sanctions
+    # exactly one sleep in this suite and it is TC-ORCH-09's. The poll is bounded by the
+    # deadline instead, and each iteration makes a real call that releases the GIL.
+    return depth
+
+
 def test_tc_store_03_readers_never_block_the_writer_and_writes_land_in_enqueue_order(
-    tmp_data_dir,
+    tmp_data_dir, monkeypatch
 ):
     """`TC-STORE-03` — *"Readers never block the writer; writes land in enqueue order; no
     `SQLITE_BUSY` surfaces to a caller."*
 
     Oracle: **ordering invariant plus no-exception**.
 
-    Three assertions, and the interesting one is the first.
+    **Readers never block the writer** is the P0 claim, and asserting it needs care: "the writer
+    finished" is passed by any implementation that finishes eventually, including one that
+    serialized every read behind the write. So the oracle here is *interleaving*, sampled rather
+    than inferred.
 
-    **Readers never block the writer** (`FR-STORE-03`, `CT-STORE-04`) is a *liveness* claim, and
-    liveness cannot be asserted by timing — a fast box passes a slow implementation. So it is
-    asserted structurally instead: the readers are still running, in a bounded spin, at the
-    moment the writer finishes. The readers stop only after the writer's completion event is
-    set. If the writer had been blocked behind eight readers holding the file, it would not
-    finish first, and the bounded wait reports that as a failure rather than hanging.
+    Each reader publishes a progress counter. Two barriers bracket the setup: the first releases
+    everyone together, the second holds the writer until every reader has completed at least one
+    query — which is what stops the writer racing to the end before a reader has run at all, and
+    makes "a reader completed zero queries" impossible rather than unlikely. The writer then
+    snapshots every counter, does its writes, and snapshots again.
 
-    **Enqueue order** is read back with an explicit `ORDER BY`, because `CT-STORE-18` says the
-    module chooses no order and "a caller needing an order states it in the statement". The
-    ordering claim is about `rowid` — the order rows were actually inserted — not about
-    whatever order a query happens to return.
+    The assertion is that **every reader advanced between those two snapshots** — reads
+    completed *during* the write phase, on the far side of a scheduler, which is what "readers
+    do not block the writer and the writer does not block readers" actually looks like from
+    outside. A store that serializes reads and writes behind one mutex, or a rollback-journal
+    database where a reader's shared lock stalls the writer, produces a zero delta for at least
+    one reader and fails here. The previous form of this assertion — "readers were still in
+    their loop when the writer finished" — was true by construction, since the loop exits *on*
+    that event, and asserted nothing.
+
+    **Enqueue order** is read with an explicit `ORDER BY`, because `CT-STORE-18` says the module
+    chooses no order and "a caller needing an order states it in the statement", and only after
+    a bounded drain, because `CT-STORE-02` says the rows are not durable when `enqueue_write`
+    returns.
 
     **No `SQLITE_BUSY`** (`CT-STORE-11`: "retried internally and never surfaces") is swept over
-    every thread, not just the writer. Eight concurrent readers against an active writer is
-    precisely the condition that produces it, and a reader that swallowed one would leave the
-    writer's own assertions green.
+    every thread. Eight concurrent readers against an active writer is exactly the condition
+    that produces it, and a reader that swallowed one would leave the writer's assertions green.
     """
-    monkeypatched = {ENV_COMMIT_BATCH: "25", ENV_COMMIT_INTERVAL_MS: "50"}
-    previous = {key: os.environ.get(key) for key in monkeypatched}
-    os.environ.update(monkeypatched)
-    try:
-        store = open_store(tmp_data_dir, issue=ISSUE)
-        handle = store.cohort("COH-CONC")
-        with handle.transaction() as tx:
-            tx.execute(statement(_ORDERED_DDL, issue=ISSUE))
+    monkeypatch.setenv(ENV_COMMIT_BATCH, "25")
+    monkeypatch.setenv(ENV_COMMIT_INTERVAL_MS, "50")
 
-        start = threading.Barrier(READER_THREADS + 1, timeout=THREAD_TIMEOUT_S)
-        writer_done = threading.Event()
-        readers_saw_writer_finish = []
-        errors: list[BaseException] = []
-        reads_completed = []
+    store = open_store(tmp_data_dir, issue=ISSUE)
+    handle = store.cohort("COH-CONC")
+    with handle.transaction() as tx:
+        tx.execute(statement(_ORDERED_DDL, issue=ISSUE))
 
-        def reader() -> None:
-            try:
-                start.wait()
-                local = 0
-                while not writer_done.is_set():
-                    list(handle.query(statement(_ORDERED_COUNT, issue=ISSUE)))
-                    local += 1
-                # The writer finished while this reader was still in its loop. That is the
-                # structural form of "readers never block the writer".
-                readers_saw_writer_finish.append(True)
-                reads_completed.append(local)
-            except BaseException as error:  # noqa: BLE001 — every escape is a finding
-                errors.append(error)
+    start = threading.Barrier(READER_THREADS + 1, timeout=THREAD_TIMEOUT_S)
+    readers_warm = threading.Barrier(READER_THREADS + 1, timeout=THREAD_TIMEOUT_S)
+    writer_done = threading.Event()
+    progress = [0] * READER_THREADS
+    snapshots: dict[str, list[int]] = {}
+    errors: list[BaseException] = []
 
-        def writer() -> None:
-            try:
-                start.wait()
-                for seq in range(ORDERED_WRITES):
-                    handle.enqueue_write(
-                        statement(_ORDERED_INSERT, issue=ISSUE), seq=seq
-                    )
-                # CT-STORE-02: enqueue_write returns before the row is durable, so the caller
-                # that must observe its own writes reads through a transaction.
-                with handle.transaction() as tx:
-                    tx.execute(statement(_ORDERED_COUNT, issue=ISSUE))
-            except BaseException as error:  # noqa: BLE001
-                errors.append(error)
-            finally:
-                writer_done.set()
+    def reader(index: int) -> None:
+        try:
+            start.wait()
+            # One query before the writer is allowed to begin, so "this reader never ran" is
+            # impossible by construction rather than merely unlikely under load.
+            list(handle.query(statement(_ORDERED_COUNT, issue=ISSUE)))
+            progress[index] = 1
+            readers_warm.wait()
+            while not writer_done.is_set():
+                list(handle.query(statement(_ORDERED_COUNT, issue=ISSUE)))
+                progress[index] += 1
+        except BaseException as error:  # noqa: BLE001 — every escape is a finding
+            errors.append(error)
 
-        threads = [threading.Thread(target=reader, name=f"reader-{n}", daemon=True)
-                   for n in range(READER_THREADS)]
-        threads.append(threading.Thread(target=writer, name="writer", daemon=True))
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join(timeout=THREAD_TIMEOUT_S)
+    def writer() -> None:
+        try:
+            start.wait()
+            readers_warm.wait()
+            snapshots["before"] = list(progress)
+            for seq in range(ORDERED_WRITES):
+                handle.enqueue_write(statement(_ORDERED_INSERT, issue=ISSUE), seq=seq)
+            snapshots["after"] = list(progress)
+        except BaseException as error:  # noqa: BLE001
+            errors.append(error)
+        finally:
+            writer_done.set()
 
-        live = [thread.name for thread in threads if thread.is_alive()]
-        assert not live, (
-            f"TC-STORE-03: {live} did not finish within {THREAD_TIMEOUT_S}s. A writer that "
-            "cannot make progress behind concurrent readers is the FR-STORE-03 failure, and a "
-            "reader that cannot finish means the writer held the file exclusively."
-        )
+    threads = [
+        threading.Thread(target=reader, args=(index,), name=f"reader-{index}", daemon=True)
+        for index in range(READER_THREADS)
+    ]
+    threads.append(threading.Thread(target=writer, name="writer", daemon=True))
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=THREAD_TIMEOUT_S)
 
-        busy = [error for error in errors if _is_busy_error(error)]
-        assert not busy, (
-            "TC-STORE-03: SQLITE_BUSY reached a caller. CT-STORE-11: it is retried internally "
-            f"and never surfaces, and under WAL with a single writer it should not occur: {busy}"
-        )
-        assert not errors, (
-            f"TC-STORE-03: a reader or the writer raised: {errors}"
-        )
+    live = [thread.name for thread in threads if thread.is_alive()]
+    assert not live, (
+        f"TC-STORE-03: {live} did not finish within {THREAD_TIMEOUT_S}s. A writer that cannot "
+        "make progress behind concurrent readers is the FR-STORE-03 failure; a reader that "
+        "cannot finish means the writer held the file exclusively."
+    )
 
-        assert len(readers_saw_writer_finish) == READER_THREADS, (
-            f"TC-STORE-03: only {len(readers_saw_writer_finish)} of {READER_THREADS} readers "
-            "were still running when the writer finished. The writer completing *first*, while "
-            "readers are mid-spin, is what 'readers never block the writer' means here — timing "
-            "would only tell us the box was fast."
-        )
-        assert all(count > 0 for count in reads_completed), (
-            f"TC-STORE-03: a reader completed zero queries: {reads_completed}. A reader that "
-            "never ran proves nothing about contention."
-        )
+    busy = [error for error in errors if _is_busy_error(error)]
+    assert not busy, (
+        "TC-STORE-03: SQLITE_BUSY reached a caller. CT-STORE-11: it is retried internally and "
+        f"never surfaces, and under WAL with a single writer it should not occur: {busy}"
+    )
+    assert not errors, f"TC-STORE-03: a reader or the writer raised: {errors}"
 
-        rows = list(handle.query(statement(_ORDERED_READ, issue=ISSUE)))
-        landed = [row[0] for row in rows]
-        assert landed == list(range(ORDERED_WRITES)), (
-            "TC-STORE-03: writes did not land in enqueue order. FR-STORE-03 serializes all "
-            "writes through one writer thread fed by an in-process queue; CT-STORE-04 makes "
-            "the single-caller ordering a promise. "
-            f"Expected 0..{ORDERED_WRITES - 1} in order, got {landed[:12]}... "
-            f"({len(landed)} rows)"
-        )
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+    assert "before" in snapshots and "after" in snapshots, (
+        "TC-STORE-03: the writer never reached its sampling points, so the interleaving "
+        "assertion below would pass vacuously."
+    )
+    stalled = [
+        index
+        for index in range(READER_THREADS)
+        if snapshots["after"][index] <= snapshots["before"][index]
+    ]
+    assert not stalled, (
+        f"TC-STORE-03: readers {stalled} completed no query while the writer was writing "
+        f"(before={snapshots['before']}, after={snapshots['after']}). Reads and writes did not "
+        "interleave — which is what a shared mutex, or a rollback journal where a reader's "
+        "shared lock stalls the writer, looks like from outside. FR-STORE-03: 'concurrent "
+        "readers shall not block the writer'; CT-STORE-04 makes it a promise to every writer."
+    )
+
+    remaining = _drain(store, handle)
+    assert remaining == 0, (
+        f"TC-STORE-03: the write queue still held {remaining} rows after {THREAD_TIMEOUT_S}s. "
+        "The ordering assertion below cannot run against a queue that never drained."
+    )
+
+    rows = list(handle.query(statement(_ORDERED_READ, issue=ISSUE)))
+    landed = [row[0] for row in rows]
+    assert landed == list(range(ORDERED_WRITES)), (
+        "TC-STORE-03: writes did not land in enqueue order. FR-STORE-03 serializes all writes "
+        "through one writer thread fed by an in-process queue, and CT-STORE-04 makes the "
+        f"single-caller ordering a promise. Expected 0..{ORDERED_WRITES - 1} in order, got "
+        f"{landed[:12]}... ({len(landed)} rows)"
+    )
 
 
 def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_depth(
@@ -221,20 +257,24 @@ def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_dept
     as a signal to reduce dispatch, not as a fault", and `FR-ORCH-21` throttles on it. A signal
     that trips early throttles a run that had headroom; one that trips late lets the queue grow
     past the bound `NFR-STORE-02`'s durability window is calculated from. So all three points
-    are asserted — `N-1` must be clear, `N` must be raised, `N+1` must still be raised — rather
-    than only checking that it eventually goes up.
+    are asserted — `N-1` clear, `N` raised, `N+1` still raised — rather than checking only that
+    it eventually goes up.
 
     **Driven through the knob, not the literal.** The plan says 999/1000/1001, which is design
-    §3.3's default depth ±1. This case sets `HARNESS_WRITE_QUEUE_DEPTH` small and asserts the
-    boundary relative to the *configured* value, then asserts separately that the default really
-    is 1000. That is strictly stronger than the literal reading: an implementation that
+    §3.3's default depth ±1. This case sets `HARNESS_WRITE_QUEUE_DEPTH` small, asserts the
+    boundary relative to the *configured* value, and then asserts separately that the default
+    really is 1000. That is strictly stronger than the literal reading: an implementation that
     hard-codes 1000 and ignores the knob passes the plan as written and fails here, and a
-    hard-coded constant "calibrated for prod" is exactly the phantom bug `CLAUDE.md` seam 3
-    exists to prevent.
+    constant "calibrated for prod" is exactly the phantom bug `CLAUDE.md` seam 3 exists to stop.
 
-    Reaching depth `N` deterministically needs the writer not to drain, which is done with the
-    two documented commit knobs — a batch larger than the queue and a long interval — rather
-    than a test-only pause backdoor.
+    Reaching depth `N` deterministically needs the writer not to drain, done with the two
+    documented commit knobs — a batch larger than the queue, a long interval — rather than a
+    test-only pause backdoor.
+
+    **"Slowed" is asserted against a factor, not a `>`.** A bare comparison against the median
+    of seven timings of the same operation is cleared by pure noise roughly half the time, so an
+    implementation applying no backpressure at all would pass at a coin flip. `SLOWDOWN_FACTOR`
+    is what makes this limb an oracle instead of a lottery.
     """
     monkeypatch.setenv(ENV_QUEUE_DEPTH, str(TEST_QUEUE_DEPTH))
     monkeypatch.setenv(ENV_COMMIT_BATCH, str(TEST_QUEUE_DEPTH * 100))
@@ -271,7 +311,10 @@ def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_dept
     # --- at the threshold: the signal must be up ---------------------------------------------
     enqueue(TEST_QUEUE_DEPTH - 1)
     depth, signalled = depth_and_signal()
-    assert depth == TEST_QUEUE_DEPTH
+    assert depth == TEST_QUEUE_DEPTH, (
+        f"TC-STORE-07: expected the queue to hold exactly {TEST_QUEUE_DEPTH} pending rows at "
+        f"the boundary, it holds {depth}."
+    )
     assert signalled, (
         f"TC-STORE-07: at depth {depth} — exactly the configured threshold — backpressure is "
         "not raised. FR-STORE-05 applies it 'when the pending write queue exceeds a configured "
@@ -280,13 +323,12 @@ def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_dept
     )
 
     # --- above the threshold: still raised, and enqueue blocks or slows -----------------------
-    over = {"duration": None, "returned": False}
+    over: dict[str, float | None] = {"duration": None}
     finished = threading.Event()
 
     def enqueue_over_threshold() -> None:
         try:
             over["duration"] = enqueue(TEST_QUEUE_DEPTH)
-            over["returned"] = True
         finally:
             finished.set()
 
@@ -300,20 +342,26 @@ def test_tc_store_07_backpressure_is_raised_exactly_at_the_configured_queue_dept
         "edge — M-ORCH reads it to decide whether to keep throttling."
     )
 
-    if not blocked:
-        # It returned, so the promise it must keep is the other one: *slowed*. Compared against
-        # the median of the sub-threshold enqueues, which is the only baseline that says
-        # anything about this machine.
+    if blocked:
+        # Blocking is one of the two behaviours FR-STORE-05 sanctions, and this fixture pins the
+        # commit interval at ten minutes so the queue cannot drain — a blocked enqueue is
+        # expected to stay blocked for the rest of the case, and the daemon thread dies with the
+        # session. That does mean a permanent deadlock and legitimate backpressure look alike
+        # here; telling them apart needs a drain, which is TC-STORE-08's ground, not this case's.
+        pass
+    else:
         finished.wait(timeout=THREAD_TIMEOUT_S)
         baseline = statistics.median(below_durations) if below_durations else 0.0
-        assert over["duration"] is not None and over["duration"] > baseline, (
-            "TC-STORE-07: the enqueue above the threshold neither blocked nor slowed — it "
-            f"took {over['duration']:.6f}s against a sub-threshold median of {baseline:.6f}s. "
-            "FR-STORE-05 requires one or the other; an enqueue that sails through above the "
-            "depth applies no backpressure at all, whatever the signal says."
+        duration = over["duration"]
+        assert duration is not None and duration > baseline * SLOWDOWN_FACTOR, (
+            "TC-STORE-07: the enqueue above the threshold neither blocked nor slowed "
+            f"meaningfully — {duration:.6f}s against a sub-threshold median of {baseline:.6f}s, "
+            f"which is under the {SLOWDOWN_FACTOR}x this case requires before it believes a "
+            "slowdown. FR-STORE-05 requires blocking or slowing; an enqueue that sails through "
+            "above the depth applies no backpressure at all, whatever the signal says."
         )
 
-    thread.join(timeout=THREAD_TIMEOUT_S)
+    thread.join(timeout=BLOCK_OBSERVATION_S)
 
     # --- the production figure the plan's literals refer to ----------------------------------
     monkeypatch.delenv(ENV_QUEUE_DEPTH, raising=False)

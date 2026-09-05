@@ -121,17 +121,31 @@ def test_tc_store_24_every_named_signal_is_emitted_and_the_free_disk_alert_fires
     )
 
     # --- the values moved ---------------------------------------------------------------------
+    #
+    # `>= 0` would be a tautology on every one of these — a constructor returning a dict of five
+    # zeros satisfies it, which is exactly the implementation the presence check above already
+    # fails to distinguish. Each assertion below is one a zeros-dict fails.
     assert metrics["free_disk_bytes"] > 0, (
         "TC-STORE-24: free_disk_bytes is not a real reading. It is one of the two alert inputs "
         "CT-STORE-17 makes contract."
     )
-    assert metrics["batch_commit_latency_ms"] >= 0, (
-        "TC-STORE-24: batch commit latency was never recorded, so nothing observed the "
-        "commit path that NFR-STORE-02's 5-second durability window is measured against."
+    assert metrics["batch_commit_latency_ms"] > 0, (
+        f"TC-STORE-24: batch commit latency is {metrics['batch_commit_latency_ms']!r} after "
+        f"{SATURATION_WRITES} writes across a 50 ms commit interval. Commits demonstrably "
+        "happened, so a zero means nothing observed the commit path — the path NFR-STORE-02's "
+        "five-second durability window is measured against."
     )
-    assert metrics["write_queue_depth"] >= 0
-    assert metrics["vacuum_duration_ms"] >= 0, (
-        "TC-STORE-24: vacuum_duration_ms is absent as a measurement. purge_cohort's VACUUM is "
+    assert isinstance(metrics["write_queue_depth"], int), (
+        "TC-STORE-24: write_queue_depth is not an integer count of pending rows. It is the "
+        "other alert input CT-STORE-17 makes contract, and M-ORCH throttles on it."
+    )
+    # `vacuum_duration_ms` is deliberately asserted only for presence and type here: no VACUUM
+    # has run, so zero is the *honest* value, and demanding a positive one would require a
+    # `purge_cohort` — which needs the promotion preconditions of `FR-STORE-07`. The non-zero
+    # assertion belongs to `TC-STORE-11` (§5.3's purge block form), and is left there rather
+    # than half-made here.
+    assert isinstance(metrics["vacuum_duration_ms"], (int, float)), (
+        "TC-STORE-24: vacuum_duration_ms is not a numeric measurement. purge_cohort's VACUUM is "
         "the longest operation the store performs and the one an operator waits on."
     )
 
@@ -147,8 +161,14 @@ def test_tc_store_24_every_named_signal_is_emitted_and_the_free_disk_alert_fires
         f"threshold. Got {sorted(quiet['alerts_declared'])}."
     )
 
+    # The breach is configured **before** the store that reads it is opened. Seam 3 knobs are
+    # read at construction — that is what "production value is the default" means — so setting
+    # the projection on a store that is already open would assert a live-reload behaviour
+    # nothing requires, and would red a correct implementation on the one half OBS-02 names.
     monkeypatch.setenv(ENV_PROJECTED_REMAINING, str(IMPOSSIBLE_PROJECTION_BYTES))
-    breached = store_metrics(store, issue=ISSUE)
+    breached_store = open_store(tmp_data_dir / "breached", issue=ISSUE)
+    breached_store.durable()
+    breached = store_metrics(breached_store, issue=ISSUE)
     assert "free_disk_below_projection" in breached["alerts_firing"], (
         "TC-STORE-24: the free-disk alert did not fire against a projected remaining-run "
         f"requirement of {IMPOSSIBLE_PROJECTION_BYTES} bytes, which no disk satisfies. This "

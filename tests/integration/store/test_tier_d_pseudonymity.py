@@ -49,25 +49,42 @@ _AUDIT_INSERT = (
 )
 _AUDIT_READ = "SELECT student_ref FROM audit_record ORDER BY id"
 
-#: The forbidden shape. Declared as literals, one per spelling, so the sweep names which one
-#: got through rather than reporting that "an insert succeeded".
-_NAME_BEARING_DDL = {
+#: The forbidden shape, as **inserts**. `FR-STORE-12` is precise about this: Tier D "shall
+#: reject any *insert* containing a column mapped as a student-name field". So the guard reads
+#: the column list of the statement it is asked to execute, and refuses — whether or not the
+#: table happens to have such a column. An earlier draft asserted on `CREATE TABLE` instead,
+#: which tests a schema guard the requirement never asks for and never exercises the write path
+#: it does: an implementation doing exactly what FR-STORE-12 says would have failed it.
+#:
+#: One literal per spelling, so a failure names the spelling that got through rather than
+#: reporting that "an insert succeeded".
+_NAME_BEARING_INSERTS = {
     "student_name": (
-        "CREATE TABLE audit_with_name ("
-        "  id INTEGER PRIMARY KEY, student_name TEXT NOT NULL, decision TEXT NOT NULL)"
+        "INSERT INTO audit_record (student_ref, student_name, criterion_id, decision) "
+        "VALUES (:student_ref, :student_name, :criterion_id, :decision)"
     ),
     "full_name": (
-        "CREATE TABLE audit_with_full ("
-        "  id INTEGER PRIMARY KEY, full_name TEXT NOT NULL, decision TEXT NOT NULL)"
+        "INSERT INTO audit_record (student_ref, full_name, criterion_id, decision) "
+        "VALUES (:student_ref, :full_name, :criterion_id, :decision)"
     ),
     "surname": (
-        "CREATE TABLE audit_with_surname ("
-        "  id INTEGER PRIMARY KEY, surname TEXT NOT NULL, decision TEXT NOT NULL)"
+        "INSERT INTO audit_record (student_ref, surname, criterion_id, decision) "
+        "VALUES (:student_ref, :surname, :criterion_id, :decision)"
     ),
     "pupil_forename": (
-        "CREATE TABLE audit_with_forename ("
-        "  id INTEGER PRIMARY KEY, pupil_forename TEXT NOT NULL, decision TEXT NOT NULL)"
+        "INSERT INTO audit_record (student_ref, pupil_forename, criterion_id, decision) "
+        "VALUES (:student_ref, :pupil_forename, :criterion_id, :decision)"
     ),
+}
+
+#: The values each forbidden insert would carry. A real name, because the guard must key on the
+#: *column*, not on anything about the value — `FR-STORE-12` says "a column mapped as a
+#: student-name field".
+_NAME_VALUES = {
+    "student_name": "Amara Okonkwo",
+    "full_name": "Amara Okonkwo",
+    "surname": "Okonkwo",
+    "pupil_forename": "Amara",
 }
 
 
@@ -81,11 +98,17 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
 
     Three limbs, and the middle one is the one a naive implementation fails.
 
-    **Rejected**, with an exact exception. `FR-STORE-12` requires the refusal but names no
-    error, so this case pins one (`StudentNameInTierDError`) rather than accepting "something
-    raised" — a `sqlite3.OperationalError` from a typo'd table name would satisfy a bare
-    `pytest.raises(Exception)` and tell us nothing about whether the guard exists. The design
-    gap is reported in the PR.
+    **Rejected**, on an **insert**, with an exact exception. The requirement is precise about
+    the operation — "shall reject any *insert* containing a column mapped as a student-name
+    field" — so the case attempts inserts, not `CREATE TABLE`s. A schema guard is a different
+    (and weaker) promise, and an implementation that did exactly what `FR-STORE-12` says while
+    permitting the DDL would fail a case written the other way round.
+
+    The exception is exact. `FR-STORE-12` requires the refusal but names no error, so this case
+    pins one (`StudentNameInTierDError`) rather than accepting "something raised" — a
+    `sqlite3.OperationalError` from a typo'd column would satisfy a bare `pytest.raises(
+    Exception)` and tell us nothing about whether the guard exists at all. The design gap is
+    reported in the PR.
 
     **Accepted.** A store that rejects *every* Tier D insert also rejects every name-bearing
     one. Without this limb the case is passed by a broken store, which is the standard failure
@@ -108,11 +131,17 @@ def test_tc_store_12_tier_d_rejects_a_student_name_column_and_accepts_student_re
     with durable.transaction() as tx:
         tx.execute(statement(_AUDIT_DDL, issue=ISSUE))
 
-    # --- limb 1: every name-bearing shape is refused, by the exact error --------------------
-    for spelling, ddl in sorted(_NAME_BEARING_DDL.items()):
+    # --- limb 1: every name-bearing *insert* is refused, by the exact error ------------------
+    for spelling, sql in sorted(_NAME_BEARING_INSERTS.items()):
+        params = {
+            "student_ref": "ref-00417",
+            "criterion_id": "CRIT-1",
+            "decision": "agree",
+            spelling: _NAME_VALUES[spelling],
+        }
         with pytest.raises(StudentNameInTierD) as raised:
             with durable.transaction() as tx:
-                tx.execute(statement(ddl, issue=ISSUE))
+                tx.execute(statement(sql, issue=ISSUE), **params)
         assert spelling in str(raised.value), (
             f"TC-STORE-12: Tier D refused the {spelling!r} column but the error does not name "
             f"it: {raised.value!r}. An operator who cannot see which column was rejected cannot "
