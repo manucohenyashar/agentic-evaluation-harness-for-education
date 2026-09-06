@@ -1265,9 +1265,14 @@ class _BaseLiveProvider:
         Dispatches nothing — the estimator reads the plan's call count and per-call token
         budgets against the implementation's own declared rate (`TC-PROV-12`'s
         hand-computed reference); the run's *actual* cost accumulates in the counters."""
-        per_call = (Decimal(plan.tokens_in_per_call) * self._cost_per_token_in
-                    + Decimal(plan.tokens_out_per_call) * self._cost_per_token_out)
-        return CostEstimate(total=per_call * plan.calls, currency="USD")
+        per_call_cost = (Decimal(plan.tokens_in_per_call) * self._cost_per_token_in
+                         + Decimal(plan.tokens_out_per_call) * self._cost_per_token_out)
+        return CostEstimate(
+            calls=plan.calls,
+            tokens_in=plan.tokens_in_per_call * plan.calls,
+            tokens_out=plan.tokens_out_per_call * plan.calls,
+            cost=per_call_cost * plan.calls,
+        )
 
     def _url_for(self, model_ref: ModelRef) -> str:
         raise NotImplementedError
@@ -1432,6 +1437,16 @@ class OpenRouterProvider(_BaseLiveProvider):
         unconfirmed panel member (naming which), and returns the report when the whole
         panel is cleared. The alias exists so a caller's intent reads at the call site."""
         return self.verify_retention(model_refs)
+
+    def capabilities(self, model_ref: ModelRef) -> Capabilities:
+        """Declared statically (`CT-PROV-04`). The hosted provider supports prefix caching
+        and seeds; concurrency is the run-config's to decide, so the declared ceiling is
+        generous and `FR-PROV-07`'s governor throttles in flight."""
+        return Capabilities(
+            supports_seed=True, supports_prefix_cache=True, max_concurrency=8,
+            deterministic_at_temperature_zero=False,
+            cost_per_token=(self._cost_per_token_in, self._cost_per_token_out),
+        )
 
     def enforce_routing_rule(self, model_ref: ModelRef, kind: str) -> None:
         """`FR-PROV-11`: price-based routing across providers is refused for scoring and
