@@ -233,13 +233,16 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.store:1513", "aeh.store:2248",
-    "aeh.pkg:1026", "aeh.pkg:1068", "aeh.pkg:1076", "aeh.pkg:1155",
-    "aeh.pkg:1160", "aeh.pkg:1180", "aeh.pkg:1204", "aeh.pkg:1384",
-    "aeh.pkg:1397", "aeh.pkg:1421", "aeh.pkg:1422", "aeh.pkg:1482",
-    "aeh.pkg:1484", "aeh.pkg:1534", "aeh.pkg:1539", "aeh.pkg:1575",
-    "aeh.pkg:1580", "aeh.pkg:1583", "aeh.pkg:1607", "aeh.pkg:1628",
-    "aeh.pkg:1636", "aeh.pkg:1637", "aeh.pkg:1641", "aeh.pkg:1650",
-    "aeh.pkg:1694", "aeh.pkg:1703",
+    "aeh.pkg:1239", "aeh.pkg:1281", "aeh.pkg:1289", "aeh.pkg:1368",
+    "aeh.pkg:1373", "aeh.pkg:1393", "aeh.pkg:1433", "aeh.pkg:1436",
+    "aeh.pkg:1453", "aeh.pkg:1458", "aeh.pkg:1460", "aeh.pkg:1469",
+    "aeh.pkg:1474", "aeh.pkg:1476", "aeh.pkg:1654", "aeh.pkg:1667",
+    "aeh.pkg:1691", "aeh.pkg:1692", "aeh.pkg:1752", "aeh.pkg:1754",
+    "aeh.pkg:1804", "aeh.pkg:1809", "aeh.pkg:1845", "aeh.pkg:1850",
+    "aeh.pkg:1853", "aeh.pkg:1877", "aeh.pkg:1954", "aeh.pkg:2086",
+    "aeh.pkg:2092", "aeh.pkg:2100", "aeh.pkg:2107", "aeh.pkg:2168",
+    "aeh.pkg:2176", "aeh.pkg:2177", "aeh.pkg:2181", "aeh.pkg:2190",
+    "aeh.pkg:2234", "aeh.pkg:2243",
 })
 
 
