@@ -233,10 +233,13 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.store:1513", "aeh.store:2248",
-    "aeh.pkg:609", "aeh.pkg:651", "aeh.pkg:659", "aeh.pkg:738",
-    "aeh.pkg:743", "aeh.pkg:763", "aeh.pkg:787", "aeh.pkg:943",
-    "aeh.pkg:956", "aeh.pkg:977", "aeh.pkg:985", "aeh.pkg:986",
-    "aeh.pkg:990", "aeh.pkg:999", "aeh.pkg:1042", "aeh.pkg:1051",
+    "aeh.pkg:1026", "aeh.pkg:1068", "aeh.pkg:1076", "aeh.pkg:1155",
+    "aeh.pkg:1160", "aeh.pkg:1180", "aeh.pkg:1204", "aeh.pkg:1384",
+    "aeh.pkg:1397", "aeh.pkg:1421", "aeh.pkg:1422", "aeh.pkg:1482",
+    "aeh.pkg:1484", "aeh.pkg:1534", "aeh.pkg:1539", "aeh.pkg:1575",
+    "aeh.pkg:1580", "aeh.pkg:1583", "aeh.pkg:1607", "aeh.pkg:1628",
+    "aeh.pkg:1636", "aeh.pkg:1637", "aeh.pkg:1641", "aeh.pkg:1650",
+    "aeh.pkg:1694", "aeh.pkg:1703",
 })
 
 

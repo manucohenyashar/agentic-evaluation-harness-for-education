@@ -2,9 +2,10 @@
 
 Owns Tier P: package identity and version lineage, the §6.2 schema lock, criteria and
 bands, the dependency graph, exemplars, the grade policy, and validation records. This
-file lands **#26** — version lineage and published-version immutability
-(`FR-PKG-01`, `-02`, `-04`, `NFR-PKG-01`); later stories (#27-#31) add the schema lock's
-enumerable list, the dependency graph, validation scoping, and export/import.
+file landed **#26** — version lineage and published-version immutability
+(`FR-PKG-01`, `-02`, `-04`, `NFR-PKG-01`); #27-#30 have since added the schema lock's
+enumerable list, bands and the dependency graph, validation records, and the grade
+policy, boundaries, answer keys and elicitation history; #31 adds export/import.
 
 It owns **no student text**: Tier P never contains student work (design §3.3's tier
 table), and nothing here reads or writes any other tier.
@@ -23,6 +24,8 @@ guard"):
 
 from __future__ import annotations
 
+import json
+import math
 import uuid
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -39,6 +42,9 @@ from aeh.store import (
 __all__ = [
     "BandSetError",
     "CyclicDependencyError",
+    "GateRule",
+    "GradePolicy",
+    "GradePolicyError",
     "Manifest",
     "NoValidationData",
     "PackageCatalog",
@@ -47,7 +53,9 @@ __all__ = [
     "PackageVersionId",
     "PublishedVersionImmutableError",
     "SCHEMA_LOCK_FIELDS",
+    "ScaleRule",
     "SchemaLockViolation",
+    "default_grade_policy",
 ]
 
 #: A package version's id: an opaque string the catalog mints.
@@ -103,6 +111,18 @@ class PublishedVersionImmutableError(PackageError):
     parent), never a mutation."""
 
 
+class GradePolicyError(PackageError):
+    """A grade policy outside the closed rule vocabulary, or a malformed boundary
+    table (`FR-PKG-14`). Answer-key refusals raise the module base `PackageError` —
+    the key is FR-PKG-17's surface, not the policy vocabulary's.
+
+    The vocabulary — weighted sum, gate, best-k-of-n, drop-lowest-n, scale, rounding,
+    boundary table — is closed on purpose (the ADR): an executable formula in a package
+    is an arbitrary-code surface and an un-auditable grade, so a policy that is not a
+    structured object is refused at construction, at write and at read. Not retryable —
+    the policy is the mistake, and rewriting it is a draft edit."""
+
+
 #: The §6.2 schema lock, in exactly one place (`NFR-PKG-03`): every `(table, field)` edit
 #: a published version refuses, enumerable at runtime so a test can assert the list
 #: matches HLD §6.2 field for field. `question_type` is the HLD's name for the physical
@@ -123,6 +143,234 @@ SCHEMA_LOCK_FIELDS: tuple[tuple[str, str], ...] = (
     ("criterion_dependency", "remove"),
     ("criterion_dependency", "alter"),
 )
+
+
+# --- the grade policy: a structured object from a closed vocabulary (FR-PKG-14/-15/-19) ---------
+#
+# The vocabulary is CLOSED by an explicit ADR: weighted sum, gate, best-k-of-n,
+# drop-lowest-n, scale, rounding, boundary table. A free-text formula or an executable
+# expression in a package is an arbitrary-code surface and an un-auditable grade, so the
+# policy exists only as this structured object — validated at construction, at write and
+# at read — and its `plain_language` wording is GENERATED from the object (`FR-PKG-15`),
+# never accepted as input, so the approved wording and the executed policy cannot diverge.
+
+#: The combination rules: how criterion scores become one total. Exactly one is in force.
+COMBINATION_RULES: tuple[str, ...] = ("weighted_sum", "best_k_of_n", "drop_lowest_n")
+
+#: The rounding modes. Rounding is declarative — `M-GRADE` executes it (FR-GRADE-02).
+ROUNDING_MODES: tuple[str, ...] = ("nearest", "up", "down")
+
+
+@dataclass(frozen=True)
+class GateRule:
+    """A gate: the named criterion must reach `minimum` for the computed grade to stand
+    (FR-GRADE-02's "optional gate"). The policy records the rule; the consequence is
+    M-GRADE's declared behaviour — the policy never encodes it a second way."""
+
+    criterion_id: str
+    minimum: float
+
+
+@dataclass(frozen=True)
+class ScaleRule:
+    """A scale: the raw total is multiplied by `factor` (e.g. target-max / raw-max)."""
+
+    factor: float
+
+
+@dataclass(frozen=True)
+class GradePolicy:
+    """The grade policy as a structured object (`FR-PKG-14`).
+
+    Fields are the closed vocabulary; everything not selected must be absent, so the
+    object never carries a parameter no rule executes (a free parameter is how a formula
+    re-enters through the back door). Validation runs in `__post_init__`: an
+    out-of-vocabulary rule — including a formula string, an executable expression, or a
+    lambda-shaped string — cannot become an object at all.
+
+    The boundary-table vocabulary member has NO field here by design: `grade_boundary`
+    rows are the single canonical representation of the grade resolution rule
+    (`FR-PKG-16`), and a flag on the policy would be a second copy that can disagree
+    with the table — the same ADR-1 reasoning as the answer key.
+
+    `review_window_hours` is ADR-3's column: nullable, and null means finalize on run
+    completion (`FR-PKG-19`) rather than wait indefinitely.
+    """
+
+    combination: str = "weighted_sum"
+    weights: tuple[tuple[str, float], ...] = ()
+    k: int | None = None
+    drop: int | None = None
+    gate: GateRule | None = None
+    scale: ScaleRule | None = None
+    rounding: str | None = None
+    decimals: int | None = None
+    review_window_hours: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.combination not in COMBINATION_RULES:
+            raise GradePolicyError(
+                f"grade-policy rule {self.combination!r} is not in the closed "
+                f"vocabulary {COMBINATION_RULES} (FR-PKG-14). A free-text formula, an "
+                "executable expression or a lambda-shaped string is refused: the policy "
+                "is a structured object a machine can execute and a teacher can read, "
+                "never a formula."
+            )
+        if self.combination == "weighted_sum":
+            if self.k is not None or self.drop is not None:
+                raise GradePolicyError(
+                    "a weighted_sum policy carries no k or drop — a parameter no rule "
+                    "executes is a latent formula (FR-PKG-14)."
+                )
+            for criterion_id, weight in self.weights:
+                if not criterion_id:
+                    raise GradePolicyError(
+                        "a weighted_sum weight names an empty criterion id."
+                    )
+                if not weight > 0:
+                    raise GradePolicyError(
+                        f"the weight for {criterion_id!r} is {weight!r}; weights are "
+                        "positive — a zero or negative weight is a formula's job, not a "
+                        "vocabulary member's."
+                    )
+        elif self.combination == "best_k_of_n":
+            if self.k is None or self.k < 1:
+                raise GradePolicyError(
+                    "a best_k_of_n policy declares k >= 1 (FR-PKG-14)."
+                )
+            if self.weights or self.drop is not None:
+                raise GradePolicyError(
+                    "a best_k_of_n policy carries no weights or drop — a parameter no "
+                    "rule executes is a latent formula (FR-PKG-14)."
+                )
+        else:  # drop_lowest_n
+            if self.drop is None or self.drop < 1:
+                raise GradePolicyError(
+                    "a drop_lowest_n policy declares drop >= 1 (FR-PKG-14)."
+                )
+            if self.weights or self.k is not None:
+                raise GradePolicyError(
+                    "a drop_lowest_n policy carries no weights or k — a parameter no "
+                    "rule executes is a latent formula (FR-PKG-14)."
+                )
+        if self.gate is not None and (not self.gate.criterion_id
+                                      or self.gate.minimum < 0):
+            raise GradePolicyError(
+                "a gate names a criterion and a minimum >= 0 (FR-GRADE-02's optional "
+                "gate, as a vocabulary member of FR-PKG-14)."
+            )
+        if self.scale is not None and not (self.scale.factor > 0):
+            raise GradePolicyError(
+                "a scale factor is positive — a zero or negative factor is not a "
+                "scaling rule (FR-PKG-14)."
+            )
+        if self.rounding is not None:
+            if self.rounding not in ROUNDING_MODES:
+                raise GradePolicyError(
+                    f"rounding mode {self.rounding!r} is not in {ROUNDING_MODES} "
+                    "(FR-PKG-14)."
+                )
+            if self.decimals is None or self.decimals < 0:
+                raise GradePolicyError(
+                    "a rounding rule declares its decimals >= 0 (FR-PKG-14)."
+                )
+        elif self.decimals is not None:
+            raise GradePolicyError(
+                "decimals without a rounding mode is a parameter no rule executes "
+                "(FR-PKG-14) — set rounding with it."
+            )
+        if self.review_window_hours is not None:
+            if (isinstance(self.review_window_hours, bool)
+                    or not isinstance(self.review_window_hours, int)
+                    or self.review_window_hours < 0):
+                raise GradePolicyError(
+                    f"review_window_hours is {self.review_window_hours!r}; it is a "
+                    "nullable INTEGER >= 0 (ADR-3, FR-PKG-19): null means finalize on "
+                    "run completion, a negative window would end before it begins."
+                )
+
+    @property
+    def plain_language(self) -> str:
+        """The approved wording, GENERATED from the object (`FR-PKG-15`).
+
+        A property, not a field: there is no constructor argument, no setter and no
+        stored form, so independent wording cannot enter through any API and the
+        approved wording and the executed policy cannot diverge. Regenerating from the
+        same object is byte-stable (a pure function of the fields)."""
+        if self.combination == "weighted_sum":
+            if self.weights:
+                listing = ", ".join(f"{criterion} x{weight:g}"
+                                    for criterion, weight in self.weights)
+                head = f"Weighted sum of criterion points ({listing})."
+            else:
+                head = "Sum of criterion points, summed into question and test totals."
+        elif self.combination == "best_k_of_n":
+            head = f"Best {self.k} of the criteria count toward the total."
+        else:
+            head = f"The lowest {self.drop} criterion scores are dropped before summing."
+        parts = [head]
+        if self.gate is not None:
+            parts.append(f"Gate: {self.gate.criterion_id} must reach "
+                         f"{self.gate.minimum:g} points.")
+        if self.scale is not None:
+            parts.append(f"The total is scaled by {self.scale.factor:g}.")
+        if self.rounding is not None:
+            word = {"nearest": "to the nearest", "up": "up", "down": "down"}[
+                self.rounding]
+            parts.append(f"Rounded {word} at {self.decimals} decimal place(s).")
+        if self.review_window_hours is None:
+            parts.append("Finalizes on run completion.")
+        else:
+            parts.append(f"Review window: {self.review_window_hours} hour(s) before "
+                         "finalization.")
+        return " ".join(parts)
+
+    def to_dict(self) -> dict:
+        """The structured content as stored. `review_window_hours` is absent on purpose:
+        it lives in its own column (ADR-3), the single canonical place — writing it
+        twice in one row would be two representations of one rule."""
+        return {
+            "combination": self.combination,
+            "weights": [list(pair) for pair in self.weights],
+            "k": self.k,
+            "drop": self.drop,
+            "gate": ({"criterion_id": self.gate.criterion_id,
+                      "minimum": self.gate.minimum} if self.gate else None),
+            "scale": ({"factor": self.scale.factor} if self.scale else None),
+            "rounding": self.rounding,
+            "decimals": self.decimals,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "GradePolicy":
+        """Rebuild from stored JSON — re-validating against the closed vocabulary, so a
+        row hand-edited to hold a formula refuses on read too (`FR-PKG-14` holds at
+        every door, not only at the write)."""
+        fields = dict(data)
+        if isinstance(fields.get("gate"), dict):
+            fields["gate"] = GateRule(**fields["gate"])
+        if isinstance(fields.get("scale"), dict):
+            fields["scale"] = ScaleRule(**fields["scale"])
+        if isinstance(fields.get("weights"), list):
+            fields["weights"] = tuple((str(c), float(w)) for c, w in fields["weights"])
+        try:
+            return cls(**fields)
+        except (TypeError, ValueError, KeyError) as error:
+            # A stored row that is not a valid policy dict (hand-edited, corrupt) is a
+            # vocabulary refusal, not a raw TypeError: FR-PKG-14 holds at read too.
+            raise GradePolicyError(
+                f"the stored grade policy is not a structured object from the closed "
+                f"rule vocabulary (FR-PKG-14): {error}"
+            ) from error
+
+
+def default_grade_policy() -> GradePolicy:
+    """`FR-SETUP-12`'s default: unweighted sum of criteria into question and test
+    totals, raw points, no transforms, null review window (finalize on run completion).
+    `grade_policy()` answers this for a version with no stored policy, so M-GRADE
+    always finds a policy and never invents one (`CT-SETUP-10`); recording that the
+    default was used is M-SETUP's obligation, discharged by storing the policy."""
+    return GradePolicy()
 
 
 # --- validation records, NoValidationData, the manifest (FR-PKG-08/-09/-12/-21) -----------------
@@ -251,6 +499,131 @@ _PKG_VALIDATION_KEYS = Migration(
     ),
 )
 
+_PKG_GRADE_POLICY_AND_KEYS = Migration(
+    version=5,
+    name="pkg_grade_policy_and_keys",
+    statements=(
+        # FR-PKG-17: the key is a column on criterion — one canonical representation.
+        Statement("ALTER TABLE criterion ADD COLUMN answer_key TEXT"),
+        # ADR-1: the options table carries NO correctness column — not is_correct, not
+        # correct_option, nothing. The key lives once, on criterion.answer_key; a second
+        # representation is how a corrected key leaves two disagreeing sources behind.
+        Statement(
+            """
+            CREATE TABLE mcq_option (
+                package_version_id TEXT NOT NULL,
+                criterion_id       TEXT NOT NULL,
+                option_id          TEXT NOT NULL,
+                label              TEXT NOT NULL,
+                PRIMARY KEY (package_version_id, criterion_id, option_id),
+                FOREIGN KEY (package_version_id, criterion_id)
+                    REFERENCES criterion(package_version_id, criterion_id)
+            )
+            """
+        ),
+        # FR-PKG-16: the boundary table is the single canonical representation of the
+        # grade resolution rule. Floors are INCLUSIVE — boundary_for resolves the grade
+        # with the greatest floor <= the scaled score.
+        Statement(
+            """
+            CREATE TABLE grade_boundary (
+                package_version_id TEXT NOT NULL REFERENCES package_version(package_version_id),
+                grade              TEXT NOT NULL,
+                scaled_floor       REAL NOT NULL,
+                PRIMARY KEY (package_version_id, grade)
+            )
+            """
+        ),
+        # ADR-3: the review window is a column, not a policy-JSON field.
+        Statement("ALTER TABLE grade_policy ADD COLUMN review_window_hours INTEGER"),
+        # FR-PKG-20 / FR-CALIB-14: the calibration audit trail — every question asked,
+        # options offered, answer given, resulting edit. It is the record that answers
+        # "why does the rubric say this now", which is why it is append-only below.
+        Statement(
+            """
+            CREATE TABLE elicitation_history (
+                elicitation_id     TEXT NOT NULL PRIMARY KEY,
+                package_version_id TEXT NOT NULL REFERENCES package_version(package_version_id),
+                question           TEXT NOT NULL,
+                options_offered    TEXT NOT NULL,
+                answer_given       TEXT NOT NULL,
+                resulting_edit     TEXT NOT NULL DEFAULT '',
+                asked_at           TEXT NOT NULL
+            )
+            """
+        ),
+        # FR-PKG-20: append-only IN PRACTICE, not by convention — an unconditional
+        # trigger pair aborts any UPDATE or DELETE, including raw SQL around the catalog.
+        Statement(
+            "CREATE TRIGGER elicitation_history_append_only_update "
+            "BEFORE UPDATE ON elicitation_history "
+            "BEGIN SELECT RAISE(ABORT, 'elicitation_history is append-only: rows are "
+            "never updated (FR-PKG-20)'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER elicitation_history_append_only_delete "
+            "BEFORE DELETE ON elicitation_history "
+            "BEGIN SELECT RAISE(ABORT, 'elicitation_history is append-only: rows are "
+            "never deleted (FR-PKG-20)'); END"
+        ),
+        # The 002 pattern, carried to the new content tables: a published version's
+        # options and boundaries are immutable — plus the DELETE refusal 002's tables
+        # predate. grade_policy gets one too: this diff introduces its first DELETE
+        # statement (set_grade_policy's draft rewrite), so the backstop moves with it.
+        # elicitation_history is deliberately NOT here: appends are always allowed (the
+        # trail records conversations about the rubric as published).
+        Statement(
+            "CREATE TRIGGER grade_policy_delete_refused BEFORE DELETE ON grade_policy "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: grade policy "
+            "removed from a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER mcq_option_immutable BEFORE UPDATE ON mcq_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: mcq_option "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER mcq_option_insert_locked BEFORE INSERT ON mcq_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: mcq_option "
+            "added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER mcq_option_delete_refused BEFORE DELETE ON mcq_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: mcq_option "
+            "removed from a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER grade_boundary_immutable BEFORE UPDATE ON grade_boundary "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: grade_boundary "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER grade_boundary_insert_locked BEFORE INSERT ON grade_boundary "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: grade_boundary "
+            "added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER grade_boundary_delete_refused BEFORE DELETE ON grade_boundary "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: grade_boundary "
+            "removed from a published version'); END"
+        ),
+    ),
+)
+
 _PKG_VERSION_LINEAGE = Migration(
     version=2,
     name="pkg_version_lineage",
@@ -368,30 +741,6 @@ _PKG_VERSION_LINEAGE = Migration(
     ),
 )
 
-#: The content rows a revision copies from its parent, with explicit column lists —
-#: one declared statement per table, parents before children so every copied row's FK is
-#: satisfied at insert time. `exemplar` re-mints its id: two revisions of one package
-#: share one Tier P file, so a verbatim exemplar_id would collide on the primary key.
-_REVISION_COPIES: tuple[str, ...] = (
-    "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind) "
-    "SELECT :new, criterion_id, question_id, kind FROM criterion "
-    "WHERE package_version_id = :old",
-    "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
-    "SELECT :new, criterion_id, ordinal, band, points FROM band "
-    "WHERE package_version_id = :old",
-    "INSERT INTO criterion_dependency (package_version_id, criterion_id, depends_on) "
-    "SELECT :new, criterion_id, depends_on FROM criterion_dependency "
-    "WHERE package_version_id = :old",
-    "INSERT INTO exemplar (exemplar_id, package_version_id, criterion_id, band) "
-    "SELECT hex(randomblob(8)), :new, criterion_id, band FROM exemplar "
-    "WHERE package_version_id = :old",
-    "INSERT INTO grade_policy (package_version_id, policy) "
-    "SELECT :new, policy FROM grade_policy WHERE package_version_id = :old",
-)
-
-#: Every table the immutability triggers guard.
-
-
 # --- the owning-module contribution to the store's migration registry ---------------------------
 #
 # Appended at import: after this module is imported, Tier P's current schema version is 2
@@ -425,9 +774,9 @@ PKG_STATEMENTS.update({
         "SELECT COUNT(*) AS n FROM package WHERE package_id = :p"
     ),
     "pkg_revision_copy_criterion": Statement(
-        "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind) "
-        "SELECT :new, criterion_id, question_id, kind FROM criterion "
-        "WHERE package_version_id = :old"
+        "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
+        "answer_key) SELECT :new, criterion_id, question_id, kind, answer_key "
+        "FROM criterion WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
         "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
@@ -445,8 +794,19 @@ PKG_STATEMENTS.update({
         "WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_grade_policy": Statement(
-        "INSERT INTO grade_policy (package_version_id, policy) "
-        "SELECT :new, policy FROM grade_policy WHERE package_version_id = :old"
+        "INSERT INTO grade_policy (package_version_id, policy, review_window_hours) "
+        "SELECT :new, policy, review_window_hours FROM grade_policy "
+        "WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_mcq_option": Statement(
+        "INSERT INTO mcq_option (package_version_id, criterion_id, option_id, label) "
+        "SELECT :new, criterion_id, option_id, label FROM mcq_option "
+        "WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_grade_boundary": Statement(
+        "INSERT INTO grade_boundary (package_version_id, grade, scaled_floor) "
+        "SELECT :new, grade, scaled_floor FROM grade_boundary "
+        "WHERE package_version_id = :old"
     ),
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
@@ -468,8 +828,8 @@ PKG_STATEMENTS.update({
     ),
     "select_criteria": Statement(
         "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
-        "construct_tag, band_count FROM criterion WHERE package_version_id = :v "
-        "ORDER BY criterion_id"
+        "construct_tag, band_count, answer_key FROM criterion "
+        "WHERE package_version_id = :v ORDER BY criterion_id"
     ),
     "select_bands": Statement(
         "SELECT criterion_id, ordinal, band, points, descriptor FROM band "
@@ -511,6 +871,57 @@ PKG_STATEMENTS.update({
     ),
     "select_latest_version": Statement(
         "SELECT package_version_id FROM package_version ORDER BY revision DESC LIMIT 1"
+    ),
+    # -- grade policy, boundaries, answer keys, elicitation history (#30) ----------------
+    "select_policy": Statement(
+        "SELECT policy, review_window_hours FROM grade_policy "
+        "WHERE package_version_id = :v"
+    ),
+    "insert_policy": Statement(
+        "INSERT INTO grade_policy (package_version_id, policy, review_window_hours) "
+        "VALUES (:v, :policy, :review_window_hours)"
+    ),
+    "delete_policy": Statement(
+        "DELETE FROM grade_policy WHERE package_version_id = :v"
+    ),
+    "select_boundaries": Statement(
+        "SELECT grade, scaled_floor FROM grade_boundary "
+        "WHERE package_version_id = :v ORDER BY scaled_floor"
+    ),
+    "delete_boundaries": Statement(
+        "DELETE FROM grade_boundary WHERE package_version_id = :v"
+    ),
+    "insert_boundary": Statement(
+        "INSERT INTO grade_boundary (package_version_id, grade, scaled_floor) "
+        "VALUES (:v, :grade, :scaled_floor)"
+    ),
+    "select_answer_key_latest": Statement(
+        "SELECT c.answer_key AS answer_key FROM criterion c "
+        "JOIN package_version pv ON pv.package_version_id = c.package_version_id "
+        "WHERE c.criterion_id = :criterion_id "
+        "ORDER BY pv.revision DESC LIMIT 1"
+    ),
+    "update_criterion_answer_key": Statement(
+        "UPDATE criterion SET answer_key = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "select_mcq_options": Statement(
+        "SELECT option_id, label FROM mcq_option WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id ORDER BY option_id"
+    ),
+    "delete_mcq_options": Statement(
+        "DELETE FROM mcq_option WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "insert_mcq_option": Statement(
+        "INSERT INTO mcq_option (package_version_id, criterion_id, option_id, label) "
+        "VALUES (:v, :criterion_id, :option_id, :label)"
+    ),
+    "insert_elicitation": Statement(
+        "INSERT INTO elicitation_history (elicitation_id, package_version_id, question, "
+        "options_offered, answer_given, resulting_edit, asked_at) "
+        "VALUES (:id, :v, :question, :options_offered, :answer_given, "
+        ":resulting_edit, datetime('now'))"
     ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
@@ -554,6 +965,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_VERSION_LINEAGE,)
     + (_PKG_SCHEMA_LOCK_COLUMNS,)
     + (_PKG_VALIDATION_KEYS,)
+    + (_PKG_GRADE_POLICY_AND_KEYS,)
 )
 
 #: The revision copy order: parents before children, so every copied row's FK is
@@ -563,8 +975,13 @@ _REVISION_COPY_KEYS: tuple[str, ...] = (
     "pkg_revision_copy_band",
     "pkg_revision_copy_dependency",
     "pkg_revision_copy_exemplar",
+    "pkg_revision_copy_mcq_option",
     "pkg_revision_copy_grade_policy",
+    "pkg_revision_copy_grade_boundary",
 )
+# elicitation_history is deliberately NOT a revision copy: it is the append-only
+# calibration trail (FR-PKG-20), whose rows reference the version the conversation was
+# about — copying them would duplicate history, and no process may rewrite it.
 
 
 # --- the catalog --------------------------------------------------------------------------------
@@ -841,8 +1258,21 @@ class PackageCatalog:
         self._cache_version = None
 
     def _load_version(self, v: PackageVersionId) -> dict:
-        criteria = [dict(r) for r in self._handle.query(
-            PKG_STATEMENTS["select_criteria"], v=v)]
+        criteria = []
+        for r in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
+            row = dict(r)
+            try:
+                row["answer_key"] = (
+                    tuple(json.loads(row["answer_key"])) if row["answer_key"] else ()
+                )
+            except (TypeError, ValueError) as error:
+                # A malformed key must not poison the per-run cache loader with a raw
+                # JSONDecodeError — CT-PKG-11: caller errors are this module's own.
+                raise PackageError(
+                    f"version {v!r} holds a malformed answer key for criterion "
+                    f"{row['criterion_id']!r}: {error}"
+                ) from error
+            criteria.append(row)
         bands_by_criterion: dict[str, tuple] = {}
         for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
             bands_by_criterion.setdefault(row["criterion_id"], []).append(dict(row))
@@ -937,7 +1367,18 @@ class PackageCatalog:
     ) -> None:
         """Set one criterion column — the guarded mutation surface `M-CALIB` writes
         through (`FR-CALIB-07`). Refuses locked fields on published versions with
-        `SchemaLockViolation` naming the field; permits everything on drafts."""
+        `SchemaLockViolation` naming the field; permits everything on drafts.
+
+        `answer_key` is refused here regardless of lock state: the key has exactly one
+        write door, `set_answer_key` (ADR-1's single canonical representation) — this
+        generic path stores the raw value, and an unvalidated one would poison every
+        later read of the version."""
+        if field == "answer_key":
+            raise PackageError(
+                "answer_key is written through set_answer_key (FR-PKG-17, ADR-1) — "
+                "the canonical setter validates and serializes the key; this generic "
+                "field path would store it raw."
+            )
         with self._handle.transaction() as tx:
             self._guard(tx, v, f"criterion.{field}")
             tx.execute(
@@ -958,6 +1399,216 @@ class PackageCatalog:
                 v=v, criterion_id=criterion_id, ordinal=ordinal, value=value,
             )
         self._invalidate()
+
+    # -- grade policy, boundaries, answer keys, elicitation history (#30) --------------------
+
+    def set_grade_policy(self, v: PackageVersionId, policy: GradePolicy) -> None:
+        """Store the executed policy (`FR-PKG-14`). Only a `GradePolicy` instance is
+        accepted — a string (a free-text formula, an executable expression, a
+        lambda-shaped string) is refused HERE rather than stored and interpreted later,
+        because an executable formula in a package is an arbitrary-code surface and an
+        un-auditable grade. `plain_language` needs no storage: it is generated from the
+        object on read (`FR-PKG-15`)."""
+        if not isinstance(policy, GradePolicy):
+            raise GradePolicyError(
+                f"the grade policy must be a GradePolicy object drawn from the closed "
+                f"rule vocabulary (FR-PKG-14); got {type(policy).__name__}. A "
+                "free-text formula or an executable expression is refused — it is an "
+                "arbitrary-code surface and an un-auditable grade."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "grade_policy.set")
+            tx.execute(PKG_STATEMENTS["delete_policy"], v=v)
+            tx.execute(PKG_STATEMENTS["insert_policy"], v=v,
+                       policy=json.dumps(policy.to_dict(), sort_keys=True),
+                       review_window_hours=policy.review_window_hours)
+        self._invalidate()
+
+    def grade_policy(self, v: PackageVersionId) -> GradePolicy:
+        """The executed policy as a structured object (`FR-PKG-14`): parsed from the
+        stored JSON and RE-VALIDATED against the closed vocabulary, so a hand-edited row
+        holding a formula refuses on read too. `review_window_hours` comes from its
+        column (ADR-3) — null means finalize on run completion (`FR-PKG-19`), never wait
+        indefinitely. A version with no stored policy answers the default
+        (`FR-SETUP-12`) — M-GRADE always finds a policy and never has to invent one."""
+        rows = self._handle.query(PKG_STATEMENTS["select_policy"], v=v)
+        if not rows:
+            return default_grade_policy()
+        try:
+            data = json.loads(rows[0]["policy"])
+        except (TypeError, ValueError) as error:
+            # A row that is not even JSON — a formula stored by hand — is exactly the
+            # FR-PKG-14 refusal, not a raw JSONDecodeError from the read path.
+            raise GradePolicyError(
+                f"the stored grade policy for version {v!r} is not a structured "
+                f"object from the closed rule vocabulary (FR-PKG-14): {error}"
+            ) from error
+        data["review_window_hours"] = rows[0]["review_window_hours"]
+        return GradePolicy.from_dict(data)
+
+    def set_boundaries(
+        self, v: PackageVersionId, boundaries: Sequence[tuple[str, float]]
+    ) -> None:
+        """Declare the version's grade boundary table (`FR-PKG-16`) — the SINGLE
+        canonical representation of the grade resolution rule; the policy object carries
+        no copy of it. Each pair is (grade, scaled_floor). Floors are INCLUSIVE:
+        `boundary_for` resolves a scaled score to the grade with the greatest floor
+        <= the score. An empty sequence clears the table (a draft's no-boundary-table
+        state); CT-PKG-10's null-equivalent is the ABSENCE of rows, and callers handle
+        that rather than inventing boundaries."""
+        grades = [grade for grade, _ in boundaries]
+        floors = [float(floor) for _, floor in boundaries]
+        if any(not grade for grade in grades):
+            raise GradePolicyError(
+                "a boundary table names each grade (FR-PKG-16) — an empty label "
+                "resolves to nothing."
+            )
+        if len(set(grades)) != len(grades):
+            raise GradePolicyError(
+                f"duplicate grade labels {grades} — one label, one cut "
+                "(FR-PKG-16's single canonical representation)."
+            )
+        if any(not math.isfinite(floor) for floor in floors):
+            raise GradePolicyError(
+                "boundary floors are finite scaled scores (FR-PKG-16)."
+            )
+        if len(set(floors)) != len(floors):
+            raise GradePolicyError(
+                f"duplicate scaled floors {floors} — two grades sharing one cut is "
+                "an ambiguous resolution (FR-PKG-16)."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "grade_boundary.set")
+            tx.execute(PKG_STATEMENTS["delete_boundaries"], v=v)
+            for grade, floor in boundaries:
+                tx.execute(PKG_STATEMENTS["insert_boundary"], v=v,
+                           grade=grade, scaled_floor=float(floor))
+        self._invalidate()
+
+    def boundary_for(self, v: PackageVersionId, scaled_score: float) -> str | None:
+        """`FR-PKG-16`/`CT-PKG-10`: the grade for a scaled score — a PURE lookup over
+        `grade_boundary`, the single canonical representation. Floors are INCLUSIVE
+        (the declared rule): the grade with the greatest floor <= the score. A score
+        below the lowest floor has no grade, and a version with NO boundary table
+        answers None — never an invented boundary."""
+        resolved: str | None = None
+        for row in self._handle.query(PKG_STATEMENTS["select_boundaries"], v=v):
+            if float(row["scaled_floor"]) <= scaled_score:
+                resolved = row["grade"]
+            else:
+                break
+        return resolved
+
+    def distance_to_nearest_boundary(
+        self, v: PackageVersionId, scaled_score: float
+    ) -> float | None:
+        """`FR-PKG-16`: how far a scaled score sits from the nearest cut — M-REVIEW's
+        boundary-proximity ranking signal. Exactly 0.0 ON a cut. None where the version
+        declares no boundary table (`CT-PKG-10`) — the caller handles it; no invented
+        distance."""
+        rows = self._handle.query(PKG_STATEMENTS["select_boundaries"], v=v)
+        if not rows:
+            return None
+        return min(abs(float(row["scaled_floor"]) - scaled_score) for row in rows)
+
+    def set_answer_key(
+        self, v: PackageVersionId, criterion_id: str, key: Sequence[str]
+    ) -> None:
+        """Declare the multiple-choice key (`FR-PKG-17`, ADR-1):
+        `criterion.answer_key` is the SINGLE canonical representation — `mcq_option`
+        carries no correctness column, so a corrected key cannot leave two disagreeing
+        sources. The key is the sequence of acceptable option ids (one for
+        single-select, several for multi-select). Refused on a published version: a key
+        CORRECTION is a new version (`FR-PKG-18`) — create_version(parent, ...) copies
+        the prior key into the child, the correction lands there, and
+        `audit_record.answer_key_ref` resolves to exactly the key that produced a given
+        grade."""
+        ids = [str(option) for option in key]
+        if not ids or any(not option for option in ids):
+            raise PackageError(
+                "an answer key is a non-empty sequence of option ids (FR-PKG-17); an "
+                "empty or blank key would grade every submission wrong identically."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.answer_key")
+            if criterion_id not in {row["criterion_id"] for row in tx.execute(
+                    PKG_STATEMENTS["select_criteria"], v=v)}:
+                raise PackageError(
+                    f"criterion {criterion_id!r} does not exist in version {v!r}."
+                )
+            tx.execute(PKG_STATEMENTS["update_criterion_answer_key"],
+                       v=v, criterion_id=criterion_id, value=json.dumps(ids))
+        self._invalidate()
+
+    def answer_key(self, criterion_id: str) -> tuple[str, ...]:
+        """`FR-PKG-17`/`CT-PKG-08`: the criterion's key, from the version currently at
+        the top of the lineage — the one a grade produced NOW pins by
+        `answer_key_ref`. A prior version's key stays exactly where it was (read it
+        version-pinned via `criteria(parent_v)`), which is what makes `FR-PKG-18`'s
+        resolution exact. No key declared yet answers the empty tuple."""
+        rows = self._handle.query(PKG_STATEMENTS["select_answer_key_latest"],
+                                  criterion_id=criterion_id)
+        if not rows or rows[0]["answer_key"] is None:
+            return ()
+        try:
+            return tuple(json.loads(rows[0]["answer_key"]))
+        except (TypeError, ValueError) as error:
+            raise PackageError(
+                f"criterion {criterion_id!r} holds a malformed answer key: {error}"
+            ) from error
+
+    def set_mcq_options(
+        self, v: PackageVersionId, criterion_id: str,
+        options: Sequence[tuple[str, str]],
+    ) -> None:
+        """Declare the criterion's options as (option_id, label) pairs (`FR-PKG-17`).
+        Deliberately NO correctness column exists on `mcq_option` (ADR-1): the key
+        lives once, on `criterion.answer_key`. Drafts only — the triggers refuse
+        published versions."""
+        ids = [option_id for option_id, _ in options]
+        if any(not option_id for option_id in ids):
+            raise PackageError("an mcq option carries a non-empty option_id.")
+        if len(set(ids)) != len(ids):
+            raise PackageError(f"duplicate option ids {ids} — options are distinct.")
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "mcq_option.set")
+            if criterion_id not in {row["criterion_id"] for row in tx.execute(
+                    PKG_STATEMENTS["select_criteria"], v=v)}:
+                raise PackageError(
+                    f"criterion {criterion_id!r} does not exist in version {v!r}."
+                )
+            tx.execute(PKG_STATEMENTS["delete_mcq_options"], v=v,
+                       criterion_id=criterion_id)
+            for option_id, label in options:
+                tx.execute(PKG_STATEMENTS["insert_mcq_option"], v=v,
+                           criterion_id=criterion_id, option_id=option_id,
+                           label=label)
+        self._invalidate()
+
+    def mcq_options(self, v: PackageVersionId, criterion_id: str) -> tuple:
+        """The criterion's declared options, as (option_id, label) pairs — the display
+        half of `FR-PKG-17`. Correctness is NOT here (ADR-1): read the key."""
+        rows = self._handle.query(PKG_STATEMENTS["select_mcq_options"], v=v,
+                                  criterion_id=criterion_id)
+        return tuple((row["option_id"], row["label"]) for row in rows)
+
+    def append_elicitation(
+        self, v: PackageVersionId, question: str, options_offered: Sequence[str],
+        answer_given: str, resulting_edit: str = "",
+    ) -> str:
+        """Append one calibration-history row (`FR-PKG-20`, `FR-CALIB-14`): the question
+        asked, the options offered, the teacher's answer, the resulting edit. Appends
+        are allowed on PUBLISHED versions — the trail records conversations about the
+        rubric as it stands. The table is append-only in practice, not by convention:
+        migration 005 installs unconditional BEFORE UPDATE / BEFORE DELETE triggers,
+        and this surface offers no update or delete at all."""
+        elicitation_id = uuid.uuid4().hex
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["insert_elicitation"], id=elicitation_id, v=v,
+                       question=question,
+                       options_offered=json.dumps(list(options_offered)),
+                       answer_given=answer_given, resulting_edit=resulting_edit)
+        return elicitation_id
 
     # -- the lineage surface -----------------------------------------------------------------
 
@@ -1009,7 +1660,8 @@ class PackageCatalog:
 
     def is_locked(self, v: PackageVersionId) -> bool:
         """Whether `v` is published. Read surface for the tests and the console."""
-        return bool(self._handle.query(_SELECT_VERSION, v=v)[0]["locked"])
+        return bool(self._handle.query(
+            PKG_STATEMENTS["select_version"], v=v)[0]["locked"])
 
     def lineage(self, v: PackageVersionId) -> tuple[PackageVersionId, ...]:
         """The version's ancestry, oldest first — the chain a grade resolves through."""
