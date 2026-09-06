@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+import aeh.pkg  # noqa: F401 -- imports the owning module so Tier P's registry is complete
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,
@@ -50,7 +51,10 @@ GOLDEN = Path(__file__).resolve().parents[3] / "fixtures" / "F-SCHEMA" / "post-m
 FIXTURE_ROWS: dict[Tier, dict[str, list[tuple]]] = {
     Tier.PACKAGE: {
         "package": [("PKG-FIX", "2026-01-01T00:00:00Z")],
-        "package_version": [("PV-FIX", "PKG-FIX", 1, 1)],
+        # locked = 0: migration 002 installs the immutability triggers, and seeding
+        # children of a LOCKED version would trip them — a fixture database standing at
+        # version N is a work-in-progress draft, not a published version.
+        "package_version": [("PV-FIX", "PKG-FIX", 1, 0)],
         # Column order matches the DDL: criterion(criterion_id, package_version_id, ...).
         # The first draft had it swapped — the builder's raw connection runs with FKs off,
         # so nothing caught it until the FK check below did (review, B2).
@@ -116,8 +120,16 @@ def _fixture_database(db_path: Path, tier: Tier, at_version: int) -> None:
                 (migration.version, migration.name, FIXTURE_VERSION_STAMP),
             )
         for table, rows in FIXTURE_ROWS[tier].items():
+            # The insert names its columns and takes the FIRST len(values) of the table's
+            # declaration order: later additive migrations only append columns, so the
+            # leading columns are exactly what migration 001 declared and what the
+            # positional fixture rows describe — at every schema version.
+            declared = [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
+            named = declared[: len(rows[0])]
             placeholders = ", ".join("?" for _ in rows[0])
-            connection.executemany(f"INSERT INTO {table} VALUES ({placeholders})", rows)
+            column_list = ", ".join(f'"{c}"' for c in named)
+            connection.executemany(
+                f'INSERT INTO "{table}" ({column_list}) VALUES ({placeholders})', rows)
         connection.commit()
         # The builder's connection runs with FKs off (SQLite's default), which is exactly
         # how a value-swapped row passed silently once: NOT NULL/CHECK/PK are enforced, FK
@@ -132,14 +144,19 @@ def _fixture_database(db_path: Path, tier: Tier, at_version: int) -> None:
         connection.close()
 
 
-def _checksum(db_path: Path) -> dict[str, dict]:
+def _checksum(db_path: Path, projection: dict[str, list[str]] | None = None) -> dict[str, dict]:
     """Per-table row counts and content checksums, over every user table.
 
     Rows are serialized in declaration-stable order (ordered by every column, repr-normalized
     for blob cells) and hashed — so the checksum moves if a migration rewrites, drops,
     reshapes or reorders data, and stays put if a migration only adds empty structure.
     `schema_version` is excluded: once a *new* migration applies, its `applied_at` is
-    legitimately "now", and a checksum that moved on every migration would be noise."""
+    legitimately "now", and a checksum that moved on every migration would be noise.
+
+    `projection` restricts each table's checksum to the named columns — the differential's
+    tool for a column-ADDING migration, where comparing whole rows would flag the new
+    column as changed data (TC-STORE-04's own advisory anticipated exactly this edit, and
+    #26's Tier P lineage migration is the first column-adder)."""
     connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
     try:
         tables = sorted(
@@ -151,11 +168,20 @@ def _checksum(db_path: Path) -> dict[str, dict]:
         result: dict[str, dict] = {}
         for table in tables:
             columns = [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
-            order = ", ".join(f'"{c}"' for c in columns)
-            rows = connection.execute(f'SELECT * FROM "{table}" ORDER BY {order}').fetchall()
+            selected = (
+                [c for c in (projection or {}).get(table, columns) if c in columns]
+                if projection else columns
+            )
+            order = ", ".join(f'"{c}"' for c in (selected or columns))
+            rows = connection.execute(
+                f'SELECT {order} FROM "{table}" ORDER BY {order}').fetchall()
             digest = hashlib.sha256()
             digest.update(repr(rows).encode())
-            result[table] = {"rows": len(rows), "checksum": digest.hexdigest()}
+            result[table] = {
+                "rows": len(rows),
+                "columns": columns,
+                "checksum": digest.hexdigest(),
+            }
         return result
     finally:
         connection.close()
@@ -213,29 +239,45 @@ def test_tc_store_04_every_prior_version_migrates_to_current_without_data_loss(t
                 f"TC-STORE-04: {tier.value} v{version} applied {opened.migrations_applied}; "
                 "pending is 'not in the applied set', in version order."
             )
-            after = _checksum(db_path)
+            before_projection = {t: b["columns"] for t, b in before.items()}
+            # Two reads with two jobs: the PROJECTED read feeds the before/after
+            # differential (a column-adding migration changes the row shape, and
+            # projecting onto the old columns separates "data changed" from "shape
+            # changed"); the UNPROJECTED read is the post-migration state the golden
+            # pins — the golden describes the world as the current schema holds it.
+            after = _checksum(db_path, projection=before_projection)
+            after_full = _checksum(db_path)
             # "preserved for every *surviving* table" (the plan's wording): a migration may
-            # ADD tables (#12's store_lease_clock arrives exactly this way) — the oracle is
-            # that nothing vanishes and every surviving table's rows and content are intact.
+            # ADD tables (#12's store_lease_clock, #26's triggers) — the oracle is that
+            # nothing vanishes and every surviving table's data is intact, compared over
+            # the BEFORE-shape columns: a column-ADDING migration legitimately changes the
+            # row shape, and projecting onto the old columns is what separates "data
+            # changed" from "shape changed" — the differential's own stated tool, applied
+            # now that #26's Tier P lineage migration is the first real column-adder.
             vanished = set(before) - set(after)
             assert not vanished, (
                 f"TC-STORE-04: migrating {tier.value} v{version} dropped table(s) {sorted(vanished)}. "
                 "Forward-only migrations add and reshape; they do not remove."
             )
-            changed = {t for t in before if before[t] != after.get(t)}
+            lost_rows = {
+                t for t in before if before[t]["rows"] != after.get(t, {}).get("rows")
+            }
+            assert not lost_rows, (
+                f"TC-STORE-04: migrating {tier.value} v{version} changed row counts in "
+                f"{sorted(lost_rows)}. NFR-STORE-04: no data loss."
+            )
+            changed = {
+                t for t in before if before[t]["checksum"] != after.get(t, {}).get("checksum")
+            }
             assert not changed, (
                 f"TC-STORE-04: migrating {tier.value} v{version} -> "
                 f"{current_schema_version(tier)} changed data in {sorted(changed)}: "
                 f"{ {t: (before[t], after[t]) for t in sorted(changed)} }. "
                 "NFR-STORE-04: forward-only, no data loss. If the migration legitimately "
-                "transforms data, the golden and FIXTURE_ROWS move with it — in the same PR. "
-                "NOTE for a column-ADDING migration: this differential compares whole rows "
-                "with SELECT *, so an added column changes every row's shape and the fix is "
-                "comparing only the columns present in the before-shape — edit the "
-                "comparison, not the golden, for that case."
+                "transforms data, the golden and FIXTURE_ROWS move with it — in the same PR."
             )
             store.close()
-            report[f"{tier.value}@v{version}"] = after
+            report[f"{tier.value}@v{version}"] = after_full
 
     assert golden is not None, (
         "TC-STORE-04: fixtures/F-SCHEMA/post-migration-checksums.json is missing. The golden "
