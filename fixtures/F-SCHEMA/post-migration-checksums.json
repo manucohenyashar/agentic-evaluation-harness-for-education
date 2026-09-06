@@ -290,12 +290,13 @@
       "rows": 1
     },
     "exemplar": {
-      "checksum": "158839dc6a8e903972a592d56aa110743fa1f4ced22654f3f328892c8cc99c56",
+      "checksum": "92df2b04c7eb40444508855867a4a02ffbf57a8a9bb8b55f2bf650f975e417ec",
       "columns": [
         "exemplar_id",
         "package_version_id",
         "criterion_id",
-        "band"
+        "band",
+        "provenance"
       ],
       "rows": 1
     },
@@ -329,13 +330,18 @@
       "rows": 1
     },
     "validation_record": {
-      "checksum": "8946e23cd561a08193e245bfb1ef721d8980f24edcff4b577fdecce520e93bec",
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
         "validation_record_id",
         "package_version_id",
         "backend_profile",
         "panel_build_ref",
-        "recorded_at"
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
       ],
       "rows": 1
     }
@@ -377,12 +383,13 @@
       "rows": 1
     },
     "exemplar": {
-      "checksum": "158839dc6a8e903972a592d56aa110743fa1f4ced22654f3f328892c8cc99c56",
+      "checksum": "92df2b04c7eb40444508855867a4a02ffbf57a8a9bb8b55f2bf650f975e417ec",
       "columns": [
         "exemplar_id",
         "package_version_id",
         "criterion_id",
-        "band"
+        "band",
+        "provenance"
       ],
       "rows": 1
     },
@@ -416,13 +423,18 @@
       "rows": 1
     },
     "validation_record": {
-      "checksum": "8946e23cd561a08193e245bfb1ef721d8980f24edcff4b577fdecce520e93bec",
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
         "validation_record_id",
         "package_version_id",
         "backend_profile",
         "panel_build_ref",
-        "recorded_at"
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
       ],
       "rows": 1
     }
@@ -464,12 +476,13 @@
       "rows": 1
     },
     "exemplar": {
-      "checksum": "158839dc6a8e903972a592d56aa110743fa1f4ced22654f3f328892c8cc99c56",
+      "checksum": "92df2b04c7eb40444508855867a4a02ffbf57a8a9bb8b55f2bf650f975e417ec",
       "columns": [
         "exemplar_id",
         "package_version_id",
         "criterion_id",
-        "band"
+        "band",
+        "provenance"
       ],
       "rows": 1
     },
@@ -503,13 +516,111 @@
       "rows": 1
     },
     "validation_record": {
-      "checksum": "8946e23cd561a08193e245bfb1ef721d8980f24edcff4b577fdecce520e93bec",
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
         "validation_record_id",
         "package_version_id",
         "backend_profile",
         "panel_build_ref",
-        "recorded_at"
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
+      ],
+      "rows": 1
+    }
+  },
+  "package@v4": {
+    "band": {
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "rows": 1
+    },
+    "criterion": {
+      "checksum": "0e53f02f775b6236bac0c60039351084ffdef2ca523302c969687382097e5d12",
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag"
+      ],
+      "rows": 2
+    },
+    "criterion_dependency": {
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "rows": 1
+    },
+    "exemplar": {
+      "checksum": "92df2b04c7eb40444508855867a4a02ffbf57a8a9bb8b55f2bf650f975e417ec",
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance"
+      ],
+      "rows": 1
+    },
+    "grade_policy": {
+      "checksum": "4ea9f45b1e747b3932babd0048c5609b3d62827db73d280706902b69df8597fa",
+      "columns": [
+        "package_version_id",
+        "policy"
+      ],
+      "rows": 1
+    },
+    "package": {
+      "checksum": "28a0531ad7ff7d4fd44bad21cc86490980dc390595347be1fc01d2765d28a2b7",
+      "columns": [
+        "package_id",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "package_version": {
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab",
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "rows": 1
+    },
+    "validation_record": {
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
       ],
       "rows": 1
     }
