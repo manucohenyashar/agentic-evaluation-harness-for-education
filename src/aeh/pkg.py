@@ -37,6 +37,8 @@ from aeh.store import (
 )
 
 __all__ = [
+    "BandSetError",
+    "CyclicDependencyError",
     "PackageCatalog",
     "PackageDraft",
     "PackageError",
@@ -53,6 +55,26 @@ PackageVersionId = str
 class PackageError(Exception):
     """Base for every `M-PKG` failure. Siblings, never a chain — the exact-type oracle
     convention every module's error taxonomy follows."""
+
+
+class BandSetError(PackageError):
+    """A band set violates the structural rules the scoring pipeline assumes
+    (`FR-PKG-06`): a `band_count` that is odd or outside 2..6, ordinals that are not
+    contiguous from 0, or `points` that are not non-decreasing in ordinal.
+
+    The monotone mapping is what `M-AGG` and `M-GRADE` assume; the even count is the
+    design rule that removes the safe middle band a hesitant judge retreats to
+    (design §5.10, R40). Not retryable by mutation — the band set is rewritten as a
+    whole."""
+
+
+class CyclicDependencyError(PackageError):
+    """A `criterion_dependency` write would make the dependency graph cyclic
+    (`FR-PKG-05`).
+
+    The extraction sweep's two-pass order rests on the graph being a DAG; a cycle would
+    strand the cycle's criteria in the second pass forever. Not retryable — the edge is
+    the mistake."""
 
 
 class SchemaLockViolation(PackageError):
@@ -112,6 +134,7 @@ _PKG_SCHEMA_LOCK_COLUMNS = Migration(
     name="pkg_schema_lock_columns",
     statements=(
         Statement("ALTER TABLE criterion ADD COLUMN max_points REAL"),
+        Statement("ALTER TABLE criterion ADD COLUMN band_count INTEGER"),
         Statement("ALTER TABLE criterion ADD COLUMN scoring_model TEXT"),
         Statement("ALTER TABLE criterion ADD COLUMN construct_tag TEXT"),
         Statement("ALTER TABLE band ADD COLUMN descriptor TEXT"),
@@ -315,6 +338,44 @@ PKG_STATEMENTS.update({
         "INSERT INTO grade_policy (package_version_id, policy) "
         "SELECT :new, policy FROM grade_policy WHERE package_version_id = :old"
     ),
+    "insert_criterion": Statement(
+        "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
+        "max_points, scoring_model, construct_tag, band_count) VALUES (:v, "
+        ":criterion_id, :question_id, :kind, :max_points, :scoring_model, "
+        ":construct_tag, :band_count)"
+    ),
+    "insert_dependency": Statement(
+        "INSERT INTO criterion_dependency (package_version_id, criterion_id, "
+        "depends_on) VALUES (:v, :criterion_id, :depends_on)"
+    ),
+    "insert_band": Statement(
+        "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points, "
+        "descriptor) VALUES (:v, :criterion_id, :ordinal, :band, :points, :descriptor)"
+    ),
+    "insert_exemplar": Statement(
+        "INSERT INTO exemplar (exemplar_id, package_version_id, criterion_id, band) "
+        "VALUES (:exemplar_id, :v, :criterion_id, :band)"
+    ),
+    "select_criteria": Statement(
+        "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
+        "construct_tag, band_count FROM criterion WHERE package_version_id = :v "
+        "ORDER BY criterion_id"
+    ),
+    "select_bands": Statement(
+        "SELECT criterion_id, ordinal, band, points, descriptor FROM band "
+        "WHERE package_version_id = :v ORDER BY criterion_id, ordinal"
+    ),
+    "select_bands_by_criterion": Statement(
+        "SELECT criterion_id, ordinal, band, points, descriptor FROM band "
+        "WHERE criterion_id = :criterion_id ORDER BY ordinal"
+    ),
+    "select_dependencies": Statement(
+        "SELECT criterion_id, depends_on FROM criterion_dependency "
+        "WHERE package_version_id = :v"
+    ),
+    "select_latest_version": Statement(
+        "SELECT package_version_id FROM package_version ORDER BY revision DESC LIMIT 1"
+    ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
     # statement exists, and the guard selects by field name.
@@ -395,6 +456,10 @@ class PackageCatalog:
     def __init__(self, handle, *, package_id: str) -> None:
         self._handle = handle
         self._package_id = package_id
+        # The per-run cache (NFR-PKG-05): loaded once against a version, invalidated on
+        # publish and on any edit. ~23,000 unit reads per run must not re-query SQLite.
+        self._cache: dict | None = None
+        self._cache_version: str | None = None
 
     def _guard(self, tx, v: PackageVersionId, field: str) -> None:
         """The one lock check every mutation funnels through.
@@ -435,6 +500,229 @@ class PackageCatalog:
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion_dependency.alter")
 
+    # -- structure, graph and the per-run cache (#28) ------------------------------------------
+
+    def add_criterion(
+        self, v: PackageVersionId, criterion_id: str, *, question_id: str = "",
+        kind: str = "open", max_points: float = 0.0, scoring_model: str = "atomic",
+        construct_tag: str = "", dependencies: Sequence[str] = (),
+        band_count: int | None = None,
+    ) -> None:
+        """Add a criterion with its dependency edges, refusing a cycle (`FR-PKG-05`) —
+        the guard's add-refusal applies to published versions; drafts add freely. The
+        content arguments default so a published version's refusal fires before any
+        content is needed (TC-PKG-03 row 2 passes only the id).
+
+        `band_count` is the DECLARED band-set size (`FR-PKG-06`): odd or outside 2..6
+        fails at the declare — a set that can never satisfy the even-count rule should
+        not exist even as a draft. `add_band` refuses past the declared count."""
+        if band_count is not None and (band_count < 2 or band_count > 6
+                                       or band_count % 2 != 0):
+            raise BandSetError(
+                f"a band_count of {band_count} is odd or outside 2..6 (FR-PKG-06). The "
+                "even count removes the safe middle band a hesitant judge retreats to "
+                "(design §5.10, R40) — declared at the criterion, not discovered after "
+                "the bands are written."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.add")
+            tx.execute(PKG_STATEMENTS["insert_criterion"],
+                       v=v, criterion_id=criterion_id, question_id=question_id,
+                       kind=kind, max_points=max_points, scoring_model=scoring_model,
+                       construct_tag=construct_tag, band_count=band_count)
+            for depends_on in dependencies:
+                tx.execute(PKG_STATEMENTS["insert_dependency"],
+                           v=v, criterion_id=criterion_id, depends_on=depends_on)
+        self._cache_get(v)
+        self._assert_acyclic(self._version_graph(v))
+        self._invalidate()
+
+    def add_band(
+        self, v: PackageVersionId, criterion_id: str, ordinal: int,
+        band: str, points: float, descriptor: str = "",
+    ) -> None:
+        """Add one band, enforcing the structural rules on the whole set afterwards
+        (`FR-PKG-06`)."""
+        declared = self._band_count(v, criterion_id)
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "band.add-unpublished")
+            if declared is not None and ordinal >= declared:
+                raise BandSetError(
+                    f"band ordinal {ordinal} exceeds the criterion's declared "
+                    f"band_count of {declared} (FR-PKG-06)."
+                )
+            tx.execute(PKG_STATEMENTS["insert_band"],
+                       v=v, criterion_id=criterion_id, ordinal=ordinal,
+                       band=band, points=points, descriptor=descriptor)
+        rows = self._read_bands(criterion_id)
+        self._validate_band_order(rows)
+        if declared is not None and len(rows) == declared:
+            self._validate_band_count(len(rows))
+        self._invalidate()
+
+    def add_exemplar(
+        self, v: PackageVersionId, exemplar_id: str, criterion_id: str, band: str,
+    ) -> None:
+        """Add an exemplar, refusing a band that does not name a band declared for the
+        criterion (`FR-PKG-07`)."""
+        declared = {row["band"] for row in self._read_bands(criterion_id)}
+        if band not in declared:
+            raise BandSetError(
+                f"exemplar names band {band!r}, which criterion {criterion_id!r} does "
+                f"not declare (declared: {sorted(declared)}). An exemplar anchored to an "
+                "undeclared band would train judges toward a level the scoring pipeline "
+                "cannot produce."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "exemplar.add-unpublished")
+            tx.execute(PKG_STATEMENTS["insert_exemplar"],
+                       v=v, exemplar_id=exemplar_id, criterion_id=criterion_id,
+                       band=band)
+        self._invalidate()
+
+    def topological_order(self, v: PackageVersionId) -> tuple[str, ...]:
+        """A valid topological order over the version's dependency graph — dependencies
+        before dependents, which is `M-ORCH`'s extraction sweep order (`FR-PKG-05`)."""
+        return self._toposort(self._version_graph(v))
+
+    def criteria(self, v: PackageVersionId, question_id: str | None = None) -> tuple:
+        """The version's criteria, from the per-run cache (`NFR-PKG-05`: read on every
+        one of ~23,000 units)."""
+        cached = self._cache_get(v)
+        if question_id is None:
+            return cached["criteria"]
+        return tuple(c for c in cached["criteria"] if c["question_id"] == question_id)
+
+    def bands(self, criterion_id: str) -> tuple:
+        """The criterion's bands, ordered by ordinal, from the per-run cache."""
+        cached = self._cache_current()
+        return cached["bands"].get(criterion_id, ())
+
+    def points_for_band(self, criterion_id: str, band: str) -> float:
+        """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee)."""
+        for row in self.bands(criterion_id):
+            if row["band"] == band:
+                return float(row["points"])
+        raise PackageError(f"criterion {criterion_id!r} declares no band {band!r}.")
+
+    def _cache_get(self, v: PackageVersionId) -> dict:
+        if self._cache_version != v or self._cache is None:
+            self._cache = self._load_version(v)
+            self._cache_version = v
+        return self._cache
+
+    def _cache_current(self) -> dict:
+        """The cache, loaded against the file's latest version when no version has been
+        read yet — `bands(criterion_id)` carries no version argument by contract
+        (`CT-PROV`'s sibling shape: bands belong to the file's current version)."""
+        if self._cache is None:
+            rows = self._handle.query(PKG_STATEMENTS["select_latest_version"])
+            if not rows:
+                raise PackageError(
+                    "this Tier P database holds no package_version — the cache has "
+                    "nothing to load."
+                )
+            self._cache_get(rows[0]["package_version_id"])
+        return self._cache
+
+    def _invalidate(self) -> None:
+        """Invalidation on publish and on any edit: the cache must not become a second
+        source of truth (design §3.4, #28's own acceptance criterion)."""
+        self._cache = None
+        self._cache_version = None
+
+    def _load_version(self, v: PackageVersionId) -> dict:
+        criteria = [dict(r) for r in self._handle.query(
+            PKG_STATEMENTS["select_criteria"], v=v)]
+        bands_by_criterion: dict[str, tuple] = {}
+        for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
+            bands_by_criterion.setdefault(row["criterion_id"], []).append(dict(row))
+        bands = {c: tuple(rows) for c, rows in bands_by_criterion.items()}
+        return {"criteria": tuple(criteria), "bands": bands}
+
+    def _read_bands(self, criterion_id: str) -> list:
+        """Bands read straight from the database — the validators and the exemplar guard
+        run against the truth, not against the cache."""
+        return self._handle.query(PKG_STATEMENTS["select_bands_by_criterion"],
+                                  criterion_id=criterion_id)
+
+    def _version_graph(self, v: PackageVersionId) -> dict[str, set[str]]:
+        graph: dict[str, set[str]] = {
+            row["criterion_id"]: set()
+            for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v)
+        }
+        for row in self._handle.query(PKG_STATEMENTS["select_dependencies"], v=v):
+            graph.setdefault(row["criterion_id"], set()).add(row["depends_on"])
+            graph.setdefault(row["depends_on"], set())
+        return graph
+
+    def _assert_acyclic(self, graph: dict[str, set[str]]) -> None:
+        """Kahn's algorithm: a DAG consumes every node; whatever remains is the cycle
+        (`FR-PKG-05`)."""
+        remaining = {node: set(edges) for node, edges in graph.items()}
+        consumed: set[str] = set()
+        while remaining:
+            ready = [node for node, edges in remaining.items() if edges <= consumed]
+            if not ready:
+                cycle = sorted(next(iter(remaining.values())) | set(remaining))
+                raise CyclicDependencyError(
+                    f"the dependency graph is cyclic among {cycle}. The extraction "
+                    "sweep's two-pass order (FR-PKG-05) rests on the graph being a DAG."
+                )
+            for node in ready:
+                consumed.add(node)
+                del remaining[node]
+
+    def _toposort(self, graph: dict[str, set[str]]) -> tuple[str, ...]:
+        """Kahn's algorithm, deterministic: ready nodes emit in sorted order so the
+        extraction sweep's order is reproducible."""
+        remaining = {node: set(edges) for node, edges in graph.items()}
+        consumed: set[str] = set()
+        order: list[str] = []
+        while remaining:
+            ready = sorted(node for node, edges in remaining.items()
+                           if edges <= consumed)
+            if not ready:
+                raise CyclicDependencyError(
+                    f"the dependency graph is cyclic among {sorted(remaining)}."
+                )
+            for node in ready:
+                order.append(node)
+                consumed.add(node)
+                del remaining[node]
+        return tuple(order)
+
+    def _band_count(self, v: PackageVersionId, criterion_id: str) -> int | None:
+        for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
+            if row["criterion_id"] == criterion_id:
+                return row["band_count"]
+        return None
+
+    def _validate_band_order(self, rows) -> None:
+        """`FR-PKG-06`'s order half: ordinals contiguous from 0, points non-decreasing
+        in ordinal — the monotone mapping M-AGG and M-GRADE assume."""
+        ordinals = sorted(row["ordinal"] for row in rows)
+        points = [float(row["points"]) for row in sorted(rows, key=lambda r: r["ordinal"])]
+        if ordinals != list(range(len(ordinals))):
+            raise BandSetError(
+                f"the band ordinals {ordinals} are not contiguous from 0 (FR-PKG-06). "
+                "Gaps would leave an unreachable band in the middle of the mapping."
+            )
+        if any(later < earlier for earlier, later in zip(points, points[1:])):
+            raise BandSetError(
+                f"the band points {points} are not non-decreasing in ordinal (FR-PKG-06). "
+                "M-AGG and M-GRADE assume the monotone band-to-points mapping."
+            )
+
+    def _validate_band_count(self, count: int) -> None:
+        """`FR-PKG-06`'s count half: even, within 2..6 — the even count removes the safe
+        middle band a hesitant judge retreats to (design §5.10, R40)."""
+        if count < 2 or count > 6 or count % 2 != 0:
+            raise BandSetError(
+                f"a band set of {count} bands is outside 2..6 or odd (FR-PKG-06). The "
+                "even count removes the safe middle band a hesitant judge retreats to."
+            )
+
     def update_criterion_field(
         self, v: PackageVersionId, criterion_id: str, field: str, value: Any
     ) -> None:
@@ -447,6 +735,7 @@ class PackageCatalog:
                 PKG_STATEMENTS[f"update_criterion_{field}"],
                 v=v, criterion_id=criterion_id, value=value,
             )
+        self._invalidate()
 
     def update_band_field(
         self, v: PackageVersionId, criterion_id: str, ordinal: int,
@@ -459,6 +748,7 @@ class PackageCatalog:
                 PKG_STATEMENTS[f"update_band_{field}"],
                 v=v, criterion_id=criterion_id, ordinal=ordinal, value=value,
             )
+        self._invalidate()
 
     # -- the lineage surface -----------------------------------------------------------------
 
@@ -498,6 +788,15 @@ class PackageCatalog:
         self._refuse_mutation(v)
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
+        # FR-PKG-06's count half, at the publish boundary: every declared band_count is
+        # fully populated and even/2..6. The per-add checks covered order and ceiling.
+        # The validation reads the DATABASE directly — the cache was just invalidated.
+        for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
+            criterion = dict(row)
+            declared = self._band_count(v, criterion["criterion_id"])
+            if declared is not None:
+                self._validate_band_count(len(self.bands(criterion["criterion_id"])))
+        self._invalidate()
 
     def is_locked(self, v: PackageVersionId) -> bool:
         """Whether `v` is published. Read surface for the tests and the console."""
