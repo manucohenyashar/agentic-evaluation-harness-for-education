@@ -107,6 +107,8 @@ __all__ = [
     "BuildWatch",
     "Clock",
     "ConcurrencyGovernor",
+    "LocalServerProvider",
+    "OpenRouterProvider",
     "RunCounters",
     "HttpRequest",
     "HttpResponse",
@@ -655,6 +657,22 @@ class SystemClock:
         time.sleep(seconds)
 
 
+def _wait(clock, seconds: float) -> None:
+    """Wait `seconds`, through whatever the injected clock offers.
+
+    `SystemClock` sleeps for real. A test clock implements `advance` (the suite's
+    `FrozenClock` does), and advancing is the honest equivalent: the wait consumes fake
+    time, `rate_limit_wait_s` stays assertable, and §4.6's one-sanctioned-sleep rule is
+    not spent by a retry loop. A clock with neither is treated as instantaneous."""
+    sleeper = getattr(clock, "sleep", None)
+    if callable(sleeper):
+        sleeper(seconds)
+        return
+    advancer = getattr(clock, "advance", None)
+    if callable(advancer):
+        advancer(seconds)
+
+
 # --- the knobs (seam 3: production value is the default) ---------------------------------------
 
 #: `HARNESS_RETRY_MAX` (default 3) — the retry budget `FR-PROV-06` names. Attempts, not
@@ -676,6 +694,43 @@ DEFAULT_RETRY_AFTER_CEILING_S = 120.0
 #: repeated 429s (`FR-PROV-07`: "toward the configured floor rather than the full batch").
 CONCURRENCY_FLOOR_ENV = "HARNESS_CONCURRENCY_FLOOR"
 DEFAULT_CONCURRENCY_FLOOR = 1
+
+#: The two live providers' endpoints and credential (`CT-PROV-15`: this module is the only
+#: place in the tree that names a model endpoint).
+OPENROUTER_BASE_URL_ENV = "OPENROUTER_BASE_URL"
+OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY"
+LOCAL_INFERENCE_BASE_URL_ENV = "LOCAL_INFERENCE_BASE_URL"
+DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_LOCAL_INFERENCE_BASE_URL = "http://127.0.0.1:8080/v1"
+
+#: The answers `verify_retention` treats as a zero-retention confirmation. Deliberately a
+#: strict, closed set: the wire shape of a confirmation is design §3.2's open TBD, and the
+#: seam abstracts it — but the *evaluation* must be fail-closed regardless (`TC-PROV-17`):
+#: absent, empty, hedged ("mostly", "unknown"), or verbose answers are unconfirmed. This
+#: set is what TC-PROV-20's nightly observation revisits, not a guessed response schema.
+RETENTION_CONFIRMED_ANSWERS: frozenset[str] = frozenset(
+    {"yes", "true", "confirmed", "zero-retention"}
+)
+
+def _is_retention_confirmed(answer: object) -> bool:
+    """Is this retention answer an explicit zero-retention confirmation? **Fail-closed.**
+
+    `True` (a boolean) confirms; a string confirms only if it is exactly one of
+    `RETENTION_CONFIRMED_ANSWERS`; everything else — `False`, `None`, empty, hedged,
+    verbose — is unconfirmed. `bool(answer)` would read "unknown" as a yes and pass every
+    exception-type assertion while disclosing a cohort's work (the exact bug `SEC-03`'s
+    parametrization exists to catch)."""
+    if isinstance(answer, bool):
+        return answer
+    if not isinstance(answer, str):
+        return False
+    return answer.strip().lower() in RETENTION_CONFIRMED_ANSWERS
+
+
+#: Scoring/extraction criteria are the calls `FR-PROV-11` forbids price-based routing on:
+#: the cheapest path must never decide a judgment. Extraction joins scoring because a
+#: transcription that fed a judgment is part of the judgment's evidence.
+ROUTING_PROHIBITED_KINDS: frozenset[str] = frozenset({"scoring", "extraction"})
 
 
 def _int_env(name: str, default: int) -> int:
@@ -966,13 +1021,11 @@ def dispatch_with_retries(
             response = transport.send(request_factory())
         except TransportError as error:
             last_error = error
-        except (RateLimitedError, MalformedResponseError):
-            # A transport that classified instead of returning: honoured, per the same
-            # rules, so an injected transport cannot smuggle in a different policy.
-            raise NotImplementedError(
-                "transports return HttpResponse and raise TransportError only; 429 and "
-                "parse classification are this module's job"
-            )
+        except (ConnectionResetError, TimeoutError, OSError) as error:
+            # A raw connection failure — reset, timeout, unreachable host — is the
+            # transport failure `FR-PROV-06` names, whatever exception class the platform
+            # raises it through. `TC-PROV-10`'s decision table programs exactly this shape.
+            last_error = TransportError(f"transport failure: {error}")
         else:
             if response.status == 429:
                 wait = parse_retry_after(
@@ -986,17 +1039,18 @@ def dispatch_with_retries(
                     governor.on_rate_limited()
                 if counters is not None:
                     counters.on_rate_limited(wait)
-                    if attempt > 0:
-                        counters.on_retry()
-                last_error = RateLimitedError(f"HTTP 429 from the provider (attempt {attempt + 1})")
-                resolved_clock.sleep(wait)
+                last_error = RateLimitedError(
+                    f"HTTP 429 from the provider (attempt {attempt + 1})")
+                _wait(resolved_clock, wait)
+                if counters is not None and attempt > 0:
+                    counters.on_retry()
                 continue
             if 500 <= response.status <= 599:
                 last_error = TransportError(
                     f"HTTP {response.status} from the provider (attempt {attempt + 1})")
                 if counters is not None and attempt > 0:
                     counters.on_retry()
-                resolved_clock.sleep(jittered_backoff(
+                _wait(resolved_clock, jittered_backoff(
                     resolved_policy.backoff_base_ms, attempt, resolved_rng))
                 continue
             try:
@@ -1008,12 +1062,14 @@ def dispatch_with_retries(
                 return parsed
             except MalformedResponseError as error:
                 last_error = error
-                resolved_clock.sleep(jittered_backoff(
+                _wait(resolved_clock, jittered_backoff(
                     resolved_policy.backoff_base_ms, attempt, resolved_rng))
+                if counters is not None and attempt > 0:
+                    counters.on_retry()
                 continue
         if counters is not None and attempt > 0:
             counters.on_retry()
-        resolved_clock.sleep(jittered_backoff(
+        _wait(resolved_clock, jittered_backoff(
             resolved_policy.backoff_base_ms, attempt, resolved_rng))
 
     if isinstance(last_error, MalformedResponseError):
@@ -1050,6 +1106,374 @@ class InferenceProvider(Protocol):
     def estimate_cost(self, plan: CallPlan) -> CostEstimate: ...
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport: ...
+
+
+# --- the live implementations (FR-PROV-03, FR-PROV-14, FR-PROV-15) ------------------------------
+#
+# Both providers share one shape: an OpenAI-compatible chat-completions request, dispatched
+# through `dispatch_with_retries` over an injected `Transport`, parsed into a `Completion`.
+# LiteLLM (ADR-2) is the deployment-time shim; through the `Transport` seam the wire shape
+# is plain and the tests program responses without stubbing the provider.
+#
+# **Substitutability** (`FR-PROV-03`): a caller written against one implementation runs
+# unchanged against the others with only `RunConfig` differing. The constructors below take
+# the same seam arguments (`transport`, `clock`, `rng`, `counters`, `build_watch`,
+# `governor`, `retention_answers`, `on_dispatch`) defaulting to the real ones, behaviour-
+# neutrally — `FR-PROV-15`.
+
+
+def _openai_body(prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams) -> bytes:
+    """The dispatched body. The payload is carried **unchanged**: every `(name, value)`
+    field appears verbatim, in declaration order — no added field, no reordering, no
+    templating (`FR-PROV-13`, `TC-PROV-03`'s differential oracle). NFR-PROV-04: identity
+    reaches the body as the caller's `student_ref` field values (the roster mapping happened
+    in `M-INGEST`); no student name exists anywhere in the payload to leak."""
+    import json
+
+    body = {
+        "model": model_ref.build_id,
+        "prompt": {"fields": [[name, value] for name, value in prompt.fields]},
+        "temperature": params.temperature,
+    }
+    if params.seed is not None:
+        body["seed"] = params.seed
+    if params.max_tokens is not None:
+        body["max_tokens"] = params.max_tokens
+    if params.top_p is not None:
+        body["top_p"] = params.top_p
+    if params.stop:
+        body["stop"] = list(params.stop)
+    return json.dumps(body, ensure_ascii=False, sort_keys=False).encode("utf-8")
+
+
+def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completion":
+    """OpenAI-shaped response to a `Completion`, or `MalformedResponseError`.
+
+    The resolved build is what the response *reported* (the body's `model` field, falling
+    back to the `x-served-build` header) — never the requested ref (`FR-PROV-04`)."""
+    import json
+
+    body = response.body
+    if isinstance(body, dict):
+        document = body  # a programmed transport may hand the parsed document straight over
+    else:
+        try:
+            document = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise MalformedResponseError(
+                f"the response body is not valid JSON: {error}"
+            ) from error
+    if not isinstance(document, dict):
+        raise MalformedResponseError("the response body is JSON but not an object")
+    usage = document.get("usage") or {}
+    if not isinstance(usage, dict):
+        raise MalformedResponseError("the response 'usage' is not an object")
+    cached = usage.get("cached_prefix_tokens")
+    if cached is None and isinstance(usage.get("prompt_tokens_details"), dict):
+        cached = usage["prompt_tokens_details"].get("cached_tokens", 0)
+    if "choices" in document:
+        # An OpenAI-shaped response: the completion text hides in the first choice.
+        choices = document["choices"]
+        if not isinstance(choices, list) or not choices:
+            raise MalformedResponseError("the response carries no choices")
+        message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+        text = message.get("content")
+        if not isinstance(text, str):
+            raise MalformedResponseError(
+                "the first choice carries no message content string")
+    elif "text" in document:
+        # The module's own flat shape — the one `TC-PROV-18`'s programmed transport speaks:
+        # text verbatim, usage beside it, the served build in `model`.
+        text = document["text"]
+        if not isinstance(text, str):
+            raise MalformedResponseError("the response 'text' is not a string")
+    else:
+        raise MalformedResponseError(
+            "the response carries neither a choices list nor a text field"
+        )
+    served = document.get("model")
+    if not isinstance(served, str) or not served:
+        served = response.headers.get("x-served-build", model_ref.build_id)
+
+    return Completion(
+        text=text,
+        tokens_in=int(usage.get("prompt_tokens", 0)),
+        tokens_out=int(usage.get("completion_tokens", 0)),
+        latency_ms=0,
+        resolved_build=served,
+        cached_prefix_tokens=int(cached or 0),
+        cost=None,
+    )
+
+
+class _BaseLiveProvider:
+    """The shared dispatch machinery of the two live providers.
+
+    Not part of the public surface (`CT-PROV-01` closes it): the two classes below are the
+    implementations, and this class exists so the request/parse/display logic is written
+    once. Every constructor argument is `FR-PROV-15`'s seam, defaulting to the real thing,
+    behaviour-neutrally."""
+
+    def __init__(
+        self, *,
+        transport: Transport | None = None,
+        clock: Clock | None = None,
+        rng: random.Random | None = None,
+        counters: RunCountersTracker | None = None,
+        build_watch: BuildWatch | None = None,
+        governor: ConcurrencyGovernor | None = None,
+        policy: RetryPolicy | None = None,
+    ) -> None:
+        self._transport = transport if transport is not None else _DefaultTransport()
+        self._clock = clock if clock is not None else SystemClock()
+        self._rng = rng if rng is not None else random.Random()
+        self._counters = counters if counters is not None else RunCountersTracker()
+        self._build_watch = build_watch if build_watch is not None else BuildWatch()
+        self._governor = governor
+        self._policy = policy if policy is not None else RetryPolicy.from_environment()
+
+    @property
+    def counters(self) -> RunCounters:
+        """`CT-PROV-11`'s surface: the six names, for `M-ORCH` to persist."""
+        return self._counters.snapshot()
+
+    def record_run_build(self, model_key: str, build_id: str) -> None:
+        """The run-start build record `BuildWatch` guards (`FR-PROV-05`)."""
+        self._build_watch.record(model_key, build_id)
+
+    def _dispatch(self, model_ref: ModelRef, prompt: PromptPayload,
+                  params: SamplingParams) -> "Completion":
+        body = _openai_body(prompt, model_ref, params)
+        headers = {"Content-Type": "application/json"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        model_key = f"{model_ref.provider}:{model_ref.build_id}"
+        completion = dispatch_with_retries(
+            self._transport,
+            lambda: HttpRequest("POST", self._url_for(model_ref), headers, body),
+            lambda response: _parse_completion(response, model_ref),
+            policy=self._policy, clock=self._clock, rng=self._rng,
+            governor=self._governor, counters=self._counters,
+            build_watch=self._build_watch, model_key=model_key,
+        )
+        self._counters.on_usage(
+            completion.tokens_in, completion.tokens_out, completion.cached_prefix_tokens)
+        return completion
+
+    def estimate_cost(self, plan: CallPlan) -> CostEstimate:
+        """`FR-PROV-09`: a pure function of the plan and the declared per-token costs.
+        Dispatches nothing — the estimator reads the plan's call count and per-call token
+        budgets against the implementation's own declared rate (`TC-PROV-12`'s
+        hand-computed reference); the run's *actual* cost accumulates in the counters."""
+        per_call = (Decimal(plan.tokens_in_per_call) * self._cost_per_token_in
+                    + Decimal(plan.tokens_out_per_call) * self._cost_per_token_out)
+        return CostEstimate(total=per_call * plan.calls, currency="USD")
+
+    def _url_for(self, model_ref: ModelRef) -> str:
+        raise NotImplementedError
+
+
+class LocalServerProvider(_BaseLiveProvider):
+    """The on-premise OpenAI-compatible server (`FR-PROV-11`'s first implementation).
+
+    Retention is trivially confirmed — the model runs on school hardware, and no bytes
+    leave the building. `verify_retention` answers from that fact, not from a network
+    call."""
+
+    def __init__(self, *, base_url: str | None = None, api_key: str = "",
+                 **seams: Any) -> None:
+        super().__init__(**seams)
+        self._base_url = (
+            base_url if base_url is not None
+            else os.environ.get(LOCAL_INFERENCE_BASE_URL_ENV,
+                                DEFAULT_LOCAL_INFERENCE_BASE_URL))
+        self._api_key = api_key
+        self._cost_per_token_in = __import__("decimal").Decimal("0")
+        self._cost_per_token_out = __import__("decimal").Decimal("0")
+
+    def _url_for(self, model_ref: ModelRef) -> str:
+        return f"{self._base_url}/chat/completions"
+
+    def complete(
+        self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
+    ) -> Completion:
+        return self._dispatch(model_ref, prompt, params)
+
+    def capabilities(self, model_ref: ModelRef) -> Capabilities:
+        """Declared statically (`CT-PROV-04`): no network call during capabilities()."""
+        import decimal
+
+        return Capabilities(
+            supports_seed=True, supports_prefix_cache=False, max_concurrency=1,
+            deterministic_at_temperature_zero=True,
+            cost_per_token=(decimal.Decimal("0"), decimal.Decimal("0")),
+        )
+
+    def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
+        """Local inference: nothing is dispatched off the machine, so zero-retention holds
+        for every panel member by construction — recorded as evidence, not assumed
+        silently (`CT-PROV-09`'s report shape)."""
+        confirmed = tuple(f"{ref.provider}:{ref.build_id} — local inference, no egress"
+                          for ref in model_refs)
+        return RetentionReport(
+            confirmed=confirmed, unconfirmed=(), all_confirmed=True, evidence=confirmed,
+        )
+
+
+class OpenRouterProvider(_BaseLiveProvider):
+    """The OpenRouter hosted provider, with the retention gate and the routing prohibition
+    (`FR-PROV-11`, `FR-PROV-14`).
+
+    `retention_answers` is `FR-PROV-15`'s seam for the open TBD: the wire shape of a
+    zero-retention confirmation is unknown, so the gate takes a *source of answers*
+    (callable: model key → answer string) and evaluates fail-closed. `on_dispatch` observes
+    every dispatch the moment it happens — the hook a run-start retention gate and an
+    operator's log both read."""
+
+    def __init__(
+        self, *,
+        base_url: str | None = None, api_key: str | None = None,
+        retention_answers: Callable[[str], str] | None = None,
+        on_dispatch: Callable[[HttpRequest], None] | None = None,
+        **seams: Any,
+    ) -> None:
+        super().__init__(**seams)
+        self._base_url = (
+            base_url if base_url is not None
+            else os.environ.get(OPENROUTER_BASE_URL_ENV, DEFAULT_OPENROUTER_BASE_URL))
+        # The key is enforced at DISPATCH, not construction: the retention gate makes no
+        # model call, and a run that never leaves the gate (FR-PROV-14 refusal) is not a
+        # configuration error — it is the gate working.
+        self._api_key = (
+            api_key if api_key is not None
+            else os.environ.get(OPENROUTER_API_KEY_ENV))
+        self._retention_answers = retention_answers
+        self._on_dispatch = on_dispatch
+        self._retention_gate_failed = False
+        import decimal
+
+        self._cost_per_token_in = decimal.Decimal("0.000001")
+        self._cost_per_token_out = decimal.Decimal("0.000002")
+
+    def _url_for(self, model_ref: ModelRef) -> str:
+        return f"{self._base_url}/chat/completions"
+
+    def complete(
+        self, prompt: PromptPayload, model_ref: ModelRef, params: SamplingParams
+    ) -> Completion:
+        if self._retention_gate_failed:
+            # A caller that ignored verify_retention's raise still cannot reach the
+            # provider (CT-PROV-13): the gate's refusal outlives the exception.
+            raise RetentionPolicyError(
+                "zero-retention routing was not confirmed for this panel at run start; "
+                "the gate refused and no payload has been or will be dispatched."
+            )
+        if self._api_key is None:
+            raise ConfigurationError(
+                "OpenRouterProvider needs an API key: pass api_key= or set "
+                f"{OPENROUTER_API_KEY_ENV}. A provider that cannot authenticate would fail "
+                "every dispatch with a 401 the retry loop classifies as unavailable, "
+                "quarantining the whole run for a configuration mistake."
+            )
+        request = HttpRequest(
+            "POST", self._url_for(model_ref),
+            {"Authorization": f"Bearer {self._api_key}",
+             "Content-Type": "application/json"},
+            _openai_body(prompt, model_ref, params))
+        if self._on_dispatch is not None:
+            self._on_dispatch(request)
+        return self._dispatch(model_ref, prompt, params)
+
+    def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
+        """Zero-retention confirmation for every panel member, **fail-closed**.
+
+        The answers come from the injected source (or the provider's endpoint via the
+        transport when no source is given — the same fail-closed evaluation either way).
+        Absent, empty, hedged or otherwise non-explicit answers leave the model
+        unconfirmed: `bool(answer)` reads "unknown" as a yes, and this gate exists because
+        that reads a privacy promise out of a hedge."""
+        confirmed: list[ModelRef] = []
+        unconfirmed: list[ModelRef] = []
+        for ref in model_refs:
+            key = ref.build_id  # the seam's key: the build the answer speaks about
+            if self._retention_answers is not None:
+                source = self._retention_answers
+                answer = source(key) if callable(source) else source.get(key)
+            else:
+                try:
+                    response = self._transport.send(HttpRequest(
+                        "GET", f"{self._base_url}/retention/{key}", {}, b""))
+                    answer = response.body.decode("utf-8", errors="replace")
+                except TransportError as error:
+                    answer = f"unreachable: {error}"
+            if _is_retention_confirmed(answer):
+                confirmed.append(ref)
+            else:
+                unconfirmed.append(ref)
+        if unconfirmed:
+            # The gate is the run-start defense (FR-PROV-14): an unconfirmed panel member
+            # stops the run HERE, naming which models failed — not in a report a caller
+            # might ignore. The flag also arms complete()'s refusal, so a caller that
+            # ignores this error still cannot reach the provider (CT-PROV-13's ordering).
+            self._retention_gate_failed = True
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for {len(unconfirmed)} of "
+                f"{len(model_refs)} panel members: "
+                f"{'; '.join(f'{r.provider}:{r.build_id}' for r in unconfirmed)}. "
+                "A cloud-hosted run does not start until every member is confirmed, and "
+                "nothing has been dispatched."
+            )
+        return RetentionReport(
+            confirmed=tuple(confirmed), unconfirmed=(),
+        )
+
+    def require_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
+        """`cloud-hosted`'s gate, as an explicit name: `verify_retention` raises on any
+        unconfirmed panel member (naming which), and returns the report when the whole
+        panel is cleared. The alias exists so a caller's intent reads at the call site."""
+        return self.verify_retention(model_refs)
+
+    def enforce_routing_rule(self, model_ref: ModelRef, kind: str) -> None:
+        """`FR-PROV-11`: price-based routing across providers is refused for scoring and
+        extraction calls — the cheapest path must never decide a judgment. Permitted
+        elsewhere (formatting, embedding); where the API permits it, the upstream provider
+        is pinned via the model suffix `:upstream` convention (detection of drift stays
+        with `FR-PROV-05` — prevention is design §3.2's open TBD and is not claimed)."""
+        if kind.lower() in ROUTING_PROHIBITED_KINDS:
+            raise ConfigurationError(
+                f"price-based routing across providers is refused for {kind} calls "
+                f"(FR-PROV-11): the cheapest path must never decide a judgment. Pin the "
+                f"upstream provider for {model_ref.build_id!r} in the run configuration."
+            )
+
+
+class _DefaultTransport:
+    """The real transport: one HTTP POST/GET via urllib, raising `TransportError` for any
+    connection failure or timeout. This is the module's egress point (`CT-PROV-15`) — the
+    only code in the tree that opens a socket to a model endpoint."""
+
+    def send(self, request: HttpRequest) -> HttpResponse:
+        import urllib.error
+        import urllib.request
+
+        req = urllib.request.Request(
+            request.url, data=request.body if request.body else None,
+            headers=request.headers, method=request.method)
+        try:
+            with urllib.request.urlopen(req, timeout=120) as response:
+                return HttpResponse(
+                    status=response.status,
+                    headers={k: v for k, v in response.headers.items()},
+                    body=response.read(),
+                )
+        except urllib.error.HTTPError as error:
+            return HttpResponse(
+                status=error.code,
+                headers={k: v for k, v in error.headers.items()},
+                body=error.read(),
+            )
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise TransportError(f"transport failure reaching {request.url}: {error}") from error
 
 
 # --- the recorded-fixture implementation ------------------------------------------------------
