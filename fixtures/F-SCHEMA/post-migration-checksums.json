@@ -255,23 +255,27 @@
   },
   "package@v1": {
     "band": {
-      "checksum": "b47d277cbcfc429ba1ec574b73632379027dcbb004a38f62fd603f56fe91b558",
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
       "columns": [
         "package_version_id",
         "criterion_id",
         "ordinal",
         "band",
-        "points"
+        "points",
+        "descriptor"
       ],
       "rows": 1
     },
     "criterion": {
-      "checksum": "447fce8a0e2ecbc67f83c7c690426c4cef74cfab5b66b121323c53d375b1a3e8",
+      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
       "columns": [
         "criterion_id",
         "package_version_id",
         "question_id",
-        "kind"
+        "kind",
+        "max_points",
+        "scoring_model",
+        "construct_tag"
       ],
       "rows": 2
     },
@@ -337,23 +341,113 @@
   },
   "package@v2": {
     "band": {
-      "checksum": "b47d277cbcfc429ba1ec574b73632379027dcbb004a38f62fd603f56fe91b558",
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
       "columns": [
         "package_version_id",
         "criterion_id",
         "ordinal",
         "band",
-        "points"
+        "points",
+        "descriptor"
       ],
       "rows": 1
     },
     "criterion": {
-      "checksum": "447fce8a0e2ecbc67f83c7c690426c4cef74cfab5b66b121323c53d375b1a3e8",
+      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
       "columns": [
         "criterion_id",
         "package_version_id",
         "question_id",
-        "kind"
+        "kind",
+        "max_points",
+        "scoring_model",
+        "construct_tag"
+      ],
+      "rows": 2
+    },
+    "criterion_dependency": {
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "rows": 1
+    },
+    "exemplar": {
+      "checksum": "158839dc6a8e903972a592d56aa110743fa1f4ced22654f3f328892c8cc99c56",
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band"
+      ],
+      "rows": 1
+    },
+    "grade_policy": {
+      "checksum": "4ea9f45b1e747b3932babd0048c5609b3d62827db73d280706902b69df8597fa",
+      "columns": [
+        "package_version_id",
+        "policy"
+      ],
+      "rows": 1
+    },
+    "package": {
+      "checksum": "28a0531ad7ff7d4fd44bad21cc86490980dc390595347be1fc01d2765d28a2b7",
+      "columns": [
+        "package_id",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "package_version": {
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab",
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "rows": 1
+    },
+    "validation_record": {
+      "checksum": "8946e23cd561a08193e245bfb1ef721d8980f24edcff4b577fdecce520e93bec",
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at"
+      ],
+      "rows": 1
+    }
+  },
+  "package@v3": {
+    "band": {
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "rows": 1
+    },
+    "criterion": {
+      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "scoring_model",
+        "construct_tag"
       ],
       "rows": 2
     },
