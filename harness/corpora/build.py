@@ -417,6 +417,13 @@ _GENERATED_UNDER_BASELINES = frozenset(
     {"baselines/registry.json", "baselines/TC-REG-06/work-id-reference.inputs.json"}
 )
 
+#: Recorded goldens outside `baselines/` — same kind, different home. `F-SCHEMA`'s
+#: post-migration checksums are the *output of the store's migration machinery on fixture
+#: databases*, captured by TS-10 (#16) and updated consciously when a migration legitimately
+#: transforms data (the golden diff is the review). Deriving them here would make the corpora
+#: build open stores, which is test-harness work, not corpus generation.
+_RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
+
 
 def _is_recorded_baseline(path: str) -> bool:
     """Is this a §6.9 golden that a producer recorded, rather than generated corpus data?
@@ -434,7 +441,9 @@ def _is_recorded_baseline(path: str) -> bool:
     *registered* here — `tests/support/baselines.py` does, by refusing to compare against a
     path the registry does not list.
     """
-    return path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES
+    return (path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES) or (
+        path in _RECORDED_GOLDENS
+    )
 
 
 def _tree(root: Path) -> dict[str, bytes]:

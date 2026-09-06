@@ -1,0 +1,146 @@
+{
+  "cohort@v1": {
+    "cohort": {
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4",
+      "rows": 1
+    },
+    "criterion_score": {
+      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "rows": 1
+    },
+    "document": {
+      "checksum": "87fab03e7a2fc5c78db78b0240d78dfa185f6ee531cceb80afa343893fc70f73",
+      "rows": 1
+    },
+    "document_region": {
+      "checksum": "71f7deb9c60becf492998eff433501d194f32d941e08e00f2cbba5fb3cf675a0",
+      "rows": 1
+    },
+    "evidence": {
+      "checksum": "45f70fec5a514f3585c8ad8c612890c7e696d21b1757922965d9f7cd310fed9f",
+      "rows": 1
+    },
+    "narrative": {
+      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a",
+      "rows": 1
+    },
+    "review_queue": {
+      "checksum": "93b39e25df2787f86d613da71e999838d549da467e81945ffb8ff25ecca6b1d8",
+      "rows": 1
+    },
+    "roster": {
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0",
+      "rows": 1
+    },
+    "submission": {
+      "checksum": "7af6ee94659042922b91610147c0f4c6d110c46213269105ff5f8b07a230a6dc",
+      "rows": 1
+    },
+    "submission_grade": {
+      "checksum": "e8913276c4952f64b4947ccdf304043c077c7502815888785e28002e7714e097",
+      "rows": 1
+    },
+    "verdict": {
+      "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",
+      "rows": 1
+    },
+    "work_unit": {
+      "checksum": "0b33eda0748b029dceffe476a2e1c02ea50e4e85a091dadfdd2bcb25efda94a0",
+      "rows": 1
+    }
+  },
+  "durable@v1": {
+    "audit_record": {
+      "checksum": "bbbb113f05b7313d267288de7922a91b1e3bcb24b84d5b118641bcc655863c4f",
+      "rows": 1
+    },
+    "criterion_stats": {
+      "checksum": "7cc1c51cadb477ca055baa40f51083300a627d7d81aa61246932c4c21f8fed99",
+      "rows": 1
+    },
+    "label": {
+      "checksum": "97433d2fad00aabcc9ab4329948d99cf9b757f1294ad4bb5e5db32fa3c9ed0a2",
+      "rows": 1
+    },
+    "mcq_item_stats": {
+      "checksum": "55994b31db19328cdd6bbbfe6835d7e16e896741dd890d7bbaa0da43dafa6a73",
+      "rows": 1
+    },
+    "mcq_item_summary": {
+      "checksum": "aeaf679b219c6f80eaedb8fd2b51c75759759f8114a554752f5fbb4cff566b84",
+      "rows": 1
+    },
+    "run_metrics": {
+      "checksum": "3338fbfbce1f4c37a24acdf36d406a2ff7843c6f4bcb11570aa63ba146fb3cea",
+      "rows": 1
+    },
+    "store_lease_clock": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0
+    }
+  },
+  "durable@v2": {
+    "audit_record": {
+      "checksum": "bbbb113f05b7313d267288de7922a91b1e3bcb24b84d5b118641bcc655863c4f",
+      "rows": 1
+    },
+    "criterion_stats": {
+      "checksum": "7cc1c51cadb477ca055baa40f51083300a627d7d81aa61246932c4c21f8fed99",
+      "rows": 1
+    },
+    "label": {
+      "checksum": "97433d2fad00aabcc9ab4329948d99cf9b757f1294ad4bb5e5db32fa3c9ed0a2",
+      "rows": 1
+    },
+    "mcq_item_stats": {
+      "checksum": "55994b31db19328cdd6bbbfe6835d7e16e896741dd890d7bbaa0da43dafa6a73",
+      "rows": 1
+    },
+    "mcq_item_summary": {
+      "checksum": "aeaf679b219c6f80eaedb8fd2b51c75759759f8114a554752f5fbb4cff566b84",
+      "rows": 1
+    },
+    "run_metrics": {
+      "checksum": "3338fbfbce1f4c37a24acdf36d406a2ff7843c6f4bcb11570aa63ba146fb3cea",
+      "rows": 1
+    },
+    "store_lease_clock": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rows": 0
+    }
+  },
+  "package@v1": {
+    "band": {
+      "checksum": "b47d277cbcfc429ba1ec574b73632379027dcbb004a38f62fd603f56fe91b558",
+      "rows": 1
+    },
+    "criterion": {
+      "checksum": "5c8c8c1a2a40cdb1dd564a6fe62cf271e5f47d1e03136022eb87718bfb74f031",
+      "rows": 1
+    },
+    "criterion_dependency": {
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec",
+      "rows": 1
+    },
+    "exemplar": {
+      "checksum": "158839dc6a8e903972a592d56aa110743fa1f4ced22654f3f328892c8cc99c56",
+      "rows": 1
+    },
+    "grade_policy": {
+      "checksum": "4ea9f45b1e747b3932babd0048c5609b3d62827db73d280706902b69df8597fa",
+      "rows": 1
+    },
+    "package": {
+      "checksum": "28a0531ad7ff7d4fd44bad21cc86490980dc390595347be1fc01d2765d28a2b7",
+      "rows": 1
+    },
+    "package_version": {
+      "checksum": "bcbff2b101cbb8095a2a569f78fb835c9a4f05490beabfb81c9b9c79a44df9e5",
+      "rows": 1
+    },
+    "validation_record": {
+      "checksum": "8946e23cd561a08193e245bfb1ef721d8980f24edcff4b577fdecce520e93bec",
+      "rows": 1
+    }
+  }
+}
