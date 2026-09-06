@@ -92,6 +92,7 @@ from typing import Any, Callable, ContextManager, Iterator, Mapping, Protocol, S
 
 __all__ = [
     "BlobStore",
+    "CrossTierTransactionError",
     "DiskFullError",
     "InsecureLocationError",
     "Migration",
@@ -726,6 +727,30 @@ def _reject_tier_d_student_name_insert(declared: Statement) -> None:
             f"and is pseudonymized (CT-STORE-09), and it is the one tier purge_cohort does "
             f"not touch — a name here would outlive every retention control in the system."
         )
+
+
+class CrossTierTransactionError(StoreError):
+    """A `transaction()` body attempted to open a second tier's transaction on the same
+    thread (`CT-STORE-03`).
+
+    CT-STORE-03 provides atomicity **within one tier handle** and says so: "Cross-tier
+    atomicity is **not** provided." The dangerous outcome is not the missing guarantee — it
+    is the caller who nests a second tier's `transaction()` inside a first's and believes
+    both sides committed together, because without this refusal the nested transaction
+    commits independently and the outer one commits on its own schedule. The refusal makes
+    the attempt loud instead of silently split. Not retryable: the fix is in the caller's
+    shape, not in the timing.
+    """
+
+
+#: The tiers holding an open `transaction()` on this thread, as a per-tier **depth** — not a
+#: set. Same-tier nesting is legal at the bookkeeping level (two cohort handles are two
+#: files), and a set's difference operation would lose the outer tier when an inner
+#: same-tier transaction exits, disarming the cross-tier guard for the rest of the outer
+#: body. A counter keeps the outer tier visible until its own transaction closes. (Found by
+#: TC-STORE-C03's own review: hold cohort A, open cohort B, close B, open durable — the set
+#: version split silently. Same-tier nesting on SQLite itself still fails on its own terms.)
+_OPEN_TX_TIERS = threading.local()
 
 
 # --- the Tier D schema authorizer (FR-STORE-12, CT-STORE-09) ------------------------------------
@@ -2258,13 +2283,15 @@ class WriteQueue:
     __slots__ = (
         "_broken", "_condition", "_connect_write", "_failures", "_guard", "_halt", "_holder",
         "_last_latency_ms", "_limits", "_over_since", "_pending", "_queue", "_stamps",
-        "_stopping", "_thread", "_write_lock",
+        "_stopping", "_thread", "_tier_name", "_write_lock",
     )
 
     def __init__(self, connect_write: Any, limits: StoreLimits, *,
+                 tier_name: str = "",
                  guard: Callable[[Statement], None] | None = None,
                  halt: Callable[[BaseException], None] | None = None) -> None:
         self._connect_write = connect_write
+        self._tier_name = tier_name
         self._limits = limits
         # The tier write guard (Tier D's student-name check) or `None` for a tier without
         # one. Applied at both doors: `enqueue` before queueing, `transaction` via the `Tx`
@@ -2441,6 +2468,19 @@ class WriteQueue:
                 "transaction() was called on a closed store. Reopening the write connection "
                 "here would commit to a tier whose handle has already been released."
             )
+        counts = getattr(_OPEN_TX_TIERS, "tiers", None) or {}
+        open_tiers = {tier for tier, depth in counts.items() if depth > 0}
+        if open_tiers and open_tiers != {self._tier_name}:
+            # CT-STORE-03's negative, made loud: a second tier's transaction nested inside
+            # a first tier's open one. Without this the nested transaction commits
+            # independently and the caller believes in an atomicity nobody provided.
+            raise CrossTierTransactionError(
+                f"transaction() was opened on tier(s) {sorted(open_tiers)} while tier "
+                f"{self._tier_name!r} already holds an open transaction on this thread. "
+                "CT-STORE-03 provides no cross-tier atomicity — the nested transaction "
+                "would commit independently, and a caller believing both sides committed "
+                "together is silently split. Run the tiers' transactions sequentially."
+            )
         with self._write_lock:
             try:
                 # The door's entry is this module's own I/O — on first write it creates
@@ -2455,10 +2495,16 @@ class WriteQueue:
                     raise failure
                 raise
             self._holder.in_transaction = True
+            counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+            counts[self._tier_name] = counts.get(self._tier_name, 0) + 1
+            _OPEN_TX_TIERS.tiers = counts
             try:
                 yield Tx(connection, self._limits.retries, guard=self._guard)
             except BaseException as error:
                 self._holder.in_transaction = False
+                counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+                counts[self._tier_name] = counts.get(self._tier_name, 0) - 1
+                _OPEN_TX_TIERS.tiers = counts
                 try:
                     _run(connection, _ROLLBACK, retries=self._limits.retries)
                 except sqlite3.Error:
@@ -2474,6 +2520,9 @@ class WriteQueue:
                     raise failure
                 raise
             self._holder.in_transaction = False
+            counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+            counts[self._tier_name] = counts.get(self._tier_name, 0) - 1
+            _OPEN_TX_TIERS.tiers = counts
             try:
                 _run(connection, _COMMIT, retries=self._limits.retries)
             except sqlite3.OperationalError as error:
@@ -2729,7 +2778,8 @@ class SqliteTierHandle:
         guard = None if opened.tier is not Tier.DURABLE else _reject_tier_d_student_name_insert
         self._queue: WriteQueue | None = (
             None if self._read_only
-            else WriteQueue(self._open_write_connection, limits, guard=guard)
+            else WriteQueue(self._open_write_connection, limits,
+                            tier_name=opened.tier.value, guard=guard)
         )
 
     # -- the read connections ------------------------------------------------------------------
@@ -2803,8 +2853,14 @@ class SqliteTierHandle:
             )
 
     @property
-    def opened(self) -> TierOpened:
-        """What opening this database did. Read-only; see `TierOpened`."""
+    def _open_report(self) -> TierOpened:
+        """What opening this database did. Read-only; see `TierOpened`.
+
+        Private, per `CT-STORE-01`: the handle's public surface is `query`,
+        `enqueue_write`, `transaction` — and nothing else. The open report is
+        observability, and `store_metrics` reads it through the private name, the same
+        discipline that renamed `close` to `_close` in #12 (TC-STORE-C01 is the case that
+        holds the line)."""
         return self._opened
 
     def query(self, statement: Statement, **params: Any) -> Sequence[Row]:
@@ -2899,8 +2955,10 @@ class SqliteTierHandle:
         return self._queue.transaction()
 
     @property
-    def metrics(self) -> dict[str, Any]:
-        """This tier's share of `CT-STORE-17`'s signals. Aggregated by `store_metrics`."""
+    def _metrics(self) -> dict[str, Any]:
+        """This tier's share of `CT-STORE-17`'s signals. Aggregated by `store_metrics`,
+        which reads this private name — the handle's public surface is closed
+        (`CT-STORE-01`), and an observability accessor is not a contract member."""
         queue = self._queue
         return {
             "write_queue_depth": 0 if queue is None else queue.depth,
@@ -3443,7 +3501,7 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
     sizes: dict[str, int] = {}
 
     for (tier, key, _read_only), handle in store._handles.items():  # noqa: SLF001
-        share = handle.metrics
+        share = handle._metrics  # noqa: SLF001 -- observability reads the private accessor
         depth += int(share["write_queue_depth"])
         latency_ms = max(latency_ms, float(share["batch_commit_latency_ms"]))
         failures += int(share["write_failures"])
