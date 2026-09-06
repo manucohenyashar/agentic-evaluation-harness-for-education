@@ -65,7 +65,7 @@ import pytest
 
 from tests.support.impl import PROVIDER_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
+# No tier marker: the file runs in every tier (its dependencies have all landed).
 
 CONF_MODULE = "aeh.conf"
 ISSUE = "#21"

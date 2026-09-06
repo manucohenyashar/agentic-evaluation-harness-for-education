@@ -345,23 +345,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # to count, so #19 lands first by construction and keying on it would fire while the
     # counters were still absent. The `symbol` target is the accessor rather than the module --
     # `aeh.prov` arrives with #18, months before `FR-PROV-12`.
-    "#20": (
-        "symbol",
-        # `LocalServerProvider.counters`, because that is the object the test drives -- the
-        # registry's question is which blocker *resolved* makes the test runnable, and
-        # `RecordedFixtureProvider.counters` resolving would fire the gate for a test that
-        # then fails on a provider it never mentions. Same trap the #122 note describes.
-        f"{PROVIDER_MODULE}:LocalServerProvider.counters",
-        ("tests/unit/prov/test_run_counters.py",),
-    ),
-    # `SEC-03` -- `cloud-hosted` retention (`FR-PROV-14`). `OpenRouterProvider` is named
-    # verbatim in design 3.2's Interfaces block, so this blocker is forced rather than guessed,
-    # and retention is meaningless without the implementation that talks to the cloud.
-    "#21": (
-        "symbol",
-        f"{PROVIDER_MODULE}:OpenRouterProvider.verify_retention",
-        ("tests/unit/prov/test_retention_gate.py",),
-    ),
+    # The `"#20"` and `"#21"` entries that stood here are gone: #19 (the retry loop and the
+    # Transport/Clock seam), #20 (the counters and BuildWatch) and #21 (the two live
+    # providers and the fail-closed retention gate) landed together, so both TS-07 unit
+    # files lost the marker and rejoined the fast tier. The anticipated seam held: the
+    # tests' `retention_answers` dict keyed by build_id, the `transport=`/`clock=`
+    # constructor arguments and the `counters` accessor all resolved against the shipped
+    # surface without a test edit. #22 (TS-05) owns the fuller retry-taxonomy cases and the
+    # live-API retention shapes.
     # `TC-PROV-21` and `SEC-04` scan assembled payloads for student names. Keyed on `M-JUDGE`
     # and **not** on `M-ORCH`, although both cases read as though they need a full run: design
     # 3.10 declares `assemble(unit) -> ScoringRequest` pure ("# pure, testable"), so a test
