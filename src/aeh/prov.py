@@ -78,6 +78,8 @@ The four seams (`CLAUDE.md`)
 from __future__ import annotations
 
 import dataclasses
+import random
+import threading
 import hashlib
 import json
 import logging
@@ -86,6 +88,7 @@ import os
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Callable
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -101,6 +104,16 @@ __all__ = [
     "CostEstimate",
     "DEFAULT_FIXTURE_MAX_CONCURRENCY",
     "FIXTURE_DIR_ENV",
+    "Clock",
+    "ConcurrencyGovernor",
+    "HttpRequest",
+    "HttpResponse",
+    "RetryPolicy",
+    "SystemClock",
+    "Transport",
+    "dispatch_with_retries",
+    "jittered_backoff",
+    "parse_retry_after",
     "FIXTURE_MAX_CONCURRENCY_ENV",
     "FIXTURE_SCHEMA",
     "FixtureMissingError",
@@ -570,6 +583,319 @@ def request_key(
 
 
 # --- the interface -------------------------------------------------------------------------------
+
+
+# --- the transport and clock seam (FR-PROV-15, design v1.5) ------------------------------------
+#
+# The seam this story owns. Design §3.2's v1.5 text: the real providers take `transport`,
+# `clock`, `retention_answers` and `on_dispatch` as constructor arguments defaulting to the
+# real ones, behaviour-neutrally. The point is not convenience — it is that the retry
+# taxonomy below is *stated and assertable*: the only way to program a 429 without the seam
+# was to stub the provider, which replaces the very code under test. A `Transport` is one
+# HTTP attempt and nothing else; retry classification lives here, in this module, where
+# `FR-PROV-06`'s rule can hold it.
+
+
+@dataclass(frozen=True)
+class HttpRequest:
+    """One request as a `Transport` receives it. Plain data, no logic."""
+
+    method: str
+    url: str
+    headers: Mapping[str, str]
+    body: bytes
+
+
+@dataclass(frozen=True)
+class HttpResponse:
+    """One response as a `Transport` returns it. `status` is the HTTP code; a connection
+    failure never produces an `HttpResponse` — it raises `TransportError`, which is the
+    classification the retry loop trusts."""
+
+    status: int
+    headers: Mapping[str, str]
+    body: bytes
+
+
+class Transport(Protocol):
+    """One HTTP attempt, and no retry logic (`FR-PROV-15`).
+
+    Implementations raise `TransportError` for a connection failure or timeout, and return
+    an `HttpResponse` otherwise — including for 429 and 5xx, whose *classification* is this
+    module's job, not the transport's. A transport that retried internally would make
+    `HARNESS_RETRY_MAX` a lie; the protocol's docstring is part of the contract for that
+    reason.
+    """
+
+    def send(self, request: HttpRequest) -> HttpResponse: ...
+
+
+class Clock(Protocol):
+    """The two things a retry loop needs from time: a monotonic reading and a way to wait.
+
+    Injected so `Retry-After: 2` honoured twenty times consumes no wall time in a test —
+    test plan §4.6 makes `TC-ORCH-09` the suite's one sanctioned sleep, and a retry loop
+    that slept for real would spend the whole budget on the first case that exercised it.
+    """
+
+    def monotonic(self) -> float: ...
+
+    def sleep(self, seconds: float) -> None: ...
+
+
+class SystemClock:
+    """The real clock. The default, and the only thing in the module that touches `time`."""
+
+    def monotonic(self) -> float:
+        return time.monotonic()
+
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+
+# --- the knobs (seam 3: production value is the default) ---------------------------------------
+
+#: `HARNESS_RETRY_MAX` (default 3) — the retry budget `FR-PROV-06` names. Attempts, not
+#: retries: a budget of 3 is one first attempt and two retries.
+RETRY_MAX_ENV = "HARNESS_RETRY_MAX"
+DEFAULT_RETRY_MAX = 3
+
+#: `HARNESS_BACKOFF_BASE_MS` (default 250) — the exponential backoff's base, before jitter.
+BACKOFF_BASE_MS_ENV = "HARNESS_BACKOFF_BASE_MS"
+DEFAULT_BACKOFF_BASE_MS = 250
+
+#: `HARNESS_RETRY_AFTER_CEILING_S` (default 120) — a `Retry-After` above the ceiling is
+#: treated as malformed: a provider answering "come back in an hour" is unavailable for a
+#: school-day run, and waiting would hold the run hostage to a figure the provider made up.
+RETRY_AFTER_CEILING_S_ENV = "HARNESS_RETRY_AFTER_CEILING_S"
+DEFAULT_RETRY_AFTER_CEILING_S = 120.0
+
+#: `HARNESS_CONCURRENCY_FLOOR` (default 1) — where in-flight dispatches ratchet down to on
+#: repeated 429s (`FR-PROV-07`: "toward the configured floor rather than the full batch").
+CONCURRENCY_FLOOR_ENV = "HARNESS_CONCURRENCY_FLOOR"
+DEFAULT_CONCURRENCY_FLOOR = 1
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ConfigurationError(f"{name}={raw!r} is not an integer") from error
+    if value < 0:
+        raise ConfigurationError(f"{name}={value} must not be negative")
+    return value
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ConfigurationError(f"{name}={raw!r} is not a number") from error
+    if value < 0:
+        raise ConfigurationError(f"{name}={value} must not be negative")
+    return value
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """The retry budget, resolved once. The figures are env-gated (`CLAUDE.md` seam 3) and
+    frozen at construction — `TC-PROV-C07`'s per-error assertions and `TC-STORE-C05`'s
+    lesson both say a policy that re-read the environment would be unassertable."""
+
+    max_attempts: int = DEFAULT_RETRY_MAX
+    backoff_base_ms: int = DEFAULT_BACKOFF_BASE_MS
+    retry_after_ceiling_s: float = DEFAULT_RETRY_AFTER_CEILING_S
+
+    @classmethod
+    def from_environment(cls) -> "RetryPolicy":
+        return cls(
+            max_attempts=_int_env(RETRY_MAX_ENV, DEFAULT_RETRY_MAX),
+            backoff_base_ms=_int_env(BACKOFF_BASE_MS_ENV, DEFAULT_BACKOFF_BASE_MS),
+            retry_after_ceiling_s=_float_env(
+                RETRY_AFTER_CEILING_S_ENV, DEFAULT_RETRY_AFTER_CEILING_S),
+        )
+
+
+def parse_retry_after(value: str | None, *, ceiling_s: float) -> float | None:
+    """`Retry-After` as seconds-to-wait, or `None` when it must not be honoured.
+
+    `TC-PROV-11`'s boundary table: `0` is honoured (wait 0), `3600` is honoured **subject
+    to the declared ceiling** — a provider saying "an hour" is unavailable for a school-day
+    run, and the ceiling converts it to not-honoured so the jittered backoff and the
+    budget's exhaustion decide instead. Absent → `None`. Malformed → `None`: a garbage
+    header must not crash the dispatch, and it must not be guessed at either.
+
+    HTTP-date `Retry-After` values are deliberately out of scope: the providers this
+    module fronts return seconds (measured against `TC-PROV-20`'s nightly observation),
+    and a date parser here would be code with no producer.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if not text.isdigit():
+        return None
+    seconds = float(text)
+    if seconds > ceiling_s:
+        return None
+    return seconds
+
+
+def jittered_backoff(base_ms: int, attempt: int, rng: random.Random) -> float:
+    """Full jitter (`AWS architecture blog`'s formulation, which the design's "exponential
+    with jitter" cites in spirit): uniform between 0 and the exponential cap. Full jitter
+    beats equal-jitter for thundering herds, which is the failure mode `FR-PROV-07`'s
+    concurrency floor exists to contain. `rng` is injected — a test asserting a wait
+    pins the sequence, not the wall clock."""
+    cap_ms = base_ms * (2 ** min(attempt, 30))
+    return rng.uniform(0, cap_ms) / 1000.0
+
+
+class ConcurrencyGovernor:
+    """In-flight dispatch accounting, ratcheted down toward the configured floor on 429s
+    (`FR-PROV-07`: "toward the configured floor rather than the full batch being
+    dispatched").
+
+    `M-ORCH` owns the batch and the worker pool; this module owns the *signal*. The
+    governor does not block anything — `reduce()` lowers the permitted in-flight count and
+    `admits()` answers whether one more dispatch may start. The ratchet is one-way per
+    incident: a successful dispatch after the cooldown lifts the count back by one, so a
+    provider that recovered is used again rather than avoided forever.
+    """
+
+    def __init__(self, *, floor: int | None = None) -> None:
+        self._floor = floor if floor is not None else _int_env(
+            CONCURRENCY_FLOOR_ENV, DEFAULT_CONCURRENCY_FLOOR)
+        self._permitted = self._floor * 8  # starts generous; 429s ratchet it toward the floor
+        self._lock = threading.Lock()
+
+    @property
+    def permitted(self) -> int:
+        with self._lock:
+            return self._permitted
+
+    @property
+    def floor(self) -> int:
+        return self._floor
+
+    def admits(self, in_flight: int) -> bool:
+        """Whether one more dispatch may start given the current permission level."""
+        with self._lock:
+            return in_flight < self._permitted
+
+    def on_rate_limited(self) -> int:
+        """Halve the permission, never below the floor. Returns the new level — the number
+        an observability consumer reads (`CT-PROV-09`)."""
+        with self._lock:
+            self._permitted = max(self._floor, self._permitted // 2)
+            return self._permitted
+
+    def on_success(self) -> int:
+        """One recovered dispatch lifts the permission back by one, never above the start."""
+        with self._lock:
+            self._permitted = min(self._floor * 8, self._permitted + 1)
+            return self._permitted
+
+
+# --- the one dispatch loop (FR-PROV-06/-07/-08) -------------------------------------------------
+
+
+#: The attempt budget counts first attempts too, so `max_attempts - 1` is the retry count.
+def dispatch_with_retries(
+    transport: Transport,
+    request_factory: Callable[[], HttpRequest],
+    parse: Callable[[HttpResponse], Any],
+    *,
+    policy: RetryPolicy | None = None,
+    clock: Clock | None = None,
+    rng: random.Random | None = None,
+    governor: ConcurrencyGovernor | None = None,
+) -> Any:
+    """Attempt one request through `transport`, retrying only what `FR-PROV-06` permits.
+
+    The loop, in the order the classification demands:
+
+    1. `transport.send` — a raised `TransportError` is retryable (connection failed,
+       timeout); any other error propagates untouched.
+    2. The response's status: 429 → wait (`Retry-After` honoured, jittered backoff
+       otherwise) and tell the governor; 5xx → retry; anything else → parse.
+    3. `parse(response)` — a raised `MalformedResponseError` is retryable up to the budget;
+       past it the error surfaces *as itself* so the caller can quarantine the unit.
+    4. A parse that **succeeds returns immediately** — the attempt loop is exited at the
+       first parsed response, which is the code shape of "one judgment, one sample". There
+       is no flag, parameter or hook that re-enters the loop after a parse succeeds, and
+       `FR-PROV-06`'s surface assertion (TC-PROV-10) holds because there is nothing to flip.
+
+    Budget exhaustion on transport/5xx/429 raises `ProviderUnavailableError` with the last
+    error chained — terminal for the run, and the reason no provider substitution exists
+    downstream (`FR-PROV-08`): a caller that received this was told, loudly, that the panel
+    member it asked for did not answer. Budget exhaustion on malformed responses surfaces
+    `MalformedResponseError` as itself — the *unit* quarantines and the run continues.
+    """
+    resolved_policy = policy if policy is not None else RetryPolicy.from_environment()
+    resolved_clock = clock if clock is not None else SystemClock()
+    resolved_rng = rng if rng is not None else random.Random()
+    last_error: Exception | None = None
+
+    for attempt in range(resolved_policy.max_attempts):
+        try:
+            response = transport.send(request_factory())
+        except TransportError as error:
+            last_error = error
+        except (RateLimitedError, MalformedResponseError):
+            # A transport that classified instead of returning: honoured, per the same
+            # rules, so an injected transport cannot smuggle in a different policy.
+            raise NotImplementedError(
+                "transports return HttpResponse and raise TransportError only; 429 and "
+                "parse classification are this module's job"
+            )
+        else:
+            if response.status == 429:
+                wait = parse_retry_after(
+                    response.headers.get("Retry-After"),
+                    ceiling_s=resolved_policy.retry_after_ceiling_s,
+                )
+                if wait is None:
+                    wait = jittered_backoff(
+                        resolved_policy.backoff_base_ms, attempt, resolved_rng)
+                if governor is not None:
+                    governor.on_rate_limited()
+                last_error = RateLimitedError(f"HTTP 429 from the provider (attempt {attempt + 1})")
+                resolved_clock.sleep(wait)
+                continue
+            if 500 <= response.status <= 599:
+                last_error = TransportError(
+                    f"HTTP {response.status} from the provider (attempt {attempt + 1})")
+                resolved_clock.sleep(jittered_backoff(
+                    resolved_policy.backoff_base_ms, attempt, resolved_rng))
+                continue
+            try:
+                return parse(response)
+            except MalformedResponseError as error:
+                last_error = error
+                resolved_clock.sleep(jittered_backoff(
+                    resolved_policy.backoff_base_ms, attempt, resolved_rng))
+                continue
+        resolved_clock.sleep(jittered_backoff(
+            resolved_policy.backoff_base_ms, attempt, resolved_rng))
+
+    if isinstance(last_error, MalformedResponseError):
+        # Structural parse failures past the budget quarantine the unit — the caller sees
+        # the malformed error itself, not an availability error, because the provider was
+        # reachable and answering nonsense (CT-PROV-07's per-error state assertion).
+        raise last_error
+    raise ProviderUnavailableError(
+        f"the provider did not answer within the retry budget "
+        f"({resolved_policy.max_attempts} attempts, HARNESS_RETRY_MAX). No substitute "
+        f"provider or model exists (FR-PROV-08) — the unit fails and the run continues."
+    ) from last_error
 
 
 @runtime_checkable
