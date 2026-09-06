@@ -218,7 +218,7 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: on this line), which is the re-read this constant exists to force.
 #:
 #: **The second entry is not a second place SQL reaches SQLite.**
-#: `aeh.store:2248` is `LeaseClock._persist`, and the fourteen `aeh.pkg` entries are `PackageCatalog`'s writes, reads, guards and validators, each calling `tx.execute(PKG_STATEMENTS[...],
+#: `aeh.store:2248` is `LeaseClock._persist`, and the sixteen `aeh.pkg` entries are `PackageCatalog`'s writes, reads, guards, validators and the validation surface, each calling `tx.execute(PKG_STATEMENTS[...],
 #: ...)` — `Tx.execute` is the module's own declared-statement API and delegates to `_run`, which
 #: is still the only site that touches a `sqlite3` cursor. The walker cannot see that, and
 #: shouldn't: it flags every `execute()` and asks a human whether the argument is a declared
@@ -233,10 +233,10 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.store:1513", "aeh.store:2248",
-    "aeh.pkg:472", "aeh.pkg:529", "aeh.pkg:534", "aeh.pkg:554",
-    "aeh.pkg:578", "aeh.pkg:734", "aeh.pkg:747", "aeh.pkg:768",
-    "aeh.pkg:776", "aeh.pkg:777", "aeh.pkg:781", "aeh.pkg:790",
-    "aeh.pkg:833", "aeh.pkg:842",
+    "aeh.pkg:609", "aeh.pkg:651", "aeh.pkg:659", "aeh.pkg:738",
+    "aeh.pkg:743", "aeh.pkg:763", "aeh.pkg:787", "aeh.pkg:943",
+    "aeh.pkg:956", "aeh.pkg:977", "aeh.pkg:985", "aeh.pkg:986",
+    "aeh.pkg:990", "aeh.pkg:999", "aeh.pkg:1042", "aeh.pkg:1051",
 })
 
 

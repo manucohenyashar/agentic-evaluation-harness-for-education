@@ -39,6 +39,8 @@ from aeh.store import (
 __all__ = [
     "BandSetError",
     "CyclicDependencyError",
+    "Manifest",
+    "NoValidationData",
     "PackageCatalog",
     "PackageDraft",
     "PackageError",
@@ -123,6 +125,95 @@ SCHEMA_LOCK_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
+# --- validation records, NoValidationData, the manifest (FR-PKG-08/-09/-12/-21) -----------------
+#
+# The structural rule: a package can never advertise a single "validated" figure. Every
+# validation row is keyed by population, backend, panel build and scoring model; the query
+# surface returns records per key or an explicit `NoValidationData` — never an aggregate,
+# never zero, never a figure from an adjacent key. HLD §2.1's error (a package-level
+# headline across populations) is made unrepresentable in the query surface.
+
+
+class NoValidationData:
+    """The explicit result for a validation key with no matching row (`FR-PKG-09`).
+
+    Distinguishable **in type** from a zero or a low figure — a caller that renders it as
+    `0.0` has reintroduced the failure this requirement exists to prevent. Not an
+    exception: "no data" is a normal state of a brand-new package version, and the
+    console displays it as its own thing (`FR-CONSOLE-24`)."""
+
+    _instance: "NoValidationData | None" = None
+
+    def __new__(cls) -> "NoValidationData":
+        # A singleton keeps every absent-key answer the same object: `result is
+        # NoValidationData()` is a second, type-level way to test, and equality across
+        # calls is free.
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "NoValidationData()"
+
+    def __str__(self) -> str:
+        return "no validation data for this key"
+
+
+@dataclass(frozen=True)
+class ManifestEntry:
+    """One population's validation entry in the manifest (`FR-PKG-21`)."""
+
+    population_scope_id: str
+    criterion_id: str
+    backend_profile: str
+    panel_build_ref: str
+    scoring_model: str
+    agreement: float
+    n: int
+    is_weakest: bool
+
+
+@dataclass(frozen=True)
+class Manifest:
+    """The package manifest (`FR-PKG-21`): per-population validation entries, the
+    weakest criterion per population, exemplar provenance and schema version — and
+    deliberately **no** field aggregating validation across populations. A package that
+    advertises one headline number repeats HLD §2.1's error in portable form; the shape
+    makes it unrepresentable."""
+
+    package_version_id: str
+    schema_version: int
+    entries: tuple[ManifestEntry, ...]
+    exemplar_provenance: tuple[str, ...]
+
+
+def _weakest_entry(entries: list[ManifestEntry]) -> list[ManifestEntry]:
+    """Flag the weakest entry per population (`FR-STATS-13`'s travel-along): the lowest
+    agreement with n >= 1. The manifest carries it deliberately — a package advertising
+    only its overall number is the portable form of the §2.1 error."""
+    by_population: dict[str, list[ManifestEntry]] = {}
+    for entry in entries:
+        by_population.setdefault(entry.population_scope_id, []).append(entry)
+    flagged: list[ManifestEntry] = []
+    for population in sorted(by_population):
+        weakest = min(by_population[population], key=lambda e: e.agreement)
+        flagged.extend(
+            entry if entry is not weakest
+            else ManifestEntry(
+                population_scope_id=entry.population_scope_id,
+                criterion_id=entry.criterion_id,
+                backend_profile=entry.backend_profile,
+                panel_build_ref=entry.panel_build_ref,
+                scoring_model=entry.scoring_model,
+                agreement=entry.agreement,
+                n=entry.n,
+                is_weakest=True,
+            )
+            for entry in by_population[population]
+        )
+    return flagged
+
+
 # --- the Tier P migration this module contributes (design §3.3's decision table) ---------------
 #
 # `M-STORE` owns the migration *mechanism*; the owning module contributes the migrations.
@@ -138,6 +229,25 @@ _PKG_SCHEMA_LOCK_COLUMNS = Migration(
         Statement("ALTER TABLE criterion ADD COLUMN scoring_model TEXT"),
         Statement("ALTER TABLE criterion ADD COLUMN construct_tag TEXT"),
         Statement("ALTER TABLE band ADD COLUMN descriptor TEXT"),
+        Statement("ALTER TABLE exemplar ADD COLUMN provenance TEXT"),
+    ),
+)
+
+_PKG_VALIDATION_KEYS = Migration(
+    version=4,
+    name="pkg_validation_keys",
+    statements=(
+        Statement("ALTER TABLE validation_record ADD COLUMN criterion_id TEXT"),
+        Statement(
+            "ALTER TABLE validation_record ADD COLUMN population_scope_id TEXT"),
+        Statement("ALTER TABLE validation_record ADD COLUMN scoring_model TEXT"),
+        Statement("ALTER TABLE validation_record ADD COLUMN agreement REAL"),
+        Statement("ALTER TABLE validation_record ADD COLUMN n INTEGER"),
+        Statement(
+            "CREATE UNIQUE INDEX validation_record_key ON validation_record "
+            "(package_version_id, criterion_id, population_scope_id, backend_profile, "
+            "panel_build_ref, scoring_model)"
+        ),
     ),
 )
 
@@ -373,6 +483,32 @@ PKG_STATEMENTS.update({
         "SELECT criterion_id, depends_on FROM criterion_dependency "
         "WHERE package_version_id = :v"
     ),
+    "select_validation": Statement(
+        "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n FROM validation_record "
+        "WHERE package_version_id = :v "
+        "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
+    "select_all_validations": Statement(
+        "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n FROM validation_record "
+        "WHERE package_version_id = :v"
+    ),
+    "insert_validation": Statement(
+        "INSERT INTO validation_record (validation_record_id, package_version_id, "
+        "criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n, recorded_at) VALUES (hex(randomblob(8)), :v, "
+        ":criterion_id, :population_scope_id, :backend_profile, :panel_build_ref, "
+        ":scoring_model, :agreement, :n, datetime('now'))"
+    ),
+    "select_exemplar_provenance": Statement(
+        "SELECT DISTINCT provenance FROM exemplar WHERE package_version_id = :v "
+        "AND provenance IS NOT NULL"
+    ),
     "select_latest_version": Statement(
         "SELECT package_version_id FROM package_version ORDER BY revision DESC LIMIT 1"
     ),
@@ -417,6 +553,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
     + (_PKG_VERSION_LINEAGE,)
     + (_PKG_SCHEMA_LOCK_COLUMNS,)
+    + (_PKG_VALIDATION_KEYS,)
 )
 
 #: The revision copy order: parents before children, so every copied row's FK is
@@ -499,6 +636,78 @@ class PackageCatalog:
         (cases 11-13). The row-level shape is #28's; the lock fires here first."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion_dependency.alter")
+
+    # -- validation records and the manifest (#29) ----------------------------------------------
+
+    def store_validation(
+        self, v: PackageVersionId, criterion_id: str, population_scope_id: str,
+        backend_profile: str, panel_build_ref: str, scoring_model: str,
+        agreement: float, n: int,
+    ) -> None:
+        """Store one validation record, keyed by the six-part key `FR-PKG-08` fixes.
+        Refused on published versions only if the record would CHANGE an existing row
+        (validation records are append-only in practice: new keys, never rewrites)."""
+        with self._handle.transaction() as tx:
+            row = tx.execute(PKG_STATEMENTS["select_validation"],
+                             v=v, criterion_id=criterion_id,
+                             population_scope_id=population_scope_id,
+                             backend_profile=backend_profile,
+                             panel_build_ref=panel_build_ref,
+                             scoring_model=scoring_model)
+            if row:
+                self._guard(tx, v, "validation_record.alter")
+            tx.execute(PKG_STATEMENTS["insert_validation"],
+                       v=v, criterion_id=criterion_id,
+                       population_scope_id=population_scope_id,
+                       backend_profile=backend_profile,
+                       panel_build_ref=panel_build_ref,
+                       scoring_model=scoring_model, agreement=agreement, n=n)
+        self._invalidate()
+
+    def validation_for(
+        self, v: PackageVersionId, population_scope_id: str, backend_profile: str,
+        panel_build_ref: str, scoring_model: str = "", criterion_id: str | None = None,
+    ) -> Any:
+        """`FR-PKG-09`: the record for one key, or `NoValidationData` — **distinguishable
+        in type** from a zero or a low figure. No aggregate exists anywhere on this
+        surface (`CT-PKG-07`): the caller names the key, the catalog answers the key."""
+        rows = self._handle.query(PKG_STATEMENTS["select_validation"],
+                                  v=v, criterion_id=criterion_id,
+                                  population_scope_id=population_scope_id,
+                                  backend_profile=backend_profile,
+                                  panel_build_ref=panel_build_ref,
+                                  scoring_model=scoring_model)
+        if not rows:
+            return NoValidationData()
+        return dict(rows[0])
+
+    def manifest(self, v: PackageVersionId) -> Manifest:
+        """`FR-PKG-21`: per-population validation entries, the weakest criterion per
+        population, exemplar provenance and schema version — and no cross-population
+        aggregate field (the shape makes the §2.1 error unrepresentable)."""
+        rows = self._handle.query(PKG_STATEMENTS["select_all_validations"], v=v)
+        entries = _weakest_entry([
+            ManifestEntry(
+                population_scope_id=row["population_scope_id"],
+                criterion_id=row["criterion_id"],
+                backend_profile=row["backend_profile"],
+                panel_build_ref=row["panel_build_ref"],
+                scoring_model=row["scoring_model"],
+                agreement=float(row["agreement"]),
+                n=int(row["n"]),
+                is_weakest=False,
+            ) for row in rows
+        ])
+        provenance = tuple(
+            row["provenance"] for row in self._handle.query(
+                PKG_STATEMENTS["select_exemplar_provenance"], v=v)
+        )
+        return Manifest(
+            package_version_id=v,
+            schema_version=self._handle._open_report.schema_version_after,
+            entries=tuple(entries),
+            exemplar_provenance=provenance,
+        )
 
     # -- structure, graph and the per-run cache (#28) ------------------------------------------
 
