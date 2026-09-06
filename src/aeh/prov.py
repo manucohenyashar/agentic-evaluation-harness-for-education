@@ -104,8 +104,10 @@ __all__ = [
     "CostEstimate",
     "DEFAULT_FIXTURE_MAX_CONCURRENCY",
     "FIXTURE_DIR_ENV",
+    "BuildWatch",
     "Clock",
     "ConcurrencyGovernor",
+    "RunCounters",
     "HttpRequest",
     "HttpResponse",
     "RetryPolicy",
@@ -804,6 +806,118 @@ class ConcurrencyGovernor:
             return self._permitted
 
 
+# --- run counters and the build-change guard (FR-PROV-09, FR-PROV-12, FR-PROV-05) --------------
+
+#: The six counter names, contract per `CT-PROV-11` — read by name for persistence into
+#: `run_metrics`. Not a partition: a call answered 429 once then succeeding increments
+#: **both** `transport_retries` (every attempt beyond the first, whatever provoked it —
+#: `FR-PROV-06` classifies 429 as transport-class) and `rate_limited_calls` (calls throttled
+#: at least once). Design v1.5 settles the semantics because the partitioning reading is
+#: defensible and reports a different number — and `rate_limited_calls`' consumer is an
+#: alert on its *share of dispatch*, which needs the per-call count.
+COUNTER_NAMES: tuple[str, ...] = (
+    "transport_retries",
+    "rate_limited_calls",
+    "rate_limit_wait_s",
+    "tokens_in",
+    "tokens_out",
+    "cache_hit_rate",
+)
+
+
+@dataclass(frozen=True)
+class RunCounters:
+    """The six counters as `counters()` returns them (`CT-PROV-11`'s surface).
+
+    `cache_hit_rate` is the token-weighted `cached_prefix_tokens / tokens_in` over the run —
+    a rate in `[0, 1]`, never a count. HLD §9.7 treats a drop below the historical band as
+    a build failure with no error (the symptom of losing prefix ordering is a fivefold
+    slowdown), which is why the unit is a rate and the name is contract."""
+
+    transport_retries: int
+    rate_limited_calls: int
+    rate_limit_wait_s: float
+    tokens_in: int
+    tokens_out: int
+    cache_hit_rate: float
+
+
+class RunCountersTracker:
+    """The in-memory accumulator behind `counters()`. This module writes nothing directly:
+    `M-ORCH` reads `counters()` and persists to `run_metrics` on the ordinary commit cadence
+    (`CT-PROV-11`)."""
+
+    def __init__(self) -> None:
+        self._transport_retries = 0
+        self._rate_limited_calls = 0
+        self._rate_limit_wait_s = 0.0
+        self._tokens_in = 0
+        self._tokens_out = 0
+        self._cached_prefix_tokens = 0
+        self._lock = threading.Lock()
+
+    def on_retry(self) -> int:
+        """One more attempt beyond the first, whatever provoked it (429 included)."""
+        with self._lock:
+            self._transport_retries += 1
+            return self._transport_retries
+
+    def on_rate_limited(self, waited_s: float) -> None:
+        """The call was throttled at least once — counted once per call, with the whole
+        wait it incurred accumulated under `rate_limit_wait_s`."""
+        with self._lock:
+            self._rate_limited_calls += 1
+            self._rate_limit_wait_s += waited_s
+
+    def on_usage(self, tokens_in: int, tokens_out: int, cached_prefix_tokens: int) -> None:
+        with self._lock:
+            self._tokens_in += tokens_in
+            self._tokens_out += tokens_out
+            self._cached_prefix_tokens += cached_prefix_tokens
+
+    def snapshot(self) -> RunCounters:
+        with self._lock:
+            rate = (
+                self._cached_prefix_tokens / self._tokens_in if self._tokens_in else 0.0
+            )
+            return RunCounters(
+                transport_retries=self._transport_retries,
+                rate_limited_calls=self._rate_limited_calls,
+                rate_limit_wait_s=self._rate_limit_wait_s,
+                tokens_in=self._tokens_in,
+                tokens_out=self._tokens_out,
+                cache_hit_rate=rate,
+            )
+
+
+class BuildWatch:
+    """The run-start build record, and the guard that refuses a changed panel (`FR-PROV-05`).
+
+    `record` is called at run start with the builds the panel expects; `check` is called per
+    response with the build that actually served it. A mismatch raises `BuildChangedError`
+    — terminal, **not retried** (`FR-PROV-05`: a retry that landed back on the original
+    build would hide the fact that the panel changed mid-run). The comparison is exact-case
+    and whole-string (`TC-PROV-08`'s boundary: case differences and revision suffixes are
+    different builds — a declared rule, stated here rather than left incidental)."""
+
+    def __init__(self) -> None:
+        self._expected: dict[str, str] = {}
+
+    def record(self, model_key: str, build_id: str) -> None:
+        self._expected[model_key] = build_id
+
+    def check(self, model_key: str, served_build: str) -> None:
+        expected = self._expected.get(model_key)
+        if expected is None:
+            return  # no run-start record for this model: nothing to guard yet
+        if served_build != expected:
+            raise BuildChangedError(
+                f"the panel changed mid-run: {model_key} was built {expected!r} at run "
+                f"start and {served_build!r} served this response. Not retried (FR-PROV-05) "
+                f"— a retry landing on the original build would hide the change."
+            )
+
+
 # --- the one dispatch loop (FR-PROV-06/-07/-08) -------------------------------------------------
 
 
@@ -817,6 +931,9 @@ def dispatch_with_retries(
     clock: Clock | None = None,
     rng: random.Random | None = None,
     governor: ConcurrencyGovernor | None = None,
+    counters: RunCountersTracker | None = None,
+    build_watch: BuildWatch | None = None,
+    model_key: str = "",
 ) -> Any:
     """Attempt one request through `transport`, retrying only what `FR-PROV-06` permits.
 
@@ -867,22 +984,35 @@ def dispatch_with_retries(
                         resolved_policy.backoff_base_ms, attempt, resolved_rng)
                 if governor is not None:
                     governor.on_rate_limited()
+                if counters is not None:
+                    counters.on_rate_limited(wait)
+                    if attempt > 0:
+                        counters.on_retry()
                 last_error = RateLimitedError(f"HTTP 429 from the provider (attempt {attempt + 1})")
                 resolved_clock.sleep(wait)
                 continue
             if 500 <= response.status <= 599:
                 last_error = TransportError(
                     f"HTTP {response.status} from the provider (attempt {attempt + 1})")
+                if counters is not None and attempt > 0:
+                    counters.on_retry()
                 resolved_clock.sleep(jittered_backoff(
                     resolved_policy.backoff_base_ms, attempt, resolved_rng))
                 continue
             try:
-                return parse(response)
+                parsed = parse(response)
+                if build_watch is not None:
+                    build_watch.check(model_key, getattr(parsed, "resolved_build", ""))
+                if counters is not None and attempt > 0:
+                    counters.on_retry()
+                return parsed
             except MalformedResponseError as error:
                 last_error = error
                 resolved_clock.sleep(jittered_backoff(
                     resolved_policy.backoff_base_ms, attempt, resolved_rng))
                 continue
+        if counters is not None and attempt > 0:
+            counters.on_retry()
         resolved_clock.sleep(jittered_backoff(
             resolved_policy.backoff_base_ms, attempt, resolved_rng))
 
