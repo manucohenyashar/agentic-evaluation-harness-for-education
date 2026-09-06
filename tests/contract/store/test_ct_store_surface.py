@@ -103,11 +103,17 @@ def test_tc_store_c07_blobs_are_content_addressed_idempotent_and_live_for_the_ti
     )
     assert blobs.get(first) == payload
 
-    # The lifetime half: reopen the store (new handles, same directory) and resolve again.
+    # The lifetime half: reopen the store (new handles, same directory) and resolve again —
+    # `get` AND `path`, both of which the clause names.
     store.close()
     reopened = open_store(tmp_data_dir)
     assert reopened.blobs().get(first) == payload, (
         "TC-STORE-C07: a hash put() returned did not resolve after a reopen. The lifetime is "
         "the owning tier's, not the handle's — M-INGEST reads rasters back across sessions."
+    )
+    resolved = reopened.blobs().path(first)
+    assert resolved.is_relative_to(tmp_data_dir.resolve()) and resolved.exists(), (
+        f"TC-STORE-C07: path({first}) after reopen is {resolved} — outside the data "
+        "directory or absent. The clause names path() beside get()."
     )
     reopened.close()

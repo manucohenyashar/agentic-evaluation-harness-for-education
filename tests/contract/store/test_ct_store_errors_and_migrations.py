@@ -219,6 +219,8 @@ def test_tc_store_c12_after_a_successful_open_the_schema_matches_the_binary(tmp_
         for migration in TIER_MIGRATIONS[tier]:
             for stmt in migration.statements:
                 text = str(stmt)
+                if "CREATE TABLE " not in text:
+                    continue  # a future index or view migration is not a table
                 between = text.split("CREATE TABLE ", 1)[1]
                 expected_tables.add(between.split("(", 1)[0].strip())
         expected_tables.add("schema_version")  # created by _migrate, not a migration row

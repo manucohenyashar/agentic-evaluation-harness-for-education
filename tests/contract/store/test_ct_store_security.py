@@ -96,6 +96,24 @@ def test_tc_store_c08_no_search_statement_no_fts_and_the_adversarial_constructio
     )
 
 
+#: The scoring-path consumers CT-STORE-08's rung-4 limb sweeps, as they land. Empty today;
+#: the scaffold below is the unmissable remainder.
+SCORING_CONSUMERS: tuple[str, ...] = ()
+
+
+@pytest.mark.parametrize("consumer", SCORING_CONSUMERS)
+def test_tc_store_c08_no_scoring_query_names_another_students_submission(consumer):
+    """C08's rung-4 limb — *'run the E2E journey and assert no query issued during scoring
+    names another student's submission'* — the runtime form of the no-contamination rule.
+    Parametrized over the scoring consumers as they land; an empty registry must never
+    read as the sweep having run."""
+    pytest.fail(
+        f"TC-STORE-C08: scoring consumer {consumer} is registered without a rung-4 sweep "
+        "body. Bind the consumer's E2E journey and assert no issued query names another "
+        "student's submission when the module lands."
+    )
+
+
 def test_tc_store_c09_tier_prohibitions_and_the_pseudonymized_boundary(tmp_data_dir):
     """`TC-STORE-C09` — *'data moves toward D only, and nothing flows back. Attempt a write
     from Tier D toward C and assert refusal. Then ... Tier D rejects any insert carrying a

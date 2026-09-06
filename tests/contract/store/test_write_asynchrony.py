@@ -22,6 +22,8 @@ import pytest
 from aeh.store import store_metrics
 from tests.support.store_api import open_store, statement
 
+# Step 4 needs the file tree; pathlib is imported at use site inside the self-audit.
+
 pytestmark = pytest.mark.contract
 
 ISSUE = "#17"
@@ -89,6 +91,30 @@ def test_tc_store_c02_read_your_own_write_goes_through_transaction(tmp_data_dir)
             "and this one is how every read-modify-write ledger transition works."
         )
     store.close()
+
+
+def test_tc_store_c02_step_4_no_contract_case_uses_an_in_memory_store():
+    """Step 4 — *'assert the §4.2 in-memory shortcut is confined: enumerate cases using an
+    in-memory store and assert none exercises a write path (§4.10 forbids an in-memory
+    stand-in for this contract).'* Implementable today, over this suite's own tree: no
+    contract case may open an in-memory SQLite database at all, because a synchronous
+    in-memory stand-in is what hides CT-STORE-02's violation."""
+    from pathlib import Path
+
+    contract_dir = Path(__file__).resolve().parent
+    needle = ":mem" + "ory:"  # assembled so this audit's own text does not match itself
+    offenders: list[str] = []
+    for py_file in sorted(contract_dir.glob("*.py")):
+        if py_file.name == Path(__file__).name:
+            continue  # the audit's own docstring discusses the shortcut; code is what counts
+        text = py_file.read_text(encoding="utf-8")
+        if needle in text:
+            offenders.append(py_file.name)
+    assert not offenders, (
+        f"TC-STORE-C02: contract file(s) open an in-memory store: {offenders}. §4.10 "
+        "forbids an in-memory stand-in for this contract — a synchronous in-memory fake is "
+        "the exact shape that hides the asynchrony clause being violated."
+    )
 
 
 @pytest.mark.parametrize("consumer", CONSUMERS)

@@ -35,14 +35,17 @@ REPO_SRC = Path(__file__).resolve().parents[3] / "src"
 def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_data_dir):
     """`TC-STORE-C05` — *'kill the process uncontrolled at randomized points under sustained
     write load; assert at most `batch` results **or** `interval` seconds of completed work is
-    lost ... the case reads them from configuration.'*
+    lost ... the case reads them from configuration and asserts against the configured
+    value, which is what makes a loosened bound (RISK-33) visible as an edit.'*
 
-    The bound under test is the child process's *configured* one (`HARNESS_COMMIT_BATCH=10`,
-    `HARNESS_COMMIT_INTERVAL_MS` high, so the batch size is the binding figure). Every kill
-    must lose at most one batch window — pairs surviving are whole batches — and the reopen
-    must be clean. The repeated-kill machinery itself is TC-STORE-18's (twenty repetitions);
-    this case asserts the **threshold against the configured value** across the same shape
-    of death."""
+    The child writes through **`enqueue_write`** — the queue path the configured batch
+    governs — and appends its enqueue count to a progress file after every unit. The parent
+    kills at a spread of offsets; the oracle is the **threshold**: rows recovered at reopen
+    >= rows enqueued at kill minus the configured batch. A store that lost 30 whole batches
+    fails here even though every batch it did commit was whole (that shape half is
+    TC-STORE-18's and C03's). The bound is read from `HARNESS_COMMIT_BATCH` — loosening it
+    in the store reds this case only if the case reads the same configuration, which is the
+    point."""
     child = tmp_data_dir / "c05_child.py"
     child.write_text(textwrap.dedent(
         """
@@ -55,26 +58,32 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         handle = store.cohort("c-c05")
         with handle.transaction() as tx:
             tx.execute(Statement(
-                "CREATE TABLE c05_rows (batch_no INTEGER NOT NULL, seq INTEGER NOT NULL)"))
+                "CREATE TABLE c05_rows (unit_no INTEGER NOT NULL PRIMARY KEY)"))
+        progress = Path(os.environ["PROGRESS"])
+        progress.write_text("0")  # the parent may kill before the first unit lands
         Path(os.environ["READY"]).write_text("ready")
-        insert = Statement("INSERT INTO c05_rows VALUES (:b, :s)")
-        batch = 0
+        insert = Statement("INSERT INTO c05_rows VALUES (:n)")
+        unit = 0
         while True:
-            with handle.transaction() as tx:
-                for seq in range(10):
-                    tx.execute(insert, b=batch, s=seq)
-            batch += 1
-            time.sleep(0.002)
+            handle.enqueue_write(insert, n=unit)
+            unit += 1
+            # The progress line is the enqueue side of the bound: what the child had
+            # *handed to the queue* when the kill landed. The reopen may legitimately be
+            # behind it by at most the configured batch.
+            progress.write_text(str(unit))
+            time.sleep(0.001)
         """
     ), encoding="utf-8")
+    configured_batch = 10
     for repetition in range(6):
         data_dir = tmp_data_dir / f"rep-{repetition}"
         data_dir.mkdir()
         env = os.environ.copy()
         env["AEH_SRC"] = str(REPO_SRC)
-        env["HARNESS_COMMIT_BATCH"] = "10"
+        env["HARNESS_COMMIT_BATCH"] = str(configured_batch)
         env["HARNESS_COMMIT_INTERVAL_MS"] = "60000"  # batch size is the binding figure
         env["READY"] = str(data_dir / "ready")
+        env["PROGRESS"] = str(data_dir / "progress")
         process = subprocess.Popen(
             [sys.executable, str(child), str(data_dir)], env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -82,24 +91,36 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         deadline = time.monotonic() + 30
         while not ready.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
-        time.sleep(0.05 + repetition * 0.05)  # deterministic spread across batch boundaries
+        assert ready.exists(), (
+            f"TC-STORE-C05 (rep {repetition}): the child never reached its write loop — the "
+            "repetition would assert nothing (stderr is devnull'd). Same guard as "
+            "TC-STORE-18, same reason."
+        )
+        time.sleep(0.15 + repetition * 0.15)  # a spread of kill offsets mid-write
+        enqueued_at_kill = int((data_dir / "progress").read_text())
         process.kill()
         process.wait(timeout=30)
 
         store = open_store(data_dir)
         handle = store.cohort("c-c05")
-        batches = sorted({row[0] for row in handle.query(statement(
-            "SELECT DISTINCT batch_no FROM c05_rows", issue=ISSUE))})
-        # Whole committed batches, and never a gap: the loss is a batch window.
-        assert batches == list(range(len(batches))), (
-            f"TC-STORE-C05 (rep {repetition}): committed batches {batches} are not "
-            "gap-free. A hole in the middle is not a batch-window loss, it is corruption."
+        recovered = handle.query(statement(
+            "SELECT MAX(unit_no) FROM c05_rows", issue=ISSUE))[0][0]
+        recovered = (recovered + 1) if recovered is not None else 0
+        loss_bound = configured_batch  # rows the configured window may legitimately lose
+        assert recovered >= enqueued_at_kill - loss_bound, (
+            f"TC-STORE-C05 (rep {repetition}): {enqueued_at_kill - recovered} units lost; "
+            f"the configured bound is {loss_bound} (HARNESS_COMMIT_BATCH). CT-STORE-05's "
+            "oracle is the threshold against the CONFIGURED value — a bound loosened in the "
+            "store is an edit this case makes visible."
         )
-        per_batch = handle.query(statement(
-            "SELECT batch_no, COUNT(*) FROM c05_rows GROUP BY batch_no", issue=ISSUE))
-        assert all(row[1] == 10 for row in per_batch), (
-            f"TC-STORE-C05 (rep {repetition}): a committed batch is partial: {per_batch}. "
-            f"The configured bound is 10 rows per batch; the loss must be a whole window."
+        # Whole committed units, no gaps in the surviving prefix: the loss is a window,
+        # never a tear.
+        surviving = [row[0] for row in handle.query(statement(
+            "SELECT unit_no FROM c05_rows ORDER BY unit_no", issue=ISSUE))]
+        assert surviving == list(range(surviving[0] if surviving else 0,
+                                       (surviving[-1] + 1) if surviving else 0)), (
+            f"TC-STORE-C05 (rep {repetition}): the surviving rows have gaps. The loss is a "
+            "commit window; a hole inside it is corruption, not the bound."
         )
         store.close()
 

@@ -743,8 +743,13 @@ class CrossTierTransactionError(StoreError):
     """
 
 
-#: The tiers holding an open `transaction()` on this thread. Cross-tier nesting is the one
-#: shape `CT-STORE-03` refuses loudly; same-tier nesting fails on SQLite's own terms.
+#: The tiers holding an open `transaction()` on this thread, as a per-tier **depth** — not a
+#: set. Same-tier nesting is legal at the bookkeeping level (two cohort handles are two
+#: files), and a set's difference operation would lose the outer tier when an inner
+#: same-tier transaction exits, disarming the cross-tier guard for the rest of the outer
+#: body. A counter keeps the outer tier visible until its own transaction closes. (Found by
+#: TC-STORE-C03's own review: hold cohort A, open cohort B, close B, open durable — the set
+#: version split silently. Same-tier nesting on SQLite itself still fails on its own terms.)
 _OPEN_TX_TIERS = threading.local()
 
 
@@ -2463,7 +2468,8 @@ class WriteQueue:
                 "transaction() was called on a closed store. Reopening the write connection "
                 "here would commit to a tier whose handle has already been released."
             )
-        open_tiers = getattr(_OPEN_TX_TIERS, "tiers", None) or set()
+        counts = getattr(_OPEN_TX_TIERS, "tiers", None) or {}
+        open_tiers = {tier for tier, depth in counts.items() if depth > 0}
         if open_tiers and open_tiers != {self._tier_name}:
             # CT-STORE-03's negative, made loud: a second tier's transaction nested inside
             # a first tier's open one. Without this the nested transaction commits
@@ -2489,14 +2495,16 @@ class WriteQueue:
                     raise failure
                 raise
             self._holder.in_transaction = True
-            _OPEN_TX_TIERS.tiers = (
-                getattr(_OPEN_TX_TIERS, "tiers", None) or set()) | {self._tier_name}
+            counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+            counts[self._tier_name] = counts.get(self._tier_name, 0) + 1
+            _OPEN_TX_TIERS.tiers = counts
             try:
                 yield Tx(connection, self._limits.retries, guard=self._guard)
             except BaseException as error:
                 self._holder.in_transaction = False
-                _OPEN_TX_TIERS.tiers = (
-                    getattr(_OPEN_TX_TIERS, "tiers", None) or set()) - {self._tier_name}
+                counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+                counts[self._tier_name] = counts.get(self._tier_name, 0) - 1
+                _OPEN_TX_TIERS.tiers = counts
                 try:
                     _run(connection, _ROLLBACK, retries=self._limits.retries)
                 except sqlite3.Error:
@@ -2512,8 +2520,9 @@ class WriteQueue:
                     raise failure
                 raise
             self._holder.in_transaction = False
-            _OPEN_TX_TIERS.tiers = (
-                getattr(_OPEN_TX_TIERS, "tiers", None) or set()) - {self._tier_name}
+            counts = dict(getattr(_OPEN_TX_TIERS, "tiers", None) or {})
+            counts[self._tier_name] = counts.get(self._tier_name, 0) - 1
+            _OPEN_TX_TIERS.tiers = counts
             try:
                 _run(connection, _COMMIT, retries=self._limits.retries)
             except sqlite3.OperationalError as error:

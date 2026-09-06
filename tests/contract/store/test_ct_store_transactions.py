@@ -131,6 +131,7 @@ def test_tc_store_c04_readers_never_see_a_partial_transaction(tmp_data_dir):
     readers = [threading.Thread(target=reader, daemon=True) for _ in range(3)]
     for thread in readers:
         thread.start()
+    started = time.monotonic()
     try:
         for batch in range(20):
             with handle.transaction() as tx:
@@ -146,6 +147,16 @@ def test_tc_store_c04_readers_never_see_a_partial_transaction(tmp_data_dir):
         f"TC-STORE-C04: readers observed partial-transaction counts {violations[:5]}. The "
         "single writer plus WAL is what makes partial transactions unobservable; a reader "
         "seeing one is the clause failing at the database level, not in a mutex."
+    )
+    # The other half of the clause, measured: "no reader blocks the writer". A generous
+    # upper bound — the 200 transactions must complete while three readers hammer the
+    # table. A WAL regression (readers holding the writer's lock) shows up here as a
+    # timeout, absorbed until now by the store's busy retries.
+    writer_seconds = time.monotonic() - started
+    assert writer_seconds < 30, (
+        f"TC-STORE-C04: 200 transactions took {writer_seconds:.1f}s with readers running. "
+        "Concurrent readers must never block the writer — a WAL-to-journal regression is "
+        "absorbed by the busy retries and visible only here."
     )
     store.close()
 
