@@ -60,17 +60,20 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
             tx.execute(Statement(
                 "CREATE TABLE c05_rows (unit_no INTEGER NOT NULL PRIMARY KEY)"))
         progress = Path(os.environ["PROGRESS"])
-        progress.write_text("0")  # the parent may kill before the first unit lands
+        progress.write_text("0\\n")  # the parent may kill before the first unit lands
         Path(os.environ["READY"]).write_text("ready")
         insert = Statement("INSERT INTO c05_rows VALUES (:n)")
         unit = 0
         while True:
             handle.enqueue_write(insert, n=unit)
             unit += 1
-            # The progress line is the enqueue side of the bound: what the child had
-            # *handed to the queue* when the kill landed. The reopen may legitimately be
-            # behind it by at most the configured batch.
-            progress.write_text(str(unit))
+            # The progress LOG is the enqueue side of the bound: one appended line per
+            # unit handed to the queue. Append-mode lines are the Windows-safe way to
+            # publish a count to a process that will kill you mid-write: the parent reads
+            # after the kill (no writer remains) and skips any line the kill tore. There
+            # is no rename to lose to a file-lock race.
+            with open(progress, "a", encoding="utf-8") as log:
+                log.write(f"{unit}\\n")
             time.sleep(0.001)
         """
     ), encoding="utf-8")
@@ -81,37 +84,55 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         env = os.environ.copy()
         env["AEH_SRC"] = str(REPO_SRC)
         env["HARNESS_COMMIT_BATCH"] = str(configured_batch)
+        # The queue depth is part of the configured loss window too: units parked in the
+        # queue at kill time are as lost as the batch being committed. Pinning both knobs
+        # makes the bound below exact.
+        env["HARNESS_WRITE_QUEUE_DEPTH"] = str(configured_batch)
         env["HARNESS_COMMIT_INTERVAL_MS"] = "60000"  # batch size is the binding figure
         env["READY"] = str(data_dir / "ready")
         env["PROGRESS"] = str(data_dir / "progress")
+        child_err = (data_dir / "child-stderr.txt").open("wb")
         process = subprocess.Popen(
             [sys.executable, str(child), str(data_dir)], env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stdout=subprocess.DEVNULL, stderr=child_err)
+        child_err.close()
         ready = data_dir / "ready"
         deadline = time.monotonic() + 30
         while not ready.exists() and time.monotonic() < deadline:
             time.sleep(0.01)
         assert ready.exists(), (
             f"TC-STORE-C05 (rep {repetition}): the child never reached its write loop — the "
-            "repetition would assert nothing (stderr is devnull'd). Same guard as "
-            "TC-STORE-18, same reason."
+            f"repetition would assert nothing. Child stderr: "
+            f"{(data_dir / 'child-stderr.txt').read_text(errors='replace')[-600:]}. Same "
+            "guard as TC-STORE-18, same reason."
         )
         time.sleep(0.15 + repetition * 0.15)  # a spread of kill offsets mid-write
-        enqueued_at_kill = int((data_dir / "progress").read_text())
         process.kill()
         process.wait(timeout=30)
+        # Read AFTER the kill: no writer remains, so the last complete line is exact —
+        # a line the kill tore mid-write simply fails the int-parse and is skipped.
+        progress_lines = [
+            int(line) for line in
+            (data_dir / "progress").read_text().splitlines() if line.strip().isdigit()
+        ]
+        enqueued_at_kill = max(progress_lines) if progress_lines else 0
 
         store = open_store(data_dir)
         handle = store.cohort("c-c05")
         recovered = handle.query(statement(
             "SELECT MAX(unit_no) FROM c05_rows", issue=ISSUE))[0][0]
         recovered = (recovered + 1) if recovered is not None else 0
-        loss_bound = configured_batch  # rows the configured window may legitimately lose
-        assert recovered >= enqueued_at_kill - loss_bound, (
+        # The configured loss window: everything the child could have handed to the queue
+        # and not seen committed — the pending queue (depth) plus the batch mid-commit.
+        # Both knobs are read from the child's configuration, which is what makes a
+        # loosened bound (RISK-33) visible as an edit here.
+        loss_bound = configured_batch + configured_batch
+        assert enqueued_at_kill - recovered <= loss_bound, (
             f"TC-STORE-C05 (rep {repetition}): {enqueued_at_kill - recovered} units lost; "
-            f"the configured bound is {loss_bound} (HARNESS_COMMIT_BATCH). CT-STORE-05's "
-            "oracle is the threshold against the CONFIGURED value — a bound loosened in the "
-            "store is an edit this case makes visible."
+            f"the configured window is {loss_bound} (queue depth {configured_batch} + "
+            f"commit batch {configured_batch}). CT-STORE-05's oracle is the threshold "
+            "against the CONFIGURED value — a bound loosened in the store is an edit this "
+            "case makes visible."
         )
         # Whole committed units, no gaps in the surviving prefix: the loss is a window,
         # never a tear.
