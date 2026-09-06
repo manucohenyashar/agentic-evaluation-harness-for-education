@@ -218,7 +218,7 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: on this line), which is the re-read this constant exists to force.
 #:
 #: **The second entry is not a second place SQL reaches SQLite.**
-#: `aeh.store:2248` is `LeaseClock._persist` calling `tx.execute(STATEMENTS["upsert_lease_clock"],
+#: `aeh.store:2248` is `LeaseClock._persist`, and the seven `aeh.pkg` entries are `PackageCatalog`'s writes and reads, each calling `tx.execute(PKG_STATEMENTS[...],
 #: ...)` — `Tx.execute` is the module's own declared-statement API and delegates to `_run`, which
 #: is still the only site that touches a `sqlite3` cursor. The walker cannot see that, and
 #: shouldn't: it flags every `execute()` and asks a human whether the argument is a declared
@@ -231,7 +231,11 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: The line number is part of the entry, so an edit above the site fails this case. That is
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
-KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({"aeh.store:1513", "aeh.store:2248"})
+KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
+    "aeh.store:1513", "aeh.store:2248",
+    "aeh.pkg:326", "aeh.pkg:334", "aeh.pkg:335", "aeh.pkg:339",
+    "aeh.pkg:348", "aeh.pkg:382", "aeh.pkg:391",
+})
 
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
