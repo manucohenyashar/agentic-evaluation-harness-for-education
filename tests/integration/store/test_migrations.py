@@ -19,6 +19,7 @@ green by design.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import sqlite3
@@ -50,7 +51,13 @@ FIXTURE_ROWS: dict[Tier, dict[str, list[tuple]]] = {
     Tier.PACKAGE: {
         "package": [("PKG-FIX", "2026-01-01T00:00:00Z")],
         "package_version": [("PV-FIX", "PKG-FIX", 1, 1)],
-        "criterion": [("PV-FIX", "CRIT-1", "Q-1", "open")],
+        # Column order matches the DDL: criterion(criterion_id, package_version_id, ...).
+        # The first draft had it swapped — the builder's raw connection runs with FKs off,
+        # so nothing caught it until the FK check below did (review, B2).
+        "criterion": [
+            ("CRIT-1", "PV-FIX", "Q-1", "open"),
+            ("CRIT-2", "PV-FIX", "Q-2", "open"),
+        ],
         "band": [("PV-FIX", "CRIT-1", 0, "b0", 0.0)],
         "criterion_dependency": [("PV-FIX", "CRIT-2", "CRIT-1")],
         "exemplar": [("EX-FIX", "PV-FIX", "CRIT-1", "b0")],
@@ -112,6 +119,15 @@ def _fixture_database(db_path: Path, tier: Tier, at_version: int) -> None:
             placeholders = ", ".join("?" for _ in rows[0])
             connection.executemany(f"INSERT INTO {table} VALUES ({placeholders})", rows)
         connection.commit()
+        # The builder's connection runs with FKs off (SQLite's default), which is exactly
+        # how a value-swapped row passed silently once: NOT NULL/CHECK/PK are enforced, FK
+        # is not. Assert the fixture is what the store's own pragma would accept.
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        assert not violations, (
+            f"the {tier.value} fixture violates its own foreign keys: {violations[:4]}. A "
+            "database the store's FK pragma would refuse is not a state any binary could "
+            "have written, and a migration judged against it is judged against corrupt data."
+        )
     finally:
         connection.close()
 
@@ -212,7 +228,11 @@ def test_tc_store_04_every_prior_version_migrates_to_current_without_data_loss(t
                 f"{current_schema_version(tier)} changed data in {sorted(changed)}: "
                 f"{ {t: (before[t], after[t]) for t in sorted(changed)} }. "
                 "NFR-STORE-04: forward-only, no data loss. If the migration legitimately "
-                "transforms data, the golden and FIXTURE_ROWS move with it — in the same PR."
+                "transforms data, the golden and FIXTURE_ROWS move with it — in the same PR. "
+                "NOTE for a column-ADDING migration: this differential compares whole rows "
+                "with SELECT *, so an added column changes every row's shape and the fix is "
+                "comparing only the columns present in the before-shape — edit the "
+                "comparison, not the golden, for that case."
             )
             store.close()
             report[f"{tier.value}@v{version}"] = after
@@ -241,7 +261,7 @@ def test_tc_store_05_a_too_new_database_refuses_to_open_and_is_not_touched(tmp_d
     data_dir.mkdir(parents=True)
     db_path = _tier_path(data_dir, Tier.DURABLE, "")
     _fixture_database(db_path, Tier.DURABLE, 1)
-    with sqlite3.connect(db_path) as raw:
+    with contextlib.closing(sqlite3.connect(db_path)) as raw:
         raw.execute("INSERT INTO schema_version (version, name, applied_at) VALUES (99, 'from-the-future', ?)",
                     (FIXTURE_VERSION_STAMP,))
         raw.commit()

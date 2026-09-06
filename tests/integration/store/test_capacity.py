@@ -45,7 +45,7 @@ CAPACITY_STUDENTS = int(os.environ.get("HARNESS_TEST_CAPACITY_STUDENTS", "350"))
 CAPACITY_LIMIT_BYTES = 500 * 1024 * 1024  # NFR-STORE-06's Assumption, under
 
 
-def test_tc_store_17_two_hundred_write_units_per_second_sustained(tmp_data_dir):
+def test_tc_store_17_two_hundred_write_units_per_second_sustained(tmp_data_dir, monkeypatch):
     """`TC-STORE-17` — *"200 write units per second sustained ... without queue growth."*
 
     Oracle: **metric threshold**. The rate is measured over the whole run — first enqueue to
@@ -53,11 +53,8 @@ def test_tc_store_17_two_hundred_write_units_per_second_sustained(tmp_data_dir):
     asserted back to zero at the end: a store that wrote 400 units and left 300 pending met
     nothing. The 60-second E1 run is `PERF-05`'s; this case holds the same floor at CI
     scale, and `HARNESS_TEST_PERF_SECONDS` raises the duration to reference scale."""
-    import aeh.store as store_module
-
-    monkeypatched = pytest.MonkeyPatch()
-    monkeypatched.setenv("HARNESS_COMMIT_BATCH", "100")
-    monkeypatched.setenv("HARNESS_COMMIT_INTERVAL_MS", "100")
+    monkeypatch.setenv("HARNESS_COMMIT_BATCH", "100")
+    monkeypatch.setenv("HARNESS_COMMIT_INTERVAL_MS", "100")
     store = open_store(tmp_data_dir)
     handle = store.cohort("c-perf")
     with handle.transaction() as tx:
@@ -94,7 +91,6 @@ def test_tc_store_17_two_hundred_write_units_per_second_sustained(tmp_data_dir):
         f"TC-STORE-17: {rows[0][0]} of {total} rows landed. Throughput measured against "
         "rows that did not survive is not throughput."
     )
-    monkeypatched.undo()
 
 
 def test_tc_store_19_a_clean_environment_needs_only_the_data_dir(tmp_data_dir, tmp_path):
@@ -149,12 +145,15 @@ def test_tc_store_20_a_full_scale_run_fits_under_the_capacity_assumption(tmp_dat
     rasters does not belong in an every-push tier; `HARNESS_TEST_CAPACITY_STUDENTS` scales
     the fill for a constrained box, and the printed figure is what revisits the Assumption —
     a pass that says nothing about where under 500 MB the store landed says nothing."""
-    blobs = store = None
     store = open_store(tmp_data_dir)
     blobs = store.blobs()
     handle = store.cohort("c-capacity")
 
-    raster = bytes(range(256)) * 800  # ~200 KB per page raster, rasters dominate per §9.12
+    # ~200 KB per page raster, rasters dominate per §9.12 — and every raster is
+    # student-distinct, because content addressing deduplicates identical bytes and a fill
+    # whose 1,050 rasters collapse to 3 files measures nothing about the dominant data
+    # class (review, B1: the first draft read 8.7 MB; distinct rasters read ~223 MB).
+    raster = bytes(range(256)) * 800
     with handle.transaction() as tx:
         tx.execute(statement(
             "INSERT INTO cohort (cohort_id, consent_class, created_at) "
@@ -165,34 +164,40 @@ def test_tc_store_20_a_full_scale_run_fits_under_the_capacity_assumption(tmp_dat
         submission = f"s-{student:05d}"
         with handle.transaction() as tx:
             tx.execute(statement(
-                "INSERT INTO roster (cohort_id, student_ref) VALUES ('c-capacity', ?)"
-                .replace("?", f"'{student_ref}'"), issue=ISSUE))
+                "INSERT INTO roster (cohort_id, student_ref) "
+                "VALUES ('c-capacity', :student_ref)", issue=ISSUE), student_ref=student_ref)
             tx.execute(statement(
                 "INSERT INTO submission (submission_id, cohort_id, student_ref) "
-                f"VALUES ('{submission}', 'c-capacity', '{student_ref}')", issue=ISSUE))
+                "VALUES (:submission, 'c-capacity', :student_ref)", issue=ISSUE),
+                submission=submission, student_ref=student_ref)
             tx.execute(statement(
                 "INSERT INTO document (document_id, submission_id, content_hash) "
-                f"VALUES ('d-{student:05d}', '{submission}', 'hash-{student:05d}')", issue=ISSUE))
+                "VALUES (:document, :submission, :content_hash)", issue=ISSUE),
+                document=f"d-{student:05d}", submission=submission,
+                content_hash=f"hash-{student:05d}")
             for page in range(1, 4):
-                blobs.put(raster + bytes([page % 256]))
+                blobs.put(raster + bytes([page % 256, student % 256, (student >> 8) % 256]))
                 tx.execute(statement(
                     "INSERT INTO document_region (region_id, document_id, page_no, element_kind) "
-                    f"VALUES ('r-{student:05d}-{page}', 'd-{student:05d}', {page}, 'text')",
-                    issue=ISSUE))
+                    "VALUES (:region, :document, :page_no, 'text')", issue=ISSUE),
+                    region=f"r-{student:05d}-{page}", document=f"d-{student:05d}",
+                    page_no=page)
         with handle.transaction() as tx:
             for unit in range(units_per_student):
                 tx.execute(statement(
                     "INSERT INTO work_unit (work_id, submission_id, stage, status) "
-                    f"VALUES ('w-{student:05d}-{unit:03d}', '{submission}', 'judge', 'done')",
-                    issue=ISSUE))
+                    "VALUES (:work_id, :submission, 'judge', 'done')", issue=ISSUE),
+                    work_id=f"w-{student:05d}-{unit:03d}", submission=submission)
                 tx.execute(statement(
                     "INSERT INTO evidence (evidence_id, work_id, document_id) "
-                    f"VALUES ('e-{student:05d}-{unit:03d}', 'w-{student:05d}-{unit:03d}', "
-                    f"'d-{student:05d}')", issue=ISSUE))
+                    "VALUES (:evidence, :work_id, :document)", issue=ISSUE),
+                    evidence=f"e-{student:05d}-{unit:03d}",
+                    work_id=f"w-{student:05d}-{unit:03d}", document=f"d-{student:05d}")
                 tx.execute(statement(
                     "INSERT INTO verdict (verdict_id, work_id, judge_id, band) "
-                    f"VALUES ('v-{student:05d}-{unit:03d}', 'w-{student:05d}-{unit:03d}', "
-                    f"'judge-1', 'b1')", issue=ISSUE))
+                    "VALUES (:verdict, :work_id, 'judge-1', 'b1')", issue=ISSUE),
+                    verdict=f"v-{student:05d}-{unit:03d}",
+                    work_id=f"w-{student:05d}-{unit:03d}")
 
     total_bytes = sum(
         f.stat().st_size for f in tmp_data_dir.rglob("*") if f.is_file()
@@ -201,12 +206,12 @@ def test_tc_store_20_a_full_scale_run_fits_under_the_capacity_assumption(tmp_dat
         f"\nTC-STORE-20: {CAPACITY_STUDENTS} students -> {total_bytes / (1024 * 1024):.1f} MB "
         f"on disk (limit {CAPACITY_LIMIT_BYTES // (1024 * 1024)} MB, NFR-STORE-06's Assumption)"
     )
+    store.close()
     assert total_bytes < CAPACITY_LIMIT_BYTES, (
         f"TC-STORE-20: a {CAPACITY_STUDENTS}-student fill occupies "
         f"{total_bytes / (1024 * 1024):.1f} MB — over NFR-STORE-06's 500 MB Assumption. The "
         "figure is reported either way; the Assumption exists to be revisited with data."
     )
-    store.close()
 
 
 def test_tc_store_23_the_data_directory_is_configurable(tmp_data_dir):
