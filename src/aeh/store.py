@@ -18,16 +18,13 @@ owner-only permissions and the insecure-location refusal (`FR-STORE-09`), the di
 (`FR-STORE-10`), purge with its Tier D precondition (`FR-STORE-07`), and Tier D's
 student-name guard (`FR-STORE-12`).
 
-One sibling remains declared and **raises `NotImplementedError` naming its issue**, rather
-than being absent or — much worse — being written as a no-op:
-
-| Surface | Issue | Requirements |
-|---|---|---|
-| `Store.blobs` | #12 | `FR-STORE-06`, `-11` |
-
-A no-op `transaction()` would have been the worst of the three stubs: `FUZZ-07`'s own
-docstring records that review proved that case vacuous by dropping in a bare `yield` and
-watching 500/500 examples pass. Raising kept the shape without creating a
+No sibling remains a stub: the tier handles, the queue, the blob store, purge, the
+permission and disk-full doctrine and the name guard are all implemented — the last
+`NotImplementedError`-naming-its-issue stub was `Store.blobs`, which #12 landed. The stub
+discipline itself is worth keeping on the record: `FUZZ-07`'s own docstring records that
+review proved a no-op `transaction()` vacuous by dropping in a bare `yield` and watching
+500/500 examples pass, so the three stories that preceded their implementations raised
+`NotImplementedError` naming their issue instead — keeping the shape without creating a
 green-by-blindness path.
 
 Decisions this file fixes, that the design underdetermines
@@ -80,7 +77,6 @@ import hashlib
 import os
 import re
 import secrets
-import re
 import shutil
 import sqlite3
 import sys
@@ -102,7 +98,6 @@ __all__ = [
     "PurgePreconditionError",
     "PurgeReport",
     "Row",
-    "STATEMENTS",
     "SchemaTooNewError",
     "Statement",
     "Store",
@@ -1874,52 +1869,6 @@ def _as_disk_full(error: BaseException, *, include_os_errors: bool = True) -> Di
         failure.__cause__ = error
         return failure
     return None
-    """`DiskFullError` for `error` — chained, with the decision-table wording — or `None`.
-
-    The classification step shared by every door the requirement covers: the write queue's
-    batch path, a `transaction()` body, and purge's delete and `VACUUM` steps. The door
-    that saw the failure owns the state to record (the queue's failure list and broken
-    flag; purge has none) and then runs the halt hook — which is why this helper only
-    builds the error and never halts on its own.
-
-    `include_os_errors=False` is the **transaction body's** setting, and it is not a
-    technicality: a `transaction()` body runs arbitrary caller code, so a raw
-    `OSError(ENOSPC)` raised there can be the caller's *own* file export failing on an
-    unrelated path. Classifying that as the store's disk-full would halt the run for
-    somebody else's I/O. The body door therefore classifies only the store's own
-    `sqlite3` errors; the batch, commit and purge doors — whose failures are always this
-    module's I/O — keep `OSError(ENOSPC)` in scope.
-
-    Declared residual faces: out-of-space that surfaces as `SQLITE_CANTOPEN` ("unable to
-    open database file") or a generic `disk I/O error` is **not** classified, because
-    neither message is unique to exhaustion — the same codes fire for a wrong path or
-    permissions, and a mis-classified halt is exactly the loose string match
-    `_is_disk_full` refuses to be.
-    """
-    if isinstance(error, sqlite3.Error):
-        if isinstance(error, sqlite3.OperationalError) and "database or disk is full" in str(
-            error
-        ).lower():
-            failure = DiskFullError(
-                f"the write failed for want of disk space and the process halts "
-                f"(FR-STORE-10): {error}. The interrupted work was rolled back whole, so "
-                f"no result row is present without its ledger transition, and the ledger "
-                f"stands at its last commit, which is resumable (CT-STORE-05's window, "
-                f"not a new loss)."
-            )
-            failure.__cause__ = error
-            return failure
-        return None
-    if include_os_errors and isinstance(error, OSError) and error.errno == errno.ENOSPC:
-        failure = DiskFullError(
-            f"the write failed for want of disk space and the process halts (FR-STORE-10): "
-            f"{error}. The interrupted work was rolled back whole, so no result row is "
-            f"present without its ledger transition, and the ledger stands at its last "
-            f"commit, which is resumable (CT-STORE-05's window, not a new loss)."
-        )
-        failure.__cause__ = error
-        return failure
-    return None
 
 
 #: What a `content_hash` must look like: exactly 64 lowercase hex characters, anchored.
@@ -1936,10 +1885,6 @@ BLOB_HASH_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z")
 #: storing one blob created exactly one file, so a temp file that lived there -- or was left there
 #: by a crash -- would fail a correct store.
 INCOMING_DIR = ".incoming"
-
-#: Owner-only, on the blob files themselves (`FR-STORE-09`). Ignored on Windows, like the
-#: directory mode #10 records; #13 owns the full rule.
-OWNER_ONLY_FILE = 0o600
 
 
 class ContentAddressedBlobStore:
@@ -1990,7 +1935,16 @@ class ContentAddressedBlobStore:
         self._incoming.mkdir(parents=True, exist_ok=True, mode=OWNER_ONLY_DIR)
         staged = self._incoming / f"{content_hash}.{secrets.token_hex(8)}"
         try:
-            staged.write_bytes(data)
+            try:
+                staged.write_bytes(data)
+            except BaseException as error:
+                # The blob door is a write door like any other (`FR-STORE-10` names no
+                # exemption, and a page raster is student data on the same disk the run is
+                # about to lose): out-of-space here classifies and halts like the queue,
+                # transaction and purge doors, rather than surfacing a retryable-looking
+                # OSError from a process that kept going.
+                _halt_if_disk_full(error)
+                raise
             try:
                 staged.chmod(OWNER_ONLY_FILE)
             except OSError:
@@ -2009,6 +1963,7 @@ class ContentAddressedBlobStore:
                 # documented as idempotent without qualification, so it must not raise for the
                 # one case where idempotency is doing its job.
                 if not target.exists():
+                    _halt_if_disk_full(error)
                     raise
         finally:
             # A failed write must not leave the staging file behind: `TC-STORE-09` counts every
@@ -3583,6 +3538,7 @@ STATEMENTS: Mapping[str, Statement] = {
     "purge_delete_document": _PURGE_DELETES["document"],
     "purge_delete_submission": _PURGE_DELETES["submission"],
     "purge_delete_roster": _PURGE_DELETES["roster"],
+    "purge_delete_cohort": _PURGE_DELETES["cohort"],
     # -- the lease clock (FR-STORE-11, #12) ------------------------------------------------------
     "select_lease_clock": _SELECT_LEASE_CLOCK,
     "upsert_lease_clock": _UPSERT_LEASE_CLOCK,
