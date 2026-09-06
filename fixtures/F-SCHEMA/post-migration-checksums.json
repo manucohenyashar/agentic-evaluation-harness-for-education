@@ -267,13 +267,14 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
+      "checksum": "0e53f02f775b6236bac0c60039351084ffdef2ca523302c969687382097e5d12",
       "columns": [
         "criterion_id",
         "package_version_id",
         "question_id",
         "kind",
         "max_points",
+        "band_count",
         "scoring_model",
         "construct_tag"
       ],
@@ -353,13 +354,14 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
+      "checksum": "0e53f02f775b6236bac0c60039351084ffdef2ca523302c969687382097e5d12",
       "columns": [
         "criterion_id",
         "package_version_id",
         "question_id",
         "kind",
         "max_points",
+        "band_count",
         "scoring_model",
         "construct_tag"
       ],
@@ -439,13 +441,14 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "d5daa8b5c1abab5a7f1f03d8f29cefa351fd44a5b5d1f8868509758029aaa8af",
+      "checksum": "0e53f02f775b6236bac0c60039351084ffdef2ca523302c969687382097e5d12",
       "columns": [
         "criterion_id",
         "package_version_id",
         "question_id",
         "kind",
         "max_points",
+        "band_count",
         "scoring_model",
         "construct_tag"
       ],
