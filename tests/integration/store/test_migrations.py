@@ -204,7 +204,7 @@ def test_tc_store_04_every_prior_version_migrates_to_current_without_data_loss(t
             else:
                 store = open_store(data_dir)
                 handle = store.durable()
-            opened = handle.opened
+            opened = handle._open_report  # noqa: SLF001 -- the open report, privately read
             assert opened.schema_version_before == version
             assert opened.schema_version_after == current_schema_version(tier)
             assert opened.migrations_applied == tuple(
