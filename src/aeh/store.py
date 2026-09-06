@@ -2270,9 +2270,12 @@ class WriteQueue:
         # one. Applied at both doors: `enqueue` before queueing, `transaction` via the `Tx`
         # it hands out. See `_reject_tier_d_student_name_insert`.
         self._guard = guard
-        # The disk-full halt (`FR-STORE-10`). Module-level default so a test monkeypatches
-        # exactly one name; see `DiskFullError`.
-        self._halt = _halt_process_on_disk_full if halt is None else halt
+        # The disk-full halt (`FR-STORE-10`). The injected hook, or `None` to use the
+        # module-level default — resolved at CALL time, not here, because a default bound
+        # at construction would freeze the real `os._exit` into every queue built before a
+        # test patched the module attribute, and the whole point of the indirection is that
+        # a test monkeypatches exactly one name; see `DiskFullError`.
+        self._halt = halt
         self._queue: deque[WriteUnit] = deque()
         self._stamps: deque[float] = deque()
         self._condition = threading.Condition()
@@ -2522,7 +2525,8 @@ class WriteQueue:
             # to enqueue must hit the broken state rather than wait out a drain that will
             # never come.
             self._condition.notify_all()
-        self._halt(failure)  # never returns in production; see `DiskFullError`
+        halt = self._halt if self._halt is not None else _halt_process_on_disk_full
+        halt(failure)  # never returns in production; see `DiskFullError`
         return failure
 
     # -- the writer side -----------------------------------------------------------------------
@@ -2631,7 +2635,20 @@ class WriteQueue:
                     except sqlite3.Error:
                         pass
                     raise
-                _run(connection, _COMMIT, retries=self._limits.retries)
+                try:
+                    _run(connection, _COMMIT, retries=self._limits.retries)
+                except BaseException:
+                    # A failed COMMIT can leave the transaction open (SQLITE_BUSY keeps it;
+                    # a Python-level abort never ran it at all) — without this rollback the
+                    # next batch's BEGIN fails with "cannot start a transaction within a
+                    # transaction" and every batch after the first failure is lost. The
+                    # transaction() path has always rolled back on COMMIT failure; the batch
+                    # path gets the same courtesy. TS-08's commit-point injection found it.
+                    try:
+                        _run(connection, _ROLLBACK, retries=self._limits.retries)
+                    except sqlite3.Error:
+                        pass
+                    raise
         except BaseException as error:  # noqa: BLE001 -- recorded; see the docstring
             failure = self._disk_full_failure(error)
             if failure is None:
