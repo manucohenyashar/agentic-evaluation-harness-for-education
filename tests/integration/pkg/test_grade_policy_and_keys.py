@@ -194,14 +194,33 @@ def test_tc_pkg_18_a_correction_creates_a_new_version_and_retains_the_prior_key(
     """`TC-PKG-18` — *'a new package_version is created retaining the prior key, so
     audit_record.answer_key_ref resolves to exactly the key that produced a given
     grade'* — the correction flow is create_version + set_answer_key on the child; the
-    parent's key is byte-identical afterwards, and the lineage is exact."""
+    parent's key is byte-identical afterwards, and the lineage is exact.
+
+    The revision-copy half is asserted too, immediately after the copy: the child
+    inherits the parent's policy (window included), boundaries, options and key —
+    dropping any copy statement would hand a corrected child a silently different
+    instrument. `elicitation_history` is deliberately NOT copied: it is the append-only
+    trail (FR-PKG-20), whose rows reference the version the conversation was about."""
     store, handle, catalog, v1 = _catalog(tmp_data_dir)
+    catalog.set_grade_policy(v1, GradePolicy(review_window_hours=24))
+    catalog.set_boundaries(v1, CUTS)
     catalog.set_answer_key(v1, "MCQ-1", ["A"])
+    catalog.append_elicitation(v1, "Why option A?", ["A", "B"], "A", "key declared")
     catalog.publish(v1, "teacher")
     v2 = catalog.create_version(v1)
+    # The copy is lossless — every content surface the child will edit is there:
+    assert catalog.grade_policy(v2) == catalog.grade_policy(v1)
+    assert catalog.grade_policy(v2).review_window_hours == 24
+    assert catalog.boundary_for(v2, 60.0) == catalog.boundary_for(v1, 60.0) == "C"
+    assert catalog.mcq_options(v2, "MCQ-1") == catalog.mcq_options(v1, "MCQ-1")
+    assert catalog.criteria(v2)[1]["answer_key"] == ("A",)
+    # The trail did NOT copy — two rows total, both referencing the version asked about:
+    rows = handle.query(statement(
+        "SELECT package_version_id, question FROM elicitation_history", issue=ISSUE))
+    assert [tuple(r) for r in rows] == [(v1, "Why option A?")]
+    # The correction lands in the child; the parent keeps its key:
     catalog.set_answer_key(v2, "MCQ-1", ["B"])
     catalog.publish(v2, "teacher")
-    # The prior key is retained and still resolvable, version-pinned:
     assert catalog.criteria(v1)[1]["answer_key"] == ("A",)
     assert catalog.criteria(v2)[1]["answer_key"] == ("B",)
     # The current lineage top answers the new key:
@@ -255,6 +274,59 @@ def test_tc_pkg_19_a_negative_window_is_refused_with_the_exact_exception(tmp_dat
         GradePolicy(review_window_hours=-1)
     with pytest.raises(GradePolicyError):
         GradePolicy(review_window_hours=1.5)
+    store.close()
+
+
+def test_tc_pkg_19_the_write_door_refuses_a_free_text_formula(tmp_data_dir):
+    """`FR-PKG-14`'s write door — `set_grade_policy` accepts only a `GradePolicy`
+    object: a string policy (a formula, an expression) is refused with
+    `GradePolicyError` at the write, not stored and interpreted later. The
+    construction-time half of the same refusal is TC-PKG-14's unit case."""
+    store, handle, catalog, v = _catalog(tmp_data_dir)
+    for formula in ("total = sum(scores)", "score * 0.8 + 5",
+                    "lambda scores: sum(scores)"):
+        with pytest.raises(GradePolicyError):
+            catalog.set_grade_policy(v, formula)
+    # Nothing was written — the version still answers the default:
+    assert catalog.grade_policy(v) == GradePolicy()
+    store.close()
+
+
+def test_tc_pkg_19_the_generic_field_path_refuses_the_answer_key_door(tmp_data_dir):
+    """`ADR-1`'s one-door rule, enforced — `update_criterion_field` cannot reach
+    `criterion.answer_key` with an unvalidated value: the generic dispatch refuses the
+    field and points at `set_answer_key`."""
+    store, handle, catalog, v = _catalog(tmp_data_dir)
+    with pytest.raises(PackageError, match="set_answer_key"):
+        catalog.update_criterion_field(v, "MCQ-1", "answer_key", "not json at all")
+    catalog.set_answer_key(v, "MCQ-1", ["A"])
+    assert catalog.criteria(v)[1]["answer_key"] == ("A",)
+    store.close()
+
+
+def test_tc_pkg_19_corrupted_rows_refuse_inside_the_module_error_family(tmp_data_dir):
+    """`CT-PKG-09`/`CT-PKG-11` — the vocabulary holds at READ too: a hand-edited policy
+    row that is not a structured object refuses with `GradePolicyError`, and a
+    hand-edited malformed answer key refuses with `PackageError` — never a raw
+    `TypeError`/`JSONDecodeError` from the parse half-way through the surface. Both rows
+    are written raw against a DRAFT (drafts edit freely; the corruption is the point)."""
+    store, handle, catalog, v = _catalog(tmp_data_dir)
+    catalog.set_grade_policy(v, GradePolicy())
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "UPDATE grade_policy SET policy = 'total = sum(scores)' "
+            "WHERE package_version_id = :v", issue=ISSUE), v=v)
+    with pytest.raises(GradePolicyError):
+        catalog.grade_policy(v)
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "UPDATE criterion SET answer_key = '{not json' "
+            "WHERE package_version_id = :v AND criterion_id = 'MCQ-1'", issue=ISSUE),
+            v=v)
+    with pytest.raises(PackageError):
+        catalog.criteria(v)
+    with pytest.raises(PackageError):
+        catalog.answer_key("MCQ-1")
     store.close()
 
 

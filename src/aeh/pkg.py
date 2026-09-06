@@ -112,8 +112,9 @@ class PublishedVersionImmutableError(PackageError):
 
 
 class GradePolicyError(PackageError):
-    """A grade policy outside the closed rule vocabulary, or a malformed boundary table
-    or answer key (`FR-PKG-14`).
+    """A grade policy outside the closed rule vocabulary, or a malformed boundary
+    table (`FR-PKG-14`). Answer-key refusals raise the module base `PackageError` —
+    the key is FR-PKG-17's surface, not the policy vocabulary's.
 
     The vocabulary — weighted sum, gate, best-k-of-n, drop-lowest-n, scale, rounding,
     boundary table — is closed on purpose (the ADR): an executable formula in a package
@@ -352,7 +353,15 @@ class GradePolicy:
             fields["scale"] = ScaleRule(**fields["scale"])
         if isinstance(fields.get("weights"), list):
             fields["weights"] = tuple((str(c), float(w)) for c, w in fields["weights"])
-        return cls(**fields)
+        try:
+            return cls(**fields)
+        except (TypeError, ValueError, KeyError) as error:
+            # A stored row that is not a valid policy dict (hand-edited, corrupt) is a
+            # vocabulary refusal, not a raw TypeError: FR-PKG-14 holds at read too.
+            raise GradePolicyError(
+                f"the stored grade policy is not a structured object from the closed "
+                f"rule vocabulary (FR-PKG-14): {error}"
+            ) from error
 
 
 def default_grade_policy() -> GradePolicy:
@@ -559,8 +568,17 @@ _PKG_GRADE_POLICY_AND_KEYS = Migration(
         ),
         # The 002 pattern, carried to the new content tables: a published version's
         # options and boundaries are immutable — plus the DELETE refusal 002's tables
-        # predate. elicitation_history is deliberately NOT here: appends are always
-        # allowed (the trail records conversations about the rubric as published).
+        # predate. grade_policy gets one too: this diff introduces its first DELETE
+        # statement (set_grade_policy's draft rewrite), so the backstop moves with it.
+        # elicitation_history is deliberately NOT here: appends are always allowed (the
+        # trail records conversations about the rubric as published).
+        Statement(
+            "CREATE TRIGGER grade_policy_delete_refused BEFORE DELETE ON grade_policy "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: grade policy "
+            "removed from a published version'); END"
+        ),
         Statement(
             "CREATE TRIGGER mcq_option_immutable BEFORE UPDATE ON mcq_option "
             "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
@@ -722,30 +740,6 @@ _PKG_VERSION_LINEAGE = Migration(
         ),
     ),
 )
-
-#: The content rows a revision copies from its parent, with explicit column lists —
-#: one declared statement per table, parents before children so every copied row's FK is
-#: satisfied at insert time. `exemplar` re-mints its id: two revisions of one package
-#: share one Tier P file, so a verbatim exemplar_id would collide on the primary key.
-_REVISION_COPIES: tuple[str, ...] = (
-    "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind) "
-    "SELECT :new, criterion_id, question_id, kind FROM criterion "
-    "WHERE package_version_id = :old",
-    "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
-    "SELECT :new, criterion_id, ordinal, band, points FROM band "
-    "WHERE package_version_id = :old",
-    "INSERT INTO criterion_dependency (package_version_id, criterion_id, depends_on) "
-    "SELECT :new, criterion_id, depends_on FROM criterion_dependency "
-    "WHERE package_version_id = :old",
-    "INSERT INTO exemplar (exemplar_id, package_version_id, criterion_id, band) "
-    "SELECT hex(randomblob(8)), :new, criterion_id, band FROM exemplar "
-    "WHERE package_version_id = :old",
-    "INSERT INTO grade_policy (package_version_id, policy) "
-    "SELECT :new, policy FROM grade_policy WHERE package_version_id = :old",
-)
-
-#: Every table the immutability triggers guard.
-
 
 # --- the owning-module contribution to the store's migration registry ---------------------------
 #
@@ -1267,9 +1261,17 @@ class PackageCatalog:
         criteria = []
         for r in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
             row = dict(r)
-            row["answer_key"] = (
-                tuple(json.loads(row["answer_key"])) if row["answer_key"] else ()
-            )
+            try:
+                row["answer_key"] = (
+                    tuple(json.loads(row["answer_key"])) if row["answer_key"] else ()
+                )
+            except (TypeError, ValueError) as error:
+                # A malformed key must not poison the per-run cache loader with a raw
+                # JSONDecodeError — CT-PKG-11: caller errors are this module's own.
+                raise PackageError(
+                    f"version {v!r} holds a malformed answer key for criterion "
+                    f"{row['criterion_id']!r}: {error}"
+                ) from error
             criteria.append(row)
         bands_by_criterion: dict[str, tuple] = {}
         for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
@@ -1365,7 +1367,18 @@ class PackageCatalog:
     ) -> None:
         """Set one criterion column — the guarded mutation surface `M-CALIB` writes
         through (`FR-CALIB-07`). Refuses locked fields on published versions with
-        `SchemaLockViolation` naming the field; permits everything on drafts."""
+        `SchemaLockViolation` naming the field; permits everything on drafts.
+
+        `answer_key` is refused here regardless of lock state: the key has exactly one
+        write door, `set_answer_key` (ADR-1's single canonical representation) — this
+        generic path stores the raw value, and an unvalidated one would poison every
+        later read of the version."""
+        if field == "answer_key":
+            raise PackageError(
+                "answer_key is written through set_answer_key (FR-PKG-17, ADR-1) — "
+                "the canonical setter validates and serializes the key; this generic "
+                "field path would store it raw."
+            )
         with self._handle.transaction() as tx:
             self._guard(tx, v, f"criterion.{field}")
             tx.execute(
@@ -1421,7 +1434,15 @@ class PackageCatalog:
         rows = self._handle.query(PKG_STATEMENTS["select_policy"], v=v)
         if not rows:
             return default_grade_policy()
-        data = json.loads(rows[0]["policy"])
+        try:
+            data = json.loads(rows[0]["policy"])
+        except (TypeError, ValueError) as error:
+            # A row that is not even JSON — a formula stored by hand — is exactly the
+            # FR-PKG-14 refusal, not a raw JSONDecodeError from the read path.
+            raise GradePolicyError(
+                f"the stored grade policy for version {v!r} is not a structured "
+                f"object from the closed rule vocabulary (FR-PKG-14): {error}"
+            ) from error
         data["review_window_hours"] = rows[0]["review_window_hours"]
         return GradePolicy.from_dict(data)
 
