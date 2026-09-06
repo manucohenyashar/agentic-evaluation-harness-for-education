@@ -42,6 +42,8 @@ __all__ = [
     "PackageError",
     "PackageVersionId",
     "PublishedVersionImmutableError",
+    "SCHEMA_LOCK_FIELDS",
+    "SchemaLockViolation",
 ]
 
 #: A package version's id: an opaque string the catalog mints.
@@ -51,6 +53,20 @@ PackageVersionId = str
 class PackageError(Exception):
     """Base for every `M-PKG` failure. Siblings, never a chain — the exact-type oracle
     convention every module's error taxonomy follows."""
+
+
+class SchemaLockViolation(PackageError):
+    """An edit the HLD §6.2 lock forbids was attempted (`FR-PKG-03`).
+
+    The message names the offending field, because `M-CALIB` routes every rubric edit
+    through this module (`FR-CALIB-07`) and an operator fixing a refused edit needs the
+    field, not a generic refusal. The forbidden-field list is `SCHEMA_LOCK_FIELDS` — one
+    place in the source, enumerable at runtime (`NFR-PKG-03`); a second copy of the list
+    is how a locked field quietly becomes editable.
+
+    Not retryable by mutation: the sanctioned vehicle for every clarification is a new
+    version (`FR-PKG-04`).
+    """
 
 
 class PublishedVersionImmutableError(PackageError):
@@ -63,11 +79,44 @@ class PublishedVersionImmutableError(PackageError):
     parent), never a mutation."""
 
 
+#: The §6.2 schema lock, in exactly one place (`NFR-PKG-03`): every `(table, field)` edit
+#: a published version refuses, enumerable at runtime so a test can assert the list
+#: matches HLD §6.2 field for field. `question_type` is the HLD's name for the physical
+#: `kind` column — the HLD name is what the list carries, because the enumeration test
+#: reads it against the HLD text.
+SCHEMA_LOCK_FIELDS: tuple[tuple[str, str], ...] = (
+    ("criterion", "max_points"),
+    ("criterion", "add"),
+    ("criterion", "remove"),
+    ("criterion", "question_type"),
+    ("criterion", "scoring_model"),
+    ("criterion", "construct_tag"),
+    ("band", "label"),
+    ("band", "ordinal"),
+    ("band", "descriptor"),
+    ("band", "points"),
+    ("criterion_dependency", "add"),
+    ("criterion_dependency", "remove"),
+    ("criterion_dependency", "alter"),
+)
+
+
 # --- the Tier P migration this module contributes (design §3.3's decision table) ---------------
 #
 # `M-STORE` owns the migration *mechanism*; the owning module contributes the migrations.
 # #26's migration adds the lineage columns the schema's minimal 001 set did not carry and
 # installs the immutability triggers — the database half of `NFR-PKG-01`.
+
+_PKG_SCHEMA_LOCK_COLUMNS = Migration(
+    version=3,
+    name="pkg_schema_lock_columns",
+    statements=(
+        Statement("ALTER TABLE criterion ADD COLUMN max_points REAL"),
+        Statement("ALTER TABLE criterion ADD COLUMN scoring_model TEXT"),
+        Statement("ALTER TABLE criterion ADD COLUMN construct_tag TEXT"),
+        Statement("ALTER TABLE band ADD COLUMN descriptor TEXT"),
+    ),
+)
 
 _PKG_VERSION_LINEAGE = Migration(
     version=2,
@@ -266,9 +315,48 @@ PKG_STATEMENTS.update({
         "INSERT INTO grade_policy (package_version_id, policy) "
         "SELECT :new, policy FROM grade_policy WHERE package_version_id = :old"
     ),
+    # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
+    # lockable field carries its own literal — the registry stays the one place a
+    # statement exists, and the guard selects by field name.
+    "update_criterion_max_points": Statement(
+        "UPDATE criterion SET max_points = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "update_criterion_question_type": Statement(
+        "UPDATE criterion SET kind = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "update_criterion_scoring_model": Statement(
+        "UPDATE criterion SET scoring_model = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "update_criterion_construct_tag": Statement(
+        "UPDATE criterion SET construct_tag = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "update_band_label": Statement(
+        "UPDATE band SET label = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id AND ordinal = :ordinal"
+    ),
+    "update_band_ordinal": Statement(
+        "UPDATE band SET ordinal = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id AND ordinal = :ordinal"
+    ),
+    "update_band_descriptor": Statement(
+        "UPDATE band SET descriptor = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id AND ordinal = :ordinal"
+    ),
+    "update_band_points": Statement(
+        "UPDATE band SET points = :value WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id AND ordinal = :ordinal"
+    ),
 })
 STATEMENTS.update(PKG_STATEMENTS)
-TIER_MIGRATIONS[Tier.PACKAGE] = TIER_MIGRATIONS[Tier.PACKAGE] + (_PKG_VERSION_LINEAGE,)
+TIER_MIGRATIONS[Tier.PACKAGE] = (
+    TIER_MIGRATIONS[Tier.PACKAGE]
+    + (_PKG_VERSION_LINEAGE,)
+    + (_PKG_SCHEMA_LOCK_COLUMNS,)
+)
 
 #: The revision copy order: parents before children, so every copied row's FK is
 #: satisfied at insert time. Each key names a statement in `PKG_STATEMENTS`.
@@ -307,6 +395,70 @@ class PackageCatalog:
     def __init__(self, handle, *, package_id: str) -> None:
         self._handle = handle
         self._package_id = package_id
+
+    def _guard(self, tx, v: PackageVersionId, field: str) -> None:
+        """The one lock check every mutation funnels through.
+
+        A published version refuses EVERY in-place edit; a locked-field edit is named
+        specifically (`SchemaLockViolation`), everything else as
+        `PublishedVersionImmutableError` — the two errors' distinct meanings, in one
+        place. Drafts (locked = 0) edit freely: the copy-on-revision flow exists to give
+        clarifications a vehicle, not to forbid authoring."""
+        row = tx.execute(PKG_STATEMENTS["select_version"], v=v)[0]
+        if not row["locked"]:
+            return
+        if field in {f"{table}.{name}" for table, name in SCHEMA_LOCK_FIELDS}:
+            raise SchemaLockViolation(
+                f"the {field!r} edit on package version {v!r} is refused by the §6.2 "
+                f"schema lock (FR-PKG-03): changing what is measured invalidates every "
+                f"accumulated validation record. The sanctioned vehicle is a new version "
+                f"(create_version(parent={v!r}))."
+            )
+        raise PublishedVersionImmutableError(
+            f"package version {v!r} is published (locked = 1) and immutable (FR-PKG-01)."
+        )
+
+    def add_criterion(self, v: PackageVersionId, criterion_id: str) -> None:
+        """Add a criterion in place — refused on published versions (`TC-PKG-03` case 2);
+        the sanctioned vehicle is a revision (`FR-PKG-04`)."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.add")
+
+    def remove_criterion(self, v: PackageVersionId, criterion_id: str) -> None:
+        """Remove a criterion in place — refused on published versions (case 3)."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.remove")
+
+    def update_criterion_dependency(self, v: PackageVersionId) -> None:
+        """Add/remove/alter a dependency row in place — refused on published versions
+        (cases 11-13). The row-level shape is #28's; the lock fires here first."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion_dependency.alter")
+
+    def update_criterion_field(
+        self, v: PackageVersionId, criterion_id: str, field: str, value: Any
+    ) -> None:
+        """Set one criterion column — the guarded mutation surface `M-CALIB` writes
+        through (`FR-CALIB-07`). Refuses locked fields on published versions with
+        `SchemaLockViolation` naming the field; permits everything on drafts."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, f"criterion.{field}")
+            tx.execute(
+                PKG_STATEMENTS[f"update_criterion_{field}"],
+                v=v, criterion_id=criterion_id, value=value,
+            )
+
+    def update_band_field(
+        self, v: PackageVersionId, criterion_id: str, ordinal: int,
+        field: str, value: Any,
+    ) -> None:
+        """Set one band column, under the same guard (`TC-PKG-03` cases 7-10)."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, f"band.{field}")
+            tx.execute(
+                PKG_STATEMENTS[f"update_band_{field}"],
+                v=v, criterion_id=criterion_id, ordinal=ordinal, value=value,
+            )
 
     # -- the lineage surface -----------------------------------------------------------------
 
