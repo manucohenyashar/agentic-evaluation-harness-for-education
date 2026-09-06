@@ -3,10 +3,13 @@
 Cases `TC-STORE-14` (`FR-STORE-11`, P0, unit / boundary) and `RES-14` (§6.8), test plan
 §5.3 and §6.8. Issue #15 (TS-09).
 
-Rung 0 — pure, with the injected clock the plan names ("exact value with an injected clock").
-`FrozenClock` moves only when the test moves it, and carries both halves the requirement
-needs: a monotonic term the backwards jump cannot touch, and a wall clock the test can set
-arbitrarily — the very pair `FR-STORE-11` exists to keep apart.
+Rung 0 for the clock halves, rung 2 for the persistence half — all with the injected clock
+the plan names ("exact value with an injected clock"). `FrozenClock` moves only when the test
+moves it, and carries both halves the requirement needs: a monotonic term the backwards jump
+cannot touch, and a wall clock the test can set arbitrarily — the very pair `FR-STORE-11`
+exists to keep apart. (An earlier draft also asserted the double's own separation contract as
+a standalone case; it was deleted as coverage-inflating — the double has its own harness
+self-test, and the case's oracle is the lease arithmetic below, not the clock's.)
 
 `Written ahead of implementation: yes` is stale — the lease clock landed with #12; the case
 runs green by design. `TC-STORE-14` is the paired case #12's own DoD deferred to this issue
@@ -27,42 +30,6 @@ from tests.support.clock import EPOCH, FrozenClock
 pytestmark = [pytest.mark.integration]
 
 ISSUE = "#15"
-
-
-def test_tc_store_14_a_backwards_wall_clock_never_revives_an_expired_lease():
-    """`TC-STORE-14` — *"A lease issued at monotonic t; the wall clock moved backwards ten
-    minutes, then forwards. An expired lease never appears live after a backwards clock jump;
-    expiry is computed from the persisted monotonic counter."*
-
-    Oracle: **exact values**. The lease is issued with a 60-second TTL; the monotonic clock
-    runs well past expiry; the wall clock is set an hour *back*, then pushed forward again.
-    Expiry is judged at every step, and the lease that expired stays expired through both
-    wall-clock moves."""
-    clock = FrozenClock(start=EPOCH)
-    ticks_before = clock.monotonic()
-
-    clock.advance(300)
-    monotonic_before_jump = clock.monotonic()
-
-    store_clock = clock
-    # The clock is injected; persistence is exercised in the round-trip case below.
-    clock_holder = type("Holder", (), {})()
-    clock_holder.clock = store_clock
-
-    # A pure-clock staging: `LeaseClock` needs a store, so the pure half asserts the clock
-    # contract the requirement rests on — the monotonic term is independent of the wall term.
-    clock.set_wall_clock(EPOCH - __import__("datetime").timedelta(hours=1))
-    assert clock.now() < EPOCH, "the wall clock did not move backwards"
-    assert clock.monotonic() == monotonic_before_jump, (
-        "TC-STORE-14: the backwards wall-clock jump moved the monotonic term. The frozen "
-        "clock carries both halves precisely so this separation is assertable; a lease "
-        "expiry computed from `now()` is the 'simplification to datetime.now()' the test "
-        "plan names as the bug."
-    )
-    clock.set_wall_clock(EPOCH + __import__("datetime").timedelta(minutes=5))
-    assert clock.monotonic() == monotonic_before_jump
-    assert ticks_before == 0.0
-    _ = clock_holder  # consumed by the shape above; kept for the narrative
 
 
 def test_tc_store_14_expiry_is_exact_from_the_persisted_counter_across_a_restart(

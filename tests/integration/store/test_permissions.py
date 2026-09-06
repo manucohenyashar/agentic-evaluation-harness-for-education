@@ -101,7 +101,10 @@ def test_tc_store_10_open_store_refuses_and_creates_nothing(tmp_data_dir, monkey
         store_module, "_insecure_location_reason", lambda path, **kw: "synthetic: /tmp (1777)")
     with pytest.raises(InsecureLocationError) as raised:
         api_open_store(fresh)
-    assert "world-writable" in str(raised.value) or "safe" in str(raised.value)
+    assert "world-writable" in str(raised.value) or "synthetic" in str(raised.value), (
+        "TC-STORE-10: the refusal must name the reason it refused — the synthetic reason "
+        "threaded through the seam is what the message carries."
+    )
     assert not fresh.exists(), (
         "TC-STORE-10: the refused start created the data directory. 'Refuses to start' "
         "(CT-STORE-16) means nothing on disk — a half-built directory at a location the "
@@ -129,12 +132,9 @@ def test_tc_store_10_res_02_created_files_and_directories_are_owner_only(tmp_pat
     data_dir = tmp_path / "data"
     store = open_store(data_dir)
     durable = store.durable()
-    cohort = store.cohort("c-perm")
+    store.cohort("c-perm")
     blobs = store.blobs()
     blobs.put(b"raster")
-    handle = cohort
-    with handle.transaction() as tx:
-        tx.execute(statement("CREATE TABLE perm_probe (id INTEGER PRIMARY KEY)", issue=ISSUE))
 
     for directory in (data_dir, data_dir / "packages", data_dir / "cohorts", data_dir / "blobs"):
         assert stat.S_IMODE(directory.stat().st_mode) == 0o700, (
@@ -179,4 +179,7 @@ def test_res_02_an_unusable_directory_refuses_at_startup(tmp_data_dir, monkeypat
     with pytest.raises(Exception) as refused:
         api_open_store(blocker / "data")
     assert type(refused.value).__name__ != "InsecureLocationError"
-    assert not (blocker / "data" / "durable.sqlite").exists()
+    assert not (blocker / "data").exists(), (
+        "RES-02: no partial initialization — the store created nothing beneath the "
+        "unusable path before refusing."
+    )

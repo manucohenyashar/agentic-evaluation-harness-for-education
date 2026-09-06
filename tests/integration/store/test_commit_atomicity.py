@@ -9,6 +9,16 @@ finds on disk after a batch died mid-commit; against anything else it asserts th
 `Written ahead of implementation: yes` in the issue body is stale — the queue landed with #11
 and this case runs green by design. Recorded in the PR rather than silently relied on.
 
+**Steps 1-2 of the plan's block form are not implemented here, and that is a stated
+deviation, not an omission.** They prescribe the commit *boundaries* — "assert exactly one
+commit fires at the hundredth, not before", and the 4999/5000 ms interval edge — against an
+injected `FrozenClock`. The queue's `_next_batch` reads `time.monotonic()` directly, so
+pinning the interval edge needs a clock seam in the write queue, which is implementation
+work this test PR does not own (`TC-STORE-07` honors the knobs without the clock seam; the
+boundary case belongs with whatever story adds the seam). What this case implements is the
+binding oracle — the invariant on the reopened file — plus the whole-batch arithmetic the
+injection pins around the batch boundary.
+
 The ground `FUZZ-07` deliberately left open (its docstring says so): the **queue path**. A
 result row and its `work_unit` status transition enqueued as separate units land in the same
 commit batch, so a writer that dies mid-batch is the moment the invariant is real. The plan's

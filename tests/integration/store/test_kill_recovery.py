@@ -28,7 +28,6 @@ from pathlib import Path
 import pytest
 
 from aeh.store import Statement, open_store
-from tests.support.store_api import open_store as api_open_store
 
 pytestmark = [pytest.mark.integration]
 
@@ -79,7 +78,10 @@ def _child_env() -> dict[str, str]:
     env = os.environ.copy()
     env["AEH_SRC"] = str(REPO_SRC)
     env["HARNESS_COMMIT_BATCH"] = "10"
-    env["HARNESS_COMMIT_INTERVAL_MS"] = "25"
+    # Interval high: commits are batch-size-triggered only. A short interval would let a
+    # child stall (sleep oversleep, GC) commit a *partial* batch — an even one breaks the
+    # whole-batch assertion, an odd one the invariant itself, against a correct store.
+    env["HARNESS_COMMIT_INTERVAL_MS"] = "60000"
     env["READY"] = ""  # replaced per repetition; see the test body
     return env
 
@@ -152,5 +154,3 @@ def test_tc_store_18_res_03_twenty_kills_every_reopen_recovers_to_a_whole_batch(
 def statement_read(sql: str) -> Statement:
     return Statement(sql)
 
-
-_ = api_open_store  # imported for symmetry with the suite's other store cases
