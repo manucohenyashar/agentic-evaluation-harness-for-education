@@ -15,10 +15,9 @@ records whatever the model last did rather than what the module promised. So the
 message here carries the reviewer and the grounds out of `fixtures/baselines/registry.json`,
 and there is no helper anywhere in this repo that rewrites a golden in one call.
 
-**Written ahead of implementation** (test plan §8.2). `assemble_canonical_markdown` is #37's
-(`M-INGEST` assembly order and page provenance); the golden files are its output and are not
-committed yet, for the reason `tests/support/baselines.py` gives. Remove the `writtenahead`
-marker — never the test — when #37 closes, and record the baselines in that same PR.
+`Written ahead of implementation: yes` is stale — #37 landed `assemble_canonical_markdown`
+(the declared preference ladder and page provenance) and both baselines were recorded in the
+same PR.
 """
 
 from __future__ import annotations
@@ -28,8 +27,6 @@ import pytest
 from tests.support import corpora
 from tests.support.baselines import assert_matches_golden, entry_for
 from tests.support.impl import INGEST_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#37"
 CASE = "TC-REG-01"
