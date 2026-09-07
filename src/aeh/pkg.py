@@ -74,8 +74,10 @@ __all__ = [
     "PublishedVersionImmutableError",
     "SCHEMA_LOCK_FIELDS",
     "ScaleRule",
+    "SCHEMA_LOCK_VIOLATIONS",
     "SchemaLockViolation",
     "SchemaTooNewError",
+    "schema_lock_violation_count",
     "default_grade_policy",
     "export_package",
     "in_memory_catalog",
@@ -183,6 +185,8 @@ class BandSetError(PackageError):
     (design §5.10, R40). Not retryable by mutation — the band set is rewritten as a
     whole."""
 
+    retryable = False
+
 
 class CyclicDependencyError(PackageError):
     """A `criterion_dependency` write would make the dependency graph cyclic
@@ -191,6 +195,8 @@ class CyclicDependencyError(PackageError):
     The extraction sweep's two-pass order rests on the graph being a DAG; a cycle would
     strand the cycle's criteria in the second pass forever. Not retryable — the edge is
     the mistake."""
+
+    retryable = False
 
 
 class SchemaLockViolation(PackageError):
@@ -206,6 +212,8 @@ class SchemaLockViolation(PackageError):
     version (`FR-PKG-04`).
     """
 
+    retryable = False
+
 
 class PublishedVersionImmutableError(PackageError):
     """An update was attempted on a published (`locked = 1`) `package_version`, or on any
@@ -215,6 +223,8 @@ class PublishedVersionImmutableError(PackageError):
     or any criterion, band or exemplar beneath it — silently rewrites history. Not
     retryable: the fix is a **revision** (`create_version` with the published version as
     parent), never a mutation."""
+
+    retryable = False
 
 
 class GradePolicyError(PackageError):
@@ -239,6 +249,8 @@ class ExportBlockedError(PackageError):
     paraphrased-and-approved or dropped — the gate is actionable, not a dead end. Not
     retryable until the rows are remediated."""
 
+    retryable = False
+
     def __init__(self, message: str, report: "ProvenanceReport | None" = None) -> None:
         super().__init__(message)
         #: The provenance report taken at refusal time, so the caller does not need a
@@ -252,6 +264,8 @@ class SchemaTooNewError(PackageError):
     The message names the required upgrade, and nothing is partially imported — a
     partial import of a newer package is worse than a refused one. Mirrors
     `M-STORE`'s refusal of a too-new tier file; this is the package-archive half."""
+
+    retryable = False
 
 
 #: The §6.2 schema lock, in exactly one place (`NFR-PKG-03`): every `(table, field)` edit

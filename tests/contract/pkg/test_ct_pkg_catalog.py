@@ -216,7 +216,7 @@ def test_tc_pkg_c03_every_locked_field_refuses_naming_itself_and_the_list_is_one
             elif table == "criterion_dependency":
                 catalog.update_criterion_dependency(v)
         message = str(refusal.value)
-        if field in ("add", "remove", "alter"):
+        if table == "criterion_dependency" and field in ("add", "remove"):
             assert table in message, (
                 f"TC-PKG-C03: the refusal for ({table}, {field}) does not name the "
                 "table it guards — an operator fixing a refused edit needs to know "
@@ -228,13 +228,21 @@ def test_tc_pkg_c03_every_locked_field_refuses_naming_itself_and_the_list_is_one
                 "field — an operator fixing a refused edit needs the field, not a "
                 "generic refusal (CT-PKG-03, FR-CALIB-07)."
             )
-    # The structural half: one definition, enumerable, no second copy in the source.
+    # The structural half: one definition, enumerable, and no second copy anywhere in
+    # the codebase — the realistic drift is a future module pasting its own copy.
     assert len(SCHEMA_LOCK_FIELDS) == 13
-    pkg_source = (
-        __import__("pathlib").Path("src/aeh/pkg.py").read_text(encoding="utf-8"))
-    assert pkg_source.count('("criterion", "max_points")') == 1, (
-        "TC-PKG-C03: SCHEMA_LOCK_FIELDS has a second definition — the two lists drift "
-        "and a locked field quietly becomes editable (NFR-PKG-03)."
+    copies = []
+    for path in sorted(pathlib.Path("src", "aeh").glob("*.py")):
+        text = path.read_text(encoding="utf-8")
+        hits = text.count('("criterion", "max_points")')
+        if hits:
+            copies.append(f"{path.name}: {hits}")
+        if path.name != "pkg.py" and "SCHEMA_LOCK" in text:
+            copies.append(f"{path.name}: mentions SCHEMA_LOCK")
+    assert copies == ["pkg.py: 1"], (
+        f"TC-PKG-C03: the §6.2 forbidden-field list is defined more than once: "
+        f"{copies}. The two lists drift and a locked field quietly becomes editable "
+        "(NFR-PKG-03)."
     )
     store.close()
 
@@ -266,42 +274,94 @@ def test_tc_pkg_c04_band_order_survives_shuffled_storage_and_the_boundaries_hold
     assert bands[-1]["points"] == max(row["points"] for row in bands)
     assert [row["ordinal"] for row in bands] == [0, 1]
     assert catalog.points_for_band("CRIT-1", "b1") == 4.0
-    # The boundary sweep: 1, 3, 5, 7 and 0 bands each rejected.
+    # The adversarial construction: the rows are physically SHUFFLED in storage
+    # (raw DELETE + re-INSERT in reverse ordinal order on a draft), and bands() still
+    # returns them ascending — the order is contract, not a property of insertion.
+    shuffle_target = catalog.create_version(v)
+    parent_rows = handle.query(statement(
+        "SELECT criterion_id, ordinal, band, points, descriptor FROM band "
+        "WHERE package_version_id = :v ORDER BY ordinal DESC", issue=ISSUE), v=v)
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "DELETE FROM band WHERE package_version_id = :v", issue=ISSUE),
+            v=shuffle_target)
+        for row in parent_rows:  # re-inserted descending: storage order reversed
+            tx.execute(statement(
+                "INSERT INTO band (package_version_id, criterion_id, ordinal, band, "
+                "points, descriptor) VALUES (:v, :criterion_id, :ordinal, :band, "
+                ":points, :descriptor)", issue=ISSUE), v=shuffle_target,
+                criterion_id=row["criterion_id"], ordinal=row["ordinal"],
+                band=row["band"], points=row["points"], descriptor=row["descriptor"])
+    stored = handle.query(statement(
+        "SELECT ordinal FROM band WHERE package_version_id = :v "
+        "AND criterion_id = 'CRIT-1' ORDER BY rowid", issue=ISSUE), v=shuffle_target)
+    assert [row["ordinal"] for row in stored] == [1, 0], (
+        "the shuffle did not take — the case would assert nothing"
+    )
+    shuffled_bands = catalog.bands("CRIT-1")
+    assert [row["ordinal"] for row in shuffled_bands] == [0, 1], (
+        "TC-PKG-C04: bands() returned storage order, not ordinal order — the order "
+        "is contract (CT-PKG-04)."
+    )
+    # The refusal halves of the invariants: non-monotone points and an ordinal gap
+    # each raise BandSetError; a HALF-POPULATED declared set reaching publish trips
+    # the count half there.
+    draft = catalog.create_version(v)
+    catalog.add_criterion(draft, "NM-1", question_id="Q-NM", kind="open",
+                          max_points=4.0, band_count=2)
+    catalog.add_band(draft, "NM-1", 0, "high", 4.0)
+    with pytest.raises(BandSetError):
+        catalog.add_band(draft, "NM-1", 1, "low", 0.0)
+    gap = catalog.create_version(v)
+    catalog.add_criterion(gap, "GAP-1", question_id="Q-G", kind="open",
+                          max_points=4.0, band_count=2)
+    with pytest.raises(BandSetError):
+        catalog.add_band(gap, "GAP-1", 1, "b1", 1.0)
+    half = catalog.create_version(v)
+    catalog.add_criterion(half, "HALF-1", question_id="Q-H", kind="open",
+                          max_points=4.0, band_count=4)
+    catalog.add_band(half, "HALF-1", 0, "b0", 0.0)
+    catalog.add_band(half, "HALF-1", 1, "b1", 1.0)
+    with pytest.raises(BandSetError):
+        catalog.publish(half, "teacher")
+    # The boundary sweep: 1, 3, 5, 7 and 0 bands each rejected — the declared count
+    # that can never satisfy the even rule fails at the declare.
     for bad_count in (1, 3, 5, 7, 0):
         draft = catalog.create_version(v)
         with pytest.raises(BandSetError):
             draft_criterion = f"BC-{bad_count}"
             catalog.add_criterion(draft, draft_criterion, question_id="Q-B",
                                   kind="open", max_points=4.0, band_count=bad_count)
-            for ordinal in range(bad_count):
-                catalog.add_band(draft, draft_criterion, ordinal, f"band-{ordinal}",
-                                 float(ordinal))
-            catalog.publish(draft, "teacher")
     store.close()
 
 
 # -- TC-PKG-C05: points_for_band is the single canonical mapping (static half) -------------------
 
 
-def test_tc_pkg_c05_the_points_column_has_exactly_one_reader():
-    """`TC-PKG-C05`'s static half — `criterion_band.points` (`band.points`) has exactly
-    ONE reader in the codebase: `points_for_band`. A second reader is a second mapping
-    that can drift from the declared instrument (RISK-05).
+def test_tc_pkg_c05_band_points_has_exactly_one_reading_module():
+    """`TC-PKG-C05`'s static half — `band.points` is read by exactly ONE module,
+    `aeh.pkg` (inside `points_for_band`): no other module in `src/aeh` touches the
+    column, by subscript or by SELECT. A second reader is a second mapping that can
+    drift from the declared instrument (RISK-05).
 
     The runtime half (M-AGG calls it exactly once per criterion score) is a rung-3
     assertion that lands with M-AGG (#57+); this artifact assertion is the part that
     holds today."""
-    readers = []
-    for path in (__import__("pathlib").Path("src") / "aeh").glob("*.py"):
+    offenders = []
+    for path in sorted(pathlib.Path("src", "aeh").glob("*.py")):
+        if path.name == "pkg.py":
+            continue
         text = path.read_text(encoding="utf-8")
-        if '"points"' in text or "'points'" in text:
-            for line_no, line in enumerate(
-                    text.splitlines(), start=1):
-                if ('"points"' in line or "'points'" in line) and "SELECT" in line.upper():
-                    readers.append(f"{path.name}:{line_no}")
-    assert readers == ["pkg.py:0"] or all(r.startswith("pkg.py") for r in readers), (
-        f"TC-PKG-C05: band.points is read outside points_for_band: {readers}. The "
-        "mapping must be single-canonical (CT-PKG-05, RISK-05)."
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            stripped = line.split("#")[0]
+            if '["points"]' in stripped or "'points']" in stripped:
+                offenders.append(f"{path.name}:{line_no} subscript")
+            if "points" in stripped.lower() and "select" in stripped.lower():
+                offenders.append(f"{path.name}:{line_no} select")
+    assert not offenders, (
+        f"TC-PKG-C05: band.points is read outside aeh.pkg: {offenders}. The "
+        "band-to-points mapping is single-canonical — points_for_band is its only "
+        "reader (CT-PKG-05, RISK-05)."
     )
 
 
@@ -324,6 +384,8 @@ def test_tc_pkg_c06_the_order_satisfies_the_graph_and_a_cycle_cannot_be_stored(
     for before, after in (("A", "C"), ("B", "C"), ("C", "D"), ("B", "E")):
         assert position[before] < position[after]
     assert list(catalog.topological_order(v)) == list(order)
+    # The timing assertion that IS the clause: a cyclic write raises at WRITE time,
+    # and the refusal is a no-op (the stored graph stays the prior acyclic one).
     with pytest.raises(CyclicDependencyError):
         catalog.set_dependencies(v, (("A", "C"), ("B", "C"), ("C", "D"), ("B", "E"),
                                      ("D", "A")))
@@ -331,6 +393,15 @@ def test_tc_pkg_c06_the_order_satisfies_the_graph_and_a_cycle_cannot_be_stored(
         "TC-PKG-C06: a refused cyclic write changed the stored graph — a rejected "
         "write is a no-op (CT-PKG-11), and no reader may ever see a cycle."
     )
+    # Stable across a reopen (the cross-process half achievable today): M-ORCH
+    # enumerates from it, and NFR-ORCH-05 requires byte-identical order across runs.
+    store.close()
+    reopened = open_store(tmp_data_dir)
+    reopened_catalog = PackageCatalog(reopened.package("pkg-ct"), package_id="pkg-ct")
+    assert list(reopened_catalog.topological_order(v)) == list(order), (
+        "TC-PKG-C06: the order is not stable across a reopen."
+    )
+    reopened.close()
     store.close()
 
 
@@ -355,6 +426,16 @@ def test_tc_pkg_c07_each_key_component_perturbed_answers_novalidationdata(tmp_da
         dict(panel_build_ref="panel-2"),
         dict(scoring_model="holistic"),
     ]
+    # The sixth component — the version itself. A record stored on v must NOT answer
+    # for a different version of the same package, however identical the other five
+    # parts: a dropped version filter merges two instruments' validity claims.
+    child = catalog.create_version(v)
+    superseded = catalog.validation_for(child, "pop-a", "backend-1", "panel-1",
+                                        "atomic")
+    assert isinstance(superseded, NoValidationData), (
+        "TC-PKG-C07: a validation record stored on one version answered for another — "
+        "the version is part of the key (CT-PKG-07)."
+    )
     for perturbation in perturbations:
         kwargs = dict(population_scope_id="pop-a", backend_profile="backend-1",
                       panel_build_ref="panel-1", scoring_model="atomic")
@@ -431,9 +512,11 @@ def test_tc_pkg_c09_the_vocabulary_refuses_formulas_and_the_wording_follows(
     )
     with pytest.raises(AttributeError):
         changed.plain_language = "An A is excellent."
-    assert all(rule in COMBINATION_RULES or rule not in
-               ("weighted_sum", "best_k_of_n", "drop_lowest_n")
-               for rule in COMBINATION_RULES)
+    with pytest.raises(PackageError):
+        GradePolicy(combination="weighted_median")  # off-vocabulary: refused
+    assert COMBINATION_RULES == ("weighted_sum", "best_k_of_n", "drop_lowest_n"), (
+        "TC-PKG-C09: the vocabulary grew without the contract changing with it."
+    )
     store.close()
 
 
@@ -499,6 +582,12 @@ def test_tc_pkg_c11_every_named_error_refuses_as_a_no_op(tmp_data_dir):
          lambda: catalog.add_criterion(catalog.create_version(v), "X-1",
                                        question_id="Q", kind="open", band_count=3)),
     ]
+    assert (all(error.retryable is False for error, _ in refusals)
+            and ExportBlockedError.retryable is False
+            and SchemaTooNewError.retryable is False), (
+        "TC-PKG-C11: a named caller error is marked retryable \u2014 none is "
+        "(CT-PKG-11)."
+    )
     for expected, trigger in refusals:
         with pytest.raises(expected):
             trigger()
@@ -542,8 +631,12 @@ def test_tc_pkg_c11_every_named_error_refuses_as_a_no_op(tmp_data_dir):
         return {path.name: path.read_bytes()
                 for path in sorted(packages_dir.iterdir()) if path.is_file()}
     before = tree_bytes()
-    with pytest.raises(SchemaTooNewError):
+    with pytest.raises(SchemaTooNewError) as too_new:
         receiver.import_file(future)
+    assert str(manifest["schema_version"]) in str(too_new.value), (
+        "TC-PKG-C11: the too-new refusal does not name the required upgrade — an "
+        "operator cannot act on a refusal that says only \"too new\" (FR-PKG-13)."
+    )
     assert tree_bytes() == before, (
         "TC-PKG-C11: a refused import changed the receiving installation — a partial "
         "import is worse than a refused one."
@@ -609,7 +702,7 @@ def test_tc_pkg_c12_every_tier_p_write_passes_through_m_pkg(tmp_data_dir):
             continue
         for line_no, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(), start=1):
-            if any(marker in line.upper() for marker in write_markers)                     and "Statement" not in line.split("#")[0]:
+            if any(marker in line.upper() for marker in write_markers):
                 offenders.append(f"{path.name}:{line_no}")
     assert not offenders, (
         f"TC-PKG-C12: write SQL exists outside the store and the owning module: "
@@ -638,13 +731,20 @@ def test_tc_pkg_c13_the_gate_refuses_and_the_export_carries_no_verbatim_text(
     draft = catalog.create_version(v)
     catalog.add_exemplar(draft, "EX-VERBATIM", "CRIT-1", "b1",
                          provenance="real_verbatim", blob_hash=blob_hash)
+    catalog.add_exemplar(draft, "EX-VERBATIM-2", "CRIT-2", "b1",
+                         provenance="real_verbatim")
     report = catalog.export_provenance_report(draft)
     assert report.contains_real_student_text is True
-    assert {entry.exemplar_id for entry in report.real_verbatim} == {"EX-VERBATIM"}
+    assert {entry.exemplar_id for entry in report.real_verbatim} == {
+        "EX-VERBATIM", "EX-VERBATIM-2"}, (
+        "TC-PKG-C13: the report does not list EVERY real_verbatim exemplar \u2014 "
+        "the refusal must be actionable down to the last row."
+    )
     with pytest.raises(ExportBlockedError):
         catalog.export(draft, tmp_data_dir / "blocked.pkgzip")
     # Remediate, export, and scan the ARTIFACT for the sentinel.
     catalog.remove_exemplar(draft, "EX-VERBATIM")
+    catalog.remove_exemplar(draft, "EX-VERBATIM-2")
     good = tmp_data_dir / "clean.pkgzip"
     catalog.export(draft, good)
     with zipfile.ZipFile(good) as archive:
@@ -661,9 +761,9 @@ def test_tc_pkg_c13_the_gate_refuses_and_the_export_carries_no_verbatim_text(
 
 def test_tc_pkg_c14_the_archive_imports_cleanly_or_refuses_untouched(tmp_data_dir):
     """`TC-PKG-C14` — the export imports on a second installation with no network and
-    no shared filesystem and the content matches; a too-new package refuses naming the
-    required upgrade with the receiver byte-identical afterwards (RISK-26 at package
-    granularity)."""
+    no shared filesystem and the content matches. The too-new refusal (including its
+    named upgrade) is `TC-PKG-C11`'s case, where the no-op assertion lives alongside
+    it."""
     store, handle, catalog = _catalog(tmp_data_dir, blobs=True)
     v = _version_with_content(catalog)
     blob_hash = store.blobs().put(b"reference material")
@@ -778,6 +878,9 @@ def test_tc_pkg_c16_the_logs_and_the_signal_name_are_the_contract(
         assert publish_records, (
             "TC-PKG-C16: publication is not logged with its approver and timestamp."
         )
+        assert any(token in publish_records[0].getMessage() for token in ("20", ":")), (
+            "TC-PKG-C16: the publication log carries no timestamp."
+        )
         with pytest.raises(SchemaLockViolation):
             catalog.update_criterion_field(v, "CRIT-1", "max_points", 99.0)
         warn_records = [r for r in caplog.records
@@ -790,10 +893,31 @@ def test_tc_pkg_c16_the_logs_and_the_signal_name_are_the_contract(
         catalog.export(v, dest)
         export_records = [r for r in caplog.records
                           if "exported package" in r.getMessage()]
-        assert export_records and "pkg-ct" in export_records[0].getMessage()
+        assert export_records, "TC-PKG-C16: export is not logged."
+        export_message = export_records[0].getMessage()
+        assert ("pkg-ct" in export_message and "provenance=" in export_message
+                and str(dest) in export_message), (
+            f"TC-PKG-C16: the export log names neither version, provenance nor "
+            f"destination: {export_message!r} (CT-PKG-16)."
+        )
+        receiver_store = open_store(tmp_data_dir / "receiver-c16")
+        receiver = PackageCatalog(receiver_store.package("seed-c16"),
+                                  package_id="seed-c16")
+        imported = receiver.import_file(dest)
+        import_records = [r for r in caplog.records
+                          if "imported package" in r.getMessage()]
+        assert import_records, "TC-PKG-C16: import is not logged."
+        import_message = import_records[0].getMessage()
+        assert (imported.package_id in import_message
+                and "provenance=" in import_message
+                and "signature=" in import_message), (
+            f"TC-PKG-C16: the import log names neither version, provenance nor "
+            f"source: {import_message!r} (CT-PKG-16)."
+        )
+        receiver_store.close()
         assert schema_lock_violation_count() == before + 1, (
-            "TC-PKG-C16: the violation signal did not increment — the alert signal is "
-            "dead."
+            "TC-PKG-C16: the violation signal did not increment \u2014 the alert "
+            "signal is dead."
         )
     store.close()
 
