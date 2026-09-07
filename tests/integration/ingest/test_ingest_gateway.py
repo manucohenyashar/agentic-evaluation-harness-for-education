@@ -1428,6 +1428,10 @@ def test_tc_ingest_17_present_blank_and_absent_are_distinct(tmp_data_dir):
         ("Q1", "present"), ("Q2", "blank")]
     # The absent question: the package declares Q3, no region carries it — the
     # expected-region read (FR-INGEST-18) emits a distinct ABSENT row.
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "INSERT OR IGNORE INTO cohort (cohort_id, consent_class, created_at) "
+            "VALUES ('c-36', 'synthetic', '2026-01-01')", issue=ISSUE))
     seed = store.package("pkg-39")
     with seed.transaction() as tx:
         tx.execute(statement(
@@ -1492,6 +1496,10 @@ def test_tc_ingest_19_question_format_is_read_from_the_package(tmp_data_dir):
     from aeh.pkg import PackageCatalog, PackageDraft
     store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
     handle = store.cohort("c-36")
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "INSERT OR IGNORE INTO cohort (cohort_id, consent_class, created_at) "
+            "VALUES ('c-36', 'synthetic', '2026-01-01')", issue=ISSUE))
     seed = store.package("pkg-39")
     with seed.transaction() as tx:
         tx.execute(statement(
@@ -1525,6 +1533,10 @@ def test_tc_ingest_20_shape_contradictions_are_v2_failures(tmp_data_dir):
     from aeh.pkg import PackageCatalog, PackageDraft
     store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
     handle = store.cohort("c-36")
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "INSERT OR IGNORE INTO cohort (cohort_id, consent_class, created_at) "
+            "VALUES ('c-36', 'synthetic', '2026-01-01')", issue=ISSUE))
     seed = store.package("pkg-39")
     with seed.transaction() as tx:
         tx.execute(statement(
@@ -1552,7 +1564,10 @@ def test_tc_ingest_20_shape_contradictions_are_v2_failures(tmp_data_dir):
     assert ("Q2", "selection where the package declares open") in findings, (
         "TC-INGEST-20: a selection where open is declared was not recorded."
     )
-    assert report.gates["v2"] == "deferred"  # the ROUTING is #40's; the record is #39's
+    assert report.gates["v2"] == "fail", (
+        "TC-INGEST-20: the V2 gate column carries its own outcome — a failure is "
+        "recorded as a failure, never collapsed (FR-INGEST-29)."
+    )
     store.close()
 
 

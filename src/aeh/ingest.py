@@ -58,6 +58,7 @@ __all__ = [
     "IngestGapError",
     "IngestOrderError",
     "IngestReport",
+    "INGEST_STATUSES",
     "Ingestor",
     "TokenCluster",
     "PageImage",
@@ -138,6 +139,28 @@ def _configured_evaluative_terms() -> tuple[str, ...]:
     synonyms = tuple(term.strip().lower() for term in raw.split(",")
                      if term.strip())
     return EVALUATIVE_TERMS + synonyms
+
+#: The five legal ingest statuses (`FR-INGEST-29`). Quarantine is three of them:
+#: `unreadable` (V0), `incomplete` (V1/V2), `unmatched_assessment` (V4/#41) — and a
+#: quarantined submission NEVER reaches the teacher review queue (FR-INGEST-30).
+INGEST_STATUSES: tuple[str, ...] = (
+    "ok", "low_confidence_ocr", "unreadable", "incomplete", "unmatched_assessment",
+)
+
+#: The blank-page tolerance (V0: the fraction of a document's pages that may be
+#: blank or near-blank before the artifact quarantines; `HARNESS_INGEST_BLANK_TOLERANCE`).
+BLANK_TOLERANCE_ENV = "HARNESS_INGEST_BLANK_TOLERANCE"
+DEFAULT_BLANK_TOLERANCE = 0.2
+
+#: The V0 resolution floor in DPI (an artifact rasterized below it quarantines;
+#: `HARNESS_INGEST_RESOLUTION_FLOOR`).
+RESOLUTION_FLOOR_ENV = "HARNESS_INGEST_RESOLUTION_FLOOR"
+DEFAULT_RESOLUTION_FLOOR = 150
+
+#: The transcription attempts before a page quarantines (`NFR-INGEST-02`: fail the
+#: unit, never the run — the cohort's remaining submissions continue).
+TRANSCRIPTION_ATTEMPTS_ENV = "HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS"
+DEFAULT_TRANSCRIPTION_ATTEMPTS = 3
 
 #: The re-request budget before an evaluative description quarantines the ingestion
 #: (`HARNESS_INGEST_EVALUATIVE_RETRIES`).
@@ -596,6 +619,31 @@ _INGEST_REGION_COLUMNS = Migration(
     ),
 )
 
+_INGEST_GATE_COLUMNS = Migration(
+    version=5,
+    name="ingest_gate_columns",
+    statements=(
+        # FR-INGEST-29: each gate records its own outcome — never one boolean
+        # (CT-INGEST-08). V4 fills with #41; the columns exist from the start.
+        Statement("ALTER TABLE submission ADD COLUMN v0_integrity TEXT"),
+        Statement("ALTER TABLE submission ADD COLUMN v1_pages TEXT"),
+        Statement("ALTER TABLE submission ADD COLUMN v2_structure TEXT"),
+        Statement("ALTER TABLE submission ADD COLUMN v3_identity TEXT"),
+        Statement("ALTER TABLE submission ADD COLUMN v4_match TEXT"),
+        Statement(
+            "ALTER TABLE submission ADD COLUMN ingest_status TEXT "
+            "CHECK (ingest_status IN ('ok', 'low_confidence_ocr', 'unreadable', "
+            "'incomplete', 'unmatched_assessment'))"
+        ),
+        # FR-INGEST-30: quarantine state on the row — the operator surface reads it;
+        # the teacher review queue must never contain a quarantined item.
+        Statement(
+            "ALTER TABLE submission ADD COLUMN quarantined INTEGER "
+            "NOT NULL DEFAULT 0 CHECK (quarantined IN (0, 1))"
+        ),
+    ),
+)
+
 _INGEST_TOKEN_CLUSTERS = Migration(
     version=4,
     name="ingest_token_clusters",
@@ -700,6 +748,19 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     "delete_unresolved_token": Statement(
         "DELETE FROM unresolved_token WHERE token = :token"
     ),
+    "insert_submission": Statement(
+        "INSERT INTO submission (submission_id, cohort_id, student_ref) "
+        "VALUES (:submission_id, :cohort_id, :student_ref)"
+    ),
+    "update_submission_gates": Statement(
+        "UPDATE submission SET v0_integrity = :v0, v1_pages = :v1, "
+        "v2_structure = :v2, v3_identity = :v3, v4_match = :v4, "
+        "ingest_status = :status, quarantined = :quarantined, "
+        "student_ref = :student_ref WHERE submission_id = :submission_id"
+    ),
+    "select_roster": Statement(
+        "SELECT student_ref FROM roster WHERE cohort_id = :cohort_id"
+    ),
     "select_document_head": Statement(
         "SELECT document_id, submission_id, content_hash, transcriber_ref, kind, "
         "parent_doc_id, created_at FROM document WHERE submission_id = :submission_id "
@@ -712,6 +773,7 @@ TIER_MIGRATIONS[Tier.COHORT] = (
     + (_INGEST_DOCUMENT_COLUMNS,)
     + (_INGEST_REGION_COLUMNS,)
     + (_INGEST_TOKEN_CLUSTERS,)
+    + (_INGEST_GATE_COLUMNS,)
 )
 
 
@@ -1819,56 +1881,171 @@ class Ingestor:
         filenames: dict[str, str] | None = None,
         package_catalog: Any | None = None,
     ) -> IngestReport:
-        """Ingest one submission through the validation ladder. #36 lands the gateway
-        half (transcription and the document row); the V0-V4 gates fill `gates`,
-        `ingest_status`, `detail` and `v4_signals` with #40/#41 — the report shape
-        exists now so callers compile against the real surface.
+        """Ingest one submission through the validation ladder (`FR-INGEST-21..24`,
+        `FR-INGEST-29`): V0 file integrity, V1 page completeness, V2 structural
+        completeness — reading the question structure FROM the package
+        (`FR-INGEST-18`/`19`), never classified per submission — and V3 identity
+        against the roster. Each gate records its own outcome in its own column
+        (`FR-INGEST-29`); a failure quarantines the submission (`ingest_status` one
+        of the five) and a quarantined submission NEVER reaches the teacher review
+        queue (`FR-INGEST-30`) — the operator surface reads the row's quarantine
+        state.
 
-        #39's half: when `package_catalog` is bound, the question structure is read
-        FROM THE PACKAGE (`FR-INGEST-18`) — question kinds and expected answer
-        regions — never classified per submission, and a region whose shape
-        contradicts the package (prose where `mcq` is declared, a selection where
-        `open`) is recorded as a V2 failure naming the question (`FR-INGEST-19`),
-        routed to the operator with the gates — never silently reinterpreted."""
-        document_id = self.ingest_document(
-            blobs, kind="submission", order_hint=order_hint,
-            package_version=package_version, filenames=filenames,
-        )
+        Fail the unit, never the run (`NFR-INGEST-02`): a page that fails
+        transcription the configured number of times quarantines THIS submission;
+        the cohort's remaining submissions continue.
+
+        V4 (assessment match) is #41's; its column is written `deferred` here."""
+        submission_id = f"sub-{uuid.uuid4().hex[:12]}"
+        gates: dict[str, str] = {"v0": "pass", "v1": "pass", "v2": "pass",
+                                 "v3": "pass", "v4": "deferred"}
+        findings: list[dict] = []
+        ingest_status = "ok"
+        quarantined = False
+        student_ref = "unknown"
+
+        def quarantine(gate: str, status: str, finding: dict) -> None:
+            nonlocal ingest_status, quarantined
+            gates[gate] = "fail"
+            ingest_status = status
+            quarantined = True
+            findings.append(finding)
+
+        # V0 file integrity (FR-INGEST-21): every source opens and rasterizes; zero
+        # pages or a blank ratio past tolerance quarantines as `unreadable`.
+        v0_failed = False
+        for blob_hash in blobs:
+            pdf_bytes = self._blobs.get(blob_hash)
+            try:
+                pages = self._rasterizer.rasterize(pdf_bytes, _configured_dpi())
+            except IngestError as error:
+                quarantine("v0", "unreadable", {
+                    "gate": "v0", "blob_hash": blob_hash[:12],
+                    "finding": f"the source could not be rasterized: {error}"})
+                v0_failed = True
+                continue
+            if not pages:
+                quarantine("v0", "unreadable", {
+                    "gate": "v0", "blob_hash": blob_hash[:12],
+                    "finding": "the source has zero pages"})
+                v0_failed = True
+                continue
+            blank = sum(1 for page in pages if not page.png.strip())
+            if blank / len(pages) > self._configured_float(
+                    BLANK_TOLERANCE_ENV, DEFAULT_BLANK_TOLERANCE):
+                quarantine("v0", "unreadable", {
+                    "gate": "v0", "blob_hash": blob_hash[:12],
+                    "finding": f"{blank}/{len(pages)} blank pages exceed tolerance"})
+                v0_failed = True
+
+        # The submission row exists before anything references it: the document's
+        # FK points here, and the gate columns write to it after the ladder runs.
+        with self._handle.transaction() as tx:
+            tx.execute(INGEST_STATEMENTS["insert_submission"],
+                       submission_id=submission_id, cohort_id=cohort_id,
+                       student_ref=student_ref)
+        document_id: DocumentId | None = None
         v2_failures: list[dict] = []
-        if package_catalog is not None:
-            # FR-INGEST-18: the package declares what each question IS.
-            declared = {
-                row["question_id"]: row["kind"]
-                for row in package_catalog.criteria(package_version)
-            }
-            regions = self._handle.query(INGEST_STATEMENTS["select_regions"],
-                                         document_id=document_id)
-            for region in regions:
-                question_id = None
-                if region["region_kind"] == "selection_mark":
+        if not v0_failed:
+            try:
+                document_id = self.ingest_document(
+                    blobs, kind="submission", order_hint=order_hint,
+                    package_version=package_version, filenames=filenames,
+                    submission_id=submission_id,
+                )
+            except (IngestGapError, IngestDuplicateError) as error:
+                # V1 page completeness (FR-INGEST-22): #37's gap and duplicate
+                # findings become gate outcomes here — quarantined, naming the
+                # specific pages.
+                quarantine("v1", "incomplete", {"gate": "v1",
+                                                "finding": str(error)})
+            except IngestError as error:
+                quarantine("v0", "unreadable", {"gate": "v0",
+                                                "finding": str(error)})
+
+        if document_id is not None and not quarantined:
+            # V2 structural completeness (FR-INGEST-23), reading the question
+            # structure FROM the package (FR-INGEST-18): a region whose shape
+            # contradicts the package is a V2 failure naming the question.
+            if package_catalog is not None:
+                declared = {
+                    row["question_id"]: row["kind"]
+                    for row in package_catalog.criteria(package_version)
+                }
+                regions = self._handle.query(INGEST_STATEMENTS["select_regions"],
+                                             document_id=document_id)
+                for region in regions:
                     question_id = region["element_kind"]
-                    declared_kind = declared.get(question_id)
-                    if declared_kind == "open":
+                    if region["region_kind"] == "selection_mark":
+                        if declared.get(question_id) == "open":
+                            v2_failures.append({
+                                "gate": "v2", "question_id": question_id,
+                                "finding": "selection where the package declares "
+                                           "open"})
+                    elif declared.get(question_id) == "mcq":
                         v2_failures.append({
                             "gate": "v2", "question_id": question_id,
-                            "finding": "selection where the package declares open",
-                        })
-                elif region["element_kind"] in declared:
-                    question_id = region["element_kind"]
-                    if declared[question_id] == "mcq":
+                            "finding": "prose where the package declares mcq"})
+                    elif question_id not in declared:
                         v2_failures.append({
                             "gate": "v2", "question_id": question_id,
-                            "finding": "prose where the package declares mcq",
-                        })
+                            "finding": "the package declares no such question"})
+                if v2_failures:
+                    quarantine("v2", "incomplete", {
+                        "gate": "v2", "failures": v2_failures})
+            # V3 identity (FR-INGEST-24): the transcript's declared identity,
+            # matched against the roster — ambiguous or unmatched routes to triage
+            # and is NEVER guessed.
+            stored_markdown = self._handle.query(
+                INGEST_STATEMENTS["select_document"],
+                document_id=document_id)[0]["markdown"]
+            named = self._extract_identity(stored_markdown)
+            roster = {row["student_ref"] for row in self._handle.query(
+                INGEST_STATEMENTS["select_roster"], cohort_id=cohort_id)}
+            if named is None:
+                gates["v3"] = "unmatched"
+                ingest_status = "incomplete"
+                quarantined = True
+                findings.append({"gate": "v3", "finding":
+                                 "no student identity found in the submission"})
+            elif named not in roster:
+                candidates = sorted(ref for ref in roster
+                                    if named.lower() in ref.lower())
+                gates["v3"] = "ambiguous" if len(candidates) > 1 else "unmatched"
+                ingest_status = "incomplete"
+                quarantined = True
+                findings.append({"gate": "v3", "finding":
+                                 f"identity {named!r} does not match the roster "
+                                 f"(candidates: {candidates})"})
+            else:
+                gates["v3"] = "pass"
+                student_ref = named
+
+        with self._handle.transaction() as tx:
+            tx.execute(INGEST_STATEMENTS["update_submission_gates"],
+                       submission_id=submission_id,
+                       v0=gates["v0"], v1=gates["v1"], v2=gates["v2"],
+                       v3=gates["v3"], v4=gates["v4"], status=ingest_status,
+                       quarantined=1 if quarantined else 0,
+                       student_ref=student_ref)
+        LOGGER.info(
+            "ingested submission %s status=%s gates=%s findings=%d",
+            submission_id, ingest_status, gates, len(findings),
+        )
         return IngestReport(
-            submission_id=f"pending-{cohort_id}", document_id=document_id,
-            gates={"v0": "deferred", "v1": "deferred", "v2": "deferred",
-                   "v3": "deferred", "v4": "deferred"},
-            ingest_status="ok",
-            detail={"note": "the validation ladder lands with #40/#41",
-                    "v2_failures": v2_failures},
+            submission_id=submission_id, document_id=document_id or "",
+            gates=gates, ingest_status=ingest_status,
+            detail={"findings": findings, "v2_failures": v2_failures},
             v4_signals={},
         )
+
+    @staticmethod
+    def _extract_identity(markdown: str) -> str | None:
+        """The submission's declared identity: a leading 'Student: <name>' line the
+        pinned prompt asks the model to carry over verbatim (FR-INGEST-24). None when
+        the transcript declares none — V3 routes the absence; it never guesses."""
+        match = re.search(r"^Student:\s*(.+)$", markdown, re.MULTILINE)
+        return match.group(1).strip() if match else None
 
     # -- the transcription step ------------------------------------------------------------------
 
