@@ -4,17 +4,20 @@ Case: `TC-PROV-06` (`NFR-PROV-01`, P0, Contract, rung 0-3, test plan §5.2 and �
 Issue #23 (TS-06). C01-C14 and the provider half of C16 are implemented here; the two block
 clauses are placed as follows:
 
-- **`TC-PROV-C15`** (sole egress, safety property): the static half is the import-graph
-  assertion of `TC-PROV-05`, running in `tests/artifact/test_import_graph.py`, which covers
-  this clause's step 1 and step 3 for the whole tree. The runtime half (step 2, rung 4 — a
-  full E2E journey under a process-wide connection log) needs `M-ORCH`'s pipeline, which
-  does not exist yet; it is named here rather than silently dropped, and lands with the E2E
-  cases (§6.2).
-- **`TC-PROV-C16`** (identical inputs are not promised identical text): the consumer sweep
-  (steps 2-5) needs `M-JUDGE`, `M-EXTRACT` and `M-CONFORM`, none of which exist yet. The
-  provider half (step 1) — a provider whose byte-identical requests draw textually different
-  responses, with no caching or deduplication anywhere in this module — is
-  `test_tc_prov_c16_...` below. The consumer sweep becomes the consuming stories' obligation
+- **`TC-PROV-C15`** (sole egress, safety property): the case lives in
+  `tests/contract/prov/test_sole_egress.py` (issue #25) — cardinality one over the
+  egress-capable import set, the adversarial construction, and the runtime half (step 2)
+  with a stack-attributed egress guard over the journey that exists. The walker itself is
+  `tests/support/import_graph.py`; `tests/artifact/test_import_graph.py` holds `TC-PROV-05`'s
+  tree-level assertions (zero violations outside `M-PROV`). The §6.2 full journey under the
+  runtime guard lands with `M-ORCH`.
+- **`TC-PROV-C16`** (identical inputs are not promised identical text): the block-form case
+  lives in `tests/contract/prov/test_nonpromise_determinism.py` (issue #25) — the
+  golden-file tier assertion (step 5) and the consumer-sweep placement (steps 2-4, which
+  need `M-JUDGE`, `M-EXTRACT` and `M-CONFORM`, none of which exist yet). The provider half
+  (step 1) — a provider whose byte-identical requests draw textually different responses,
+  with no caching or deduplication anywhere in this module — is
+  `test_tc_prov_c16_...` below; the sweep becomes the consuming stories' obligation
   the moment they land.
 
 **The two parametrization axes.** §6.11.2: the whole suite runs against
@@ -106,8 +109,9 @@ pytestmark = pytest.mark.contract
 
 #: Every clause of §6.11.2 this suite owns a case for, in order. The completeness assertion
 #: below reads this list, so a clause dropped in an edit fails here by name rather than
-#: silently narrowing the suite. (C15 lives with the import-graph assertion; its placement is
-#: stated verbatim in the module docstring, which is part of the scanned source.)
+#: silently narrowing the suite. (C15 is a whole-tree case rather than a parametrized cell;
+#: its home is `tests/contract/prov/test_sole_egress.py` — see the module docstring, which
+#: is part of the scanned source.)
 CLAUSE_IDS = tuple(f"TC-PROV-C{i:02d}" for i in range(1, 15)) + ("TC-PROV-C16",)
 
 LIVE_IMPLS = ("local", "openrouter")
