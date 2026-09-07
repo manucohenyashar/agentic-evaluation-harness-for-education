@@ -109,10 +109,33 @@ ELEMENT_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
 #: The evaluative vocabulary (FR-INGEST-11's configured list, in ONE enumerable place —
 #: the same discipline as the schema-lock list). A description matching any of these is
 #: rejected and re-requested; a description that has already graded the work must never
-#: reach a judge. `HARNESS_INGEST_EVALUATIVE_TERMS` (comma-separated) extends it.
+#: reach a judge.
+#:
+#: Matching is PREFIX-based with an optional "in-" negation prefix, decided from
+#: RISK-17's own motivating example: "the arrow is correctly labelled" is the failure
+#: the requirement exists for, so "correct" must match "correctly", "incorrect" and
+#: "correction" — a word that STARTS with the term (optionally negated) carries the
+#: same judgement. `HARNESS_INGEST_EVALUATIVE_TERMS` (comma-separated) adds configured
+#: synonyms at call time (design Configuration: `INGEST_EVALUATIVE_TERMS`).
 EVALUATIVE_TERMS: tuple[str, ...] = (
     "correct", "valid", "appropriate", "properly", "as expected", "should be",
 )
+
+#: The morphology the matcher folds in: the negation prefix and the suffixes a
+#: judgement word wears.
+EVALUATIVE_MATCH_ENV = "HARNESS_INGEST_EVALUATIVE_TERMS"
+
+
+def _configured_evaluative_terms() -> tuple[str, ...]:
+    """The configured list: the module's own terms plus the environment's synonyms,
+    read at call time (the knob exists so a school can add its own vocabulary
+    without a code change)."""
+    raw = os.environ.get(EVALUATIVE_MATCH_ENV)
+    if not raw:
+        return EVALUATIVE_TERMS
+    synonyms = tuple(term.strip().lower() for term in raw.split(",")
+                     if term.strip())
+    return EVALUATIVE_TERMS + synonyms
 
 #: The re-request budget before an evaluative description quarantines the ingestion
 #: (`HARNESS_INGEST_EVALUATIVE_RETRIES`).
@@ -124,10 +147,12 @@ DEFAULT_EVALUATIVE_RETRIES = 1
 #: prompt — the parser and the prompt move together or not at all.
 REGION_OPEN = "<!-- region:"
 REGION_CLOSE = "<!-- /region -->"
-CROP_OPEN = "<!-- crop:"
 STRUCK_OPEN = "<s>"
 STRUCK_CLOSE = "</s>"
-SUPERSEDED_PREFIX = "~~superseded-by:"
+#: The supersession note the pinned prompt asks the model to write before the
+#: correcting content: the region it names (or the immediately preceding one) is
+#: the earlier version, and BOTH stay (`FR-INGEST-12`).
+SUPERSEDED_PREFIX = "~~superseded-by"
 
 #: The transcription prompt (v2): the region-marker protocol, the per-kind description
 #: fields (`FR-INGEST-10`), and the retraction markup (`FR-INGEST-12` — BOTH versions
@@ -810,60 +835,112 @@ class IngestReport:
 
 
 def _evaluative_offences(description: str,
-                         terms: Sequence[str] = EVALUATIVE_TERMS) -> list[str]:
+                         terms: Sequence[str] | None = None) -> list[str]:
     """The evaluative terms the description contains (`FR-INGEST-11`'s mechanical
-    check): word-boundary matches, case-insensitive, over the configured list."""
+    check): PREFIX matches over the configured list with the optional negation prefix
+    ("in-"/"in"/"un") and any suffix — see the constant's morphology decision."""
+    configured = terms if terms is not None else _configured_evaluative_terms()
     lowered = description.lower()
-    return [term for term in terms
-            if re.search(r"\b" + re.escape(term.lower()) + r"\b", lowered)]
+    offences: list[str] = []
+    for term in configured:
+        stem = term.lower()
+        if " " in stem:
+            # Multi-word terms match verbatim ("as expected", "should be").
+            if stem in lowered:
+                offences.append(term)
+            continue
+        if re.search(r"\b(?:in-?|un)?" + re.escape(stem) + r"\w*", lowered):
+            offences.append(term)
+    return offences
+
+
+def _parse_region_attributes(header: str) -> dict[str, str]:
+    """`kind=x element_kind=y crop=1,2,3,4` — attribute pairs in ANY order, so a
+    model that reorders or adds attributes still parses (review M3's drift case)."""
+    attributes: dict[str, str] = {}
+    for token in header.split():
+        if "=" in token:
+            key, _, value = token.partition("=")
+            attributes[key.strip().lower()] = value.strip()
+    return attributes
 
 
 def _parse_regions(transcript: str, source_hash: str, page_no: int,
                    position_start: int, kind_of_page: str) -> list[dict]:
     """Parse one page's transcript into region records.
 
-    The pinned prompt asks the model to wrap every region in the marker protocol; a
-    transcript with NO markers is one transcribed_text region (a text-only page is the
-    common case, and the protocol is additive). Struck-through spans become regions
-    with `retraction='struck_through'`; a '~~superseded-by' note marks the earlier
-    region it replaces — BOTH versions stay (`FR-INGEST-12`)."""
+    The pinned prompt asks the model to wrap every region in the marker protocol. A
+    transcript with NO markers is one transcribed_text region (a text-only page is
+    the common case, and the protocol is additive). Text OUTSIDE complete markers
+    also becomes transcribed_text regions — the Markdown and the region rows must
+    describe the same content. A transcript carrying an OPENING marker but no
+    complete pair is MALFORMED model output and refuses here rather than storing
+    protocol comments as student text (review M3). Struck-through spans become
+    regions with `retraction='struck_through'`; a '~~superseded-by' note marks the
+    correcting region, whose id the PREVIOUS region then carries as
+    `retraction='superseded_by:<region_id>'` — BOTH versions stay (`FR-INGEST-12`,
+    review B2)."""
     import uuid as _uuid
+
+    def new_region(position: int, **overrides: Any) -> dict:
+        region: dict[str, Any] = {
+            "region_id": f"reg-{_uuid.uuid4().hex[:12]}",
+            "page_no": page_no,
+            "element_kind": "text",
+            "region_kind": "transcribed_text",
+            "description": None,
+            "content": "",
+            "retraction": None,
+            "content_state": "present",
+            "selection_state": None,
+            "selection": None,
+            "crop_box": None,
+            "source_hash": source_hash,
+            "page_index": page_no,
+            "position": position,
+            "is_untrusted_content": 1 if kind_of_page == "submission" else 0,
+            "supersedes_previous": False,
+        }
+        region.update(overrides)
+        return region
 
     regions: list[dict] = []
     pattern = re.compile(
-        re.escape(REGION_OPEN) + r"\s*kind=(?P<kind>[a-z_]+)"
-        r"(?:\s+element_kind=(?P<element>[a-z_]+))?"
-        r"(?:\s+question_id=(?P<question>[A-Za-z0-9._-]+))?\s*-->"
+        re.escape(REGION_OPEN) + r"(?P<header>[^>]*?)-->"
         r"(?P<body>.*?)" + re.escape(REGION_CLOSE),
         re.DOTALL,
     )
     matches = list(pattern.finditer(transcript))
-    position = position_start
     if not matches:
+        if REGION_OPEN in transcript:
+            raise IngestError(
+                f"page {page_no}'s transcript carries an unterminated region marker "
+                "— malformed model output (design §3.5's failure taxonomy); the "
+                "page refuses rather than storing protocol comments as student text."
+            )
         body = transcript.strip()
         if body:
-            regions.append({
-                "region_id": f"reg-{_uuid.uuid4().hex[:12]}",
-                "page_no": page_no,
-                "element_kind": "text",
-                "region_kind": "transcribed_text",
-                "description": None,
-                "content": body,
-                "retraction": None,
-                "content_state": "present",
-                "selection_state": None,
-                "selection": None,
-                "crop_png": None,
-                "source_hash": source_hash,
-                "page_index": page_no,
-                "position": position,
-                "is_untrusted_content": 1 if kind_of_page == "submission" else 0,
-            })
+            regions.append(new_region(position_start, content=body))
         return regions
+
+    position = position_start
+    cursor = 0
+    supersede_requests: list[int] = []
     for match in matches:
-        kind = match.group("kind")
-        element = match.group("element") or ("text" if kind == "transcribed_text"
-                                             else "graphic")
+        outside = transcript[cursor:match.start()].strip()
+        if outside:
+            regions.append(new_region(position, content=outside))
+            position += 1
+        cursor = match.end()
+        attributes = _parse_region_attributes(match.group("header"))
+        kind = attributes.get("kind", "transcribed_text")
+        if kind not in REGION_KINDS:
+            raise IngestError(
+                f"page {page_no}'s region declares kind {kind!r}, which is not one "
+                f"of {REGION_KINDS} — malformed model output."
+            )
+        element = attributes.get("element_kind") or (
+            "text" if kind == "transcribed_text" else "graphic")
         body = match.group("body").strip()
         if not body:
             continue
@@ -872,28 +949,48 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                            body, re.DOTALL)
         if struck:
             retraction = "struck_through"
-        superseded = re.search(re.escape(SUPERSEDED_PREFIX) + r"\s*(\S+)", body)
-        content = body
-        regions.append({
-            "region_id": f"reg-{_uuid.uuid4().hex[:12]}",
-            "page_no": page_no,
-            "element_kind": element,
-            "region_kind": kind,
-            "description": body if kind == "described_graphic" else None,
-            "content": content,
-            "retraction": retraction,
-            "content_state": "present",
-            "selection_state": (None if kind != "selection_mark"
-                                else "resolved"),
-            "selection": (None if kind != "selection_mark"
-                          else (match.group("question") or "")),
-            "crop_png": None,
-            "source_hash": source_hash,
-            "page_index": page_no,
-            "position": position,
-            "is_untrusted_content": 1 if kind_of_page == "submission" else 0,
-        })
+        supersedes = SUPERSEDED_PREFIX in body
+        crop_box = None
+        if "crop" in attributes:
+            parts = attributes["crop"].split(",")
+            if len(parts) != 4:
+                raise IngestError(
+                    f"page {page_no}'s crop attribute {attributes['crop']!r} is not "
+                    "x,y,w,h.")
+            try:
+                crop_box = tuple(int(part) for part in parts)
+            except ValueError as error:
+                raise IngestError(
+                    f"page {page_no}'s crop attribute "
+                    f"{attributes['crop']!r} is not x,y,w,h.") from error
+        regions.append(new_region(
+            position,
+            element_kind=element,
+            region_kind=kind,
+            description=body if kind == "described_graphic" else None,
+            content=body,
+            retraction=retraction,
+            crop_box=crop_box,
+            selection_state=(None if kind != "selection_mark" else "resolved"),
+            selection=(None if kind != "selection_mark"
+                       else attributes.get("question_id", "")),
+            supersedes_previous=supersedes,
+        ))
+        if supersedes:
+            supersede_requests.append(len(regions) - 1)
         position += 1
+    outside = transcript[cursor:].strip()
+    if outside:
+        regions.append(new_region(position, content=outside))
+        position += 1
+    # B2: each superseding region's id lands on the region it replaces — the earlier
+    # version carries 'superseded_by:<the correcting region's id>'.
+    for index in supersede_requests:
+        if index > 0 and regions[index - 1]["retraction"] is None:
+            # A struck-through region's own retraction is the more specific visual
+            # fact and is not overwritten by the supersession link.
+            regions[index - 1]["retraction"] = (
+                f"superseded_by:{regions[index]['region_id']}")
     return regions
 
 
@@ -917,11 +1014,19 @@ class Ingestor:
         self._params = params
         self._rasterizer = rasterizer
         self._residency = residency
-        # FR-INGEST-14 (Phase 2): the risk register's high-risk criteria (the register
-        # contents are TBD, design Q-12 — the list is injected) and the DIFFERENT
-        # model family whose second description is recorded beside the first.
-        self._high_risk = tuple(high_risk_criterion_ids)
-        self._second_model_ref = second_model_ref
+        # FR-INGEST-14 is Phase 2 (design's own phase marker; TC-INGEST-38 is "P1,
+        # Phase 2"): the register contents are TBD (design Q-12), so a caller passing
+        # the hook today is told so LOUDLY rather than believing a second description
+        # happened. The params land for real with the Phase 2 story.
+        if high_risk_criterion_ids or second_model_ref is not None:
+            raise IngestError(
+                "the FR-INGEST-14 second-description pass is Phase 2 (design §3.5's "
+                "phase marker): the risk register is not defined yet (Q-12), so "
+                "high_risk_criterion_ids/second_model_ref are accepted by no "
+                "implementation. Drop them until Phase 2."
+            )
+        self._high_risk: tuple[str, ...] = ()
+        self._second_model_ref: ModelRef | None = None
 
     # -- the gateway -----------------------------------------------------------------------------
 
@@ -1117,20 +1222,10 @@ class Ingestor:
                         "no unambiguous filenames. The module never guesses "
                         "(FR-INGEST-31) — state the order and re-ingest."
                     )
-        markdown = self._assemble([record["transcript"] for record in ordered])
-        content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
-        provenance = {
-            "order_source": order_source,
-            "pages": [
-                {"blob_hash": record["blob_hash"], "page_no": record["page_no"],
-                 "position": position + 1}
-                for position, record in enumerate(ordered)
-            ],
-        }
-        # The regions (FR-INGEST-13/10/11/12): parse each page's marked-up transcript,
-        # enforce the evaluative bar (reject and RE-REQUEST, FR-INGEST-11), retain
-        # crops for graphics, and write one row per region. The region rows are the
-        # coordinate system every later stage reads.
+        # The regions (FR-INGEST-13/10/11/12) come BEFORE the document row is
+        # assembled: a re-request replaces the page's transcript, and the stored
+        # Markdown must be the FINAL one — the rejected judgement must not survive in
+        # document.markdown (review B3).
         retries = self._configured_retries()
         all_regions: list[dict] = []
         position_cursor = 0
@@ -1164,12 +1259,31 @@ class Ingestor:
                 )
             all_regions.extend(regions)
             position_cursor += len(regions)
+        # B1: the crops are IMAGE crops (FR-INGEST-13) — the region's box carved from
+        # the page raster through the rasterizer seam, or the whole page raster when
+        # the model emitted no box. Never the description text.
         for region in all_regions:
             if region["region_kind"] == "described_graphic":
-                # The crop is retained (FR-INGEST-13): the region's raster bytes go
-                # to the content-addressed store and the row carries the ref.
-                crop_png = region.get("crop_png") or region["content"].encode("utf-8")
+                record = next(r for r in ordered
+                              if r["blob_hash"] == region["source_hash"])
+                box = region.get("crop_box")
+                crop_png = self._rasterizer.crop(
+                    self._blobs.get(region["source_hash"]), region["page_index"],
+                    box if box is not None else (0, 0, record["image"].width_px,
+                                                 record["image"].height_px),
+                    _configured_dpi())
                 region["crop_ref"] = self._blobs.put(crop_png)
+        # The Markdown is assembled from the FINAL transcripts (B3).
+        markdown = self._assemble([record["transcript"] for record in ordered])
+        content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        provenance = {
+            "order_source": order_source,
+            "pages": [
+                {"blob_hash": record["blob_hash"], "page_no": record["page_no"],
+                 "position": position + 1}
+                for position, record in enumerate(ordered)
+            ],
+        }
         with self._handle.transaction() as tx:
             # The parent row first: document_region's FK points at it.
             tx.execute(INGEST_STATEMENTS["insert_document"],
@@ -1203,12 +1317,42 @@ class Ingestor:
                            description_secondary=None)
         LOGGER.info(
             "ingested document %s kind=%s pages=%d order=%s content_hash=%s "
-            "transcriber=%s divergence=%s",
+            "transcriber=%s divergence=%s regions=%d re_requests=%d",
             document_id, kind, len(page_images), order_source, content_hash[:12],
             transcriber_ref,
             None if divergence is None else round(divergence, 3),
+            len(all_regions), re_requests,
         )
         return document_id
+
+    def _enforce_evaluative_bar(self, regions: list[dict]) -> list[dict]:
+        """The FR-INGEST-11 gate over parsed regions: re-request up to the budget,
+        then refuse. Factored so ingest and revise enforce the SAME bar."""
+        offenders = [region for region in regions
+                     if region["description"]
+                     and _evaluative_offences(region["description"])]
+        if offenders:
+            raise IngestError(
+                f"{len(offenders)} description(s) contain evaluative vocabulary: "
+                "the descriptions would hand the panel a pre-made judgement "
+                "(FR-INGEST-11). Surface for the operator."
+            )
+        return regions
+
+    def _retain_crops(self, regions: list[dict]) -> list[dict]:
+        """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
+        page raster through the rasterizer seam, retained in the blob store."""
+        for region in regions:
+            if region["region_kind"] != "described_graphic":
+                continue
+            box = region.get("crop_box")
+            pdf_bytes = self._blobs.get(region["source_hash"])
+            crop_png = self._rasterizer.crop(pdf_bytes, region["page_index"],
+                                             box if box is not None
+                                             else (0, 0, 0, 0),
+                                             _configured_dpi())
+            region["crop_ref"] = self._blobs.put(crop_png)
+        return regions
 
     @staticmethod
     def _configured_retries() -> int:
@@ -1270,6 +1414,7 @@ class Ingestor:
         transcriber_ref: str | None = None
         new_provenance_pages: list[dict] = []
         layers: list[str] = []
+        revision_regions_all: list[dict] = []
         dpi = _configured_dpi()
         if self._residency is not None:
             self._residency.acquire("transcriber")
@@ -1319,6 +1464,15 @@ class Ingestor:
                     layers.append(self._rasterizer.text_layer(
                         self._blobs.get(blob_hash), page_no)
                         if replaced_from is None else "")
+                    # M5: the revision's pages are regionized too — a head later
+                    # stages read carries regions whether it came from ingest or
+                    # from a correction, and the evaluative gate holds on both.
+                    revision_regions = _parse_regions(
+                        completion.text, blob_hash, page_no, len(markdown_parts) - 1,
+                        "revision")
+                    revision_regions = self._enforce_evaluative_bar(revision_regions)
+                    revision_regions = self._retain_crops(revision_regions)
+                    revision_regions_all.extend(revision_regions)
                     new_provenance_pages.append({
                         "blob_hash": blob_hash, "page_no": page_no,
                         "position": position, **({"replaced": replaced_from}
@@ -1354,6 +1508,13 @@ class Ingestor:
                         transcriber_ref = completion.resolved_build
                         markdown_parts.append(completion.text)
                         layers.append("")
+                        revision_regions = _parse_regions(
+                            completion.text, blob_hash, page.page_no,
+                            len(markdown_parts) - 1, "revision")
+                        revision_regions = self._enforce_evaluative_bar(
+                            revision_regions)
+                        revision_regions = self._retain_crops(revision_regions)
+                        revision_regions_all.extend(revision_regions)
                         new_provenance_pages.append({
                             "blob_hash": blob_hash, "page_no": page.page_no,
                             "position": position,
@@ -1394,9 +1555,30 @@ class Ingestor:
                        pages_with_text_layer=pages_with_layer or None,
                        text_layer_divergence=divergence,
                        created_at=self._now())
+            for region in revision_regions_all:
+                tx.execute(INGEST_STATEMENTS["insert_region"],
+                           region_id=region["region_id"],
+                           document_id=new_id,
+                           page_no=region["page_no"],
+                           element_kind=region["element_kind"],
+                           region_kind=region["region_kind"],
+                           description=region["description"],
+                           retraction=region["retraction"],
+                           ocr_conf=None,
+                           content_state=region["content_state"],
+                           selection_state=region["selection_state"],
+                           selection=region["selection"],
+                           crop_ref=region.get("crop_ref"),
+                           source_hash=region["source_hash"],
+                           page_index=region["page_index"],
+                           position=region["position"],
+                           is_untrusted_content=1 if row["kind"] == "submission" else 0,
+                           description_secondary=None)
         LOGGER.info(
-            "revised document %s into %s pages_replaced=%d content_hash=%s",
+            "revised document %s into %s pages_replaced=%d content_hash=%s "
+            "regions=%d",
             document_id, new_id, len(replacement_pages), content_hash[:12],
+            len(revision_regions_all),
         )
         return new_id
 
