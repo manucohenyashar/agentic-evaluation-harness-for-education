@@ -219,10 +219,26 @@ def test_tc_store_c12_after_a_successful_open_the_schema_matches_the_binary(tmp_
         for migration in TIER_MIGRATIONS[tier]:
             for stmt in migration.statements:
                 text = str(stmt)
-                if "CREATE TABLE " not in text:
-                    continue  # a future index or view migration is not a table
-                between = text.split("CREATE TABLE ", 1)[1]
-                expected_tables.add(between.split("(", 1)[0].strip())
+                # Simulate the DDL in order: a migration may rebuild a table (create a
+                # new name, drop the old, rename), so a bare "collect every CREATE
+                # TABLE" parse would count a swap's intermediate names as schema.
+                upper = text.upper()
+                if "CREATE TABLE " in upper:
+                    between = text.split("CREATE TABLE ", 1)[1]
+                    name = between.split("(", 1)[0].strip()
+                    if " AS " in upper:
+                        # CREATE TABLE x AS SELECT: a scratch copy, still a table.
+                        expected_tables.add(name)
+                    else:
+                        expected_tables.add(name)
+                elif "DROP TABLE" in upper:
+                    name = text.split("DROP TABLE", 1)[1].strip().strip(";").lower()
+                    expected_tables.discard(name)
+                elif "RENAME TO" in upper:
+                    old_name = text.split("ALTER TABLE", 1)[1].split("RENAME TO", 1)[0]
+                    new_name = text.split("RENAME TO", 1)[1].strip().strip(";")
+                    expected_tables.discard(old_name.strip())
+                    expected_tables.add(new_name)
         expected_tables.add("schema_version")  # created by _migrate, not a migration row
         found = {
             row[0] for row in handle.query(statement(
