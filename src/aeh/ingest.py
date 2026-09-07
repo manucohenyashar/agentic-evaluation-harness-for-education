@@ -704,8 +704,8 @@ class PypdfSanitizer(PdfSanitizer):
         except ImportError as error:  # pragma: no cover - acceptance-run only
             raise IngestError(
                 "the live sanitizer needs the pypdf package; the fast tier uses a "
-                "scripted PdfSanitizer double instead. Install it for the "
-                "acceptance run."
+                "scripted PdfSanitizer double instead (the dependency is declared "
+                "in requirements-dev.txt)."
             ) from error
 
         reader = self._open(pypdf, pdf_bytes)
@@ -841,6 +841,11 @@ class PypdfSanitizer(PdfSanitizer):
                     remaining = (max_decompressed_bytes - decompressed
                                  if max_decompressed_bytes is not None else -1)
                     sized = self._measure_stream(value, remaining)
+                    if sized is None:
+                        # Unmeasurable without decoding: refused, not measured
+                        # (review B3 — the declared filter-family rule).
+                        bounds_crossed.append("decompressed_bytes")
+                        raise _WalkAborted
                     decompressed += sized  # the partial count, if it crossed
                     if max_decompressed_bytes is not None \
                             and decompressed > max_decompressed_bytes:
@@ -890,33 +895,41 @@ class PypdfSanitizer(PdfSanitizer):
                     found.add(construct)
         return found
 
-    def _measure_stream(self, stream: Any, budget: int) -> int:
-        """The stream's decompressed size within `budget` (-1 = unbounded): the
-        count may exceed the budget, but the measurement stops absorbing there
-        and the caller refuses. FlateDecode is measured in chunks that abort
-        mid-stream; other filters are measured post hoc and the WALK (not just
-        the stream) stops on a crossing — declared: the chunked form covers the
-        canonical bomb (Flate), and exotic filters overshoot only by the one
-        stream already decompressed before the walk notices."""
+    def _measure_stream(self, stream: Any, budget: int) -> int | None:
+        """The stream's decompressed size within `budget` (-1 = unbounded), or
+        None when the stream cannot be bounded without fully decoding it.
+
+        Declared rule (review B3): exactly two families are measurable —
+        UNFILTERED streams (the encoded bytes ARE the data; a plain `len`, no
+        decode) and streams whose ENTIRE filter chain is FlateDecode (measured
+        in bounded chunks that stop absorbing at the budget). Every other
+        chain — LZW, RunLength, ASCII85, DCT outside an image, any compound
+        chain — is UNMEASURABLE and returns None: the walk refuses the artifact
+        rather than decoding past its ceiling. These are the standard filters,
+        not exotic ones, and the alternative (decode, then count) is precisely
+        the allocate-then-check shape the requirement forbids; NFR-INGEST-08
+        makes the conservative outcome the default."""
         filter_value = stream.get("/Filter")
         filters = (list(filter_value) if isinstance(filter_value, list)
                    else [filter_value] if filter_value else [])
-        first = str(filters[0]) if filters else ""
-        if first in ("/FlateDecode", "/Fl"):
-            # The ENCODED bytes, without decoding: the writer-side StreamObject
-            # exposes them as `raw_data`, the reader-side EncodedStreamObject
-            # keeps them (undecoded) in `_data` and offers no public raw access.
-            raw = (stream.raw_data if hasattr(stream, "raw_data")
-                   else stream._data)
+        if not filters:
+            return len(self._encoded_bytes(stream))
+        if len(filters) == 1 and str(filters[0]) in ("/FlateDecode", "/Fl"):
+            raw = self._encoded_bytes(stream)
             try:
                 return _chunked_flate_size(
                     raw, len(raw) if budget < 0 else budget)
             except zlib.error:
                 return len(raw)
-        try:
-            return len(stream.get_data())
-        except Exception:  # noqa: BLE001 -- an undecodable stream is measured by its raw size
-            return len(stream.raw_data)
+        return None
+
+    @staticmethod
+    def _encoded_bytes(stream: Any) -> bytes:
+        """The stream's ENCODED bytes, without decoding: the writer-side
+        StreamObject exposes them as `raw_data`; the reader-side
+        EncodedStreamObject keeps them (undecoded) in `_data` and offers no
+        public raw accessor (review B2)."""
+        return stream.raw_data if hasattr(stream, "raw_data") else stream._data
 
     def _page_facts(self, reader: Any) -> dict:
         """Structural page observations for the pre-raster bounds: the page count
@@ -942,7 +955,6 @@ class PypdfSanitizer(PdfSanitizer):
         found them; this pass deletes the keys, the name-tree entries and the
         file-attachment annotations — the verify pass then asserts the removal."""
         visited: set[tuple[int, int]] = set()
-        stack: list[Any] = [reader.trailer]
 
         def prune(value: Any) -> None:
             if isinstance(value, pypdf.generic.IndirectObject):
@@ -1747,7 +1759,7 @@ def _parse_region_attributes(header: str) -> dict[str, str]:
     return attributes
 
 
-_UNTRUSTED_ATTR = re.compile(r"\bis_untrusted_content=\w+")
+_UNTRUSTED_ATTR = re.compile(r"\bis_untrusted_content(?:=\w+)?")
 
 
 def _wrap_untrusted(body: str) -> str:
@@ -1792,10 +1804,10 @@ def _mark_untrusted_content(transcript: str) -> str:
         if outside:
             parts.append(_wrap_untrusted(outside))
         header = match.group("header")
-        if "is_untrusted_content" in header:
-            header = _UNTRUSTED_ATTR.sub("is_untrusted_content=1", header)
-        else:
-            header = f"{header} is_untrusted_content=1"
+        # The model is not trusted to have emitted a well-formed marker: a bare
+        # token, a wrong value or an absent one all rewrite to `=1` (review S1)
+        # — strip any occurrence, then append the authoritative one.
+        header = f"{_UNTRUSTED_ATTR.sub(' ', header)} is_untrusted_content=1"
         # The canonical spacing (one space between tokens, one each side) is what
         # makes the transform idempotent: a re-run captures this exact header and
         # re-emits it byte-for-byte.
@@ -2047,6 +2059,11 @@ class Ingestor:
             self._residency.acquire("transcriber")
         try:
             pages_used = 0
+            # The sanitized copy of each source blob, kept so EVERY decode of the
+            # document — page rasters, text layers, retained crops — reads the
+            # sanitized bytes and nothing else ever re-reads the original (#42,
+            # review B1: the crop path was rendering the unsanitized original).
+            sanitized_of: dict[str, bytes] = {}
             for blob_hash in blobs:
                 deadline = time.monotonic() + self._configured_seconds(
                     MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
@@ -2058,6 +2075,7 @@ class Ingestor:
                 sanitized = self._sanitize_source(blob_hash, pdf_bytes,
                                                   pages_used=pages_used,
                                                   deadline=deadline)
+                sanitized_of[blob_hash] = sanitized.pdf_bytes
                 if sanitized.neutralized:
                     LOGGER.info(
                         "neutralized %s in source blob %s before rasterization",
@@ -2092,7 +2110,8 @@ class Ingestor:
                             "re-run the ingestion on one build."
                         )
                     transcriber_ref = completion.resolved_build
-                    layer = self._rasterizer.text_layer(pdf_bytes, page.page_no)
+                    layer = self._rasterizer.text_layer(sanitized_of[blob_hash],
+                                                        page.page_no)
                     page_records.append({
                         "blob_hash": blob_hash,
                         "page_no": page.page_no,
@@ -2237,11 +2256,14 @@ class Ingestor:
         position_cursor = 0
         re_requests = 0
         for record in ordered:
-            if kind == "submission":  # the FR-INGEST-35 demarcation gate, not a path
-                # The emission rule runs over the FINAL transcript, after the
-                # ordering ladder and the divergence measure — both read the raw
-                # transcription; the stored Markdown and the region rows then
-                # both carry the untrusted marker.
+            # FR-INGEST-35: the emission rule runs over the FINAL transcript,
+            # after the ordering ladder and the divergence measure — both read
+            # the raw transcription; the stored Markdown and the region rows
+            # then both carry the untrusted marker. (This is the demarcation
+            # gate — a post-transcription emission gate on the one pipeline,
+            # not a per-kind path; TC-INGEST-02's guard exempts it structurally,
+            # keyed on the transform call in the branch body.)
+            if kind == "submission":
                 record["transcript"] = _mark_untrusted_content(record["transcript"])
             regions = _parse_regions(record["transcript"], record["blob_hash"],
                                      record["page_no"], position_cursor, kind)
@@ -2276,14 +2298,16 @@ class Ingestor:
             position_cursor += len(regions)
         # B1: the crops are IMAGE crops (FR-INGEST-13) — the region's box carved from
         # the page raster through the rasterizer seam, or the whole page raster when
-        # the model emitted no box. Never the description text.
+        # the model emitted no box. Never the description text. The crop reads the
+        # SANITIZED source bytes (#42: a retained crop must no more re-render the
+        # unsanitized original than the page raster does).
         for region in all_regions:
             if region["region_kind"] == "described_graphic":
                 record = next(r for r in ordered
                               if r["blob_hash"] == region["source_hash"])
                 box = region.get("crop_box")
                 crop_png = self._rasterizer.crop(
-                    self._blobs.get(region["source_hash"]), region["page_index"],
+                    sanitized_of[region["source_hash"]], region["page_index"],
                     box if box is not None else (0, 0, record["image"].width_px,
                                                  record["image"].height_px),
                     _configured_dpi())
@@ -2362,15 +2386,18 @@ class Ingestor:
             )
         return regions
 
-    def _retain_crops(self, regions: list[dict]) -> list[dict]:
+    def _retain_crops(self, regions: list[dict],
+                      sanitized_of: dict[str, bytes]) -> list[dict]:
         """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
-        page raster through the rasterizer seam, retained in the blob store."""
+        page raster through the rasterizer seam, retained in the blob store. The
+        crop reads the SANITIZED source bytes (#42, review B1) — never the
+        original blob."""
         for region in regions:
             if region["region_kind"] != "described_graphic":
                 continue
             box = region.get("crop_box")
-            pdf_bytes = self._blobs.get(region["source_hash"])
-            crop_png = self._rasterizer.crop(pdf_bytes, region["page_index"],
+            crop_png = self._rasterizer.crop(sanitized_of[region["source_hash"]],
+                                             region["page_index"],
                                              box if box is not None
                                              else (0, 0, 0, 0),
                                              _configured_dpi())
@@ -2451,13 +2478,23 @@ class Ingestor:
         sanitizer's walk, mid-stream."""
         strip = self._configured_bool(STRIP_ACTIVE_CONTENT_ENV,
                                       DEFAULT_STRIP_ACTIVE_CONTENT)
-        result = self._sanitizer.sanitize(
-            pdf_bytes, strip=strip,
-            max_decompressed_bytes=self._configured_int(
-                MAX_DECOMPRESSED_BYTES_ENV, DEFAULT_MAX_DECOMPRESSED_BYTES),
-            max_embedded_objects=self._configured_int(
-                MAX_EMBEDDED_OBJECTS_ENV, DEFAULT_MAX_EMBEDDED_OBJECTS),
-            deadline=deadline)
+        try:
+            result = self._sanitizer.sanitize(
+                pdf_bytes, strip=strip,
+                max_decompressed_bytes=self._configured_int(
+                    MAX_DECOMPRESSED_BYTES_ENV, DEFAULT_MAX_DECOMPRESSED_BYTES),
+                max_embedded_objects=self._configured_int(
+                    MAX_EMBEDDED_OBJECTS_ENV, DEFAULT_MAX_EMBEDDED_OBJECTS),
+                deadline=deadline)
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter:
+            # ANY exception inside the sanitizer — declared or not, a fault-
+            # injected one included — resolves to refusal, never to processing
+            # (review B2: the docstring promised the wrapping; this is it).
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} could not be sanitized: "
+                f"{error!r}") from error
         if result.unremovable:
             raise IngestSanitizeError(
                 f"source blob {blob_hash[:12]} carries active content that cannot "
@@ -2552,6 +2589,9 @@ class Ingestor:
             self._residency.acquire("transcriber")
         try:
             raster_cache: dict[str, list[PageImage]] = {}
+            # The sanitized copy per source blob (review B1): text layers and
+            # retained crops read it too — nothing re-reads the original.
+            sanitized_cache: dict[str, bytes] = {}
 
             def pages_of(blob_hash: str) -> list[PageImage]:
                 if blob_hash not in raster_cache:
@@ -2569,6 +2609,7 @@ class Ingestor:
                             "neutralized %s in source blob %s before "
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
+                    sanitized_cache[blob_hash] = sanitized.pdf_bytes
                     raster_cache[blob_hash] = self._rasterizer.rasterize(
                         sanitized.pdf_bytes, dpi)
                     self._check_rasters(blob_hash, raster_cache[blob_hash])
@@ -2615,7 +2656,7 @@ class Ingestor:
                             else _mark_untrusted_content(completion.text))
                     markdown_parts.append(text)
                     layers.append(self._rasterizer.text_layer(
-                        self._blobs.get(blob_hash), page_no)
+                        sanitized_cache[blob_hash], page_no)
                         if replaced_from is None else "")
                     # M5: the revision's pages are regionized too — a head later
                     # stages read carries regions whether it came from ingest or
@@ -2624,7 +2665,8 @@ class Ingestor:
                         text, blob_hash, page_no, len(markdown_parts) - 1,
                         "revision")
                     revision_regions = self._enforce_evaluative_bar(revision_regions)
-                    revision_regions = self._retain_crops(revision_regions)
+                    revision_regions = self._retain_crops(revision_regions,
+                                                          sanitized_cache)
                     revision_regions_all.extend(revision_regions)
                     new_provenance_pages.append({
                         "blob_hash": blob_hash, "page_no": page_no,
@@ -2647,7 +2689,11 @@ class Ingestor:
                             "neutralized %s in source blob %s before "
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
-                    for page in self._rasterizer.rasterize(sanitized.pdf_bytes, dpi):
+                    sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    legacy_pages = self._rasterizer.rasterize(sanitized.pdf_bytes,
+                                                              dpi)
+                    self._check_rasters(blob_hash, legacy_pages)
+                    for page in legacy_pages:
                         position += 1
                         replacement = replacements.pop(page.page_no, None)
                         if replacement is not None:
@@ -2681,7 +2727,8 @@ class Ingestor:
                             len(markdown_parts) - 1, "revision")
                         revision_regions = self._enforce_evaluative_bar(
                             revision_regions)
-                        revision_regions = self._retain_crops(revision_regions)
+                        revision_regions = self._retain_crops(revision_regions,
+                                                              sanitized_cache)
                         revision_regions_all.extend(revision_regions)
                         new_provenance_pages.append({
                             "blob_hash": blob_hash, "page_no": page.page_no,

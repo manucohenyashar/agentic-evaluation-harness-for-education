@@ -234,15 +234,24 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     # are a different variable entirely): only the two DECLARED post-transcription
     # gates may branch — the reference divergence halt (FR-INGEST-03) and, since
     # #42, the submission untrusted-content demarcation (FR-INGEST-35). Both are
-    # gates ON the one pipeline, not extraction paths, and each marks its own
-    # branch inline so the exemption is auditable where the branch appears.
+    # gates ON the one pipeline, not extraction paths. The demarcation exemption
+    # is STRUCTURAL (review note): a branch is exempt only when its body calls
+    # the demarcation transform, so no future dispatch can hide behind a comment.
+    lines = module_source.splitlines()
+
+    def _is_demarcation_gate(index: int) -> bool:
+        for follower in lines[index + 1:]:
+            if follower.strip():
+                return "_mark_untrusted_content" in follower
+        return False
+
     artifact_words = ('"assessment"', '"rubric"', '"submission"')
     dispatch_branches = [
-        line.strip() for line in module_source.splitlines()
+        line.strip() for index, line in enumerate(lines)
         if ("kind ==" in line or "kind in" in line)
         and any(word in line for word in ("'reference'", *artifact_words))
         and "divergence is not None" not in line
-        and "demarcation gate" not in line
+        and not _is_demarcation_gate(index)
     ]
     assert dispatch_branches == [], (
         f"TC-INGEST-02: the dispatch branches on the artifact kind: "
