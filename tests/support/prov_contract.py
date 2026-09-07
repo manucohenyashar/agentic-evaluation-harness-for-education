@@ -77,6 +77,12 @@ class ScriptedTransport:
     script: list = field(default_factory=list)  # per-call lists of responses / exceptions
     default: object = None                      # answered when a call's script is exhausted
     get_default: object = None                  # answered for non-POST (retention) requests
+    #: A clock and a per-attempt provider latency: the transport moves the clock by
+    #: `latency_s` on every POST, the way a real backend spends real time. `_dispatch`
+    #: measures latency through the clock seam, so a test asserting a measured latency
+    #: programs it HERE — the transport is what a latency is a property of.
+    clock: object = None
+    latency_s: float = 0.0
     calls: int = 0
     attempts: int = 0
     requests: list = field(default_factory=list)
@@ -88,6 +94,8 @@ class ScriptedTransport:
             if isinstance(self.get_default, Exception):
                 raise self.get_default
             return self.get_default
+        if self.clock is not None and self.latency_s:
+            self.clock.sleep(self.latency_s)
         self.attempts += 1
         script = self.script[self.calls] if self.calls < len(self.script) else None
         if script is None:

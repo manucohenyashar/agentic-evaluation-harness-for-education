@@ -31,6 +31,7 @@ from aeh.prov import PromptPayload
 from tests.support.prov_contract import (
     CONSTRUCTIONS,
     IMPL_IDS,
+    INJECTED,
     CountingClock,
     ScriptedTransport,
     completion,
@@ -77,11 +78,23 @@ def construction(request):
 
 
 def _provider_for(impl, construction, tmp_path, *, build=None):
-    """A provider of the given implementation and construction, scripted for one success."""
-    transport = ScriptedTransport(script=[[flat_ok(build=build) if build else flat_ok()]])
+    """A provider of the given implementation and construction, scripted for one success.
+
+    Live implementations get a latency-programmed transport: the backend is what a latency
+    is a property of, so the transport moves the clock 50 ms per attempt and `_dispatch`'s
+    measurement through the clock seam must report exactly that. A hardcoded 0 fails here
+    rather than on a nightly.
+    """
+    clock = CountingClock()
+    inject_latency = impl != "fixture" and construction == INJECTED
+    transport = ScriptedTransport(
+        script=[[flat_ok(build=build) if build else flat_ok()]],
+        clock=clock if inject_latency else None,
+        latency_s=0.05 if inject_latency else 0.0,
+    )
     provider = make_provider(
         impl, construction, transport,
-        fixture_dir=tmp_path / "fixtures", clock=CountingClock(),
+        fixture_dir=tmp_path / "fixtures", clock=clock,
     )
     if impl == "fixture":
         provider.record(payload(PromptPayload), model_ref(), params(),
@@ -96,10 +109,10 @@ def test_tc_prov_01_same_payload_through_all_three_returns_a_fully_typed_complet
     a `Completion` with text, `tokens_in`, `tokens_out`, `latency_ms`, `resolved_build` and
     `cached_prefix_tokens` populated and correctly typed.
 
-    One caller, no per-implementation branch — the body below is written once and takes only
-    the provider instance. The construction axis rides along: `FR-PROV-15` promises the two
-    constructions behave identically, and a shape difference between them would surface here
-    as a type failure on one variant.
+    Latency is a **measured** figure, not a presence check: the live implementations run
+    against a transport that spends 50 ms of clock per attempt, so a hardcoded 0 fails
+    here rather than on a nightly — where a zero-latency drift detector would describe a
+    server that answers in no time at all (RISK-37).
     """
     provider, _ = _provider_for(impl, construction, tmp_path)
     got = provider.complete(payload(PromptPayload), model_ref(), params())
@@ -116,6 +129,20 @@ def test_tc_prov_01_same_payload_through_all_three_returns_a_fully_typed_complet
             f"TC-PROV-01 ({impl}/{construction}): Completion.{field_name} is "
             f"{type(value).__name__} ({value!r}), expected {expected_type.__name__}."
         )
+    if impl == "fixture":
+        assert got.latency_ms == 430, (
+            "TC-PROV-01 (fixture): the replayed latency must be the recorded one, "
+            "verbatim — replay measures nothing (TC-PROV-13 compares the whole value)."
+        )
+    elif construction == INJECTED:
+        assert got.latency_ms == 50, (
+            f"TC-PROV-01 ({impl}/{construction}): latency_ms is {got.latency_ms} against "
+            "a transport that spent 50 ms of clock. Latency is measured through the clock "
+            "seam (FR-PROV-01 returns it as data; CT-PROV-14 reports it) — a hardcoded "
+            "constant would have the nightly describe a server that answers instantly."
+        )
+    # DEFAULTED cells use the real SystemClock, which a test transport cannot move without
+    # sleeping; their latency is the nightly's assertion (TC-PROV-19 measures a real one).
     assert got.text == '{"band": "met"}', (
         "TC-PROV-01: text is not verbatim. CT-PROV-03: text is returned verbatim and "
         "unparsed — this module has no opinion about what a judge said."

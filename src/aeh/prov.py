@@ -1262,6 +1262,7 @@ class _BaseLiveProvider:
             headers["Authorization"] = f"Bearer {self._api_key}"
         model_key = f"{model_ref.provider}:{model_ref.build_id}"
         retries_before = self._counters.snapshot().transport_retries
+        started = self._clock.monotonic()
         completion = dispatch_with_retries(
             self._transport,
             lambda: HttpRequest("POST", self._url_for(model_ref), headers, body),
@@ -1270,17 +1271,30 @@ class _BaseLiveProvider:
             governor=self._governor, counters=self._counters,
             build_watch=self._build_watch, model_key=model_key,
         )
-        if completion.cost is None and self._billed:
-            # CT-PROV-03: cost is null on edge-local and fixture — a billed backend
-            # answers with the measured fact. When the wire reported no cost, the
-            # declared per-token rates turn the measured usage into the per-call cost:
-            # derived, and derived from *declared* figures, which is why the estimate
-            # and the actuals can never disagree about the price sheet.
-            completion = dataclasses.replace(
-                completion,
-                cost=(Decimal(completion.tokens_in) * self._cost_per_token_in
-                      + Decimal(completion.tokens_out) * self._cost_per_token_out),
-            )
+        # Latency is measured, not echoed: FR-PROV-01 returns it as data, the per-call
+        # DEBUG line reports it (CT-PROV-14), and a hardcoded 0 would have the nightly
+        # describe a server that answers in no time at all. Measured through the clock
+        # seam, so an injected clock makes it exact and the default clock makes it real.
+        elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
+        if self._billed:
+            if completion.cost is None:
+                # CT-PROV-03: cost is null on edge-local and fixture — a billed backend
+                # answers with the measured fact. When the wire reported no cost, the
+                # declared per-token rates turn the measured usage into the per-call cost:
+                # derived, and derived from *declared* figures, which is why the estimate
+                # and the actuals can never disagree about the price sheet.
+                completion = dataclasses.replace(
+                    completion,
+                    cost=(Decimal(completion.tokens_in) * self._cost_per_token_in
+                          + Decimal(completion.tokens_out) * self._cost_per_token_out),
+                )
+        elif completion.cost is not None:
+            # The unbilled side is enforced, not assumed: a local server (or a proxy in
+            # front of one) that reports a cost in its usage would otherwise put a
+            # non-null cost on an edge-local completion — the clause violation the
+            # fixture refuses at record and at read.
+            completion = dataclasses.replace(completion, cost=None)
+        completion = dataclasses.replace(completion, latency_ms=elapsed_ms)
         self._counters.on_usage(
             completion.tokens_in, completion.tokens_out, completion.cached_prefix_tokens)
         # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path

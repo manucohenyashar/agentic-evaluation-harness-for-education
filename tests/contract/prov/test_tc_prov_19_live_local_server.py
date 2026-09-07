@@ -8,11 +8,22 @@ fixture run is the fast tier, and **the live runs are nightly under the `live` m
 their failure is P0, not advisory**, because they are the only thing that can detect the
 double drifting from the contract the real backend keeps (RISK-37).
 
-What this file runs is the same caller the fast tier runs: the substitutability probe over
-all four interface operations, plus the fixture differential — the live completion is
-recorded into a `RecordedFixtureProvider` (the nightly `F-RECORDED` regeneration path) and
-the replay must return it byte-identically. That is the differential the plan names:
-*"the companion real test for every fixture-provider case in the fast tier."*
+Which clause halves run here, and which cannot
+----------------------------------------------
+Implemented against the live backend: the Completion shape with a **measured** latency
+(`CT-PROV-03`, `FR-PROV-01`), the wire byte-identity of the dispatched payload
+(`CT-PROV-05`) and one-call-one-dispatch (`CT-PROV-01`) — captured through a recording
+proxy around the module's real transport — the declared capabilities and the pure estimate
+(`CT-PROV-04`, `CT-PROV-09`), the by-construction retention confirmation
+(`FR-PROV-14`'s edge-local half), the fixture replay differential, and the counters
+(`CT-PROV-11`). What *cannot* run here: the failure-injection rows (`CT-PROV-06`/`-07`'s
+decision tables) — a real server cannot be programmed to fail on schedule; those rows live
+in the fast tier over the seam, and this file's differential is what bounds the double's
+drift from the backend they assume.
+
+The differential the plan names: *"the companion real test for every fixture-provider case
+in the fast tier"* — the live completion is recorded into a `RecordedFixtureProvider` (the
+nightly `F-RECORDED` regeneration path) and the replay must return it byte-identically.
 
 Environment: E3, a live local model server (Ollama / vLLM-MLX). This case has **never been
 executed** — E3 does not exist in this repository (`CLAUDE.md`: all work runs locally, no
@@ -28,6 +39,7 @@ docstring for the full reasoning this file inherits).
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 from decimal import Decimal
 
@@ -54,10 +66,10 @@ def _base_url() -> str:
     return base_url
 
 
-def _live_provider():
+def _live_provider(transport=None):
     from aeh.prov import LocalServerProvider
 
-    return LocalServerProvider(base_url=_base_url())
+    return LocalServerProvider(base_url=_base_url(), transport=transport)
 
 
 def _live_model_ref() -> ModelRef:
@@ -73,9 +85,11 @@ def test_tc_prov_19_the_clause_caller_runs_unchanged_against_the_live_server():
     """TC-PROV-19 — the same caller the fast tier runs, against the real E3 backend.
 
     The four interface operations answer exactly as the clause suite asserts they must:
-    a fully-populated `Completion` (TC-PROV-01's shape), declared capabilities
-    (`CT-PROV-04`), a pure estimate (`CT-PROV-09`), and a retention check that is
-    confirmed by construction — local inference dispatches nothing off the machine.
+    a fully-populated `Completion` with a **measured** latency (`TC-PROV-01`'s shape plus
+    the measurement the fast tier can only program), declared capabilities
+    (`CT-PROV-04`), a pure estimate from the declared zero rates (`CT-PROV-09`), and a
+    retention check confirmed by construction — local inference dispatches nothing off
+    the machine (`FR-PROV-14`'s edge-local half).
     """
     provider = _live_provider()
     ref = _live_model_ref()
@@ -93,7 +107,14 @@ def test_tc_prov_19_the_clause_caller_runs_unchanged_against_the_live_server():
             "leaves null is exactly the RISK-37 drift the nightly exists to catch."
         )
     assert got.cost is None, (
-        "TC-PROV-19: the edge-local backend billed nothing, so cost is null (CT-PROV-03)."
+        "TC-PROV-19: the edge-local backend billed nothing, so cost is null (CT-PROV-03) "
+        "— even if the server reports a cost in its usage, the clause puts null here."
+    )
+    assert got.latency_ms > 0, (
+        "TC-PROV-19: a real model call reported zero latency. Latency is measured through "
+        "the clock seam (FR-PROV-01) — a constant 0 here means the nightly describes a "
+        "server that answers instantly, and every per-call DEBUG line lies with it "
+        "(CT-PROV-14)."
     )
     assert got.resolved_build, (
         "TC-PROV-19: resolved_build is empty. What actually answered is recorded into "
@@ -120,7 +141,48 @@ def test_tc_prov_19_the_clause_caller_runs_unchanged_against_the_live_server():
     )
 
 
-def test_tc_prov_19_the_live_answer_replays_identically_through_the_fixture():
+def test_tc_prov_19_the_wire_carries_the_payload_byte_for_byte():
+    """TC-PROV-19, `CT-PROV-05` live half: the payload on the real wire is the caller's,
+    byte for byte, and one `complete` is one dispatch (`CT-PROV-01`) — the two checks most
+    likely to catch a real server's SDK-shaped divergence, captured through a recording
+    proxy around the module's own real transport."""
+    from aeh.prov import _DefaultTransport  # the module's sole egress point (CT-PROV-15)
+
+    class _Recording:
+        """Forwards to the real transport, keeping the wire the provider dispatched."""
+
+        def __init__(self):
+            self._inner = _DefaultTransport()
+            self.requests = []
+            self.attempts = 0
+
+        def send(self, request):
+            self.requests.append(request)
+            self.attempts += 1
+            return self._inner.send(request)
+
+    recording = _Recording()
+    provider = _live_provider(transport=recording)
+    ref = _live_model_ref()
+    caller = contract_payload(PromptPayload)
+    provider.complete(caller, ref, SamplingParams(temperature=0.0))
+
+    assert recording.attempts == 1, (
+        f"TC-PROV-19: one complete() made {recording.attempts} dispatches against the real "
+        "server. One call is one model call (CT-PROV-01) — the nightly is where a batching "
+        "or SDK-retry layer would show itself."
+    )
+    posts = [r for r in recording.requests if r.method == "POST"]
+    assert len(posts) == 1
+    wire = json.loads(posts[0].body.decode("utf-8"))["prompt"]["fields"]
+    assert wire == [list(p) for p in caller.fields], (
+        "TC-PROV-19: the payload on the real wire is not the caller's. Byte identity "
+        "survives the real backend or the fast tier's prefix guarantee means nothing "
+        "(CT-PROV-05, RISK-23)."
+    )
+
+
+def test_tc_prov_19_the_live_answer_replays_identically_through_the_fixture(tmp_path):
     """TC-PROV-19's differential: the live completion, recorded through the nightly
     regeneration path, replays byte-identically.
 
@@ -137,10 +199,8 @@ def test_tc_prov_19_the_live_answer_replays_identically_through_the_fixture():
     live = provider.complete(payload, ref, params_)
 
     from aeh.prov import RecordedFixtureProvider
-    import tempfile
 
-    fixture_dir = tempfile.mkdtemp(prefix="tc-prov-19-")
-    fixtures = RecordedFixtureProvider(fixture_dir=fixture_dir)
+    fixtures = RecordedFixtureProvider(fixture_dir=tmp_path / "fixtures")
     fixtures.record(payload, ref, params_, dataclasses.replace(live, cost=None))
 
     replayed = fixtures.complete(payload, ref, params_)

@@ -42,10 +42,12 @@ prohibition is on *waiving a case a backend must pass*; a case whose subject the
 cannot have is not waived, it does not apply. `C02`'s own source sweep stays honest about
 the difference: the banned strings are deselects and expected failures, not scope.
 
-`TC-PROV-C02`'s rule is enforced on this file itself: no case branches on the
-implementation, and no case is waived per backend. The differential is structural — every
-applicable test is one function over the parametrization, so an implementation-specific
-behaviour can only show up as a red cell, never as a green bypass.
+`TC-PROV-C02`'s rule is enforced on this file itself: no case waives a backend, and the
+only per-implementation branches in the file are the distinctions `CT-PROV-03` itself
+declares (cost nullability per hosting, the fixture's replay path standing in for a wire).
+The differential is structural — every applicable test is one function over the
+parametrization, so an implementation-specific behaviour can only show up as a red cell,
+never as a green bypass.
 """
 
 from __future__ import annotations
@@ -230,8 +232,12 @@ def test_tc_prov_c02_no_case_waives_a_backend_and_every_clause_case_is_present()
        placed verbatim in the module docstring, which this scan covers.)
     """
     source = inspect.getsource(sys.modules[__name__])
+    # The builders are part of the suite's per-backend behaviour too: a conditional bypass
+    # could hide in a helper as easily as in a test body.
+    source += inspect.getsource(sys.modules["tests.support.prov_contract"])
     # Assembled by concatenation so this assertion's own literals cannot match themselves.
-    banned = ("pytest.mark." + "skip", "pytest.mark." + "xfail", "skip" + "if(")
+    banned = ("pytest.mark." + "skip", "pytest.mark." + "xfail",
+              "pytest." + "skip(", "pytest." + "xfail(", "skip" + "if(")
     for pattern in banned:
         assert pattern not in source, (
             f"TC-PROV-C02: this suite contains {banned!r}. A case waived per backend is the "
@@ -322,6 +328,49 @@ def test_tc_prov_c03_resolved_build_is_what_answered_never_what_was_requested(
     assert got.resolved_build != model_ref().build_id
 
 
+def test_tc_prov_c03_a_reported_cost_is_believed_verbatim_and_an_unparseable_one_is_taxonomy(
+    live_impl, tmp_path
+):
+    """`CT-PROV-03`'s cost distinctions, wire-reported side: a backend that bills and
+    reports what it billed is **believed verbatim** — not re-derived from the declared
+    rates, which would discard the measured fact for an estimate of it — and a
+    `usage.cost` that will not parse is a structurally broken response
+    (`MalformedResponseError`), not a silent None. The unbilled implementation gets the
+    mirror-image assertion: a reported cost is *nullified*, because CT-PROV-03 puts null
+    on edge-local regardless of what the wire says."""
+    reported = flat_ok(tokens_in=1800, tokens_out=12)
+    body = json.loads(reported.body.decode("utf-8"))
+    body["usage"]["cost"] = "0.0042"  # ≠ the derived 0.001824, so belief is discriminating
+    transport = ScriptedTransport(script=[[HttpResponse(200, {}, json.dumps(body).encode())]])
+    if live_impl == "openrouter":
+        provider = make_openrouter_with_sentinel(transport, clock=CountingClock())
+    else:
+        provider = make_provider(live_impl, INJECTED, transport, clock=CountingClock())
+    got = provider.complete(payload(PromptPayload), model_ref(), params())
+
+    if live_impl == "openrouter":
+        assert got.cost == Decimal("0.0042"), (
+            f"TC-PROV-C03 ({live_impl}): a reported cost of 0.0042 came back as "
+            f"{got.cost!r}. The wire's measured figure is believed verbatim — re-deriving "
+            "it from the declared rates replaces the measurement with an estimate of "
+            "itself (CT-PROV-03: cost is the measured fact beside the usage)."
+        )
+    else:
+        assert got.cost is None, (
+            f"TC-PROV-C03 ({live_impl}): a cost reported by an edge-local backend must be "
+            "nullified — CT-PROV-03 puts null on edge-local; nothing was billed, so a "
+            "wire cost is not a measured price of anything."
+        )
+
+    broken = flat_ok()
+    body = json.loads(broken.body.decode("utf-8"))
+    body["usage"]["cost"] = "not-a-number"
+    transport.script.append([HttpResponse(200, {}, json.dumps(body).encode())])
+    transport.next_call()
+    with pytest.raises(MalformedResponseError):
+        provider.complete(payload(PromptPayload), model_ref(), params())
+
+
 # --- TC-PROV-C04 — data: capabilities are declared, not discovered (P1) -----------------------------
 
 
@@ -362,8 +411,8 @@ def test_tc_prov_c04_capabilities_answer_with_the_transport_blocked_and_stay_sta
     posts_after = sum(1 for r in transport.requests if r.method == "POST")
     assert posts_after == posts, (
         f"TC-PROV-C04 ({impl}/{construction}): capabilities() dispatched. Declared, not "
-        "discovered (CT-PROV-04) — with the socket guard up, a discovery call would also "
-        "have failed the network guard."
+        "discovered (CT-PROV-04) — the transport spy is the oracle: a discovery call "
+        "would appear here as a POST the caller did not make."
     )
 
 
@@ -477,24 +526,42 @@ def test_tc_prov_c06_a_parsed_response_is_never_re_requested(
 def test_tc_prov_c07_transport_error_is_retried_internally_then_surfaced_chained(
     live_impl, construction, tmp_path, monkeypatch
 ):
-    """`TransportError` — provoke it, assert the surfaced taxonomy shape, the internal
-    retry and the retryability the clause claims. Retried internally before it surfaces;
-    surfaced, it is the budget-exhaustion error with the transport error as its cause —
-    the siblings keep every exact-type oracle discriminating (RISK-34)."""
+    """`TransportError` — retryable, and the retry is *behavioural*: budget 2, first
+    attempt fails at the transport, second succeeds — the caller sees a completion, and
+    the retry is visible in the counters. A second script proves the surfaced shape when
+    the budget exhausts: `ProviderUnavailableError` with the transport error as its cause
+    — the siblings keep every exact-type oracle discriminating (RISK-34)."""
     if construction == DEFAULTED:
         # The defaulted policy is read from the environment once at construction — which is
-        # precisely the seam-3 reading this axis exists to exercise.
-        monkeypatch.setenv("HARNESS_RETRY_MAX", "1")
+        # precisely the seam-3 reading this axis exists to exercise. Base 1 keeps §4.6's
+        # no-real-sleep rule intact on the real SystemClock.
+        monkeypatch.setenv("HARNESS_RETRY_MAX", "2")
         monkeypatch.setenv("HARNESS_BACKOFF_BASE_MS", "1")
-    transport = ScriptedTransport(script=[[TransportError("connection reset")]])
+    clock = CountingClock()
+    transport = ScriptedTransport(script=[[TransportError("connection reset"), flat_ok()]],
+                                  default=flat_ok())
     provider = make_provider(
         live_impl, construction, transport, fixture_dir=tmp_path / "fixtures",
-        clock=CountingClock() if construction == INJECTED else None,
-        policy=RetryPolicy(1, 1, 120.0) if construction == INJECTED else None,
+        clock=clock if construction == INJECTED else None,
+        policy=RetryPolicy(2, 1, 120.0) if construction == INJECTED else None,
     )
+    got = provider.complete(payload(PromptPayload), model_ref(), params())
+    assert transport.attempts == 2, (
+        f"TC-PROV-C07 ({live_impl}/{construction}): {transport.attempts} attempts for a "
+        "transport failure inside a budget of 2. The transport error is retried "
+        "internally before it can surface (CT-PROV-07) — a caller never sees it on the "
+        "first failure."
+    )
+    assert provider.counters.transport_retries == 1
+    assert got.text == '{"band": "met"}'
+    if construction == INJECTED:
+        assert len(clock.waited) == 1  # the backoff between the two attempts
+
+    transport.next_call()
+    transport.script.append([TransportError("connection reset"),
+                             TransportError("connection reset")])
     with pytest.raises(ProviderUnavailableError) as raised:
         provider.complete(payload(PromptPayload), model_ref(), params())
-    assert transport.attempts == 1
     assert isinstance(raised.value.__cause__, TransportError), (
         f"TC-PROV-C07 ({live_impl}/{construction}): the surfaced error lost its cause. The "
         "budget-exhaustion error carries the transport error it exhausted the budget on — "
@@ -508,22 +575,29 @@ def test_tc_prov_c07_rate_limited_error_is_retried_with_a_wait_and_counted(
     live_impl, construction, tmp_path, monkeypatch
 ):
     """`RateLimitedError` — HTTP 429, retryable *with a wait*, and the wait lands in the
-    run counters under both constructions. `Retry-After: 0` keeps §4.6's no-real-sleep rule
-    intact on the defaulted axis while still exercising the clock seam (`sleep` is called
-    with zero, `rate_limit_wait_s` accumulates zero honestly)."""
+    run counters under both constructions. The behavioural half: budget 2, first attempt
+    answered 429, second succeeds — the caller sees a completion, and both the throttle
+    and the retry are in the counters. `Retry-After: 0` keeps §4.6's no-real-sleep rule
+    intact on the defaulted axis while still exercising the clock seam."""
     if construction == DEFAULTED:
-        monkeypatch.setenv("HARNESS_RETRY_MAX", "1")
+        monkeypatch.setenv("HARNESS_RETRY_MAX", "2")
+        monkeypatch.setenv("HARNESS_BACKOFF_BASE_MS", "1")
     clock = CountingClock()
-    transport = ScriptedTransport(script=[[HttpResponse(429, {"Retry-After": "0"}, b"")]])
+    transport = ScriptedTransport(
+        script=[[HttpResponse(429, {"Retry-After": "0"}, b""), flat_ok()]],
+        default=flat_ok())
     provider = make_provider(
         live_impl, construction, transport, fixture_dir=tmp_path / "fixtures",
         clock=clock if construction == INJECTED else None,
-        policy=RetryPolicy(1, 250, 120.0) if construction == INJECTED else None,
+        policy=RetryPolicy(2, 250, 120.0) if construction == INJECTED else None,
     )
-    with pytest.raises(ProviderUnavailableError) as raised:
-        provider.complete(payload(PromptPayload), model_ref(), params())
-    assert isinstance(raised.value.__cause__, RateLimitedError)
-    assert RateLimitedError.retryable is True
+    got = provider.complete(payload(PromptPayload), model_ref(), params())
+    assert transport.attempts == 2, (
+        f"TC-PROV-C07 ({live_impl}/{construction}): a 429 was not retried internally. "
+        "RateLimitedError is retryable with a wait (CT-PROV-07) — the caller must not "
+        "see it while the budget holds."
+    )
+    assert got.text == '{"band": "met"}'
 
     counters = provider.counters
     assert counters.rate_limited_calls == 1, (
@@ -532,8 +606,18 @@ def test_tc_prov_c07_rate_limited_error_is_retried_with_a_wait_and_counted(
         "a lost count is a lost alarm (CT-PROV-09/CT-PROV-11)."
     )
     assert counters.rate_limit_wait_s == 0.0
+    assert counters.transport_retries == 1
     if construction == INJECTED:
         assert clock.waited == [0.0]
+
+    # And past the budget it surfaces chained: the taxonomy shape the caller catches.
+    transport.next_call()
+    transport.script.append([HttpResponse(429, {"Retry-After": "0"}, b""),
+                             HttpResponse(429, {"Retry-After": "0"}, b"")])
+    with pytest.raises(ProviderUnavailableError) as raised:
+        provider.complete(payload(PromptPayload), model_ref(), params())
+    assert isinstance(raised.value.__cause__, RateLimitedError)
+    assert RateLimitedError.retryable is True
 
 
 def test_tc_prov_c07_malformed_response_retries_to_the_budget_then_surfaces_as_itself(
@@ -724,9 +808,12 @@ def test_tc_prov_c09_estimate_cost_is_pure_never_dispatches_and_matches_the_decl
             "computed 0 would read as a measured price of nothing (CT-PROV-03's logic, one "
             "level up)."
         )
-    assert all(r.method != "POST" for r in transport.requests) or transport.attempts == 1, (
-        f"TC-PROV-C09 ({impl}/{construction}): estimate_cost dispatched. It is a pure "
-        "function and never dispatches (CT-PROV-09)."
+    assert transport.requests == [], (
+        f"TC-PROV-C09 ({impl}/{construction}): estimate_cost dispatched "
+        f"{len(transport.requests)} request(s). It is a pure function of the plan and the "
+        "declared rates and never dispatches (CT-PROV-09) — an implementation that "
+        "resolves its rates per call is discovering at call time, which CT-PROV-04 "
+        "forbids besides."
     )
 
 
@@ -806,23 +893,34 @@ def test_tc_prov_c10_an_unknown_request_misses_with_the_socket_layer_open(networ
 # --- TC-PROV-C11 — state: writes nothing; counters accumulate in memory (P1) ------------------------
 
 
-def test_tc_prov_c11_a_batch_of_calls_writes_nothing_and_the_counters_stay_in_memory(
-    live_impl, construction, tmp_path
-):
-    """`CT-PROV-11`: the module writes nothing — a write-audit over a batch of calls
-    expects an empty log — and the six counters accumulate **in memory**, read by the
-    caller. The negative half (the module never persists the counters itself) is the same
-    empty log: a persist would appear in it as a write."""
-    provider, transport = _success_provider(live_impl, construction, tmp_path)
+def test_tc_prov_c11_a_batch_of_calls_writes_nothing(impl, construction, tmp_path):
+    """`CT-PROV-11`'s write half: the module writes nothing — a write-audit over a batch
+    of calls expects an empty log. Parametrized over **all three implementations**: the
+    fixture's replay path only reads, so a double that quietly wrote (an access log, a
+    cache entry) would otherwise pass every cell in the suite while violating the clause
+    in the fast tier's own model boundary. The negative half (the module never persists
+    the counters itself) is the same empty log: a persist would appear in it as a write."""
+    provider, _ = _success_provider(impl, construction, tmp_path)
     with recording_write_audit() as attempts:
         for _ in range(3):
             provider.complete(payload(PromptPayload), model_ref(), params())
     assert attempts == [], (
-        f"TC-PROV-C11 ({live_impl}/{construction}): the module wrote to disk: "
+        f"TC-PROV-C11 ({impl}/{construction}): the module wrote to disk: "
         f"{[(a.api, str(a.target)) for a in attempts]}. CT-PROV-11: writes nothing "
         "directly — persistence into run_metrics is M-ORCH's commit, not this module's "
         "write, and that is what keeps run_metrics single-writer (CT-ORCH-17)."
     )
+
+
+def test_tc_prov_c11_the_counters_accumulate_in_memory_and_are_read_by_the_caller(
+    live_impl, construction, tmp_path
+):
+    """`CT-PROV-11`'s counter half: the six counters accumulate **in memory** and are read
+    by the caller. Live implementations only — the fixture is replay, has no dispatch
+    loop, and therefore has nothing to count (see the module docstring's scope note)."""
+    provider, _ = _success_provider(live_impl, construction, tmp_path)
+    for _ in range(3):
+        provider.complete(payload(PromptPayload), model_ref(), params())
     counters = provider.counters
     assert counters.tokens_in == 3 * 1800 and counters.tokens_out == 3 * 12, (
         f"TC-PROV-C11 ({live_impl}/{construction}): the counters do not reflect the batch. "
@@ -864,9 +962,12 @@ def test_tc_prov_c12_the_request_key_materializes_no_copy_of_the_prefix():
     """`CT-PROV-12`'s allocation half: the request key streams into the hasher — no buffer
     holding the assembled request is ever materialized (NFR-PROV-02), so an observed
     `cache_hit_rate` reflects the caller's prompt ordering, not this module's allocation
-    behaviour. Oracle: an allocation-count differential across prefix sizes — the traced
-    peak must stay proportional to ONE encode copy of the bytes, not to the framed-buffer
-    copies a materializing implementation would make."""
+    behaviour. Oracle (§6.11.2): an **allocation differential across prefix sizes** — the
+    growth in traced peak between a small and a large prefix must be ONE encode copy of
+    the size difference. A materializing implementation (a buffer holding the assembled
+    request, plus its framed copies) grows by several copies of the difference and fails
+    the differential, which a single-size bound cannot discriminate."""
+    small = PromptPayload(fields=(("system", "score"), ("submission", "x" * 4_000)))
     large = PromptPayload(fields=(("system", "score"), ("submission", "x" * 50_000)))
 
     def _traced_peak(prompt: PromptPayload) -> int:
@@ -877,14 +978,16 @@ def test_tc_prov_c12_the_request_key_materializes_no_copy_of_the_prefix():
         tracemalloc.stop()
         return peak - base
 
-    large_bytes = len(large.fields[1][1].encode("utf-8"))
-    large_delta = _traced_peak(large)
-    assert large_delta <= 2 * large_bytes + 8_192, (
-        f"TC-PROV-C12: computing the request key over a {large_bytes}-byte prefix "
-        f"allocated {large_delta} bytes. The key streams into the hasher (NFR-PROV-02) — "
-        "the only per-call copy is the one str.encode must make. A materialized buffer of "
-        "the assembled request would at least double that, and the observed cache_hit_rate "
-        "would start reporting this module's allocations instead of the caller's ordering."
+    size_difference = len(large.fields[1][1].encode("utf-8")) \
+        - len(small.fields[1][1].encode("utf-8"))
+    delta_difference = _traced_peak(large) - _traced_peak(small)
+    assert delta_difference <= size_difference + (size_difference // 2) + 8_192, (
+        f"TC-PROV-C12: growing the prefix by {size_difference} bytes grew the request "
+        f"key's allocation by {delta_difference} bytes. The key streams into the hasher "
+        "(NFR-PROV-02) — the growth is the one copy str.encode must make. A materialized "
+        "buffer of the assembled request grows by several copies of the difference, and "
+        "the observed cache_hit_rate starts reporting this module's allocations instead "
+        "of the caller's ordering."
     )
 
 
@@ -938,13 +1041,18 @@ def test_tc_prov_c13_the_wire_carries_the_ref_and_no_roster_name(
 
 
 def test_tc_prov_c13_the_credential_reaches_no_log_exception_or_return_value(
-    live_impl, construction, tmp_path, caplog
+    live_impl, construction, tmp_path, caplog, monkeypatch
 ):
     """`CT-PROV-13`'s credential rule: a distinctive credential value appears in no log
     line, no exception message and no returned value. The key is carried by the provider on
     its real seam, then a success and a forced failure are driven past every surface that
     could echo it. Student work gets the same sweep: no payload field value reaches a log
     line either (CT-PROV-13 names both)."""
+    if construction == DEFAULTED:
+        # The forced failure is retried by the default policy; base 1 keeps §4.6's
+        # no-real-sleep rule intact on the real SystemClock this construction supplies.
+        monkeypatch.setenv("HARNESS_RETRY_MAX", "1")
+        monkeypatch.setenv("HARNESS_BACKOFF_BASE_MS", "1")
     transport = ScriptedTransport(script=[[flat_ok()]], default=HttpResponse(500, {}, b"boom"))
     provider = make_openrouter_with_sentinel(
         transport, clock=CountingClock() if construction == INJECTED else None,
