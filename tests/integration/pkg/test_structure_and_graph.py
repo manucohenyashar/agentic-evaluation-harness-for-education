@@ -13,7 +13,10 @@ assertion changed in the renamed tests — because a test named for the wrong TC
 RTM point coverage at the wrong requirement. #32's delta on top of the renames: the
 `TC-PKG-05` named cells the #28 tests did not cover (the 3-cycle, the self-edge, the DAG
 invariant) and the `TC-PKG-08` cells (ordinals 1,2,3 and 0,1,1; equal adjacent points
-permitted).
+permitted). Three renamed tests also gained a no-op assertion after their refusal (the
+refused write must leave no row behind, `CT-PKG-11`) and the publish-half pin
+(`test_tc_pkg_08_publish_counts_this_versions_bands_only`) — additions, not changes, to
+what the renamed tests assert.
 
 Rung 2 — real Tier P files, because the band-set rules and the graph are enforced by
 failed writes against the database.
@@ -189,6 +192,38 @@ def test_tc_pkg_08_decreasing_points_fail(tmp_data_dir):
         "TC-PKG-08 (decreasing): the refused band left a row behind — a rejected write "
         "must be a no-op (CT-PKG-11), and the persisted set would be the non-monotone "
         "one M-AGG and M-GRADE cannot consume."
+    )
+    store.close()
+
+
+def test_tc_pkg_08_publish_counts_this_versions_bands_only(tmp_data_dir):
+    """`TC-PKG-08`'s publish half — the count rule is validated against THIS version's
+    rows, and a revision's copied bands are not its parent's.
+
+    The reviewer's construction for the defect the first #32 fix introduced (and the
+    stale-cache bug before it): revisions copy band rows under the same criterion id,
+    so a criterion-id lookup counts the file's whole lineage of bands and refuses a
+    legitimate publish of a complete version — with no catalog door to recover,
+    because bands are only ever added, never removed."""
+    store, handle, catalog = _fresh_catalog(tmp_data_dir, package_id="pkg-32b")
+    v1 = catalog.create_version(None, PackageDraft(title="complete, unpublished"))
+    catalog.add_criterion(v1, "CRIT-X", question_id="Q", kind="open", max_points=4.0,
+                          band_count=2)
+    catalog.add_band(v1, "CRIT-X", 0, "b0", 0.0)
+    catalog.add_band(v1, "CRIT-X", 1, "b1", 4.0)
+    # A revision off the STILL-DRAFT parent: the copy doubles the band rows this file
+    # carries under CRIT-X, before either version is published.
+    v2 = catalog.create_version(v1, PackageDraft(title="revision before publish"))
+    catalog.publish(v1, "approver")
+    assert catalog.is_locked(v1), (
+        "TC-PKG-08 (publish half): publishing the complete v1 failed or left it "
+        "unlocked — the count validation must read v1's own two bands, not the four "
+        "the file now carries under the same criterion id."
+    )
+    catalog.publish(v2, "approver")
+    assert catalog.is_locked(v2), (
+        "TC-PKG-08 (publish half): v2's own copied set is complete but its publish "
+        "was refused — the same lineage-counting defect from the other side."
     )
     store.close()
 

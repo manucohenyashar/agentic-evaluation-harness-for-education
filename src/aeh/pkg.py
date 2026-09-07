@@ -1500,7 +1500,9 @@ class PackageCatalog:
         The validation runs INSIDE the transaction, so a refused band is a no-op
         (`CT-PKG-11`): the whole-set rules (contiguity, monotone points, the declared
         count) can only be checked after the row is inserted, and checking after the
-        commit would leave the invalid set on disk behind the raised error."""
+        commit would leave the invalid set on disk behind the raised error. The set is
+        read version-scoped — a criterion id is shared with every revision that copied
+        it, and the parent's bands are not this version's set."""
         declared = self._band_count(v, criterion_id)
         with self._handle.transaction() as tx:
             self._guard(tx, v, "band.add-unpublished")
@@ -1509,9 +1511,10 @@ class PackageCatalog:
                     f"band ordinal {ordinal} exceeds the criterion's declared "
                     f"band_count of {declared} (FR-PKG-06)."
                 )
-            if any(row["ordinal"] == ordinal for row in tx.execute(
-                    PKG_STATEMENTS["select_bands_by_criterion"],
-                    criterion_id=criterion_id)):
+            existing = [row for row in tx.execute(
+                PKG_STATEMENTS["select_bands"], v=v)
+                if row["criterion_id"] == criterion_id]
+            if any(row["ordinal"] == ordinal for row in existing):
                 # Refused here, with the structural error, before the INSERT: the
                 # ordinal is half of the primary key, so the database would refuse the
                 # duplicate anyway — but with a bare IntegrityError, not the
@@ -1524,8 +1527,8 @@ class PackageCatalog:
             tx.execute(PKG_STATEMENTS["insert_band"],
                        v=v, criterion_id=criterion_id, ordinal=ordinal,
                        band=band, points=points, descriptor=descriptor)
-            rows = list(tx.execute(PKG_STATEMENTS["select_bands_by_criterion"],
-                                   criterion_id=criterion_id))
+            rows = [row for row in tx.execute(PKG_STATEMENTS["select_bands"], v=v)
+                    if row["criterion_id"] == criterion_id]
             self._validate_band_order(rows)
             if declared is not None and len(rows) == declared:
                 self._validate_band_count(len(rows))
@@ -1552,7 +1555,9 @@ class PackageCatalog:
                 "name for 'real_verbatim' — the canonical value is the only one the "
                 "export gate tests."
             )
-        declared = {row["band"] for row in self._read_bands(criterion_id)}
+        declared = {row["band"] for row in self._handle.query(
+            PKG_STATEMENTS["select_bands"], v=v)
+            if row["criterion_id"] == criterion_id}
         if band not in declared:
             raise BandSetError(
                 f"exemplar names band {band!r}, which criterion {criterion_id!r} does "
@@ -2378,20 +2383,25 @@ class PackageCatalog:
         refused publish is a no-op: a version locked with an incomplete band set would
         be an immutable invalid instrument, which is worse than an unpublished one."""
         self._refuse_mutation(v)
-        # The validation reads the DATABASE directly, not the per-run cache — the
-        # cache holds whatever version was read last, not this one.
+        # The validation counts THIS VERSION's rows from the database — not the
+        # per-run cache (which holds whatever version was read last), and not a
+        # criterion-id lookup (which would count every revision's copied bands of the
+        # same criterion id; the parent's rows are not this version's).
+        populated: dict[str, int] = {}
+        for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
+            populated[row["criterion_id"]] = populated.get(row["criterion_id"], 0) + 1
         for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
-            declared = self._band_count(v, row["criterion_id"])
+            declared = row["band_count"]
             if declared is not None:
-                bands = self._read_bands(row["criterion_id"])
-                if len(bands) != declared:
+                count = populated.get(row["criterion_id"], 0)
+                if count != declared:
                     raise BandSetError(
                         f"criterion {row['criterion_id']!r} declares a band_count of "
-                        f"{declared} but carries {len(bands)} band(s) (FR-PKG-06): a "
+                        f"{declared} but carries {count} band(s) (FR-PKG-06): a "
                         "partially populated band set must not be publishable — the "
                         "judge would see fewer bands than the declared mapping."
                     )
-                self._validate_band_count(len(bands))
+                self._validate_band_count(count)
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
             LOGGER.info("published package version %s by %s at %s",

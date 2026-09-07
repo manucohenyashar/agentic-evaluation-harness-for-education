@@ -44,7 +44,10 @@ pytestmark = pytest.mark.integration
 ISSUE = "#32"
 
 #: A *standalone* numeral — not a digit inside an identifier token (`b0`, `Q-4`, `v2`).
-_NUMERAL = re.compile(r"(?<![A-Za-z0-9])\d+(?:[.,]\d+)?(?![A-Za-z0-9])")
+#: The lookarounds exclude letters AND the hyphen, so both the `b` of `b0` and the `-4`
+#: of `Q-4` keep their digits out of the scan; a numeral between separators (`(3 out`,
+#: `10%`) still matches.
+_NUMERAL = re.compile(r"(?<![A-Za-z0-9-])\d+(?:[.,]\d+)?(?![A-Za-z0-9-])")
 
 #: The mark vocabulary a content numeral is refused beside. `TC-JUDGE-08`'s pattern:
 #: "a numeral adjacent to a mark word, 'out of', a percentage".

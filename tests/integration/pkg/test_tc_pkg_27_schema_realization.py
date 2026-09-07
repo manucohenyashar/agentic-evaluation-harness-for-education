@@ -147,6 +147,15 @@ def test_tc_pkg_27_every_named_constraint_is_realized_in_the_live_schema(tmp_dat
     catalog.add_band(v, "PR-2", 2, "b2", 2.0)
     with pytest.raises(BandSetError):
         catalog.publish(v, "approver")  # PR-2 declares 4, carries 3: odd, incomplete
+    # The no-op pin: the count half runs BEFORE the lock flips, so the refused publish
+    # left the version unlocked. (Before #32 the validation ran after the UPDATE
+    # committed, and a refused publish left the version locked with the incomplete set
+    # — an immutable invalid instrument.)
+    assert not catalog.is_locked(v), (
+        "TC-PKG-27: a refused publish locked the version — the count half must run "
+        "before the lock transaction, or the refusal is not a no-op and the locked "
+        "version carries the invalid band set forever."
+    )
     # FR-PKG-06, contiguity and monotonicity: the whole-set guard runs inside the
     # write, refusing the gapped ordinal and the decreasing points value.
     catalog.add_band(v, "PR-2", 3, "b3", 3.0)  # complete the set so later steps run

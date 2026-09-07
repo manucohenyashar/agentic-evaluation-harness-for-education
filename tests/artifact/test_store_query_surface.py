@@ -232,25 +232,17 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
-        "aeh.store:1518", "aeh.store:2253", "aeh.pkg:1300", "aeh.pkg:1342",
-        "aeh.pkg:1356", "aeh.pkg:1358", "aeh.pkg:1360", "aeh.pkg:1383",
-        "aeh.pkg:1391", "aeh.pkg:1470", "aeh.pkg:1484", "aeh.pkg:1486",
-        "aeh.pkg:1488", "aeh.pkg:1512", "aeh.pkg:1524", "aeh.pkg:1527",
-        "aeh.pkg:1565", "aeh.pkg:1568", "aeh.pkg:1585", "aeh.pkg:1590",
-        "aeh.pkg:1592", "aeh.pkg:1601", "aeh.pkg:1606", "aeh.pkg:1608",
-        "aeh.pkg:1786", "aeh.pkg:1799", "aeh.pkg:1823", "aeh.pkg:1824",
-        "aeh.pkg:1884", "aeh.pkg:1886", "aeh.pkg:1936", "aeh.pkg:1941",
-        "aeh.pkg:1977", "aeh.pkg:1982", "aeh.pkg:1985", "aeh.pkg:2009",
-        "aeh.pkg:2094", "aeh.pkg:2260", "aeh.pkg:2266", "aeh.pkg:2274",
-        "aeh.pkg:2281", "aeh.pkg:2349", "aeh.pkg:2357", "aeh.pkg:2358",
-        "aeh.pkg:2362", "aeh.pkg:2364", "aeh.pkg:2396", "aeh.pkg:2434",
-        "aeh.pkg:2443", "aeh.pkg:2490", "aeh.pkg:2579", "aeh.pkg:2720",
-        "aeh.pkg:2724", "aeh.pkg:2728", "aeh.pkg:2731", "aeh.pkg:2737",
-        "aeh.pkg:2745", "aeh.ingest:1470",
-        "aeh.ingest:1481", "aeh.ingest:1503", "aeh.ingest:1735",
-        "aeh.ingest:1748", "aeh.ingest:1770", "aeh.ingest:1800",
-        "aeh.ingest:1867", "aeh.ingest:1870", "aeh.ingest:1871",
-        "aeh.ingest:1944", "aeh.ingest:2025",
+        "aeh.store:1518", "aeh.store:2253", "aeh.ingest:1470", "aeh.ingest:1481", "aeh.ingest:1503", "aeh.ingest:1735", "aeh.ingest:1748", "aeh.ingest:1770",
+        "aeh.ingest:1800", "aeh.ingest:1867", "aeh.ingest:1870", "aeh.ingest:1871", "aeh.ingest:1944", "aeh.ingest:2025", "aeh.pkg:1300", "aeh.pkg:1342",
+        "aeh.pkg:1356", "aeh.pkg:1358", "aeh.pkg:1360", "aeh.pkg:1383", "aeh.pkg:1391", "aeh.pkg:1470", "aeh.pkg:1484", "aeh.pkg:1486",
+        "aeh.pkg:1488", "aeh.pkg:1514", "aeh.pkg:1527", "aeh.pkg:1530", "aeh.pkg:1570", "aeh.pkg:1573", "aeh.pkg:1590", "aeh.pkg:1595",
+        "aeh.pkg:1597", "aeh.pkg:1606", "aeh.pkg:1611", "aeh.pkg:1613", "aeh.pkg:1791", "aeh.pkg:1804", "aeh.pkg:1828", "aeh.pkg:1829",
+        "aeh.pkg:1889", "aeh.pkg:1891", "aeh.pkg:1941", "aeh.pkg:1946", "aeh.pkg:1982", "aeh.pkg:1987", "aeh.pkg:1990", "aeh.pkg:2014",
+        "aeh.pkg:2099", "aeh.pkg:2265", "aeh.pkg:2271", "aeh.pkg:2279", "aeh.pkg:2286", "aeh.pkg:2354", "aeh.pkg:2362", "aeh.pkg:2363",
+        "aeh.pkg:2367", "aeh.pkg:2369", "aeh.pkg:2406", "aeh.pkg:2444", "aeh.pkg:2453", "aeh.pkg:2500", "aeh.pkg:2589", "aeh.pkg:2730",
+        "aeh.pkg:2734", "aeh.pkg:2738", "aeh.pkg:2741", "aeh.pkg:2747", "aeh.pkg:2755", "aeh.store:1518", "aeh.store:2253", "aeh.ingest:1470",
+        "aeh.ingest:1481", "aeh.ingest:1503", "aeh.ingest:1735", "aeh.ingest:1748", "aeh.ingest:1770", "aeh.ingest:1800", "aeh.ingest:1867", "aeh.ingest:1870",
+        "aeh.ingest:1871", "aeh.ingest:1944", "aeh.ingest:2025",
 })
 
 
