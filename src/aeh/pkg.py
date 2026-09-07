@@ -1289,6 +1289,14 @@ class PackageCatalog:
         self._cache: dict | None = None
         self._cache_version: str | None = None
 
+    @property
+    def package_id(self) -> str:
+        """The package's identity as the catalog knows it — the name `M-INGEST`'s V4
+        identifier signal compares a submission's printed 'Assessment:' line against
+        (`FR-INGEST-25`). `PackageDraft.title` is not persisted in this schema, so the
+        id is the declared identity until `M-SETUP` carries a human-readable one."""
+        return self._package_id
+
     def _guard(self, tx, v: PackageVersionId, field: str) -> None:
         """The one lock check every mutation funnels through.
 
