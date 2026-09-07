@@ -218,7 +218,7 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: on this line), which is the re-read this constant exists to force.
 #:
 #: **The second entry is not a second place SQL reaches SQLite.**
-#: `aeh.store:2248` is `LeaseClock._persist`, and the sixteen `aeh.pkg` entries are `PackageCatalog`'s writes, reads, guards, validators and the validation surface, each calling `tx.execute(PKG_STATEMENTS[...],
+#: `aeh.store:2248` is `LeaseClock._persist`, and the `aeh.pkg` entries are `PackageCatalog`'s writes, reads, guards, validators and the validation surface, each calling `tx.execute(PKG_STATEMENTS[...],
 #: ...)` — `Tx.execute` is the module's own declared-statement API and delegates to `_run`, which
 #: is still the only site that touches a `sqlite3` cursor. The walker cannot see that, and
 #: shouldn't: it flags every `execute()` and asks a human whether the argument is a declared
@@ -233,19 +233,20 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
         "aeh.store:1518", "aeh.store:2253", "aeh.pkg:1300", "aeh.pkg:1342",
-        "aeh.pkg:1344", "aeh.pkg:1346", "aeh.pkg:1348", "aeh.pkg:1371",
-        "aeh.pkg:1379", "aeh.pkg:1458", "aeh.pkg:1463", "aeh.pkg:1465",
-        "aeh.pkg:1467", "aeh.pkg:1487", "aeh.pkg:1527", "aeh.pkg:1530",
-        "aeh.pkg:1547", "aeh.pkg:1552", "aeh.pkg:1554", "aeh.pkg:1563",
-        "aeh.pkg:1568", "aeh.pkg:1570", "aeh.pkg:1748", "aeh.pkg:1761",
-        "aeh.pkg:1785", "aeh.pkg:1786", "aeh.pkg:1846", "aeh.pkg:1848",
-        "aeh.pkg:1898", "aeh.pkg:1903", "aeh.pkg:1939", "aeh.pkg:1944",
-        "aeh.pkg:1947", "aeh.pkg:1971", "aeh.pkg:2056", "aeh.pkg:2222",
-        "aeh.pkg:2228", "aeh.pkg:2236", "aeh.pkg:2243", "aeh.pkg:2311",
-        "aeh.pkg:2319", "aeh.pkg:2320", "aeh.pkg:2324", "aeh.pkg:2326",
-        "aeh.pkg:2339", "aeh.pkg:2385", "aeh.pkg:2394", "aeh.pkg:2441",
-        "aeh.pkg:2530", "aeh.pkg:2671", "aeh.pkg:2675", "aeh.pkg:2679",
-        "aeh.pkg:2682", "aeh.pkg:2688", "aeh.pkg:2696", "aeh.ingest:1470",
+        "aeh.pkg:1356", "aeh.pkg:1358", "aeh.pkg:1360", "aeh.pkg:1383",
+        "aeh.pkg:1391", "aeh.pkg:1470", "aeh.pkg:1484", "aeh.pkg:1486",
+        "aeh.pkg:1488", "aeh.pkg:1512", "aeh.pkg:1524", "aeh.pkg:1527",
+        "aeh.pkg:1565", "aeh.pkg:1568", "aeh.pkg:1585", "aeh.pkg:1590",
+        "aeh.pkg:1592", "aeh.pkg:1601", "aeh.pkg:1606", "aeh.pkg:1608",
+        "aeh.pkg:1786", "aeh.pkg:1799", "aeh.pkg:1823", "aeh.pkg:1824",
+        "aeh.pkg:1884", "aeh.pkg:1886", "aeh.pkg:1936", "aeh.pkg:1941",
+        "aeh.pkg:1977", "aeh.pkg:1982", "aeh.pkg:1985", "aeh.pkg:2009",
+        "aeh.pkg:2094", "aeh.pkg:2260", "aeh.pkg:2266", "aeh.pkg:2274",
+        "aeh.pkg:2281", "aeh.pkg:2349", "aeh.pkg:2357", "aeh.pkg:2358",
+        "aeh.pkg:2362", "aeh.pkg:2364", "aeh.pkg:2396", "aeh.pkg:2434",
+        "aeh.pkg:2443", "aeh.pkg:2490", "aeh.pkg:2579", "aeh.pkg:2720",
+        "aeh.pkg:2724", "aeh.pkg:2728", "aeh.pkg:2731", "aeh.pkg:2737",
+        "aeh.pkg:2745", "aeh.ingest:1470",
         "aeh.ingest:1481", "aeh.ingest:1503", "aeh.ingest:1735",
         "aeh.ingest:1748", "aeh.ingest:1770", "aeh.ingest:1800",
         "aeh.ingest:1867", "aeh.ingest:1870", "aeh.ingest:1871",

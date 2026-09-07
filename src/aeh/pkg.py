@@ -1341,6 +1341,18 @@ class PackageCatalog:
             self._guard(tx, v, "criterion_dependency.alter")
             tx.execute(PKG_STATEMENTS["delete_dependencies"], v=v)
             for before, after in edges:
+                if before == after:
+                    # The self-edge is refused HERE, with the graph error, before the
+                    # INSERT: the DDL's CHECK (criterion_id <> depends_on) would refuse
+                    # the raw write, but FR-PKG-05 promises the caller
+                    # CyclicDependencyError, and a caller branching on the exact type
+                    # would otherwise see sqlite3.IntegrityError for this one cell.
+                    raise CyclicDependencyError(
+                        f"the dependency edge ({before!r}, {after!r}) is a self-edge "
+                        f"(FR-PKG-05): a criterion cannot depend on itself. The "
+                        "database's CHECK (criterion_id <> depends_on) backstops the "
+                        "same rule for writes that route around the catalog."
+                    )
                 tx.execute(PKG_STATEMENTS["insert_dependency"],
                            v=v, criterion_id=after, depends_on=before)
             graph = {row["criterion_id"]: set() for row in tx.execute(
@@ -1460,6 +1472,15 @@ class PackageCatalog:
                        kind=kind, max_points=max_points, scoring_model=scoring_model,
                        construct_tag=construct_tag, band_count=band_count)
             for depends_on in dependencies:
+                if depends_on == criterion_id:
+                    # Same self-edge refusal as set_dependencies: the graph error the
+                    # design promises, raised before the DDL's CHECK can answer with a
+                    # bare IntegrityError (FR-PKG-05).
+                    raise CyclicDependencyError(
+                        f"criterion {criterion_id!r} cannot depend on itself "
+                        f"(FR-PKG-05). The database's CHECK (criterion_id <> "
+                        "depends_on) backstops the same rule for raw writes."
+                    )
                 tx.execute(PKG_STATEMENTS["insert_dependency"],
                            v=v, criterion_id=criterion_id, depends_on=depends_on)
             graph = {row["criterion_id"]: set() for row in tx.execute(
@@ -1474,8 +1495,12 @@ class PackageCatalog:
         self, v: PackageVersionId, criterion_id: str, ordinal: int,
         band: str, points: float, descriptor: str = "",
     ) -> None:
-        """Add one band, enforcing the structural rules on the whole set afterwards
-        (`FR-PKG-06`)."""
+        """Add one band, enforcing the structural rules on the whole set (`FR-PKG-06`).
+
+        The validation runs INSIDE the transaction, so a refused band is a no-op
+        (`CT-PKG-11`): the whole-set rules (contiguity, monotone points, the declared
+        count) can only be checked after the row is inserted, and checking after the
+        commit would leave the invalid set on disk behind the raised error."""
         declared = self._band_count(v, criterion_id)
         with self._handle.transaction() as tx:
             self._guard(tx, v, "band.add-unpublished")
@@ -1484,13 +1509,26 @@ class PackageCatalog:
                     f"band ordinal {ordinal} exceeds the criterion's declared "
                     f"band_count of {declared} (FR-PKG-06)."
                 )
+            if any(row["ordinal"] == ordinal for row in tx.execute(
+                    PKG_STATEMENTS["select_bands_by_criterion"],
+                    criterion_id=criterion_id)):
+                # Refused here, with the structural error, before the INSERT: the
+                # ordinal is half of the primary key, so the database would refuse the
+                # duplicate anyway — but with a bare IntegrityError, not the
+                # BandSetError the band rules' error taxonomy promises.
+                raise BandSetError(
+                    f"criterion {criterion_id!r} already declares band ordinal "
+                    f"{ordinal} (FR-PKG-06): ordinals are contiguous from 0, so a "
+                    "duplicate is a gap wearing another ordinal's name."
+                )
             tx.execute(PKG_STATEMENTS["insert_band"],
                        v=v, criterion_id=criterion_id, ordinal=ordinal,
                        band=band, points=points, descriptor=descriptor)
-        rows = self._read_bands(criterion_id)
-        self._validate_band_order(rows)
-        if declared is not None and len(rows) == declared:
-            self._validate_band_count(len(rows))
+            rows = list(tx.execute(PKG_STATEMENTS["select_bands_by_criterion"],
+                                   criterion_id=criterion_id))
+            self._validate_band_order(rows)
+            if declared is not None and len(rows) == declared:
+                self._validate_band_count(len(rows))
         self._invalidate()
 
     def add_exemplar(
@@ -2333,20 +2371,31 @@ class PackageCatalog:
 
     def publish(self, v: PackageVersionId, approved_by: str) -> None:
         """Set `locked = 1` — the one permitted update to a version row, and the moment
-        its immutability begins (`FR-PKG-01`)."""
+        its immutability begins (`FR-PKG-01`).
+
+        `FR-PKG-06`'s count half runs at the publish boundary — every declared
+        band_count fully populated and even/2..6 — and BEFORE the lock flips, so a
+        refused publish is a no-op: a version locked with an incomplete band set would
+        be an immutable invalid instrument, which is worse than an unpublished one."""
         self._refuse_mutation(v)
+        # The validation reads the DATABASE directly, not the per-run cache — the
+        # cache holds whatever version was read last, not this one.
+        for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
+            declared = self._band_count(v, row["criterion_id"])
+            if declared is not None:
+                bands = self._read_bands(row["criterion_id"])
+                if len(bands) != declared:
+                    raise BandSetError(
+                        f"criterion {row['criterion_id']!r} declares a band_count of "
+                        f"{declared} but carries {len(bands)} band(s) (FR-PKG-06): a "
+                        "partially populated band set must not be publishable — the "
+                        "judge would see fewer bands than the declared mapping."
+                    )
+                self._validate_band_count(len(bands))
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
             LOGGER.info("published package version %s by %s at %s",
                         v, approved_by, datetime.now(timezone.utc).isoformat())
-        # FR-PKG-06's count half, at the publish boundary: every declared band_count is
-        # fully populated and even/2..6. The per-add checks covered order and ceiling.
-        # The validation reads the DATABASE directly — the cache was just invalidated.
-        for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
-            criterion = dict(row)
-            declared = self._band_count(v, criterion["criterion_id"])
-            if declared is not None:
-                self._validate_band_count(len(self.bands(criterion["criterion_id"])))
         self._invalidate()
 
     def is_locked(self, v: PackageVersionId) -> bool:
