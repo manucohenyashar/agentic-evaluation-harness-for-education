@@ -358,12 +358,10 @@ _INGEST_DOCUMENT_COLUMNS = Migration(
     ),
 )
 
-_INGEST_STATEMENTS: dict[str, Statement] = {
-    f"ingest_document_core_{index:02d}": statement
-    for index, statement in enumerate(_INGEST_DOCUMENT_COLUMNS.statements)
-}
-INGEST_STATEMENTS: dict[str, Statement] = dict(_INGEST_STATEMENTS)
-INGEST_STATEMENTS.update({
+# The runtime statements only: migration DDL is versioned data in TIER_MIGRATIONS and
+# deliberately stays out of the sanctioned runtime registry (the store's documented
+# rule) — a DROP TABLE must never be a "declared" runtime statement.
+INGEST_STATEMENTS: dict[str, Statement] = {
     "insert_document": Statement(
         "INSERT INTO document (document_id, submission_id, content_hash, markdown, "
         "transcriber_ref, prompt_template_version, kind, parent_doc_id, source_blobs, "
@@ -383,7 +381,7 @@ INGEST_STATEMENTS.update({
         "parent_doc_id, created_at FROM document WHERE submission_id = :submission_id "
         "ORDER BY created_at, document_id"
     ),
-})
+}
 STATEMENTS.update(INGEST_STATEMENTS)
 TIER_MIGRATIONS[Tier.COHORT] = (
     TIER_MIGRATIONS[Tier.COHORT] + (_INGEST_DOCUMENT_COLUMNS,)
@@ -553,7 +551,16 @@ class Ingestor:
                                          width_px=rescan[0].width_px,
                                          height_px=rescan[0].height_px)
                     completion = self._transcribe_page(page, blob_hash)
-                    transcriber_ref = transcriber_ref or completion.resolved_build
+                    if (transcriber_ref is not None
+                            and completion.resolved_build != transcriber_ref):
+                        raise IngestError(
+                            f"the transcriber build changed mid-revision: "
+                            f"{transcriber_ref!r} answered earlier pages, "
+                            f"{completion.resolved_build!r} answered this one. One "
+                            "document, one transcriber build — re-run the revision "
+                            "on one build."
+                        )
+                    transcriber_ref = completion.resolved_build
                     markdown_parts.append(completion.text)
             if replacements:
                 raise IngestError(

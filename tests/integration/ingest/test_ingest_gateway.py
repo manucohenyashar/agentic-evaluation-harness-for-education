@@ -186,6 +186,14 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
             "calls for a two-page PDF — every page is transcribed with exactly one "
             "call (FR-INGEST-02)."
         )
+        # Exactly one call PER PAGE: the recorded (page_no, image) pairs cover page 1
+        # and page 2 once each — a path that called one page twice and skipped the
+        # other would pass a bare count.
+        page_numbers = [page_no for page_no, _ in provider.calls[before:]]
+        assert sorted(page_numbers) == ["1", "2"], (
+            f"TC-INGEST-02: the calls covered pages {page_numbers} — one call per "
+            "page, not merely the right total (FR-INGEST-02)."
+        )
         total_calls += len(provider.calls) - before
     assert total_calls == 8
     assert set(rasterizer.dpi_seen) == {200}, (
@@ -290,6 +298,35 @@ def test_tc_ingest_06_a_revision_creates_a_new_row_and_never_touches_the_origina
         "(FR-INGEST-05)."
     )
     assert row_after["content_hash"] != row_before["content_hash"]
+    # The one-build rule holds across a revision too: a build flip mid-revision is
+    # refused and the original row (and no new row) records a mixed-build ref.
+    patch = pytest.MonkeyPatch()
+    calls_before = len(provider.calls)
+    flips = {"seen": 0}
+
+    original_complete = provider.complete
+
+    def flipping(prompt, model_ref, params):
+        flips["seen"] += 1
+        provider.build_override = (
+            "vlm@sha256:bbbb" if flips["seen"] > 1 else "vlm@sha256:aaaa")
+        return original_complete(prompt, model_ref, params)
+
+    provider.complete = flipping  # type: ignore[method-assign]
+    try:
+        with pytest.raises(IngestError, match="mid-revision"):
+            ingestor.revise_document(original, [PageReplacement(blob_hash=rescan,
+                                                                 page_no=1)])
+    finally:
+        provider.complete = original_complete  # type: ignore[method-assign]
+        provider.build_override = None
+        patch.undo()
+    rows_now = handle.query(statement(
+        "SELECT document_id FROM document WHERE parent_doc_id = :d", issue=ISSUE),
+        d=original)
+    assert len(rows_now) == 1 and rows_now[0]["document_id"] == revised, (
+        "a refused revision left a row behind — the refusal must be a no-op."
+    )
     store.close()
 
 
@@ -329,6 +366,41 @@ def test_tc_ingest_36_the_residency_slot_holds_across_the_calls_and_blocks_the_j
     slot.acquire("judge")
     assert slot._holder == "judge"
     slot.release("judge")
+    # A second acquirer WAITS: a judge thread parked on acquire is admitted only
+    # after the transcriber releases — the "model unloads before the first judge
+    # loads" half of the criterion, as a blocking property.
+    admitted = threading.Event()
+    slot.acquire("transcriber")
+
+    def judge_waits() -> None:
+        slot.acquire("judge")
+        admitted.set()
+        slot.release("judge")
+
+    waiter = threading.Thread(target=judge_waits, daemon=True)
+    waiter.start()
+    assert not admitted.wait(timeout=0.3), (
+        "TC-INGEST-36: a judge acquired the exclusive slot while the transcriber "
+        "still held it — the profiles that cannot co-resident the two models are "
+        "not being honoured."
+    )
+    slot.release("transcriber")
+    assert admitted.wait(timeout=5.0), (
+        "TC-INGEST-36: the waiting judge was never admitted after release."
+    )
+    waiter.join(timeout=5.0)
+    # And the REAL hardware profiles wire the exclusive form: a policy edit that
+    # silently admits judge+transcriber on unified-small/discrete-gpu fails here.
+    from aeh.conf import HARDWARE_PROFILES
+
+    for profile_name in ("unified-small", "discrete-gpu"):
+        policy = HARDWARE_PROFILES[profile_name].residency_policy
+        assert ResidencySlot.for_policy(policy)._exclusive is True, (
+            f"TC-INGEST-36: {profile_name}'s residency policy admits judge and "
+            "transcriber concurrently — the VLM no longer holds its own slot "
+            "(AC: ingestion completes and the model unloads before the first judge "
+            "loads)."
+        )
     # And a policy admitting both roles yields the coexistence form:
     shared = ResidencySlot.for_policy(("judge", "transcriber"))
     assert shared._exclusive is False
