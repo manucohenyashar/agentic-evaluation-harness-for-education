@@ -411,7 +411,6 @@ def test_tc_conform_c14_the_hole_is_still_open_in_all_three_places_that_record_i
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c14_m_pkg_records_no_backend_equivalence_claim():
     """`CT-CONFORM-14`'s consumer sweep, `M-PKG` half.
 

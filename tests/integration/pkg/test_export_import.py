@@ -284,6 +284,21 @@ def test_tc_pkg_23_provenance_is_a_closed_vocabulary(tmp_data_dir):
     store.close()
 
 
+def test_tc_pkg_21_a_revision_carries_provenance_and_blob_references(tmp_data_dir):
+    """`TC-PKG-21`'s copy half — the revision copy of an exemplar carries its provenance
+    AND its blob reference (the id re-mints; two revisions share one Tier P file): a
+    corrected child that silently lost either would export a package whose provenance
+    record (FR-PKG-12) or self-containedness (FR-PKG-10) is a lie."""
+    store, catalog, v, _, blob_hash = _rich_package(tmp_data_dir)
+    child = catalog.create_version(v)
+    rows = store.package("pkg-roundtrip").query(statement(
+        "SELECT criterion_id, band, provenance, blob_hash FROM exemplar "
+        "WHERE package_version_id = :v", issue=ISSUE), v=child)
+    assert [tuple(r) for r in rows] == [("CRIT-1", "b1", "paraphrased", blob_hash)]
+    assert catalog.criteria(child)[0]["answer_key"] == catalog.criteria(v)[0]["answer_key"]
+    store.close()
+
+
 # -- TC-PKG-24: the flag is derived, never independent --------------------------------------------
 
 

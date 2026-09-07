@@ -302,7 +302,6 @@ def test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criter
     assert bare == [], f"{bare} return an aggregate with no weakest criterion attached"
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c13_an_exported_package_carries_the_weakest_figure_beside_the_headline():
     """The portability half, at **rung 3**: *"assert an **exported** package carries the weakest
     figure alongside the headline"*.

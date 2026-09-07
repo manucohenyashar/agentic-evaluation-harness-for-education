@@ -1,0 +1,15 @@
+{
+  "member_count": 2,
+  "members": [
+    {
+      "name": "manifest.json",
+      "sha256": "39c5202a926b07d9bc106231b58bd626781497f5b3fa1108369d1d1a706b8297"
+    },
+    {
+      "name": "package.pkg.sqlite",
+      "sha256": "34ed8fe85f1ed45b2fd4fe0355d898def282fd766c384b00222da4ec01dc6a96"
+    }
+  ],
+  "package_id": "PKG-REF",
+  "schema_version": 6
+}

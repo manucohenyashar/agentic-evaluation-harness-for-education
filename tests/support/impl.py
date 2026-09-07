@@ -99,14 +99,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `in_memory_catalog`, `open_store` and `compute_work_id` are the constructors these tests
     # actually call and appear in no Interfaces block, so none can exist before an implementation
     # does. That closes the window without needing a fourth registry kind.
-    "#28": (
-        "symbol",
-        f"{PKG_MODULE}:in_memory_catalog",
-        ("tests/property/test_fuzz_06_graphs_and_work_ids.py"
-         "::test_fuzz_06_a_cyclic_dependency_write_is_always_rejected",
-         "tests/property/test_fuzz_06_graphs_and_work_ids.py"
-         "::test_fuzz_06_topological_order_always_satisfies_every_edge"),
-    ),
+    # `"#28"` is gone because #31 landed: `aeh.pkg:in_memory_catalog()` exists — a catalog
+    # lifetime over one shared scratch Tier P store, delegating to the real
+    # `PackageCatalog` (whose `create_version` now writes the draft's criteria and whose
+    # `set_dependencies` is the real dependency write, cycle-refusing inside the
+    # transaction so the refusal is a no-op, `CT-PKG-11`). Both FUZZ-06 graph-half cases
+    # run unmarked; the work-ID half stays keyed on #57 below.
     # **Re-keyed off `open_store` by #10.** Both entries stood on `open_store` because, when they
     # were written, `M-STORE` was one unbuilt module and any name in it was as good as any other.
     # #10 has now landed `open_store` while the blob store and the write queue are still #12's and
@@ -324,13 +322,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{INGEST_MODULE}:assemble_canonical_markdown",
         ("tests/regression/test_reg_01_canonical_markdown.py",),
     ),
-    "#31 baselines": (
-        # The same symbol `#31 stats` keys on, under its own key so neither entry's message
-        # loses track of which suite it is unmarking.
-        "symbol",
-        f"{PKG_MODULE}:export_package",
-        ("tests/regression/test_reg_02_package_archive.py",),
-    ),
+    # `"#31 baselines"` is gone because #31 landed: `aeh.pkg:export_package` exists (the
+    # module-level seam the written-ahead suites anticipated), `TC-REG-02` runs in the gate
+    # and its baseline `TC-REG-02/PKG-REF.archive.json` was recorded in #31's PR.
     "#104": (
         # `GradingService.export` is declared in design §3.14, so it is Protocol surface and
         # cannot be the key. `export_grade_artifacts` is this suite's -- it returns the CSV and
@@ -535,20 +529,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{CONFORM_MODULE}:run_adversarial_tier",
         ("tests/integration/conform/test_tc_conform_09_adversarial_tier.py",),
     ),
-    # `TC-CONFORM-C14`'s consumer sweep splits by consumer. #29 owns the population- and
-    # backend-scoped validation records, so it is what makes the `M-PKG` half runnable; the
-    # `M-CONSOLE` half is #122's and rides with the other console sweeps below.
-    #
-    # `record_validation` is invented and absent from both design documents. `PackageCatalog`
-    # declares `validation_for` -- the **read** side -- and no write method at all, which is worth
-    # noticing on its own: `M-CONFORM` is required to write "through `M-PKG`" via a surface the
-    # design never names.
-    "#29": (
-        "symbol",
-        f"{PKG_MODULE}:record_validation",
-        ("tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
-         "::test_tc_conform_c14_m_pkg_records_no_backend_equivalence_claim",),
-    ),
+    # `"#29"` is gone because #31 landed: `aeh.pkg:record_validation` now exists as the
+    # write side the design never named (catalog-backed for the in-memory catalog,
+    # registry-backed for the export summary), so the `M-PKG` half of `TC-CONFORM-C14`'s
+    # consumer sweep runs unmarked. The `M-CONSOLE` half is #122's and stays with the
+    # console sweeps below.
     # --- TS-77 (#132), the twelve CT-CONSOLE rendering and honesty clause cases ---------------
     #
     # `M-CONSOLE` is six stories, and these twelve cases land across four of them: #122 builds the
@@ -973,16 +958,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale_figure",
         ),
     ),
-    "#31 stats": (
-        "symbol",
-        f"{PKG_MODULE}:export_package",
-        (
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c13_an_exported_package_carries_the_weakest_figure_beside_the_headline",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c20_no_consumer_renders_or_exports_a_single_headline_figure[m_pkg_export]",
-        ),
-    ),
+    # `"#31 stats"` is gone because #31 landed: `export_package` answers the validation
+    # payload (`weakest_per_population` beside the per-population headline, never an
+    # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked. The
+    # `m_console` param keeps its marker — #123 has not landed.
     "#91 stats": (
         "symbol",
         f"{AGG_MODULE}:describe_agreement",

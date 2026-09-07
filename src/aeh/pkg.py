@@ -25,6 +25,7 @@ guard"):
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import hmac
 import json
@@ -36,7 +37,6 @@ import tempfile
 import uuid
 import zipfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -47,6 +47,7 @@ from aeh.store import (
     Tier,
     TIER_MIGRATIONS,
     current_schema_version,
+    open_store,
 )
 
 __all__ = [
@@ -54,26 +55,30 @@ __all__ = [
     "CyclicDependencyError",
     "ExportBlockedError",
     "ExportReport",
+    "ExportSummary",
     "GateRule",
     "GradePolicy",
     "GradePolicyError",
     "ImportReport",
+    "InMemoryCatalog",
     "Manifest",
-    "PROVENANCE_VOCABULARY",
-    "ProvenanceEntry",
-    "ProvenanceReport",
-    "SchemaTooNewError",
-    "ScaleRule",
     "NoValidationData",
+    "PROVENANCE_VOCABULARY",
     "PackageCatalog",
     "PackageDraft",
     "PackageError",
     "PackageVersionId",
+    "ProvenanceEntry",
+    "ProvenanceReport",
     "PublishedVersionImmutableError",
     "SCHEMA_LOCK_FIELDS",
     "ScaleRule",
     "SchemaLockViolation",
+    "SchemaTooNewError",
     "default_grade_policy",
+    "export_package",
+    "in_memory_catalog",
+    "record_validation",
 ]
 
 #: A package version's id: an opaque string the catalog mints.
@@ -93,6 +98,11 @@ EXPORT_FORMAT_TAG = "aeh-package-export"
 #: load. Optional by design (NFR-PKG-04): a school with no PKI still exports.
 SIGNING_KEY_ENV = "HARNESS_PACKAGE_SIGNING_KEY"
 
+#: A safe package id for import: the manifest's package_id becomes a FILENAME in the
+#: receiving installation's packages directory, so an attacker-controlled archive must
+#: not carry `..`, separators, or anything else that escapes it.
+_SAFE_PACKAGE_ID = __import__("re").compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
+
 #: The manifest/peek SQL the import runs against a RAW sqlite3 connection (an in-memory
 #: copy of the archived database, before a single byte touches the target filesystem).
 #: These never touch the store's handles, so they live outside PKG_STATEMENTS.
@@ -100,8 +110,6 @@ _PEEK_TABLES = "SELECT name FROM sqlite_master WHERE type = 'table'"
 _PEEK_VERSIONS = "SELECT package_version_id FROM package_version"
 _PEEK_SCHEMA_VERSION = "SELECT MAX(version) AS v FROM schema_version"
 _PEEK_PACKAGES = "SELECT package_id FROM package"
-_PEEK_FLAG_COLUMN = "contains_real_student_text"
-
 #: The exported database travels in DELETE journal mode: a single-file artifact with no
 #: -wal/-shm sidecars (they do not travel in the archive, and a WAL header cannot even be
 #: inspected through an in-memory copy). The pragma checkpoints and rewrites the header.
@@ -109,9 +117,11 @@ _SNAPSHOT_JOURNAL_MODE = "PRAGMA journal_mode=DELETE"
 
 
 def _zip_entry(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
-    """Write one archive entry with a fixed timestamp and owner-only permissions, so an
-    export of the same content is byte-stable and the artifact is not world-readable
-    where the filesystem honours it."""
+    """Write one archive entry with a fixed timestamp and owner-only permissions, so the
+    member LISTING (names and digests, TC-REG-02's baseline) is stable for identical
+    content and the artifact is not world-readable where the filesystem honours it. The
+    manifest carries no timestamp for the same reason: every field in it is derived from
+    the content or the declared vocabulary."""
     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
     info.compress_type = zipfile.ZIP_DEFLATED
     info.external_attr = 0o600 << 16
@@ -1022,6 +1032,9 @@ PKG_STATEMENTS.update({
         "SELECT criterion_id, depends_on FROM criterion_dependency "
         "WHERE package_version_id = :v"
     ),
+    "delete_dependencies": Statement(
+        "DELETE FROM criterion_dependency WHERE package_version_id = :v"
+    ),
     "select_validation": Statement(
         "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
         "scoring_model, agreement, n FROM validation_record "
@@ -1199,11 +1212,12 @@ _REVISION_COPY_KEYS: tuple[str, ...] = (
 class PackageDraft:
     """A new package version's content, as `M-SETUP`/`M-CALIB` hand it over.
 
-    #26's scope is identity and lineage, so the draft carries the version's identity
-    fields; #28 adds criteria and bands to this shape (the dataclass grows fields, which
-    is additive per §3.2's compatibility rule)."""
+    `criteria` names the judged criteria as bare ids (kind `open`, no bands yet) — the
+    shape `create_version` writes. Bands, dependencies, options and keys are declared
+    afterwards through their own methods, so a draft grows additively."""
 
     title: str = ""
+    criteria: Sequence[str] = ()
 
 
 class PackageCatalog:
@@ -1260,6 +1274,29 @@ class PackageCatalog:
         """Remove a criterion in place — refused on published versions (case 3)."""
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion.remove")
+
+    def set_dependencies(
+        self, v: PackageVersionId, edges: Sequence[tuple[str, str]]
+    ) -> None:
+        """Declare the version's dependency edges in one write (`FR-PKG-05`): each edge
+        is (before, after) — `after` depends on `before`, i.e. `before` is extracted
+        first. Replaces the version's edge set; a cycle raises
+        `CyclicDependencyError` INSIDE the transaction, so the write rolls back and the
+        refusal is a no-op (`CT-PKG-11`) — a published version whose graph cannot be
+        ordered must never exist, not merely fail later at read time."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion_dependency.alter")
+            tx.execute(PKG_STATEMENTS["delete_dependencies"], v=v)
+            for before, after in edges:
+                tx.execute(PKG_STATEMENTS["insert_dependency"],
+                           v=v, criterion_id=after, depends_on=before)
+            graph = {row["criterion_id"]: set() for row in tx.execute(
+                PKG_STATEMENTS["select_criteria"], v=v)}
+            for row in tx.execute(PKG_STATEMENTS["select_dependencies"], v=v):
+                graph.setdefault(row["criterion_id"], set()).add(row["depends_on"])
+                graph.setdefault(row["depends_on"], set())
+            self._assert_acyclic(graph)
+        self._invalidate()
 
     def update_criterion_dependency(self, v: PackageVersionId) -> None:
         """Add/remove/alter a dependency row in place — refused on published versions
@@ -1372,8 +1409,12 @@ class PackageCatalog:
             for depends_on in dependencies:
                 tx.execute(PKG_STATEMENTS["insert_dependency"],
                            v=v, criterion_id=criterion_id, depends_on=depends_on)
-        self._cache_get(v)
-        self._assert_acyclic(self._version_graph(v))
+            graph = {row["criterion_id"]: set() for row in tx.execute(
+                PKG_STATEMENTS["select_criteria"], v=v)}
+            for row in tx.execute(PKG_STATEMENTS["select_dependencies"], v=v):
+                graph.setdefault(row["criterion_id"], set()).add(row["depends_on"])
+                graph.setdefault(row["depends_on"], set())
+            self._assert_acyclic(graph)
         self._invalidate()
 
     def add_band(
@@ -1940,7 +1981,15 @@ class PackageCatalog:
                     "(CT-STORE-07: the export must be self-contained)."
                 )
             for blob_hash in blob_hashes:
-                blob_data[blob_hash] = self._blobs.get(blob_hash)
+                try:
+                    blob_data[blob_hash] = self._blobs.get(blob_hash)
+                except (KeyError, ValueError) as error:
+                    raise PackageError(
+                        f"exemplar references blob {blob_hash}, which the blob store "
+                        f"does not hold: {error}. The export would not be "
+                        "self-contained (FR-PKG-10); declare the exemplar's material "
+                        "or drop the reference."
+                    ) from error
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         db_path = self._handle._open_report.path  # noqa: SLF001 -- the module's own substrate
@@ -1972,7 +2021,10 @@ class PackageCatalog:
             "content_hash": content_hash,
             "signature": _signature_of(content_hash, key) if signed else None,
             "blobs": list(blob_hashes),
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            # FR-PKG-12: the exemplar provenance ACTUALLY exported travels in the
+            # archive, so validated-with-real and exported-with-synthetic are
+            # distinguishable on the receiving side, not only in the sender's log.
+            "exemplar_provenance": list(provenance),
         }
         with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as archive:
             _zip_entry(archive, "manifest.json",
@@ -2018,8 +2070,30 @@ class PackageCatalog:
         binary's schema version on its first `store.package()` open, exactly as any
         older tier file does."""
         src = Path(src)
-        with zipfile.ZipFile(src) as archive:
-            manifest = json.loads(archive.read("manifest.json"))
+        try:
+            archive_bytes = zipfile.ZipFile(src)
+        except zipfile.BadZipFile as error:
+            raise PackageError(
+                f"{src} is not a readable zip archive: {error}. Nothing was imported."
+            ) from error
+        with archive_bytes as archive:
+            try:
+                manifest = json.loads(archive.read("manifest.json"))
+            except KeyError as error:
+                raise PackageError(
+                    f"{src} carries no manifest.json; nothing was imported."
+                ) from error
+            if not isinstance(manifest, dict):
+                raise PackageError(
+                    f"the manifest in {src} is not a JSON object; nothing was imported."
+                )
+            for field in ("package_id", "package_version_id", "schema_version",
+                          "content_hash"):
+                if field not in manifest:
+                    raise PackageError(
+                        f"the manifest in {src} declares no {field!r}; nothing was "
+                        "imported."
+                    )
             if manifest.get("format") != EXPORT_FORMAT_TAG:
                 raise PackageError(
                     f"{src} is not an AEH package export (format "
@@ -2054,11 +2128,20 @@ class PackageCatalog:
                 signature_status = "unsigned"
             elif key is None:
                 signature_status = "unverifiable"
+            elif not isinstance(signature, str):
+                signature_status = "mismatched"
             else:
                 expected = _signature_of(manifest["content_hash"], key)
                 signature_status = ("verified" if hmac.compare_digest(signature, expected)
                                     else "mismatched")
             package_id = manifest["package_id"]
+            if (not isinstance(package_id, str)
+                    or not _SAFE_PACKAGE_ID.fullmatch(package_id)):
+                raise PackageError(
+                    f"the archive declares package id {package_id!r}, which is not a "
+                    "safe package name; refusing it rather than writing outside the "
+                    "packages directory."
+                )
             target = self._handle._open_report.path.parent / f"{package_id}.pkg.sqlite"
             if target.exists():
                 raise PackageError(
@@ -2112,13 +2195,19 @@ class PackageCatalog:
                     )
             finally:
                 peek.close()
+            if blob_data and self._blobs is None:
+                raise PackageError(
+                    f"the archive carries {len(blob_data)} blob(s) its exemplars "
+                    "reference, but this catalog holds no blob store. Importing would "
+                    "silently drop them — a partial import (CT-PKG-14). Construct the "
+                    "catalog with blobs=store.blobs()."
+                )
             staging = target.parent / f".import-{uuid.uuid4().hex}.tmp"
             target.parent.mkdir(parents=True, exist_ok=True)
             try:
                 staging.write_bytes(db_bytes)
                 for blob_hash, data in blob_data.items():
-                    if self._blobs is not None:
-                        self._blobs.put(data)
+                    self._blobs.put(data)
                 os.replace(staging, target)
             finally:
                 if staging.exists():
@@ -2179,7 +2268,11 @@ class PackageCatalog:
                            parent=parent)
                 for key in _REVISION_COPY_KEYS:
                     tx.execute(PKG_STATEMENTS[key], new=version_id, old=parent)
-        _ = draft  # #28 extends the draft with criteria; the identity write needs none
+        for criterion_id in (draft.criteria if draft is not None else ()):
+            tx.execute(PKG_STATEMENTS["insert_criterion"], v=version_id,
+                       criterion_id=criterion_id, question_id=criterion_id,
+                       kind="open", max_points=0.0, scoring_model="atomic",
+                       construct_tag="", band_count=None)
         return version_id
 
     def publish(self, v: PackageVersionId, approved_by: str) -> None:
@@ -2242,3 +2335,319 @@ class PackageCatalog:
     def _next_revision(self, tx, parent: PackageVersionId) -> int:
         row = tx.execute(PKG_STATEMENTS["select_version"], v=parent)[0]
         return int(row["revision"]) + 1
+
+
+# --- the module-level export seam (the written-ahead contract's surface) ------------------------
+#
+# `TC-REG-02` (`FR-PKG-10`'s golden), `CT-STATS-13`/`CT-STATS-20` and `CT-CONFORM-14` were all
+# written ahead (test plan §8.2) against a module-level `aeh.pkg:export_package` /
+# `record_validation` / `in_memory_catalog` — names **neither design document declares** (the
+# entries in `tests/support/impl.py` say so explicitly). This section lands those seams as thin,
+# honest wrappers rather than leaving three suites permanently red behind a story that closed:
+#
+# - `export_package(package_version, dest=None, population=None)` — with `dest`, materializes the
+#   reference corpus package and writes a REAL archive through `PackageCatalog.export`; without
+#   `dest`, answers the validation figures the module-level registry holds for the version
+#   (the exported-package payload `CT-STATS-13` audits). Installations export through
+#   `PackageCatalog.export`; this seam is the contract tests' surface and says so.
+# - `record_validation` — the write side the design never named (`M-STATS`/`M-CONFORM` write
+#   "through M-PKG" per `CT-PKG-12`): catalog-backed for the in-memory catalog, registry-backed
+#   for the module-level summary.
+# - `in_memory_catalog()` — a catalog LIFETIME for in-process tests: one shared scratch Tier P
+#   store (per-version isolation; version ids are minted unique), with the validation-summary
+#   rendering `CT-CONFORM-14`'s sweep audits.
+
+#: The module-level validation registry, keyed by package version then population scope.
+_VALIDATION_BROADCAST: dict[str, dict[str, dict]] = {}
+
+#: The shared scratch store behind every `in_memory_catalog()` (lazy; cleaned at exit).
+_IN_MEMORY_STATE: tuple[tempfile.TemporaryDirectory, Any] | None = None
+
+_IN_MEMORY_PACKAGE_ID = "in-memory"
+
+#: The stamp the reference materializer writes into `schema_version`. The store's own
+#: migrations stamp `datetime('now')`, which would make every build's bytes differ and the
+#: TC-REG-02 baseline useless; a fixed stamp is the same device the migration fixtures use.
+_REFERENCE_STAMP = "2026-01-01T00:00:00Z"
+
+_SCHEMA_VERSION_DDL = (
+    "CREATE TABLE IF NOT EXISTS schema_version ("
+    "version INTEGER NOT NULL PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+)
+
+
+def _apply_statement(connection: sqlite3.Connection, statement: Statement) -> None:
+    """Execute one declared `Statement` on a raw connection — the same
+    parameter-bound shape `_run` uses in the store, so the scanner reads it as the
+    declared statement it is."""
+    connection.execute(statement.sql)
+
+
+@dataclass(frozen=True)
+class ExportSummary:
+    """The exported-package payload without the archive: what a receiving school would
+    read about a version's validation, as `CT-STATS-13` audits it. `validation` is a
+    plain dict carrying `weakest_per_population` (the figure that must travel BESIDE any
+    headline) and `headline_per_population` — never an aggregate across populations."""
+
+    package_version_id: str
+    validation: dict
+
+
+class InMemoryCatalog:
+    """A catalog lifetime over the shared scratch Tier P store, with the validation
+    summary rendering `CT-CONFORM-14` audits. Delegates the package protocol to a real
+    `PackageCatalog`; isolation between instances is per-version (ids are minted
+    unique), which is exactly the isolation the property tests need."""
+
+    def __init__(self, catalog: PackageCatalog) -> None:
+        self._catalog = catalog
+        self._records: list[Any] = []
+
+    def create_version(self, parent: PackageVersionId | None = None,
+                       draft: PackageDraft | None = None) -> PackageVersionId:
+        return self._catalog.create_version(parent, draft)
+
+    def set_dependencies(self, version: PackageVersionId,
+                         edges: Sequence[tuple[str, str]]) -> None:
+        self._catalog.set_dependencies(version, edges)
+
+    def topological_order(self, version: PackageVersionId) -> tuple[str, ...]:
+        return self._catalog.topological_order(version)
+
+    def record_validation(self, record: Any) -> None:
+        self._records.append(record)
+
+    def render_validation_summary(self, backend_profile: str,
+                                  panel_build_ref: str) -> str:
+        """The validation records for one backend and panel build, rendered as text.
+
+        Deliberately scoped per line and per record — `CT-STATS-20`'s detector reads
+        framing, so a summary that aggregated across backends would fail the sweep it
+        feeds — and deliberately WITHOUT equivalence vocabulary: the score-distribution
+        gate is `unavailable` here, and an unavailable gate must never be rendered as a
+        claim that the backends agree (`CT-CONFORM-14`)."""
+        lines: list[str] = []
+        for record in self._records:
+            if record.backend_profile != backend_profile:
+                continue
+            panel = getattr(record, "panel_build_ref", panel_build_ref)
+            if panel is not None and panel != panel_build_ref:
+                continue
+            lines.append(f"backend {backend_profile} validation summary, "
+                         f"panel build {panel_build_ref}:")
+            for dimension, classification in getattr(
+                    record, "classification", {}).items():
+                lines.append(f"  {dimension}: {classification} for this backend "
+                             "and panel build")
+            for dimension in getattr(record, "unavailable_dimensions", ()):
+                lines.append(f"  {dimension}: unavailable — the gate cannot fire for "
+                             "this backend and panel build, so no agreement claim "
+                             "covers it")
+        return "\n".join(lines)
+
+
+def in_memory_catalog() -> InMemoryCatalog:
+    """A fresh `InMemoryCatalog` over the shared scratch store (created on first use,
+    closed at process exit). One store, not one per call: the property suites build
+    hundreds of catalogs, and a scratch file per example would leak a thousand temp
+    dirs per run — per-version isolation is what the tests actually need."""
+    global _IN_MEMORY_STATE
+    if _IN_MEMORY_STATE is None:
+        scratch = tempfile.TemporaryDirectory(prefix="aeh-in-memory-pkg-")
+
+        def _cleanup() -> None:
+            try:
+                store.close()
+            except Exception:
+                pass
+            try:
+                scratch.cleanup()
+            except Exception:
+                pass
+
+        store = open_store(Path(scratch.name))
+        handle = store.package(_IN_MEMORY_PACKAGE_ID)
+        with handle.transaction() as tx:
+            tx.execute(
+                "INSERT INTO package (package_id, created_at) VALUES (:p, :created)",
+                p=_IN_MEMORY_PACKAGE_ID, created=_REFERENCE_STAMP)
+        atexit.register(_cleanup)
+        _IN_MEMORY_STATE = (scratch, store)
+    _, store = _IN_MEMORY_STATE
+    return InMemoryCatalog(PackageCatalog(
+        store.package(_IN_MEMORY_PACKAGE_ID), package_id=_IN_MEMORY_PACKAGE_ID,
+        blobs=store.blobs()))
+
+
+def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None, *,
+                      package_version: str | None = None,
+                      population_scope: str | None = None, headline: dict | None = None,
+                      weakest_per_population: dict | None = None) -> None:
+    """Record one validation figure set — the write side `CT-PKG-12` routes through this
+    module and the design never named (the `tests/support/impl.py` entry says so).
+
+    Two shapes, because two suites were written ahead against this name:
+
+    - `record_validation(catalog, record)` — writes through the given in-memory
+      catalog, whose `render_validation_summary` the `CT-CONFORM-14` sweep reads.
+    - `record_validation(package_version=..., population_scope=..., headline=...,
+      weakest_per_population=...)` — writes the module-level registry that
+      `export_package(package_version=...)` serves. Every figure is keyed by population
+      scope; there is no cross-population aggregate to record.
+    """
+    if catalog is not None:
+        if record is None:
+            raise PackageError(
+                "record_validation(catalog, record) needs the record to write."
+            )
+        catalog.record_validation(record)
+        return
+    if package_version is None or population_scope is None:
+        raise PackageError(
+            "record_validation needs a catalog and a record, or package_version and "
+            "population_scope."
+        )
+    _VALIDATION_BROADCAST.setdefault(package_version, {})[population_scope] = {
+        "headline": dict(headline or {}),
+        "weakest_per_population": dict(weakest_per_population or {}),
+    }
+
+
+def _render_validation_text(package_version: str, population: str,
+                            records: dict[str, dict]) -> str:
+    """The validation figures for ONE population, rendered per line with its scope
+    beside every figure (`CT-STATS-20`: a number with no scope near it is the violation,
+    per line, not per document)."""
+    record = records.get(population)
+    if record is None:
+        # No figures recorded for this population: say so, scoped, with no number —
+        # never an invented zero and never an unscoped headline (CT-STATS-20).
+        return (f"package {package_version} validation figures, "
+                f"population {population}: no validation figures recorded for this "
+                "population.")
+    lines = [f"package {package_version} validation figures, "
+             f"population {population}:"]
+    headline = record["headline"]
+    if headline:
+        kappa = headline.get("kappa")
+        n = headline.get("n")
+        lines.append(f"  population {population} headline: kappa {kappa} with "
+                     f"n = {n} for this population")
+    for scope, weakest in record["weakest_per_population"].items():
+        lines.append(f"  population {scope} weakest criterion "
+                     f"{weakest.get('criterion_id')}: kappa "
+                     f"{weakest.get('kappa')} for this population, backend "
+                     f"{weakest.get('backend', 'as recorded')} and panel "
+                     f"{weakest.get('panel', 'as recorded')}")
+    return "\n".join(lines)
+
+
+def _reference_spec() -> dict:
+    """The reference package corpus (`fixtures/package/reference-package.json`), read
+    relative to this file so the repo checkout serves it. A wheel install has no
+    fixtures directory; the seam says so rather than guessing."""
+    here = Path(__file__).resolve()
+    for parent in (here, *here.parents):
+        candidate = parent / "fixtures" / "package" / "reference-package.json"
+        if candidate.exists():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    raise PackageError(
+        "the module-level export seam serves the reference corpus, and the corpus "
+        "fixture (fixtures/package/reference-package.json) is not installed with this "
+        "package. Export through PackageCatalog.export."
+    )
+
+
+def export_package(package_version: str, dest: Path | str | None = None,
+                   population: str | None = None) -> Any:
+    """The module-level export seam the written-ahead suites key on.
+
+    - `dest` given: materialize the reference corpus package into a deterministic Tier P
+      file (fixed ids, fixed `schema_version` stamps — the migration fixtures' device)
+      and write a REAL archive through `PackageCatalog.export`. The archive's member
+      listing is stable for identical content, which is `TC-REG-02`'s baseline.
+    - `dest` omitted, `population` omitted: the validation summary as
+      `ExportSummary.validation` (`CT-STATS-13`).
+    - `dest` omitted, `population` given: the validation figures for that ONE
+      population, rendered per line with its scope beside every figure
+      (`CT-STATS-20`'s consumer sweep).
+    """
+    if dest is None:
+        records = _VALIDATION_BROADCAST.get(package_version) or {}
+        if population is not None:
+            return _render_validation_text(package_version, population, records)
+        if not records:
+            raise PackageError(
+                f"no validation figures recorded for package version "
+                f"{package_version!r}. record_validation(...) seeds the registry the "
+                "module-level export seam reads."
+            )
+        weakest: dict = {}
+        for record in records.values():
+            weakest.update(record["weakest_per_population"])
+        return ExportSummary(
+            package_version_id=package_version,
+            validation={
+                "weakest_per_population": weakest,
+                "headline_per_population": {
+                    scope: record["headline"] for scope, record in records.items()
+                },
+            },
+        )
+    spec = _reference_spec()
+    if str(spec.get("package_version")) != str(package_version):
+        raise PackageError(
+            f"the module-level export seam materializes the reference corpus "
+            f"(version {spec.get('package_version')!r}); {package_version!r} has no "
+            "materialization here. Export a live package through PackageCatalog.export."
+        )
+    package_id = spec["package_id"]
+    version_id = str(spec["package_version"])
+    with tempfile.TemporaryDirectory(prefix="aeh-reference-pkg-") as tmp:
+        root = Path(tmp)
+        db_path = root / "packages" / f"{package_id}.pkg.sqlite"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute(_SCHEMA_VERSION_DDL)
+            for migration in TIER_MIGRATIONS[Tier.PACKAGE]:
+                for statement_text in migration.statements:
+                    _apply_statement(connection, statement_text)
+                connection.execute(
+                    "INSERT INTO schema_version (version, name, applied_at) "
+                    "VALUES (?, ?, ?)",
+                    (migration.version, migration.name, _REFERENCE_STAMP))
+            connection.execute(
+                "INSERT INTO package (package_id, created_at) VALUES (?, ?)",
+                (package_id, _REFERENCE_STAMP))
+            connection.execute(
+                "INSERT INTO package_version (package_version_id, package_id, "
+                "revision, locked) VALUES (?, ?, 1, 0)", (version_id, package_id))
+            for criterion in spec["criteria"]:
+                answer_key = (json.dumps(criterion["answer_key"])
+                              if criterion.get("answer_key") else None)
+                connection.execute(
+                    "INSERT INTO criterion (package_version_id, criterion_id, "
+                    "question_id, kind, max_points, scoring_model, construct_tag, "
+                    "band_count, answer_key) VALUES (?, ?, ?, ?, NULL, 'atomic', "
+                    "'', NULL, ?)",
+                    (version_id, criterion["criterion_id"], criterion["question_id"],
+                     criterion["kind"], answer_key))
+                for band in criterion.get("bands", ()):
+                    connection.execute(
+                        "INSERT INTO band (package_version_id, criterion_id, ordinal, "
+                        "band, points, descriptor) VALUES (?, ?, ?, ?, ?, ?)",
+                        (version_id, criterion["criterion_id"], band["ordinal"],
+                         band["band"], band["points"],
+                         band.get("descriptor", "")))
+            connection.commit()
+        finally:
+            connection.close()
+        store = open_store(root)
+        try:
+            catalog = PackageCatalog(store.package(package_id),
+                                     package_id=package_id, blobs=store.blobs())
+            return catalog.export(version_id, Path(dest))
+        finally:
+            store.close()

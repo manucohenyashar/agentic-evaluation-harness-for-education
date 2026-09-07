@@ -53,7 +53,6 @@ FUZZ_EXAMPLES = 500
 # --- FR-PKG-05: the dependency graph ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(criterion_graphs())
 def test_fuzz_06_a_cyclic_dependency_write_is_always_rejected(graph):
@@ -86,7 +85,6 @@ def test_fuzz_06_a_cyclic_dependency_write_is_always_rejected(graph):
         )
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(acyclic_graphs())
 def test_fuzz_06_topological_order_always_satisfies_every_edge(graph):
