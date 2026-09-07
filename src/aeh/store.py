@@ -1373,8 +1373,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: deterministic order keeps the report stable from run to run.
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "document_region", "document", "submission", "roster",
-    "cohort",
+    "evidence", "work_unit", "assessment_match_proposal", "v4_cohort_breaker",
+    "document_region", "document", "submission", "roster", "cohort",
 )
 _PURGE_DELETES: Mapping[str, Statement] = {
     "review_queue": Statement("DELETE FROM review_queue"),
@@ -1393,6 +1393,12 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # name the registry lacks would be student text left behind (FR-STORE-07).
     "unresolved_token": Statement("DELETE FROM unresolved_token"),
     "token_cluster": Statement("DELETE FROM token_cluster"),
+    # #41's cohort-tier tables: the mismatch proposals carry the submission's signal
+    # snapshots (student text among them) and the breaker row is the cohort's own
+    # finding — both purge with the cohort, proposals before the submissions their
+    # FK points at.
+    "assessment_match_proposal": Statement("DELETE FROM assessment_match_proposal"),
+    "v4_cohort_breaker": Statement("DELETE FROM v4_cohort_breaker"),
     "cohort": Statement("DELETE FROM cohort"),
 }
 
