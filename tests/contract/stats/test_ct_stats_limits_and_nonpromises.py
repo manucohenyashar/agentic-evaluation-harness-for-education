@@ -301,12 +301,14 @@ def test_tc_stats_c19_each_contract_alert_exists_and_fires(alert, issue):
 # --- CT-STATS-20 — no figure here is a system-wide accuracy claim ------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        ("M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123"),
-        ("M-PKG", PKG_MODULE, "export_package", "#31"),
+        # The M-CONSOLE half is still blocked on #123 (no console exists), so its param
+        # carries the marker; the M-PKG half landed with #31's export seam.
+        pytest.param("M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123",
+                     marks=pytest.mark.writtenahead),
+        pytest.param("M-PKG", PKG_MODULE, "export_package", "#31"),
     ],
     ids=["m_console", "m_pkg_export"],
 )

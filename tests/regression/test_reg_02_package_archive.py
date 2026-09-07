@@ -19,8 +19,8 @@ parameters, so the raw bytes differ between two exports of identical content, an
 that fails on every run gets deleted within a week. The listing is stable and is what the
 requirement is actually about.
 
-**Written ahead of implementation** (§8.2). `export_package` is #31's. Remove the marker —
-never the test — when #31 closes, and record the baseline in that PR.
+`Written ahead of implementation: yes` is stale — #31 landed the module-level export seam
+and the baseline `TC-REG-02/PKG-REF.archive.json` was recorded in the same PR.
 """
 
 from __future__ import annotations
@@ -34,8 +34,6 @@ import pytest
 from tests.support import corpora
 from tests.support.baselines import assert_matches_golden
 from tests.support.impl import PKG_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#31"
 CASE = "TC-REG-02"
