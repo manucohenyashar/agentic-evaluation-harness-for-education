@@ -245,10 +245,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
         "aeh.pkg:2319", "aeh.pkg:2320", "aeh.pkg:2324", "aeh.pkg:2326",
         "aeh.pkg:2339", "aeh.pkg:2385", "aeh.pkg:2394", "aeh.pkg:2441",
         "aeh.pkg:2530", "aeh.pkg:2671", "aeh.pkg:2675", "aeh.pkg:2679",
-        "aeh.pkg:2682", "aeh.pkg:2688", "aeh.pkg:2696", "aeh.ingest:1408",
-        "aeh.ingest:1419", "aeh.ingest:1441", "aeh.ingest:1673", "aeh.ingest:1686",
-        "aeh.ingest:1708", "aeh.ingest:1738", "aeh.ingest:1805", "aeh.ingest:1808",
-        "aeh.ingest:1809",
+        "aeh.pkg:2682", "aeh.pkg:2688", "aeh.pkg:2696", "aeh.ingest:1470",
+        "aeh.ingest:1481", "aeh.ingest:1503", "aeh.ingest:1735",
+        "aeh.ingest:1748", "aeh.ingest:1770", "aeh.ingest:1800",
+        "aeh.ingest:1867", "aeh.ingest:1870", "aeh.ingest:1871",
+        "aeh.ingest:1944", "aeh.ingest:2025",
 })
 
 
