@@ -85,6 +85,10 @@ LIVE_BACKEND_MARKERS = (
 #: generated-text expectation compared exactly against a live tier — the combination step 5
 #: forbids. Statistical comparison against a baseline (a declared tolerance over aggregates)
 #: is not on this list: that is `TC-REG-05`'s substitution detector, and it is allowed.
+#: A hand-rolled `==` against a golden's bytes would evade any name list; what bounds it is
+#: `assert_matches_golden` being the repository's only golden-comparison path (deliberately,
+#: per `tests/support/baselines.py` — there is no `record_golden`), plus the governance scan
+#: above closing the unregistered-artifact route.
 GOLDEN_MATCH_HELPERS = ("assert_matches_golden",)
 
 
@@ -113,12 +117,20 @@ def test_tc_prov_c16_no_baseline_holds_generated_text_as_a_live_tier_expectation
        exactly the "regenerate until green" affordance §6.9 refuses to build, arrived at
        through the filesystem instead.
     2. The registry itself names no live-backend seam.
-    3. No test under `tests/regression/` — the directory every baseline producer lives in —
-       references a live-backend environment variable, and no `live`-marked test there
-       performs an exact-match golden comparison (`GOLDEN_MATCH_HELPERS`). The scan is over
-       the AST, not a text grep: a helper called from a live-marked body is found wherever
-       it hides, and `TC-REG-05`'s mandated statistical detector (tolerance-declared
-       aggregates, shift reported as substitution) stays allowed.
+    3. No baseline producer under `tests/regression/` — the directory every producer lives
+       in — references a live-backend environment variable; and no `live`-marked test
+       **anywhere in the test tree** performs an exact-match golden comparison
+       (`GOLDEN_MATCH_HELPERS`). Both scans are structural — the seam scan is a source scan
+       (a dormant reference is already the dependence), the helper scan is over the AST (a
+       call from a live-marked body is found wherever it hides). The two scan different
+       scopes on purpose: the producers' directory is where a seam reference would be a
+       violation, while a live-marked golden *match* is repository-wide — a nightly in
+       `tests/contract/` or `tests/integration/` could grow one as easily as a regression
+       test could. (The reverse is also why the seam scan stays narrow: the live nightlies
+       themselves legitimately reference the seams, so widening that half would build the
+       false-positive gate the sole-egress case warns gets switched off.)
+       `TC-REG-05`'s mandated statistical detector (tolerance-declared aggregates, shift
+       reported as substitution) stays allowed — it is not a match.
     """
     entries = registry()
     assert entries, "the §6.9 baseline registry is empty; step 5 would be vacuous."
@@ -150,6 +162,8 @@ def test_tc_prov_c16_no_baseline_holds_generated_text_as_a_live_tier_expectation
     regression_dir = repo_root / "tests" / "regression"
     # The assembled form, so this file's own literals cannot match the scan it performs.
     live_decorator = "pytest.mark." + "live"
+
+    # The seam scan: the producers' directory. Narrowed deliberately — see the docstring.
     for path in sorted(regression_dir.glob("*.py")):
         source = path.read_text(encoding="utf-8")
         for marker in LIVE_BACKEND_MARKERS:
@@ -160,7 +174,11 @@ def test_tc_prov_c16_no_baseline_holds_generated_text_as_a_live_tier_expectation
                 "live tier)."
             )
 
-        tree = ast.parse(source, filename=str(path))
+    # The exact-match scan: the whole test tree, because the clause is repository-wide.
+    for path in sorted((repo_root / "tests").rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
