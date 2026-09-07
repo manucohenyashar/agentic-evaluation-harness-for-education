@@ -30,6 +30,7 @@ import pytest
 from aeh.conf import ModelRef
 from aeh.ingest import (
     DOCUMENT_KINDS,
+    EVALUATIVE_TERMS,
     IngestDuplicateError,
     IngestError,
     IngestGapError,
@@ -75,6 +76,11 @@ class ScriptedRasterizer(Rasterizer):
                       width_px=100, height_px=140)
             for index in range(count)
         ]
+
+    def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
+        return bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A]) + (
+            f"crop {box} from page {page_no} of "
+            f"{pdf_bytes.decode('utf-8', errors='replace')}".encode())
 
 
 class ScriptedProvider:
@@ -206,16 +212,21 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     )
     # No per-kind alternative path: the pipeline never branches on kind.
     module_source = pathlib.Path("src", "aeh", "ingest.py").read_text(encoding="utf-8")
-    allowed = {'if kind == "reference" and divergence is not None:'}
+    # Branches on the ARTIFACT kinds specifically (the parser's region-kind locals
+    # are a different variable entirely): only the reference divergence halt — a
+    # post-transcription gate, not an extraction path — may branch.
+    artifact_words = ('"assessment"', '"rubric"', '"submission"')
     dispatch_branches = [
         line.strip() for line in module_source.splitlines()
-        if ("kind ==" in line or 'kind in' in line and "if" in line)
-        and line.strip() not in allowed
+        if ("kind ==" in line or "kind in" in line)
+        and any(word in line for word in ("'reference'", *artifact_words))
+        and "divergence is not None" not in line
     ]
     assert dispatch_branches == [], (
-        f"TC-INGEST-02: the dispatch branches on kind: {dispatch_branches}. There is "
-        "one pipeline for all four kinds (FR-INGEST-02) — the reference divergence "
-        "halt is a post-transcription gate, not an extraction path."
+        f"TC-INGEST-02: the dispatch branches on the artifact kind: "
+        f"{dispatch_branches}. There is one pipeline for all four kinds "
+        "(FR-INGEST-02) — the reference divergence halt is a post-transcription "
+        "gate, not an extraction path."
     )
     # The env knob moves the pinned DPI (seam 3):
     patch = pytest.MonkeyPatch()
@@ -964,4 +975,427 @@ def test_tc_ingest_09b_torn_stacks_and_repeated_numbers_are_refused(tmp_data_dir
                         SamplingParams(temperature=0.0), ThreePageRasterizer())
     with pytest.raises(IngestError, match="repeats positions"):
         repeated.ingest_document([source], kind="submission")
+    store.close()
+
+
+# -- #38: region kinds, structured descriptions, the evaluative bar, retractions -----------------
+
+
+def _marked(*regions: str) -> str:
+    """Wrap region bodies in the pinned marker protocol, the way the model emits them."""
+    return "\n\n".join(f"<!-- region: {r} -->\n{{body}}\n<!-- /region -->"
+                        for r in regions)
+
+
+class OnePageRasterizer(ScriptedRasterizer):
+    def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+        return [PageImage(page_no=1, png=b"page-one", width_px=100, height_px=140)]
+
+    def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
+        # A PNG header + the box: image bytes, deterministically derived, so the
+        # crop-resolution assertion reads real image content.
+        return bytes([0x89]) + b"PNG" + bytes([0x0D, 0x0A, 0x1A, 0x0A]) + f"crop {box} from {pdf_bytes!r}".encode()
+
+
+def _region_provider(bodies: list[str]):
+    """A provider double emitting one marked-up page per rasterized page, in order."""
+    class Marked(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            body = bodies[(page_no - 1) % len(bodies)]
+            return Completion(text=body, tokens_in=1, tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    return Marked()
+
+
+def test_tc_ingest_11_each_element_kind_description_carries_its_named_fields(
+    tmp_data_dir,
+):
+    """`TC-INGEST-11` — the fixture sweep, one element kind at a time: the description
+    the model returns CONTAINS each named field (`FR-INGEST-10`'s own acceptance
+    form), asserted per field from the F-GRAPHIC corpus pages' descriptions."""
+    from aeh.ingest import ELEMENT_REQUIRED_FIELDS, ELEMENT_KINDS
+
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    descriptions = {
+        "free_body_diagram": (
+            "The diagram shows three arrows. arrow label: weight; origin point: the "
+            "crate's centre; direction: straight down. arrow label: normal; origin "
+            "point: the contact face; direction: perpendicular to the incline "
+            "surface. arrow label: friction; origin point: the contact face; "
+            "direction: along the incline surface."),
+        "geometry_construction": (
+            "Points A and B are marked with crosses. relation: the segment AB is "
+            "perpendicular to the segment BC at point B, and the arcs through A and C "
+            "are congruent."),
+        "graph_or_plot": (
+            "The plot's axis labels: time with units in seconds on the horizontal axis, "
+            "velocity with units in metres per second on the vertical. The curve "
+            "crosses the horizontal axis at intercept t = 4 s, and its only turning "
+            "point is at t = 2 s."),
+        "table": (
+            "| Trial | Length |\n|---|---|\n| 1 | 5.2 cm |\n| 2 | 5.4 cm |"),
+        "label_or_annotation": (
+            "The annotation attaches to the pulley wheel, by a leader line to the "
+            "rim."),
+        "spatial_relation": (
+            "The weights holder is below the pulley; the string is right of the "
+            "clamp stand."),
+    }
+    for element_kind in ELEMENT_KINDS:
+        marked = (f"<!-- region: kind=described_graphic "
+                  f"element_kind={element_kind} -->\n{descriptions[element_kind]}\n"
+                  "<!-- /region -->")
+        source = blobs.put(f"fixture {element_kind}".encode())
+        single = ScriptedRasterizer()
+        single.plan = {f"fixture {element_kind}".encode(): 1}
+        ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                            SamplingParams(temperature=0.0), single)
+        document_id = ingestor.ingest_document([source], kind="submission",
+                                               filenames={source: "scan-01.md"})
+        rows = handle.query(statement(
+            "SELECT description, region_kind, element_kind FROM document_region "
+            "WHERE document_id = :d", issue=ISSUE), d=document_id)
+        assert rows and rows[0]["region_kind"] == "described_graphic"
+        description = rows[0]["description"]
+        if element_kind == "spatial_relation":
+            # A page states ONE relation explicitly; the requirement is explicitness,
+            # not every possible relation on one page.
+            assert any(field.lower() in description.lower()
+                       for field in ELEMENT_REQUIRED_FIELDS[element_kind]), (
+                f"TC-INGEST-11: the spatial relation is not stated explicitly: "
+                f"{description!r} (FR-INGEST-10)."
+            )
+        else:
+            for field in ELEMENT_REQUIRED_FIELDS[element_kind]:
+                assert field.lower() in description.lower(), (
+                    f"TC-INGEST-11: the {element_kind} description lacks its named "
+                    f"field {field!r}: {description!r} (FR-INGEST-10)."
+                )
+    store.close()
+
+
+def test_tc_ingest_12_region_kinds_and_resolvable_crops(tmp_data_dir):
+    """`TC-INGEST-12` — a page with text, a graphic and a tick box: every region
+    carries one of the three `region_kind` values, and every `described_graphic`
+    carries a non-null `crop_ref` resolving to a retained image crop in the blob
+    store."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text -->\nThe answer begins here.\n"
+        "<!-- /region -->\n"
+        "<!-- region: kind=described_graphic element_kind=graph_or_plot -->\n"
+        "The plot shows velocity against time.\n<!-- /region -->\n"
+        "<!-- region: kind=selection_mark question_id=Q1 -->\n\u2713\n"
+        "<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT region_kind, crop_ref FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    assert [row["region_kind"] for row in rows] == [
+        "transcribed_text", "described_graphic", "selection_mark"], (
+        "TC-INGEST-12: the regions did not carry the three kinds in order."
+    )
+    graphic = rows[1]
+    assert graphic["crop_ref"], (
+        "TC-INGEST-12: a described_graphic without a crop_ref (FR-INGEST-13)."
+    )
+    assert blobs.get(graphic["crop_ref"]), (
+        "TC-INGEST-12: the crop_ref does not resolve to a retained crop."
+    )
+    store.close()
+
+
+def test_tc_ingest_13_evaluative_descriptions_are_rejected_then_re_requested(
+    tmp_data_dir,
+):
+    """`TC-INGEST-13` — a description containing each configured evaluative term is
+    rejected and RE-REQUESTED; after the retry budget the ingestion refuses rather
+    than storing an evaluative description."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    for term in ("correct", "valid", "appropriate", "properly", "as expected",
+                 "should be"):
+        marked = ("<!-- region: kind=described_graphic "
+                  "element_kind=free_body_diagram -->\n"
+                  f"The arrow is {term} drawn.\n<!-- /region -->")
+        attempts = {"n": 0}
+
+        class CountingMarked(ScriptedProvider):
+            def complete(self, prompt, model_ref, params):
+                attempts["n"] += 1
+                return _region_provider([marked]).complete(
+                    prompt, model_ref, params)
+
+        ingestor = Ingestor(handle, blobs, CountingMarked(), _model(),
+                            SamplingParams(temperature=0.0), OnePageRasterizer())
+        with pytest.raises(IngestError, match="evaluative"):
+            ingestor.ingest_document([source], kind="submission",
+                                     filenames={source: "scan-01.md"})
+        # At least one RE-REQUEST happened (the rejection is not the end of it):
+        assert attempts["n"] >= 2, (
+            f"TC-INGEST-13: {term!r} was rejected without a re-request "
+            f"(attempts: {attempts['n']}) — FR-INGEST-11 says reject AND re-request."
+        )
+    store.close()
+
+
+def test_tc_ingest_14_the_confusable_page_discriminates(tmp_data_dir):
+    """`TC-INGEST-14` — the near-miss fixture: the correct, purely descriptive
+    rendering is ACCEPTED and the evaluative rendering of the same diagram is
+    REJECTED, so the bar discriminates rather than blanket-rejecting."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    descriptive = ("<!-- region: kind=described_graphic "
+                   "element_kind=free_body_diagram -->\n"
+                   "The arrow labelled weight points straight down from the crate's "
+                   "centre.\n<!-- /region -->")
+    evaluative = ("<!-- region: kind=described_graphic "
+                  "element_kind=free_body_diagram -->\n"
+                  "The arrow labelled weight is correctly drawn, as expected.\n"
+                  "<!-- /region -->")
+    good = Ingestor(handle, blobs, _region_provider([descriptive]), _model(),
+                    SamplingParams(temperature=0.0), OnePageRasterizer())
+    assert good.ingest_document([source], kind="submission",
+                                filenames={source: "scan-01.md"})
+    bad = Ingestor(handle, blobs, _region_provider([evaluative]), _model(),
+                   SamplingParams(temperature=0.0), OnePageRasterizer())
+    another = blobs.put(b"another pdf")
+    with pytest.raises(IngestError, match="evaluative"):
+        bad.ingest_document([another], kind="submission",
+                            filenames={another: "scan-01.md"})
+    store.close()
+
+
+def test_tc_ingest_15_no_stored_description_carries_evaluative_vocabulary(
+    tmp_data_dir,
+):
+    """`TC-INGEST-15` — every stored description across an ingest: zero matches
+    against the evaluative-term list (the pattern scan over the stored artifacts)."""
+    from aeh.ingest import _evaluative_offences
+
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = ("<!-- region: kind=described_graphic "
+              "element_kind=geometry_construction -->\n"
+              "Points A and B marked; relation: AB perpendicular to BC.\n"
+              "<!-- /region -->\n"
+              "<!-- region: kind=transcribed_text -->\nThe work shown is brief.\n"
+              "<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT description FROM document_region WHERE document_id = :d",
+        issue=ISSUE), d=document_id)
+    for row in rows:
+        if row["description"]:
+            assert _evaluative_offences(row["description"]) == [], (
+                f"TC-INGEST-15: a stored description carries evaluative vocabulary: "
+                f"{row['description']!r}."
+            )
+    store.close()
+
+
+def test_tc_ingest_16_retractions_keep_both_versions(tmp_data_dir):
+    """`TC-INGEST-16` — struck-through content is RETAINED with
+    `retraction = 'struck_through'`; a superseded line keeps both versions in the
+    Markdown."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text -->\n"
+        "<s>the wrong formula crossed out</s> the corrected working follows.\n"
+        "<!-- /region -->\n"
+        "<!-- region: kind=transcribed_text -->\n"
+        "~~superseded-by the line above the original velocity value\n"
+        "the corrected velocity value\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT region_kind, retraction FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    markdown = handle.query(statement(
+        "SELECT markdown FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]["markdown"]
+    struck_rows = [row for row in rows if row["retraction"] == "struck_through"]
+    assert struck_rows, (
+        "TC-INGEST-16: struck-through content was dropped instead of retained with "
+        "retraction='struck_through' (FR-INGEST-12)."
+    )
+    assert "the wrong formula crossed out" in markdown
+    assert "the corrected working follows" in markdown, (
+        "TC-INGEST-16: BOTH versions must be present in the Markdown."
+    )
+    store.close()
+
+
+# -- #38 review round 2: superseded links, the re-request success path, the bindings -------------
+
+
+def test_tc_ingest_16b_a_correction_carries_superseded_by(tmp_data_dir):
+    """`TC-INGEST-16`'s second half (review B2) — the superseded region carries
+    `retraction = 'superseded_by:<the correcting region's id>'`, an exact value, and
+    BOTH versions are present."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text -->\n"
+        "the original velocity value as first written\n<!-- /region -->\n"
+        "<!-- region: kind=transcribed_text -->\n"
+        "~~superseded-by the corrected velocity value, written above\n"
+        "<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT region_id, retraction FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    assert len(rows) == 2
+    first, second = rows
+    assert first["retraction"] == f"superseded_by:{second['region_id']}", (
+        f"TC-INGEST-16: the superseded region carries "
+        f"{first['retraction']!r}, not 'superseded_by:<region_id>' (FR-INGEST-12)."
+    )
+    assert second["retraction"] is None
+    store.close()
+
+
+def test_tc_ingest_13b_a_successful_re_request_leaves_no_evaluative_text(
+    tmp_data_dir,
+):
+    """Review B3 — the re-request SUCCEEDS on the second call: the stored
+    `document.markdown` is the CLEAN transcript (the rejected judgement must not
+    survive in the document row), the region rows are clean, and exactly two VLM
+    calls were made. Nothing is written when the budget is exhausted (pinned too)."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    dirty = ("<!-- region: kind=described_graphic "
+             "element_kind=free_body_diagram -->\n"
+             "The arrow is correctly drawn, as expected.\n<!-- /region -->")
+    clean = ("<!-- region: kind=described_graphic "
+             "element_kind=free_body_diagram -->\n"
+             "The arrow labelled weight points straight down from the centre.\n"
+             "<!-- /region -->")
+
+    class Recovers(ScriptedProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls: list = []
+
+        def complete(self, prompt, model_ref, params):
+            text = dirty if len(self.calls) == 0 else clean
+            fields = dict(prompt.fields)
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            return Completion(text=text, tokens_in=1, tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    recovering = Recovers()
+    ingestor = Ingestor(handle, blobs, recovering, _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    assert len(recovering.calls) == 2, (
+        "TC-INGEST-13: the re-request did not issue a second VLM call."
+    )
+    row = handle.query(statement(
+        "SELECT markdown FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]
+    assert "correctly" not in row["markdown"] and "as expected" not in row["markdown"], (
+        "Review B3: the REJECTED evaluative description survives in "
+        "document.markdown — the stored document must be the FINAL transcript."
+    )
+    assert "straight down from the centre" in row["markdown"]
+    regions = handle.query(statement(
+        "SELECT description FROM document_region WHERE document_id = :d",
+        issue=ISSUE), d=document_id)
+    assert all("correctly" not in (r["description"] or "")
+               for r in regions)
+    store.close()
+
+
+def test_tc_ingest_13c_an_exhausted_budget_writes_nothing(tmp_data_dir):
+    """TC-INGEST-13's pin (review note) — after the re-request budget is exhausted,
+    NO document row and NO region rows exist."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = ("<!-- region: kind=described_graphic "
+              "element_kind=free_body_diagram -->\n"
+              "The arrow is correctly drawn.\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    with pytest.raises(IngestError, match="evaluative"):
+        ingestor.ingest_document([source], kind="submission",
+                                 filenames={source: "scan-01.md"})
+    assert handle.query(statement(
+        "SELECT COUNT(*) AS n FROM document", issue=ISSUE))[0]["n"] == 0
+    assert handle.query(statement(
+        "SELECT COUNT(*) AS n FROM document_region", issue=ISSUE))[0]["n"] == 0
+    store.close()
+
+
+def test_tc_ingest_11b_the_evaluative_list_binds_to_the_corpus_list():
+    """Review M2 — the module's evaluative vocabulary and the corpus generator's list
+    are the SAME judgement about what counts as a verdict. The corpus's comment warns
+    that a second copy is how the two drift apart; this binding is what stops it."""
+    from harness.corpora.graphic import EVALUATIVE_TERMS as CORPUS_TERMS
+
+    for term in CORPUS_TERMS:
+        assert term in EVALUATIVE_TERMS, (
+            f"TC-INGEST-11b: the corpus's evaluative term {term!r} is not in the "
+            "module's list — the two copies have drifted."
+        )
+
+
+def test_tc_ingest_11c_the_f_graphic_fixture_page_round_trips(tmp_data_dir):
+    """Review M4 — TC-INGEST-11's fixture is the F-GRAPHIC corpus page itself: the
+    corpus's own `acceptable_description` is what the model returns, wrapped in the
+    marker protocol, and the STORED description is exactly it (not an echo of a
+    hand-written constant)."""
+    from tests.support import corpora
+
+    corpus = corpora.load("F-GRAPHIC")
+    member = next(m for m in corpus.members if "GR-01" in str(m.id).upper())
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    pages = corpora.materialize_pages(member, tmp_data_dir / "fg")
+    page_text = pathlib.Path(pages[0]).read_text(encoding="utf-8")
+    marked = ("<!-- region: kind=described_graphic "
+              "element_kind=free_body_diagram -->\n" + page_text + "\n"
+              "<!-- /region -->")
+    source = blobs.put(b"fixture pdf")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    stored = handle.query(statement(
+        "SELECT description FROM document_region WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]["description"]
+    assert stored is not None and "arrow" in stored.lower()
+    assert stored.strip() == page_text.strip(), (
+        "TC-INGEST-11c: the stored description is not the fixture page's own "
+        "description — the round-trip through the marker protocol changed it."
+    )
     store.close()
