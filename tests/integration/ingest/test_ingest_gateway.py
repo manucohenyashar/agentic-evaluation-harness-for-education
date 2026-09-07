@@ -4,6 +4,10 @@ Cases `TC-INGEST-01`, `TC-INGEST-02`, `TC-INGEST-05`, `TC-INGEST-06` (test plan 
 via TS-14/issue #43's pairing with #36) plus the residency-slot acceptance criterion
 from #36's own list. The remaining TS-14 cases (text-layer divergence, assembly-order
 preference, page provenance, duplicate/gap detection) are #37's and land with it.
+#43 — the `type:test` issue itself — closes the oracle gaps the story-authored cases
+left: `TC-INGEST-02`'s four-page input, `TC-INGEST-07`'s differential across
+presentation orders, `TC-INGEST-08`'s per-region artifact assertion, and
+`TC-INGEST-48`'s golden-file regression over the corpora through the gateway.
 
 Rung 2 — real Tier C files, real blob directories; the VLM is a scripted
 `InferenceProvider` (the `RecordedFixtureProvider` shape: one `Completion` per call,
@@ -194,13 +198,14 @@ def test_tc_ingest_01_only_m_ingest_touches_pdfs_and_no_entry_point_takes_a_path
 
 
 def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_dir):
-    """`TC-INGEST-02` — a two-page PDF of EACH artifact kind: every page rasterized at
-    the pinned DPI and transcribed with exactly ONE VLM call — call count equals page
-    count for all four kinds — and no per-kind alternative path exists in the module's
-    dispatch (asserted over the source: no `kind ==` branch selects an extraction
-    path)."""
+    """`TC-INGEST-02` — a FOUR-page PDF of EACH artifact kind (the plan's input):
+    every page rasterized at the pinned DPI and transcribed with exactly ONE VLM call
+    — call count equals page count for all four kinds — and no per-kind alternative
+    path exists in the module's dispatch (asserted over the source: no `kind ==`
+    branch selects an extraction path)."""
     store, blobs, rasterizer, provider, slot, ingestor = _fixture(tmp_data_dir)
-    source = blobs.put(b"fixture pdf: two pages")
+    source = blobs.put(b"fixture pdf: four pages")
+    rasterizer.plan[b"fixture pdf: four pages"] = 4
     total_calls = 0
     for kind in DOCUMENT_KINDS:
         before = len(provider.calls)
@@ -210,21 +215,21 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
             "SELECT kind FROM document WHERE document_id = :d", issue=ISSUE),
             d=document_id)[0]
         assert row["kind"] == kind
-        assert len(provider.calls) - before == 2, (
+        assert len(provider.calls) - before == 4, (
             f"TC-INGEST-02: kind {kind!r} made {len(provider.calls) - before} VLM "
-            "calls for a two-page PDF — every page is transcribed with exactly one "
+            "calls for a four-page PDF — every page is transcribed with exactly one "
             "call (FR-INGEST-02)."
         )
-        # Exactly one call PER PAGE: the recorded (page_no, image) pairs cover page 1
-        # and page 2 once each — a path that called one page twice and skipped the
-        # other would pass a bare count.
+        # Exactly one call PER PAGE: the recorded (page_no, image) pairs cover pages
+        # 1-4 once each — a path that called one page twice and skipped another would
+        # pass a bare count.
         page_numbers = [page_no for page_no, _ in provider.calls[before:]]
-        assert sorted(page_numbers) == ["1", "2"], (
+        assert sorted(page_numbers) == ["1", "2", "3", "4"], (
             f"TC-INGEST-02: the calls covered pages {page_numbers} — one call per "
             "page, not merely the right total (FR-INGEST-02)."
         )
         total_calls += len(provider.calls) - before
-    assert total_calls == 8
+    assert total_calls == 16
     assert set(rasterizer.dpi_seen) == {200}, (
         "TC-INGEST-02: the rasterization DPI is not the pinned default."
     )
@@ -687,6 +692,24 @@ def _two_page_provider(first: str, second: str) -> ScriptedProvider:
     return TwoPage()
 
 
+class KeyedProvider(ScriptedProvider):
+    """A provider double answering per (source blob, page): the way the multi-file,
+    fiducial and corpus cases script their pages — one transcript per (blob, page_no)
+    pair, whatever order the gateway reaches them in."""
+
+    def __init__(self, texts: dict) -> None:
+        super().__init__()
+        self._texts = texts
+
+    def complete(self, prompt, model_ref, params):
+        fields = dict(prompt.fields)
+        key = (fields["source_blob_hash"], int(fields["page_no"]))
+        self.calls.append(key)
+        return Completion(text=self._texts[key], tokens_in=1, tokens_out=1,
+                          latency_ms=1, resolved_build=model_ref.build_id,
+                          cached_prefix_tokens=0, cost=None)
+
+
 def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
     """`TC-INGEST-09` — two identical pages and two just above the
     `INGEST_DUPLICATE_SIMILARITY_THRESHOLD` (injected — the value is a design TBD) are
@@ -938,6 +961,155 @@ def test_tc_ingest_07b_the_fiducial_tier_sorts_naturally_and_refuses_repeats(
     with pytest.raises(IngestError, match="repeat positions"):
         repeated.ingest_document([source], kind="submission",
                                  filenames={source: "scan-01.md"})
+    store.close()
+
+
+def test_tc_ingest_07c_order_is_independent_of_the_presentation_order(tmp_data_dir):
+    """`TC-INGEST-07`'s differential oracle — *'Directory iteration order never used,
+    asserted by running each case twice with different filesystem orderings and
+    comparing output hashes.'* The gateway's interface has no directory read: sources
+    arrive as an explicit sequence, so the two orderings here are the two sequences a
+    caller could hand the same content in. Every decidable tier is run twice with the
+    sources presented in opposite orders, and the stored Markdown, its content hash
+    and the provenance record must be IDENTICAL — the artifact is a function of the
+    content, never of the arrival order (FR-INGEST-06)."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    blob_a = blobs.put(b"interleave part A")
+    blob_b = blobs.put(b"interleave part B")
+    rasterizer.plan[b"interleave part A"] = 2
+    rasterizer.plan[b"interleave part B"] = 2
+
+    printed = {
+        (blob_a, 1): "Page 1 of 4 - the alpha page discusses forces",
+        (blob_a, 2): "Page 3 of 4 - the gamma page discusses moments",
+        (blob_b, 1): "Page 2 of 4 - the beta page discusses optics",
+        (blob_b, 2): "Page 4 of 4 - the delta page discusses waves",
+    }
+    markers = {
+        (blob_a, 1): "[fiducial:page-1] the alpha page discusses forces",
+        (blob_a, 2): "[fiducial:page-3] the gamma page discusses moments",
+        (blob_b, 1): "[fiducial:page-2] the beta page discusses optics",
+        (blob_b, 2): "[fiducial:page-4] the delta page discusses waves",
+    }
+    plain = {
+        (blob_a, 1): "the alpha page discusses forces",
+        (blob_a, 2): "the gamma page discusses moments",
+        (blob_b, 1): "the beta page discusses optics",
+        (blob_b, 2): "the delta page discusses waves",
+    }
+
+    def ingest(texts, sequence, **kwargs) -> tuple[str, str, str, str]:
+        ingestor = Ingestor(handle, blobs, KeyedProvider(texts), _model(),
+                            SamplingParams(temperature=0.0), rasterizer,
+                            sanitizer=THROUGH_SANITIZER)
+        document_id = ingestor.ingest_document(sequence, kind="submission", **kwargs)
+        row = handle.query(statement(
+            "SELECT markdown, content_hash, source_blobs FROM document "
+            "WHERE document_id = :d", issue=ISSUE), d=document_id)[0]
+        order_source = json.loads(row["source_blobs"])["order_source"]
+        return row["markdown"], row["content_hash"], row["source_blobs"], order_source
+
+    # (b) printed page numbers: the ladder must INTERLEAVE the two files by their
+    # printed positions, whichever order the blobs arrive in.
+    first = ingest(printed, [blob_b, blob_a])
+    second = ingest(printed, [blob_a, blob_b])
+    assert first == second, (
+        "TC-INGEST-07: the assembled artifact depends on the order the sources were "
+        "PRESENTED in — the page-number tier is not deciding the order (FR-INGEST-06)."
+    )
+    assert first[3] == "page_number"
+    # (a) operator-stated order: the hint is absolute, so reversing the presentation
+    # must not move a byte.
+    first = ingest(plain, [blob_b, blob_a], order_hint=[blob_a, blob_b])
+    second = ingest(plain, [blob_a, blob_b], order_hint=[blob_a, blob_b])
+    assert first == second
+    assert first[3] == "operator"
+    # (c) fiducial markers: same property through the marker tier's natural sort.
+    first = ingest(markers, [blob_b, blob_a])
+    second = ingest(markers, [blob_a, blob_b])
+    assert first == second
+    assert first[3] == "marker"
+    # (d) filenames only: same names, opposite presentation, one artifact.
+    names = {blob_a: "01-part-a.md", blob_b: "02-part-b.md"}
+    first = ingest(plain, [blob_b, blob_a], filenames=names)
+    second = ingest(plain, [blob_a, blob_b], filenames=names)
+    assert first == second, (
+        "TC-INGEST-07: the filename tier followed the presentation order instead of "
+        "the natural sort of the names (FR-INGEST-06)."
+    )
+    assert first[3] == "filename"
+    store.close()
+
+
+def test_tc_ingest_08_every_region_carries_the_full_provenance_triple(tmp_data_dir):
+    """`TC-INGEST-08` — an assembled multi-file document: EVERY region row carries the
+    source file hash, the page index within that file, and the position in the
+    assembled sequence — enough to display the originating page for any cited span
+    (FR-INGEST-07). The provenance-level triple is asserted in TC-INGEST-07's
+    two-blob case; this is the per-REGION artifact assertion the plan names, over a
+    document whose pages each carry several regions."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    blob_a = blobs.put(b"provenance part A")
+    blob_b = blobs.put(b"provenance part B")
+    rasterizer.plan[b"provenance part A"] = 2
+    rasterizer.plan[b"provenance part B"] = 2
+
+    def two_regions(body: str) -> str:
+        first = f"<!-- region: kind=transcribed_text -->\n{body}, first part\n<!-- /region -->"
+        second = f"<!-- region: kind=transcribed_text -->\n{body}, second part\n<!-- /region -->"
+        return f"{first}\n{second}"
+
+    texts = {
+        (blob_a, 1): two_regions("Page 1 of 4 - alpha page about forces"),
+        (blob_a, 2): two_regions("Page 3 of 4 - gamma page about moments"),
+        (blob_b, 1): two_regions("Page 2 of 4 - beta page about optics"),
+        (blob_b, 2): two_regions("Page 4 of 4 - delta page about waves"),
+    }
+    ingestor = Ingestor(handle, blobs, KeyedProvider(texts), _model(),
+                        SamplingParams(temperature=0.0), rasterizer,
+                        sanitizer=THROUGH_SANITIZER)
+    document_id = ingestor.ingest_document([blob_a, blob_b], kind="assessment")
+
+    provenance = json.loads(handle.query(statement(
+        "SELECT source_blobs FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]["source_blobs"])
+    regions = handle.query(statement(
+        "SELECT source_hash, page_no, page_index, position FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    assert len(regions) == 8, (
+        "TC-INGEST-08: the fixture's four two-region pages did not yield eight "
+        "region rows — there is nothing per-region to assert."
+    )
+    # Region positions are the dense assembled sequence over REGIONS (0-based; the
+    # provenance record's positions are the per-page sequence, 1-based).
+    assert [region["position"] for region in regions] == list(range(0, 8)), (
+        "TC-INGEST-08: region positions are not the dense assembled sequence."
+    )
+    page_at = {page["position"]: page for page in provenance["pages"]}
+    provenance_order = [(page_at[position]["blob_hash"], page_at[position]["page_no"])
+                        for position in sorted(page_at)]
+    region_pages = [(region["source_hash"], region["page_index"])
+                    for region in regions]
+    for region in regions:
+        assert (region["source_hash"], region["page_index"]) in provenance_order, (
+            f"TC-INGEST-08: the region at position {region['position']} names "
+            f"(source, page) {(region['source_hash'][:12], region['page_index'])}, "
+            "which the provenance record does not — a cited span could not be "
+            "traced to its originating page (FR-INGEST-07)."
+        )
+        assert region["page_no"] == region["page_index"]
+    # And the regions of each page appear in the ASSEMBLED page order: collapsing
+    # the per-region pairs into consecutive runs reproduces the provenance sequence.
+    runs = [region_pages[0]] + [
+        pair for index, pair in enumerate(region_pages[1:], start=1)
+        if pair != region_pages[index - 1]]
+    assert runs == provenance_order, (
+        f"TC-INGEST-08: the regions' (source, page) runs {runs} do not follow the "
+        f"assembled page order {provenance_order} — the region sequence and the "
+        "provenance disagree about which page a span came from (FR-INGEST-07)."
+    )
     store.close()
 
 
@@ -1671,4 +1843,103 @@ def test_tc_ingest_22_a_cluster_is_resolved_once_across_the_cohort(tmp_data_dir)
             issue=ISSUE), d=document_id)[0]["content"]
         assert "the resolved reading of the token" in content
         assert "<unresolved>" not in content
+    store.close()
+
+
+# -- #43: TC-INGEST-48 — the corpora through the gateway, against the §6.9 baseline ---------------
+
+
+def test_tc_ingest_48_the_gateway_stores_the_golden_canonical_markdown(tmp_data_dir):
+    """`TC-INGEST-48` — the `F-SYNTH` and `F-GRAPHIC` corpora through the GATEWAY:
+    every fixture document ingested end-to-end (rasterize, transcribe, order ladder,
+    regions, store) and the STORED canonical Markdown compared byte for byte against
+    the committed §6.9 baseline. The plan's oracle names §6.9 deliberately — one
+    baseline, two cases: `TC-REG-01` (landed with #37) pins the pure
+    `assemble_canonical_markdown` seam against these same golden files; this case pins
+    what the gateway actually stores, so the artifact a downstream stage reads is the
+    reviewed bytes and not a transcription-order artefact.
+
+    The case ingests as `assessment`, not `submission`: the golden is the canonical
+    assembly itself, and the submission-only untrusted-content demarcation (#42)
+    wraps submission transcripts in marked regions, which would change the bytes
+    under comparison — the demarcation has its own cases (`TC-INGEST-35`/`-36`)."""
+    from tests.support import corpora
+    from tests.support.baselines import BASELINE_ROOT, entry_for
+
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    entry = entry_for("TC-REG-01")
+
+    for corpus_name, golden_name in (
+        ("F-SYNTH", "TC-REG-01/F-SYNTH.canonical.md"),
+        ("F-GRAPHIC", "TC-REG-01/F-GRAPHIC.canonical.md"),
+    ):
+        assert golden_name in entry.golden, (
+            f"{golden_name} is not one of the registered §6.9 baselines "
+            f"{entry.golden} — the golden this case reads must be the one the "
+            f"registry's reviewer reviews."
+        )
+        golden_lines = (BASELINE_ROOT / golden_name).read_text(
+            encoding="utf-8").splitlines()
+        corpus = corpora.load(corpus_name)
+        for member in corpus.members:
+            # Locate the member's section by its header signature — a `## {id}`
+            # line followed by the report's `content_hash:` line — so an H2 inside
+            # the canonical body (the corpus's own `## Q1`-style headings) cannot
+            # be mistaken for a section boundary.
+            starts = [index for index, line in enumerate(golden_lines)
+                      if line == f"## {member.id}" and index + 1 < len(golden_lines)
+                      and golden_lines[index + 1].startswith("content_hash: ")]
+            assert len(starts) == 1, (
+                f"TC-INGEST-48: {golden_name} does not carry exactly one section "
+                f"for {member.id}: {starts}."
+            )
+            start = starts[0]
+            next_start = min((index for index in range(start + 1, len(golden_lines))
+                              if golden_lines[index].startswith("## ")
+                              and index + 1 < len(golden_lines)
+                              and golden_lines[index + 1].startswith("content_hash: ")),
+                             default=len(golden_lines))
+            body_start = start + 5  # ## id / content_hash / transcriber_ref / source_blobs / blank
+            golden_hash = golden_lines[start + 1].split(": ", 1)[1]
+            golden_canonical = "\n".join(
+                golden_lines[body_start:next_start]).rstrip("\n") + "\n"
+
+            pages = corpora.materialize_pages(
+                member, tmp_data_dir / corpus_name / member.id)
+            page_texts = [path.read_text(encoding="utf-8") for path in pages]
+            source_bytes = f"corpus {member.id}".encode()
+            source = blobs.put(source_bytes)
+            rasterizer.plan[source_bytes] = len(page_texts)
+            ingestor = Ingestor(
+                handle, blobs,
+                KeyedProvider({(source, page_no + 1): text
+                               for page_no, text in enumerate(page_texts)}),
+                _model(), SamplingParams(temperature=0.0), rasterizer,
+                sanitizer=THROUGH_SANITIZER)
+            # F-SYNTH's pages carry printed numbers, so the page-number tier
+            # decides; F-GRAPHIC's single unnumbered pages need the filename tier.
+            document_id = ingestor.ingest_document(
+                [source], kind="assessment", filenames={source: f"{member.id}.md"})
+            row = handle.query(statement(
+                "SELECT markdown, content_hash, source_blobs FROM document "
+                "WHERE document_id = :d", issue=ISSUE), d=document_id)[0]
+
+            assert row["markdown"] == golden_canonical, (
+                f"TC-INGEST-48: the gateway's stored Markdown for {member.id} "
+                f"differs from the committed {golden_name} baseline. "
+                + entry.governance()
+            )
+            assert row["content_hash"] == golden_hash, (
+                f"TC-INGEST-48: {member.id}'s recorded content hash is not the "
+                f"baseline's — the hash is over the canonical Markdown "
+                f"(FR-INGEST-04)."
+            )
+            assert row["content_hash"] == hashlib.sha256(
+                row["markdown"].encode("utf-8")).hexdigest()
+            expected_tier = "page_number" if corpus_name == "F-SYNTH" else "filename"
+            assert json.loads(row["source_blobs"])["order_source"] == expected_tier, (
+                f"TC-INGEST-48: {member.id}'s assembly order was not decided by the "
+                f"{expected_tier} tier (FR-INGEST-06)."
+            )
     store.close()
