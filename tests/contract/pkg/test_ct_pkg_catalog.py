@@ -24,6 +24,7 @@ creation/publication/violation logging) is implemented in this PR alongside the 
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -693,21 +694,52 @@ def test_tc_pkg_c12_every_tier_p_write_passes_through_m_pkg(tmp_data_dir):
             "connection mechanism) may write Tier P (CT-PKG-12)."
         )
     # The artifact half at statement granularity: every Tier P WRITE statement in the
-    # source lives in the store (mechanism: migrations, queue, pragmas) or in pkg (the
-    # owning module's registry) — no other module issues one at all.
-    write_markers = ("INSERT INTO", "UPDATE ", "DELETE FROM", "REPLACE INTO")
+    # source lives either in the store (mechanism: migrations, queue, pragmas), in pkg
+    # (the owning module), or in a REGISTERED MIGRATION (design §3.3: M-STORE owns the
+    # migration mechanism; the owning module contributes the migrations — a module's
+    # own tier migration is sanctioned, its runtime statements are not).
+    from aeh.store import TIER_MIGRATIONS, Tier
+
+    # The binary is every aeh module: import them all so each owning module's
+    # migration contribution is registered before the sanctioned set is built.
+    import importlib
+    import pkgutil
+
+    for module_info in pkgutil.iter_modules([str(pathlib.Path("src/aeh"))]):
+        importlib.import_module(f"aeh.{module_info.name}")
+    sanctioned = {str(stmt) for tier in Tier for migration in TIER_MIGRATIONS[tier]
+                  for stmt in migration.statements}
+    # The clause's scope is Tier P's rows: a write touching any other tier's tables is
+    # that tier's owning module's business, not a package-writership violation.
+    tier_p_tables = ("package", "package_version", "criterion", "band",
+                     "criterion_dependency", "exemplar", "grade_policy",
+                     "grade_boundary", "validation_record", "mcq_option",
+                     "elicitation_history")
+    write_markers = tuple(
+        f"{verb} {table}" for verb in ("INSERT INTO", "UPDATE", "DELETE FROM",
+                                       "REPLACE INTO")
+        for table in tier_p_tables)
     offenders = []
     for path in sorted(pathlib.Path("src/aeh").glob("*.py")):
         if path.name in ("store.py", "pkg.py"):
             continue
-        for line_no, line in enumerate(
-                path.read_text(encoding="utf-8").splitlines(), start=1):
-            if any(marker in line.upper() for marker in write_markers):
-                offenders.append(f"{path.name}:{line_no}")
+        # String-constant granularity: a registered migration's SQL is a multi-line
+        # literal whose whole text is sanctioned; a rogue write is a literal (or an
+        # assembly) that is not.
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            upper = node.value.upper()
+            if not any(marker in upper for marker in write_markers):
+                continue
+            if node.value in sanctioned:
+                continue
+            offenders.append(f"{path.name}:{node.lineno}")
     assert not offenders, (
-        f"TC-PKG-C12: write SQL exists outside the store and the owning module: "
-        f"{offenders}. Sole writership of Tier P (CT-PKG-12) is a property of the "
-        "source, not of caller discipline."
+        f"TC-PKG-C12: runtime write SQL exists outside the store and the owning "
+        f"module: {offenders}. Sole writership of Tier P (CT-PKG-12) is a property of "
+        "the source, not of caller discipline."
     )
     store.close()
 
