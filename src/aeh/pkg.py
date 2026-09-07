@@ -37,6 +37,7 @@ import tempfile
 import uuid
 import zipfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -87,6 +88,38 @@ PackageVersionId = str
 #: Module observability (`CT-PKG-16`): every export/import logged with version,
 #: provenance and destination; every `SchemaLockViolation` at WARN.
 LOGGER = logging.getLogger("aeh.pkg")
+
+
+class _ViolationCounter:
+    """The monotone count of refused §6.2-locked edits (`CT-PKG-16`'s alert signal).
+
+    The NAME is contract (`RISK-35`): a rising `schema_lock_violation_count` means a
+    caller is attempting something the design forbids, and an alert on a renamed signal
+    is an alert that silently watches nothing. Exposed through
+    `schema_lock_violation_count()`; the rate ops alerts on is this counter's
+    derivative, which a monitor computes — the module owns the count, not the clock."""
+
+    def __init__(self) -> None:
+        self._value = 0
+
+    def increment(self) -> None:
+        self._value += 1
+
+    @property
+    def value(self) -> int:
+        return self._value
+
+
+#: The stable-name signal itself. Module-level, so every catalog instance's refusals
+#: contribute to the one number ops watches.
+SCHEMA_LOCK_VIOLATIONS = _ViolationCounter()
+
+
+def schema_lock_violation_count() -> int:
+    """`CT-PKG-16`'s stable-name accessor: §6.2-locked edits refused, monotone over the
+    process lifetime. A rising rate is an alert signal meaning a caller is attempting
+    something the design forbids."""
+    return SCHEMA_LOCK_VIOLATIONS.value
 
 #: The export archive format tag and version. Import refuses an unknown NEWER format
 #: (the same forward-only rule the schema itself follows) and accepts older ones.
@@ -1254,6 +1287,12 @@ class PackageCatalog:
         if not row["locked"]:
             return
         if field in {f"{table}.{name}" for table, name in SCHEMA_LOCK_FIELDS}:
+            SCHEMA_LOCK_VIOLATIONS.increment()
+            LOGGER.warning(
+                "schema lock violation: the %r edit on package version %r is refused "
+                "(FR-PKG-03) — a rising rate means a caller is attempting something "
+                "the design forbids", field, v,
+            )
             raise SchemaLockViolation(
                 f"the {field!r} edit on package version {v!r} is refused by the §6.2 "
                 f"schema lock (FR-PKG-03): changing what is measured invalidates every "
@@ -2227,8 +2266,9 @@ class PackageCatalog:
             src=str(src),
         )
         LOGGER.info(
-            "imported package %s version %s signature=%s src=%s",
-            package_id, report.package_version_id, signature_status, src,
+            "imported package %s version %s provenance=%s signature=%s src=%s",
+            package_id, report.package_version_id, manifest.get("exemplar_provenance"),
+            signature_status, src,
         )
         return report
 
@@ -2273,6 +2313,8 @@ class PackageCatalog:
                        criterion_id=criterion_id, question_id=criterion_id,
                        kind="open", max_points=0.0, scoring_model="atomic",
                        construct_tag="", band_count=None)
+        LOGGER.info("created package version %s (package %s, parent %s)",
+                    version_id, self._package_id, parent)
         return version_id
 
     def publish(self, v: PackageVersionId, approved_by: str) -> None:
@@ -2281,6 +2323,8 @@ class PackageCatalog:
         self._refuse_mutation(v)
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
+            LOGGER.info("published package version %s by %s at %s",
+                        v, approved_by, datetime.now(timezone.utc).isoformat())
         # FR-PKG-06's count half, at the publish boundary: every declared band_count is
         # fully populated and even/2..6. The per-add checks covered order and ceiling.
         # The validation reads the DATABASE directly — the cache was just invalidated.
