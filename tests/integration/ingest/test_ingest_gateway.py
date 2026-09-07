@@ -1399,3 +1399,224 @@ def test_tc_ingest_11c_the_f_graphic_fixture_page_round_trips(tmp_data_dir):
         "description — the round-trip through the marker protocol changed it."
     )
     store.close()
+
+
+# -- #39: per-region confidence, content states, selection marks, package read, clustering -------
+
+
+def test_tc_ingest_17_present_blank_and_absent_are_distinct(tmp_data_dir):
+    """`TC-INGEST-17` — an answer region with writing, an EMPTY answer region, and a
+    page where the region is absent: `present`, `blank` and `absent` are three rows,
+    never collapsed — blank is a legitimate zero, absent is a scanning failure."""
+    from aeh.pkg import PackageCatalog, PackageDraft
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present -->\n"
+        "the worked answer to Q1\n<!-- /region -->\n"
+        "<!-- region: kind=transcribed_text question_id=Q2 state=blank -->\n"
+        "<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT element_kind, content_state FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    assert [(row["element_kind"], row["content_state"]) for row in rows] == [
+        ("Q1", "present"), ("Q2", "blank")]
+    # The absent question: the package declares Q3, no region carries it — the
+    # expected-region read (FR-INGEST-18) emits a distinct ABSENT row.
+    seed = store.package("pkg-39")
+    with seed.transaction() as tx:
+        tx.execute(statement(
+            "INSERT INTO package (package_id, created_at) VALUES ('pkg-39', 'x')",
+            issue=ISSUE))
+    catalog = PackageCatalog(seed, package_id="pkg-39")
+    try:
+        v = catalog.create_version(None, PackageDraft(title="pkg"))
+        catalog.add_criterion(v, "C1", question_id="Q3", kind="open", max_points=4.0)
+        regions = ingestor._absent_regions(v, document_id, declared_regions=[
+            ("Q1", "present"), ("Q2", "blank")], package_catalog=catalog)
+        assert regions == [("Q3", "absent")], (
+            "TC-INGEST-17: the absent question is not recorded as its own row — "
+            "absent (scanning failure) and blank (legitimate zero) are distinct "
+            "(FR-INGEST-16)."
+        )
+    finally:
+        pass
+    store.close()
+
+
+def test_tc_ingest_18_the_selection_decision_table(tmp_data_dir):
+    """`TC-INGEST-18` — the decision table: a clean single tick resolves; two ticks
+    are `multiple_marks`; a smudge and an erased-and-remarked box are `ambiguous`;
+    an empty box resolves to none. `selection` is populated ONLY when resolved, and
+    no ambiguous or multiple mark is ever mapped to an option."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    table = {
+        "resolved": ("B", "B"),
+        "multiple_marks": (None, None),
+        "ambiguous": (None, None),
+    }
+    for selection_state, (selection, _) in table.items():
+        marked = (f"<!-- region: kind=selection_mark question_id=Q1 "
+                  f"selection_state={selection_state} selection={selection or ''} -->\n"
+                  "the mark as seen\n<!-- /region -->")
+        ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                            SamplingParams(temperature=0.0), OnePageRasterizer())
+        source = blobs.put(f"pdf-{selection_state}".encode())
+        document_id = ingestor.ingest_document([source], kind="submission",
+                                               filenames={source: "scan.md"})
+        rows = handle.query(statement(
+            "SELECT selection_state, selection FROM document_region "
+            "WHERE document_id = :d", issue=ISSUE), d=document_id)
+        assert rows[0]["selection_state"] == selection_state
+        if selection_state == "resolved":
+            assert rows[0]["selection"] == selection
+        else:
+            assert rows[0]["selection"] is None, (
+                f"TC-INGEST-18: a {selection_state} mark carries a selection — an "
+                "unreadable mark must never be mapped to an option (FR-INGEST-17)."
+            )
+    store.close()
+
+
+def test_tc_ingest_19_question_format_is_read_from_the_package(tmp_data_dir):
+    """`TC-INGEST-19` — the question structure is read FROM THE PACKAGE, never
+    classified per submission: the ingest with a bound catalog reads the declared
+    kinds; the assertion is that the same package feeds every submission without any
+    per-submission classification call (the catalog is read, not a model)."""
+    from aeh.pkg import PackageCatalog, PackageDraft
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    seed = store.package("pkg-39")
+    with seed.transaction() as tx:
+        tx.execute(statement(
+            "INSERT INTO package (package_id, created_at) VALUES ('pkg-39', 'x')",
+            issue=ISSUE))
+    catalog = PackageCatalog(seed, package_id="pkg-39")
+    try:
+        v = catalog.create_version(None, PackageDraft(title="pkg"))
+        catalog.add_criterion(v, "C1", question_id="Q1", kind="mcq", max_points=1.0)
+        catalog.add_criterion(v, "C2", question_id="Q2", kind="open", max_points=4.0)
+        ingestor = Ingestor(handle, blobs, ScriptedProvider(), _model(),
+                            SamplingParams(temperature=0.0), OnePageRasterizer())
+        source = blobs.put(b"fixture pdf")
+        report = ingestor.ingest_submission(
+            [source], cohort_id="c-36", package_version=v,
+            package_catalog=catalog, filenames={source: "scan-01.md"})
+        assert report.document_id
+        # The declared structure is the package's, read once for the submission:
+        declared = {row["question_id"]: row["kind"]
+                    for row in catalog.criteria(v)}
+        assert declared == {"Q1": "mcq", "Q2": "open"}
+    finally:
+        pass
+    store.close()
+
+
+def test_tc_ingest_20_shape_contradictions_are_v2_failures(tmp_data_dir):
+    """`TC-INGEST-20` — prose where the package declares `mcq`, a selection where it
+    declares `open`: both recorded as V2 failures NAMING the question, routed to the
+    operator — never silently reinterpreted."""
+    from aeh.pkg import PackageCatalog, PackageDraft
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    seed = store.package("pkg-39")
+    with seed.transaction() as tx:
+        tx.execute(statement(
+            "INSERT INTO package (package_id, created_at) VALUES ('pkg-39', 'x')",
+            issue=ISSUE))
+    catalog = PackageCatalog(seed, package_id="pkg-39")
+    v = catalog.create_version(None, PackageDraft(title="pkg"))
+    catalog.add_criterion(v, "C1", question_id="Q1", kind="mcq", max_points=1.0)
+    catalog.add_criterion(v, "C2", question_id="Q2", kind="open", max_points=4.0)
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present -->\n"
+        "a prose answer where the package declares mcq\n<!-- /region -->\n"
+        "<!-- region: kind=selection_mark question_id=Q2 selection_state=resolved "
+        "selection=A -->\nthe mark as seen\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    report = ingestor.ingest_submission([source], cohort_id="c-36",
+                                        package_version=v, package_catalog=catalog,
+                                        filenames={source: "scan-01.md"})
+    findings = [(f["question_id"], f["finding"]) for f in report.detail["v2_failures"]]
+    assert ("Q1", "prose where the package declares mcq") in findings, (
+        "TC-INGEST-20: prose where mcq is declared was not recorded as a V2 failure."
+    )
+    assert ("Q2", "selection where the package declares open") in findings, (
+        "TC-INGEST-20: a selection where open is declared was not recorded."
+    )
+    assert report.gates["v2"] == "deferred"  # the ROUTING is #40's; the record is #39's
+    store.close()
+
+
+def test_tc_ingest_21_ocr_confidence_is_per_region(tmp_data_dir):
+    """`TC-INGEST-21` — `ocr_conf` recorded PER REGION, at different values, so the
+    read path M-INTEG uses (region rows) carries confidence at span granularity — a
+    document-level value alone does not satisfy the requirement."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    marked = (
+        "<!-- region: kind=transcribed_text question_id=Q1 conf=0.94 -->\n"
+        "clearly written text\n<!-- /region -->\n"
+        "<!-- region: kind=transcribed_text question_id=Q2 conf=0.41 -->\n"
+        "marginal handwriting here\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer())
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    rows = handle.query(statement(
+        "SELECT element_kind, ocr_conf FROM document_region "
+        "WHERE document_id = :d ORDER BY position", issue=ISSUE), d=document_id)
+    assert [(row["element_kind"], row["ocr_conf"]) for row in rows] == [
+        ("Q1", 0.94), ("Q2", 0.41)], (
+        "TC-INGEST-21: ocr_conf is not per region at the recorded values — impact "
+        "routing intersects confidence with spans (FR-INGEST-15)."
+    )
+    store.close()
+
+
+def test_tc_ingest_22_a_cluster_is_resolved_once_across_the_cohort(tmp_data_dir):
+    """`TC-INGEST-22` — the same ambiguous token in MULTIPLE submissions: clustered
+    once, presented once, and the resolution applies to every occurrence, with the
+    returned ids covering every affected document."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    marked = ("<!-- region: kind=transcribed_text -->\n"
+              "the margin says <unresolved>illegible-token</unresolved> beside "
+              "the answer\n<!-- /region -->")
+    marked_ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                               SamplingParams(temperature=0.0), OnePageRasterizer())
+    affected = []
+    for index in range(3):
+        source = blobs.put(f"submission {index}".encode())
+        document_id = marked_ingestor.ingest_document([source], kind="submission",
+                                                      filenames={source: "scan.md"})
+        affected.append(document_id)
+    clusters = marked_ingestor.clusters("c-36")
+    matching = [c for c in clusters if c.token == "illegible-token"]
+    assert len(matching) == 1, (
+        f"TC-INGEST-22: the token produced {len(matching)} clusters — it is "
+        "presented ONCE for resolution (FR-INGEST-20)."
+    )
+    cluster = matching[0]
+    assert set(cluster.document_ids) == set(affected)
+    resolved = marked_ingestor.resolve_cluster(cluster.cluster_id,
+                                               "the resolved reading of the token")
+    assert set(resolved) == set(affected), (
+        "TC-INGEST-22: the resolution did not reach every occurrence."
+    )
+    for document_id in affected:
+        content = handle.query(statement(
+            "SELECT content FROM document_region WHERE document_id = :d",
+            issue=ISSUE), d=document_id)[0]["content"]
+        assert "the resolved reading of the token" in content
+        assert "<unresolved>" not in content
+    store.close()

@@ -37,7 +37,7 @@
       "rows": 1
     },
     "document_region": {
-      "checksum": "c2b63348ae0fca2e97dcd5cc2428c02d8f67d71d2cff62587986f35711c7809b",
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268",
       "columns": [
         "region_id",
         "document_id",
@@ -55,7 +55,8 @@
         "page_index",
         "position",
         "is_untrusted_content",
-        "description_secondary"
+        "description_secondary",
+        "content"
       ],
       "rows": 1
     },
@@ -111,6 +112,17 @@
         "revision"
       ],
       "rows": 1
+    },
+    "token_cluster": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "rows": 0
     },
     "verdict": {
       "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",
@@ -171,7 +183,7 @@
       "rows": 1
     },
     "document_region": {
-      "checksum": "c2b63348ae0fca2e97dcd5cc2428c02d8f67d71d2cff62587986f35711c7809b",
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268",
       "columns": [
         "region_id",
         "document_id",
@@ -189,7 +201,8 @@
         "page_index",
         "position",
         "is_untrusted_content",
-        "description_secondary"
+        "description_secondary",
+        "content"
       ],
       "rows": 1
     },
@@ -245,6 +258,17 @@
         "revision"
       ],
       "rows": 1
+    },
+    "token_cluster": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "rows": 0
     },
     "verdict": {
       "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",
@@ -305,7 +329,7 @@
       "rows": 1
     },
     "document_region": {
-      "checksum": "c2b63348ae0fca2e97dcd5cc2428c02d8f67d71d2cff62587986f35711c7809b",
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268",
       "columns": [
         "region_id",
         "document_id",
@@ -323,7 +347,8 @@
         "page_index",
         "position",
         "is_untrusted_content",
-        "description_secondary"
+        "description_secondary",
+        "content"
       ],
       "rows": 1
     },
@@ -379,6 +404,163 @@
         "revision"
       ],
       "rows": 1
+    },
+    "token_cluster": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "rows": 0
+    },
+    "verdict": {
+      "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band"
+      ],
+      "rows": 1
+    },
+    "work_unit": {
+      "checksum": "0b33eda0748b029dceffe476a2e1c02ea50e4e85a091dadfdd2bcb25efda94a0",
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status"
+      ],
+      "rows": 1
+    }
+  },
+  "cohort@v4": {
+    "cohort": {
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4",
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "criterion_score": {
+      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band"
+      ],
+      "rows": 1
+    },
+    "document": {
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9",
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "document_region": {
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268",
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content"
+      ],
+      "rows": 1
+    },
+    "evidence": {
+      "checksum": "45f70fec5a514f3585c8ad8c612890c7e696d21b1757922965d9f7cd310fed9f",
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id"
+      ],
+      "rows": 1
+    },
+    "narrative": {
+      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a",
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id"
+      ],
+      "rows": 1
+    },
+    "review_queue": {
+      "checksum": "93b39e25df2787f86d613da71e999838d549da467e81945ffb8ff25ecca6b1d8",
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason"
+      ],
+      "rows": 1
+    },
+    "roster": {
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0",
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "rows": 1
+    },
+    "submission": {
+      "checksum": "7af6ee94659042922b91610147c0f4c6d110c46213269105ff5f8b07a230a6dc",
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref"
+      ],
+      "rows": 1
+    },
+    "submission_grade": {
+      "checksum": "e8913276c4952f64b4947ccdf304043c077c7502815888785e28002e7714e097",
+      "columns": [
+        "submission_id",
+        "revision"
+      ],
+      "rows": 1
+    },
+    "token_cluster": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "rows": 0
     },
     "verdict": {
       "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",

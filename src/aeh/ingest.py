@@ -59,6 +59,7 @@ __all__ = [
     "IngestOrderError",
     "IngestReport",
     "Ingestor",
+    "TokenCluster",
     "PageImage",
     "PageReplacement",
     "PdfiumRasterizer",
@@ -81,8 +82,9 @@ DOCUMENT_KINDS: tuple[str, ...] = ("assessment", "reference", "rubric", "submiss
 #: The transcription prompt's version (`NFR-INGEST-05`): a prompt change alters every
 #: subsequent transcript, so the version is pinned here, recorded on every document row,
 #: and bumped only deliberately. v2 added the region-marker protocol and the per-kind
-#: description fields (#38) — a deliberate bump, recorded in the PR.
-TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v2"
+#: description fields (#38); v3 added the per-region confidence, content-state and
+#: unresolved-token attributes (#39) — each a deliberate bump, recorded in the PR.
+TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v3"
 
 #: The three region kinds (`FR-INGEST-13`). A region is exactly one.
 REGION_KINDS: tuple[str, ...] = ("transcribed_text", "described_graphic",
@@ -163,7 +165,12 @@ TRANSCRIPTION_PROMPT = (
     "region comments: '<!-- region: kind=transcribed_text -->' for text, "
     "'<!-- region: kind=described_graphic element_kind=free_body_diagram -->' for a "
     "graphic, '<!-- region: kind=selection_mark question_id=Q1 -->' for a mark; close "
-    "each with '<!-- /region -->'. Describe graphics with the element kind's named "
+    "each with '<!-- /region -->'. Tag every region with its reading confidence "
+    "('conf=0.87'), an answer region's content state ('state=present', 'state=blank' "
+    "when the answer space is empty), and a mark region with its selection state "
+    "('selection_state=resolved' or 'ambiguous' or 'multiple_marks'). Where a "
+    "handwritten token cannot be read, transcribe it as <unresolved>token</"
+    "unresolved> — never guess it. Describe graphics with the element kind's named "
     "fields: a free-body diagram names per arrow its label, origin point and "
     "direction (an angle or a relation to a named surface or axis); a geometry "
     "construction names its points and every marked relation; a graph names its axis "
@@ -589,6 +596,40 @@ _INGEST_REGION_COLUMNS = Migration(
     ),
 )
 
+_INGEST_TOKEN_CLUSTERS = Migration(
+    version=4,
+    name="ingest_token_clusters",
+    statements=(
+        # FR-INGEST-20: one cluster per visually-similar unresolved token, presented
+        # ONCE for operator resolution; the resolution applies to every occurrence.
+        Statement(
+            "ALTER TABLE document_region ADD COLUMN content TEXT"
+        ),
+        Statement(
+            """
+            CREATE TABLE unresolved_token (
+                token       TEXT NOT NULL,
+                region_id   TEXT NOT NULL REFERENCES document_region(region_id),
+                document_id TEXT NOT NULL REFERENCES document(document_id),
+                PRIMARY KEY (token, region_id)
+            )
+            """
+        ),
+        Statement(
+            """
+            CREATE TABLE token_cluster (
+                cluster_id  TEXT NOT NULL PRIMARY KEY,
+                cohort_id   TEXT NOT NULL,
+                token       TEXT NOT NULL,
+                resolution  TEXT,
+                resolved_at TEXT,
+                UNIQUE (cohort_id, token)
+            )
+            """
+        ),
+    ),
+)
+
 INGEST_STATEMENTS: dict[str, Statement] = {
     "insert_document": Statement(
         "INSERT INTO document (document_id, submission_id, content_hash, markdown, "
@@ -608,11 +649,11 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "INSERT INTO document_region (region_id, document_id, page_no, element_kind, "
         "region_kind, description, retraction, ocr_conf, content_state, "
         "selection_state, selection, crop_ref, source_hash, page_index, position, "
-        "is_untrusted_content, description_secondary) VALUES (:region_id, "
+        "is_untrusted_content, description_secondary, content) VALUES (:region_id, "
         ":document_id, :page_no, :element_kind, :region_kind, :description, "
         ":retraction, :ocr_conf, :content_state, :selection_state, :selection, "
         ":crop_ref, :source_hash, :page_index, :position, :is_untrusted_content, "
-        ":description_secondary)"
+        ":description_secondary, :content)"
     ),
     "select_regions": Statement(
         "SELECT region_id, document_id, page_no, element_kind, region_kind, "
@@ -620,6 +661,44 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "selection, crop_ref, source_hash, page_index, position, "
         "is_untrusted_content, description_secondary FROM document_region "
         "WHERE document_id = :document_id ORDER BY position"
+    ),
+    "select_all_regions": Statement(
+        "SELECT document_id, content FROM document_region"
+    ),
+    "update_region_resolution": Statement(
+        "UPDATE document_region SET selection = :resolution, selection_state = "
+        "'resolved' WHERE selection_state = 'ambiguous' AND selection = :token"
+    ),
+    "select_ambiguous_regions": Statement(
+        "SELECT document_id, region_id, selection FROM document_region "
+        "WHERE selection_state = 'ambiguous' AND selection IS NOT NULL"
+    ),
+    "insert_cluster": Statement(
+        "INSERT INTO token_cluster (cluster_id, cohort_id, token, resolution, "
+        "resolved_at) VALUES (:cluster_id, :cohort_id, :token, :resolution, "
+        ":resolved_at)"
+    ),
+    "select_clusters": Statement(
+        "SELECT cluster_id, cohort_id, token, resolution, resolved_at "
+        "FROM token_cluster WHERE cohort_id = :cohort_id ORDER BY cluster_id"
+    ),
+    "insert_unresolved_token": Statement(
+        "INSERT OR IGNORE INTO unresolved_token (token, region_id, document_id) "
+        "VALUES (:token, :region_id, :document_id)"
+    ),
+    "select_unresolved_documents": Statement(
+        "SELECT DISTINCT document_id FROM unresolved_token WHERE token = :token"
+    ),
+    "select_region_ids_for_token": Statement(
+        "SELECT region_id FROM unresolved_token WHERE token = :token"
+    ),
+    "update_region_content": Statement(
+        "UPDATE document_region SET content = REPLACE(content, "
+        "'<unresolved>' || :token || '</unresolved>', :resolution), "
+        "selection_state = 'resolved' WHERE region_id = :region_id"
+    ),
+    "delete_unresolved_token": Statement(
+        "DELETE FROM unresolved_token WHERE token = :token"
     ),
     "select_document_head": Statement(
         "SELECT document_id, submission_id, content_hash, transcriber_ref, kind, "
@@ -632,6 +711,7 @@ TIER_MIGRATIONS[Tier.COHORT] = (
     TIER_MIGRATIONS[Tier.COHORT]
     + (_INGEST_DOCUMENT_COLUMNS,)
     + (_INGEST_REGION_COLUMNS,)
+    + (_INGEST_TOKEN_CLUSTERS,)
 )
 
 
@@ -820,6 +900,19 @@ class PageReplacement:
 
 
 @dataclass
+class TokenCluster:
+    """One cohort-wide unresolved token (`FR-INGEST-20`): the token, the documents
+    whose regions carry it, and — once resolved — the operator's reading. The id is
+    derived from the token, so the same token always resolves through the same
+    cluster."""
+
+    cluster_id: str
+    cohort_id: str
+    token: str
+    document_ids: list[str]
+
+
+@dataclass
 class IngestReport:
     """What one submission ingestion did (`CLAUDE.md` seam 4). The gate columns are
     per-gate by design (`FR-INGEST-29`, R13) — a bare status on top of five unrecorded
@@ -939,11 +1032,25 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                 f"page {page_no}'s region declares kind {kind!r}, which is not one "
                 f"of {REGION_KINDS} — malformed model output."
             )
-        element = attributes.get("element_kind") or (
+        # FR-INGEST-15: the per-region reading confidence, as the model tagged it.
+        ocr_conf = (float(attributes["conf"])
+                    if attributes.get("conf") else None)
+        # FR-INGEST-16: present / blank / absent, as tagged; described_graphic is
+        # present by definition.
+        content_state = attributes.get("state", "present")
+        if content_state not in ("present", "blank", "absent"):
+            raise IngestError(
+                f"page {page_no}'s region declares content_state "
+                f"{content_state!r}, which is not one of present/blank/absent — "
+                "malformed model output."
+            )
+        element = attributes.get("question_id") or attributes.get("element_kind") or (
             "text" if kind == "transcribed_text" else "graphic")
         body = match.group("body").strip()
-        if not body:
-            continue
+        if not body and "state" not in attributes:
+            continue  # a truly empty marker carries nothing to record
+        # A tagged-but-empty region (state=blank) is a ROW, not a skip — blank and
+        # absent are distinct states (FR-INGEST-16); its body stays empty.
         retraction = None
         struck = re.search(re.escape(STRUCK_OPEN) + r"(.*?)" + re.escape(STRUCK_CLOSE),
                            body, re.DOTALL)
@@ -971,9 +1078,18 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             content=body,
             retraction=retraction,
             crop_box=crop_box,
-            selection_state=(None if kind != "selection_mark" else "resolved"),
+            ocr_conf=ocr_conf,
+            content_state=(content_state if kind != "described_graphic"
+                           else "present"),
+            selection_state=(None if kind != "selection_mark"
+                             else attributes.get("selection_state", "resolved")),
+            # FR-INGEST-17: `selection` is the OPTION the mark resolves to, populated
+            # ONLY when resolved — an ambiguous, multiple or unreadable mark is never
+            # mapped to an option or to an incorrect answer.
             selection=(None if kind != "selection_mark"
-                       else attributes.get("question_id", "")),
+                       else (attributes.get("selection")
+                             if attributes.get("selection_state", "resolved")
+                             == "resolved" else None)),
             supersedes_previous=supersedes,
         ))
         if supersedes:
@@ -1027,6 +1143,9 @@ class Ingestor:
             )
         self._high_risk: tuple[str, ...] = ()
         self._second_model_ref: ModelRef | None = None
+        # The cohort whose file this handle opens — the clustering's scope is the
+        # cohort, and one cohort file IS one cohort.
+        self._cohort_id = "this-cohort"
 
     # -- the gateway -----------------------------------------------------------------------------
 
@@ -1305,16 +1424,24 @@ class Ingestor:
                            region_kind=region["region_kind"],
                            description=region["description"],
                            retraction=region["retraction"],
-                           ocr_conf=None,
+                           ocr_conf=region.get("ocr_conf"),
                            content_state=region["content_state"],
                            selection_state=region["selection_state"],
                            selection=region["selection"],
                            crop_ref=region.get("crop_ref"),
+                           content=region["content"],
                            source_hash=region["source_hash"],
                            page_index=region["page_index"],
                            position=region["position"],
                            is_untrusted_content=region["is_untrusted_content"],
                            description_secondary=None)
+                for token in re.findall(r"<unresolved>(.*?)</unresolved>",
+                                        region["content"] or ""):
+                    if token.strip():
+                        tx.execute(INGEST_STATEMENTS["insert_unresolved_token"],
+                                   token=token.strip().lower(),
+                                   region_id=region["region_id"],
+                                   document_id=document_id)
         LOGGER.info(
             "ingested document %s kind=%s pages=%d order=%s content_hash=%s "
             "transcriber=%s divergence=%s regions=%d re_requests=%d",
@@ -1564,16 +1691,24 @@ class Ingestor:
                            region_kind=region["region_kind"],
                            description=region["description"],
                            retraction=region["retraction"],
-                           ocr_conf=None,
+                           ocr_conf=region.get("ocr_conf"),
                            content_state=region["content_state"],
                            selection_state=region["selection_state"],
                            selection=region["selection"],
                            crop_ref=region.get("crop_ref"),
+                           content=region["content"],
                            source_hash=region["source_hash"],
                            page_index=region["page_index"],
                            position=region["position"],
                            is_untrusted_content=1 if row["kind"] == "submission" else 0,
                            description_secondary=None)
+                for token in re.findall(r"<unresolved>(.*?)</unresolved>",
+                                        region["content"] or ""):
+                    if token.strip():
+                        tx.execute(INGEST_STATEMENTS["insert_unresolved_token"],
+                                   token=token.strip().lower(),
+                                   region_id=region["region_id"],
+                                   document_id=new_id)
         LOGGER.info(
             "revised document %s into %s pages_replaced=%d content_hash=%s "
             "regions=%d",
@@ -1582,25 +1717,156 @@ class Ingestor:
         )
         return new_id
 
+    # -- the absent-region read (FR-INGEST-16/18) -----------------------------------------
+
+    def _absent_regions(self, package_version: str, document_id: DocumentId,
+                        declared_regions: Sequence[tuple[str, str]],
+                        package_catalog: Any) -> list[tuple[str, str]]:
+        """The package's declared questions MINUS the regions the document records:
+        each missing question becomes its own `absent` row — absent (a scanning
+        failure, routed to triage) and blank (a legitimate zero) are distinct rows
+        and are never collapsed (`FR-INGEST-16`)."""
+        recorded = {question for question, _ in declared_regions}
+        absent: list[tuple[str, str]] = []
+        rows = package_catalog.criteria(package_version)
+        with self._handle.transaction() as tx:
+            for row in rows:
+                question_id = row["question_id"]
+                if question_id in recorded:
+                    continue
+                absent.append((question_id, "absent"))
+                tx.execute(INGEST_STATEMENTS["insert_region"],
+                           region_id=f"reg-{uuid.uuid4().hex[:12]}",
+                           document_id=document_id,
+                           page_no=1,
+                           element_kind=question_id,
+                           region_kind="transcribed_text",
+                           description=None,
+                           retraction=None,
+                           ocr_conf=None,
+                           content_state="absent",
+                           selection_state=None,
+                           selection=None,
+                           crop_ref=None,
+                           source_hash=None,
+                           page_index=None,
+                           position=None,
+                           is_untrusted_content=0,
+                           description_secondary=None,
+                           content=None)
+        return absent
+
+    # -- cohort-wide token clustering (FR-INGEST-20) --------------------------------------
+
+    def clusters(self, cohort_id: str) -> tuple[TokenCluster, ...]:
+        """The cohort's unresolved-token clusters (`FR-INGEST-20`): every DISTINCT
+        unresolved token across the cohort's regions, grouped ONCE. The tokens are
+        what the transcription marked `<unresolved>...</unresolved>`; a cluster is
+        presented for operator resolution once, never once per occurrence. The
+        cluster id is derived from the token, so the same token always resolves
+        through the same cluster."""
+        rows = self._handle.query(INGEST_STATEMENTS["select_all_regions"])
+        grouped: dict[str, TokenCluster] = {}
+        for row in rows:
+            for token in re.findall(r"<unresolved>(.*?)</unresolved>",
+                                    row["content"] or ""):
+                normalized = token.strip().lower()
+                if not normalized:
+                    continue
+                if normalized not in grouped:
+                    grouped[normalized] = TokenCluster(
+                        cluster_id=f"clu-{hashlib.sha256(normalized.encode()).hexdigest()[:12]}",
+                        cohort_id=cohort_id,
+                        token=normalized,
+                        document_ids=[])
+                if row["document_id"] not in grouped[normalized].document_ids:
+                    grouped[normalized].document_ids.append(row["document_id"])
+        return tuple(grouped.values())
+
+    def resolve_cluster(self, cluster_id: str,
+                        resolution: str) -> tuple[DocumentId, ...]:
+        """Apply one operator resolution to EVERY occurrence of the cluster's token
+        (`FR-INGEST-20`): every region carrying it is resolved in place, the
+        resolution is recorded once in `token_cluster`, and the document ids whose
+        regions changed are returned — the set of documents the correction touches."""
+        matches = [cluster for cluster in self.clusters(self._cohort_id)
+                   if cluster.cluster_id == cluster_id]
+        if not matches:
+            raise IngestError(f"cluster {cluster_id!r} does not exist.")
+        token = matches[0].token
+        # The affected documents are captured BEFORE the update — the resolution
+        # replaces the token, so a read-after-write would find nothing.
+        affected = tuple(row["document_id"] for row in self._handle.query(
+            INGEST_STATEMENTS["select_unresolved_documents"], token=token))
+        region_ids = [row["region_id"] for row in self._handle.query(
+            INGEST_STATEMENTS["select_region_ids_for_token"], token=token)]
+        with self._handle.transaction() as tx:
+            for region_id in region_ids:
+                tx.execute(INGEST_STATEMENTS["update_region_content"],
+                           region_id=region_id, resolution=resolution,
+                           token=token)
+            tx.execute(INGEST_STATEMENTS["delete_unresolved_token"], token=token)
+            tx.execute(INGEST_STATEMENTS["insert_cluster"],
+                       cluster_id=cluster_id, cohort_id=matches[0].cohort_id,
+                       token=token, resolution=resolution, resolved_at=self._now())
+        LOGGER.info("resolved cluster %s token=%r across %d document(s)",
+                    cluster_id, token, len(affected))
+        return affected
+
     def ingest_submission(
         self, blobs: Sequence[str], cohort_id: str,
         package_version: str, order_hint: Sequence[str] | None = None,
         filenames: dict[str, str] | None = None,
+        package_catalog: Any | None = None,
     ) -> IngestReport:
         """Ingest one submission through the validation ladder. #36 lands the gateway
         half (transcription and the document row); the V0-V4 gates fill `gates`,
         `ingest_status`, `detail` and `v4_signals` with #40/#41 — the report shape
-        exists now so callers compile against the real surface."""
+        exists now so callers compile against the real surface.
+
+        #39's half: when `package_catalog` is bound, the question structure is read
+        FROM THE PACKAGE (`FR-INGEST-18`) — question kinds and expected answer
+        regions — never classified per submission, and a region whose shape
+        contradicts the package (prose where `mcq` is declared, a selection where
+        `open`) is recorded as a V2 failure naming the question (`FR-INGEST-19`),
+        routed to the operator with the gates — never silently reinterpreted."""
         document_id = self.ingest_document(
             blobs, kind="submission", order_hint=order_hint,
             package_version=package_version, filenames=filenames,
         )
+        v2_failures: list[dict] = []
+        if package_catalog is not None:
+            # FR-INGEST-18: the package declares what each question IS.
+            declared = {
+                row["question_id"]: row["kind"]
+                for row in package_catalog.criteria(package_version)
+            }
+            regions = self._handle.query(INGEST_STATEMENTS["select_regions"],
+                                         document_id=document_id)
+            for region in regions:
+                question_id = None
+                if region["region_kind"] == "selection_mark":
+                    question_id = region["element_kind"]
+                    declared_kind = declared.get(question_id)
+                    if declared_kind == "open":
+                        v2_failures.append({
+                            "gate": "v2", "question_id": question_id,
+                            "finding": "selection where the package declares open",
+                        })
+                elif region["element_kind"] in declared:
+                    question_id = region["element_kind"]
+                    if declared[question_id] == "mcq":
+                        v2_failures.append({
+                            "gate": "v2", "question_id": question_id,
+                            "finding": "prose where the package declares mcq",
+                        })
         return IngestReport(
             submission_id=f"pending-{cohort_id}", document_id=document_id,
             gates={"v0": "deferred", "v1": "deferred", "v2": "deferred",
                    "v3": "deferred", "v4": "deferred"},
             ingest_status="ok",
-            detail={"note": "the validation ladder lands with #40/#41"},
+            detail={"note": "the validation ladder lands with #40/#41",
+                    "v2_failures": v2_failures},
             v4_signals={},
         )
 
