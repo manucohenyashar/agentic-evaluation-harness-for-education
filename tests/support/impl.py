@@ -311,17 +311,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `tests/support/baselines.py` explains why a baseline committed before its producer freezes
     # a guess. `golden_bytes()` raises `NotImplementedYet` naming the same issue as the key here,
     # so the two cannot drift.
-    "#37": (
-        # `assemble_canonical_markdown`, not `Ingestor.ingest_submission`: design §3.7 declares
-        # the `Ingestor` Protocol, so a key on any of its members resolves against a
-        # Protocol-only `aeh.ingest` with nothing behind it. Checked: this name appears nowhere
-        # in either design document. #36 creates the module and the canonical artifact; #37 adds
-        # `FR-INGEST-06`'s assembly order, and `TC-REG-01` traces to both -- so #37 is the later
-        # of the two and the one whose landing makes the case runnable.
-        "symbol",
-        f"{INGEST_MODULE}:assemble_canonical_markdown",
-        ("tests/regression/test_reg_01_canonical_markdown.py",),
-    ),
+    # `"#37"` is gone because #37 landed: `aeh.ingest:assemble_canonical_markdown`
+    # exists — the pure assembly seam over the declared preference ladder (operator >
+    # printed page number > fiducial > filename > refuse, never directory order) — and
+    # both TC-REG-01 baselines were recorded in #37's PR.
     # `"#31 baselines"` is gone because #31 landed: `aeh.pkg:export_package` exists (the
     # module-level seam the written-ahead suites anticipated), `TC-REG-02` runs in the gate
     # and its baseline `TC-REG-02/PKG-REF.archive.json` was recorded in #31's PR.

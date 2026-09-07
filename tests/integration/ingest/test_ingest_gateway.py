@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import inspect
+import json
 import pathlib
 import sqlite3
 import threading
@@ -29,7 +30,10 @@ import pytest
 from aeh.conf import ModelRef
 from aeh.ingest import (
     DOCUMENT_KINDS,
+    IngestDuplicateError,
     IngestError,
+    IngestGapError,
+    IngestOrderError,
     Ingestor,
     PageImage,
     PageReplacement,
@@ -176,7 +180,8 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     total_calls = 0
     for kind in DOCUMENT_KINDS:
         before = len(provider.calls)
-        document_id = ingestor.ingest_document([source], kind=kind)
+        document_id = ingestor.ingest_document(
+            [source], kind=kind, filenames={source: "scan-01.md"})
         row = store.cohort("c-36").query(statement(
             "SELECT kind FROM document WHERE document_id = :d", issue=ISSUE),
             d=document_id)[0]
@@ -201,19 +206,23 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     )
     # No per-kind alternative path: the pipeline never branches on kind.
     module_source = pathlib.Path("src", "aeh", "ingest.py").read_text(encoding="utf-8")
+    allowed = {'if kind == "reference" and divergence is not None:'}
     dispatch_branches = [
         line.strip() for line in module_source.splitlines()
-        if "kind ==" in line or 'kind in' in line and "if" in line
+        if ("kind ==" in line or 'kind in' in line and "if" in line)
+        and line.strip() not in allowed
     ]
     assert dispatch_branches == [], (
         f"TC-INGEST-02: the dispatch branches on kind: {dispatch_branches}. There is "
-        "one pipeline for all four kinds (FR-INGEST-02)."
+        "one pipeline for all four kinds (FR-INGEST-02) — the reference divergence "
+        "halt is a post-transcription gate, not an extraction path."
     )
     # The env knob moves the pinned DPI (seam 3):
     patch = pytest.MonkeyPatch()
     patch.setenv("HARNESS_INGEST_DPI", "150")
     try:
-        ingestor.ingest_document([source], kind="submission")
+        ingestor.ingest_document([source], kind="submission",
+                                 filenames={source: "scan-01.md"})
         assert rasterizer.dpi_seen[-1] == 150
     finally:
         patch.undo()
@@ -233,8 +242,10 @@ def test_tc_ingest_05_one_row_per_document_and_a_null_transcriber_is_unrepresent
     rejected by the schema itself."""
     store, blobs, rasterizer, provider, slot, ingestor = _fixture(tmp_data_dir)
     source = blobs.put(b"fixture pdf")
-    first = ingestor.ingest_document([source], kind="assessment")
-    second = ingestor.ingest_document([source], kind="reference")
+    first = ingestor.ingest_document([source], kind="assessment",
+                                     filenames={source: "scan-01.md"})
+    second = ingestor.ingest_document([source], kind="reference",
+                                      filenames={source: "scan-01.md"})
     assert first != second
     handle = store.cohort("c-36")
     rows = handle.query(statement(
@@ -274,7 +285,8 @@ def test_tc_ingest_06_a_revision_creates_a_new_row_and_never_touches_the_origina
     store, blobs, rasterizer, provider, slot, ingestor = _fixture(tmp_data_dir)
     rasterizer.plan[b"rescan"] = 1
     source = blobs.put(b"fixture pdf")
-    original = ingestor.ingest_document([source], kind="submission")
+    original = ingestor.ingest_document([source], kind="submission",
+                                        filenames={source: "scan-01.md"})
     handle = store.cohort("c-36")
     row_before = handle.query(statement(
         "SELECT * FROM document WHERE document_id = :d", issue=ISSUE), d=original)[0]
@@ -353,7 +365,8 @@ def test_tc_ingest_36_the_residency_slot_holds_across_the_calls_and_blocks_the_j
         observations.append(f"held={slot._holder!r}")
 
     provider.while_calling = inspect_slot
-    ingestor.ingest_document([source], kind="submission")
+    ingestor.ingest_document([source], kind="submission",
+                             filenames={source: "scan-01.md"})
     assert observations and all(state == "held='transcriber'" for state in observations), (
         f"TC-INGEST-36: the residency slot was not held during the VLM calls: "
         f"{observations}."
@@ -404,4 +417,296 @@ def test_tc_ingest_36_the_residency_slot_holds_across_the_calls_and_blocks_the_j
     # And a policy admitting both roles yields the coexistence form:
     shared = ResidencySlot.for_policy(("judge", "transcriber"))
     assert shared._exclusive is False
+    store.close()
+
+
+# -- TC-INGEST-03/04: the text layer is extracted in addition, and a reference halts --------------
+
+
+class LayeredRasterizer(ScriptedRasterizer):
+    """A ONE-page rasterizer double carrying a configurable embedded text layer."""
+
+    def __init__(self, layer: str) -> None:
+        super().__init__()
+        self._layer = layer
+
+    def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+        return [PageImage(page_no=1, png=b"page-one", width_px=100, height_px=140)]
+
+    def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
+        return self._layer
+
+
+def test_tc_ingest_03_a_divergent_reference_halts_as_a_corrupted_answer_key(
+    tmp_data_dir,
+):
+    """`TC-INGEST-03` — a `reference` artifact whose text layer diverges from the
+    transcript at 0%, just under, and above `INGEST_TEXT_LAYER_DIVERGENCE_HALT`: the
+    columns are recorded in the ingested cases and ingestion HALTS above the threshold
+    — a corrupted answer key, not a warning. Boundary rule, declared: halt when
+    divergence is STRICTLY greater."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    source = blobs.put(b"fixture pdf")
+    handle = store.cohort("c-36")
+    transcript = "the transcribed page says these exact words here"
+
+    def ingest_with(layer: str, halt: str | None = None):
+        patch = pytest.MonkeyPatch()
+        if halt is not None:
+            patch.setenv("HARNESS_INGEST_TEXT_LAYER_DIVERGENCE_HALT", halt)
+        layered = LayeredRasterizer(layer)
+        transcript_provider = _two_page_provider(transcript, transcript)
+        ingestor = Ingestor(handle, blobs, transcript_provider, _model(),
+                            SamplingParams(temperature=0.0), layered)
+        try:
+            return ingestor.ingest_document([source], kind="reference",
+                                            filenames={source: "scan-01.md"}), patch
+        except BaseException:
+            patch.undo()
+            raise
+
+    # 0% divergence: identical layer and transcript — recorded, ingested.
+    document_id, patch = ingest_with(transcript)
+    row = handle.query(statement(
+        "SELECT pages_with_text_layer, text_layer_divergence FROM document "
+        "WHERE document_id = :d", issue=ISSUE), d=document_id)[0]
+    patch.undo()
+    assert row["pages_with_text_layer"] == 1 and row["text_layer_divergence"] == 0.0
+    # Just under the threshold: recorded and ingested.
+    document_id, patch = ingest_with(
+        "the transcribed page says these exact words too", halt="0.5")
+    row = handle.query(statement(
+        "SELECT text_layer_divergence FROM document WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]
+    patch.undo()
+    assert 0.0 < row["text_layer_divergence"] < 0.5
+    # Above the threshold: halts, and NOTHING is written.
+    with pytest.raises(IngestError, match="corrupted answer key"):
+        _, patch = ingest_with(
+            "completely different words appear on the layer entirely", halt="0.1")
+        patch.undo()
+    rows = handle.query(statement(
+        "SELECT COUNT(*) AS n FROM document WHERE kind = 'reference'", issue=ISSUE))
+    assert rows[0]["n"] == 2, (
+        "TC-INGEST-03: the halted ingestion left a row behind — a corrupted answer "
+        "key is not ingested."
+    )
+    store.close()
+
+
+def test_tc_ingest_04_a_divergent_submission_is_recorded_and_does_not_halt(tmp_data_dir):
+    """`TC-INGEST-04` — the same divergence on a `submission` artifact: recorded, and
+    ingestion does NOT halt — the halt is specific to `reference` (a corrupted answer
+    key; a submission's divergence is impact-routing's input, not a refusal)."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    source = blobs.put(b"fixture pdf")
+    layered = LayeredRasterizer(
+        "completely different words appear on the layer entirely")
+    ingestor = Ingestor(store.cohort("c-36"), blobs, provider, _model(),
+                        SamplingParams(temperature=0.0), layered)
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    row = store.cohort("c-36").query(statement(
+        "SELECT pages_with_text_layer, text_layer_divergence FROM document "
+        "WHERE document_id = :d", issue=ISSUE), d=document_id)[0]
+    assert row["pages_with_text_layer"] == 1
+    assert row["text_layer_divergence"] > 0.5
+    store.close()
+
+
+# -- TC-INGEST-07: the order ladder, in strict preference, recorded -------------------------------
+
+
+def test_tc_ingest_07_the_ladder_sources_record_and_the_refusal_asks_the_operator(
+    tmp_data_dir,
+):
+    """`TC-INGEST-07`/`FR-INGEST-31` — the decision table's runnable core: the
+    page-number tier orders shuffled rasters and records itself; the operator tier
+    overrides printed numbers; the filename tier orders when nothing else is
+    available; with NO tier the ingestion refuses asking for an order — never a guess.
+    Directory order is structurally unused: the blob hashes arrive as an explicit
+    sequence and every tier's ordering is computed from recorded data."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+
+    # (b) page numbers, rasters presented shuffled: the printed headers decide. The
+    # transcripts key on the SOURCE hash, so two files are not each other's duplicates.
+    class Shuffled(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            texts = {1: "Page 2 of 2 - second", 2: "Page 1 of 2 - first"}
+            return Completion(text=texts[page_no] + " of " + fields["source_blob_hash"][:6],
+                              tokens_in=1, tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    ingestor = Ingestor(handle, blobs, Shuffled(), _model(),
+                        SamplingParams(temperature=0.0), rasterizer)
+    document_id = ingestor.ingest_document([source], kind="submission")
+    row = handle.query(statement(
+        "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]
+    assert row["markdown"].startswith("Page 1 of 2 - first")
+    provenance = json.loads(row["source_blobs"])
+    assert provenance["order_source"] == "page_number"
+    assert [page["position"] for page in provenance["pages"]] == [1, 2]
+
+    # (a) operator overrides: plain transcripts, filenames that would order them one
+    # way, and an operator hint ordering them the other — the operator wins (the head
+    # of the strict preference ladder), and the record says so.
+    class Plain(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            return Completion(
+                text="plain body text from " + fields["source_blob_hash"][:6]
+                     + " page " + fields["page_no"],
+                tokens_in=1, tokens_out=1, latency_ms=1,
+                resolved_build=model_ref.build_id, cached_prefix_tokens=0, cost=None)
+
+    plain_ingestor = Ingestor(handle, blobs, Plain(), _model(),
+                              SamplingParams(temperature=0.0), rasterizer)
+    first_blob = blobs.put(b"plain pdf one")
+    second_blob = blobs.put(b"plain pdf two")
+    document_id = plain_ingestor.ingest_document(
+        [second_blob, first_blob], kind="submission",
+        order_hint=[first_blob, second_blob],
+        filenames={first_blob: "zzz-last.md", second_blob: "aaa-first.md"})
+    row = handle.query(statement(
+        "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]
+    assert json.loads(row["source_blobs"])["order_source"] == "operator", (
+        "TC-INGEST-07: the operator tier did not override the filename tier — the "
+        "ladder's preference is strict, operator first."
+    )
+    # The hint ordered the FILES: first_blob's pages precede second_blob's.
+    assert row["markdown"].index(first_blob[:6]) < row["markdown"].index(second_blob[:6])
+
+    # (d) filenames only: the filename tier orders and records itself (the plain
+    # transcripts carry no printed numbers, so the filename tier is what fires).
+    first_blob = blobs.put(b"plain pdf one")
+    second_blob = blobs.put(b"plain pdf two")
+    document_id = plain_ingestor.ingest_document(
+        [second_blob, first_blob], kind="submission",
+        filenames={first_blob: "scan-01.md", second_blob: "scan-02.md"})
+    row = handle.query(statement(
+        "SELECT source_blobs FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]
+    assert json.loads(row["source_blobs"])["order_source"] == "filename"
+
+    # (e) none of the tiers: refuse, asking the operator — never a guess.
+    naked = blobs.put(b"naked pdf")
+    with pytest.raises(IngestError, match="never guesses"):
+        plain_ingestor.ingest_document([naked], kind="submission")
+    store.close()
+
+
+# -- TC-INGEST-09/10: duplicates surfaced, gaps named ---------------------------------------------
+
+
+def _two_page_provider(first: str, second: str) -> ScriptedProvider:
+    """A provider double answering one transcript per page, in page order."""
+
+    class TwoPage(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            texts = {1: first, 2: second}
+            return Completion(text=texts[page_no], tokens_in=1, tokens_out=1,
+                              latency_ms=1, resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    return TwoPage()
+
+
+def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
+    """`TC-INGEST-09` — two identical pages and two just above the
+    `INGEST_DUPLICATE_SIMILARITY_THRESHOLD` (injected — the value is a design TBD) are
+    surfaced for confirmation, NEVER concatenated; two genuinely different pages
+    ingest; the knob moves the boundary."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    base = "alpha beta gamma delta epsilon zeta eta theta iota kappa"
+    same = base
+
+    identical = Ingestor(handle, blobs,
+                         _two_page_provider(same, same), _model(),
+                         SamplingParams(temperature=0.0), rasterizer)
+    with pytest.raises(IngestDuplicateError, match="Surface for"):
+        identical.ingest_document([source], kind="submission",
+                                  filenames={source: "scan-01.md"})
+
+    # Just ABOVE the threshold (one extra word: 10/11 = 0.909): surfaced.
+    near = Ingestor(handle, blobs,
+                    _two_page_provider(base, base + " lambda"),
+                    _model(), SamplingParams(temperature=0.0), rasterizer)
+    with pytest.raises(IngestDuplicateError, match="Surface for"):
+        near.ingest_document([source], kind="submission",
+                             filenames={source: "scan-01.md"})
+    # Just BELOW it (two extra words: 10/12 = 0.833): ingested.
+    below = Ingestor(handle, blobs,
+                     _two_page_provider(base, base + " lambda mu"),
+                     _model(), SamplingParams(temperature=0.0), rasterizer)
+    assert below.ingest_document([source], kind="submission",
+                                 filenames={source: "scan-01.md"})
+
+    different = Ingestor(handle, blobs,
+                         _two_page_provider(
+                             "the first page discusses algebraic manipulation",
+                             "the second page contains a diagram of a pulley"),
+                         _model(), SamplingParams(temperature=0.0), rasterizer)
+    different_source = blobs.put(b"yet another pdf")
+    assert different.ingest_document([different_source], kind="submission",
+                                     filenames={different_source: "scan-01.md"})
+
+    # The knob moves the boundary (injected, not hard-coded):
+    patch = pytest.MonkeyPatch()
+    patch.setenv("HARNESS_INGEST_DUPLICATE_SIMILARITY_THRESHOLD", "0.999")
+    try:
+        another = blobs.put(b"another pdf")
+        assert near.ingest_document([another], kind="submission",
+                                    filenames={another: "scan-01.md"})
+    finally:
+        patch.undo()
+    store.close()
+
+
+def test_tc_ingest_10_a_gap_names_the_specific_missing_positions(tmp_data_dir):
+    """`TC-INGEST-10` — a document missing printed pages 3 and 7 raises a V1 finding
+    NAMING [3, 7] — the assertion is on the named positions, not merely on failure."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+
+    class FivePageRasterizer(ScriptedRasterizer):
+        def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
+                              height_px=1) for i in range(5)]
+
+    transcripts = ["Page 1 of 7", "Page 2 of 7", "Page 4 of 7", "Page 5 of 7",
+                   "Page 6 of 7"]
+
+    class Sequenced(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            return Completion(text=transcripts[page_no - 1], tokens_in=1,
+                              tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    ingestor = Ingestor(handle, blobs, Sequenced(), _model(),
+                        SamplingParams(temperature=0.0), FivePageRasterizer())
+    with pytest.raises(IngestError) as gap:
+        ingestor.ingest_document([source], kind="submission")
+    assert "[3, 7]" in str(gap.value), (
+        f"TC-INGEST-10: the finding does not name the specific missing positions: "
+        f"{gap.value}."
+    )
     store.close()
