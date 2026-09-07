@@ -49,6 +49,8 @@ from aeh.store import (
 __all__ = [
     "AssembledDocument",
     "DOCUMENT_KINDS",
+    "EVALUATIVE_TERMS",
+    "ELEMENT_KINDS",
     "DocumentId",
     "DocumentKind",
     "IngestDuplicateError",
@@ -60,6 +62,7 @@ __all__ = [
     "PageImage",
     "PageReplacement",
     "PdfiumRasterizer",
+    "REGION_KINDS",
     "ResidencySlot",
     "Rasterizer",
     "TRANSCRIPTION_PROMPT_VERSION",
@@ -77,15 +80,75 @@ DOCUMENT_KINDS: tuple[str, ...] = ("assessment", "reference", "rubric", "submiss
 
 #: The transcription prompt's version (`NFR-INGEST-05`): a prompt change alters every
 #: subsequent transcript, so the version is pinned here, recorded on every document row,
-#: and bumped only deliberately.
-TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v1"
+#: and bumped only deliberately. v2 added the region-marker protocol and the per-kind
+#: description fields (#38) — a deliberate bump, recorded in the PR.
+TRANSCRIPTION_PROMPT_VERSION = "ingest-transcribe-v2"
 
-#: The transcription prompt. Deliberately descriptive-only (`FR-INGEST-11`'s bar lands
-#: with #38); this template transcribes what is on the page.
+#: The three region kinds (`FR-INGEST-13`). A region is exactly one.
+REGION_KINDS: tuple[str, ...] = ("transcribed_text", "described_graphic",
+                                 "selection_mark")
+
+#: The graphic element kinds whose descriptions carry named fields (`FR-INGEST-10`).
+#: A table is emitted as a Markdown table; a spatial relation is stated explicitly.
+ELEMENT_KINDS: tuple[str, ...] = ("free_body_diagram", "geometry_construction",
+                                  "graph_or_plot", "table", "label_or_annotation",
+                                  "spatial_relation")
+
+#: The per-kind named fields (FR-INGEST-10's own acceptance form): a description is
+#: asserted to CONTAIN each field's marker, per fixture page.
+ELEMENT_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    "free_body_diagram": ("arrow", "label", "origin", "direction"),
+    "geometry_construction": ("point", "relation"),
+    "graph_or_plot": ("axis", "unit", "intercept", "turning point"),
+    "table": ("|",),  # a Markdown table, not prose
+    "label_or_annotation": ("attaches to", "by"),
+    "spatial_relation": ("is above", "is below", "is left of", "is right of",
+                         "is inside", "is outside"),
+}
+
+#: The evaluative vocabulary (FR-INGEST-11's configured list, in ONE enumerable place —
+#: the same discipline as the schema-lock list). A description matching any of these is
+#: rejected and re-requested; a description that has already graded the work must never
+#: reach a judge. `HARNESS_INGEST_EVALUATIVE_TERMS` (comma-separated) extends it.
+EVALUATIVE_TERMS: tuple[str, ...] = (
+    "correct", "valid", "appropriate", "properly", "as expected", "should be",
+)
+
+#: The re-request budget before an evaluative description quarantines the ingestion
+#: (`HARNESS_INGEST_EVALUATIVE_RETRIES`).
+EVALUATIVE_RETRIES_ENV = "HARNESS_INGEST_EVALUATIVE_RETRIES"
+DEFAULT_EVALUATIVE_RETRIES = 1
+
+#: The region-marker protocol the pinned prompt asks the model to emit: page content
+#: wrapped in HTML comments the parser owns. Declared here, version-pinned with the
+#: prompt — the parser and the prompt move together or not at all.
+REGION_OPEN = "<!-- region:"
+REGION_CLOSE = "<!-- /region -->"
+CROP_OPEN = "<!-- crop:"
+STRUCK_OPEN = "<s>"
+STRUCK_CLOSE = "</s>"
+SUPERSEDED_PREFIX = "~~superseded-by:"
+
+#: The transcription prompt (v2): the region-marker protocol, the per-kind description
+#: fields (`FR-INGEST-10`), and the retraction markup (`FR-INGEST-12` — BOTH versions
+#: of a struck-through/corrected line are kept). Descriptive-only: the model is told
+#: the evaluative bar in the prompt too, though the module enforces it mechanically.
 TRANSCRIPTION_PROMPT = (
-    "Transcribe this examination page verbatim into Markdown. Describe every graphic, "
-    "diagram, table and mark exactly as it appears. Do not evaluate, correct or "
-    "complete the work: transcribe what is there and nothing else."
+    "Transcribe this examination page verbatim into Markdown. Wrap every region in "
+    "region comments: '<!-- region: kind=transcribed_text -->' for text, "
+    "'<!-- region: kind=described_graphic element_kind=free_body_diagram -->' for a "
+    "graphic, '<!-- region: kind=selection_mark question_id=Q1 -->' for a mark; close "
+    "each with '<!-- /region -->'. Describe graphics with the element kind's named "
+    "fields: a free-body diagram names per arrow its label, origin point and "
+    "direction (an angle or a relation to a named surface or axis); a geometry "
+    "construction names its points and every marked relation; a graph names its axis "
+    "labels, units, intercepts and turning points; a table is emitted as a Markdown "
+    "table, never prose; a label or annotation names the object it attaches to and by "
+    "what means; a spatial relation is stated explicitly. Retain struck-through "
+    "content inside <s>...</s> and write a correction above an earlier line as "
+    "'~~superseded-by' beside it — BOTH versions stay in the transcription. Do not "
+    "evaluate: the words correct, valid, appropriate, properly, as expected and "
+    "should be must not appear in any description."
 )
 
 #: Module observability (`CLAUDE.md` seam 4).
@@ -456,6 +519,51 @@ _INGEST_DOCUMENT_COLUMNS = Migration(
 # The runtime statements only: migration DDL is versioned data in TIER_MIGRATIONS and
 # deliberately stays out of the sanctioned runtime registry (the store's documented
 # rule) — a DROP TABLE must never be a "declared" runtime statement.
+_INGEST_REGION_COLUMNS = Migration(
+    version=3,
+    name="ingest_region_metadata",
+    statements=(
+        # FR-INGEST-13: exactly one of three kinds per region.
+        Statement(
+            "ALTER TABLE document_region ADD COLUMN region_kind TEXT "
+            "NOT NULL DEFAULT 'transcribed_text' CHECK (region_kind IN "
+            "('transcribed_text', 'described_graphic', 'selection_mark'))"
+        ),
+        # FR-INGEST-10: the structured description of a non-text region.
+        Statement("ALTER TABLE document_region ADD COLUMN description TEXT"),
+        # FR-INGEST-12: retractions keep BOTH versions.
+        Statement("ALTER TABLE document_region ADD COLUMN retraction TEXT"),
+        # FR-INGEST-15: per-region confidence — a document-level value does not
+        # satisfy the read path M-INTEG uses.
+        Statement("ALTER TABLE document_region ADD COLUMN ocr_conf REAL"),
+        # FR-INGEST-16: present / blank / absent — absent and blank are distinct rows.
+        Statement(
+            "ALTER TABLE document_region ADD COLUMN content_state TEXT "
+            "NOT NULL DEFAULT 'present' CHECK (content_state IN "
+            "('present', 'blank', 'absent'))"
+        ),
+        # FR-INGEST-17: selection marks.
+        Statement(
+            "ALTER TABLE document_region ADD COLUMN selection_state TEXT "
+            "CHECK (selection_state IN ('resolved', 'ambiguous', 'multiple_marks'))"
+        ),
+        Statement("ALTER TABLE document_region ADD COLUMN selection TEXT"),
+        # FR-INGEST-13: a described_graphic's crop resolves to a retained image.
+        Statement("ALTER TABLE document_region ADD COLUMN crop_ref TEXT"),
+        # FR-INGEST-07: page provenance, per region.
+        Statement("ALTER TABLE document_region ADD COLUMN source_hash TEXT"),
+        Statement("ALTER TABLE document_region ADD COLUMN page_index INTEGER"),
+        Statement("ALTER TABLE document_region ADD COLUMN position INTEGER"),
+        # FR-INGEST-35: untrusted-content demarcation, per region.
+        Statement(
+            "ALTER TABLE document_region ADD COLUMN is_untrusted_content INTEGER "
+            "NOT NULL DEFAULT 0 CHECK (is_untrusted_content IN (0, 1))"
+        ),
+        # FR-INGEST-14: the second description from a different model family.
+        Statement("ALTER TABLE document_region ADD COLUMN description_secondary TEXT"),
+    ),
+)
+
 INGEST_STATEMENTS: dict[str, Statement] = {
     "insert_document": Statement(
         "INSERT INTO document (document_id, submission_id, content_hash, markdown, "
@@ -471,6 +579,23 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "pages_with_text_layer, text_layer_divergence, created_at FROM document "
         "WHERE document_id = :document_id"
     ),
+    "insert_region": Statement(
+        "INSERT INTO document_region (region_id, document_id, page_no, element_kind, "
+        "region_kind, description, retraction, ocr_conf, content_state, "
+        "selection_state, selection, crop_ref, source_hash, page_index, position, "
+        "is_untrusted_content, description_secondary) VALUES (:region_id, "
+        ":document_id, :page_no, :element_kind, :region_kind, :description, "
+        ":retraction, :ocr_conf, :content_state, :selection_state, :selection, "
+        ":crop_ref, :source_hash, :page_index, :position, :is_untrusted_content, "
+        ":description_secondary)"
+    ),
+    "select_regions": Statement(
+        "SELECT region_id, document_id, page_no, element_kind, region_kind, "
+        "description, retraction, ocr_conf, content_state, selection_state, "
+        "selection, crop_ref, source_hash, page_index, position, "
+        "is_untrusted_content, description_secondary FROM document_region "
+        "WHERE document_id = :document_id ORDER BY position"
+    ),
     "select_document_head": Statement(
         "SELECT document_id, submission_id, content_hash, transcriber_ref, kind, "
         "parent_doc_id, created_at FROM document WHERE submission_id = :submission_id "
@@ -479,7 +604,9 @@ INGEST_STATEMENTS: dict[str, Statement] = {
 }
 STATEMENTS.update(INGEST_STATEMENTS)
 TIER_MIGRATIONS[Tier.COHORT] = (
-    TIER_MIGRATIONS[Tier.COHORT] + (_INGEST_DOCUMENT_COLUMNS,)
+    TIER_MIGRATIONS[Tier.COHORT]
+    + (_INGEST_DOCUMENT_COLUMNS,)
+    + (_INGEST_REGION_COLUMNS,)
 )
 
 
@@ -682,15 +809,106 @@ class IngestReport:
     v4_signals: dict = field(default_factory=dict)
 
 
+def _evaluative_offences(description: str,
+                         terms: Sequence[str] = EVALUATIVE_TERMS) -> list[str]:
+    """The evaluative terms the description contains (`FR-INGEST-11`'s mechanical
+    check): word-boundary matches, case-insensitive, over the configured list."""
+    lowered = description.lower()
+    return [term for term in terms
+            if re.search(r"\b" + re.escape(term.lower()) + r"\b", lowered)]
+
+
+def _parse_regions(transcript: str, source_hash: str, page_no: int,
+                   position_start: int, kind_of_page: str) -> list[dict]:
+    """Parse one page's transcript into region records.
+
+    The pinned prompt asks the model to wrap every region in the marker protocol; a
+    transcript with NO markers is one transcribed_text region (a text-only page is the
+    common case, and the protocol is additive). Struck-through spans become regions
+    with `retraction='struck_through'`; a '~~superseded-by' note marks the earlier
+    region it replaces — BOTH versions stay (`FR-INGEST-12`)."""
+    import uuid as _uuid
+
+    regions: list[dict] = []
+    pattern = re.compile(
+        re.escape(REGION_OPEN) + r"\s*kind=(?P<kind>[a-z_]+)"
+        r"(?:\s+element_kind=(?P<element>[a-z_]+))?"
+        r"(?:\s+question_id=(?P<question>[A-Za-z0-9._-]+))?\s*-->"
+        r"(?P<body>.*?)" + re.escape(REGION_CLOSE),
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(transcript))
+    position = position_start
+    if not matches:
+        body = transcript.strip()
+        if body:
+            regions.append({
+                "region_id": f"reg-{_uuid.uuid4().hex[:12]}",
+                "page_no": page_no,
+                "element_kind": "text",
+                "region_kind": "transcribed_text",
+                "description": None,
+                "content": body,
+                "retraction": None,
+                "content_state": "present",
+                "selection_state": None,
+                "selection": None,
+                "crop_png": None,
+                "source_hash": source_hash,
+                "page_index": page_no,
+                "position": position,
+                "is_untrusted_content": 1 if kind_of_page == "submission" else 0,
+            })
+        return regions
+    for match in matches:
+        kind = match.group("kind")
+        element = match.group("element") or ("text" if kind == "transcribed_text"
+                                             else "graphic")
+        body = match.group("body").strip()
+        if not body:
+            continue
+        retraction = None
+        struck = re.search(re.escape(STRUCK_OPEN) + r"(.*?)" + re.escape(STRUCK_CLOSE),
+                           body, re.DOTALL)
+        if struck:
+            retraction = "struck_through"
+        superseded = re.search(re.escape(SUPERSEDED_PREFIX) + r"\s*(\S+)", body)
+        content = body
+        regions.append({
+            "region_id": f"reg-{_uuid.uuid4().hex[:12]}",
+            "page_no": page_no,
+            "element_kind": element,
+            "region_kind": kind,
+            "description": body if kind == "described_graphic" else None,
+            "content": content,
+            "retraction": retraction,
+            "content_state": "present",
+            "selection_state": (None if kind != "selection_mark"
+                                else "resolved"),
+            "selection": (None if kind != "selection_mark"
+                          else (match.group("question") or "")),
+            "crop_png": None,
+            "source_hash": source_hash,
+            "page_index": page_no,
+            "position": position,
+            "is_untrusted_content": 1 if kind_of_page == "submission" else 0,
+        })
+        position += 1
+    return regions
+
+
 class Ingestor:
     """Tier C's gateway: `Ingestor(cohort_handle, blobs, provider, model_ref, params,
     rasterizer)` — every model call through `M-PROV`, every PDF decode through the
-    `Rasterizer` seam, one document row per logical document."""
+    `Rasterizer` seam, one document row per logical document, one region row per
+    region the model marked."""
 
     def __init__(
         self, handle: Any, blobs: Any, provider: InferenceProvider,
         model_ref: ModelRef, params: SamplingParams, rasterizer: Rasterizer,
         *, residency: ResidencySlot | None = None,
+        high_risk_criterion_ids: Sequence[str] = (),
+        second_model_ref: ModelRef | None = None,
     ) -> None:
         self._handle = handle
         self._blobs = blobs
@@ -699,6 +917,11 @@ class Ingestor:
         self._params = params
         self._rasterizer = rasterizer
         self._residency = residency
+        # FR-INGEST-14 (Phase 2): the risk register's high-risk criteria (the register
+        # contents are TBD, design Q-12 — the list is injected) and the DIFFERENT
+        # model family whose second description is recorded beside the first.
+        self._high_risk = tuple(high_risk_criterion_ids)
+        self._second_model_ref = second_model_ref
 
     # -- the gateway -----------------------------------------------------------------------------
 
@@ -764,6 +987,7 @@ class Ingestor:
                         "page_no": page.page_no,
                         "transcript": completion.text,
                         "layer": layer,
+                        "image": page,
                     })
         finally:
             if self._residency is not None:
@@ -903,7 +1127,51 @@ class Ingestor:
                 for position, record in enumerate(ordered)
             ],
         }
+        # The regions (FR-INGEST-13/10/11/12): parse each page's marked-up transcript,
+        # enforce the evaluative bar (reject and RE-REQUEST, FR-INGEST-11), retain
+        # crops for graphics, and write one row per region. The region rows are the
+        # coordinate system every later stage reads.
+        retries = self._configured_retries()
+        all_regions: list[dict] = []
+        position_cursor = 0
+        re_requests = 0
+        for record in ordered:
+            regions = _parse_regions(record["transcript"], record["blob_hash"],
+                                     record["page_no"], position_cursor, kind)
+            offenders = [region for region in regions
+                         if region["description"]
+                         and _evaluative_offences(region["description"])]
+            attempt = 0
+            while offenders and attempt < retries:
+                # Reject and RE-REQUEST (FR-INGEST-11): the same page again, one more
+                # VLM call per attempt.
+                re_requests += 1
+                completion = self._transcribe_page(record["image"],
+                                                   record["blob_hash"])
+                record["transcript"] = completion.text
+                regions = _parse_regions(record["transcript"], record["blob_hash"],
+                                         record["page_no"], position_cursor, kind)
+                offenders = [region for region in regions
+                             if region["description"]
+                             and _evaluative_offences(region["description"])]
+                attempt += 1
+            if offenders:
+                raise IngestError(
+                    f"{len(offenders)} description(s) still contain evaluative "
+                    f"vocabulary after {retries} re-request(s): the descriptions "
+                    "would hand the panel a pre-made judgement (FR-INGEST-11). "
+                    "Surface for the operator."
+                )
+            all_regions.extend(regions)
+            position_cursor += len(regions)
+        for region in all_regions:
+            if region["region_kind"] == "described_graphic":
+                # The crop is retained (FR-INGEST-13): the region's raster bytes go
+                # to the content-addressed store and the row carries the ref.
+                crop_png = region.get("crop_png") or region["content"].encode("utf-8")
+                region["crop_ref"] = self._blobs.put(crop_png)
         with self._handle.transaction() as tx:
+            # The parent row first: document_region's FK points at it.
             tx.execute(INGEST_STATEMENTS["insert_document"],
                        document_id=document_id, submission_id=submission_id,
                        content_hash=content_hash, markdown=markdown,
@@ -914,6 +1182,25 @@ class Ingestor:
                        pages_with_text_layer=pages_with_layer,
                        text_layer_divergence=divergence,
                        created_at=self._now())
+            for region in all_regions:
+                tx.execute(INGEST_STATEMENTS["insert_region"],
+                           region_id=region["region_id"],
+                           document_id=document_id,
+                           page_no=region["page_no"],
+                           element_kind=region["element_kind"],
+                           region_kind=region["region_kind"],
+                           description=region["description"],
+                           retraction=region["retraction"],
+                           ocr_conf=None,
+                           content_state=region["content_state"],
+                           selection_state=region["selection_state"],
+                           selection=region["selection"],
+                           crop_ref=region.get("crop_ref"),
+                           source_hash=region["source_hash"],
+                           page_index=region["page_index"],
+                           position=region["position"],
+                           is_untrusted_content=region["is_untrusted_content"],
+                           description_secondary=None)
         LOGGER.info(
             "ingested document %s kind=%s pages=%d order=%s content_hash=%s "
             "transcriber=%s divergence=%s",
@@ -922,6 +1209,17 @@ class Ingestor:
             None if divergence is None else round(divergence, 3),
         )
         return document_id
+
+    @staticmethod
+    def _configured_retries() -> int:
+        raw = os.environ.get(EVALUATIVE_RETRIES_ENV)
+        if not raw:
+            return DEFAULT_EVALUATIVE_RETRIES
+        try:
+            return int(raw)
+        except ValueError as error:
+            raise IngestError(
+                f"{EVALUATIVE_RETRIES_ENV}={raw!r} is not an integer.") from error
 
     @staticmethod
     def _configured_float(env: str, default: float) -> float:
