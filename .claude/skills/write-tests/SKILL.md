@@ -1,7 +1,6 @@
 ---
 name: write-tests
 description: Implement the test cases described in a type:test issue, following the same plan, implement, verify, review, ship loop as fix-issue.
-disable-model-invocation: true
 ---
 
 Implement the test cases described in issue: $ARGUMENTS. This mirrors `/fix-issue`, but the

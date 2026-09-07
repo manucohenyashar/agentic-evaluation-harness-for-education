@@ -1,7 +1,6 @@
 ---
 name: fix-issue
 description: Turn a type:story GitHub issue into a reviewed, tested pull request using plan mode, a verification loop, and an adversarial review subagent.
-disable-model-invocation: true
 ---
 
 Implement GitHub issue: $ARGUMENTS. Follow every phase in order — don't skip verification
