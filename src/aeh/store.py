@@ -1388,6 +1388,11 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "document": Statement("DELETE FROM document"),
     "submission": Statement("DELETE FROM submission"),
     "roster": Statement("DELETE FROM roster"),
+    # #39's cohort-tier tables: unresolved-token occurrences and their clusters are
+    # cohort content (they reference documents) and are purged with the cohort — a
+    # name the registry lacks would be student text left behind (FR-STORE-07).
+    "unresolved_token": Statement("DELETE FROM unresolved_token"),
+    "token_cluster": Statement("DELETE FROM token_cluster"),
     "cohort": Statement("DELETE FROM cohort"),
 }
 
