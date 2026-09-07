@@ -553,6 +553,15 @@ def test_tc_ingest_07_the_ladder_sources_record_and_the_refusal_asks_the_operato
     provenance = json.loads(row["source_blobs"])
     assert provenance["order_source"] == "page_number"
     assert [page["position"] for page in provenance["pages"]] == [1, 2]
+    # The full provenance triple per page (TC-INGEST-08's artifact half): the source
+    # hash, the page index WITHIN that source, and the assembled position — enough to
+    # display the originating page for any cited span. This fixture is one blob, so
+    # both positions come from blob page 1 and 2 respectively.
+    assert provenance["pages"][0]["blob_hash"] == source
+    # The rasters are shuffled (page 1 carries the printed header "Page 2"), so the
+    # page_number tier positions them honestly: position 1 is the blob's SECOND page.
+    assert provenance["pages"][0]["page_no"] == 2
+    assert provenance["pages"][1]["page_no"] == 1
 
     # (a) operator overrides: plain transcripts, filenames that would order them one
     # way, and an operator hint ordering them the other — the operator wins (the head
@@ -582,8 +591,15 @@ def test_tc_ingest_07_the_ladder_sources_record_and_the_refusal_asks_the_operato
         "TC-INGEST-07: the operator tier did not override the filename tier — the "
         "ladder's preference is strict, operator first."
     )
-    # The hint ordered the FILES: first_blob's pages precede second_blob's.
+    # The hint ordered the FILES: first_blob's pages precede second_blob's — and the
+    # two-blob provenance carries the full triple per page (TC-INGEST-08: an assembled
+    # multi-file document; each page knows its source hash, its page index within that
+    # source, and its assembled position).
     assert row["markdown"].index(first_blob[:6]) < row["markdown"].index(second_blob[:6])
+    multi = json.loads(row["source_blobs"])
+    assert {page["blob_hash"] for page in multi["pages"]} == {first_blob, second_blob}
+    assert [page["page_no"] for page in multi["pages"]] == [1, 2, 1, 2]
+    assert [page["position"] for page in multi["pages"]] == [1, 2, 3, 4]
 
     # (d) filenames only: the filename tier orders and records itself (the plain
     # transcripts carry no printed numbers, so the filename tier is what fires).
@@ -678,7 +694,12 @@ def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
 
 def test_tc_ingest_10_a_gap_names_the_specific_missing_positions(tmp_data_dir):
     """`TC-INGEST-10` — a document missing printed pages 3 and 7 raises a V1 finding
-    NAMING [3, 7] — the assertion is on the named positions, not merely on failure."""
+    NAMING [3, 7] — the assertion is on the named positions, not merely on failure.
+
+    The plan row's other half — a missing QUESTION 4 — is the V2 structural gate
+    (FR-INGEST-23): it needs the package's question inventory, which is read at rung 3
+    by #40's ladder; the deferral is recorded here so the plan does not lie about
+    coverage."""
     store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
     handle = store.cohort("c-36")
     source = blobs.put(b"fixture pdf")
@@ -709,4 +730,238 @@ def test_tc_ingest_10_a_gap_names_the_specific_missing_positions(tmp_data_dir):
         f"TC-INGEST-10: the finding does not name the specific missing positions: "
         f"{gap.value}."
     )
+    store.close()
+
+
+# -- review round 2: the interleaved-revision, fiducial, boundary and torn-stack cases -------------
+
+
+class MultiPageRasterizer(ScriptedRasterizer):
+    """A rasterizer double returning a per-source scripted page count."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.layers: dict[int, str] = {}
+
+    def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+        count = self.plan.get(pdf_bytes, 2)
+        return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
+                          height_px=1) for i in range(count)]
+
+    def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
+        return self.layers.get(page_no, "")
+
+
+def test_tc_ingest_06b_a_revision_on_interleaved_pages_replaces_the_seen_page(
+    tmp_data_dir,
+):
+    """B1 (review round 2) — the interleaved case: two 2-page blobs whose PRINTED
+    numbers interleave (A holds pages 1 and 3, B holds 2 and 4). The recorded
+    provenance maps assembled position 2 to BLOB B page 1, and a correction for
+    position 2 must replace exactly that page — a per-blob running counter would
+    replace A's second page and silently lose the student's printed page 3."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    rasterizer = MultiPageRasterizer()
+    blob_a = blobs.put(b"part one")
+    blob_b = blobs.put(b"part two")
+    rasterizer.plan[b"part one"] = 2
+    rasterizer.plan[b"part two"] = 2
+    # The transcripts interleave: A's pages carry printed 1 and 3, B's carry 2 and 4.
+
+    class Interleaved(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            key = (fields["source_blob_hash"], int(fields["page_no"]))
+            self.calls.append(key)
+            texts = {
+                (blob_a, 1): "Page 1 of 4 - part one page one",
+                (blob_a, 2): "Page 3 of 4 - part one page two",
+                (blob_b, 1): "Page 2 of 4 - part two page one",
+                (blob_b, 2): "Page 4 of 4 - part two page two",
+            }
+            if key not in texts:
+                return Completion(text=f"rescanned page {key[1]}",
+                                  tokens_in=1, tokens_out=1, latency_ms=1,
+                                  resolved_build=model_ref.build_id,
+                                  cached_prefix_tokens=0, cost=None)
+            return Completion(text=texts[key], tokens_in=1, tokens_out=1,
+                              latency_ms=1, resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    ingestor = Ingestor(handle, blobs, Interleaved(), _model(),
+                        SamplingParams(temperature=0.0), rasterizer)
+    # No hint: the printed numbers interleave the files through the page-number tier.
+    document_id = ingestor.ingest_document([blob_a, blob_b], kind="submission")
+    provenance = json.loads(handle.query(statement(
+        "SELECT source_blobs FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]["source_blobs"])
+    by_position = {page["position"]: (page["blob_hash"], page["page_no"])
+                   for page in provenance["pages"]}
+    assert by_position[1] == (blob_a, 1) and by_position[2] == (blob_b, 1)
+    assert by_position[3] == (blob_a, 2) and by_position[4] == (blob_b, 2)
+    # The teacher corrects the page they SEE at position 2 — B's first page.
+    rescan = blobs.put(b"rescan-position-2")
+    rasterizer.plan[b"rescan-position-2"] = 1
+    revised = ingestor.revise_document(document_id, [
+        PageReplacement(blob_hash=rescan, page_no=2)])
+    row = handle.query(statement(
+        "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
+        issue=ISSUE), d=revised)[0]
+    new_provenance = json.loads(row["source_blobs"])
+    new_at_2 = next(page for page in new_provenance["pages"]
+                    if page["position"] == 2)
+    assert new_at_2["blob_hash"] == rescan and new_at_2["page_no"] == 1, (
+        "the revised provenance does not point the corrected position at the rescan."
+    )
+    assert "Page 2 of 4 - part two page one" not in row["markdown"], (
+        "the STALE transcript the teacher asked to fix is still in the document."
+    )
+    assert "Page 3 of 4 - part one page two" in row["markdown"], (
+        "A's printed page 3 vanished — the correction lost a page (B1)."
+    )
+    # The other three positions are untouched.
+    untouched = Ingestor(handle, blobs, Interleaved(), _model(),
+                         SamplingParams(temperature=0.0), MultiPageRasterizer())
+    original_pages = handle.query(statement(
+        "SELECT markdown FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]["markdown"]
+    for printed in ("Page 1 of 4", "Page 3 of 4", "Page 4 of 4"):
+        assert printed in row["markdown"] and printed in original_pages
+    store.close()
+
+
+def test_tc_ingest_07b_the_fiducial_tier_sorts_naturally_and_refuses_repeats(
+    tmp_data_dir,
+):
+    """`TC-INGEST-07` decision-table case (c) — fiducial markers: `[fiducial:page-10]`
+    sorts AFTER `[fiducial:page-2]` (natural order, like the filename tier), and two
+    pages sharing a marker are refused as a misprint rather than assembled in raster
+    order."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+
+    class Fiducial(ScriptedProvider):
+        def __init__(self, markers) -> None:
+            super().__init__()
+            self._markers = markers
+
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            return Completion(text=f"[fiducial:{self._markers[page_no - 1]}]",
+                              tokens_in=1, tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    # Natural sort: page-1, page-2, page-10 — presented in raster order 10, 1, 2.
+    rasterizer.plan = {b"fixture pdf": 3}
+    ingestor = Ingestor(handle, blobs, Fiducial(["page-10", "page-1", "page-2"]),
+                        _model(), SamplingParams(temperature=0.0), rasterizer)
+    document_id = ingestor.ingest_document([source], kind="submission")
+    row = handle.query(statement(
+        "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]
+    assert [row["markdown"].index(f"page-{n}") for n in (1, 2, 10)] == sorted(
+        row["markdown"].index(f"page-{n}") for n in (1, 2, 10)), (
+        "TC-INGEST-07: the fiducial tier sorted lexicographically — page-10 does not "
+        "belong between page-1 and page-2."
+    )
+    assert json.loads(row["source_blobs"])["order_source"] == "marker"
+    # Repeats: two pages sharing a marker are a misprint — refused, never assembled
+    # (the bodies differ, so the duplicate check cannot be what fires).
+    rasterizer.plan = {b"fixture pdf": 2}
+
+    class RepeatedFiducial(Fiducial):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            self.calls.append((fields["page_no"], fields["image_png_base64"]))
+            body = "first sheet body" if page_no == 1 else "second sheet body"
+            return Completion(text=f"[fiducial:{self._markers[page_no - 1]}] {body}",
+                              tokens_in=1, tokens_out=1, latency_ms=1,
+                              resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    repeated = Ingestor(handle, blobs, RepeatedFiducial(["page-1", "page-1"]),
+                        _model(), SamplingParams(temperature=0.0), rasterizer)
+    with pytest.raises(IngestError, match="repeat positions"):
+        repeated.ingest_document([source], kind="submission",
+                                 filenames={source: "scan-01.md"})
+    store.close()
+
+
+def test_tc_ingest_03b_the_divergence_boundary_is_exactly_strict(tmp_data_dir):
+    """`TC-INGEST-03`'s fourth boundary point — divergence EXACTLY at the threshold:
+    recorded and ingested (the declared rule is strictly-greater). Layer "a b c d"
+    against transcript "a b c d e f g h" is Jaccard 4/8 → divergence exactly 0.5 with
+    the halt at 0.5."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    layered = LayeredRasterizer("a b c d")
+    ingestor = Ingestor(handle, blobs,
+                        _two_page_provider("a b c d e f g h", "second page entirely"),
+                        _model(), SamplingParams(temperature=0.0), layered)
+    patch = pytest.MonkeyPatch()
+    patch.setenv("HARNESS_INGEST_TEXT_LAYER_DIVERGENCE_HALT", "0.5")
+    try:
+        document_id = ingestor.ingest_document([source], kind="reference",
+                                               filenames={source: "scan-01.md"})
+    finally:
+        patch.undo()
+    row = handle.query(statement(
+        "SELECT text_layer_divergence FROM document WHERE document_id = :d",
+        issue=ISSUE), d=document_id)[0]
+    assert row["text_layer_divergence"] == 0.5, (
+        "TC-INGEST-03: exactly-at-the-threshold did not ingest and record — the "
+        "declared boundary is strictly greater."
+    )
+    store.close()
+
+
+def test_tc_ingest_09b_torn_stacks_and_repeated_numbers_are_refused(tmp_data_dir):
+    """FR-INGEST-09's refusal halves — pages DISAGREEING about the document's page
+    count (a torn or mixed stack) and REPEATING a printed position are both refused,
+    not assembled."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+
+    class Torn(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            texts = {1: "Page 1 of 3", 2: "Page 2 of 4"}  # disagreeing totals
+            return Completion(text=texts[page_no], tokens_in=1, tokens_out=1,
+                              latency_ms=1, resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    ingestor = Ingestor(handle, blobs, Torn(), _model(),
+                        SamplingParams(temperature=0.0), rasterizer)
+    with pytest.raises(IngestError, match="disagree"):
+        ingestor.ingest_document([source], kind="submission")
+
+    class ThreePageRasterizer(ScriptedRasterizer):
+        def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
+                              height_px=1) for i in range(3)]
+
+    class Repeated(ScriptedProvider):
+        def complete(self, prompt, model_ref, params):
+            fields = dict(prompt.fields)
+            page_no = int(fields["page_no"])
+            texts = {1: "Page 1 of 2 - alpha body here",
+                     2: "Page 1 of 2 - beta body here",
+                     3: "Page 2 of 2 - gamma body here"}  # position 1 repeated
+            return Completion(text=texts[page_no], tokens_in=1, tokens_out=1,
+                              latency_ms=1, resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    repeated = Ingestor(handle, blobs, Repeated(), _model(),
+                        SamplingParams(temperature=0.0), ThreePageRasterizer())
+    with pytest.raises(IngestError, match="repeats positions"):
+        repeated.ingest_document([source], kind="submission")
     store.close()

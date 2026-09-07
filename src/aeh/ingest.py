@@ -123,9 +123,10 @@ DEFAULT_DUPLICATE_THRESHOLD = 0.9
 #: transcription prompt asks the model to carry over verbatim.
 _PAGE_NUMBER_PATTERN = re.compile(r"\bPage\s+(\d+)\s+of\s+(\d+)\b", re.IGNORECASE)
 
-#: The fiducial-marker pattern (the same tier's other form): an explicit marker line
-#: the print shop placed on every sheet.
-_FIDUCIAL_PATTERN = re.compile(r"^\[fiducial:([A-Za-z0-9._-]+)\]\s*$", re.MULTILINE)
+#: The fiducial-marker pattern (the same tier's other form): an explicit marker the
+#: print shop placed at the top of every sheet — the line starts with it, and body
+#: text may follow on the same line.
+_FIDUCIAL_PATTERN = re.compile(r"^\[fiducial:([A-Za-z0-9._-]+)\]", re.MULTILINE)
 
 #: The similarity measure for duplicates and divergence: word-level Jaccard over
 #: lowercased whitespace-split tokens. Declared here so both thresholds measure the
@@ -168,10 +169,12 @@ class IngestGapError(IngestError):
 
 
 class IngestDuplicateError(IngestError):
-    """Two pages whose transcripts (or rasters) are similar above the configured
-    threshold (`FR-INGEST-08`): surfaced for confirmation, NEVER concatenated — a
-    duplicated page silently assembled twice would double-count a student's answer.
-    The pairs are named; the operator resolves and re-ingests."""
+    """Two pages whose TRANSCRIPTS are similar above the configured threshold
+    (`FR-INGEST-08`): surfaced for confirmation, NEVER concatenated — a duplicated page
+    silently assembled twice would double-count a student's answer. The pairs are
+    named; the operator resolves and re-ingests. (The FR's disjunction — page-image OR
+    transcript similarity — is satisfied by the transcript channel; the image-
+    similarity channel is a deliberate deferral to the acceptance run.)"""
 
 
 def _configured_dpi() -> int:
@@ -509,9 +512,6 @@ class AssembledDocument:
         )
 
 
-_ORDER_SOURCES: tuple[str, ...] = ("operator", "page_number", "marker", "filename")
-
-
 def _parse_page_number(text: str) -> tuple[int, int] | None:
     """The page's (number, declared total) from a "Page N of M" header — the total is
     what makes a GAP detectable: pages 1, 2, 4, 5, 6 of a declared 7 are missing 3 and
@@ -568,8 +568,17 @@ def assemble_canonical_markdown(
             raise IngestError(
                 "the operator-stated order does not name every page exactly once."
             )
-        ordered_indices = [hint_names.index(identity) for identity in identities]
-        ordered_indices = [identities.index(name) for name in hint_names]
+        # Index by FIRST UNUSED occurrence, so two pages sharing a basename (the
+        # same file name materialized in different directories) cannot collapse.
+        by_identity: dict[str, list[int]] = {}
+        for index, identity in enumerate(identities):
+            by_identity.setdefault(identity, []).append(index)
+        ordered_indices = []
+        taken: set[int] = set()
+        for name in hint_names:
+            index = next(i for i in by_identity[name] if i not in taken)
+            taken.add(index)
+            ordered_indices.append(index)
         order_source = "operator"
     if order_source is None:
         numbers = [_parse_page_number(text) for text in texts]
@@ -602,7 +611,15 @@ def assemble_canonical_markdown(
     if order_source is None:
         markers = [_parse_fiducial(text) for text in texts]
         if all(marker is not None for marker in markers):
-            ordered_indices = sorted(range(len(markers)), key=lambda i: markers[i])
+            repeats = sorted({marker for marker in markers
+                              if markers.count(marker) > 1})
+            if repeats:
+                raise IngestGapError(
+                    f"the fiducial markers repeat positions {repeats} — a misprint "
+                    "or a duplicated sheet (FR-INGEST-09)."
+                )
+            ordered_indices = sorted(range(len(markers)),
+                                     key=lambda i: _natural_key(markers[i]))
             order_source = "marker"
     if order_source is None:
         # The filename tier: an explicit mapping when the caller has real names, else
@@ -696,11 +713,14 @@ class Ingestor:
         exactly ONE VLM transcription call per page, and emit exactly ONE immutable
         Markdown `document` row (`FR-INGEST-02`, `FR-INGEST-04`).
 
-        `blobs` are content hashes in the blob store, in assembly order (the caller's
-        sequence is the order #36 honors; the declared preference machinery lands with
-        #37). `kind` is one of the four artifact kinds — there is no per-kind
-        alternative path: the pipeline below is the only one. Returns the new
-        `DocumentId`."""
+        `blobs` are content hashes in the blob store. The assembly order comes from
+        the declared preference ladder (FR-INGEST-06): an operator-stated
+        `order_hint` (blob hashes in order) > printed page numbers parsed from the
+        transcripts > fiducial markers > `filenames` (blob hash -> source filename,
+        natural-sorted). With no tier available the call refuses — the module never
+        guesses (FR-INGEST-31). `kind` is one of the four artifact kinds — there is
+        no per-kind alternative path: the pipeline below is the only one. Returns the
+        new `DocumentId`."""
         if kind not in DOCUMENT_KINDS:
             raise IngestError(
                 f"document kind {kind!r} is not one of {DOCUMENT_KINDS}. There are "
@@ -845,9 +865,18 @@ class Ingestor:
                 markers = [_parse_fiducial(record["transcript"])
                            for record in page_records]
                 if all(marker is not None for marker in markers):
+                    repeats = sorted({marker for marker in markers
+                                      if markers.count(marker) > 1})
+                    if repeats:
+                        raise IngestGapError(
+                            f"the fiducial markers repeat positions {repeats} — "
+                            "a misprint or a duplicated sheet (FR-INGEST-09)."
+                        )
+                    # Natural sort: [fiducial:page-10] sorts after [fiducial:page-2],
+                    # exactly as the filename tier treats page-10.md.
                     ordered = [record for _, record in
                                sorted(zip(markers, page_records),
-                                      key=lambda pair: pair[0])]
+                                      key=lambda pair: _natural_key(pair[0]))]
                     order_source = "marker"
                 elif filenames and all(filenames.get(blob) for blob in blobs):
                     name_of = {record["blob_hash"]: filenames[record["blob_hash"]]
@@ -921,50 +950,62 @@ class Ingestor:
         row = rows[0]
         provenance = json.loads(row["source_blobs"] or "{}")
         if isinstance(provenance, dict) and "pages" in provenance:
-            # The structured form (#37): per-page provenance with the assembled
-            # position — a replacement page_no names the POSITION in the assembled
-            # sequence, which is the page a teacher sees.
-            source_blobs = []
-            for entry in provenance["pages"]:
-                if entry["blob_hash"] not in source_blobs:
-                    source_blobs.append(entry["blob_hash"])
-            position_blob = {entry["position"]: entry["blob_hash"]
-                             for entry in provenance["pages"]}
+            # The structured form (#37): the recorded provenance IS the page sequence —
+            # iterate positions 1..N and take (blob, page_no) from each entry. The
+            # page_number/marker tiers INTERLEAVE pages across files, so a running
+            # per-blob counter would silently replace the wrong page and lose another.
+            page_sequence = [
+                (entry["blob_hash"], entry["page_no"])
+                for entry in sorted(provenance["pages"],
+                                    key=lambda e: e["position"])
+            ]
         else:
-            # The legacy list form (pre-#37 rows): positions are the raster order.
-            source_blobs = list(provenance)
-            position_blob = None
+            # The legacy list form (pre-#37 rows): raster order within each blob.
+            page_sequence = None
+            source_blobs = list(provenance) if isinstance(provenance, list) else []
         replacements = {replacement.page_no: replacement.blob_hash
                         for replacement in replacement_pages}
         if not replacements:
             raise IngestError("revise_document needs at least one replacement page.")
+
         markdown_parts: list[str] = []
         transcriber_ref: str | None = None
+        new_provenance_pages: list[dict] = []
+        layers: list[str] = []
         dpi = _configured_dpi()
         if self._residency is not None:
             self._residency.acquire("transcriber")
         try:
-            position = 0
-            for blob_hash in source_blobs:
-                pdf_bytes = self._blobs.get(blob_hash)
-                for page in self._rasterizer.rasterize(pdf_bytes, dpi):
-                    position += 1
-                    lookup = position if position_blob is not None else page.page_no
-                    replacement = replacements.pop(lookup, None)
+            raster_cache: dict[str, list[PageImage]] = {}
+
+            def pages_of(blob_hash: str) -> list[PageImage]:
+                if blob_hash not in raster_cache:
+                    raster_cache[blob_hash] = self._rasterizer.rasterize(
+                        self._blobs.get(blob_hash), dpi)
+                return raster_cache[blob_hash]
+
+            if page_sequence is not None:
+                # One transcription call per recorded position, in assembled order.
+                for position, (blob_hash, page_no) in enumerate(page_sequence,
+                                                                start=1):
+                    pages = pages_of(blob_hash)
+                    page = pages[page_no - 1]
+                    replacement = replacements.pop(position, None)
+                    replaced_from: str | None = None
                     if replacement is not None:
-                        # A rescan is a one-page PDF holding the replacement page:
-                        # rasterize it and transcribe THAT, with its own provenance.
-                        rescan = self._rasterizer.rasterize(
-                            self._blobs.get(replacement), dpi)
+                        # A rescan is a one-page PDF holding the replacement page.
+                        rescan = pages_of(replacement)
                         if len(rescan) != 1:
                             raise IngestError(
-                                f"the replacement for page {lookup} rasterized "
+                                f"the replacement for position {position} rasterized "
                                 f"to {len(rescan)} pages; a replacement page is one "
                                 "page."
                             )
-                        page = PageImage(page_no=page.page_no, png=rescan[0].png,
+                        replaced_from = page_no
+                        page = PageImage(page_no=1, png=rescan[0].png,
                                          width_px=rescan[0].width_px,
                                          height_px=rescan[0].height_px)
+                        blob_hash, page_no = replacement, 1
                     completion = self._transcribe_page(page, blob_hash)
                     if (transcriber_ref is not None
                             and completion.resolved_build != transcriber_ref):
@@ -977,10 +1018,53 @@ class Ingestor:
                         )
                     transcriber_ref = completion.resolved_build
                     markdown_parts.append(completion.text)
+                    layers.append(self._rasterizer.text_layer(
+                        self._blobs.get(blob_hash), page_no)
+                        if replaced_from is None else "")
+                    new_provenance_pages.append({
+                        "blob_hash": blob_hash, "page_no": page_no,
+                        "position": position, **({"replaced": replaced_from}
+                                                 if replaced_from else {}),
+                    })
+            else:
+                position = 0
+                for blob_hash in source_blobs:
+                    pdf_bytes = self._blobs.get(blob_hash)
+                    for page in self._rasterizer.rasterize(pdf_bytes, dpi):
+                        position += 1
+                        replacement = replacements.pop(page.page_no, None)
+                        if replacement is not None:
+                            rescan = pages_of(replacement)
+                            if len(rescan) != 1:
+                                raise IngestError(
+                                    f"the replacement for page {page.page_no} "
+                                    f"rasterized to {len(rescan)} pages; a "
+                                    "replacement page is one page."
+                                )
+                            page = PageImage(page_no=page.page_no,
+                                             png=rescan[0].png,
+                                             width_px=rescan[0].width_px,
+                                             height_px=rescan[0].height_px)
+                        completion = self._transcribe_page(page, blob_hash)
+                        if (transcriber_ref is not None
+                                and completion.resolved_build != transcriber_ref):
+                            raise IngestError(
+                                "the transcriber build changed mid-revision: "
+                                f"{transcriber_ref!r} answered earlier pages, "
+                                f"{completion.resolved_build!r} answered this one."
+                            )
+                        transcriber_ref = completion.resolved_build
+                        markdown_parts.append(completion.text)
+                        layers.append("")
+                        new_provenance_pages.append({
+                            "blob_hash": blob_hash, "page_no": page.page_no,
+                            "position": position,
+                        })
             if replacements:
                 raise IngestError(
-                    f"replacement pages {sorted(replacements)} do not exist in "
-                    f"document {document_id!r} ({len(source_blobs)} source file(s))."
+                    f"replacement positions {sorted(replacements)} do not exist in "
+                    f"document {document_id!r} "
+                    f"({len(page_sequence or source_blobs)} page(s))."
                 )
         finally:
             if self._residency is not None:
@@ -988,6 +1072,17 @@ class Ingestor:
         new_id = f"doc-{uuid.uuid4().hex[:12]}"
         markdown = self._assemble(markdown_parts)
         content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
+        # The revision's own provenance (FR-INGEST-07): the replaced positions point
+        # at the RESCAN blob they actually came from — copying the parent's record
+        # verbatim would claim a citation's page is the pre-correction scan.
+        order_source = (provenance.get("order_source", "operator")
+                        if isinstance(provenance, dict) else "operator")
+        pages_with_layer = sum(1 for layer in layers if layer)
+        divergence = max(
+            (1.0 - _jaccard_similarity(layer, text)
+             for layer, text in zip(layers, markdown_parts) if layer),
+            default=None,
+        )
         with self._handle.transaction() as tx:
             tx.execute(INGEST_STATEMENTS["insert_document"],
                        document_id=new_id, submission_id=row["submission_id"],
@@ -995,8 +1090,11 @@ class Ingestor:
                        transcriber_ref=transcriber_ref,
                        prompt_template_version=TRANSCRIPTION_PROMPT_VERSION,
                        kind=row["kind"], parent_doc_id=document_id,
-                       source_blobs=row["source_blobs"],
-                       pages_with_text_layer=None, text_layer_divergence=None,
+                       source_blobs=json.dumps(
+                           {"order_source": order_source,
+                            "pages": new_provenance_pages}, sort_keys=True),
+                       pages_with_text_layer=pages_with_layer or None,
+                       text_layer_divergence=divergence,
                        created_at=self._now())
         LOGGER.info(
             "revised document %s into %s pages_replaced=%d content_hash=%s",
@@ -1006,15 +1104,16 @@ class Ingestor:
 
     def ingest_submission(
         self, blobs: Sequence[str], cohort_id: str,
-        package_version: str,
+        package_version: str, order_hint: Sequence[str] | None = None,
+        filenames: dict[str, str] | None = None,
     ) -> IngestReport:
         """Ingest one submission through the validation ladder. #36 lands the gateway
         half (transcription and the document row); the V0-V4 gates fill `gates`,
         `ingest_status`, `detail` and `v4_signals` with #40/#41 — the report shape
         exists now so callers compile against the real surface."""
         document_id = self.ingest_document(
-            blobs, kind="submission",
-            package_version=package_version,
+            blobs, kind="submission", order_hint=order_hint,
+            package_version=package_version, filenames=filenames,
         )
         return IngestReport(
             submission_id=f"pending-{cohort_id}", document_id=document_id,
@@ -1046,9 +1145,7 @@ class Ingestor:
     @staticmethod
     def _assemble(parts: Sequence[str]) -> str:
         """Assemble page transcripts into the canonical Markdown: pages joined by a
-        fixed separator, in the given order. (The declared preference machinery —
-        operator order, printed numbers, fiducials — lands with #37; #36's order is the
-        caller's sequence, which the tests pin as never being directory order.)"""
+        fixed separator, in the order the preference ladder produced."""
         return "\n\n<!-- page break -->\n\n".join(parts)
 
     @staticmethod
