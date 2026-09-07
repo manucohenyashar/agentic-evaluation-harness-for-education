@@ -17,9 +17,16 @@ The four seams (`CLAUDE.md`):
 2. **Deterministic transport** — the VLM is `M-PROV`'s `InferenceProvider` (the fast
    tier's `RecordedFixtureProvider`); the rasterizer is a `Rasterizer` seam with a
    scripted double for tests and a lazy-imported `pypdfium2` implementation for the
-   acceptance run.
-3. **Env-gated knobs** — `HARNESS_INGEST_DPI` (the pinned rasterization DPI) and
-   `HARNESS_INGEST_MAX_TOKENS_PER_PAGE`; production values are the defaults.
+   acceptance run; the sanitizer is a `PdfSanitizer` seam the same way (#42) — a
+   scripted double for the fast tier, a lazy-imported `pypdf` implementation for the
+   acceptance run. A PDF is never rasterized unsanitized: the sanitizer is a required
+   constructor argument, so there is no configuration that skips it.
+3. **Env-gated knobs** — `HARNESS_INGEST_DPI` (the pinned rasterization DPI),
+   `HARNESS_INGEST_MAX_TOKENS_PER_PAGE`, and #42's adversarial-input ceilings
+   (`HARNESS_INGEST_STRIP_ACTIVE_CONTENT`, `HARNESS_INGEST_MAX_PAGES_PER_DOC`,
+   `HARNESS_INGEST_MAX_DECOMPRESSED_BYTES`, `HARNESS_INGEST_MAX_IMAGE_PIXELS`,
+   `HARNESS_INGEST_MAX_FILE_SECONDS`, `HARNESS_INGEST_MAX_EMBEDDED_OBJECTS`);
+   production values are the defaults.
 4. **Stage-level observability** — `IngestReport` carries per-gate columns (populated by
    #40/#41) and the ingest surface logs page counts, hashes and the transcriber build.
 """
@@ -28,11 +35,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import logging
 import os
 import re
+import time
 import uuid
+import zlib
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -56,6 +66,7 @@ __all__ = [
     "IngestCohortBreakerTripped",
     "IngestDuplicateError",
     "IngestError",
+    "IngestSanitizeError",
     "IngestGapError",
     "IngestOrderError",
     "IngestReport",
@@ -65,10 +76,13 @@ __all__ = [
     "TokenCluster",
     "PageImage",
     "PageReplacement",
+    "PdfSanitizer",
     "PdfiumRasterizer",
+    "PypdfSanitizer",
     "REGION_KINDS",
     "ResidencySlot",
     "Rasterizer",
+    "SanitizeResult",
     "TRANSCRIPTION_PROMPT_VERSION",
     "assemble_canonical_markdown",
 ]
@@ -278,6 +292,57 @@ DEFAULT_V4_BREAKER_MIN = 20
 V4_SEMANTIC_FLOOR_ENV = "HARNESS_INGEST_V4_SEMANTIC_FLOOR"
 DEFAULT_V4_SEMANTIC_FLOOR = 0.10
 
+# --- adversarial-input safety (#42, FR-INGEST-33/34) ----------------------------------------------
+#
+# Design Configuration (§3.5) names the knobs `INGEST_STRIP_ACTIVE_CONTENT`,
+# `INGEST_MAX_PAGES_PER_DOC`, `INGEST_MAX_DECOMPRESSED_BYTES`,
+# `INGEST_MAX_IMAGE_PIXELS` and `INGEST_MAX_FILE_SECONDS`; the repo's convention
+# prefixes the design's configuration names with `HARNESS_` (the same mapping that
+# turned design `INGEST_DPI` into `HARNESS_INGEST_DPI`). The embedded-object ceiling
+# the plan names only as "an embedded-object ceiling" is
+# `HARNESS_INGEST_MAX_EMBEDDED_OBJECTS`.
+
+#: Whether the sanitizer STRIPS the active constructs it finds (`FR-INGEST-33`).
+#: Declared reading: this knob toggles strip versus REFUSE, never sanitize versus
+#: process — set it to false and any detected active construct quarantines the
+#: artifact, because processing unsanitized active content is the one outcome the
+#: requirement exists to prevent.
+STRIP_ACTIVE_CONTENT_ENV = "HARNESS_INGEST_STRIP_ACTIVE_CONTENT"
+DEFAULT_STRIP_ACTIVE_CONTENT = True
+
+#: The page ceiling per logical document (`FR-INGEST-34`), checked from the
+#: sanitizer's structural read BEFORE any rasterization allocates.
+MAX_PAGES_ENV = "HARNESS_INGEST_MAX_PAGES_PER_DOC"
+DEFAULT_MAX_PAGES = 200
+
+#: The total decompressed-byte ceiling per source file (`FR-INGEST-34`). The
+#: sanitizer measures streams in bounded chunks and aborts the walk the moment the
+#: running total crosses this — a decompression bomb quarantines WITHOUT full
+#: decompression, which is the requirement's own acceptance form.
+MAX_DECOMPRESSED_BYTES_ENV = "HARNESS_INGEST_MAX_DECOMPRESSED_BYTES"
+DEFAULT_MAX_DECOMPRESSED_BYTES = 512 * 1024 * 1024
+
+#: The pixel ceiling (`FR-INGEST-34`), enforced twice: against the DECLARED
+#: dimensions of embedded images (from their dictionaries, before anything decodes
+#: them — a 60000×60000 image is refused at ~3.6 GP before the renderer can
+#: allocate it) and against the actual raster dimensions after rendering (a
+#: belt-and-braces on the same bound).
+MAX_IMAGE_PIXELS_ENV = "HARNESS_INGEST_MAX_IMAGE_PIXELS"
+DEFAULT_MAX_IMAGE_PIXELS = 64_000_000
+
+#: The per-file processing wall-clock ceiling in seconds (`FR-INGEST-34`). Checked
+#: at the sanitizer's object boundaries and at per-page decode boundaries — a
+#: boundary-cut ceiling, declared: a native decode cannot be preempted mid-flight,
+#: only refused between flights.
+MAX_FILE_SECONDS_ENV = "HARNESS_INGEST_MAX_FILE_SECONDS"
+DEFAULT_MAX_FILE_SECONDS = 60.0
+
+#: The embedded-object ceiling (`FR-INGEST-34`'s "embedded-object count"): the
+#: sanitizer's graph walk counts the objects it visits and refuses the artifact
+#: once the count crosses this, before allocating for the rest.
+MAX_EMBEDDED_OBJECTS_ENV = "HARNESS_INGEST_MAX_EMBEDDED_OBJECTS"
+DEFAULT_MAX_EMBEDDED_OBJECTS = 50_000
+
 #: The printed page-number pattern the page-number tier parses (`FR-INGEST-06`'s
 #: second preference tier): a leading "Page N of M" header, which is what a pinned
 #: transcription prompt asks the model to carry over verbatim.
@@ -373,6 +438,17 @@ class IngestCohortBreakerTripped(IngestError):
     while the finding waits. This is the one gate outcome that IS an exception: it
     halts the cohort, not the submission (NFR-INGEST-02's unit-level quarantine is
     recorded on the row; this is cohort-level and refuses the work)."""
+
+
+class IngestSanitizeError(IngestError):
+    """A sanitization refusal (`FR-INGEST-33`/`FR-INGEST-34`/`NFR-INGEST-08`): the
+    source carries active content that cannot be removed, crossed a resource
+    ceiling, or could not be parsed for sanitization at all — and the artifact is
+    therefore refused, never processed. In the submission path the ladder catches
+    this and records the V0 quarantine; in the setup-artifact path it propagates to
+    the uploading teacher (`FR-INGEST-32`). Any exception raised inside the
+    sanitizer — declared or not — is wrapped into this type, so every failure mode
+    resolves to refusal rather than to processing."""
 
 
 def _configured_dpi() -> int:
@@ -480,6 +556,509 @@ class PdfiumRasterizer(Rasterizer):
             return text_page.get_text_range()
         finally:
             pdf.close()
+
+
+# --- the sanitizer seam (#42: FR-INGEST-33 / FR-INGEST-34) ----------------------------------------
+
+
+#: The active and external-reference action types (`FR-INGEST-33`'s list), keyed by
+#: the PDF action's `/S` value, valued by the construct class a finding names. A
+#: dictionary whose `/S` is any of these IS the construct — wherever it hides (an
+#: annotation's `/A`, the catalog's `/OpenAction`, a name-tree destination, an
+#: incremental update's new objects, inside an object stream): the graph walk from
+#: the trailer reaches all of them, which is the structural answer to the
+#: TC-INGEST-33 variants.
+_ACTION_CONSTRUCTS: dict[str, str] = {
+    "/JavaScript": "javascript",
+    "/Launch": "launch",
+    "/URI": "uri",
+    "/GoToR": "goto_r",
+    "/GoToE": "embedded_file",
+    "/SubmitForm": "submit_form",
+}
+
+
+@dataclass(frozen=True)
+class SanitizeResult:
+    """What the sanitizer did to one source PDF (`CLAUDE.md` seam 4).
+
+    `pdf_bytes` is the copy rasterization is allowed to read — the original when
+    nothing needed removing, the rewritten document otherwise. `neutralized` names
+    the construct classes found and removed; `unremovable` names those detected and
+    NOT removed, which the gateway refuses on. `bounds_crossed` names the ceilings
+    the artifact crossed mid-walk (`FR-INGEST-34`), after which the walk stopped —
+    `decompressed_bytes` is the total measured up to the stop, so a bomb is refused
+    without ever being fully decompressed. The structural observations
+    (`page_count`, `page_sizes_pt`, `max_declared_image_px`) are what the gateway
+    checks the page, pixel and object ceilings against BEFORE rendering."""
+
+    pdf_bytes: bytes
+    neutralized: tuple[str, ...] = ()
+    unremovable: tuple[str, ...] = ()
+    bounds_crossed: tuple[str, ...] = ()
+    decompressed_bytes: int = 0
+    page_count: int | None = None
+    page_sizes_pt: tuple[tuple[float, float], ...] = ()
+    max_declared_image_px: int = 0
+
+
+class PdfSanitizer:
+    """The PDF neutralize-and-bound seam (`CLAUDE.md` seam 2): the one place a source
+    PDF is inspected and rewritten before any rasterization.
+
+    `FR-INGEST-33` makes sanitization a precondition of rasterization — the seam
+    exists so that, like the rasterizer and the model boundary, it is a dependency
+    with a deterministic double for tests and a real implementation for the
+    acceptance run. A gateway cannot even be constructed without naming one."""
+
+    def sanitize(
+        self, pdf_bytes: bytes, *, strip: bool,
+        max_decompressed_bytes: int | None,
+        max_embedded_objects: int | None, deadline: float | None,
+    ) -> SanitizeResult:
+        """Inspect `pdf_bytes`, remove the active constructs (`strip=True`), and
+        report what was found within the given bounds. Raising anything at all is
+        legitimate — the gateway wraps every failure into a refusal
+        (`NFR-INGEST-08`)."""
+        raise NotImplementedError
+
+
+class _WalkAborted(Exception):
+    """A bound was crossed mid-walk (`FR-INGEST-34`): the walk stops HERE — no
+    further objects are visited, no further stream is decompressed — and the
+    partial observations ride out to the caller as the refusal's evidence."""
+
+
+def _chunked_flate_size(raw: bytes, budget: int) -> int:
+    """The decompressed size of a FlateDecode stream, measured in bounded chunks.
+
+    Returns the running total — which may exceed `budget`, but only after the
+    measurement STOPPED absorbing (the caller compares and refuses): a bomb is
+    sized at most 64KiB past the line it crossed, never fully decompressed (the
+    requirement's own acceptance form). Multi-member streams (concatenated zlib
+    data) keep being measured until the input is exhausted or the budget is
+    crossed."""
+    total = 0
+
+    def absorb(member: "zlib._Decompress", feed: bytes) -> bool:
+        """Decompress one 64KiB slice, draining what max_length held back.
+        False once the budget is crossed."""
+        nonlocal total
+        piece = member.decompress(feed, 65536)
+        total += len(piece)
+        if total > budget:
+            return False
+        while member.unconsumed_tail:
+            piece = member.decompress(member.unconsumed_tail, 65536)
+            total += len(piece)
+            if total > budget:
+                return False
+        return True
+
+    member = zlib.decompressobj()
+    offset = 0
+    while True:
+        chunk = raw[offset:offset + 65536]
+        offset += len(chunk)
+        if not absorb(member, chunk):
+            return total  # crossed: the count so far, then stop
+        if offset < len(raw):
+            continue
+        if not member.unused_data:
+            break  # the input is exhausted and it was one member
+        raw = member.unused_data  # a concatenated second member follows
+        member = zlib.decompressobj()
+        offset = 0
+    return total
+
+
+class PypdfSanitizer(PdfSanitizer):
+    """The live sanitizer, over `pypdf`. Imported LAZILY, like the live rasterizer:
+    the fast tier never needs the dependency, and an acceptance-run box installs it
+    explicitly.
+
+    Three passes, in order: a bounded MEASUREMENT walk of the original (detect the
+    constructs, size the streams chunk-wise, count the objects, watch the clock) —
+    a bound crossed here stops the walk and refuses the artifact before anything
+    is allocated for it; then the STRIP (mutate the reader's object graph, clone it
+    out through `PdfWriter`); then a VERIFY re-parse of the rewritten bytes, whose
+    finding of any surviving construct reads as `unremovable` rather than as
+    success — "neutralized" is an asserted property, never a hope."""
+
+    _CHUNK = 65536
+
+    @staticmethod
+    def _module() -> Any:
+        """The pypdf module, resolved lazily wherever a helper needs it (the lazy
+        import IS the seam; the module system caches the resolution)."""
+        import pypdf  # noqa: PLC0415 -- the lazy import IS the seam
+        return pypdf
+
+    def sanitize(
+        self, pdf_bytes: bytes, *, strip: bool,
+        max_decompressed_bytes: int | None,
+        max_embedded_objects: int | None, deadline: float | None,
+    ) -> SanitizeResult:
+        try:
+            import pypdf  # noqa: PLC0415 -- the lazy import IS the seam
+        except ImportError as error:  # pragma: no cover - acceptance-run only
+            raise IngestError(
+                "the live sanitizer needs the pypdf package; the fast tier uses a "
+                "scripted PdfSanitizer double instead (the dependency is declared "
+                "in requirements-dev.txt)."
+            ) from error
+
+        reader = self._open(pypdf, pdf_bytes)
+        measured = self._walk(reader, pypdf, measure_streams=True,
+                              max_decompressed_bytes=max_decompressed_bytes,
+                              max_embedded_objects=max_embedded_objects,
+                              deadline=deadline)
+        if measured["bounds_crossed"]:
+            # A ceiling was crossed mid-walk: the artifact is refused without
+            # being fully walked, let alone rewritten (FR-INGEST-34's "quarantine
+            # rather than being allocated for"). No strip happens past a crossed
+            # bound — stripping would be processing the artifact.
+            return SanitizeResult(
+                pdf_bytes=pdf_bytes,
+                bounds_crossed=measured["bounds_crossed"],
+                decompressed_bytes=measured["decompressed_bytes"],
+                page_count=measured["page_count"],
+                page_sizes_pt=measured["page_sizes_pt"],
+                max_declared_image_px=measured["max_declared_image_px"],
+            )
+        if not measured["constructs"]:
+            # Nothing active: the sanitized copy of a clean PDF is itself — no
+            # gratuitous re-serialization of a well-formed document.
+            return self._result(pdf_bytes, measured)
+        if not strip:
+            # Declared reading of the knob (module constants above): strip=false
+            # means refuse, never process. Any detected construct is then, by
+            # definition, one that cannot be removed in this configuration.
+            return SanitizeResult(
+                pdf_bytes=pdf_bytes, unremovable=tuple(sorted(measured["constructs"])),
+                decompressed_bytes=measured["decompressed_bytes"],
+                page_count=measured["page_count"],
+                page_sizes_pt=measured["page_sizes_pt"],
+                max_declared_image_px=measured["max_declared_image_px"],
+            )
+
+        self._strip(reader, pypdf)
+        sanitized = self._serialize(reader, pypdf)
+        verified = self._walk(self._open(pypdf, sanitized), pypdf,
+                              measure_streams=False, max_decompressed_bytes=None,
+                              max_embedded_objects=None, deadline=None)
+        if verified["constructs"]:
+            # The rewrite did not take: the construct survives in the sanitized
+            # copy, so the honest outcome is "cannot be removed" (FR-INGEST-33),
+            # and the gateway quarantines instead of rasterizing.
+            return SanitizeResult(
+                pdf_bytes=pdf_bytes,
+                unremovable=tuple(sorted(verified["constructs"])),
+                decompressed_bytes=measured["decompressed_bytes"],
+                page_count=measured["page_count"],
+                page_sizes_pt=measured["page_sizes_pt"],
+                max_declared_image_px=measured["max_declared_image_px"],
+            )
+        return SanitizeResult(
+            pdf_bytes=sanitized,
+            neutralized=tuple(sorted(measured["constructs"])),
+            decompressed_bytes=measured["decompressed_bytes"],
+            page_count=verified["page_count"],
+            page_sizes_pt=verified["page_sizes_pt"],
+            max_declared_image_px=measured["max_declared_image_px"],
+        )
+
+    # -- the passes -------------------------------------------------------------------------------
+
+    def _open(self, pypdf: Any, pdf_bytes: bytes) -> Any:
+        if not pdf_bytes.lstrip()[:5] == b"%PDF-":
+            raise IngestSanitizeError(
+                "the source does not carry a PDF header — it is not a PDF, and "
+                "nothing about it can be sanitized.")
+        try:
+            reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+            if reader.is_encrypted:
+                # An encrypted file cannot be inspected, so it cannot be
+                # sanitized — F-ADV-PDF's encrypted fixture quarantines here.
+                raise IngestSanitizeError(
+                    "the source is encrypted; an unreadable artifact cannot be "
+                    "sanitized, so it is refused (FR-INGEST-33).")
+            return reader
+        except IngestSanitizeError:
+            raise
+        except Exception as error:
+            raise IngestSanitizeError(
+                f"the source could not be parsed for sanitization: {error}") from error
+
+    def _walk(
+        self, reader: Any, pypdf: Any, *, measure_streams: bool,
+        max_decompressed_bytes: int | None, max_embedded_objects: int | None,
+        deadline: float | None,
+    ) -> dict:
+        """One bounded graph walk from the trailer, over every reachable object.
+
+        Detection is structural: any dictionary carrying `/AA`, `/OpenAction`,
+        `/JS`, `/XFA`, `/EF`, an action dictionary whose `/S` is one of the
+        construct types, or a name tree naming JavaScript or embedded files. The
+        same walk measures: unique indirect objects visited (the embedded-object
+        ceiling), stream decompression chunk-wise (the byte ceiling), and the
+        clock. With `measure_streams=False` (the verify pass) streams are left
+        sealed — construct detection never needs to decompress one."""
+        constructs: set[str] = set()
+        seen: set[tuple[int, int]] = set()
+        decompressed = 0
+        bounds_crossed: list[str] = []
+        max_image_px = 0
+
+        def visit(value: Any) -> None:
+            nonlocal decompressed, max_image_px
+            if deadline is not None and time.monotonic() >= deadline:
+                bounds_crossed.append("wall_clock")
+                raise _WalkAborted
+            if isinstance(value, pypdf.generic.IndirectObject):
+                key = (value.idnum, value.generation)
+                if key in seen:
+                    return
+                if max_embedded_objects is not None \
+                        and len(seen) >= max_embedded_objects:
+                    bounds_crossed.append("embedded_objects")
+                    raise _WalkAborted
+                seen.add(key)
+                value = value.get_object()
+            if isinstance(value, pypdf.generic.StreamObject):
+                subtype = str(value.get("/Subtype", ""))
+                if subtype == "/Image":
+                    # Declared dimensions, read from the dictionary: a
+                    # 60000×60000 image is refused from its header before
+                    # anything decodes it (the FR's pixel bound, pre-allocation).
+                    try:
+                        max_image_px = max(max_image_px, int(value["/Width"])
+                                           * int(value["/Height"]))
+                    except (KeyError, TypeError, ValueError):
+                        pass
+                    return  # image streams are never decompressed by the walk
+                if measure_streams:
+                    remaining = (max_decompressed_bytes - decompressed
+                                 if max_decompressed_bytes is not None else -1)
+                    sized = self._measure_stream(value, remaining)
+                    if sized is None:
+                        # Unmeasurable without decoding: refused, not measured
+                        # (review B3 — the declared filter-family rule).
+                        bounds_crossed.append("decompressed_bytes")
+                        raise _WalkAborted
+                    decompressed += sized  # the partial count, if it crossed
+                    if max_decompressed_bytes is not None \
+                            and decompressed > max_decompressed_bytes:
+                        bounds_crossed.append("decompressed_bytes")
+                        raise _WalkAborted
+                return
+            if isinstance(value, pypdf.generic.DictionaryObject):
+                constructs.update(self._detect(value))
+            if isinstance(value, (pypdf.generic.DictionaryObject,
+                                  pypdf.generic.ArrayObject)):
+                children = (value.values() if isinstance(
+                    value, pypdf.generic.DictionaryObject) else value)
+                for child in list(children):
+                    visit(child)
+
+        try:
+            visit(reader.trailer)
+        except _WalkAborted:
+            pass
+        pages = self._page_facts(reader)
+        return {"constructs": constructs, "seen": len(seen),
+                "decompressed_bytes": decompressed,
+                "bounds_crossed": tuple(bounds_crossed),
+                "max_declared_image_px": max_image_px, **pages}
+
+    def _detect(self, obj: Any) -> set[str]:
+        """The construct classes one dictionary carries (`FR-INGEST-33`'s list)."""
+        pypdf = self._module()
+        found: set[str] = set()
+        for key in ("/AA", "/OpenAction", "/JS", "/XFA", "/EF"):
+            if key in obj:
+                found.add({"AA": "aa", "OpenAction": "open_action",
+                           "JS": "javascript", "XFA": "xfa",
+                           "EF": "embedded_file"}[key[1:]])
+        action = obj.get("/S")
+        if action is not None:
+            construct = _ACTION_CONSTRUCTS.get(str(action))
+            if construct:
+                found.add(construct)
+        if str(obj.get("/Subtype", "")) == "/FileAttachment":
+            found.add("embedded_file")
+        names = obj.get("/Names")
+        if isinstance(names, pypdf.generic.DictionaryObject):
+            for tree, construct in (("/JavaScript", "javascript"),
+                                    ("/EmbeddedFiles", "embedded_file")):
+                if tree in names:
+                    found.add(construct)
+        return found
+
+    def _measure_stream(self, stream: Any, budget: int) -> int | None:
+        """The stream's decompressed size within `budget` (-1 = unbounded), or
+        None when the stream cannot be bounded without fully decoding it.
+
+        Declared rule (review B3): exactly two families are measurable —
+        UNFILTERED streams (the encoded bytes ARE the data; a plain `len`, no
+        decode) and streams whose ENTIRE filter chain is FlateDecode (measured
+        in bounded chunks that stop absorbing at the budget). Every other
+        chain — LZW, RunLength, ASCII85, DCT outside an image, any compound
+        chain — is UNMEASURABLE and returns None: the walk refuses the artifact
+        rather than decoding past its ceiling. These are the standard filters,
+        not exotic ones, and the alternative (decode, then count) is precisely
+        the allocate-then-check shape the requirement forbids; NFR-INGEST-08
+        makes the conservative outcome the default."""
+        filter_value = stream.get("/Filter")
+        filters = (list(filter_value) if isinstance(filter_value, list)
+                   else [filter_value] if filter_value else [])
+        if not filters:
+            return len(self._encoded_bytes(stream))
+        if len(filters) == 1 and str(filters[0]) in ("/FlateDecode", "/Fl"):
+            raw = self._encoded_bytes(stream)
+            try:
+                return _chunked_flate_size(
+                    raw, len(raw) if budget < 0 else budget)
+            except zlib.error:
+                return len(raw)
+        return None
+
+    @staticmethod
+    def _encoded_bytes(stream: Any) -> bytes:
+        """The stream's ENCODED bytes, without decoding: the writer-side
+        StreamObject exposes them as `raw_data`; the reader-side
+        EncodedStreamObject keeps them (undecoded) in `_data` and offers no
+        public raw accessor (review B2)."""
+        return stream.raw_data if hasattr(stream, "raw_data") else stream._data
+
+    def _page_facts(self, reader: Any) -> dict:
+        """Structural page observations for the pre-raster bounds: the page count
+        and each page's point size (the expected raster's dimensions at the pinned
+        DPI are `pt / 72 * dpi`, checkable before the raster is allocated)."""
+        try:
+            pages = list(reader.pages)
+        except Exception as error:  # noqa: BLE001 -- an unreadable page tree is a refusal
+            raise IngestSanitizeError(
+                f"the page tree could not be read for the resource bounds: {error}"
+            ) from error
+        sizes: list[tuple[float, float]] = []
+        for page in pages:
+            try:
+                box = page.mediabox
+                sizes.append((float(box.width), float(box.height)))
+            except Exception:  # noqa: BLE001 -- a page without a box contributes no size
+                sizes.append((0.0, 0.0))
+        return {"page_count": len(pages), "page_sizes_pt": tuple(sizes)}
+
+    def _strip(self, reader: Any, pypdf: Any) -> None:
+        """Remove the constructs from the reader's object graph in place. The walk
+        found them; this pass deletes the keys, the name-tree entries and the
+        file-attachment annotations — the verify pass then asserts the removal."""
+        visited: set[tuple[int, int]] = set()
+
+        def prune(value: Any) -> None:
+            if isinstance(value, pypdf.generic.IndirectObject):
+                key = (value.idnum, value.generation)
+                if key in visited:
+                    return
+                visited.add(key)
+                value = value.get_object()
+            if isinstance(value, pypdf.generic.DictionaryObject):
+                for key in ("/AA", "/OpenAction", "/JS", "/XFA", "/EF"):
+                    if key in value:
+                        del value[pypdf.generic.NameObject(key)]
+                action = value.get("/A")
+                if isinstance(action, pypdf.generic.IndirectObject):
+                    action = action.get_object()
+                if isinstance(action, pypdf.generic.DictionaryObject) \
+                        and str(action.get("/S", "")) in _ACTION_CONSTRUCTS:
+                    del value[pypdf.generic.NameObject("/A")]
+                names = value.get("/Names")
+                if isinstance(names, pypdf.generic.IndirectObject):
+                    names = names.get_object()
+                if isinstance(names, pypdf.generic.DictionaryObject):
+                    for tree in ("/JavaScript", "/EmbeddedFiles"):
+                        if tree in names:
+                            del names[pypdf.generic.NameObject(tree)]
+                    dests = names.get("/Dests")
+                    if isinstance(dests, pypdf.generic.IndirectObject):
+                        dests = dests.get_object()
+                    if isinstance(dests, pypdf.generic.DictionaryObject):
+                        self._prune_dest_tree(dests, pypdf)
+            if isinstance(value, (pypdf.generic.DictionaryObject,
+                                  pypdf.generic.ArrayObject)):
+                children = (list(value.values()) if isinstance(
+                    value, pypdf.generic.DictionaryObject) else list(value))
+                for child in children:
+                    prune(child)
+
+        prune(reader.trailer)
+        for page in reader.pages:
+            annots = page.get("/Annots")
+            if isinstance(annots, pypdf.generic.IndirectObject):
+                annots = annots.get_object()
+            if not isinstance(annots, pypdf.generic.ArrayObject):
+                continue
+            kept = pypdf.generic.ArrayObject()
+            for entry in annots:
+                resolved = (entry.get_object() if isinstance(
+                    entry, pypdf.generic.IndirectObject) else entry)
+                if isinstance(resolved, pypdf.generic.DictionaryObject) \
+                        and str(resolved.get("/Subtype", "")) == "/FileAttachment":
+                    continue  # the embedded-file vector leaves with its annotation
+                kept.append(entry)
+            page[pypdf.generic.NameObject("/Annots")] = kept
+
+    def _prune_dest_tree(self, node: Any, pypdf: Any) -> None:
+        """Drop name-tree destination entries whose action is an external or
+        active reference (a `/Dests` tree can carry `/GoToR` and `/URI` behind a
+        named destination exactly as an annotation can)."""
+        kids = node.get("/Kids")
+        if isinstance(kids, pypdf.generic.IndirectObject):
+            kids = kids.get_object()
+        if isinstance(kids, pypdf.generic.ArrayObject):
+            for kid in list(kids):
+                resolved = (kid.get_object() if isinstance(
+                    kid, pypdf.generic.IndirectObject) else kid)
+                if isinstance(resolved, pypdf.generic.DictionaryObject):
+                    self._prune_dest_tree(resolved, pypdf)
+            return
+        flat = node.get("/Names")
+        if not isinstance(flat, pypdf.generic.ArrayObject):
+            return
+        kept = pypdf.generic.ArrayObject()
+        entries = list(flat)
+        for index in range(0, len(entries) - 1, 2):
+            target = entries[index + 1]
+            if isinstance(target, pypdf.generic.IndirectObject):
+                target = target.get_object()
+            if isinstance(target, pypdf.generic.DictionaryObject) \
+                    and str(target.get("/S", "")) in _ACTION_CONSTRUCTS:
+                continue  # the named destination's action leaves with its entry
+            kept.append(entries[index])
+            kept.append(entries[index + 1])
+        node[pypdf.generic.NameObject("/Names")] = kept
+
+    def _serialize(self, reader: Any, pypdf: Any) -> bytes:
+        buffer = io.BytesIO()
+        try:
+            writer = pypdf.PdfWriter(clone_from=reader)
+            writer.write(buffer)
+        except Exception as error:
+            raise IngestSanitizeError(
+                f"the sanitized copy could not be written: {error}") from error
+        return buffer.getvalue()
+
+    @staticmethod
+    def _result(pdf_bytes: bytes, measured: dict) -> SanitizeResult:
+        return SanitizeResult(
+            pdf_bytes=pdf_bytes, neutralized=(),
+            bounds_crossed=measured["bounds_crossed"],
+            decompressed_bytes=measured["decompressed_bytes"],
+            page_count=measured["page_count"],
+            page_sizes_pt=measured["page_sizes_pt"],
+            max_declared_image_px=measured["max_declared_image_px"],
+        )
 
 
 # --- the residency slot --------------------------------------------------------------------------
@@ -1180,6 +1759,67 @@ def _parse_region_attributes(header: str) -> dict[str, str]:
     return attributes
 
 
+_UNTRUSTED_ATTR = re.compile(r"\bis_untrusted_content(?:=\w+)?")
+
+
+def _wrap_untrusted(body: str) -> str:
+    """One region the harness owns: submission-origin text wrapped in the marker
+    that names it data (`FR-INGEST-35`)."""
+    return (f"{REGION_OPEN} kind=transcribed_text is_untrusted_content=1 -->\n"
+            f"{body}\n{REGION_CLOSE}")
+
+
+def _mark_untrusted_content(transcript: str) -> str:
+    """`FR-INGEST-35`'s emission rule, applied BY the harness rather than asked of
+    the model: every region header of a submission transcript carries
+    `is_untrusted_content=1`, and every byte of transcript text OUTSIDE the region
+    protocol is wrapped into a region that does — so the full content of a
+    submission sits inside marked regions, and prompt assembly (`M-EXTRACT`,
+    `M-JUDGE`) can enclose it in one unambiguous delimited block. Setup artifacts
+    are never passed through here (`TC-INGEST-36`): the marker DISCRIMINATES —
+    reference and rubric content is the teacher's, and blanket-marking would put
+    the answer key inside the untrusted block.
+
+    The model is not trusted to have added the marker, and the transform is
+    idempotent: a header already carrying the attribute is rewritten to `=1`, not
+    appended to. A transcript with an unterminated marker is returned unchanged —
+    the parser refuses it as malformed output, and a partial rewrite must not
+    precede that refusal."""
+    pattern = re.compile(
+        re.escape(REGION_OPEN) + r"(?P<header>[^>]*?)-->"
+        r"(?P<body>.*?)" + re.escape(REGION_CLOSE),
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(transcript))
+    if not matches:
+        if REGION_OPEN in transcript:
+            return transcript  # unterminated marker: the parser refuses it as-is
+        body = transcript.strip()
+        return transcript if not body else _wrap_untrusted(body)
+
+    parts: list[str] = []
+    cursor = 0
+    for match in matches:
+        outside = transcript[cursor:match.start()].strip()
+        if outside:
+            parts.append(_wrap_untrusted(outside))
+        header = match.group("header")
+        # The model is not trusted to have emitted a well-formed marker: a bare
+        # token, a wrong value or an absent one all rewrite to `=1` (review S1)
+        # — strip any occurrence, then append the authoritative one.
+        header = f"{_UNTRUSTED_ATTR.sub(' ', header)} is_untrusted_content=1"
+        # The canonical spacing (one space between tokens, one each side) is what
+        # makes the transform idempotent: a re-run captures this exact header and
+        # re-emits it byte-for-byte.
+        parts.append(f"{REGION_OPEN} {' '.join(header.split())} -->"
+                     f"{match.group('body')}{REGION_CLOSE}")
+        cursor = match.end()
+    outside = transcript[cursor:].strip()
+    if outside:
+        parts.append(_wrap_untrusted(outside))
+    return "\n".join(parts)
+
+
 def _parse_regions(transcript: str, source_hash: str, page_no: int,
                    position_start: int, kind_of_page: str) -> list[dict]:
     """Parse one page's transcript into region records.
@@ -1341,7 +1981,8 @@ class Ingestor:
     def __init__(
         self, handle: Any, blobs: Any, provider: InferenceProvider,
         model_ref: ModelRef, params: SamplingParams, rasterizer: Rasterizer,
-        *, residency: ResidencySlot | None = None,
+        *, sanitizer: PdfSanitizer,
+        residency: ResidencySlot | None = None,
         high_risk_criterion_ids: Sequence[str] = (),
         second_model_ref: ModelRef | None = None,
     ) -> None:
@@ -1351,6 +1992,18 @@ class Ingestor:
         self._model_ref = model_ref
         self._params = params
         self._rasterizer = rasterizer
+        # FR-INGEST-33: there is no configuration that skips sanitization — the
+        # argument is required, so a gateway cannot be built that rasterizes a
+        # source it did not name a neutralizer for. (The fast tier passes a
+        # scripted double, exactly as it does for the rasterizer and the
+        # provider; the acceptance run passes PypdfSanitizer().)
+        if not isinstance(sanitizer, PdfSanitizer):
+            raise IngestError(
+                "the gateway needs a PdfSanitizer (FR-INGEST-33): every source "
+                "PDF is neutralized and bounded BEFORE any page is rasterized, "
+                "and no default can silently stand in for that decision. Pass "
+                "PypdfSanitizer() in production, a scripted double in tests.")
+        self._sanitizer = sanitizer
         self._residency = residency
         # FR-INGEST-14 is Phase 2 (design's own phase marker; TC-INGEST-38 is "P1,
         # Phase 2"): the register contents are TBD (design Q-12), so a caller passing
@@ -1405,15 +2058,45 @@ class Ingestor:
         if self._residency is not None:
             self._residency.acquire("transcriber")
         try:
+            pages_used = 0
+            # The sanitized copy of each source blob, kept so EVERY decode of the
+            # document — page rasters, text layers, retained crops — reads the
+            # sanitized bytes and nothing else ever re-reads the original (#42,
+            # review B1: the crop path was rendering the unsanitized original).
+            sanitized_of: dict[str, bytes] = {}
             for blob_hash in blobs:
+                deadline = time.monotonic() + self._configured_seconds(
+                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
                 pdf_bytes = self._blobs.get(blob_hash)
-                pages = self._rasterizer.rasterize(pdf_bytes, dpi)
+                # FR-INGEST-33/34: neutralize and bound BEFORE any page is
+                # rasterized, and rasterize only the sanitized copy. A refusal
+                # raises — quarantine in the submission path, the teacher in the
+                # setup-artifact path (FR-INGEST-32).
+                sanitized = self._sanitize_source(blob_hash, pdf_bytes,
+                                                  pages_used=pages_used,
+                                                  deadline=deadline)
+                sanitized_of[blob_hash] = sanitized.pdf_bytes
+                if sanitized.neutralized:
+                    LOGGER.info(
+                        "neutralized %s in source blob %s before rasterization",
+                        ", ".join(sanitized.neutralized), blob_hash[:12])
+                if time.monotonic() >= deadline:
+                    raise IngestSanitizeError(
+                        f"source blob {blob_hash[:12]} exceeded the wall-clock "
+                        "ceiling before rasterization (FR-INGEST-34).")
+                pages = self._rasterizer.rasterize(sanitized.pdf_bytes, dpi)
+                self._check_rasters(blob_hash, pages)
+                if time.monotonic() >= deadline:
+                    raise IngestSanitizeError(
+                        f"source blob {blob_hash[:12]} exceeded the wall-clock "
+                        "ceiling during rasterization (FR-INGEST-34).")
                 if not pages:
                     raise IngestError(
                         f"source blob {blob_hash} rasterized to zero pages — a PDF "
                         "with no pages is a V0 finding once the ladder lands; the "
                         "gateway refuses it now."
                     )
+                pages_used += len(pages)
                 page_images.extend(pages)
                 for page in pages:
                     completion = self._transcribe_page(page, blob_hash)
@@ -1427,7 +2110,8 @@ class Ingestor:
                             "re-run the ingestion on one build."
                         )
                     transcriber_ref = completion.resolved_build
-                    layer = self._rasterizer.text_layer(pdf_bytes, page.page_no)
+                    layer = self._rasterizer.text_layer(sanitized_of[blob_hash],
+                                                        page.page_no)
                     page_records.append({
                         "blob_hash": blob_hash,
                         "page_no": page.page_no,
@@ -1572,6 +2256,15 @@ class Ingestor:
         position_cursor = 0
         re_requests = 0
         for record in ordered:
+            # FR-INGEST-35: the emission rule runs over the FINAL transcript,
+            # after the ordering ladder and the divergence measure — both read
+            # the raw transcription; the stored Markdown and the region rows
+            # then both carry the untrusted marker. (This is the demarcation
+            # gate — a post-transcription emission gate on the one pipeline,
+            # not a per-kind path; TC-INGEST-02's guard exempts it structurally,
+            # keyed on the transform call in the branch body.)
+            if kind == "submission":
+                record["transcript"] = _mark_untrusted_content(record["transcript"])
             regions = _parse_regions(record["transcript"], record["blob_hash"],
                                      record["page_no"], position_cursor, kind)
             offenders = [region for region in regions
@@ -1585,6 +2278,9 @@ class Ingestor:
                 completion = self._transcribe_page(record["image"],
                                                    record["blob_hash"])
                 record["transcript"] = completion.text
+                if kind == "submission":  # the FR-INGEST-35 demarcation gate, not a path
+                    record["transcript"] = _mark_untrusted_content(
+                        record["transcript"])
                 regions = _parse_regions(record["transcript"], record["blob_hash"],
                                          record["page_no"], position_cursor, kind)
                 offenders = [region for region in regions
@@ -1602,14 +2298,16 @@ class Ingestor:
             position_cursor += len(regions)
         # B1: the crops are IMAGE crops (FR-INGEST-13) — the region's box carved from
         # the page raster through the rasterizer seam, or the whole page raster when
-        # the model emitted no box. Never the description text.
+        # the model emitted no box. Never the description text. The crop reads the
+        # SANITIZED source bytes (#42: a retained crop must no more re-render the
+        # unsanitized original than the page raster does).
         for region in all_regions:
             if region["region_kind"] == "described_graphic":
                 record = next(r for r in ordered
                               if r["blob_hash"] == region["source_hash"])
                 box = region.get("crop_box")
                 crop_png = self._rasterizer.crop(
-                    self._blobs.get(region["source_hash"]), region["page_index"],
+                    sanitized_of[region["source_hash"]], region["page_index"],
                     box if box is not None else (0, 0, record["image"].width_px,
                                                  record["image"].height_px),
                     _configured_dpi())
@@ -1688,15 +2386,18 @@ class Ingestor:
             )
         return regions
 
-    def _retain_crops(self, regions: list[dict]) -> list[dict]:
+    def _retain_crops(self, regions: list[dict],
+                      sanitized_of: dict[str, bytes]) -> list[dict]:
         """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
-        page raster through the rasterizer seam, retained in the blob store."""
+        page raster through the rasterizer seam, retained in the blob store. The
+        crop reads the SANITIZED source bytes (#42, review B1) — never the
+        original blob."""
         for region in regions:
             if region["region_kind"] != "described_graphic":
                 continue
             box = region.get("crop_box")
-            pdf_bytes = self._blobs.get(region["source_hash"])
-            crop_png = self._rasterizer.crop(pdf_bytes, region["page_index"],
+            crop_png = self._rasterizer.crop(sanitized_of[region["source_hash"]],
+                                             region["page_index"],
                                              box if box is not None
                                              else (0, 0, 0, 0),
                                              _configured_dpi())
@@ -1726,6 +2427,120 @@ class Ingestor:
         if not 0.0 <= value <= 1.0:
             raise IngestError(f"{env}={value} is outside 0.0..1.0.")
         return value
+
+    @staticmethod
+    def _configured_bool(env: str, default: bool) -> bool:
+        raw = os.environ.get(env)
+        if not raw:
+            return default
+        lowered = raw.strip().lower()
+        if lowered in ("1", "true", "yes", "on"):
+            return True
+        if lowered in ("0", "false", "no", "off"):
+            return False
+        raise IngestError(f"{env}={raw!r} is not a boolean.")
+
+    @staticmethod
+    def _configured_seconds(env: str, default: float) -> float:
+        """A wall-clock ceiling: any positive number of seconds (the 0.0..1.0
+        validation of `_configured_float` is a similarity-threshold rule, not a
+        duration one)."""
+        raw = os.environ.get(env)
+        if not raw:
+            return default
+        try:
+            value = float(raw)
+        except ValueError as error:
+            raise IngestError(f"{env}={raw!r} is not a number.") from error
+        if value <= 0:
+            raise IngestError(
+                f"{env}={value} is not a positive wall-clock ceiling.")
+        return value
+
+    # -- the sanitize-and-bound stage (#42: FR-INGEST-33/34) ---------------------------------------
+
+    def _sanitize_source(self, blob_hash: str, pdf_bytes: bytes, *,
+                         pages_used: int, deadline: float) -> SanitizeResult:
+        """The stage every source PDF passes through before any rasterization
+        (`FR-INGEST-33`/`FR-INGEST-34`): neutralize the active constructs, then
+        check the ceilings the sanitizer's structural read makes checkable BEFORE
+        allocation — the page ceiling against the structural page count (this
+        document's running total included), the pixel ceiling against each page's
+        expected raster dimensions (`pt / 72 * dpi`) and every embedded image's
+        declared dimensions.
+
+        Every failure is a refusal (`NFR-INGEST-08`): a sanitizer exception of any
+        kind, unremovable active content, or a crossed bound raises
+        `IngestSanitizeError` — quarantine in the submission path, the teacher
+        surfacing in the setup-artifact path (`FR-INGEST-32`). The wall-clock
+        ceiling rides in as `deadline` (per source file, checked at the decode
+        boundaries); the byte and object ceilings are enforced inside the
+        sanitizer's walk, mid-stream."""
+        strip = self._configured_bool(STRIP_ACTIVE_CONTENT_ENV,
+                                      DEFAULT_STRIP_ACTIVE_CONTENT)
+        try:
+            result = self._sanitizer.sanitize(
+                pdf_bytes, strip=strip,
+                max_decompressed_bytes=self._configured_int(
+                    MAX_DECOMPRESSED_BYTES_ENV, DEFAULT_MAX_DECOMPRESSED_BYTES),
+                max_embedded_objects=self._configured_int(
+                    MAX_EMBEDDED_OBJECTS_ENV, DEFAULT_MAX_EMBEDDED_OBJECTS),
+                deadline=deadline)
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter:
+            # ANY exception inside the sanitizer — declared or not, a fault-
+            # injected one included — resolves to refusal, never to processing
+            # (review B2: the docstring promised the wrapping; this is it).
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} could not be sanitized: "
+                f"{error!r}") from error
+        if result.unremovable:
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} carries active content that cannot "
+                f"be removed ({', '.join(result.unremovable)}): quarantined, "
+                "never transcribed (FR-INGEST-33).")
+        if result.bounds_crossed:
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} crossed a resource ceiling "
+                f"({', '.join(result.bounds_crossed)}): quarantined rather than "
+                "allocated for (FR-INGEST-34).")
+        max_pages = self._configured_int(MAX_PAGES_ENV, DEFAULT_MAX_PAGES)
+        if result.page_count is not None \
+                and pages_used + result.page_count > max_pages:
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} would take the document to "
+                f"{pages_used + result.page_count} pages, over the {max_pages}-page "
+                "ceiling: quarantined rather than rasterized (FR-INGEST-34).")
+        max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
+                                          DEFAULT_MAX_IMAGE_PIXELS)
+        dpi = _configured_dpi()
+        oversized = [
+            index + 1
+            for index, (width_pt, height_pt) in enumerate(result.page_sizes_pt)
+            if width_pt * dpi / 72.0 * (height_pt * dpi / 72.0) > max_pixels
+        ]
+        if oversized or result.max_declared_image_px > max_pixels:
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} carries an image over the "
+                f"{max_pixels}-pixel ceiling (pages {oversized}, largest declared "
+                f"image {result.max_declared_image_px}px): quarantined before any "
+                "render allocates for it (FR-INGEST-34).")
+        return result
+
+    def _check_rasters(self, blob_hash: str, pages: Sequence[PageImage]) -> None:
+        """The pixel ceiling against the ACTUAL rasters. The declared-dimensions
+        check above runs first and is the before-allocation form; this is the
+        belt-and-braces on the same bound — a seam that lied about what it read is
+        caught before transcription spends a model call on it."""
+        max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
+                                          DEFAULT_MAX_IMAGE_PIXELS)
+        for page in pages:
+            if page.width_px * page.height_px > max_pixels:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
+                    f"to {page.width_px}x{page.height_px}, over the {max_pixels}-"
+                    "pixel ceiling (FR-INGEST-34).")
 
     def revise_document(
         self, document_id: DocumentId, replacement_pages: Sequence[PageReplacement],
@@ -1760,6 +2575,11 @@ class Ingestor:
             raise IngestError("revise_document needs at least one replacement page.")
 
         markdown_parts: list[str] = []
+        # The divergence measure reads the RAW transcripts (FR-INGEST-03): the
+        # untrusted-marker protocol (#42) is scaffolding the harness adds after
+        # the measure, so the recorded divergence stays comparable across prompt
+        # versions.
+        raw_parts: list[str] = []
         transcriber_ref: str | None = None
         new_provenance_pages: list[dict] = []
         layers: list[str] = []
@@ -1769,11 +2589,30 @@ class Ingestor:
             self._residency.acquire("transcriber")
         try:
             raster_cache: dict[str, list[PageImage]] = {}
+            # The sanitized copy per source blob (review B1): text layers and
+            # retained crops read it too — nothing re-reads the original.
+            sanitized_cache: dict[str, bytes] = {}
 
             def pages_of(blob_hash: str) -> list[PageImage]:
                 if blob_hash not in raster_cache:
+                    # A revision re-reads source blobs: the same sanitize-and-
+                    # bound stage applies, per blob (a revised document's total
+                    # page count was already bounded when it was first ingested;
+                    # the rescans are one-page sources).
+                    deadline = time.monotonic() + self._configured_seconds(
+                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    sanitized = self._sanitize_source(
+                        blob_hash, self._blobs.get(blob_hash), pages_used=0,
+                        deadline=deadline)
+                    if sanitized.neutralized:
+                        LOGGER.info(
+                            "neutralized %s in source blob %s before "
+                            "re-rasterization",
+                            ", ".join(sanitized.neutralized), blob_hash[:12])
+                    sanitized_cache[blob_hash] = sanitized.pdf_bytes
                     raster_cache[blob_hash] = self._rasterizer.rasterize(
-                        self._blobs.get(blob_hash), dpi)
+                        sanitized.pdf_bytes, dpi)
+                    self._check_rasters(blob_hash, raster_cache[blob_hash])
                 return raster_cache[blob_hash]
 
             if page_sequence is not None:
@@ -1809,18 +2648,25 @@ class Ingestor:
                             "on one build."
                         )
                     transcriber_ref = completion.resolved_build
-                    markdown_parts.append(completion.text)
+                    raw_parts.append(completion.text)
+                    # FR-INGEST-35 holds on corrections: a revised SUBMISSION page
+                    # is re-emitted marked like the original (the region rows
+                    # already key their column off the document's kind).
+                    text = (completion.text if row["kind"] != "submission"
+                            else _mark_untrusted_content(completion.text))
+                    markdown_parts.append(text)
                     layers.append(self._rasterizer.text_layer(
-                        self._blobs.get(blob_hash), page_no)
+                        sanitized_cache[blob_hash], page_no)
                         if replaced_from is None else "")
                     # M5: the revision's pages are regionized too — a head later
                     # stages read carries regions whether it came from ingest or
                     # from a correction, and the evaluative gate holds on both.
                     revision_regions = _parse_regions(
-                        completion.text, blob_hash, page_no, len(markdown_parts) - 1,
+                        text, blob_hash, page_no, len(markdown_parts) - 1,
                         "revision")
                     revision_regions = self._enforce_evaluative_bar(revision_regions)
-                    revision_regions = self._retain_crops(revision_regions)
+                    revision_regions = self._retain_crops(revision_regions,
+                                                          sanitized_cache)
                     revision_regions_all.extend(revision_regions)
                     new_provenance_pages.append({
                         "blob_hash": blob_hash, "page_no": page_no,
@@ -1831,7 +2677,23 @@ class Ingestor:
                 position = 0
                 for blob_hash in source_blobs:
                     pdf_bytes = self._blobs.get(blob_hash)
-                    for page in self._rasterizer.rasterize(pdf_bytes, dpi):
+                    deadline = time.monotonic() + self._configured_seconds(
+                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    # The legacy-provenance branch rasterizes whole sources the
+                    # same way: sanitized copy only (FR-INGEST-33).
+                    sanitized = self._sanitize_source(blob_hash, pdf_bytes,
+                                                      pages_used=0,
+                                                      deadline=deadline)
+                    if sanitized.neutralized:
+                        LOGGER.info(
+                            "neutralized %s in source blob %s before "
+                            "re-rasterization",
+                            ", ".join(sanitized.neutralized), blob_hash[:12])
+                    sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    legacy_pages = self._rasterizer.rasterize(sanitized.pdf_bytes,
+                                                              dpi)
+                    self._check_rasters(blob_hash, legacy_pages)
+                    for page in legacy_pages:
                         position += 1
                         replacement = replacements.pop(page.page_no, None)
                         if replacement is not None:
@@ -1855,14 +2717,18 @@ class Ingestor:
                                 f"{completion.resolved_build!r} answered this one."
                             )
                         transcriber_ref = completion.resolved_build
-                        markdown_parts.append(completion.text)
+                        raw_parts.append(completion.text)
+                        text = (completion.text if row["kind"] != "submission"
+                                else _mark_untrusted_content(completion.text))
+                        markdown_parts.append(text)
                         layers.append("")
                         revision_regions = _parse_regions(
-                            completion.text, blob_hash, page.page_no,
+                            text, blob_hash, page.page_no,
                             len(markdown_parts) - 1, "revision")
                         revision_regions = self._enforce_evaluative_bar(
                             revision_regions)
-                        revision_regions = self._retain_crops(revision_regions)
+                        revision_regions = self._retain_crops(revision_regions,
+                                                              sanitized_cache)
                         revision_regions_all.extend(revision_regions)
                         new_provenance_pages.append({
                             "blob_hash": blob_hash, "page_no": page.page_no,
@@ -1888,7 +2754,7 @@ class Ingestor:
         pages_with_layer = sum(1 for layer in layers if layer)
         divergence = max(
             (1.0 - _jaccard_similarity(layer, text)
-             for layer, text in zip(layers, markdown_parts) if layer),
+             for layer, text in zip(layers, raw_parts) if layer),
             default=None,
         )
         with self._handle.transaction() as tx:
@@ -2079,19 +2945,41 @@ class Ingestor:
             quarantined = True
             findings.append(finding)
 
-        # V0 file integrity (FR-INGEST-21): every source opens and rasterizes; zero
-        # pages or a blank ratio past tolerance quarantines as `unreadable`.
+        # V0 file integrity (FR-INGEST-21) plus the adversarial-input stage
+        # (#42, FR-INGEST-33/34): every source is neutralized and bounded BEFORE
+        # any page is rasterized, and only the sanitized copy is rasterized. Zero
+        # pages, a blank ratio past tolerance, unremovable active content, a
+        # crossed ceiling, or ANY failure inside the sanitize-and-bound stage
+        # quarantines as `unreadable` — NFR-INGEST-08's fail-closed rule is that
+        # every one of these resolves to quarantine, never to processing, so the
+        # catch is deliberately broad.
         v0_failed = False
+        neutralized: dict[str, list[str]] = {}
+        pages_used = 0
         for blob_hash in blobs:
             pdf_bytes = self._blobs.get(blob_hash)
             try:
-                pages = self._rasterizer.rasterize(pdf_bytes, _configured_dpi())
-            except IngestError as error:
+                deadline = time.monotonic() + self._configured_seconds(
+                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                sanitized = self._sanitize_source(blob_hash, pdf_bytes,
+                                                  pages_used=pages_used,
+                                                  deadline=deadline)
+                if sanitized.neutralized:
+                    neutralized[blob_hash[:12]] = list(sanitized.neutralized)
+                    LOGGER.info(
+                        "neutralized %s in source blob %s before rasterization",
+                        ", ".join(sanitized.neutralized), blob_hash[:12])
+                pages = self._rasterizer.rasterize(sanitized.pdf_bytes,
+                                                   _configured_dpi())
+                self._check_rasters(blob_hash, pages)
+            except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08: refuse, never process
                 quarantine("v0", "unreadable", {
                     "gate": "v0", "blob_hash": blob_hash[:12],
-                    "finding": f"the source could not be rasterized: {error}"})
+                    "finding": f"the source was refused before rasterization: "
+                               f"{error}"})
                 v0_failed = True
                 continue
+            pages_used += len(pages)
             if not pages:
                 quarantine("v0", "unreadable", {
                     "gate": "v0", "blob_hash": blob_hash[:12],
@@ -2277,7 +3165,8 @@ class Ingestor:
         return IngestReport(
             submission_id=submission_id, document_id=document_id or "",
             gates=gates, ingest_status=ingest_status,
-            detail={"findings": findings, "v2_failures": v2_failures},
+            detail={"findings": findings, "v2_failures": v2_failures,
+                    "neutralized": neutralized},
             v4_signals=v4_signals,
         )
 

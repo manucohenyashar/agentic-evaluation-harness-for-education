@@ -17,3 +17,10 @@ pytest-randomly>=3.15
 # §8.2 shows TS-56 is the *cross-module* property suite (FUZZ-06, FUZZ-07), which is later.
 # Profiles `ci` and `nightly` are registered in tests/conftest.py, per §4.7's command table.
 hypothesis>=6.100
+
+# TS-18 / issue #42 lands the live `PypdfSanitizer` (the gateway's
+# neutralize-and-bound stage, FR-INGEST-33/34), and the paired rung-2 security
+# cases (TC-INGEST-33/34 — "real PDF library") build their F-ADV-PDF fixtures
+# with the same library. The fast tier never imports it (the lazy import IS the
+# seam), but the dependency is declared here so a fresh clone runs every suite.
+pypdf>=6.0

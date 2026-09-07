@@ -38,7 +38,9 @@ from aeh.ingest import (
     Ingestor,
     PageImage,
     PageReplacement,
+    PdfSanitizer,
     ResidencySlot,
+    SanitizeResult,
     Rasterizer,
     TRANSCRIPTION_PROMPT_VERSION,
 )
@@ -83,6 +85,22 @@ class ScriptedRasterizer(Rasterizer):
             f"{pdf_bytes.decode('utf-8', errors='replace')}".encode())
 
 
+
+class ThroughSanitizer(PdfSanitizer):
+    """The fast-tier sanitizer double (#42): no active constructs, the bytes
+    pass through untouched — the scripted twin of the rasterizer double above.
+    The seam is a required constructor argument, so the fast tier names one
+    exactly as it names its scripted provider and rasterizer; the live
+    `PypdfSanitizer` is exercised by the rung-2 security cases."""
+
+    def sanitize(self, pdf_bytes, *, strip=True, max_decompressed_bytes=None,
+                 max_embedded_objects=None, deadline=None):
+        return SanitizeResult(pdf_bytes=pdf_bytes)
+
+
+THROUGH_SANITIZER = ThroughSanitizer()
+
+
 class ScriptedProvider:
     """A provider double with the `RecordedFixtureProvider` shape: one deterministic
     `Completion` per call, resolved build pinned, every payload recorded."""
@@ -112,7 +130,7 @@ def _fixture(tmp_data_dir):
     provider = ScriptedProvider()
     slot = ResidencySlot.for_policy(("transcriber",))
     ingestor = Ingestor(store.cohort("c-36"), blobs, provider, _model(),
-                        SamplingParams(temperature=0.0), rasterizer, residency=slot)
+                        SamplingParams(temperature=0.0), rasterizer, residency=slot, sanitizer=THROUGH_SANITIZER)
     return store, blobs, rasterizer, provider, slot, ingestor
 
 
@@ -213,14 +231,27 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     # No per-kind alternative path: the pipeline never branches on kind.
     module_source = pathlib.Path("src", "aeh", "ingest.py").read_text(encoding="utf-8")
     # Branches on the ARTIFACT kinds specifically (the parser's region-kind locals
-    # are a different variable entirely): only the reference divergence halt — a
-    # post-transcription gate, not an extraction path — may branch.
+    # are a different variable entirely): only the two DECLARED post-transcription
+    # gates may branch — the reference divergence halt (FR-INGEST-03) and, since
+    # #42, the submission untrusted-content demarcation (FR-INGEST-35). Both are
+    # gates ON the one pipeline, not extraction paths. The demarcation exemption
+    # is STRUCTURAL (review note): a branch is exempt only when its body calls
+    # the demarcation transform, so no future dispatch can hide behind a comment.
+    lines = module_source.splitlines()
+
+    def _is_demarcation_gate(index: int) -> bool:
+        for follower in lines[index + 1:]:
+            if follower.strip():
+                return "_mark_untrusted_content" in follower
+        return False
+
     artifact_words = ('"assessment"', '"rubric"', '"submission"')
     dispatch_branches = [
-        line.strip() for line in module_source.splitlines()
+        line.strip() for index, line in enumerate(lines)
         if ("kind ==" in line or "kind in" in line)
         and any(word in line for word in ("'reference'", *artifact_words))
         and "divergence is not None" not in line
+        and not _is_demarcation_gate(index)
     ]
     assert dispatch_branches == [], (
         f"TC-INGEST-02: the dispatch branches on the artifact kind: "
@@ -468,7 +499,7 @@ def test_tc_ingest_03_a_divergent_reference_halts_as_a_corrupted_answer_key(
         layered = LayeredRasterizer(layer)
         transcript_provider = _two_page_provider(transcript, transcript)
         ingestor = Ingestor(handle, blobs, transcript_provider, _model(),
-                            SamplingParams(temperature=0.0), layered)
+                            SamplingParams(temperature=0.0), layered, sanitizer=THROUGH_SANITIZER)
         try:
             return ingestor.ingest_document([source], kind="reference",
                                             filenames={source: "scan-01.md"}), patch
@@ -514,7 +545,7 @@ def test_tc_ingest_04_a_divergent_submission_is_recorded_and_does_not_halt(tmp_d
     layered = LayeredRasterizer(
         "completely different words appear on the layer entirely")
     ingestor = Ingestor(store.cohort("c-36"), blobs, provider, _model(),
-                        SamplingParams(temperature=0.0), layered)
+                        SamplingParams(temperature=0.0), layered, sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     row = store.cohort("c-36").query(statement(
@@ -555,12 +586,18 @@ def test_tc_ingest_07_the_ladder_sources_record_and_the_refusal_asks_the_operato
                               cached_prefix_tokens=0, cost=None)
 
     ingestor = Ingestor(handle, blobs, Shuffled(), _model(),
-                        SamplingParams(temperature=0.0), rasterizer)
+                        SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission")
     row = handle.query(statement(
         "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
         issue=ISSUE), d=document_id)[0]
-    assert row["markdown"].startswith("Page 1 of 2 - first")
+    assert row["markdown"].startswith(
+        "<!-- region: kind=transcribed_text is_untrusted_content=1 -->"), (
+        "#42/FR-INGEST-35: the stored markdown of a submission is demarcated — "
+        "every byte of submission-origin content sits inside a marked region.")
+    assert (row["markdown"].find("Page 1 of 2 - first")
+            < row["markdown"].find("Page 2 of 2 - second")), (
+        "TC-INGEST-07: the printed page numbers decide the order — page 1 first.")
     provenance = json.loads(row["source_blobs"])
     assert provenance["order_source"] == "page_number"
     assert [page["position"] for page in provenance["pages"]] == [1, 2]
@@ -588,7 +625,7 @@ def test_tc_ingest_07_the_ladder_sources_record_and_the_refusal_asks_the_operato
                 resolved_build=model_ref.build_id, cached_prefix_tokens=0, cost=None)
 
     plain_ingestor = Ingestor(handle, blobs, Plain(), _model(),
-                              SamplingParams(temperature=0.0), rasterizer)
+                              SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     first_blob = blobs.put(b"plain pdf one")
     second_blob = blobs.put(b"plain pdf two")
     document_id = plain_ingestor.ingest_document(
@@ -663,7 +700,7 @@ def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
 
     identical = Ingestor(handle, blobs,
                          _two_page_provider(same, same), _model(),
-                         SamplingParams(temperature=0.0), rasterizer)
+                         SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestDuplicateError, match="Surface for"):
         identical.ingest_document([source], kind="submission",
                                   filenames={source: "scan-01.md"})
@@ -671,14 +708,14 @@ def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
     # Just ABOVE the threshold (one extra word: 10/11 = 0.909): surfaced.
     near = Ingestor(handle, blobs,
                     _two_page_provider(base, base + " lambda"),
-                    _model(), SamplingParams(temperature=0.0), rasterizer)
+                    _model(), SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestDuplicateError, match="Surface for"):
         near.ingest_document([source], kind="submission",
                              filenames={source: "scan-01.md"})
     # Just BELOW it (two extra words: 10/12 = 0.833): ingested.
     below = Ingestor(handle, blobs,
                      _two_page_provider(base, base + " lambda mu"),
-                     _model(), SamplingParams(temperature=0.0), rasterizer)
+                     _model(), SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     assert below.ingest_document([source], kind="submission",
                                  filenames={source: "scan-01.md"})
 
@@ -686,7 +723,7 @@ def test_tc_ingest_09_duplicates_are_surfaced_never_concatenated(tmp_data_dir):
                          _two_page_provider(
                              "the first page discusses algebraic manipulation",
                              "the second page contains a diagram of a pulley"),
-                         _model(), SamplingParams(temperature=0.0), rasterizer)
+                         _model(), SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     different_source = blobs.put(b"yet another pdf")
     assert different.ingest_document([different_source], kind="submission",
                                      filenames={different_source: "scan-01.md"})
@@ -734,7 +771,7 @@ def test_tc_ingest_10_a_gap_names_the_specific_missing_positions(tmp_data_dir):
                               cached_prefix_tokens=0, cost=None)
 
     ingestor = Ingestor(handle, blobs, Sequenced(), _model(),
-                        SamplingParams(temperature=0.0), FivePageRasterizer())
+                        SamplingParams(temperature=0.0), FivePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestError) as gap:
         ingestor.ingest_document([source], kind="submission")
     assert "[3, 7]" in str(gap.value), (
@@ -801,7 +838,7 @@ def test_tc_ingest_06b_a_revision_on_interleaved_pages_replaces_the_seen_page(
                               cached_prefix_tokens=0, cost=None)
 
     ingestor = Ingestor(handle, blobs, Interleaved(), _model(),
-                        SamplingParams(temperature=0.0), rasterizer)
+                        SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     # No hint: the printed numbers interleave the files through the page-number tier.
     document_id = ingestor.ingest_document([blob_a, blob_b], kind="submission")
     provenance = json.loads(handle.query(statement(
@@ -833,7 +870,7 @@ def test_tc_ingest_06b_a_revision_on_interleaved_pages_replaces_the_seen_page(
     )
     # The other three positions are untouched.
     untouched = Ingestor(handle, blobs, Interleaved(), _model(),
-                         SamplingParams(temperature=0.0), MultiPageRasterizer())
+                         SamplingParams(temperature=0.0), MultiPageRasterizer(), sanitizer=THROUGH_SANITIZER)
     original_pages = handle.query(statement(
         "SELECT markdown FROM document WHERE document_id = :d", issue=ISSUE),
         d=document_id)[0]["markdown"]
@@ -870,7 +907,7 @@ def test_tc_ingest_07b_the_fiducial_tier_sorts_naturally_and_refuses_repeats(
     # Natural sort: page-1, page-2, page-10 — presented in raster order 10, 1, 2.
     rasterizer.plan = {b"fixture pdf": 3}
     ingestor = Ingestor(handle, blobs, Fiducial(["page-10", "page-1", "page-2"]),
-                        _model(), SamplingParams(temperature=0.0), rasterizer)
+                        _model(), SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission")
     row = handle.query(statement(
         "SELECT markdown, source_blobs FROM document WHERE document_id = :d",
@@ -897,7 +934,7 @@ def test_tc_ingest_07b_the_fiducial_tier_sorts_naturally_and_refuses_repeats(
                               cached_prefix_tokens=0, cost=None)
 
     repeated = Ingestor(handle, blobs, RepeatedFiducial(["page-1", "page-1"]),
-                        _model(), SamplingParams(temperature=0.0), rasterizer)
+                        _model(), SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestError, match="repeat positions"):
         repeated.ingest_document([source], kind="submission",
                                  filenames={source: "scan-01.md"})
@@ -915,7 +952,7 @@ def test_tc_ingest_03b_the_divergence_boundary_is_exactly_strict(tmp_data_dir):
     layered = LayeredRasterizer("a b c d")
     ingestor = Ingestor(handle, blobs,
                         _two_page_provider("a b c d e f g h", "second page entirely"),
-                        _model(), SamplingParams(temperature=0.0), layered)
+                        _model(), SamplingParams(temperature=0.0), layered, sanitizer=THROUGH_SANITIZER)
     patch = pytest.MonkeyPatch()
     patch.setenv("HARNESS_INGEST_TEXT_LAYER_DIVERGENCE_HALT", "0.5")
     try:
@@ -951,7 +988,7 @@ def test_tc_ingest_09b_torn_stacks_and_repeated_numbers_are_refused(tmp_data_dir
                               cached_prefix_tokens=0, cost=None)
 
     ingestor = Ingestor(handle, blobs, Torn(), _model(),
-                        SamplingParams(temperature=0.0), rasterizer)
+                        SamplingParams(temperature=0.0), rasterizer, sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestError, match="disagree"):
         ingestor.ingest_document([source], kind="submission")
 
@@ -972,7 +1009,7 @@ def test_tc_ingest_09b_torn_stacks_and_repeated_numbers_are_refused(tmp_data_dir
                               cached_prefix_tokens=0, cost=None)
 
     repeated = Ingestor(handle, blobs, Repeated(), _model(),
-                        SamplingParams(temperature=0.0), ThreePageRasterizer())
+                        SamplingParams(temperature=0.0), ThreePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestError, match="repeats positions"):
         repeated.ingest_document([source], kind="submission")
     store.close()
@@ -1055,7 +1092,7 @@ def test_tc_ingest_11_each_element_kind_description_carries_its_named_fields(
         single = ScriptedRasterizer()
         single.plan = {f"fixture {element_kind}".encode(): 1}
         ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                            SamplingParams(temperature=0.0), single)
+                            SamplingParams(temperature=0.0), single, sanitizer=THROUGH_SANITIZER)
         document_id = ingestor.ingest_document([source], kind="submission",
                                                filenames={source: "scan-01.md"})
         rows = handle.query(statement(
@@ -1096,7 +1133,7 @@ def test_tc_ingest_12_region_kinds_and_resolvable_crops(tmp_data_dir):
         "<!-- region: kind=selection_mark question_id=Q1 -->\n\u2713\n"
         "<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1139,7 +1176,7 @@ def test_tc_ingest_13_evaluative_descriptions_are_rejected_then_re_requested(
                     prompt, model_ref, params)
 
         ingestor = Ingestor(handle, blobs, CountingMarked(), _model(),
-                            SamplingParams(temperature=0.0), OnePageRasterizer())
+                            SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
         with pytest.raises(IngestError, match="evaluative"):
             ingestor.ingest_document([source], kind="submission",
                                      filenames={source: "scan-01.md"})
@@ -1167,11 +1204,11 @@ def test_tc_ingest_14_the_confusable_page_discriminates(tmp_data_dir):
                   "The arrow labelled weight is correctly drawn, as expected.\n"
                   "<!-- /region -->")
     good = Ingestor(handle, blobs, _region_provider([descriptive]), _model(),
-                    SamplingParams(temperature=0.0), OnePageRasterizer())
+                    SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     assert good.ingest_document([source], kind="submission",
                                 filenames={source: "scan-01.md"})
     bad = Ingestor(handle, blobs, _region_provider([evaluative]), _model(),
-                   SamplingParams(temperature=0.0), OnePageRasterizer())
+                   SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     another = blobs.put(b"another pdf")
     with pytest.raises(IngestError, match="evaluative"):
         bad.ingest_document([another], kind="submission",
@@ -1196,7 +1233,7 @@ def test_tc_ingest_15_no_stored_description_carries_evaluative_vocabulary(
               "<!-- region: kind=transcribed_text -->\nThe work shown is brief.\n"
               "<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1226,7 +1263,7 @@ def test_tc_ingest_16_retractions_keep_both_versions(tmp_data_dir):
         "~~superseded-by the line above the original velocity value\n"
         "the corrected velocity value\n<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1264,7 +1301,7 @@ def test_tc_ingest_16b_a_correction_carries_superseded_by(tmp_data_dir):
         "~~superseded-by the corrected velocity value, written above\n"
         "<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1313,7 +1350,7 @@ def test_tc_ingest_13b_a_successful_re_request_leaves_no_evaluative_text(
 
     recovering = Recovers()
     ingestor = Ingestor(handle, blobs, recovering, _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     assert len(recovering.calls) == 2, (
@@ -1345,7 +1382,7 @@ def test_tc_ingest_13c_an_exhausted_budget_writes_nothing(tmp_data_dir):
               "element_kind=free_body_diagram -->\n"
               "The arrow is correctly drawn.\n<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     with pytest.raises(IngestError, match="evaluative"):
         ingestor.ingest_document([source], kind="submission",
                                  filenames={source: "scan-01.md"})
@@ -1387,7 +1424,7 @@ def test_tc_ingest_11c_the_f_graphic_fixture_page_round_trips(tmp_data_dir):
               "<!-- /region -->")
     source = blobs.put(b"fixture pdf")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     stored = handle.query(statement(
@@ -1418,7 +1455,7 @@ def test_tc_ingest_17_present_blank_and_absent_are_distinct(tmp_data_dir):
         "<!-- region: kind=transcribed_text question_id=Q2 state=blank -->\n"
         "<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1470,7 +1507,7 @@ def test_tc_ingest_18_the_selection_decision_table(tmp_data_dir):
                   f"selection_state={selection_state} selection={selection or ''} -->\n"
                   "the mark as seen\n<!-- /region -->")
         ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                            SamplingParams(temperature=0.0), OnePageRasterizer())
+                            SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
         source = blobs.put(f"pdf-{selection_state}".encode())
         document_id = ingestor.ingest_document([source], kind="submission",
                                                filenames={source: "scan.md"})
@@ -1511,7 +1548,7 @@ def test_tc_ingest_19_question_format_is_read_from_the_package(tmp_data_dir):
         catalog.add_criterion(v, "C1", question_id="Q1", kind="mcq", max_points=1.0)
         catalog.add_criterion(v, "C2", question_id="Q2", kind="open", max_points=4.0)
         ingestor = Ingestor(handle, blobs, ScriptedProvider(), _model(),
-                            SamplingParams(temperature=0.0), OnePageRasterizer())
+                            SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
         source = blobs.put(b"fixture pdf")
         report = ingestor.ingest_submission(
             [source], cohort_id="c-36", package_version=v,
@@ -1553,7 +1590,7 @@ def test_tc_ingest_20_shape_contradictions_are_v2_failures(tmp_data_dir):
         "<!-- region: kind=selection_mark question_id=Q2 selection_state=resolved "
         "selection=A -->\nthe mark as seen\n<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     report = ingestor.ingest_submission([source], cohort_id="c-36",
                                         package_version=v, package_catalog=catalog,
                                         filenames={source: "scan-01.md"})
@@ -1584,7 +1621,7 @@ def test_tc_ingest_21_ocr_confidence_is_per_region(tmp_data_dir):
         "<!-- region: kind=transcribed_text question_id=Q2 conf=0.41 -->\n"
         "marginal handwriting here\n<!-- /region -->")
     ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                        SamplingParams(temperature=0.0), OnePageRasterizer())
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     document_id = ingestor.ingest_document([source], kind="submission",
                                            filenames={source: "scan-01.md"})
     rows = handle.query(statement(
@@ -1608,7 +1645,7 @@ def test_tc_ingest_22_a_cluster_is_resolved_once_across_the_cohort(tmp_data_dir)
               "the margin says <unresolved>illegible-token</unresolved> beside "
               "the answer\n<!-- /region -->")
     marked_ingestor = Ingestor(handle, blobs, _region_provider([marked]), _model(),
-                               SamplingParams(temperature=0.0), OnePageRasterizer())
+                               SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
     affected = []
     for index in range(3):
         source = blobs.put(f"submission {index}".encode())

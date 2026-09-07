@@ -59,6 +59,8 @@ REVIEWED_DEV_DEPENDENCIES: dict[str, str] = {
     "pytest": "TS-00 (#1) — the framework itself",
     "pytest-randomly": "TS-00 (#1) — §4.6 runs the unit suite shuffled",
     "hypothesis": "TS-03 (#7) — the first story carrying Property-level cases",
+    "pypdf": "TS-18 (#42) — the live PdfSanitizer (FR-INGEST-33/34) and the "
+             "rung-2 security cases' F-ADV-PDF fixtures",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
