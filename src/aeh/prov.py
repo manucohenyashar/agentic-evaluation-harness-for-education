@@ -86,6 +86,7 @@ import logging
 import math
 import os
 import tempfile
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Callable
@@ -1171,6 +1172,18 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completio
     cached = usage.get("cached_prefix_tokens")
     if cached is None and isinstance(usage.get("prompt_tokens_details"), dict):
         cached = usage["prompt_tokens_details"].get("cached_tokens", 0)
+    cost: Decimal | None = None
+    if usage.get("cost") is not None:
+        # A backend that reports what it billed is believed — *measured*, not derived
+        # (CT-PROV-03: on cloud, cost is the measured fact beside the usage). OpenRouter's
+        # usage carries it; a value that will not parse is a structurally broken response,
+        # not a missing one, and belongs to the taxonomy.
+        try:
+            cost = Decimal(str(usage["cost"]))
+        except Exception as error:  # noqa: BLE001 — Decimal raises ValueError/TypeError/InvalidOperation
+            raise MalformedResponseError(
+                f"the response 'usage.cost' is not a decimal: {usage['cost']!r}"
+            ) from error
     if "choices" in document:
         # An OpenAI-shaped response: the completion text hides in the first choice.
         choices = document["choices"]
@@ -1202,7 +1215,7 @@ def _parse_completion(response: HttpResponse, model_ref: ModelRef) -> "Completio
         latency_ms=0,
         resolved_build=served,
         cached_prefix_tokens=int(cached or 0),
-        cost=None,
+        cost=cost,
     )
 
 
@@ -1248,6 +1261,8 @@ class _BaseLiveProvider:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         model_key = f"{model_ref.provider}:{model_ref.build_id}"
+        retries_before = self._counters.snapshot().transport_retries
+        started = self._clock.monotonic()
         completion = dispatch_with_retries(
             self._transport,
             lambda: HttpRequest("POST", self._url_for(model_ref), headers, body),
@@ -1256,8 +1271,45 @@ class _BaseLiveProvider:
             governor=self._governor, counters=self._counters,
             build_watch=self._build_watch, model_key=model_key,
         )
+        # Latency is measured, not echoed: FR-PROV-01 returns it as data, the per-call
+        # DEBUG line reports it (CT-PROV-14), and a hardcoded 0 would have the nightly
+        # describe a server that answers in no time at all. Measured through the clock
+        # seam, so an injected clock makes it exact and the default clock makes it real.
+        elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
+        if self._billed:
+            if completion.cost is None:
+                # CT-PROV-03: cost is null on edge-local and fixture — a billed backend
+                # answers with the measured fact. When the wire reported no cost, the
+                # declared per-token rates turn the measured usage into the per-call cost:
+                # derived, and derived from *declared* figures, which is why the estimate
+                # and the actuals can never disagree about the price sheet.
+                completion = dataclasses.replace(
+                    completion,
+                    cost=(Decimal(completion.tokens_in) * self._cost_per_token_in
+                          + Decimal(completion.tokens_out) * self._cost_per_token_out),
+                )
+        elif completion.cost is not None:
+            # The unbilled side is enforced, not assumed: a local server (or a proxy in
+            # front of one) that reports a cost in its usage would otherwise put a
+            # non-null cost on an edge-local completion — the clause violation the
+            # fixture refuses at record and at read.
+            completion = dataclasses.replace(completion, cost=None)
+        completion = dataclasses.replace(completion, latency_ms=elapsed_ms)
         self._counters.on_usage(
             completion.tokens_in, completion.tokens_out, completion.cached_prefix_tokens)
+        # CT-PROV-14's per-call DEBUG line, on the live path exactly as the fixture path
+        # emits it: metadata only, never a payload value (`CT-PROV-13`).
+        _LOGGER.debug(
+            "provider call",
+            extra={
+                "model_ref": model_ref.build_id,
+                "resolved_build": completion.resolved_build,
+                "latency_ms": completion.latency_ms,
+                "tokens_in": completion.tokens_in,
+                "tokens_out": completion.tokens_out,
+                "retry_count": self._counters.snapshot().transport_retries - retries_before,
+            },
+        )
         return completion
 
     def estimate_cost(self, plan: CallPlan) -> CostEstimate:
@@ -1284,6 +1336,9 @@ class LocalServerProvider(_BaseLiveProvider):
     Retention is trivially confirmed — the model runs on school hardware, and no bytes
     leave the building. `verify_retention` answers from that fact, not from a network
     call."""
+
+    #: Edge-local: nothing is billed, so `Completion.cost` is null (`CT-PROV-03`).
+    _billed = False
 
     def __init__(self, *, base_url: str | None = None, api_key: str = "",
                  **seams: Any) -> None:
@@ -1316,13 +1371,14 @@ class LocalServerProvider(_BaseLiveProvider):
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
         """Local inference: nothing is dispatched off the machine, so zero-retention holds
-        for every panel member by construction — recorded as evidence, not assumed
-        silently (`CT-PROV-09`'s report shape)."""
-        confirmed = tuple(f"{ref.provider}:{ref.build_id} — local inference, no egress"
-                          for ref in model_refs)
-        return RetentionReport(
-            confirmed=confirmed, unconfirmed=(), all_confirmed=True, evidence=confirmed,
-        )
+        for every panel member by construction (`CT-PROV-09`'s report shape).
+
+        The report carries the panel members themselves, in the same shape
+        `OpenRouterProvider` returns — the report is contract, and a caller that consumes
+        `report.confirmed` must not receive display strings from one implementation and
+        `ModelRef`s from another (`FR-PROV-03`: the same caller runs unchanged).
+        """
+        return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
 
 
 class OpenRouterProvider(_BaseLiveProvider):
@@ -1334,6 +1390,10 @@ class OpenRouterProvider(_BaseLiveProvider):
     (callable: model key → answer string) and evaluates fail-closed. `on_dispatch` observes
     every dispatch the moment it happens — the hook a run-start retention gate and an
     operator's log both read."""
+
+    #: Cloud-hosted: calls are billed, so `Completion.cost` is a measured or derived
+    #: Decimal — never null, never zero-by-default (`CT-PROV-03`).
+    _billed = True
 
     def __init__(
         self, *,
