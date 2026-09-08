@@ -55,7 +55,7 @@ guess is a suite that asserts the wrong thing.
 | Destructive operations validate their identifier | `purge_cohort` refuses a `cohort_id` that cannot safely become a filename component — the same principle `TC-STORE-22` fixes for the blob accessors, applied where the blast radius is irreversible. Keyed lookups pass ids as bound parameters and need no rule | Review verified the traversal: `purge_cohort('../other')` and an absolute path both escaped the data directory |
 | Purge preconditions are scoped by `cohort_id` | A Tier D gate (`audit_record`, `label`, `criterion_stats`) passes iff the table exists **and** carries a `cohort_id` column **and** holds a row for this cohort. The column name is the contract `M-STATS`/`M-REVIEW` migrations must honor | #10's minimal Tier D columns carry no cohort scope; promotion means cohort-scoped rows were copied in, so absent the column promotion structurally cannot have happened — fail closed (`CT-STORE-10`'s sweep is per-precondition) |
 | Purge keeps the file and its `schema_version` | The DELETE sweep skips `schema_version` and the `sqlite_%` internals; wiping `schema_version` would make migration 001 re-run against surviving tables and leave the file permanently unopenable. The file itself remains — `TC-STORE-11`'s oracle scans the emptied file's raw bytes | `FR-STORE-07` deletes Tier C and R *content*; §3.3's data model makes the purge a `VACUUM` on one database |
-| Purge does not touch blobs | Blob reclamation at purge time is an **accepted risk** with the rule undeclared (test plan §7.4: "blob shared across cohorts at purge time"), and the blob store is #12's. `PurgeReport.blobs_deleted` is an honest zero | Making the design decision this PR would be deciding what §7.4 reserves for the design |
+| Purge reclaims the cohort's blobs by evidence, not a refcount | After the commit, purge scans every other database in the data directory for the cohort's hash-shaped values and unlinks only hashes nothing surviving references (#225; §7.4's dedup-vs-purge tension resolves in favor of the surviving reference). The blob store has no refcount table, and a schema-derived one would have to be maintained by every writer forever; a value scan is self-validating and picks up new hash-bearing columns with no registry edit | `FR-STORE-07` as #225 states it: purge deletes Tier C and R *content*, and student bytes in blobs are content |
 | `STATEMENTS` is the registry of runtime statements | Every non-migration statement literal the module executes, keyed by name. Migration DDL is excluded — it is versioned data in `TIER_MIGRATIONS`, and the schema limb of `TC-STORE-15` sweeps real files | `FR-STORE-08`'s "declared queries" is only checkable if the declared set has a home; `TC-STORE-15` limb 2 sweeps this registry, and `tests/support/store_api.py` attributes it to #13 |
 
 Configuration
@@ -1332,6 +1332,11 @@ _SELECT_COHORT_TRIGGERS_VIEWS = Statement(
     "SELECT name, type FROM sqlite_master WHERE type IN ('trigger', 'view')"
 )
 _PRAGMA_DEFER_FOREIGN_KEYS = Statement("PRAGMA defer_foreign_keys = ON")
+#: Table-valued pragma form (#225): the FK-graph introspection purge does runs with the
+#: table name as a **bound parameter**, so no identifier is ever interpolated into SQL.
+_SELECT_FOREIGN_KEY_PARENTS = Statement(
+    'SELECT "table" AS parent_table FROM pragma_foreign_key_list(:table)'
+)
 _VACUUM = Statement("VACUUM")
 #: Run after the `VACUUM`, for a reason the main file alone cannot see: `VACUUM` rewrites the
 #: database, but the freed pages — with their student text — sit in the `-wal` until a
@@ -1370,11 +1375,15 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: Children before parents. Deferred foreign keys make the order irrelevant to correctness —
 #: `PRAGMA defer_foreign_keys` is set before the BEGIN (SQLite makes it a no-op inside a
 #: transaction) and checks the constraints at COMMIT, when every table is empty — but a
-#: deterministic order keeps the report stable from run to run.
+#: deterministic order keeps the report stable from run to run. What the order **is** load-bearing
+#: for is completeness: the sweep iterates this tuple, so a name missing here is a table the
+#: sweep never touches — #39's token tables sat in `_PURGE_DELETES` but out of this tuple and
+#: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
     "evidence", "work_unit", "run", "assessment_match_proposal", "v4_cohort_breaker",
-    "document_region", "document", "submission", "roster", "cohort",
+    "unresolved_token", "token_cluster", "document_region", "document", "submission",
+    "roster", "cohort",
 )
 _PURGE_DELETES: Mapping[str, Statement] = {
     "review_queue": Statement("DELETE FROM review_queue"),
@@ -1405,6 +1414,170 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "v4_cohort_breaker": Statement("DELETE FROM v4_cohort_breaker"),
     "cohort": Statement("DELETE FROM cohort"),
 }
+
+#: A name in `_PURGE_DELETES` but not in `_COHORT_PURGE_ORDER` is a table the registry can
+#: name yet the sweep never visits — exactly the rot #225 fixed, where #39's token tables
+#: were added to the deletes and not to the order and the FK check at COMMIT aborted the
+#: purge. Checked at import so the next migration cannot land the same rot silently; the
+#: at-purge-time walk (`_assert_purge_order_matches_fk_graph`) is the live-graph half.
+_UNORDERED_PURGE_TABLES: frozenset[str] = (
+    frozenset(_PURGE_DELETES) - frozenset(_COHORT_PURGE_ORDER)
+)
+if _UNORDERED_PURGE_TABLES:
+    raise ConfigurationProblem(
+        f"_PURGE_DELETES names entries _COHORT_PURGE_ORDER lacks: "
+        f"{sorted(_UNORDERED_PURGE_TABLES)}. The sweep iterates the order tuple, so an "
+        f"entry missing there is a name the sweep never visits — its rows survive and "
+        f"the deferred FK check aborts at COMMIT. Extend _COHORT_PURGE_ORDER in the "
+        f"same change (children before parents)."
+    )
+
+
+#: One declared row-scan per swept name (#225): the reclamation phase reads blob references
+#: out of the cohort's rows, and `SELECT *` means a migration adding or renaming a
+#: hash-bearing column needs no edit here — the scan follows the table. A name missing from
+#: this registry would be a swept name whose references the reclamation never reads, which
+#: is the import-time guard right below.
+_PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
+    "review_queue": Statement("SELECT * FROM review_queue"),
+    "narrative": Statement("SELECT * FROM narrative"),
+    "submission_grade": Statement("SELECT * FROM submission_grade"),
+    "criterion_score": Statement("SELECT * FROM criterion_score"),
+    "verdict": Statement("SELECT * FROM verdict"),
+    "evidence": Statement("SELECT * FROM evidence"),
+    "work_unit": Statement("SELECT * FROM work_unit"),
+    "run": Statement("SELECT * FROM run"),
+    "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
+    "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
+    "unresolved_token": Statement("SELECT * FROM unresolved_token"),
+    "token_cluster": Statement("SELECT * FROM token_cluster"),
+    "document_region": Statement("SELECT * FROM document_region"),
+    "document": Statement("SELECT * FROM document"),
+    "submission": Statement("SELECT * FROM submission"),
+    "roster": Statement("SELECT * FROM roster"),
+    "cohort": Statement("SELECT * FROM cohort"),
+}
+
+#: A swept name without a row-scan is a reference the reclamation misses — student bytes
+#: left behind while the report claims a purge. Import-time, so the next migration cannot
+#: land the gap silently (the same doctrine as `_UNORDERED_PURGE_TABLES` above).
+_UNSCANNED_PURGE_TABLES: frozenset[str] = (
+    frozenset(_PURGE_DELETES) - frozenset(_PURGE_BLOB_HASH_SCANS)
+)
+if _UNSCANNED_PURGE_TABLES:
+    raise ConfigurationProblem(
+        f"_PURGE_BLOB_HASH_SCANS does not cover every name _PURGE_DELETES clears: "
+        f"{sorted(_UNSCANNED_PURGE_TABLES)}. The reclamation reads blob references by "
+        f"scanning each swept name's rows, so an entry missing there is a reference "
+        f"purge misses — student bytes left behind. Extend the registry in the same "
+        f"change."
+    )
+
+
+#: Any 64-hex run bounded by non-hex characters — `BLOB_HASH_PATTERN` unanchored, with
+#: boundaries so a longer hex run (a SHA-512, a concatenation) yields no phantom sub-match.
+#: This is what `ContentAddressedBlobStore.put` returns and therefore the shape every blob
+#: reference takes, wherever a migration puts it.
+_BLOB_HASH_RUN = re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])")
+
+#: The dump-walking variant (#225): case-insensitive, because an arbitrary-schema file's
+#: hash-carrying column may be BLOB-typed and dumps as uppercase hex — and missing a real
+#: reference is the unsafe direction. Binary values that happen to carry 64 hex-like bytes
+#: only make purge KEEP a blob, which is the safe mistake.
+_BLOB_HASH_RUN_ANYCASE = re.compile(
+    r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])"
+)
+
+
+def _assert_purge_order_matches_fk_graph(
+    connection: sqlite3.Connection, found: set[str], path: Path, *, retries: int,
+) -> None:
+    """Assert the sweep order against the cohort file's **live** FK graph (#225).
+
+    Walks `pragma foreign_key_list` for every table the file actually carries and checks
+    the result against `_COHORT_PURGE_ORDER`: every found table is IN the tuple (a name
+    missing there is a table the sweep never visits — the rot that aborted every
+    token-carrying cohort's purge), and every foreign key among the found tables points
+    child-before-parent. Deferred FKs make the direction cosmetic for correctness — COMMIT
+    sees every table empty either way — but an order that contradicts the live graph is
+    the shape a half-extended registry wears, and it is refused here, before the first
+    DELETE, rather than discovered as a raw `IntegrityError` at COMMIT with the sweep
+    half-run. A migration adding a cohort-scoped table without the order entry fails here
+    with the edge named, instead of silently rotting the purge.
+    """
+    order_index = {name: index for index, name in enumerate(_COHORT_PURGE_ORDER)}
+    violations: list[str] = []
+    for table in sorted(found):
+        if table.startswith("sqlite_") or table == _SCHEMA_VERSION_TABLE_NAME:
+            continue  # internals and the per-tier version marker the sweep keeps by design
+        if table not in order_index:
+            violations.append(
+                f"{table}: in the file but not in _COHORT_PURGE_ORDER — the sweep would "
+                f"never visit it"
+            )
+            continue
+        parents = _run(connection, _SELECT_FOREIGN_KEY_PARENTS,
+                       params={"table": table}, retries=retries).fetchall()
+        for row in parents:
+            parent = str(row[0])
+            if parent == table or parent not in found:
+                continue  # self-reference, or a parent absent from this (older) file
+            if parent in order_index and order_index[table] >= order_index[parent]:
+                violations.append(
+                    f"{table} references {parent}: child at position "
+                    f"{order_index[table]}, parent at {order_index[parent]}"
+                )
+    if violations:
+        raise ConfigurationProblem(
+            f"{path} has a foreign-key graph _COHORT_PURGE_ORDER does not match: "
+            f"{violations}. The purge sweep iterates the order tuple, so a missing name "
+            f"is a table the sweep never clears and a contradicted edge is a registry "
+            f"half-extended. A migration extending the cohort tier extends "
+            f"_COHORT_PURGE_ORDER in the same change. Nothing was removed."
+        )
+
+
+def _collect_blob_hash_references(
+    connection: sqlite3.Connection, tables: set[str], *, retries: int,
+) -> set[str]:
+    """Every hash-shaped value in the given tables' rows, from declared scans (#225).
+
+    The blob store is content-addressed and deliberately keyless: no cohort table carries
+    a foreign key to it, so "which blobs does this file reference" cannot be derived from
+    the FK graph. It is derived from the data instead — any `_BLOB_HASH_RUN` match in any
+    value of any row of any swept name, through `_PURGE_BLOB_HASH_SCANS`' declared `SELECT
+    *` per name. That covers a bare hash column (`document.content_hash`), a JSON list of
+    them (`document.source_blobs`) and a crop ref alike, and because the scans select
+    every column, a migration adding a hash-bearing column is picked up with no registry
+    edit. A value that only looks like a hash costs one filesystem miss in the caller's
+    reclamation loop and nothing more.
+    """
+    hashes: set[str] = set()
+    for table in sorted(tables):
+        cursor = _run(connection, _PURGE_BLOB_HASH_SCANS[table], retries=retries)
+        for row in cursor:  # streamed row by row: a purge must not materialize the file
+            for value in row:
+                if isinstance(value, str):
+                    hashes.update(_BLOB_HASH_RUN.findall(value))
+    return hashes
+
+
+def _collect_blob_hash_references_from_dump(connection: sqlite3.Connection) -> set[str]:
+    """Hash-shaped values in an arbitrary-schema database, via stdlib's dump walk (#225).
+
+    Package files and Tier D carry their owning modules' schemas — `M-STORE` owns no
+    schema meaning, so there are no declared row-scans to reuse for them, and assembling
+    SQL against names read from their catalogs is exactly what `FR-STORE-08`'s scanner
+    exists to refuse. `iterdump` is stdlib SQLite's own traversal of the file it is
+    handed: this module writes no statement at all. Mistakes land conservative — a
+    BLOB-typed reference dumps as uppercase hex, which `_BLOB_HASH_RUN_ANYCASE` still
+    sees, and a binary value that happens to carry 64 hex-like bytes only ever makes
+    purge KEEP a blob it might have deleted, never the reverse.
+    """
+    hashes: set[str] = set()
+    for line in connection.iterdump():
+        hashes.update(_BLOB_HASH_RUN_ANYCASE.findall(line))
+    return hashes
 
 
 #: What an identifier may look like when it becomes a filename component or a key. Anything
@@ -1441,12 +1614,13 @@ class PurgeReport:
     is irreversible, and a bare "purged" sitting on top of an empty report is the top
     silent-failure trap standing on the one operation where silence is unrecoverable.
 
-    `blobs_deleted` is an **honest zero**: blob reclamation at purge time is an accepted risk
-    with the rule undeclared (test plan §7.4 — "the design does not say whether
-    content-addressed deduplication or per-cohort purge wins"), and the blob store itself is
-    #12's. Deleting a shared blob breaks the cohort that still references it; leaving it
-    leaves student bytes behind; until the design declares which, purge does not touch the
-    blob directory and the report says so rather than implying a sweep happened.
+    `blobs_deleted` is a real count since #225: the blob files purge actually unlinked —
+    the cohort's hash-shaped references minus those another database in the data directory
+    still holds. Zero is an honest number, not a policy: it means the cohort referenced no
+    blobs, or every hash it referenced survives in another file's rows. A purge whose
+    blob phase is interrupted after the commit leaves the surviving blobs orphaned and
+    says so through the error it raises — the report never implies a sweep that did not
+    happen.
     """
 
     cohort_id: str
@@ -2045,6 +2219,27 @@ class ContentAddressedBlobStore:
                 "resolution to stay inside the data directory, and SEC-09 attacks exactly here."
             )
         return resolved
+
+    def delete(self, content_hash: str) -> bool:
+        """Remove the blob stored under `content_hash`; True when a file was removed (#225).
+
+        Purge's reclamation door. The caller owns the sharing decision — the store is
+        content-addressed with no refcount table, so "does anyone else still reference
+        this hash" is a question about the databases that carry hashes, not about this
+        directory, and `purge_cohort` answers it before calling here. What this method
+        owns is the same door discipline as `path` and `get`: the hash is validated before
+        the filesystem is touched and containment is asserted. The unlink targets a file
+        under `blobs/`, which is by construction complete — a write stages in `incoming/`
+        and renames into place — so there is no partial-write window to protect, and the
+        two-level fan-out directories are left in place: `stats()` counts files, and a
+        fan-out leaf is not one.
+        """
+        target = self.path(content_hash)  # validates, then asserts containment
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            return False
+        return True
 
     # -- accounting -------------------------------------------------------------------------------
 
@@ -3194,14 +3389,23 @@ class SqliteStore:
           released, and no queued write can repopulate the tables after the delete. A handle
           a caller still holds past this point fails with a raw `sqlite3.ProgrammingError` —
           declared here rather than discovered there.
-        - Blobs are **not** touched (`PurgeReport.blobs_deleted` is an honest zero): the
-          dedup-vs-purge rule is undeclared (test plan §7.4) and the blob store is #12's.
+        - Blobs **are** reclaimed (#225): the cohort's hash-shaped references are read
+          inside the transaction, and after the commit every hash no other database in
+          the data directory still holds is unlinked from the content-addressed store —
+          a blob shared with a surviving cohort keeps resolving (test plan §7.4's
+          dedup-vs-purge tension resolves in favor of the survivor), and a blob
+          referenced by nothing loses its student bytes. The count is
+          `PurgeReport.blobs_deleted`.
         - On a read-only store this raises `ReadOnlyTierError` — a purge is a write by any
           definition that matters.
 
         A purge that fails partway (say, `VACUUM` cannot get its temp copy) has already
         committed its deletes; re-running it completes the vacuum — the tables are empty and
-        the preconditions still hold.
+        the preconditions still hold. One asymmetry #225 makes explicit: if the **blob**
+        phase fails after the commit, re-running cannot finish it — the rows that named the
+        cohort's hashes are gone, so the error names the hash it stopped on and the
+        leftover blob is unreferenced orphan. The scan-before-any-unlink discipline keeps
+        that window as small as a post-commit phase can be.
         """
         cohort_id = _validated_component("cohort id", cohort_id)
         if self._read_only:
@@ -3235,6 +3439,7 @@ class SqliteStore:
         bytes_before = path.stat().st_size if path.exists() else 0
         bytes_after = bytes_before
         tables_cleared: tuple[str, ...] = ()
+        blob_hashes: set[str] = set()
         if path.exists():
             connection = _connect(
                 path, read_only=False, busy_timeout_ms=self._busy_timeout_ms,
@@ -3289,6 +3494,20 @@ class SqliteStore:
                             "half-purge. A migration extending the cohort tier must extend "
                             "_PURGE_DELETES in the same change. Nothing was removed."
                         )
+                    # #225: the order is asserted against the LIVE foreign-key graph of the
+                    # file being purged, before the first DELETE — a migration that extends
+                    # the cohort tier without extending _COHORT_PURGE_ORDER refuses here
+                    # with the edge named instead of rotting into a raw IntegrityError at
+                    # COMMIT. Deferred FKs would make a wrong order harmless only if the
+                    # sweep were complete; this assertion is what pins completeness.
+                    _assert_purge_order_matches_fk_graph(
+                        connection, found, path, retries=self._retries)
+                    # #225: the blob references are read while the rows still exist —
+                    # after the COMMIT the cohort's hashes are unrecoverable from the file,
+                    # and the reclamation phase after the vacuum runs on the set taken here.
+                    blob_hashes = _collect_blob_hash_references(
+                        connection, found & frozenset(_COHORT_PURGE_ORDER),
+                        retries=self._retries)
                     # Only tables the file actually carries, in dependency order. A file at an
                     # older schema version than this process's registry — #57's `run` table,
                     # created by a migration registered when `aeh.orch` is imported, absent
@@ -3335,6 +3554,23 @@ class SqliteStore:
                 _harden_files(path)
             bytes_after = path.stat().st_size
 
+        # #225: blob reclamation, after the deletes are committed. The rows named the
+        # cohort's hashes and are gone now, so the set taken inside the transaction is the
+        # only record of them. Sharing is decided by evidence, not by a refcount table the
+        # store does not have: every other database in the data directory is scanned for
+        # the same hashes, and only a hash NO surviving database references is reclaimed.
+        # The scan completes before the first unlink, so a scan failure deletes nothing.
+        # A failure partway through the unlinks itself leaves the rows purged and the
+        # surviving blobs orphaned — the error names the hash it stopped on, and the
+        # honest-refusal shape cannot cover a phase that runs post-commit by necessity
+        # (the hashes die with the rows).
+        blobs_deleted = 0
+        if blob_hashes:
+            referenced_elsewhere = self._blob_hashes_referenced_elsewhere(path)
+            for content_hash in sorted(blob_hashes - referenced_elsewhere):
+                if self.blobs().delete(content_hash):
+                    blobs_deleted += 1
+
         self._last_vacuum_ms = vacuum_ms
         return PurgeReport(
             cohort_id=cohort_id,
@@ -3344,7 +3580,71 @@ class SqliteStore:
             file_bytes_before=bytes_before,
             file_bytes_after=bytes_after,
             vacuum_duration_ms=vacuum_ms,
+            blobs_deleted=blobs_deleted,
         )
+
+    def _blob_hashes_referenced_elsewhere(self, purged_path: Path) -> set[str]:
+        """Hash-shaped values any OTHER database in the data directory still holds (#225).
+
+        The blob directory is shared across the whole data directory — the other cohort
+        files, the package tier and Tier D — so "shared blob" means referenced from any
+        file but the one being purged. The package tier is scanned, not assumed
+        irrelevant: an import re-puts the archive's exemplar blobs into this store and the
+        package file's exemplar rows reference the hashes. Other cohort files share this
+        module's schema and go through the declared scans; package and durable files carry
+        foreign schemas (`M-STORE` owns no schema meaning) and go through the dump walk.
+        Read-only, one pass per file. The scan runs to completion before any blob is
+        deleted: an exception here propagates and the reclamation phase is skipped whole,
+        leaving the purge's committed deletes and every blob intact — the conservative
+        direction, and the documented re-run shape covers it.
+        """
+        referenced: set[str] = set()
+        others = sorted(self._data_dir.glob("cohorts/*.sqlite"))
+        others += sorted(self._data_dir.glob("packages/*.sqlite"))
+        durable_path = self.durable_path()
+        if durable_path.exists():
+            others.append(durable_path)
+        cohort_dir = self._data_dir / "cohorts"
+        for other in others:
+            if other == purged_path:
+                continue
+            connection = _connect(
+                other, read_only=True, busy_timeout_ms=self._busy_timeout_ms,
+                retries=self._retries,
+            )
+            try:
+                if other.parent == cohort_dir:
+                    tables = {
+                        str(row[0]) for row in _run(
+                            connection, _SELECT_COHORT_TABLES, retries=self._retries
+                        ).fetchall()
+                        if not str(row[0]).startswith("sqlite_")
+                        and str(row[0]) != _SCHEMA_VERSION_TABLE_NAME
+                    }
+                    unknown = sorted(
+                        table for table in tables if table not in _PURGE_BLOB_HASH_SCANS
+                    )
+                    if unknown:
+                        # Fail closed: a cohort file at a schema this process does not
+                        # know cannot be checked for references, and a purge that cannot
+                        # check must not delete. The rows are already committed; the
+                        # documented re-run shape applies once the file is at a known
+                        # schema.
+                        raise ConfigurationProblem(
+                            f"{other} carries cohort-scoped name(s) this process's "
+                            f"registry lacks: {unknown}. Blob references in it cannot "
+                            f"be checked, so the reclamation for {purged_path.name} "
+                            f"was skipped rather than risk deleting a shared blob. "
+                            f"Nothing further is reclaimed on this call."
+                        )
+                    referenced |= _collect_blob_hash_references(
+                        connection, tables, retries=self._retries)
+                else:
+                    # Package files and Tier D: foreign schemas, walked by the stdlib dump.
+                    referenced |= _collect_blob_hash_references_from_dump(connection)
+            finally:
+                connection.close()
+        return referenced
 
     def _purge_precondition_failures(self, cohort_id: str) -> list[str]:
         """The unmet Tier D promotion gates for `cohort_id`; empty when purge may run.

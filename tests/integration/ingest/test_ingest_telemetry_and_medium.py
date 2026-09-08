@@ -146,6 +146,7 @@ from aeh.ingest import (
 )
 from aeh.prov import Completion, SamplingParams
 from aeh.store import PurgePreconditionError, open_store
+from tests.support.store_api import statement
 
 pytestmark = pytest.mark.integration
 
@@ -596,37 +597,33 @@ def test_tc_ingest_42_created_blob_files_are_owner_only(tmp_path):
     store.close()
 
 
-def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_rule_alone(
+def test_tc_ingest_42_purge_sweeps_the_ingest_rows_the_tokens_and_the_blobs(
         tmp_data_dir):
     """`TC-INGEST-42`'s purge half: *"the transcription payload is removed by
     `purge_cohort`, along with Tier C."* The transcription payload lives in the
     Tier C rows — `document.markdown`, `document_region`'s per-region
     confidence, the unresolved-token rows — and the sweep removes them after
-    the Tier D promotion gates refuse it until then.
+    the Tier D promotion gates refuse it until then. Since #225 the sweep also
+    carries the two disclosures this case used to ship with:
 
-    Two disclosed limits keep this case honest rather than red (F2, F8):
-
-    - **F2 — the blob store**: `purge_cohort` does not touch the blob
-      directory; `PurgeReport.blobs_deleted` is the documented honest zero (the
-      §7.4 accepted risk `tests/integration/store/test_purge.py` pins). The
-      crop therefore survives the purge that removed its region row, and the
-      case asserts that consequence.
-    - **F8 — the unread tokens**: a cohort carrying `unresolved_token` rows
-      **cannot be purged at all** — the sweep's `_COHORT_PURGE_ORDER` (store
-      1374) was not extended when #39 added the token tables to
-      `_PURGE_DELETES`, so `document_region` is deleted while the tokens that
-      reference it remain, the FK blocks the DELETE, and `purge_cohort` dies
-      with a raw `sqlite3.IntegrityError` (rolled back). Probe: the same
-      fixture with one `<unresolved>` token → `IntegrityError: FOREIGN KEY
-      constraint failed`; without it → the sweep below. The defect is in
-      shipped code with no open story behind it — disclosed here, asserted
-      against nothing, for the fixing story to rewrite this case with."""
+    - **F8, resolved** — the token tables: `_COHORT_PURGE_ORDER` now names
+      #39's `unresolved_token` and `token_cluster`, and the order is asserted
+      against the file's live `pragma foreign_key_list` graph before the first
+      DELETE, so the next unextended migration refuses with the edge named
+      instead of aborting at COMMIT with a raw `IntegrityError` (which is
+      exactly what this fixture produced before the fix).
+    - **F2, resolved** — the blob store: purge now reclaims the blobs the
+      cohort's rows referenced (source, sanitized copy, crop), minus any hash
+      another database in the data directory still holds. `blobs_deleted` is
+      the real count; the old "honest zero" pin (`test_purge.py`'s variant)
+      was rewritten by the same story."""
     fx = _Fixture(tmp_data_dir, "purge", "c-purge-48")
     source = fx.put(b"purge-source")
     fx.script(source, {1: _student_answer(
         "hana-w",
         "<!-- region: kind=transcribed_text question_id=Q1 state=present -->\n"
-        "the answer to the one question\n<!-- /region -->",
+        "the <unresolved>po</unresolved> answer to the one question\n"
+        "<!-- /region -->",
         "<!-- region: kind=described_graphic element_kind=graph_or_plot -->\n"
         "The plot shows velocity against time.\n<!-- /region -->")})
     fx.add_roster("hana-w")
@@ -635,6 +632,19 @@ def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_
                                   filenames={source: "scan-01.md"})
     crop_ref = fx.handle.query(
         "SELECT crop_ref FROM document_region WHERE crop_ref IS NOT NULL")[0]["crop_ref"]
+    # The fixture must carry the #39 token rows the purge has to clear: one
+    # unresolved token from the transcript, and one cluster row (the cohort-tier
+    # cluster table has no FK to anything — a purge that only followed foreign
+    # keys would leave it behind).
+    unresolved_before = fx.handle.query(
+        "SELECT COUNT(*) AS n FROM unresolved_token")[0]["n"]
+    assert unresolved_before >= 1, (
+        "TC-INGEST-42: the fixture did not produce the unresolved-token rows "
+        "the sweep is measured against.")
+    with fx.handle.transaction() as tx:
+        tx.execute(statement(
+            "INSERT INTO token_cluster (cluster_id, cohort_id, token) "
+            f"VALUES ('cl-purge-48', '{fx.cohort_id}', 'po')", issue=ISSUE))
     before = {
         "submission": fx.handle.query("SELECT COUNT(*) AS n FROM submission")[0]["n"],
         "document": fx.handle.query("SELECT COUNT(*) AS n FROM document")[0]["n"],
@@ -658,27 +668,34 @@ def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_
     assert report.rows_deleted_by_table.get("submission") == 1
     assert report.rows_deleted_by_table.get("document", 0) >= 1
     assert report.rows_deleted_by_table.get("document_region", 0) >= 2
+    # The F8 half: the #39 token tables are cleared with everything else, and
+    # the report names them.
+    assert report.rows_deleted_by_table.get("unresolved_token") == unresolved_before
+    assert report.rows_deleted_by_table.get("token_cluster") == 1
     assert report.rows_deleted_by_table.get("cohort") == 1
 
     # The post-purge absence, read through an independent connection (the
     # purge evicted the cached handle — that is part of its contract).
     with sqlite3.connect(cohort_path) as raw:
-        for table in ("submission", "document", "document_region"):
+        for table in ("submission", "document", "document_region",
+                      "unresolved_token", "token_cluster"):
             count = raw.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             assert count == 0, (
                 f"TC-INGEST-42: {table} still holds {count} row(s) after the "
                 "purge — the transcription payload is not removed.")
 
-    # The disclosed blob rule (F2): the purge does not reclaim blobs, so the
-    # crop outlives the region row that referenced it. A change to the declared
-    # rule rewrites this assertion with the rule's own story.
-    assert report.blobs_deleted == 0, (
-        "TC-INGEST-42: the purge deleted blobs — the declared rule (test plan "
-        "§7.4, PurgeReport's honest zero) is that it does not.")
-    assert fx.blobs.get(crop_ref) == b"crop", (
-        "TC-INGEST-42: the crop did not survive the purge. Under the declared "
-        "rule a blob referenced by no surviving row still resolves — the dedup "
-        "lifetime is the §7.4 open question, not something purge settles.")
+    # The reclamation half (F2, resolved by #225): every blob the cohort's rows
+    # referenced is unlinked — the raw-byte oracle is the blob directory itself.
+    # Nothing else in this data directory holds the hashes, so the source, the
+    # sanitized copy and the crop are all gone.
+    assert report.blobs_deleted >= 1, (
+        "TC-INGEST-42: the purge report claims no blobs were deleted, but this "
+        "cohort referenced at least the crop and its source.")
+    remaining = [p for p in (tmp_data_dir / "blobs").rglob("*") if p.is_file()]
+    assert remaining == [], (
+        f"TC-INGEST-42: blobs survived a cohort whose every referencing row is "
+        f"gone: {remaining}. Student bytes must not outlive the purge that "
+        "removed their last reference.")
     fx.close()
 
 

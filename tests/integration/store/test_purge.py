@@ -16,11 +16,11 @@ Promotion is simulated through an **independent** `sqlite3` connection — the o
 the question is what `purge_cohort` does about Tier D's state, not whether the store can be
 persuaded to create it.
 
-The blob variant implements the rule **declared**, not the one §7.4 left open: purge does not
-touch the blob directory (`PurgeReport.blobs_deleted` is a documented honest zero, and the
-dedup-vs-purge question is an accepted risk pending a design decision). The variant asserts
-the consequence a consumer can rely on today — a blob shared by two cohorts survives either
-cohort's purge — and the PR records that a change to the declared rule rewrites this case.
+The blob variant implements the rule **#225 declares**, which is what the §7.4 variant was
+written to be rewritten against: purge reclaims the cohort's blobs by evidence — a hash
+another surviving database still references is kept, a hash nothing references is unlinked.
+The variant asserts the two consequences a consumer can rely on: a blob shared by two cohorts
+survives the first purge and dies with the second.
 """
 
 from __future__ import annotations
@@ -157,10 +157,10 @@ def test_tc_store_11_purge_refuses_every_partial_promotion_then_removes_the_byte
     assert kept[0][0] == 1, "TC-STORE-11: Tier D must survive the purge — it is the promoted copy"
 
 
-def test_tc_store_11_a_blob_shared_by_two_cohorts_survives_either_purge(tmp_data_dir):
-    """The §7.4 variant, asserted against the **declared** rule: purge does not touch the blob
-    directory, so a blob referenced from both cohorts' rows survives both purges. A change to
-    the declared rule rewrites this case — that is what the variant is for."""
+def test_tc_store_11_a_blob_shared_by_two_cohorts_survives_the_first_purge(tmp_data_dir):
+    """The §7.4 variant, asserted against the rule #225 declares: purge reclaims the
+    cohort's blobs **by evidence** — a blob referenced from another cohort's rows survives
+    that cohort's purge, and is unlinked once nothing references it anymore."""
     store = open_store(tmp_data_dir)
     blob_store = store.blobs()
     shared = blob_store.put(b"page-raster-shared-by-two-cohorts")
@@ -177,15 +177,22 @@ def test_tc_store_11_a_blob_shared_by_two_cohorts_survives_either_purge(tmp_data
 
     report_a = store.purge_cohort("c-a")
     assert report_a.blobs_deleted == 0, (
-        "TC-STORE-11: the declared rule (test plan §7.4's accepted risk, PurgeReport's "
-        "documented honest zero) is that purge does not touch the blob directory. If that "
-        "rule changes, this case and PurgeReport's docstring change with it."
+        "TC-STORE-11: c-b's rows still reference the shared hash, and purge's scan of "
+        "the surviving databases must see them — deleting the blob here would break a "
+        "cohort mid-life (CT-STORE-07's lifetime promise)."
     )
-    store.purge_cohort("c-b")
-    assert blob_store.get(shared) == b"page-raster-shared-by-two-cohorts", (
-        "TC-STORE-11: the shared blob did not survive both purges. Whatever rule is declared, "
-        "a blob another surviving cohort still references must resolve (CT-STORE-07's "
-        "lifetime promise) — and per the declared rule, purge does not reclaim blobs at all."
+    assert blob_store.path(shared).exists(), (
+        "TC-STORE-11: the shared blob file did not survive a purge whose cohort was not "
+        "its last referencer."
+    )
+    report_b = store.purge_cohort("c-b")
+    assert report_b.blobs_deleted == 1, (
+        "TC-STORE-11: with both cohorts purged nothing references the hash anymore, so "
+        "the blob must be reclaimed — leaving it would be student bytes outliving every "
+        "purge that should have removed them."
+    )
+    assert not blob_store.path(shared).exists(), (
+        "TC-STORE-11: the blob file outlived its last referencing cohort's purge."
     )
 
 
@@ -199,27 +206,32 @@ def test_sec_13_after_purge_student_text_is_unrecoverable_and_tier_d_is_pseudony
     the combined claim."""
     store = open_store(tmp_data_dir)
     blob_store = store.blobs()
-    blob_store.put(f"raster-for-c-sec {SENTINEL}".encode())
+    sentinel_hash = blob_store.put(f"raster-for-c-sec {SENTINEL}".encode())
     _seed_cohort(store, "c-sec")
+    # The sentinel must be referenced by a cohort row: the rule #225 declares reclaims
+    # blobs the cohort's rows name, so an orphan blob would be nobody's to reclaim.
+    handle = store.cohort("c-sec")
+    with handle.transaction() as tx:
+        tx.execute(statement(
+            "INSERT INTO document (document_id, submission_id, content_hash) "
+            f"VALUES ('d-c-sec', 's-c-sec', '{sentinel_hash}')", issue=ISSUE))
     _promote(store, "c-sec")
 
     store.purge_cohort("c-sec")
 
     cohort_path = store.cohort_path("c-sec")
     assert SENTINEL.encode() not in cohort_path.read_bytes()
-    # The blob half is the §7.4 accepted risk, pinned: the declared rule is that purge does
-    # not touch the blob directory, so student bytes in a blob survive the purge that removed
-    # their database rows. That is the "leaves student bytes behind" direction of the open
-    # question, accepted because the alternative breaks another cohort's shared blobs. When
-    # the design declares the rule, this assertion and PurgeReport's honest zero change with
-    # it — the pin is what makes the gap visible instead of forgotten.
+    # The blob half, post-#225: the sentinel is referenced by a document row of the purged
+    # cohort and by nothing else in this data directory, so purge reclaims it — student
+    # bytes no longer outlive the purge that removed their last reference.
     surviving = [
         blob_file for blob_file in sorted((tmp_data_dir / "blobs").rglob("*"))
         if blob_file.is_file() and SENTINEL.encode() in blob_file.read_bytes()
     ]
-    assert surviving, (
-        "SEC-13: the sentinel blob is gone, but purge never reclaims blobs under the "
-        "declared rule — it can only disappear if something else deleted it."
+    assert surviving == [], (
+        f"SEC-13: the sentinel blob survived the purge: {surviving}. Purge reclaims the "
+        "blobs the cohort's rows referenced (#225); leaving student bytes behind is the "
+        "failure this probe exists to catch."
     )
     durable_path = store.durable_path()
     offenders = []
