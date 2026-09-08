@@ -269,9 +269,11 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     """`TC-SETUP-20` (NFR-SETUP-04, P1) — setup abandoned after step 3 (S3, the answer
     keys: the last blocking step the shipped implementation carries) leaves the partially
     completed version persisting as unpublished and continuable; the remaining-step count
-    tracks the truth across the abandonment: 1 while the inventory is unconfirmed, 0 once
-    both blocking steps are done, and — after a *fresh* `SetupService` over the same tiers
-    resumes the same version — the confirmed proposal, the done flags, and the publish."""
+    tracks the truth across the abandonment: 1 while the inventory is unconfirmed, 1 once
+    both blocking steps are done (the non-blocking rubric read-back then remains — #51
+    made it available once gate 1 holds), and — after a *fresh* `SetupService` over the
+    same tiers resumes the same version — the confirmed proposal, the done flags, and the
+    publish."""
     chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store)
 
@@ -286,7 +288,9 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     # Abandoned here: no publish. The version persists, unpublished, and is continuable.
     assert not chain.catalog.is_locked(version)
     progress = chain.service.steps()
-    assert progress.remaining_steps == 0
+    # 1, not 0: both blocking steps are done, but the non-blocking rubric read-back
+    # (#51) is now available-when-confirmed and not done — an honest console counts it.
+    assert progress.remaining_steps == 1
     assert progress.ready_to_publish
 
     resumed_catalog = PackageCatalog(chain.store.package(chain.package_id),
@@ -304,7 +308,8 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     assert [step.step_id for step in progress.steps if step.done] == [
         "inventory", "answer_keys",
     ]
-    assert progress.remaining_steps == 0
+    # 1 for the same reason as above: the read-back step is available and not done.
+    assert progress.remaining_steps == 1
 
     published = resumed.publish("teacher-1")
     assert published == version

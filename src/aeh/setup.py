@@ -1,5 +1,6 @@
-"""M-SETUP — Stage A: the question inventory proposal, the two blocking gates, and
-publication (#50; design §3.6, FR-SETUP-01/-02/-16, NFR-SETUP-04).
+"""M-SETUP — Stage A: the question inventory proposal, the rubric read-back, the two
+blocking gates, and publication (#50, #51; design §3.6, FR-SETUP-01/-02/-04/-05/-09/-16,
+NFR-SETUP-04).
 
 Stage A runs ONCE per package version (`CT-SETUP-16`): the assessment document the
 teacher ingested through `M-INGEST` is read (never re-ingested — `CT-SETUP-11`: setup
@@ -10,7 +11,10 @@ it, and the confirmed question rows are written through `M-PKG` (`FR-PKG-03`) �
 the §6.2 lock engages at the confirmation (`FR-SETUP-02`), deliberately earlier than
 publication. The confirmation IS the teacher's assertion about content; a lock that
 engaged only at publish would leave a window where the instrument could drift after
-the teacher signed it.
+the teacher signed it. After the gate, `read_back_rubric` (#51) reads the stored rubric
+into criteria and even band sets whose descriptors state what a response DOES — a
+descriptor carrying a magnitude phrase (`SETUP_MAGNITUDE_PHRASES`) or a bare numeral is
+rejected and re-requested, never stored (`FR-SETUP-05`).
 
 **The two blocking steps** (`CT-SETUP-01`, §4.2.1, `FR-CONSOLE-06`): exactly two setup
 operations block — confirming the question inventory (S3) and setting the answer keys
@@ -21,8 +25,10 @@ recorded default, and the steps this story does not stage yet are enumerated by
 `steps()` as present-and-unavailable, naming the story that stages them — the console
 tells the teacher the truth about what remains (`NFR-SETUP-04`, `FR-CONSOLE-25`):
 
-- rubric read-back: #51 (its `reference_solution` column already exists and is the one
-  field the confirmation lock leaves writable),
+- rubric read-back: HERE since #51 — non-blocking (`FR-SETUP-04`: the met/not-met
+  default a criterion without a band set takes is the recorded default, so the step can
+  be deferred; the derived set is recorded as `derived_default`, not passed off as an
+  explicit choice),
 - decomposability and dependencies: #52,
 - grade policy, grade boundaries and the prefix budget: #53 — which also stages S4's
   full `FR-SETUP-03` validation semantics. Here `set_answer_keys` is the thin,
@@ -42,8 +48,9 @@ The four seams, from the first commit:
 2. **Deterministic transport** — every model call goes through the `InferenceProvider`
    seam (`CT-PROV-01`); tests script a double, production passes a real provider, and
    no other egress exists (`CT-PROV-15`).
-3. **Env-gated knobs** — `HARNESS_SETUP_PROPOSAL_ATTEMPTS` (the degraded-path attempt
-   budget, read at CALL time per this codebase's knob doctrine).
+3. **Env-gated knobs** — `HARNESS_SETUP_PROPOSAL_ATTEMPTS` and
+   `HARNESS_SETUP_READBACK_ATTEMPTS` (the degraded-path attempt budgets, read at CALL
+   time per this codebase's knob doctrine).
 4. **Stage-level observability** — `LOGGER` ("aeh.setup") logs every proposal attempt,
    confirmation, gate refusal and publication; the proposal row carries its attempt
    count and status, so a degraded proposal is visible in the database, not just the
@@ -57,7 +64,9 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -73,13 +82,23 @@ from aeh.pkg import (
 from aeh.prov import InferenceProvider, ModelRef, PromptPayload, SamplingParams
 
 __all__ = [
+    "CriterionDraft",
     "InventoryProposal",
     "PROPOSAL_ATTEMPTS_DEFAULT",
     "PROPOSAL_ATTEMPTS_ENV",
+    "ProposedBand",
     "ProposedOption",
     "ProposedQuestion",
     "QuestionCorrection",
+    "READBACK_ATTEMPTS_DEFAULT",
+    "READBACK_ATTEMPTS_ENV",
+    "RubricReadback",
+    "SCORING_MODELS",
+    "SETUP_DEFAULT_BAND_COUNT",
+    "SETUP_EVIDENCE_TYPE_DEFAULT",
+    "SETUP_MAGNITUDE_PHRASES",
     "SETUP_PROMPT_TEMPLATE_V",
+    "SETUP_READBACK_TEMPLATE_V",
     "SetupError",
     "SetupOrderError",
     "SetupProgress",
@@ -120,6 +139,74 @@ def _configured_proposal_attempts() -> int:
     if value < 1:
         raise SetupError(
             f"{PROPOSAL_ATTEMPTS_ENV}={value} is below 1: at least one proposal "
+            "attempt is required."
+        )
+    return value
+
+
+#: The version-pinned read-back prompt (`NFR-SETUP-03`, `CT-SETUP-14`'s rule carried to
+#: the read back): changing the wording changes what the model was asked, which changes
+#: every criterion the read back produces from then on — so the text carries a version
+#: and the read-back row records which one produced it. A prompt change is a NEW version
+#: string, never an in-place edit of this constant's meaning.
+SETUP_READBACK_TEMPLATE_V = "setup-readback-v1"
+
+#: The default band-set size (`FR-SETUP-04`): a criterion whose construct carries no
+#: partial credit gets two bands — met / not met — derived from the criterion's own
+#: text. Configuration §3.6: `SETUP_DEFAULT_BAND_COUNT` (2).
+SETUP_DEFAULT_BAND_COUNT = 2
+
+#: The magnitude-phrase bar (`FR-SETUP-05`, Configuration §3.6: `SETUP_MAGNITUDE_PHRASES`):
+#: a generated band descriptor matching any of these (case-insensitive substring) is
+#: REJECTED and RE-GENERATED — the setup-time twin of FR-JUDGE-03 (no numeral in the
+#: scoring prompt) and FR-SYNTH-03 (no score claim in narrative): the system keeps
+#: magnitude language away from the model at every stage. The bar's other arm, a BARE
+#: NUMERAL, is a pattern rather than a phrase and lives in `_NUMERAL_IN_DESCRIPTOR`
+#: below; `M-JUDGE` never has to filter a descriptor (`CT-SETUP-06`).
+SETUP_MAGNITUDE_PHRASES: tuple[str, ...] = (
+    "good", "excellent", "weak", "adequate", "out of",
+)
+
+#: The bare-numeral arm of the magnitude bar (`FR-SETUP-05`): any digit in a descriptor
+#: is a points scale leaking back into the language the judge sees.
+_NUMERAL_IN_DESCRIPTOR = re.compile(r"\d")
+
+#: The evidence-type default (`FR-SETUP-09`): what kind of textual evidence satisfies a
+#: criterion the read back produces. The design pins no closed vocabulary — M-EXTRACT's
+#: interface example names `textual_span`, the common case of evidence located in the
+#: response's own text — so the read back attaches this when the model proposes none,
+#: and stores whatever non-empty declaration it does propose.
+SETUP_EVIDENCE_TYPE_DEFAULT = "textual_span"
+
+#: The read-back's scoring-model vocabulary. The criterion DDL leaves scoring_model open
+#: (its writers are trusted), but the design names exactly two models — `atomic` and
+#: `holistic` (FR-SETUP-13, FR-AGG-06) — so the read back proposes within those and a
+#: third name in a model reply is a schema-validation failure, re-requested.
+SCORING_MODELS: tuple[str, ...] = ("atomic", "holistic")
+
+#: The read-back attempt budget (`CT-SETUP-12`'s rule at the read back): a model reply
+#: that fails to parse, to validate, or to clear the magnitude bar is re-requested up to
+#: this many times, then the read back is recorded as `needs_manual_entry` — degraded
+#: but complete. Env-gated, read at CALL time (the knob doctrine: per operation, not
+#: per process load).
+READBACK_ATTEMPTS_ENV = "HARNESS_SETUP_READBACK_ATTEMPTS"
+READBACK_ATTEMPTS_DEFAULT = 3
+
+
+def _configured_readback_attempts() -> int:
+    """The read-back attempt budget, read at call time — never at import."""
+    raw = os.environ.get(READBACK_ATTEMPTS_ENV)
+    if not raw:
+        return READBACK_ATTEMPTS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise SetupError(
+            f"{READBACK_ATTEMPTS_ENV}={raw!r} is not an integer."
+        ) from error
+    if value < 1:
+        raise SetupError(
+            f"{READBACK_ATTEMPTS_ENV}={value} is below 1: at least one read-back "
             "attempt is required."
         )
     return value
@@ -228,6 +315,78 @@ class InventoryProposal:
 
 
 @dataclass(frozen=True)
+class ProposedBand:
+    """One band of a read-back criterion, in the STORED order — ordinals contiguous
+    from 0, points non-decreasing (`FR-PKG-06`'s order half), so the band a judge can
+    retreat to is the LOW one, never a safe middle. The model ranks bands best-first;
+    `read_back_rubric` fixes the ordering on read-back, which is the order §3.6's
+    Requires table assigns to this module."""
+
+    band: str
+    ordinal: int
+    points: float
+    descriptor: str
+
+
+@dataclass(frozen=True)
+class CriterionDraft:
+    """One criterion as the read back proposes it — the draft #52's decomposability
+    classification consumes and the teacher's confirmation makes the package's content.
+
+    `construct` is the criterion's own behavioural text as read from the rubric;
+    `band_count` is EVEN in 2..6 (`FR-SETUP-04`); `bands` are `ProposedBand`s in stored
+    order; `justification` records why the band set exceeds the two-band default
+    (partial credit genuinely part of the construct) and is empty exactly when
+    `band_count == SETUP_DEFAULT_BAND_COUNT`; `evidence_type` declares what kind of
+    textual evidence satisfies the criterion (`FR-SETUP-09` — M-INTEG routes on it,
+    FR-INTEG-03)."""
+
+    criterion_id: str
+    question_id: str
+    kind: str
+    scoring_model: str
+    max_points: float
+    construct: str
+    band_count: int
+    bands: tuple[ProposedBand, ...]
+    justification: str = ""
+    evidence_type: str = SETUP_EVIDENCE_TYPE_DEFAULT
+    #: `proposed` when the model proposed the band set, `derived_default` when the
+    #: module derived the two-band met / not-met set (`FR-SETUP-14`: a default taken
+    #: is recorded, not indistinguishable from an explicit choice).
+    bands_source: str = "proposed"
+
+
+@dataclass(frozen=True)
+class RubricReadback:
+    """The read back a version holds, as rebuilt from its stored row.
+
+    `status` is the payload's own word: `proposed` (criteria and bands written to the
+    draft, awaiting #52's classification and the teacher's confirmation) or
+    `needs_manual_entry` (the degraded path: every reply failed to parse, to validate,
+    or to clear the magnitude bar within the attempt budget — degraded but complete,
+    `CT-SETUP-12`, with the last error in `reason`). `attempts` is how many model calls
+    the stored read back cost, `model_ref` the build that answered (`FR-PROV-04`),
+    `template_version` the pinned prompt that asked (`NFR-SETUP-03`)."""
+
+    rubric_doc_id: DocumentId
+    assessment_doc_id: DocumentId
+    package_version_id: PackageVersionId
+    template_version: str
+    model_ref: str
+    attempts: int
+    criteria: tuple[CriterionDraft, ...]
+    status: str
+    reason: str = ""
+
+    def entry(self, criterion_id: str) -> CriterionDraft | None:
+        for criterion in self.criteria:
+            if criterion.criterion_id == criterion_id:
+                return criterion
+        return None
+
+
+@dataclass(frozen=True)
 class SetupStep:
     """One setup step as the console renders it (`NFR-SETUP-04`, `FR-CONSOLE-25`).
 
@@ -297,6 +456,38 @@ _INVENTORY_INSTRUCTION = (
     '{"question_id": "Q2", "ordinal": 2, "prompt_text": "...", '
     '"question_type": "mcq", "max_points": 2, "options": [{"option_id": "A", '
     '"ordinal": 0, "label": "..."}]}]}'
+)
+
+_READBACK_INSTRUCTION = (
+    "You are reading one rubric document and proposing the criteria and band sets a "
+    "grading package will judge against (HLD §7.8, Phase 1 — read back, never improve: "
+    "correcting a rubric is a gated, separate step the teacher owns). Anchor every "
+    "criterion to a question the confirmed inventory carries.\n"
+    "- kind is 'open' when the criterion judges written work, 'mcq' when it judges a "
+    "marked choice; scoring_model is 'atomic' when the criterion stands alone, "
+    "'holistic' when it can only be judged as a whole.\n"
+    "- band_count must be an EVEN number in 2..6. Omit it and bands entirely when the "
+    "criterion is a met / not met judgment — the two-band default is derived for you.\n"
+    "- Propose explicit bands ONLY where partial credit is genuinely part of the "
+    "construct, and then carry a 'justification' string saying what earns the partial "
+    "credit.\n"
+    "- Rank bands BEST-FIRST: ordinal 1 is the best band, and points descend to the "
+    "worst. The stored ordering is fixed afterwards; your ranking is what is read.\n"
+    "- Every band descriptor must state what a response IN THAT BAND DOES — the "
+    "observable action, not a quality judgment. NEVER use the words good, excellent, "
+    "weak, adequate, or 'out of', and never write a numeral anywhere in a descriptor: "
+    "a descriptor containing a number is a points scale leaking into the language the "
+    "judge sees, and it will be rejected.\n"
+    "- evidence_type names what kind of textual evidence satisfies the criterion "
+    "(omit it to take the default).\n"
+    "Reply with ONLY a JSON object, no prose, of this shape:\n"
+    '{"criteria": [{"criterion_id": "CRIT-1", "question_id": "Q1", "kind": "open", '
+    '"scoring_model": "holistic", "max_points": 4, '
+    '"construct": "what the criterion asks for, behaviourally", '
+    '"evidence_type": "textual_span", '
+    '"bands": [{"band": "met", "ordinal": 1, "points": 4, "descriptor": "the response '
+    'does ..."}, {"band": "not met", "ordinal": 2, "points": 0, "descriptor": "the '
+    'response does not ..."}]}]}'
 )
 
 
@@ -538,6 +729,392 @@ def _proposal_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> Inventory
     )
 
 
+# --- the rubric read-back (FR-SETUP-04/-05/-09, #51) --------------------------------------------
+#
+# The read back turns the rubric artifact into criterion drafts with band sets. Two
+# rules carry the design's teeth:
+#
+#   * the magnitude bar (`FR-SETUP-05`): a band descriptor matching
+#     `SETUP_MAGNITUDE_PHRASES` — or containing any digit — is a schema-validation
+#     failure of the reply, re-requested within the attempt budget, never stored. The
+#     rejection is the point: judges see descriptors, not a points scale in disguise.
+#   * the band-order fix (`FR-PKG-06`'s order half): the model ranks bands best-first
+#     (ordinal 1 = best, points descending); the STORED order is points-ascending with
+#     ordinals contiguous from 0, because the band a judge can retreat to must be the
+#     LOW one. §3.6's Requires table assigns that fix to this module: "band ordering is
+#     fixed on read-back".
+#
+# A criterion whose construct carries no partial credit arrives with no bands at all
+# (the common real case, §3.6's open question): the module derives the default two-band
+# met / not-met set anchored on the criterion's own text.
+
+
+def _descriptor_offense(text: str) -> str | None:
+    """What the magnitude bar finds in one descriptor, or None: a configured phrase
+    (case-insensitive substring) or any digit. The message names the match — it is the
+    re-request's reason and the log line the operator reads."""
+
+    lowered = text.lower()
+    for phrase in SETUP_MAGNITUDE_PHRASES:
+        if phrase.lower() in lowered:
+            return f"the magnitude phrase {phrase!r}"
+    numeral = _NUMERAL_IN_DESCRIPTOR.search(text)
+    if numeral:
+        return f"a bare numeral ({numeral.group(0)!r})"
+    return None
+
+
+def _derived_default_bands(construct: str, max_points: float) -> tuple[ProposedBand, ...]:
+    """The two-band default (`FR-SETUP-04`): met / not met, anchored on the criterion's
+    own text — the met band's descriptor IS the construct (the rubric's behavioural
+    sentence, not a magnitude word), the not-met band states what falls outside it.
+    Derived descriptors pass the same magnitude bar as proposed ones: if the construct
+    itself carries a phrase or a numeral, the reply is rejected and re-requested — the
+    model is asked for a cleaner statement of the construct."""
+
+    met = construct.strip()
+    not_met = f"the response does not do what the criterion describes ({met})"
+    return (
+        ProposedBand(band="not met", ordinal=0, points=0.0, descriptor=not_met),
+        ProposedBand(band="met", ordinal=1, points=max_points, descriptor=met),
+    )
+
+
+def _normalize_bands(raw_bands: Sequence[Mapping], construct: str,
+                     max_points: float) -> tuple[ProposedBand, ...]:
+    """Fix the band ordering on read-back (`FR-PKG-06`'s order half): sort by points
+    ascending — the reply's own order breaking ties, so the model's ranking survives
+    a flat band set — and re-base the ordinals to contiguous-from-0. The reply's
+    descriptor content has already cleared the magnitude bar before this runs.
+
+    The reply's bands are typed into `ProposedBand` FIRST and ordered through the
+    attribute: this module orders and writes band points, it never reads a stored band
+    row to map a band to a score — that mapping is `points_for_band`'s alone
+    (`TC-PKG-C05`, RISK-05), and the typed shape is what keeps the two apart."""
+
+    typed = tuple(
+        ProposedBand(band=str(band["band"]), ordinal=int(band["ordinal"]),
+                     points=float(band.get("points", 0.0)),
+                     descriptor=str(band["descriptor"]))
+        for band in raw_bands
+    )
+    ordered = sorted(enumerate(typed), key=lambda pair: (pair[1].points, pair[0]))
+    return tuple(
+        ProposedBand(band=band.band, ordinal=fixed_ordinal, points=band.points,
+                     descriptor=band.descriptor)
+        for fixed_ordinal, (_reply_ordinal, band) in enumerate(ordered)
+    )
+
+
+def _parse_readback_reply(
+    text: str, confirmed_ids: Mapping[str, Mapping],
+) -> tuple[CriterionDraft, ...]:
+    """Parse the model's read-back reply into criterion drafts, raising `_ReplyError`
+    on anything that is not a valid read-back — the failure the attempt loop
+    re-requests. Validity here is the whole bar: schema fields, the band rules
+    (`FR-PKG-06`'s count half), the justification rule (`FR-SETUP-04`), and the
+    magnitude scan (`FR-SETUP-05`) over every proposed AND derived descriptor — the
+    stored set must be clean whatever produced it."""
+
+    stripped = text.strip()
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start < 0 or end <= start:
+        raise _ReplyError("the reply contains no JSON object.")
+    try:
+        parsed = json.loads(stripped[start:end + 1])
+    except ValueError as error:
+        raise _ReplyError(f"the reply is not valid JSON: {error}") from error
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("criteria"), list):
+        raise _ReplyError("the reply's JSON does not carry a 'criteria' list.")
+    if not parsed["criteria"]:
+        raise _ReplyError(
+            "the reply proposes zero criteria — a rubric read back that reads nothing "
+            "is not a read back."
+        )
+    drafts: list[CriterionDraft] = []
+    seen_ids: set[str] = set()
+    for index, raw in enumerate(parsed["criteria"]):
+        if not isinstance(raw, dict):
+            raise _ReplyError(f"criterion #{index} is not an object.")
+        criterion_id = raw.get("criterion_id")
+        if not isinstance(criterion_id, str) or not criterion_id.strip():
+            raise _ReplyError(
+                f"criterion #{index}: criterion_id must be a non-empty string."
+            )
+        if criterion_id in seen_ids:
+            raise _ReplyError(
+                f"criterion #{index}: duplicate criterion_id {criterion_id!r}."
+            )
+        seen_ids.add(criterion_id)
+        question_id = raw.get("question_id")
+        if not isinstance(question_id, str) or not question_id.strip():
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: question_id must be a non-empty string."
+            )
+        if question_id not in confirmed_ids:
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: question_id {question_id!r} is not in "
+                "the CONFIRMED inventory — criteria anchor to confirmed questions "
+                "(FR-SETUP-02), and an invented anchor is a proposal bug."
+            )
+        kind = raw.get("kind")
+        if kind not in ("open", "mcq"):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: kind {kind!r} is outside the vocabulary "
+                "('open', 'mcq')."
+            )
+        scoring_model = raw.get("scoring_model")
+        if scoring_model not in SCORING_MODELS:
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: scoring_model {scoring_model!r} is "
+                f"outside the vocabulary {SCORING_MODELS} (FR-SETUP-13, FR-AGG-06)."
+            )
+        max_points = raw.get("max_points", 0.0)
+        if isinstance(max_points, bool) or not isinstance(max_points, (int, float)):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: max_points must be a number, got "
+                f"{max_points!r}."
+            )
+        if max_points < 0:
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: max_points {max_points} is negative."
+            )
+        if not math.isfinite(max_points):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: max_points {max_points} is not a finite "
+                "number — NaN would fail the band write outright and an infinity would "
+                "make every band unreachable."
+            )
+        construct = raw.get("construct")
+        if not isinstance(construct, str) or not construct.strip():
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: construct must be non-empty — the "
+                "criterion's own behavioural text is what the default band set "
+                "anchors on."
+            )
+        raw_bands = raw.get("bands", [])
+        if not isinstance(raw_bands, list):
+            raise _ReplyError(f"criterion {criterion_id!r}: bands must be a list.")
+        band_count = raw.get("band_count", len(raw_bands) or SETUP_DEFAULT_BAND_COUNT)
+        if (not isinstance(band_count, int) or isinstance(band_count, bool)
+                or band_count < 2 or band_count > 6 or band_count % 2 != 0):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: band_count {band_count!r} is odd or "
+                "outside 2..6 (FR-SETUP-04). The even count removes the safe middle "
+                "band a hesitant judge retreats to (design §5.10, R40)."
+            )
+        justification = raw.get("justification", "")
+        if justification is None:
+            justification = ""
+        if not isinstance(justification, str):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: justification must be a string."
+            )
+        if band_count > SETUP_DEFAULT_BAND_COUNT and not justification.strip():
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: band_count {band_count} exceeds the "
+                "two-band default without a justification (FR-SETUP-04) — partial "
+                "credit that is genuinely part of the construct is recorded, not "
+                "silent."
+            )
+        evidence_type = raw.get("evidence_type")
+        if evidence_type is None:
+            evidence_type = SETUP_EVIDENCE_TYPE_DEFAULT
+        if not isinstance(evidence_type, str) or not evidence_type.strip():
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: evidence_type, when given, must be a "
+                "non-empty string (FR-SETUP-09) — a declaration of nothing satisfies "
+                "no criterion."
+            )
+        if raw_bands:
+            if len(raw_bands) != band_count:
+                raise _ReplyError(
+                    f"criterion {criterion_id!r}: {len(raw_bands)} band(s) proposed "
+                    f"against a declared band_count of {band_count}."
+                )
+            for band_index, raw_band in enumerate(raw_bands):
+                if not isinstance(raw_band, dict):
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band #{band_index} is not an "
+                        "object."
+                    )
+                label = raw_band.get("band")
+                if not isinstance(label, str) or not label.strip():
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band #{band_index}: band label "
+                        "must be non-empty."
+                    )
+                points = raw_band.get("points", 0.0)
+                if isinstance(points, bool) or not isinstance(points, (int, float)):
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: points must be "
+                        f"a number, got {points!r}."
+                    )
+                if points < 0:
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: points "
+                        f"{points} is negative."
+                    )
+                if not math.isfinite(points):
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: points {points} "
+                        "is not a finite number — the JSON decoder accepts NaN and "
+                        "Infinity, and neither is a points value a band can carry."
+                    )
+                descriptor = raw_band.get("descriptor")
+                if not isinstance(descriptor, str) or not descriptor.strip():
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: descriptor must "
+                        "state what a response in that band DOES — an empty "
+                        "descriptor states nothing."
+                    )
+                offense = _descriptor_offense(descriptor)
+                if offense:
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: its descriptor "
+                        f"carries {offense} (FR-SETUP-05) — judges see what a "
+                        "response does, never a quality word or a points scale."
+                    )
+            bands = _normalize_bands(raw_bands, construct, float(max_points))
+            bands_source = "proposed"
+        else:
+            if band_count != SETUP_DEFAULT_BAND_COUNT:
+                raise _ReplyError(
+                    f"criterion {criterion_id!r}: no bands proposed but band_count "
+                    f"{band_count} is not the default — propose the bands or omit "
+                    "the count."
+                )
+            bands = _derived_default_bands(construct, float(max_points))
+            bands_source = "derived_default"
+            for band in bands:
+                offense = _descriptor_offense(band.descriptor)
+                if offense:
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r}: its construct carries {offense}, "
+                        "which would leak into the derived band descriptors "
+                        "(FR-SETUP-05) — restate the construct behaviourally."
+                    )
+        drafts.append(CriterionDraft(
+            criterion_id=criterion_id, question_id=question_id, kind=kind,
+            scoring_model=scoring_model, max_points=float(max_points),
+            construct=construct, band_count=band_count, bands=bands,
+            justification=justification.strip(), evidence_type=evidence_type.strip(),
+            bands_source=bands_source,
+        ))
+    return tuple(drafts)
+
+
+def _criterion_to_dict(draft: CriterionDraft) -> dict:
+    """The payload shape for one read-back criterion — plain mappings, because the
+    data layer does not import this module's types. `bands_source` is
+    `proposed` or `derived_default` (`FR-SETUP-14`: a default taken is recorded)."""
+    return {
+        "criterion_id": draft.criterion_id,
+        "question_id": draft.question_id,
+        "kind": draft.kind,
+        "scoring_model": draft.scoring_model,
+        "max_points": draft.max_points,
+        "construct": draft.construct,
+        "band_count": draft.band_count,
+        "evidence_type": draft.evidence_type,
+        "justification": draft.justification,
+        "bands_source": draft.bands_source,
+        "bands": [
+            {"band": band.band, "ordinal": band.ordinal, "points": band.points,
+             "descriptor": band.descriptor}
+            for band in draft.bands
+        ],
+    }
+
+
+def _criterion_record(draft: CriterionDraft) -> dict:
+    """The write shape `PackageCatalog.write_readback` validates and stores — the
+    payload dict's sibling under M-PKG's names (`construct_tag`, `band_justification`)."""
+    return {
+        "criterion_id": draft.criterion_id,
+        "question_id": draft.question_id,
+        "kind": draft.kind,
+        "max_points": draft.max_points,
+        "scoring_model": draft.scoring_model,
+        "construct_tag": draft.construct,
+        "band_count": draft.band_count,
+        "evidence_type": draft.evidence_type,
+        "band_justification": draft.justification or None,
+        "bands": [
+            {"band": band.band, "ordinal": band.ordinal, "points": band.points,
+             "descriptor": band.descriptor}
+            for band in draft.bands
+        ],
+    }
+
+
+def _stored_readback_status(row: Mapping[str, Any] | None) -> str:
+    """The stored read-back row's status — a field of the PAYLOAD, not a column.
+
+    `steps()` reads this to report done / degraded honestly (`NFR-SETUP-04`): the
+    row's own columns are provenance (documents, prompt, build, attempts), and the
+    status word the module wrote lives inside the payload it mirrors. A row whose
+    payload cannot be parsed reads as not-done rather than crashing the console's
+    enumeration — the row is provenance, and provenance is not silently replaced."""
+    if not row:
+        return ""
+    try:
+        return str(json.loads(row["payload"]).get("status") or "")
+    except (KeyError, TypeError, ValueError):
+        return ""
+
+
+def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricReadback:
+    """Rebuild the stored read back — the resume path's read (`CT-SETUP-03`: state is
+    the database). A malformed stored payload raises `SetupError` naming the corruption
+    rather than silently re-reading the rubric over it."""
+
+    try:
+        payload = json.loads(row["payload"])
+        status = payload["status"]
+        entries = payload.get("criteria", [])
+        reason = payload.get("reason", "")
+    except (ValueError, KeyError, TypeError) as error:
+        raise SetupError(
+            f"the stored read-back for version {v!r} is malformed ({error}) — the "
+            "payload is provenance and is not silently replaced; delete the version "
+            "and run setup again."
+        ) from error
+    criteria = tuple(
+        CriterionDraft(
+            criterion_id=str(entry["criterion_id"]),
+            question_id=str(entry["question_id"]),
+            kind=str(entry["kind"]),
+            scoring_model=str(entry["scoring_model"]),
+            max_points=float(entry.get("max_points", 0.0)),
+            construct=str(entry.get("construct", "")),
+            band_count=int(entry["band_count"]),
+            bands=tuple(
+                ProposedBand(band=str(band["band"]), ordinal=int(band["ordinal"]),
+                             points=float(band.get("points", 0.0)),
+                             descriptor=str(band["descriptor"]))
+                for band in entry.get("bands", ())
+            ),
+            justification=str(entry.get("justification", "")),
+            evidence_type=str(entry.get("evidence_type",
+                                        SETUP_EVIDENCE_TYPE_DEFAULT)),
+            bands_source=str(entry.get("bands_source", "proposed")),
+        )
+        for entry in entries
+    )
+    return RubricReadback(
+        rubric_doc_id=str(row["rubric_doc_id"]),
+        assessment_doc_id=str(row["assessment_doc_id"]),
+        package_version_id=v,
+        template_version=str(row["template_version"]),
+        model_ref=str(row["model_ref"]),
+        attempts=int(row["attempts"]),
+        criteria=criteria,
+        status=status,
+        reason=str(reason),
+    )
+
+
 class SetupService:
     """M-SETUP's Stage A, end to end, from code (`CT-SETUP-11`'s headless driver).
 
@@ -554,12 +1131,14 @@ class SetupService:
     ============================  =============================================
     `propose_inventory`           here — one proposal per version (`CT-SETUP-16`)
     `confirm_inventory`           here — BLOCKING gate 1; locks the rows
+    `read_back_rubric`            here — #51: criteria and even band sets, magnitude
+                                  descriptors rejected and re-requested; one read
+                                  back per version (`CT-SETUP-16`)
     `set_answer_keys`             here — BLOCKING gate 2 (thin; #53 stages the
                                   full `FR-SETUP-03` semantics)
     `publish`                     here — refused until both gates hold
     `ensure_version`, `steps`,    here — the resume and console surfaces
     `current_proposal`
-    `read_back_rubric`            #51 (the `reference_solution` column exists)
     `classify_decomposability`,   #52
     `confirm_classifications`,
     `propose_dependencies`
@@ -636,7 +1215,8 @@ class SetupService:
                     step_id="rubric_readback",
                     name="Rubric read-back against the stored rubric",
                     blocking=False, available=False, done=False,
-                    note="staged by #51",
+                    note="needs a draft version and a confirmed inventory — the read "
+                    "back anchors criteria to confirmed questions (FR-SETUP-02)",
                 ),
                 SetupStep(
                     step_id="decomposability",
@@ -688,12 +1268,29 @@ class SetupService:
             keys_note = f"answer keys missing for: {', '.join(unkeyed)}"
         elif not any(row.get("scoring_model") == "atomic" for row in criteria):
             keys_note = "no deterministic criteria yet — #53 stages their creation"
+        # The rubric read-back went live with #51: available once gate 1 is met, done
+        # when the stored read-back row reads `proposed` (the degraded row is a fact
+        # the note carries, not a done). The status lives in the row's PAYLOAD — the
+        # row's own columns are provenance only. The getattr guard keeps the
+        # enumeration honest over rung-0 doubles that do not model the write surface —
+        # a missing member reads as "not done", never as a console crash.
+        readback_member = getattr(self._catalog, "readback", None)
+        stored_readback = readback_member(v) if readback_member is not None else None
+        readback_status = _stored_readback_status(stored_readback)
+        readback_note = ""
+        if not confirmed:
+            readback_note = "unlocks when the question inventory is confirmed (§4.2.1)"
+        elif readback_status == "needs_manual_entry":
+            readback_note = ("the read back degraded to needs_manual_entry after its "
+                             "attempt budget — enter criteria through M-PKG, or a new "
+                             "version re-reads the rubric (FR-SETUP-04)")
         later = (
             SetupStep(
                 step_id="rubric_readback",
                 name="Rubric read-back against the stored rubric",
-                blocking=False, available=False, done=False,
-                note="staged by #51",
+                blocking=False, available=confirmed,
+                done=readback_status == "proposed",
+                note=readback_note,
             ),
             SetupStep(
                 step_id="decomposability",
@@ -966,6 +1563,133 @@ class SetupService:
             "inventory confirmed for version %s (%d question(s), %d correction(s)) — "
             "the question rows are locked (FR-SETUP-02)", v, len(questions),
             len(corrections),
+        )
+
+    def read_back_rubric(self, rubric_doc: DocumentId,
+                         assessment_doc: DocumentId) -> RubricReadback:
+        """Read the stored rubric back into criteria and band sets (`§3.6`'s Interface,
+        `FR-SETUP-04`/`-05`/`-09`).
+
+        Gate 1 (the confirmed inventory) must be met first — criteria anchor to
+        confirmed questions (`SetupOrderError` otherwise). The rubric and assessment are
+        read through `M-INGEST` (`CT-SETUP-11`); each attempt is one model call through
+        the provider seam within the `HARNESS_SETUP_READBACK_ATTEMPTS` budget. A reply
+        that fails to parse, anchors to an unconfirmed question, or carries a band
+        descriptor matching `SETUP_MAGNITUDE_PHRASES` (or a bare numeral) is
+        re-requested (`FR-SETUP-05`); after the budget the read back degrades to
+        `needs_manual_entry` — recorded, so the teacher enters the criteria through
+        `M-PKG` and the console says what happened rather than retrying forever.
+
+        The stored row comes back unchanged (the resume path — no new model call,
+        `CT-SETUP-03`), and a read back is ONCE per version (`CT-SETUP-16`): the row is
+        provenance, written all-or-nothing through `M-PKG` (`CT-PKG-11`)."""
+        v = self._require_draft_version()
+        stored = self._catalog.readback(v)
+        if stored is not None:
+            readback = _readback_from_row(v, stored)
+            LOGGER.info("resuming with the stored rubric read-back for version %s "
+                        "(status %s, %d attempt(s))", v, readback.status,
+                        readback.attempts)
+            return readback
+        proposal = self._catalog.proposal(v)
+        if proposal is None or not proposal["confirmed_at"]:
+            raise SetupOrderError(
+                f"the inventory for version {v!r} is not confirmed yet — the rubric "
+                "read-back anchors criteria to confirmed questions, so gate 1 "
+                "(§4.2.1) must be met before it runs (FR-SETUP-02)."
+            )
+        taken = [row["criterion_id"] for row in self._catalog.criteria(v)]
+        if taken:
+            # Reachable through M-PKG's public add_criterion — the same manual path
+            # the degraded note directs a teacher to. The read back writes criteria
+            # onto a clean draft (CT-PKG-11: a rejected write is a no-op, so the next
+            # attempt re-proposes onto that clean draft); merging its output with
+            # hand-added criteria is a decision a model call cannot make, so refuse
+            # BEFORE spending the attempt budget rather than letting M-PKG's refusal
+            # escape mid-write.
+            raise SetupOrderError(
+                f"version {v!r} already carries criterion rows ({', '.join(taken[:4])}"
+                f"{', …' if len(taken) > 4 else ''}) — the rubric read-back writes "
+                "criteria onto a clean draft and would collide with them. A version "
+                "is either hand-authored or read back, not both; a fresh read-back is "
+                "a new version (FR-PKG-02)."
+            )
+        rubric_markdown = self._ingestor.read_document(rubric_doc)
+        assessment_markdown = self._ingestor.read_document(assessment_doc)
+        confirmed_ids = frozenset(
+            row["question_id"] for row in self._catalog.questions(v)
+        )
+        payload = PromptPayload(fields=(
+            ("instruction", _READBACK_INSTRUCTION),
+            ("rubric_transcript", rubric_markdown),
+            ("assessment_transcript", assessment_markdown),
+        ))
+        budget = _configured_readback_attempts()
+        last_error = ""
+        for attempt in range(1, budget + 1):
+            try:
+                completion = self._provider.complete(payload, self._model_ref,
+                                                     self._params)
+                criteria = _parse_readback_reply(completion.text, confirmed_ids)
+            except _ReplyError as error:
+                last_error = f"attempt {attempt}: {error}"
+                LOGGER.warning("rubric read-back reply failed to parse (%d/%d): %s",
+                               attempt, budget, error)
+                continue
+            except Exception as error:  # contained: the transport's failure is a
+                # failed attempt, and the degraded path — not a crash — is the
+                # honest end of a budget spent (CT-SETUP-12's pattern).
+                last_error = f"attempt {attempt}: {type(error).__name__}: {error}"
+                LOGGER.warning("rubric read-back attempt %d/%d failed: %s",
+                               attempt, budget, error)
+                continue
+            body = {
+                "status": "proposed",
+                "criteria": [_criterion_to_dict(criterion) for criterion in criteria],
+            }
+            self._catalog.write_readback(
+                v, rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
+                criteria=[_criterion_record(criterion) for criterion in criteria],
+                payload=json.dumps(body, sort_keys=True),
+                template_version=SETUP_READBACK_TEMPLATE_V,
+                model_ref=completion.resolved_build, attempts=attempt,
+                created_at=_now(),
+            )
+            LOGGER.info(
+                "read the rubric back for version %s from documents %s/%s: %d "
+                "criterion(s) in %d attempt(s), prompt %s",
+                v, rubric_doc, assessment_doc, len(criteria), attempt,
+                SETUP_READBACK_TEMPLATE_V,
+            )
+            return RubricReadback(
+                rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
+                package_version_id=v, template_version=SETUP_READBACK_TEMPLATE_V,
+                model_ref=completion.resolved_build, attempts=attempt,
+                criteria=criteria, status="proposed",
+            )
+
+        body = {
+            "status": "needs_manual_entry",
+            "criteria": [],
+            "reason": last_error,
+        }
+        self._catalog.write_readback(
+            v, rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
+            criteria=[], payload=json.dumps(body, sort_keys=True),
+            template_version=SETUP_READBACK_TEMPLATE_V,
+            model_ref=self._model_ref.build_id, attempts=budget,
+            created_at=_now(),
+        )
+        LOGGER.warning(
+            "rubric read-back for version %s degraded to needs_manual_entry after "
+            "%d attempt(s): %s — the teacher enters the criteria through M-PKG "
+            "(CT-SETUP-12's pattern)", v, budget, last_error,
+        )
+        return RubricReadback(
+            rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
+            package_version_id=v, template_version=SETUP_READBACK_TEMPLATE_V,
+            model_ref=self._model_ref.build_id, attempts=budget, criteria=(),
+            status="needs_manual_entry", reason=last_error,
         )
 
     def set_answer_keys(self, keys: Mapping[str, Sequence[str]]) -> None:

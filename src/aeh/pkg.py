@@ -1207,6 +1207,81 @@ _PKG_QUESTION_INVENTORY = Migration(
     ),
 )
 
+# The rubric read-back (§3.6, #51): the provenance row for the one read-back per version
+# (CT-SETUP-16, the proposal row's twin) and the two criterion columns the read back fills.
+#
+# `evidence_type` (FR-SETUP-09) declares what kind of textual evidence satisfies the
+# criterion — M-INTEG routes on it (FR-INTEG-03: empty evidence is routed, never
+# auto-scored). The design pins no closed vocabulary for it (M-EXTRACT's interface example
+# names `textual_span`), so the column is TEXT without a CHECK: a CHECK would invent the
+# vocabulary the design withholds.
+#
+# `band_justification` (FR-SETUP-04) records WHY a criterion carries more than the default
+# two bands — partial credit genuinely part of the construct — so the wider band set is
+# auditable rather than arbitrary. Written only through `write_readback`, which refuses a
+# band_count above two without one.
+#
+# Neither column joins SCHEMA_LOCK_FIELDS: the §6.2 list enumerates the HLD's named fields
+# (13, unchanged), and a published version's criterion rows already refuse EVERY UPDATE
+# through the migration-002 triggers — a new column is locked by the same backstop, not by
+# a second list.
+#
+# The read-back row is written ONCE, after the criteria it produced are written, in the
+# same transaction; a draft re-runs nothing (resume returns the stored row, CT-SETUP-03).
+# Published immunity is the 002 pattern carried to the new table. No confirmation lock:
+# criteria are not question rows — they are mutable until the version publishes.
+_PKG_SETUP_READBACK = Migration(
+    version=8,
+    name="pkg_setup_readback",
+    statements=(
+        Statement(
+            "ALTER TABLE criterion ADD COLUMN evidence_type TEXT"
+        ),
+        Statement(
+            "ALTER TABLE criterion ADD COLUMN band_justification TEXT"
+        ),
+        Statement(
+            """
+            CREATE TABLE setup_readback (
+                package_version_id TEXT    NOT NULL PRIMARY KEY
+                    REFERENCES package_version(package_version_id),
+                rubric_doc_id      TEXT    NOT NULL,
+                assessment_doc_id  TEXT    NOT NULL,
+                payload            TEXT    NOT NULL,
+                template_version   TEXT    NOT NULL,
+                model_ref          TEXT    NOT NULL,
+                attempts           INTEGER NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+                created_at         TEXT    NOT NULL
+            )
+            """
+        ),
+        # -- published immunity (the 002 pattern) --
+        Statement(
+            "CREATE TRIGGER setup_readback_immutable BEFORE UPDATE ON setup_readback "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_readback "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_readback_insert_locked BEFORE INSERT ON "
+            "setup_readback "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_readback "
+            "added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_readback_delete_refused BEFORE DELETE ON "
+            "setup_readback "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_readback "
+            "removed from a published version'); END"
+        ),
+    ),
+)
+
 # --- the owning-module contribution to the store's migration registry ---------------------------
 #
 # Appended at import: after this module is imported, Tier P's current schema version is 2
@@ -1240,9 +1315,16 @@ PKG_STATEMENTS.update({
         "SELECT COUNT(*) AS n FROM package WHERE package_id = :p"
     ),
     "pkg_revision_copy_criterion": Statement(
+        # The columns migration 8 added (evidence_type, band_justification) join the
+        # copy from their first commit: a revision copies the read-back payload row
+        # too, and a copied payload that asserts an evidence_type beside criterion
+        # rows whose evidence_type is NULL would contradict itself. (The max_points-
+        # era columns this statement already dropped are a pre-existing gap, not
+        # #51's to close silently.)
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
-        "answer_key) SELECT :new, criterion_id, question_id, kind, answer_key "
-        "FROM criterion WHERE package_version_id = :old"
+        "answer_key, evidence_type, band_justification) "
+        "SELECT :new, criterion_id, question_id, kind, answer_key, evidence_type, "
+        "band_justification FROM criterion WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
         "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
@@ -1313,7 +1395,8 @@ PKG_STATEMENTS.update({
     ),
     "select_criteria": Statement(
         "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
-        "construct_tag, band_count, answer_key FROM criterion "
+        "construct_tag, band_count, answer_key, evidence_type, band_justification "
+        "FROM criterion "
         "WHERE package_version_id = :v ORDER BY criterion_id"
     ),
     "select_bands": Statement(
@@ -1519,6 +1602,31 @@ PKG_STATEMENTS.update({
         "UPDATE setup_proposal SET confirmed_at = :confirmed_at "
         "WHERE package_version_id = :v"
     ),
+    # -- rubric read-back (#51): the provenance row and the columns it fills --------------
+    "select_readback": Statement(
+        "SELECT rubric_doc_id, assessment_doc_id, payload, template_version, "
+        "model_ref, attempts, created_at FROM setup_readback "
+        "WHERE package_version_id = :v"
+    ),
+    "insert_readback": Statement(
+        "INSERT INTO setup_readback (package_version_id, rubric_doc_id, "
+        "assessment_doc_id, payload, template_version, model_ref, attempts, created_at) "
+        "VALUES (:v, :rubric_doc_id, :assessment_doc_id, :payload, :template_version, "
+        ":model_ref, :attempts, :created_at)"
+    ),
+    "insert_readback_criterion": Statement(
+        "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
+        "max_points, scoring_model, construct_tag, band_count, evidence_type, "
+        "band_justification) VALUES (:v, :criterion_id, :question_id, :kind, "
+        ":max_points, :scoring_model, :construct_tag, :band_count, :evidence_type, "
+        ":band_justification)"
+    ),
+    "pkg_revision_copy_setup_readback": Statement(
+        "INSERT INTO setup_readback (package_version_id, rubric_doc_id, "
+        "assessment_doc_id, payload, template_version, model_ref, attempts, created_at) "
+        "SELECT :new, rubric_doc_id, assessment_doc_id, payload, template_version, "
+        "model_ref, attempts, created_at FROM setup_readback WHERE package_version_id = :old"
+    ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
     # statement exists, and the guard selects by field name.
@@ -1564,6 +1672,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_GRADE_POLICY_AND_KEYS,)
     + (_PKG_EXPORT_GATE,)
     + (_PKG_QUESTION_INVENTORY,)
+    + (_PKG_SETUP_READBACK,)
 )
 
 #: The revision copy order: parents before children, so every copied row's FK is
@@ -1579,6 +1688,7 @@ _REVISION_COPY_KEYS: tuple[str, ...] = (
     "pkg_revision_copy_grade_policy",
     "pkg_revision_copy_grade_boundary",
     "pkg_revision_copy_setup_proposal",
+    "pkg_revision_copy_setup_readback",
 )
 # elicitation_history is deliberately NOT a revision copy: it is the append-only
 # calibration trail (FR-PKG-20), whose rows reference the version the conversation was
@@ -2959,6 +3069,220 @@ class PackageCatalog:
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS[f"update_question_{field}"], v=v,
                        question_id=question_id, value=value)
+
+    def readback(self, v: PackageVersionId) -> dict | None:
+        """The version's rubric read-back row, or None — the read half (resume re-reads
+        the stored row instead of re-reading the rubric, `CT-SETUP-03`; the row exists
+        only after a read back completed or degraded, never mid-flight)."""
+        rows = self._handle.query(PKG_STATEMENTS["select_readback"], v=v)
+        return dict(rows[0]) if rows else None
+
+    def write_readback(
+        self, v: PackageVersionId, *, rubric_doc_id: str, assessment_doc_id: str,
+        criteria: Sequence[Mapping], payload: str, template_version: str,
+        model_ref: str, attempts: int, created_at: str,
+    ) -> None:
+        """Write the rubric read-back in ONE transaction (`FR-SETUP-04/-05/-09`, #51):
+        every criterion row with its band set, `evidence_type` and `band_justification`,
+        plus the read-back provenance row — all or nothing (`CT-PKG-11`: a rejected
+        write is a no-op, so a failed read-back leaves nothing behind and the next
+        attempt re-proposes onto a clean draft).
+
+        Each criterion record is a mapping with `criterion_id`, `question_id`, `kind`,
+        `max_points`, `scoring_model`, `band_count`, `evidence_type`,
+        `band_justification` and `bands` (a sequence of mappings with `band`, `ordinal`,
+        `points`, `descriptor`). The structural validation here is M-PKG's own
+        (`CT-PKG-12`) — the band rules are the same ones `add_criterion`/`add_band`
+        enforce (`FR-PKG-06`), plus the read-back's own rule: a `band_count` above two
+        carries a recorded justification (`FR-SETUP-04`). Descriptor CONTENT is not
+        checked here — the magnitude-phrase bar is M-SETUP's Configuration
+        (`FR-SETUP-05`), and this module does not import it. Refused when a read-back
+        row already exists for the version (one read back per version, `CT-SETUP-16`),
+        on a published version, or for a criterion id the version already carries."""
+        self._refuse_unknown_version(v)
+        self._refuse_mutation(v)
+        if self._handle.query(PKG_STATEMENTS["select_readback"], v=v):
+            raise PackageError(
+                f"version {v!r} already holds a rubric read-back (CT-SETUP-16: one "
+                "read back per version) — the stored row is provenance and is not "
+                "replaced; the rubric read-back resumes from it."
+            )
+        validated = self._validated_readback(criteria)
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.add")
+            for criterion in validated:
+                existing = [row["criterion_id"] for row in tx.execute(
+                    PKG_STATEMENTS["select_criteria"], v=v)]
+                if criterion["criterion_id"] in existing:
+                    raise PackageError(
+                        f"criterion {criterion['criterion_id']!r} already exists in "
+                        f"version {v!r} — the read back writes criteria onto a clean "
+                        "draft, not over rows another path added."
+                    )
+                if not tx.execute(PKG_STATEMENTS["select_question"], v=v,
+                                  question_id=criterion["question_id"]):
+                    raise PackageError(
+                        f"criterion {criterion['criterion_id']!r} names question "
+                        f"{criterion['question_id']!r}, which the version's CONFIRMED "
+                        "inventory does not carry — criteria anchor to confirmed "
+                        "questions (FR-SETUP-02)."
+                    )
+                tx.execute(PKG_STATEMENTS["insert_readback_criterion"], v=v,
+                           criterion_id=criterion["criterion_id"],
+                           question_id=criterion["question_id"],
+                           kind=criterion["kind"],
+                           max_points=criterion["max_points"],
+                           scoring_model=criterion["scoring_model"],
+                           construct_tag=criterion["construct_tag"],
+                           band_count=criterion["band_count"],
+                           evidence_type=criterion["evidence_type"],
+                           band_justification=criterion["band_justification"])
+                for band in criterion["bands"]:
+                    tx.execute(PKG_STATEMENTS["insert_band"], v=v,
+                               criterion_id=criterion["criterion_id"],
+                               ordinal=band["ordinal"], band=band["band"],
+                               points=band["points"], descriptor=band["descriptor"])
+                rows = [row for row in tx.execute(
+                    PKG_STATEMENTS["select_bands"], v=v)
+                    if row["criterion_id"] == criterion["criterion_id"]]
+                self._validate_band_order(rows)
+            tx.execute(PKG_STATEMENTS["insert_readback"], v=v,
+                       rubric_doc_id=rubric_doc_id,
+                       assessment_doc_id=assessment_doc_id, payload=payload,
+                       template_version=template_version, model_ref=model_ref,
+                       attempts=attempts, created_at=created_at)
+        self._invalidate()
+        LOGGER.info(
+            "wrote rubric read-back for version %s: %d criterion(s), prompt %s, "
+            "attempt %d", v, len(validated), template_version, attempts,
+        )
+
+    def _validated_readback(
+        self, criteria: Sequence[Mapping]
+    ) -> tuple[dict, ...]:
+        """The structural half of the read-back write (`CT-PKG-12`): ids, the question
+        anchor, the band rules (`FR-PKG-06`) and the justification rule
+        (`FR-SETUP-04`). Descriptor content is M-SETUP's bar, not this module's."""
+        validated: list[dict] = []
+        seen_ids: set[str] = set()
+        for index, record in enumerate(criteria):
+            where = f"read-back criterion record #{index}"
+            criterion_id = str(record.get("criterion_id", "") or "")
+            if not criterion_id:
+                raise PackageError(f"{where}: criterion_id must be non-empty.")
+            if criterion_id in seen_ids:
+                raise PackageError(
+                    f"{where}: duplicate criterion_id {criterion_id!r} — criteria are "
+                    "distinct."
+                )
+            seen_ids.add(criterion_id)
+            question_id = str(record.get("question_id", "") or "")
+            if not question_id:
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): question_id must be non-empty — a "
+                    "criterion anchors to a confirmed question."
+                )
+            kind = record.get("kind")
+            if kind not in ("open", "mcq"):
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): kind {kind!r} is outside the "
+                    "vocabulary ('open', 'mcq')."
+                )
+            scoring_model = str(record.get("scoring_model", "") or "")
+            if not scoring_model:
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): scoring_model must be non-empty."
+                )
+            try:
+                max_points = float(record.get("max_points", 0.0))
+            except (TypeError, ValueError) as error:
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): max_points must be a number, got "
+                    f"{record.get('max_points')!r}."
+                ) from error
+            if max_points < 0:
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): max_points {max_points} is negative."
+                )
+            if not math.isfinite(max_points):
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): max_points {max_points} is not a "
+                    "finite number — SQLite stores NaN as NULL, so a NaN would trip "
+                    "the NOT NULL constraint instead of a validation error."
+                )
+            construct_tag = str(record.get("construct_tag", "") or "")
+            evidence_type = record.get("evidence_type")
+            if evidence_type is not None and not str(evidence_type).strip():
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): evidence_type, when given, must be "
+                    "non-empty (FR-SETUP-09) — a declaration of nothing satisfies no "
+                    "criterion."
+                )
+            band_count = record.get("band_count")
+            if (not isinstance(band_count, int) or isinstance(band_count, bool)
+                    or band_count < 2 or band_count > 6 or band_count % 2 != 0):
+                raise BandSetError(
+                    f"{where} ({criterion_id!r}): band_count {band_count!r} is odd or "
+                    "outside 2..6 (FR-PKG-06). The even count removes the safe middle "
+                    "band a hesitant judge retreats to (design §5.10, R40)."
+                )
+            justification = record.get("band_justification")
+            justification = str(justification) if justification is not None else ""
+            if band_count > 2 and not justification.strip():
+                raise BandSetError(
+                    f"{where} ({criterion_id!r}): band_count {band_count} exceeds the "
+                    "two-band default without a recorded justification (FR-SETUP-04) — "
+                    "partial credit that is genuinely part of the construct is "
+                    "recorded, not silent."
+                )
+            raw_bands = record.get("bands", ()) or ()
+            if len(raw_bands) != band_count:
+                raise BandSetError(
+                    f"{where} ({criterion_id!r}): {len(raw_bands)} band(s) written "
+                    f"against a declared band_count of {band_count} (FR-PKG-06) — "
+                    "`add_band` refuses past the declared count, so an under-filled "
+                    "set would strand the criterion half-mapped."
+                )
+            bands: list[dict] = []
+            for band_index, band in enumerate(raw_bands):
+                band_where = f"{where} ({criterion_id!r}) band #{band_index}"
+                label = str(band.get("band", "") or "")
+                if not label.strip():
+                    raise BandSetError(
+                        f"{band_where}: band label must be non-empty."
+                    )
+                ordinal = band.get("ordinal")
+                if (not isinstance(ordinal, int) or isinstance(ordinal, bool)
+                        or ordinal < 0):
+                    raise BandSetError(
+                        f"{band_where}: ordinal must be a non-negative integer, got "
+                        f"{ordinal!r}."
+                    )
+                try:
+                    points = float(band.get("points", 0.0))
+                except (TypeError, ValueError) as error:
+                    raise BandSetError(
+                        f"{band_where}: points must be a number, got "
+                        f"{band.get('points')!r}."
+                    ) from error
+                if points < 0:
+                    raise BandSetError(f"{band_where}: points {points} is negative.")
+                if not math.isfinite(points):
+                    raise BandSetError(
+                        f"{band_where}: points {points} is not a finite number — "
+                        "SQLite stores NaN as NULL, and an infinity is not a points "
+                        "value a band can carry."
+                    )
+                bands.append({"band": label, "ordinal": ordinal, "points": points,
+                              "descriptor": str(band.get("descriptor", "") or "")})
+            validated.append({
+                "criterion_id": criterion_id, "question_id": question_id,
+                "kind": kind, "max_points": max_points,
+                "scoring_model": scoring_model, "construct_tag": construct_tag,
+                "band_count": band_count, "evidence_type": evidence_type,
+                "band_justification": justification or None, "bands": tuple(bands),
+            })
+        return tuple(validated)
 
     def _validated_inventory(
         self, questions: Sequence[Mapping]
