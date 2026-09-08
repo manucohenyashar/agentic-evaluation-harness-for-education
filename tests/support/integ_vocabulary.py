@@ -12,32 +12,47 @@ deliberately rather than discovered (the TS-24 precedent):
 | Name | Status |
 |---|---|
 | `aeh.integ.verify_span(doc, span) -> bool` | **invented as a module-level function**: design §3.9 declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and FUZZ-03 are rung 0 — a pure function over (document bytes, span), no store, no construction. The `#65` `aeh.synth:synthesize` precedent: the minimal entry point the pure cases can call; the method and the function reconcile at `#73`'s landing |
-| `aeh.integ.IntegrityGate(store, blobs, extraction_view)` | **constructor invented** — the Protocol declares no construction. The three arguments are the design's own dependency set: M-STORE (the cohort handle documents, regions and work units are read through), the blob store (CT-INTEG-10's crop reachability), and the extraction side below. The signature reconciles at `#74`'s landing |
+| `aeh.integ.IntegrityGate(handle, blobs, extraction_view, ocr_conf_floor=...)` | **constructor invented** — the Protocol declares no construction. The arguments are the design's own dependency set: M-STORE (the cohort handle documents, regions and work units are read through), the blob store (CT-INTEG-10's crop reachability), and the extraction side below; the floor is FR-INTEG-04's configured threshold. The signature reconciles at `#74`'s landing |
 | `aeh.integ.IntegritySignals` | design-declared dataclass (§3.9): exactly six fields, `extractor_disagreement` tri-state |
 | `IntegrityGate.verify(run_id, submission_id, criterion_id)` | design-declared (§3.9 Protocol), returns `IntegritySignals` |
 | `aeh.integ.ALERT_SPAN_VERIFICATION_FAILURES` | **invented name**: CT-INTEG-14 declares the *alert* ("a span verification failure rate above a low threshold means the extractor is hallucinating spans") but not its spelling; the store's precedent (`ALERT_FREE_DISK`, `DECLARED_ALERTS`) makes the name part of the interface, so the case requires the constant and reconciles the string at `#74`'s landing |
+| `aeh.integ.INTEG_RATE_METRICS` | **invented spelling** of CT-INTEG-14's six per-criterion rates — the design names the rates but not their metric strings; the tuple is required by name so the case fails loudly if the names move |
+| `run_metrics` carries per-criterion rows | **assumed `#74` migration**: the landed durable table is `(run_id, metric, value)` with PK `(run_id, metric)`, which structurally cannot hold a per-criterion rate; CT-INTEG-14's "emitted per criterion" requires the dimension. TC-INTEG-14 reads `submission_id`, `criterion_id`, `value` for a `(run_id, metric)` through the **durable** handle and asserts the dimension set — a `#74` that emits elsewhere (or keeps the aggregate PK) fails the case rather than the reader |
 | `INTEG_SPAN_VERIFICATION_DISABLED` (env) | **invented knob** for TC-INTEG-11's differential (the plan's own oracle measures "against a run with verification disabled", which requires a disable switch; seam rule 3 makes it env-gated). PERF-06 (TS-53) needs the same switch |
-| spans' persistence | none of the landed modules store spans (grep: no `span` table or column anywhere in `src/aeh`). `ExtractionView` injects them as data at the one place design §3.9's *Requires* row says M-EXTRACT is read; `#68`'s landing replaces the injected payload with the real surface and the helper below is the single line that changes |
+| spans' persistence | none of the landed modules store spans (grep: no `span` table or column anywhere in `src/aeh`). `ExtractionView` injects them as data at the one place design §3.9's *Requires* row says M-EXTRACT is read; `#68`'s landing replaces the injected payload with the real surface and the view is the single line that changes |
 
-Seeding helpers write **real rows through a real cohort handle** (§4.2: SQLite and the blob
-store are never doubled), into the schema the landed migrations carry: `document` with
-`markdown` (`M-INGEST`'s ALTERs), `document_region` with `region_kind`/`ocr_conf`/
-`content_state`/`crop_ref`, `work_unit` with `run_id`/`criterion_id`/`attempts`/`origin`
-(M-ORCH's ALTERs). Verdict rows are seeded directly with a `sufficiency` flag carried by
-`ExtractionView` instead, because the `verdict` table has no `evidence_sufficient` column
-until M-JUDGE lands.
+**Coordinate system**: spans and region extents are **byte offsets** into
+`document.markdown` (CT-INGEST-03: "the coordinate system every later stage uses";
+NFR-INTEG-02: "a pure function of (document bytes, span)") — the property strategies
+and the boundary table both draw and assert in bytes.
+
+Seeding helpers write **real rows through a real cohort handle** (§4.2: SQLite and the
+blob store are never doubled), into the schema the landed migrations carry. Importing
+this module imports `aeh.ingest`, which is what registers the `markdown` /
+`transcriber_ref` columns into the cohort-tier migration set (review finding: without
+that import the migration is never registered and `document.markdown` does not exist).
+`seed_document` also ensures the `cohort` and `submission` rows the document's foreign
+keys reference exist — idempotently, so a file that seeds documents without a full
+`seed_run` still satisfies the enforced FK. Verdict rows are seeded directly with a
+`sufficiency` flag carried by `ExtractionView` instead, because the `verdict` table has
+no `evidence_sufficient` column until M-JUDGE lands.
 """
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import Any, Sequence
+
+import aeh.ingest  # noqa: F401  # registers the document-markdown cohort migrations
+
+#: The created-at stamp the seed helpers write, matching `tests.support.orch_run`'s
+#: package stamp convention so the two seeders produce interchangeable rows.
+_SEED_STAMP = "2026-01-01T00:00:00+00:00"
 
 
 @dataclass(frozen=True)
 class Span:
-    """The span shape CT-EXTRACT-01 declares: byte offsets into `document.markdown`.
+    """The span shape CT-EXTRACT-01 declares: BYTE offsets into `document.markdown`.
 
     A test-side record until `#68` lands the extractor's payload; `verify_span` is
     duck-typed over `.start` / `.end` / `.text`, which is the whole declared surface.
@@ -67,7 +82,8 @@ class CitedRegion:
     `ocr_conf`, `crop_ref`, `content_state`) plus the region's extent in the canonical
     Markdown — the token-cluster positions `#39` landed — because FR-INTEG-04's
     intersection ("low confidence with the spans a criterion actually cites") is
-    geometric and needs both halves.
+    geometric and needs both halves. Extents are byte offsets, like spans: the
+    intersection only means anything if both sides share the coordinate system.
     """
 
     region_id: str
@@ -138,11 +154,32 @@ class ExtractionView:
 # --- seeding: real rows through a real cohort handle -------------------------------------
 
 
-def seed_document(handle: Any, document_id: str, submission_id: str, markdown: str) -> str:
-    """Insert one canonical document with its content hash over the Markdown."""
+def seed_document(
+    handle: Any, document_id: str, submission_id: str, markdown: str, cohort_id: str
+) -> str:
+    """Insert one canonical document, ensuring its foreign keys' parents exist.
+
+    The `cohort` and `submission` rows are inserted idempotently (`INSERT OR IGNORE`)
+    so a file that seeds documents without a full `seed_run` satisfies the enforced FK,
+    and a file that runs after `seed_run` does not collide with its rows. The content
+    hash covers the Markdown bytes.
+    """
     import hashlib
 
     with handle.transaction() as tx:
+        tx.execute(
+            "INSERT OR IGNORE INTO cohort (cohort_id, consent_class, created_at) "
+            "VALUES (:c, 'synthetic', :ts)",
+            c=cohort_id,
+            ts=_SEED_STAMP,
+        )
+        tx.execute(
+            "INSERT OR IGNORE INTO submission (submission_id, cohort_id, student_ref) "
+            "VALUES (:s, :c, :r)",
+            s=submission_id,
+            c=cohort_id,
+            r=f"ref-{submission_id}",
+        )
         tx.execute(
             "INSERT INTO document (document_id, submission_id, content_hash, markdown, "
             "transcriber_ref) VALUES (:d, :s, :h, :m, 'vlm@sha256:test')",
@@ -152,22 +189,6 @@ def seed_document(handle: Any, document_id: str, submission_id: str, markdown: s
             m=markdown,
         )
     return document_id
-
-
-def seed_region(handle: Any, document_id: str, region: CitedRegion) -> None:
-    """Insert one `document_region` row with the fields CT-INGEST-04 declares."""
-    with handle.transaction() as tx:
-        tx.execute(
-            "INSERT INTO document_region (region_id, document_id, page_no, element_kind, "
-            "region_kind, ocr_conf, content_state, crop_ref) "
-            "VALUES (:r, :d, 1, :k, :k, :c, :st, :crop)",
-            r=region.region_id,
-            d=document_id,
-            k=region.region_kind,
-            c=region.ocr_conf,
-            st=region.content_state,
-            crop=region.crop_ref,
-        )
 
 
 def seed_work_unit(
@@ -215,52 +236,6 @@ def seed_verdict(
         )
 
 
-def spans_payload(spans: Sequence[Span]) -> str:
-    """The JSON payload the extractor's span set rides until `#68` lands its surface.
-
-    One serialization, spelled once, so a test asserting on stored bytes and a test
-    asserting on `ExtractionView` data cannot drift apart.
-    """
-    return json.dumps(
-        [{"start": s.start, "end": s.end, "text": s.text} for s in spans]
-    )
-
-
-def metric_rows(handle: Any, run_id: str, name: str) -> list[dict]:
-    """Read one metric's rows from `run_metrics` for a run, per criterion.
-
-    CT-INTEG-14's rates are emitted **per criterion**; the dimension the rows carry is
-    part of what the case asserts, so the reader returns whole rows rather than values.
-    """
-    return handle.query(
-        "SELECT * FROM run_metrics WHERE run_id = :r AND name = :n ORDER BY 1",
-        r=run_id,
-        n=name,
-    )
-
-
 def document_id_for(submission_id: str) -> str:
     """The deterministic document id the seeding convention uses for a submission."""
     return f"doc-{submission_id}"
-
-
-def cited_regions_for(markdown: str, spans: Sequence[Span], region_id: str,
-                      region_kind: str = "transcribed_text",
-                      ocr_conf: float | None = None,
-                      crop_ref: str | None = None) -> tuple[CitedRegion, ...]:
-    """Regions covering exactly the cited spans' extents in the Markdown.
-
-    The common fixture: a region per span, so "the region overlaps the cited span"
-    holds by construction and a case varies only the confidence or the kind.
-    """
-    return tuple(
-        CitedRegion(
-            region_id=f"{region_id}-{i}",
-            region_kind=region_kind,
-            start=s.start,
-            end=s.end,
-            ocr_conf=ocr_conf,
-            crop_ref=crop_ref,
-        )
-        for i, s in enumerate(spans)
-    )

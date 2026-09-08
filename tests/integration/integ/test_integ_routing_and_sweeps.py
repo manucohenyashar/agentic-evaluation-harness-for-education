@@ -41,11 +41,10 @@ from tests.support.integ_vocabulary import (
     document_id_for,
     seed_document,
 )
-from tests.support.orch_run import seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-_COHORT = "c-2026-7B-integ"
 _SUBMISSIONS = ("SUB-201",)
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 _PANEL_SIZE = 3
@@ -61,9 +60,9 @@ def _cited_span(doc: Doc) -> tuple[Span, ...]:
 def _scenario(tmp_data_dir, panel: PanelFlags):
     store = open_store(tmp_data_dir)
     orch, run_id, _version = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
-    handle = store.cohort(_COHORT)
+    handle = store.cohort(ORCH_COHORT_ID)
     doc = Doc(markdown=_MARKDOWN)
-    seed_document(handle, document_id_for("SUB-201"), "SUB-201", doc.markdown)
+    seed_document(handle, document_id_for("SUB-201"), "SUB-201", doc.markdown, ORCH_COHORT_ID)
     orch.enumerate_units(run_id)
     view = ExtractionView(spans=_cited_span(doc), panel=panel)
     IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
@@ -72,7 +71,7 @@ def _scenario(tmp_data_dir, panel: PanelFlags):
 
 
 def _extract_units(store, run_id: str) -> list[dict]:
-    return store.cohort(_COHORT).query(
+    return store.cohort(ORCH_COHORT_ID).query(
         "SELECT work_id, status, attempts FROM work_unit WHERE run_id = :r AND "
         "submission_id = :s AND criterion_id = :c AND stage = 'extract' ORDER BY work_id",
         r=run_id, s="SUB-201", c="C1",
@@ -80,7 +79,7 @@ def _extract_units(store, run_id: str) -> list[dict]:
 
 
 def _score_units(store, run_id: str) -> list[dict]:
-    return store.cohort(_COHORT).query(
+    return store.cohort(ORCH_COHORT_ID).query(
         "SELECT work_id, status FROM work_unit WHERE run_id = :r AND "
         "submission_id = :s AND criterion_id = :c AND stage = 'score' ORDER BY work_id",
         r=run_id, s="SUB-201", c="C1",
@@ -88,7 +87,7 @@ def _score_units(store, run_id: str) -> list[dict]:
 
 
 def _score_rows(store, run_id: str) -> list[dict]:
-    return store.cohort(_COHORT).query(
+    return store.cohort(ORCH_COHORT_ID).query(
         "SELECT * FROM criterion_score WHERE submission_id = :s AND criterion_id = :c",
         s="SUB-201", c="C1",
     )

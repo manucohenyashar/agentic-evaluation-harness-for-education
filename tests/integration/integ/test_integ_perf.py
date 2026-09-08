@@ -82,7 +82,7 @@ def _timed_verify(tmp_data_dir, docs, *, disabled: bool) -> float:
     gates = []
     for i, (markdown, span) in enumerate(docs):
         submission = f"SUB-{i:03d}"
-        seed_document(handle, document_id_for(submission), submission, markdown)
+        seed_document(handle, document_id_for(submission), submission, markdown, _COHORT)
         view = ExtractionView(spans=(span,), panel=PanelFlags((True, True, True)))
         gates.append((submission,
                       IntegrityGate(handle, store.blobs(), view, ocr_conf_floor=0.70)))

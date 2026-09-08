@@ -67,7 +67,7 @@ def _seed_document(tmp_data_dir, submission_id: str = "SUB-001") -> Doc:
     # The document row needs a store to live in; the gate opens its own over the same
     # directory, so seed through a throwaway handle first.
     store = open_store(tmp_data_dir)
-    seed_document(store.cohort(_COHORT), document_id_for(submission_id), submission_id, doc.markdown)
+    seed_document(store.cohort(_COHORT), document_id_for(submission_id), submission_id, doc.markdown, _COHORT)
     store.close()
     return doc
 
@@ -169,7 +169,7 @@ def test_tc_integ_05_wholly_described_evidence_is_described_and_its_crop_reachab
     gate_holder = {}
     store = open_store(tmp_data_dir)
     handle = store.cohort(_COHORT)
-    seed_document(handle, document_id_for("SUB-001"), "SUB-001", doc.markdown)
+    seed_document(handle, document_id_for("SUB-001"), "SUB-001", doc.markdown, _COHORT)
     crop_ref = store.blobs().put(crop_bytes)
     IntegrityGate, _ = require(INTEG_MODULE, "IntegrityGate", "IntegritySignals", issue="#74")
     view = ExtractionView(

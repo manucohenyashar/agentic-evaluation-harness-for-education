@@ -180,7 +180,7 @@ _MARKDOWN = "The answer is forty-two.\nA second sentence for coverage.\n"
 def _seeded_store(tmp_data_dir, submission_id: str) -> Doc:
     store = open_store(tmp_data_dir)
     doc = Doc(markdown=_MARKDOWN)
-    seed_document(store.cohort(_COHORT), document_id_for(submission_id), submission_id,
+    seed_document(store.cohort(_COHORT), document_id_for(submission_id), submission_id, _COHORT,
                   doc.markdown)
     store.close()
     return doc

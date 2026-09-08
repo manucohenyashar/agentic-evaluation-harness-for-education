@@ -36,11 +36,10 @@ from tests.support.integ_vocabulary import (
     document_id_for,
     seed_document,
 )
-from tests.support.orch_run import seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-_COHORT = "c-2026-7B-integ"
 _SUBMISSIONS = ("SUB-101",)
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
@@ -62,7 +61,7 @@ def _hallucinated_span() -> Span:
 
 
 def _units(store, run_id: str, submission_id: str, criterion_id: str, stage: str) -> list[dict]:
-    return store.cohort(_COHORT).query(
+    return store.cohort(ORCH_COHORT_ID).query(
         "SELECT work_id, status, attempts FROM work_unit WHERE run_id = :r AND "
         "submission_id = :s AND criterion_id = :c AND stage = :st ORDER BY work_id",
         r=run_id,
@@ -77,9 +76,9 @@ def _scenario(tmp_data_dir):
     the test mutates per attempt to simulate the extractor failing and recovering."""
     store = open_store(tmp_data_dir)
     orch, run_id, _version = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
-    handle = store.cohort(_COHORT)
+    handle = store.cohort(ORCH_COHORT_ID)
     doc = Doc(markdown=_MARKDOWN)
-    seed_document(handle, document_id_for("SUB-101"), "SUB-101", doc.markdown)
+    seed_document(handle, document_id_for("SUB-101"), "SUB-101", doc.markdown, ORCH_COHORT_ID)
     orch.enumerate_units(run_id)
     payload: list[Span] = []
     view = ExtractionView(spans=payload, panel=PanelFlags((True, True, True)))

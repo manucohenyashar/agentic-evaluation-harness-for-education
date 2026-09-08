@@ -39,11 +39,10 @@ from tests.support.integ_vocabulary import (
     document_id_for,
     seed_document,
 )
-from tests.support.orch_run import seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-_COHORT = "c-2026-7B-integ"
 _SUBMISSIONS = tuple(f"SUB-{300 + i}" for i in range(4))
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
@@ -65,7 +64,7 @@ def _scenario(tmp_data_dir, hallucinated_units: int):
     """A real run over four units; `hallucinated_units` of them carry forged spans."""
     store = open_store(tmp_data_dir)
     orch, run_id, _version = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
-    handle = store.cohort(_COHORT)
+    handle = store.cohort(ORCH_COHORT_ID)
     IntegrityGate, rate_metrics, alert = require(
         INTEG_MODULE, "IntegrityGate", "INTEG_RATE_METRICS",
         "ALERT_SPAN_VERIFICATION_FAILURES", issue="#74",
@@ -73,7 +72,7 @@ def _scenario(tmp_data_dir, hallucinated_units: int):
     gates = []
     for i, submission in enumerate(_SUBMISSIONS):
         doc = Doc(markdown=_MARKDOWN)
-        seed_document(handle, document_id_for(submission), submission, doc.markdown)
+        seed_document(handle, document_id_for(submission), submission, doc.markdown, ORCH_COHORT_ID)
         view = ExtractionView(
             spans=_unit_spans(doc, hallucinated=2 * i < hallucinated_units),
             panel=PanelFlags((True, True, True)),
