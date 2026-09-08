@@ -468,6 +468,11 @@ class CriterionDraft:
     #: unclear default applied). The audit field beside `scoring_model`, not a
     #: separate scoring input.
     decomposition_basis: str = ""
+    #: `#52` (`FR-SETUP-07`): the table's verdict for this criterion was BORDERLINE —
+    #: an unclear answer or a warning sign — so it belongs to the confirmation
+    #:`surface and counts against `SETUP_MAX_CONFIRMATIONS`. Set at parse time
+    #: (it is the reply's property, not stored state); the service applies the cap.
+    needs_confirmation: bool = False
 
 
 @dataclass(frozen=True)
@@ -689,8 +694,11 @@ _CLASSIFY_INSTRUCTION = (
     "criterion's judgment?\n"
     "- additivity: can the criterion's score be combined additively with the others "
     "without double counting or interaction effects?\n"
-    "- gates: is there a precondition (a gate) that must hold before the criterion "
-    "can be scored at all?\n"
+    "- gates: can the criterion be scored with NO precondition (a gate) that has "
+    "to hold before it can be scored at all? Answer 'no' when such a gate exists — "
+    "every question here is phrased so that 'yes' means the criterion passes it, "
+    "and the decision table reads a 'no' on gates as 'this criterion carries a "
+    "gate'.\n"
     "- warning_signs: list anything about the criterion that warns against decomposing "
     "it (straddling two constructs, mixed scales, ...); an empty list when none.\n"
     "Use 'unclear' whenever the criterion's text does not settle a question — never "
@@ -1095,6 +1103,7 @@ def _parse_readback_reply(
             )
         scoring_model = raw.get("scoring_model")
         decomposition_basis = ""
+        needs_confirmation = False
         if scoring_model is None:
             # #52 (`FR-SETUP-06`/`-08`): the reply carried the §5.3 ANSWERS (or none at
             # all) and no scoring model — the classification is the module's table, not
@@ -1109,6 +1118,24 @@ def _parse_readback_reply(
                 raw_answers = raw_answers if isinstance(raw_answers, dict) else {}
                 scoring_model, decided = _classify_answers(raw_answers)
                 decomposition_basis = decided or ""
+                # The same refusal the classifier applies (`_verdict_from_answers`):
+                # a warning sign with every answer passing refuses the atomic grant,
+                # and a borderline verdict — unclear answers OR warning signs — is
+                # surfaced for the teacher and counted against the cap by the
+                # service (`_request_confirmation`). A read-back reply must not be
+                # a second classification surface that quietly escapes FR-SETUP-07.
+                raw_warnings = raw.get("warning_signs", [])
+                warning_signs = ([str(item) for item in raw_warnings
+                                  if str(item).strip()]
+                                 if isinstance(raw_warnings, list) else [])
+                if decided is None and scoring_model == "atomic" and warning_signs:
+                    scoring_model = "holistic"
+                    decomposition_basis = ""
+                needs_confirmation = (
+                    decided is None
+                    and any(str(raw_answers.get(question, "")).strip().lower()
+                            not in ("yes", "no") for question in FIVE_QUESTIONS)
+                ) or bool(warning_signs)
         elif scoring_model not in SCORING_MODELS:
             raise _ReplyError(
                 f"criterion {criterion_id!r}: scoring_model {scoring_model!r} is "
@@ -1245,6 +1272,7 @@ def _parse_readback_reply(
             construct=construct, band_count=band_count, bands=bands,
             justification=justification.strip(), evidence_type=evidence_type.strip(),
             bands_source=bands_source, decomposition_basis=decomposition_basis,
+            needs_confirmation=needs_confirmation,
         ))
     return tuple(drafts)
 
@@ -2071,6 +2099,32 @@ class SetupService:
                 "status": "proposed",
                 "criteria": [_criterion_to_dict(criterion) for criterion in criteria],
             }
+            # The read back is a classification surface too (#52): every criterion
+            # whose scoring model the §5.3 table (or the reply's declared model)
+            # produced gets its `source='default'` row NOW, so the R62 audit table
+            # is complete before the teacher speaks, and every borderline verdict —
+            # an unclear answer or a warning sign — counts against the confirmation
+            # cap through the SAME counter the classifier uses (`_request_confirmation`
+            # is the cap's one accounting point).
+            recorder = getattr(self._catalog, "record_classification", None)
+            borderline: list[str] = []
+            for criterion in criteria:
+                if recorder is not None:
+                    recorder(
+                        v, criterion_id=criterion.criterion_id,
+                        classification=criterion.scoring_model,
+                        decomposition_basis=criterion.decomposition_basis or None,
+                        source="default", recorded_at=_now(),
+                    )
+                if criterion.needs_confirmation and self._request_confirmation(v):
+                    borderline.append(criterion.criterion_id)
+            if borderline:
+                LOGGER.warning(
+                    "read back produced %d borderline classification(s) for version "
+                    "%s (%s) — surfaced for the teacher within the %d-confirmation "
+                    "cap (FR-SETUP-07, NFR-SETUP-01)", len(borderline), v,
+                    ", ".join(borderline), SETUP_MAX_CONFIRMATIONS,
+                )
             self._catalog.write_readback(
                 v, rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
                 criteria=[_criterion_record(criterion) for criterion in criteria],
@@ -2207,8 +2261,11 @@ class SetupService:
 
         # The budget is spent and no reply parsed: degraded but complete (`CT-SETUP-12`)
         # — the default applies, surfaced, and the reason is in the verdict's reasoning
-        # so the audit trail says WHY the teacher is being asked.
-        verdict = self._verdict_from_answers(criterion_id, {}, [], "")
+        # so the audit trail says WHY the teacher is being asked. The cap is applied
+        # through the same counter as the classified path (`_request_confirmation`):
+        # a degraded package must not exceed SETUP_MAX_CONFIRMATIONS any more than a
+        # classified one (NFR-SETUP-01); beyond-cap criteria keep the holistic default
+        # but are not requested.
         degraded = DecomposabilityVerdict(
             classification="holistic", deciding_question=None,
             reasoning=(
@@ -2217,7 +2274,8 @@ class SetupService:
                 "default applies: holistic, never atomic (NFR-SETUP-02) — please "
                 "enter the answers or confirm the criterion by hand."
             ),
-            needs_teacher_confirmation=True,
+            needs_teacher_confirmation=self._request_confirmation(
+                self._catalog.draft_version()),
         )
         self._record_classification(self._catalog.draft_version(), criterion_id,
                                     degraded)
@@ -2226,6 +2284,20 @@ class SetupService:
             criterion_id, budget, last_error,
         )
         return degraded
+
+    def _request_confirmation(self, v: PackageVersionId | None) -> bool:
+        """Count one teacher confirmation against the cap, and say whether it was
+        REQUESTED — the cap's single accounting point (`FR-SETUP-07`, `NFR-SETUP-01`).
+        `SETUP_MAX_CONFIRMATIONS` confirmations are surfaced per draft version; a
+        criterion beyond the cap keeps its classification but is not requested. The
+        degraded path shares this counter, so a package whose provider fails cannot
+        exceed the cap either. Keyed by the draft version when there is one — the
+        rung-0 doubles carry none, and the counter still runs (keyed None)."""
+        requested = self._confirmations_requested.get(v, 0)
+        if requested >= SETUP_MAX_CONFIRMATIONS:
+            return False
+        self._confirmations_requested[v] = requested + 1
+        return True
 
     def _verdict_from_answers(
         self, criterion_id: str, answers: Mapping[str, str],
@@ -2248,13 +2320,8 @@ class SetupService:
         if deciding is None and classification == "atomic" and warning_signs:
             classification = "holistic"
         borderline = unclear or bool(warning_signs)
-        needs = False
-        if borderline:
-            v = self._catalog.draft_version()
-            requested = self._confirmations_requested.get(v, 0)
-            if requested < SETUP_MAX_CONFIRMATIONS:
-                needs = True
-                self._confirmations_requested[v] = requested + 1
+        needs = self._request_confirmation(
+            self._catalog.draft_version()) if borderline else False
         if deciding is not None:
             reasoning = (
                 f"the §5.3 table decided on {deciding!r} (its answer was 'no'): the "
@@ -2304,6 +2371,34 @@ class SetupService:
                decomposition_basis=verdict.deciding_question, source="default",
                recorded_at=_now())
 
+    def _record_decomposability_step(
+        self, v: PackageVersionId, *, status: str, update: Mapping,
+    ) -> None:
+        """Merge `update` into the decomposability step's ONE provenance row
+        (`FR-SETUP-14`) — merge, never replace: the step is one teacher step with
+        three sub-acts (confirmations, proposals, approvals), and a whole-payload
+        upsert would have each erase the others' record — the teacher confirms a
+        classification and then approves a proposal, and the approval must still
+        find the proposals it approves (`CT-SETUP-03`: state is the database).
+        Skipped when the catalog offers no recording surface (the rung-0 doubles)."""
+        step = getattr(self._catalog, "record_step", None)
+        if step is None:
+            return
+        prior: dict = {}
+        reader = getattr(self._catalog, "step_record", None)
+        if reader is not None:
+            row = reader(v, "decomposability")
+            if row is not None:
+                try:
+                    loaded = json.loads(row["payload"])
+                except (ValueError, TypeError):
+                    loaded = None
+                if isinstance(loaded, dict):
+                    prior = loaded
+        payload = {**prior, **dict(update)}
+        step(v, step_id="decomposability", status=status,
+             payload=json.dumps(payload, sort_keys=True), recorded_at=_now())
+
     def confirm_classifications(self, answers: Mapping[str, str]) -> None:
         """The teacher's confirmations of the surfaced classifications — the
         skippable step whose skip is itself recorded (`FR-SETUP-14`, `R62`).
@@ -2350,14 +2445,10 @@ class SetupService:
                        decomposition_basis=basis, source="teacher",
                        recorded_at=_now())
             confirmed[criterion_id] = classification
-        step = getattr(self._catalog, "record_step", None)
-        if step is not None:
-            step(v, step_id="decomposability", status="classifications_confirmed",
-                 payload=json.dumps({
-                     "confirmed": confirmed,
-                     "teacher_confirmed_count": len(confirmed),
-                 }, sort_keys=True),
-                 recorded_at=_now())
+        self._record_decomposability_step(
+            v, status="classifications_confirmed",
+            update={"confirmed": confirmed,
+                    "teacher_confirmed_count": len(confirmed)})
         LOGGER.info(
             "teacher confirmed %d classification(s) for version %s — recorded as "
             "'teacher' beside the module's 'default' rows (R62)", len(confirmed), v,
@@ -2437,28 +2528,26 @@ class SetupService:
         self, v: PackageVersionId, proposals: Sequence[DependencyProposal],
         *, status: str | None = None, reason: str = "",
     ) -> None:
-        """Write the dependency step's provenance row — the proposals as recorded
-        state (`CT-SETUP-03`), which `confirm_dependencies` approves against. Skipped
-        when the catalog offers no recording surface (the rung-0 doubles)."""
-        step = getattr(self._catalog, "record_step", None)
-        if step is None:
-            return
+        """Write the dependency proposals into the step's provenance row — the
+        proposals as recorded state (`CT-SETUP-03`), which `confirm_dependencies`
+        approves against. The row is MERGED, not replaced (see
+        `_record_decomposability_step`): a confirm_classifications call before or
+        after this one must not erase the proposals. Skipped when the catalog
+        offers no recording surface (the rung-0 doubles)."""
         if status is None:
             status = ("dependencies_proposed" if proposals
                       else "dependencies_none_proposed")
-        step(v, step_id="decomposability", status=status,
-             payload=json.dumps({
-                 "proposals": [
-                     {"criterion_id": item.criterion_id,
-                      "depends_on": item.depends_on,
-                      "reason": item.reason,
-                      "rendered": str(item)}
-                     for item in proposals
-                 ],
-                 "template_version": SETUP_DEPENDENCIES_TEMPLATE_V,
-                 **({"reason": reason} if reason else {}),
-             }, sort_keys=True),
-             recorded_at=_now())
+        self._record_decomposability_step(v, status=status, update={
+            "proposals": [
+                {"criterion_id": item.criterion_id,
+                 "depends_on": item.depends_on,
+                 "reason": item.reason,
+                 "rendered": str(item)}
+                for item in proposals
+            ],
+            "template_version": SETUP_DEPENDENCIES_TEMPLATE_V,
+            **({"reason": reason} if reason else {}),
+        })
 
     def confirm_dependencies(
         self,
@@ -2478,11 +2567,14 @@ class SetupService:
         reader = getattr(self._catalog, "step_record", None)
         recorded = reader(v, "decomposability") if reader is not None else None
         proposed: set[tuple[str, str]] = set()
+        payload: dict = {}
         if recorded is not None:
             try:
-                payload = json.loads(recorded["payload"])
+                loaded = json.loads(recorded["payload"])
             except (ValueError, TypeError):
-                payload = {}
+                loaded = None
+            if isinstance(loaded, dict):
+                payload = loaded
             for item in payload.get("proposals", []):
                 if isinstance(item, dict) and "criterion_id" in item \
                         and "depends_on" in item:
@@ -2513,20 +2605,27 @@ class SetupService:
             )
         # The edge is (before, after): `after` depends on `before` — the proposal's
         # `depends_on` is the earlier criterion whose credited work the later one
-        # would see.
-        edges = [(depends_on, criterion_id) for criterion_id, depends_on in pairs]
+        # would see. Approving in batches ACCUMULATES: the graph write is a replace
+        # (M-PKG's set_dependencies), so each approval writes the union of every
+        # approval so far — read off this row's own recorded approvals, the
+        # state-is-the-database rule — never just this batch, which would silently
+        # un-approve an earlier one.
+        merged: dict[tuple[str, str], dict] = {}
+        for item in payload.get("approved", []):
+            if isinstance(item, dict) and "criterion_id" in item \
+                    and "depends_on" in item:
+                merged[(str(item["criterion_id"]),
+                        str(item["depends_on"]))] = item
+        for criterion_id, depends_on in pairs:
+            merged.setdefault((criterion_id, depends_on), {
+                "criterion_id": criterion_id, "depends_on": depends_on})
+        approved_pairs = list(merged.values())
+        edges = [(item["depends_on"], item["criterion_id"])
+                 for item in approved_pairs]
         self._catalog.set_dependencies(v, edges)
-        step = getattr(self._catalog, "record_step", None)
-        if step is not None:
-            step(v, step_id="decomposability", status="dependencies_approved",
-                 payload=json.dumps({
-                     "approved": [
-                         {"criterion_id": criterion_id, "depends_on": depends_on}
-                         for criterion_id, depends_on in pairs
-                     ],
-                     "edge_count": len(edges),
-                 }, sort_keys=True),
-                 recorded_at=_now())
+        self._record_decomposability_step(
+            v, status="dependencies_approved",
+            update={"approved": approved_pairs, "edge_count": len(edges)})
         LOGGER.info(
             "teacher approved %d dependency edge(s) for version %s — written in one "
             "M-PKG call (FR-SETUP-10)", len(edges), v,
