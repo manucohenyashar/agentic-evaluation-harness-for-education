@@ -84,6 +84,26 @@ each with its probe evidence:
   open story to defer to and no keyable `writtenahead` target — the finding is
   disclosed here for the story that fixes the order tuple, which should also
   add the token tables' sweep to this case.
+- **F9** (`TC-INGEST-45` live half, a defect in shipped code): the live
+  rasterizer cannot serve a live medium whose transcription emits a
+  `described_graphic` region. `ingest_document` calls
+  `self._rasterizer.crop(...)` (ingest 2309/2399) for every such region, but
+  `PdfiumRasterizer` implements only `rasterize`/`text_layer` — no shipped
+  class defines `crop` (probe: `grep "def crop" src/` finds nothing). The
+  scripted double carries the method, which is why the fast tier is green;
+  a live run would raise `AttributeError` at the crop. No open story owns the
+  seam, so it is disclosed here; the live case stays honest by asserting the
+  recorded statuses and the measured report, and any live failure at the crop
+  is this finding surfacing, not the medium misbehaving.
+- **F10** (environment, `TC-INGEST-45` live half): `pypdfium2` — the live
+  rasterizer's dependency — is not in `requirements-dev.txt`; the module's
+  own docstring instructs an explicit acceptance-run install, which is what
+  this worktree's venv carries. The fast tier never imports it (the lazy
+  import is the seam).
+- **F11** (`TC-INGEST-46`, rung 4): the E4 residency-policy swap — judge and
+  transcriber co-resident by policy under one GPU — is #62/#59 territory; the
+  case pins the shipped exclusive default (`for_policy(("transcriber",))`),
+  whose blocking primitive `TC-INGEST-36` already covers in isolation.
 
 One more platform fact, for `TC-INGEST-42`'s mode half: this suite runs on
 Windows, where `os.chmod` maps every mode but read-only to a no-op and
