@@ -54,8 +54,8 @@ pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
 _CRITERIA = (
-    {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},
-    {"criterion_id": "C2", "kind": "open", "scoring_model": "atomic"},
+    {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},
+    {"criterion_id": "C2", "kind": "open", "scoring_model": "holistic"},
 )
 
 
@@ -157,7 +157,7 @@ def test_tc_orch_23_residency_finishes_one_models_batch_before_the_next_loads(
     metrics** (the recorded swap count equals the observed model transitions, and a
     swap duration is recorded beside it — `CT-ORCH-20` names both as contract)."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
-    progress = require_attr(Orchestrator, "progress", issue="#62")
+    require_attr(Orchestrator, "progress", issue="#62")
     require_attr(Orchestrator, "record_run_metrics", issue="#66")
 
     store = open_store(tmp_data_dir)
@@ -169,7 +169,7 @@ def test_tc_orch_23_residency_finishes_one_models_batch_before_the_next_loads(
         # lease may return, so the lease sequence is the observable.
         handout: list[str] = []
         while True:
-            progress(run_id)
+            orch.progress(run_id)
             batch = orch.lease("worker-a", "score", 100)
             if not batch:
                 break
@@ -234,7 +234,7 @@ def test_res_11_sustained_rate_limiting_fails_no_unit_and_reduces_concurrency(
     honouring half is the provider's own case (`TC-PROV-11`) and is not re-asserted
     here."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
-    progress = require_attr(Orchestrator, "progress", issue="#62")
+    require_attr(Orchestrator, "progress", issue="#62")
     require_attr(Orchestrator, "record_run_metrics", issue="#66")
 
     transport = _Always429CallSeam()
@@ -248,7 +248,7 @@ def test_res_11_sustained_rate_limiting_fails_no_unit_and_reduces_concurrency(
         # exception.
         concurrencies = []
         for _ in range(4):
-            report = progress(run_id)
+            report = orch.progress(run_id)
             concurrencies.append(report["concurrency"])
         assert transport.rate_limited_calls >= 4, (
             "the seam made fewer calls than the passes drove — the sustained 429 "
@@ -318,7 +318,7 @@ def test_res_13_oom_during_swap_reduces_concurrency_and_records_the_smaller_pane
     the OOM as its own failure either: the OOM is the BOX's condition, and §9.11's
     remedy is concurrency and panel shape, not the failure taxonomy."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
-    progress = require_attr(Orchestrator, "progress", issue="#62")
+    require_attr(Orchestrator, "progress", issue="#62")
 
     transport = _OomAtSwapCallSeam()
     store = open_store(tmp_data_dir)
@@ -333,7 +333,7 @@ def test_res_13_oom_during_swap_reduces_concurrency_and_records_the_smaller_pane
         # its batch ends, the next model's first call OOMs, and the remedy runs.
         concurrencies = []
         for _ in range(4):
-            report = progress(run_id)
+            report = orch.progress(run_id)
             concurrencies.append(report["concurrency"])
         assert transport.oom_calls >= 1, (
             "the seam never OOM'd at a swap — the fixture did not reach the "

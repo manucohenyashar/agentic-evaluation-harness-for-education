@@ -18,11 +18,20 @@ resolved against #58's landing):
 
 | Name | Status |
 |---|---|
-| `Orchestrator.start(run_id)`, `.pause(run_id)` | design §3.7 Protocol members #61 must ship on the concrete class |
-| `Orchestrator.resume(run_id=None)` | shipped (#57) — the same-backend half needs nothing new |
-| pause carries its **cause** (`ProviderUnavailableError` / `BuildChangedError` / operator) on the observable surface | FR-ORCH-16/17's "pauses and alerts" — assumed here as a `cause=` keyword recorded on the run; reconciled to #61's actual surface at landing |
-| refusals raise `WorkLedgerError` | the module's shipped error type; a subclass #61 adds still passes |
+| `Orchestrator.start(run_id)`, `.pause(run_id)` | design §3.7 Protocol members #61 must ship on the concrete class; the tests gate on the class and call on the instance, so the calls bind as methods once landed |
+| `Orchestrator.resume(run_id=None)` | shipped (#57); the same-backend half needs nothing new — the paused→running TRANSITION arm of resume is #61's and is asserted only in the matrix's legal cells |
+| pause carries its **cause** on the observable surface | FR-ORCH-16/17's "pauses and alerts": assumed as a `cause=` keyword; observed by a **name-agnostic scan of the run row** for the cause's text — a pause that accepts the cause and discards it fails this file |
+| the illegal-transition refusal mechanism | deliberately unpinned: the matrix's oracle is that the run's **state never moves along an undeclared edge** — whether #61 refuses with a named error, or queues a request whose effect is refused at read time, both satisfy it (CT-ORCH-13 makes the request ≠ effect) |
 | control-row storage behind the Orchestrator surface | CT-ORCH-13's timing contract is asserted through the Orchestrator (request ≠ effect), not through the row's table |
+
+**Where the rest of TC-ORCH-29 lives.** The plan's case sweeps TWO matrices. The
+work-unit half (the taxonomy's `pending → leased → done`, `leased → pending`,
+`leased → quarantined`, and the illegal requeues) is over the SHIPPED #58 surface
+and runs green in `tests/integration/orch/test_failure_taxonomy.py`; this file holds
+only the `run.status` half. The terminal cells of the run-status machine
+(`complete` / `failed` as sources) are driven by #61's lifecycle at the units-done
+and ceiling transitions — that story's run-completion case holds this same matrix
+with the terminal rows driven.
 
 Isolation: rung 1/2 — in-memory error objects over the real store; the provider
 errors are `aeh.prov`'s shipped types, constructed directly (#19/#20 shipped them;
@@ -47,7 +56,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 ISSUE = "#61"
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
-_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
+_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 
 def _run_row(store, run_id: str) -> dict:
@@ -74,20 +83,22 @@ def test_tc_orch_16_provider_outage_pauses_and_resume_binds_the_same_backend(
     code path substitutes a different provider or profile, asserted at the API
     surface."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
-    resume = require_attr(Orchestrator, "resume", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
         orch, run_id, _ = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
         orch.enumerate_units(run_id)
+        orch.start(run_id)  # the outage is MID-RUN: the run is running when it hits
         in_flight = orch.lease("worker-a", "extract", 2)
         assert in_flight
         before = _run_row(store, run_id)
 
         # The outage: mid-run, with leases outstanding. The run pauses — it does
         # not fail, and it does not degrade into partial delivery.
-        pause(run_id, cause=ProviderUnavailableError("model server unreachable"))
+        cause = "model server unreachable (connection refused after 3 attempts)"
+        orch.pause(run_id, cause=ProviderUnavailableError(cause))
 
         row = _run_row(store, run_id)
         assert row["status"] == "paused", (
@@ -99,11 +110,20 @@ def test_tc_orch_16_provider_outage_pauses_and_resume_binds_the_same_backend(
             "binding is frozen at create_run (FR-CONF-04) and a pause may not "
             "touch it"
         )
+        # The ALERT half, name-agnostic: the cause's text is readable somewhere on
+        # the run row the operator surface reads — a pause that accepts the cause
+        # and discards it says THAT it stopped, never WHY.
+        assert any(
+            isinstance(value, str) and cause in value for value in row.values()
+        ), (
+            "the pause left no readable cause anywhere on the run row — 'pauses "
+            "and alerts' means the operator surface can say WHY the run stopped"
+        )
 
         # Resume binds the SAME backend: the snapshot is byte-identical after
         # resume, and the API surface offers no way to substitute one — resume()
         # takes no provider or profile argument to pass one to.
-        resume(run_id)
+        orch.resume(run_id)
         row = _run_row(store, run_id)
         assert row["provider_config"] == before["provider_config"] and row[
             "backend_profile"
@@ -111,7 +131,7 @@ def test_tc_orch_16_provider_outage_pauses_and_resume_binds_the_same_backend(
             "resume substituted the provider or profile — half a cohort graded by "
             "one instrument and half by another is RISK-22's exact failure"
         )
-        parameters = inspect.signature(resume).parameters
+        parameters = inspect.signature(Orchestrator.resume).parameters
         assert not any(
             name in parameters for name in ("provider", "profile", "backend")
         ), (
@@ -126,19 +146,22 @@ def test_tc_orch_16_provider_outage_pauses_and_resume_binds_the_same_backend(
 def test_tc_orch_17_build_changed_pauses_and_alerts(tmp_data_dir):
     """`TC-ORCH-17` (`FR-ORCH-17`, integration / rung 1, P0) — `BuildChangedError`
     raised mid-run: the run pauses and alerts, because the panel changed underneath
-    it. The alert half is the pause carrying its cause — the operator surface can say
-    WHY the run stopped, not just that it did."""
+    it. The alert half is the cause landing on the run row — the operator surface can
+    say WHY the run stopped, not just that it did."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
         orch, run_id, _ = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
         orch.enumerate_units(run_id)
+        orch.start(run_id)
         assert orch.lease("worker-a", "extract", 2)
         before = _run_row(store, run_id)
 
-        pause(run_id, cause=BuildChangedError("served build changed mid-run"))
+        cause = "served build changed mid-run: declared a1b2, served f9e8"
+        orch.pause(run_id, cause=BuildChangedError(cause))
 
         row = _run_row(store, run_id)
         assert row["status"] == "paused", (
@@ -150,10 +173,13 @@ def test_tc_orch_17_build_changed_pauses_and_alerts(tmp_data_dir):
             "the pause rewrote the run's frozen provider snapshot — a pause "
             "changes the run's state, never its binding (FR-CONF-04)"
         )
-        # The ALERT half: the pause above was raised WITH its cause, and the alert
-        # surface that makes it readable to an operator is #61's to define — this
-        # case's run-level oracle is the named pause itself (disclosed; reconciled
-        # against whatever surface #61 ships).
+        assert any(
+            isinstance(value, str) and cause in value for value in row.values()
+        ), (
+            "the pause left no readable cause anywhere on the run row — the ALERT "
+            "half of 'pauses and alerts' is the cause landing where an operator "
+            "can read it"
+        )
     finally:
         store.close()
 
@@ -167,8 +193,8 @@ def test_tc_orch_28_pause_with_the_orchestrator_stopped_queues_and_is_honoured_a
     The plan's stated shape: pause with the orchestrator **stopped** — the request
     queues and effects nothing; the orchestrator honours it at start."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    start = require_attr(Orchestrator, "start", issue=ISSUE)
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
@@ -178,7 +204,7 @@ def test_tc_orch_28_pause_with_the_orchestrator_stopped_queues_and_is_honoured_a
         # dispatch loop — and the pause is requested anyway. The row must QUEUE (the
         # request returns, the run's status is untouched): the request is not the
         # effect (CT-ORCH-13).
-        pause(run_id)
+        orch.pause(run_id)
         assert _run_row(store, run_id)["status"] == "pending", (
             "a pause request effected the transition in-request — the console "
             "would own the run's state, and a closed browser would own a running "
@@ -188,7 +214,7 @@ def test_tc_orch_28_pause_with_the_orchestrator_stopped_queues_and_is_honoured_a
         # The orchestrator starts and reads its control surface: the queued pause
         # is honoured AT start — the declared machine's next state, not a fresh
         # run-through the queued request was silently dropped by.
-        start(run_id)
+        orch.start(run_id)
         assert _run_row(store, run_id)["status"] == "paused", (
             "the queued pause was not honoured at start — either the control row "
             "was never read or the request effected the state in-request; both "
@@ -206,20 +232,20 @@ def test_tc_orch_29_run_status_transition_matrix_is_exactly_the_declared_set(
     `pending → running → (paused ↔ running) → complete | failed`, and **every**
     illegal transition is refused — swept as the full matrix, not sampled.
 
-    **Disclosed**: the matrix's reachable-via-control states are `pending`,
-    `running`, `paused` — reaching `complete` / `failed` is the terminal half of the
-    machine, driven by #61's lifecycle at the units-done and ceiling transitions, not
-    by a control operation, so the terminal-source cells are that story's to sweep
-    (its run-completion case holds this same matrix with the terminal rows driven).
-    """
+    The refusal MECHANISM is deliberately unpinned (see the module table): for an
+    illegal cell the run's state must not move — whether #61 raises, or queues the
+    request and refuses its effect at read time, the observable is the unchanged
+    state. The matrix's work-unit half runs green in
+    `tests/integration/orch/test_failure_taxonomy.py` over the shipped #58 surface;
+    the terminal `complete` / `failed` source-cells are #61's transitions to drive
+    (its run-completion case extends this sweep with them)."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    WorkLedgerError = require(ORCH_MODULE, "WorkLedgerError", issue=ISSUE)
-    start = require_attr(Orchestrator, "start", issue=ISSUE)
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
-    resume = require_attr(Orchestrator, "resume", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
-    # The declared legal set, as (source, operation) pairs that must succeed —
-    # each asserted as a positive control before its illegal siblings are refused.
+    # The declared legal set, as (source, operation) pairs that must land the
+    # declared target — each asserted as a positive control before its illegal
+    # siblings are refused.
     legal = {
         ("pending", "start"): "running",
         ("running", "pause"): "paused",
@@ -238,35 +264,33 @@ def test_tc_orch_29_run_status_transition_matrix_is_exactly_the_declared_set(
     ]
     assert len(illegal) == 6, "the sweep did not construct the full illegal matrix"
 
-    runners = {"start": start, "pause": pause, "resume": resume}
-
-    def _fresh_run(store, index: int) -> str:
-        """One seeded run per matrix cell: a transition asserted from a stale
-        state is not a transition from the state named."""
-        _, run_id, _ = seed_run(
-            store,
-            submissions=_SUBMISSIONS,
-            criteria=_CRITERIA,
-            package_id=f"pkg-matrix-{index}",
-        )
-        return run_id
-
-    def _drive_to(orch, run_id: str, state: str) -> None:
-        path = {"pending": [], "running": ["start"], "paused": ["start", "pause"]}[state]
-        for op in path:
-            runners[op](run_id)
-
     store = open_store(tmp_data_dir)
     try:
-        orch, _, _ = seed_run(
-            store, submissions=_SUBMISSIONS, criteria=_CRITERIA, package_id="pkg-matrix-0"
-        )
+        def _fresh_run(index: int) -> tuple:
+            """One seeded run per matrix cell: a transition asserted from a stale
+            state is not a transition from the state named."""
+            _, run_id, _ = seed_run(
+                store,
+                submissions=_SUBMISSIONS,
+                criteria=_CRITERIA,
+                package_id=f"pkg-matrix-{index}",
+            )
+            return run_id
+
+        def _drive_to(orch, run_id: str, state: str) -> None:
+            path = {
+                "pending": [],
+                "running": ["start"],
+                "paused": ["start", "pause"],
+            }[state]
+            for op in path:
+                getattr(orch, op)(run_id)
 
         # Positive controls: each legal pair lands the declared target state.
         for index, ((source, op), target) in enumerate(legal.items()):
-            run_id = _fresh_run(store, index + 1)
+            run_id = _fresh_run(index + 1)
             _drive_to(orch, run_id, source)
-            runners[op](run_id)
+            getattr(orch, op)(run_id)
             assert _run_row(store, run_id)["status"] == target, (
                 f"legal transition {source!r} --{op}--> did not land '{target}' "
                 "— the declared machine's forward edges must work before the "
@@ -274,19 +298,18 @@ def test_tc_orch_29_run_status_transition_matrix_is_exactly_the_declared_set(
             )
 
         # The illegal matrix: from each reachable state, each non-legal operation
-        # is refused by name and the state does not move.
+        # leaves the state EXACTLY where it was — raising or queue-and-refuse both
+        # qualify; the state moving is the failure.
         for index, (state, op) in enumerate(illegal):
-            run_id = _fresh_run(store, index + 10)
+            run_id = _fresh_run(index + 10)
             _drive_to(orch, run_id, state)
-            with pytest.raises(WorkLedgerError) as excinfo:
-                runners[op](run_id)
-            assert type(excinfo.value).__name__ != "NotImplementedYet", (
-                "the refusal surfaced the written-ahead blocker — the lifecycle "
-                "surface is not implemented, so this cell asserted nothing"
-            )
+            try:
+                getattr(orch, op)(run_id)
+            except Exception:
+                pass  # a named refusal is one legal implementation of "refused"
             assert _run_row(store, run_id)["status"] == state, (
-                f"illegal transition {state!r} --{op}--> was not refused cleanly: "
-                "the run's state moved — the machine accepted an edge FR-ORCH-25 "
+                f"illegal transition {state!r} --{op}--> was not refused: the "
+                "run's state moved — the machine accepted an edge FR-ORCH-25 "
                 "does not declare"
             )
     finally:
@@ -309,7 +332,8 @@ def test_res_09_outage_does_not_fail_units_and_preserves_in_flight_leases(
     Orchestrator, ORCH_LEASE_SECONDS = require(
         ORCH_MODULE, "Orchestrator", "ORCH_LEASE_SECONDS", issue=ISSUE
     )
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
@@ -317,10 +341,14 @@ def test_res_09_outage_does_not_fail_units_and_preserves_in_flight_leases(
         clock = FrozenClock()
         orch = Orchestrator(store, clock=clock)
         orch.enumerate_units(run_id)
+        orch.start(run_id)
         in_flight = orch.lease("worker-a", "extract", 3)
         assert in_flight
 
-        pause(run_id, cause=ProviderUnavailableError("model server unreachable"))
+        orch.pause(
+            run_id,
+            cause=ProviderUnavailableError("model server unreachable"),
+        )
 
         for unit in in_flight:
             row = _unit_row(store, unit.work_id)
@@ -355,43 +383,50 @@ def test_res_10_build_change_pauses_and_alerts_with_the_ledger_preserved(
 ):
     """`RES-10` (`FR-PROV-05`, `FR-ORCH-17`, resilience) — served build changes
     mid-run: pause and alert, ledger preserved. `BuildChangedError`; run paused;
-    cause readable on the run; nothing about the ledger's committed work is
-    rewritten — a pause preserves state, it does not repair or re-derive it."""
+    the cause readable on the run row; nothing about the WORK LEDGER's committed
+    rows is rewritten — a pause preserves state, it does not repair or re-derive
+    it. (Scoped to the work ledger, disclosed: the pause's own control row and any
+    alert record are the mechanism's writes, #61's to place — the preservation
+    oracle is that the LEDGER's units are untouched.)"""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    pause = require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "pause", issue=ISSUE)
+    require_attr(Orchestrator, "start", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
         orch, run_id, _ = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
         orch.enumerate_units(run_id)
+        orch.start(run_id)
         won = orch.lease("worker-a", "extract", 2)
         assert won
         orch.complete(won[0].work_id)
-        before = _table_counts(store)
 
-        pause(run_id, cause=BuildChangedError("served build changed mid-run"))
+        def _ledger() -> dict:
+            return {
+                row["work_id"]: (row["status"], row["attempts"], row["last_error"])
+                for row in store.cohort("c-2026-7B-orch").query(
+                    "SELECT work_id, status, attempts, last_error FROM work_unit "
+                    "WHERE run_id = :r",
+                    r=run_id,
+                )
+            }
+
+        before = _ledger()
+
+        cause = "served build changed mid-run: declared a1b2, served 77cd"
+        orch.pause(run_id, cause=BuildChangedError(cause))
 
         row = _run_row(store, run_id)
         assert row["status"] == "paused"
-        assert _table_counts(store) == before, (
-            "the pause rewrote the ledger — a pause preserves state, it does not "
-            "repair or re-derive it"
+        assert any(
+            isinstance(value, str) and cause in value for value in row.values()
+        ), (
+            "the pause left no readable cause anywhere on the run row — 'pauses "
+            "and alerts' means the operator surface can say WHY the run stopped"
+        )
+        assert _ledger() == before, (
+            "the pause rewrote the work ledger — a pause preserves state, it does "
+            "not repair or re-derive it"
         )
     finally:
         store.close()
-
-
-def _table_counts(store) -> dict[str, int]:
-    names = [
-        row["name"]
-        for row in store.cohort("c-2026-7B-orch").query(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name NOT LIKE 'sqlite_%'"
-        )
-    ]
-    return {
-        name: store.cohort("c-2026-7B-orch").query(
-            f"SELECT COUNT(*) AS n FROM {name}"
-        )[0]["n"]
-        for name in sorted(names)
-    }

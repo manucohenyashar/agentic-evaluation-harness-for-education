@@ -1,4 +1,5 @@
-"""`TC-ORCH-18` and `RES-12` — the failure taxonomy: fail the unit, never the run.
+"""`TC-ORCH-18`, `RES-12`, and the work-unit half of `TC-ORCH-29` — the failure
+taxonomy: fail the unit, never the run.
 
 - `TC-ORCH-18` (`FR-ORCH-18`, integration / rung 2): a unit failing once, twice, three
   times — requeued after the first two; on the third it transitions to `quarantined`
@@ -7,6 +8,12 @@
 - `RES-12` (`FR-ORCH-18`, `NFR-JUDGE-05`; §9.11): malformed model output,
   persistently — three retries then quarantine the unit; the run continues. Oracle:
   exact attempt count; unit quarantined; no default band written.
+- `TC-ORCH-29`'s work-unit half (`FR-ORCH-25`, unit-negative): the ledger's
+  transition machine swept as a full matrix over the shipped #58 surface — the
+  `run.status` half lives in `tests/integration/orch/test_pause_lifecycle.py`
+  (#61's machine); this file's matrix holds the one cell where plan and shipped
+  semantics deliberately disagree (`pending → done` without a lease), disclosed at
+  the test.
 
 The surfaces these cases name shipped with #58 (`fail()`, `complete()`, the sweeper),
 so both tests run unmarked. `fail()`'s documented semantics are the oracle here:
@@ -310,6 +317,135 @@ def test_res_12_persistent_failures_quarantine_and_write_no_band(tmp_data_dir):
         assert quarantined_row["attempts"] == 3
         assert quarantined_row["last_error"] == (
             "malformed output: numeral-bearing score claim rejected"
+        )
+    finally:
+        store.close()
+
+
+def test_tc_orch_29_work_unit_transition_matrix_is_exactly_the_declared_set(
+    tmp_data_dir,
+):
+    """`TC-ORCH-29`'s work-unit half (`FR-ORCH-25`, unit-negative, P1) — the ledger's
+    transition machine, swept as the full matrix: `pending → leased → done`,
+    `leased → pending` (fail below the ceiling), `leased → quarantined` (fail at the
+    ceiling), and every illegal edge refused.
+
+    The `run.status` half of this case runs in
+    `tests/integration/orch/test_pause_lifecycle.py` (#61's machine); this file
+    holds the work-unit half because it is the SHIPPED #58 surface.
+
+    **The disclosed cell: `pending → done` without a lease.** The plan's matrix
+    names this transition illegal; the shipped ledger deliberately ACCEPTS it —
+    `complete()`'s documented at-least-once arm (#58: a completion report may
+    legitimately arrive for a unit whose lease the sweeper already cleared, and
+    refusing it would lose a real result to a race). This test asserts the SHIPPED
+    documented semantics for that one cell; the delta between plan and
+    implementation is flagged to the test-plan's owner for reconciliation — the
+    other path (shipping a red unmarked test) would fail `TEST_CMD` at the gate.
+    """
+    Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
+    WorkLedgerError = require(ORCH_MODULE, "WorkLedgerError", issue=ISSUE)
+    store = open_store(tmp_data_dir)
+    try:
+        orch, run_id, _ = seed_run(
+            store, submissions=_SUBMISSIONS, criteria=_CRITERIA
+        )
+        orch.enumerate_units(run_id)
+        rows = store.cohort("c-2026-7B-orch").query(
+            "SELECT work_id, status, attempts FROM work_unit WHERE run_id = :r",
+            r=run_id,
+        )
+        assert rows and all(row["status"] == "pending" for row in rows), (
+            "enumeration did not birth the units pending — the machine's source "
+            "state is wrong before any transition"
+        )
+        ledger_unit, ladder_unit, direct_unit = (
+            row["work_id"] for row in rows[:3]
+        )
+        error = WorkError(message="matrix probe: judge returned a band outside the set")
+
+        # --- legal edges, positive-controlled -----------------------------------
+        # pending -> leased (the claim): lease exactly two, so the third extract
+        # unit stays pending-never-leased for the disclosed cell below.
+        won = orch.lease("worker-a", "extract", 2)
+        assert len(won) == 2, "the fixture did not lease its two extract units"
+        ledger_unit, ladder_unit = won[0].work_id, won[1].work_id
+        pending_rows = store.cohort("c-2026-7B-orch").query(
+            "SELECT work_id FROM work_unit WHERE run_id = :r AND stage = 'extract' "
+            "AND status = 'pending'",
+            r=run_id,
+        )
+        assert len(pending_rows) == 1, (
+            "the fixture's lease did not leave exactly one extract unit pending — "
+            "the disclosed cell needs a unit that was never leased"
+        )
+        direct_unit = pending_rows[0]["work_id"]
+        # leased -> done (the completion).
+        orch.complete(ledger_unit)
+        assert _unit_row(store, ledger_unit)["status"] == "done"
+
+        # leased -> pending (fail below the ceiling), thrice, then quarantined at
+        # the ceiling (the ladder; TC-ORCH-18's test holds the deep form).
+        for expected in (1, 2, 3):
+            orch.lease("worker-a", "extract", 10)
+            orch.fail(ladder_unit, error)
+            row = _unit_row(store, ladder_unit)
+            assert row["attempts"] == expected and row["status"] == (
+                "quarantined" if expected == 3 else "pending"
+            ), f"ladder step {expected}: the machine landed '{row['status']}'"
+
+        # --- illegal edges, each refused with the state unchanged ---------------
+        # A failure report for a DONE unit: absorbed, the record stands.
+        orch.fail(ledger_unit, error)
+        row = _unit_row(store, ledger_unit)
+        assert row["status"] == "done" and row["attempts"] == 0, (
+            "done -> pending via a late failure report — a result that exists "
+            "must not be unpicked (the illegal requeue edge)"
+        )
+        # A failure report for a QUARANTINED unit: absorbed, no attempt moves.
+        orch.fail(ladder_unit, error)
+        row = _unit_row(store, ladder_unit)
+        assert row["status"] == "quarantined" and row["attempts"] == 3, (
+            "quarantined -> anything via a duplicate report — the operator "
+            "surface said 'quarantined at 3' and it must stay true"
+        )
+        # done/quarantined are not claimable: the dispatcher never re-arms a
+        # terminal unit (done -> leased and quarantined -> leased are illegal).
+        still_open = {unit.work_id for unit in orch.lease("worker-b", "extract", 10)}
+        assert ledger_unit not in still_open and ladder_unit not in still_open, (
+            "a terminal unit came back on a claim pass — done and quarantined "
+            "must be out of dispatch"
+        )
+        # A duplicate completion for a DONE unit: absorbed, the record stands —
+        # `complete()` is idempotent on done (`CT-ORCH-03`: a completion recorded
+        # twice leaves one done row; the duplicate is at-least-once's second
+        # worker, and refusing it would punish the race's winner). Disclosed:
+        # the plan's matrix has no outgoing edge from done, and the shipped
+        # machine honours that by NO-OP on the duplicate rather than by refusing.
+        orch.complete(ledger_unit)
+        row = _unit_row(store, ledger_unit)
+        assert row["status"] == "done" and row["attempts"] == 0, (
+            "a duplicate completion disturbed a done unit — idempotence "
+            "(CT-ORCH-03) means one done row, not a moved one"
+        )
+        # A completion for a QUARANTINED unit: the named refusal, state unchanged
+        # (three failures were recorded; a result arriving underneath that record
+        # would un-quarantine by side effect — the shipped error names it).
+        with pytest.raises(WorkLedgerError):
+            orch.complete(ladder_unit)
+        assert _unit_row(store, ladder_unit)["status"] == "quarantined" and (
+            _unit_row(store, ladder_unit)["attempts"] == 3
+        ), "a refused completion moved the quarantined unit's record"
+
+        # --- the disclosed cell: pending -> done without a lease ----------------
+        # The plan names it illegal; the shipped ledger accepts it (the documented
+        # at-least-once arm — see this test's docstring). Asserting the SHIPPED
+        # semantics.
+        orch.complete(direct_unit)
+        row = _unit_row(store, direct_unit)
+        assert row["status"] == "done" and row["attempts"] == 0, (
+            "the shipped ledger refused a completion for a lease-less pending "
+            "unit — the at-least-once arm would lose a real result to a race"
         )
     finally:
         store.close()

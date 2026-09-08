@@ -48,7 +48,7 @@ from tests.support.orch_run import seed_run
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
-_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
+_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 
 def _score_rows(store, run_id: str, submission_id: str, criterion_id: str) -> list[dict]:
@@ -70,7 +70,7 @@ def test_res_06_escalation_survives_the_kill_and_dispatches_after_resume(
     units EXIST and are dispatchable — not committed-then-forgotten, and not
     re-created by the resume (one escalation, not two)."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#58")
-    enqueue_escalation = require_attr(Orchestrator, "enqueue_escalation", issue="#60")
+    require_attr(Orchestrator, "enqueue_escalation", issue="#60")
 
     data_dir = tmp_data_dir / "res06"
     store = open_store(data_dir)
@@ -89,7 +89,7 @@ def test_res_06_escalation_survives_the_kill_and_dispatches_after_resume(
                 orch.complete(unit.work_id)
     victim = orch.lease("worker-a", "score", 1)[0]
     orch.complete(victim.work_id)
-    enqueue_escalation(run_id, submission_id=victim.submission_id, criterion_id=victim.criterion_id)
+    orch.enqueue_escalation(run_id, submission_id=victim.submission_id, criterion_id=victim.criterion_id)
     before = _score_rows(store, run_id, victim.submission_id, victim.criterion_id)
     assert len(before) == 3, (
         f"the panel enumerated {len(before)} score units, expected the panel's 3"
@@ -144,7 +144,7 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
     case is a state that makes that fallback possible and adjudication impossible —
     there is no third verdict to hide behind."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#58")
-    enqueue_escalation = require_attr(Orchestrator, "enqueue_escalation", issue="#60")
+    require_attr(Orchestrator, "enqueue_escalation", issue="#60")
 
     store = open_store(tmp_data_dir)
     try:
@@ -159,26 +159,29 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
                     orch.complete(unit.work_id)
 
         # One (submission, criterion) trio: two judges deliver, the third fails
-        # permanently — three attempts, the shipped ceiling, then quarantine.
-        first = orch.lease("worker-a", "score", 1)[0]
-        trio_ids = [
-            row["work_id"]
-            for row in _score_rows(store, run_id, first.submission_id, first.criterion_id)
+        # permanently. Lease the trio once and disposition it directly — every
+        # leased unit is accounted for, and `fail` wins over a live lease (the
+        # shipped semantics), so the permanently failing judge is reported in
+        # place without re-leasing.
+        won = orch.lease("worker-a", "score", 100)
+        assert won, "the fixture leased no score units"
+        first = won[0]
+        trio = [
+            unit
+            for unit in won
+            if unit.submission_id == first.submission_id
+            and unit.criterion_id == first.criterion_id
         ]
-        assert len(trio_ids) == 3, "the fixture did not isolate one panel trio"
-        others = [wid for wid in trio_ids if wid != first.work_id]
+        assert len(trio) == 3, "the fixture did not isolate one panel trio"
+        others = [unit for unit in trio if unit.work_id != first.work_id]
         assert len(others) == 2, "the fixture's trio overlaps the victim"
         # Land the two verdicts.
-        for wid in others:
-            won = orch.lease("worker-a", "score", 100)
-            target = next(u for u in won if u.work_id == wid)
-            orch.complete(target.work_id)
+        for unit in others:
+            orch.complete(unit.work_id)
         # The third judge fails permanently: 3 reports, the ceiling.
         for _ in range(3):
-            won = orch.lease("worker-a", "score", 100)
-            target = next(u for u in won if u.work_id == first.work_id)
             orch.fail(
-                target.work_id,
+                first.work_id,
                 WorkError(message=f"judge call failed permanently on {first.work_id[:12]}"),
             )
 
@@ -193,7 +196,10 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
             "re-enqueue (the escalated re-run is an explicit enqueue_escalation, "
             "which this case did not make)"
         )
-        assert rows[others[0]]["status"] == "done" and rows[others[1]]["status"] == "done", (
+        assert (
+            rows[others[0].work_id]["status"] == "done"
+            and rows[others[1].work_id]["status"] == "done"
+        ), (
             "a delivered verdict was disturbed by its sibling's permanent failure — "
             "the two verdicts the fallback needs must stand"
         )
@@ -210,7 +216,7 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
         # And the store holds no aggregation artifact a two-judge decision could
         # hide in: at this surface the ledger is the only place a verdict lives,
         # and it shows 2 + 1 — the fallback's honest input.
-        others_done = [rows[w]["status"] for w in others]
+        others_done = [rows[unit.work_id]["status"] for unit in others]
         assert others_done == ["done", "done"] and rows[first.work_id]["status"] == (
             "quarantined"
         ), "the trio's final state moved after the assertions above"

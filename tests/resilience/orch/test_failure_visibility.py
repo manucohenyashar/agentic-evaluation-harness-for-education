@@ -4,14 +4,15 @@ delivers; every failure is visible on the operator surface; no failure is silent
 absorbed**. Oracle: invariant plus visibility assertion.
 
 **The scale, disclosed.** The plan says "a 23,000-unit run"; the enumerated ledger
-here is 350 submissions × 17 criteria (16 judged open, scored by the three-judge
-panel, plus 1 mcq scored deterministically):
+here is 350 submissions × 18 criteria (17 judged open, scored by the three-judge
+panel, plus 1 mcq scored deterministically — the mcq criterion contributes no
+extract unit, the shipped enumerator's own shape):
 
-- extract: 350 × 17 = 5,950
-- score: 350 × 16 × 3 judges = 16,800
+- extract: 350 × 17 judged = 5,950
+- score: 350 × 17 × 3 judges = 17,850
 - deterministic: 350 × 1 = 350
 
-…23,100 units — at or above the plan's figure with every one of the three stages
+…24,150 units — at or above the plan's figure with every one of the three stages
 present, which the "spread across stages" premise needs.
 
 **The 300 injected failures, exactly.** 210 units fail once (90 extract, 90 score,
@@ -69,7 +70,10 @@ ISSUE = "#62"
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 351))
 _CRITERIA = tuple(
-    [{"criterion_id": f"C{i:02d}", "kind": "open", "scoring_model": "atomic"} for i in range(1, 17)]
+    [
+        {"criterion_id": f"C{i:02d}", "kind": "open", "scoring_model": "holistic"}
+        for i in range(1, 18)
+    ]
     + [{"criterion_id": "MCQ", "kind": "mcq", "scoring_model": "deterministic"}]
 )
 
@@ -80,7 +84,7 @@ _STAGES = ("extract", "score", "deterministic")
 #: sum(fail_once + 3 * persistent) = (90 + 30) + (90 + 30) + (30 + 30) = 300.
 _FAILURE_PLAN = {"extract": (90, 10), "score": (90, 10), "deterministic": (30, 10)}
 
-_TOTAL_UNITS = 350 * 17 + 350 * 16 * 3 + 350 * 1
+_TOTAL_UNITS = 350 * 17 + 350 * 17 * 3 + 350 * 1
 _PERSISTENT_TOTAL = sum(plan[1] for plan in _FAILURE_PLAN.values())
 _INJECTED_FAILURES = sum(plan[0] + 3 * plan[1] for plan in _FAILURE_PLAN.values())
 
@@ -105,7 +109,7 @@ def test_tc_orch_31_twenty_three_thousand_units_three_hundred_failures_all_visib
     single failures completed and still name what happened, and the progress report
     — the operator surface — reconciles to the ledger to the unit."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
-    progress = require_attr(Orchestrator, "progress", issue=ISSUE)
+    require_attr(Orchestrator, "progress", issue=ISSUE)
 
     store = open_store(tmp_data_dir)
     try:
@@ -179,7 +183,7 @@ def test_tc_orch_31_twenty_three_thousand_units_three_hundred_failures_all_visib
             "WHERE run_id = :r",
             r=run_id,
         )
-        assert len(rows) == _TOTAL_UNITS == 23_100, (
+        assert len(rows) == _TOTAL_UNITS == 24_150, (
             f"the ledger holds {len(rows)} units, planned {_TOTAL_UNITS}"
         )
         assert sum(row["attempts"] for row in rows) == 300, (
@@ -219,7 +223,7 @@ def test_tc_orch_31_twenty_three_thousand_units_three_hundred_failures_all_visib
                 )
 
         # --- the visibility half: the operator surface reconciles ---------------
-        report = progress(run_id)
+        report = orch.progress(run_id)
         assert report["complete"] is True, (
             "the completion predicate did not fire — no pending units and no "
             "in-flight unit that could spawn an escalation, yet the run is not "
