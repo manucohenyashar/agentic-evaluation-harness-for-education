@@ -5,10 +5,12 @@ gate columns and `IngestReport.gates`.
 
 The clause: each gate records its own outcome in its own column, the gates are
 NEVER collapsed into one boolean, and the outcome values are a closed vocabulary —
-`pass` / `fail` / `not_run` / `unmatched` / `ambiguous` on V0-V3 and the
-three-valued `match` / `uncertain` / `mismatch` on V4. `IngestReport.gates` (the
-stage-level observability seam, CLAUDE.md seam 4) mirrors the stored columns
-exactly.
+`pass` / `fail` / `not_reached` / `unmatched` / `ambiguous` on V0-V3 and the
+three-valued `match` / `uncertain` / `mismatch` (+ `not_run`) on V4.
+`not_reached` (#222, the F4 fix) is what an unreached gate records — never the
+initialized `'pass'`, which made naive per-gate pass counts over raw rows
+overcount. `IngestReport.gates` (the stage-level observability seam, CLAUDE.md
+seam 4) mirrors the stored columns exactly.
 
 Discriminator: a mutant that collapses the five gates into one boolean (one
 column, `passed = 1`) fails the PRAGMA shape and the report-mirror sweep while
@@ -38,10 +40,12 @@ GATE_COLUMNS = ("v0_integrity", "v1_pages", "v2_structure", "v3_identity",
                 "v4_match")
 
 #: The closed value vocabulary. The shipped routing's only writers are the
-#: "pass"/"fail"/"not_run" initialisation and the quarantines, "unmatched"/
-#: "ambiguous" on V3, and the three-valued V4 outcome.
+#: `not_reached` initialisation (#222: a gate the ladder never reached never
+#: reads `'pass'`), the `"pass"`/`"fail"` verdicts the running gates record,
+#: "unmatched"/"ambiguous" on V3, and the three-valued V4 outcome plus its
+#: `not_run`.
 GATE_VOCABULARY = frozenset({
-    "pass", "fail", "not_run", "unmatched", "ambiguous",
+    "pass", "fail", "not_reached", "not_run", "unmatched", "ambiguous",
     "match", "uncertain", "mismatch",
 })
 
@@ -173,7 +177,10 @@ def test_tc_ingest_c08_the_gate_values_are_the_closed_vocabulary(tmp_data_dir):
 def test_tc_ingest_c08_a_v4_not_run_is_recorded_not_hidden(tmp_data_dir):
     """`TC-INGEST-C08` (not_run half) — with no package bound, V4 records
     `not_run` in its own column on an otherwise-completed row: a gate that did
-    not run is a recorded outcome, not a missing column or a silent pass."""
+    not run is a recorded outcome, not a missing column or a silent pass.
+    #222's sentinel gives V2 the same honesty: with no catalog to check
+    against, V2 never ran and records `not_reached` — never the initialized
+    `'pass'` the F4 probe masked unreached gates with."""
     fx = Contract(tmp_data_dir, "c08-notrun")
     fx.add_roster("hal")
     report = _ingest_clean(fx, b"c08 nr pdf", "a.pdf")
@@ -187,7 +194,11 @@ def test_tc_ingest_c08_a_v4_not_run_is_recorded_not_hidden(tmp_data_dir):
         "bound — 'not_run' is the honest outcome."
     )
     assert stored["v0_integrity"] == "pass" and stored["v1_pages"] == "pass" \
-        and stored["v2_structure"] == "pass" and stored["v3_identity"] == "pass", (
+        and stored["v3_identity"] == "pass", (
         f"TC-INGEST-C08: the early gates recorded {stored}."
+    )
+    assert stored["v2_structure"] == "not_reached", (
+        f"TC-INGEST-C08: v2 recorded {stored['v2_structure']!r} with no "
+        "package bound — V2 never ran and must not read 'pass'."
     )
     fx.close()

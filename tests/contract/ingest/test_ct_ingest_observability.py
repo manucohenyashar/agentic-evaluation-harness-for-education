@@ -10,9 +10,10 @@ the operator to the wrong fix), pages-with-text-layer, mean and max
 description second-pass disagreement rate; per-region confidence is recorded
 in a form supporting the §6.9 surface-proxy analysis (NFR-INGEST-07).
 
-**Disclosed finding (G4, in `_doubles`, probe-backed):** the AGGREGATE signals
-are not emitted anywhere — there is no metrics emission in the module;
-`TC-INGEST-44` (TS-19, issue #48) is the open implementation story. What this
+**Finding G4, resolved by #222:** the AGGREGATE signals are now emitted by
+the single emitter `Ingestor.run_aggregates` (its per-gate counts asserted
+against construction-known reachability in `TC-INGEST-44`); the consumer
+half is TS-55 (#148) — cross-referenced, not duplicated. What this
 case holds at full strength is the producer half the aggregates are computed
 from, with the clause's own emphasis asserted at the data level:
 
@@ -32,9 +33,10 @@ from, with the clause's own emphasis asserted at the data level:
   included (CT-INGEST-04's clause, #221).
 
 `description_secondary` is always NULL — the second-pass disagreement signal
-is Phase 2 (#39 landed the column; the pass is not implemented). The emission
-and aggregation halves are M-STATS/M-INTEG's (stories #115..#118 and #73..#74)
-— deferred with disclosure.
+is Phase 2 (#39 landed the column; the pass is not implemented), so the
+emitter reads it as the honest None, never a simulated zero. Consuming the
+aggregates into stats surfaces is M-STATS/M-INTEG's (TS-55/#148) —
+cross-referenced, not duplicated.
 """
 from __future__ import annotations
 
@@ -167,7 +169,10 @@ def test_tc_ingest_c19_per_gate_counts_and_quarantine_attribution_are_derivable(
     route and two failing routes, the gate columns carry INDEPENDENT
     distributions (a merged counter could not show a v1 failure beside
     all-passing v0 columns), and every quarantined row's findings attribute to
-    the gate that failed — the quarantine count is BY gate, not in total."""
+    the gate that failed — the quarantine count is BY gate, not in total.
+    #222's sentinel: no package is bound to any of these routes, so V2 never
+    runs and reads `not_reached` on every row — the distribution the F4 probe
+    used to fake as three `'pass'`es."""
     routes = []
     clean = Contract(tmp_data_dir, "c19-clean")
     clean.add_roster("gus")
@@ -192,11 +197,13 @@ def test_tc_ingest_c19_per_gate_counts_and_quarantine_attribution_are_derivable(
     rows = [row for _label, fx, _report in routes for row in fx.submission_rows()]
     assert len(rows) == 3, f"TC-INGEST-C19: expected three rows, got {len(rows)}."
     # Per-gate pass/fail counts: each column's own distribution, asserted
-    # exactly — independent, never a merged total.
+    # exactly — independent, never a merged total. V2 never runs (no package
+    # bound) and reads `not_reached` on every row (#222); V3 runs only where a
+    # document was stored.
     columns = {"v0_integrity": {"pass": 3},
                "v1_pages": {"pass": 2, "fail": 1},
-               "v2_structure": {"pass": 3},
-               "v3_identity": {"pass": 2, "unmatched": 1},
+               "v2_structure": {"not_reached": 3},
+               "v3_identity": {"pass": 1, "unmatched": 1, "not_reached": 1},
                "v4_match": {"not_run": 3}}
     for column, expected in columns.items():
         counts = Counter(row[column] for row in rows)
@@ -236,11 +243,12 @@ def test_tc_ingest_c19_per_gate_counts_and_quarantine_attribution_are_derivable(
 def test_tc_ingest_c19_a_v0_refusal_names_v0_not_the_skipped_gates(
         tmp_data_dir):
     """`TC-INGEST-C19` (attribution under skips) — a V0 refusal quarantines
-    before V1–V3 run, and the shipped columns keep the skipped gates' `pass`
-    init (the C08 nuance): the attribution that survives is the FINDING's gate
-    key, which names v0 — the operator's quarantine-by-gate count reads the
-    finding, not the columns alone. Asserted so the aggregate cannot silently
-    attribute skipped gates."""
+    before V1–V3 run, and the skipped gates record `not_reached` (#222, the F4
+    fix) — NEVER the initialized `'pass'` they used to keep, which made naive
+    per-gate pass counts over raw rows overcount. The attribution that
+    survives is the FINDING's gate key, which names v0 — the operator's
+    quarantine-by-gate count reads the finding, not the columns alone. Both
+    halves asserted so the aggregate can neither mis-attribute nor overcount."""
     fx = Contract(tmp_data_dir, "c19-v0", sanitizer=RefusingSanitizer("junk"))
     report = fx.ingestor.ingest_submission(
         [fx.put(b"c19 v0 pdf")], cohort_id=COHORT, package_version="v0",
@@ -257,5 +265,18 @@ def test_tc_ingest_c19_a_v0_refusal_names_v0_not_the_skipped_gates(
     row = fx.submission_rows()[0]
     assert row["quarantined"] == 1 and row["ingest_status"] == "unreadable", (
         f"TC-INGEST-C19: the stored row: {dict(row)}."
+    )
+    # The F4 sweep (#222): every gate the refusal did not reach records
+    # `not_reached` — an unreached gate never reads `pass`, so counting gate
+    # passes over raw rows equals counting over construction-known
+    # reachability.
+    for column in ("v1_pages", "v2_structure", "v3_identity"):
+        assert row[column] == "not_reached", (
+            f"TC-INGEST-C19: the unreached {column} reads {row[column]!r} — "
+            "an unreached gate must record `not_reached`, never 'pass' "
+            "(the F4 overcount)."
+        )
+    assert row["v4_match"] == "not_run" and row["v0_integrity"] == "fail", (
+        f"TC-INGEST-C19: the refusal's own gates recorded {dict(row)}."
     )
     fx.close()

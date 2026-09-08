@@ -71,6 +71,11 @@ __all__ = [
     "IngestGapError",
     "IngestOrderError",
     "IngestReport",
+    "RunAggregates",
+    "GATE_NOT_REACHED",
+    "GATE_PASS_VALUES",
+    "GATE_FAIL_VALUES",
+    "GATE_COLUMNS_BY_GATE",
     "V4_MATCH_OUTCOMES",
     "INGEST_STATUSES",
     "Ingestor",
@@ -273,6 +278,16 @@ DEFAULT_DUPLICATE_THRESHOLD = 0.9
 #: package bound to the ingestion. The ladder writes exactly these values — anything
 #: else in the column is a bug, so the set is the data-layer guard's vocabulary too.
 V4_MATCH_OUTCOMES: tuple[str, ...] = ("match", "uncertain", "mismatch", "not_run")
+
+#: The gate columns' not-reached sentinel (#222, the F4 probe): a gate the ladder
+#: never reached records `not_reached`, never the initialized `'pass'` — the
+#: final gate write records EVERY column, so an initialized `'pass'` would sit on
+#: top of a gate that never ran and naive per-gate pass counts over raw rows
+#: would overcount. The sentinel is data, not absence: counting passes over raw
+#: rows then equals counting over construction-known reachability. V4 keeps its
+#: own `not_run` (`V4_MATCH_OUTCOMES`, FR-INGEST-25's shipped vocabulary); the
+#: gate columns carry no CHECK, so the sentinel needs no migration.
+GATE_NOT_REACHED = "not_reached"
 
 #: The V4 cohort circuit breaker's rate threshold (`FR-INGEST-28`; design
 #: Configuration: `INGEST_V4_COHORT_BREAKER_RATE`, the design's 20% assumption). The
@@ -1125,11 +1140,17 @@ class ResidencySlot:
     A slot whose policy admits both roles concurrently (shared-memory profiles where
     the design allows coexistence) admits them: `acquire` is then a no-op guard, and
     the slot exists so the call sites do not change when a profile tightens.
+
+    Waiter state is observable (#222, the F11 fix): `holder`, `waiters` and
+    `exclusive` read the slot's live state, and `snapshot()` returns the
+    stage-detail dict the results carry — a slot reference on a result is never
+    bare.
     """
 
     def __init__(self, *, exclusive: bool) -> None:
         self._exclusive = exclusive
         self._holder: str | None = None
+        self._waiters = 0
         if exclusive:
             import threading
 
@@ -1146,13 +1167,50 @@ class ResidencySlot:
         exclusive = not (judge_role in roles and transcriber_role in roles)
         return cls(exclusive=exclusive)
 
+    @property
+    def exclusive(self) -> bool:
+        """Whether the slot admits one resident at a time."""
+        return self._exclusive
+
+    @property
+    def holder(self) -> str | None:
+        """The role currently holding the slot, or None — a shared slot never
+        holds (its acquire is a guard, not a hold)."""
+        if not self._exclusive:
+            return None
+        with self._lock:
+            return self._holder
+
+    @property
+    def waiters(self) -> int:
+        """How many threads are currently blocked in `acquire` (#222, F11) —
+        the waiter state the mid-run probes were scheduling-race-blind to. A
+        shared slot never blocks, so it reads 0."""
+        if not self._exclusive:
+            return 0
+        with self._lock:
+            return self._waiters
+
+    def snapshot(self) -> dict:
+        """The slot's state as a stage-detail dict (`CLAUDE.md` seam 4): no
+        result carries a bare slot reference."""
+        if not self._exclusive:
+            return {"exclusive": False, "holder": None, "waiters": 0}
+        with self._lock:
+            return {"exclusive": True, "holder": self._holder,
+                    "waiters": self._waiters}
+
     def acquire(self, role: str = "transcriber") -> None:
         if not self._exclusive:
             return
         self._lock.acquire()
         try:
             while self._holder is not None:
-                self._released.wait()
+                self._waiters += 1
+                try:
+                    self._released.wait()
+                finally:
+                    self._waiters -= 1
             self._holder = role
         finally:
             self._lock.release()
@@ -1552,6 +1610,32 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "parent_doc_id, created_at FROM document WHERE submission_id = :submission_id "
         "ORDER BY created_at, document_id"
     ),
+    # -- the run-level aggregate emitter (#222, F3/G4; CT-INGEST-19/OBS-01) ----------------------------
+    # One path each: the emitter reads the cohort's rows through these and
+    # no consumer recomputes the counts. Setup artifacts (documents with a
+    # NULL submission) are outside every cohort join by construction.
+    "select_cohort_gate_rows": Statement(
+        "SELECT submission_id, v0_integrity, v1_pages, v2_structure, "
+        "v3_identity, v4_match, quarantined FROM submission "
+        "WHERE cohort_id = :cohort_id"
+    ),
+    "select_cohort_documents": Statement(
+        "SELECT d.pages_with_text_layer, d.text_layer_divergence FROM document d "
+        "JOIN submission s ON d.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id"
+    ),
+    "select_cohort_mark_regions": Statement(
+        "SELECT r.selection_state FROM document_region r "
+        "JOIN document d ON r.document_id = d.document_id "
+        "JOIN submission s ON d.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id AND r.region_kind = 'selection_mark'"
+    ),
+    "select_cohort_second_pass_regions": Statement(
+        "SELECT r.description, r.description_secondary FROM document_region r "
+        "JOIN document d ON r.document_id = d.document_id "
+        "JOIN submission s ON d.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id AND r.description_secondary IS NOT NULL"
+    ),
 }
 STATEMENTS.update(INGEST_STATEMENTS)
 TIER_MIGRATIONS[Tier.COHORT] = (
@@ -1774,6 +1858,53 @@ class IngestReport:
     ingest_status: str = "ok"
     detail: dict = field(default_factory=dict)
     v4_signals: dict = field(default_factory=dict)
+
+
+#: The per-gate PASS/FAIL values as the run aggregates count them (#222, the
+#: F3/G4 emitter — the single counting path; a consumer that counts differently
+#: is a second copy of the counts and is the bug the issue kills). A gate's
+#: passing outcome is `pass` — except V4, whose column records `match` and
+#: never the literal — and `not_reached`/`not_run` count in neither side: a
+#: gate the ladder never reached is neither a pass nor a fail.
+GATE_PASS_VALUES: dict[str, tuple[str, ...]] = {
+    "v0": ("pass",), "v1": ("pass",), "v2": ("pass",), "v3": ("pass",),
+    "v4": ("match",),
+}
+GATE_FAIL_VALUES: dict[str, tuple[str, ...]] = {
+    "v0": ("fail",), "v1": ("fail",), "v2": ("fail",),
+    "v3": ("unmatched", "ambiguous"), "v4": ("uncertain", "mismatch"),
+}
+#: The gate columns, keyed by the gates' report keys (`IngestReport.gates`).
+GATE_COLUMNS_BY_GATE: dict[str, str] = {
+    "v0": "v0_integrity", "v1": "v1_pages", "v2": "v2_structure",
+    "v3": "v3_identity", "v4": "v4_match",
+}
+
+
+@dataclass
+class RunAggregates:
+    """The run-level signals CT-INGEST-19/OBS-01 name, emitted by the ONE
+    emitter (`Ingestor.run_aggregates`, #222's F3/G4 fix) over the cohort's
+    stored rows — the counts the report surface names are actually produced.
+    A consumer (TS-55/#148) reads these; nothing recomputes them.
+
+    Rates are fractions in [0, 1]; a signal with no denominator (no rows, no
+    marks, no measurements, no second pass) is None — the honest absent, never
+    a simulated zero — and `basis` records what each signal was computed over,
+    because a bare number next to an empty provenance is the silent-failure
+    trap the stage-detail seam exists to kill."""
+
+    submissions: int
+    ocr_failure_rate: float | None
+    unresolved_mark_rate: float | None
+    pages_with_text_layer: int
+    mean_text_layer_divergence: float | None
+    max_text_layer_divergence: float | None
+    gate_pass_counts: dict[str, int]
+    gate_fail_counts: dict[str, int]
+    quarantine_counts_by_gate: dict[str, int]
+    second_pass_disagreement_rate: float | None
+    basis: dict[str, str] = field(default_factory=dict)
 
 
 def _evaluative_offences(description: str,
@@ -3089,8 +3220,13 @@ class Ingestor:
         if (tripped := self.cohort_breaker(cohort_id)) is not None:
             raise IngestCohortBreakerTripped(tripped["finding"])
         submission_id = f"sub-{uuid.uuid4().hex[:12]}"
-        gates: dict[str, str] = {"v0": "pass", "v1": "pass", "v2": "pass",
-                                 "v3": "pass", "v4": "not_run"}
+        # Every gate starts NOT REACHED (#222, the F4 fix): the final write
+        # records every column, so a `'pass'` init would ride to the row on
+        # gates the ladder never reached. Each gate flips to its own outcome
+        # only at the point the ladder actually runs it.
+        gates: dict[str, str] = {"v0": GATE_NOT_REACHED, "v1": GATE_NOT_REACHED,
+                                 "v2": GATE_NOT_REACHED,
+                                 "v3": GATE_NOT_REACHED, "v4": "not_run"}
         findings: list[dict] = []
         ingest_status = "ok"
         quarantined = False
@@ -3151,6 +3287,9 @@ class Ingestor:
                     "gate": "v0", "blob_hash": blob_hash[:12],
                     "finding": f"{blank}/{len(pages)} blank pages exceed tolerance"})
                 v0_failed = True
+        if not v0_failed:
+            # V0 completed every source without quarantining — its verdict.
+            gates["v0"] = "pass"
 
         # The submission row exists before anything references it: the document's
         # FK points here, and the gate columns write to it after the ladder runs.
@@ -3171,6 +3310,7 @@ class Ingestor:
                     package_version=package_version, filenames=filenames,
                     submission_id=submission_id,
                 )
+                gates["v1"] = "pass"
             except (IngestGapError, IngestDuplicateError) as error:
                 # V1 page completeness (FR-INGEST-22): #37's gap and duplicate
                 # findings become gate outcomes here — quarantined, naming the
@@ -3265,6 +3405,8 @@ class Ingestor:
                 if v2_failures:
                     quarantine("v2", "incomplete", {
                         "gate": "v2", "failures": v2_failures})
+                else:
+                    gates["v2"] = "pass"
             # V3 identity (FR-INGEST-24): the transcript's declared identity,
             # matched against the roster — ambiguous or unmatched routes to triage
             # and is NEVER guessed.
@@ -3398,12 +3540,149 @@ class Ingestor:
             "ingested submission %s status=%s gates=%s findings=%d",
             submission_id, ingest_status, gates, len(findings),
         )
+        detail = {"findings": findings, "v2_failures": v2_failures,
+                  "neutralized": neutralized}
+        if self._residency is not None:
+            # The F11 seam (#222): a slot on a result is never bare — the
+            # report carries the slot's stage detail (holder, waiter count)
+            # next to the gates it gated.
+            detail["residency"] = self._residency.snapshot()
         return IngestReport(
             submission_id=submission_id, document_id=document_id or "",
             gates=gates, ingest_status=ingest_status,
-            detail={"findings": findings, "v2_failures": v2_failures,
-                    "neutralized": neutralized},
+            detail=detail,
             v4_signals=v4_signals,
+        )
+
+    def run_aggregates(self, cohort_id: str) -> RunAggregates:
+        """The cohort's run-level aggregates (`CT-INGEST-19`, OBS-01) — #222's
+        F3/G4 emitter, the single path that produces every signal the report
+        surface names. Each is computed from the STORED rows (the same rows a
+        consumer could read), never from in-memory state: the per-gate pass
+        counts over raw rows are honest exactly because the F4 fix made an
+        unreached gate record `not_reached` — counting over raw rows equals
+        counting over construction-known reachability.
+
+        Signal definitions (each also stated in `basis`, with its denominator):
+
+        - `ocr_failure_rate`: submissions whose V0 or V1 gate failed, over all
+          submissions — the file/OCR pipeline failed to deliver a usable
+          transcript (remedy: re-scan/re-ingest). V2–V4's remedies differ,
+          which is the clause's reason the rates are separate signals.
+        - `unresolved_mark_rate`: selection-mark regions whose
+          `selection_state` is not `resolved`, over all selection-mark regions
+          (remedy: operator reading — CT-INGEST-05).
+        - `pages_with_text_layer`: the count over the cohort's submission
+          documents; 0 with no documents is the honest zero (a count, not a
+          rate).
+        - `mean`/`max_text_layer_divergence`: over the documents that carry a
+          measurement (each recorded value is that document's per-page
+          maximum, F6); None when none measured.
+        - `gate_pass_counts`/`gate_fail_counts`: per gate over the five
+          columns under `GATE_PASS_VALUES`/`GATE_FAIL_VALUES`;
+          `not_reached`/`not_run` count in neither.
+        - `quarantine_counts_by_gate`: each quarantined row attributed to the
+          FIRST failing gate in ladder order (the C19 derivation: a
+          quarantined row names exactly one failing gate). A quarantined row
+          that names none counts under `unattributed` — surfaced, never
+          folded away.
+        - `second_pass_disagreement_rate`: second-passed regions whose
+          secondary description differs from the primary, over second-passed
+          regions; None when the column carries no second pass — the pass is
+          not implemented (C19: never simulated), so a zero would lie."""
+        gate_rows = self._handle.query(
+            INGEST_STATEMENTS["select_cohort_gate_rows"], cohort_id=cohort_id)
+        documents = self._handle.query(
+            INGEST_STATEMENTS["select_cohort_documents"], cohort_id=cohort_id)
+        marks = self._handle.query(
+            INGEST_STATEMENTS["select_cohort_mark_regions"],
+            cohort_id=cohort_id)
+        second_pass = self._handle.query(
+            INGEST_STATEMENTS["select_cohort_second_pass_regions"],
+            cohort_id=cohort_id)
+
+        submissions = len(gate_rows)
+        ocr_failed = sum(
+            1 for row in gate_rows
+            if row["v0_integrity"] in GATE_FAIL_VALUES["v0"]
+            or row["v1_pages"] in GATE_FAIL_VALUES["v1"])
+        unresolved_marks = sum(
+            1 for row in marks if row["selection_state"] != "resolved")
+        divergences = [row["text_layer_divergence"] for row in documents
+                       if row["text_layer_divergence"] is not None]
+        pass_counts = {
+            gate: sum(1 for row in gate_rows
+                      if row[column] in GATE_PASS_VALUES[gate])
+            for gate, column in GATE_COLUMNS_BY_GATE.items()}
+        fail_counts = {
+            gate: sum(1 for row in gate_rows
+                      if row[column] in GATE_FAIL_VALUES[gate])
+            for gate, column in GATE_COLUMNS_BY_GATE.items()}
+        quarantine_by_gate: dict[str, int] = {}
+        for row in gate_rows:
+            if not row["quarantined"]:
+                continue
+            failed = next((gate for gate, column in GATE_COLUMNS_BY_GATE.items()
+                           if row[column] in GATE_FAIL_VALUES[gate]), None)
+            quarantine_by_gate[failed if failed is not None else "unattributed"] = (
+                quarantine_by_gate.get(
+                    failed if failed is not None else "unattributed", 0) + 1)
+        disagreed = sum(
+            1 for row in second_pass
+            if (row["description_secondary"] or "").strip()
+            != (row["description"] or "").strip())
+
+        return RunAggregates(
+            submissions=submissions,
+            ocr_failure_rate=(ocr_failed / submissions
+                              if submissions else None),
+            unresolved_mark_rate=(unresolved_marks / len(marks)
+                                  if marks else None),
+            pages_with_text_layer=sum(
+                row["pages_with_text_layer"] or 0 for row in documents),
+            mean_text_layer_divergence=(sum(divergences) / len(divergences)
+                                        if divergences else None),
+            max_text_layer_divergence=(max(divergences)
+                                       if divergences else None),
+            gate_pass_counts=pass_counts,
+            gate_fail_counts=fail_counts,
+            quarantine_counts_by_gate=quarantine_by_gate,
+            second_pass_disagreement_rate=(disagreed / len(second_pass)
+                                           if second_pass else None),
+            basis={
+                "ocr_failure_rate":
+                    f"submissions with a failed v0 or v1 gate over "
+                    f"{submissions} submission(s); None over an empty cohort",
+                "unresolved_mark_rate":
+                    f"selection-mark regions not 'resolved' over "
+                    f"{len(marks)} selection-mark region(s); None when the "
+                    "cohort carries no marks",
+                "pages_with_text_layer":
+                    f"sum over {len(documents)} submission document(s); "
+                    "documents without a count contribute 0",
+                "mean_text_layer_divergence":
+                    f"mean of {len(divergences)} recorded per-document "
+                    "maximum(a); None when none measured",
+                "max_text_layer_divergence":
+                    f"max of {len(divergences)} recorded per-document "
+                    "maximum(a); None when none measured",
+                "gate_pass_counts":
+                    "per gate over the raw submission rows under "
+                    "GATE_PASS_VALUES; not_reached/not_run count in neither "
+                    "side (the F4 discriminator)",
+                "gate_fail_counts":
+                    "per gate over the raw submission rows under "
+                    "GATE_FAIL_VALUES",
+                "quarantine_counts_by_gate":
+                    "quarantined rows attributed to the first failing gate "
+                    "in ladder order; 'unattributed' only when a quarantined "
+                    "row names none",
+                "second_pass_disagreement_rate":
+                    f"second-passed regions whose secondary description "
+                    f"differs from the primary over {len(second_pass)} "
+                    "second-passed region(s); None while no second pass has "
+                    "run (the pass is not implemented — never simulated)",
+            },
         )
 
     @staticmethod
