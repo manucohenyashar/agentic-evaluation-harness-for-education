@@ -74,6 +74,71 @@ TS26_EXTRACT_SYMBOLS = (
     SPAN_PARSE,
 )
 
+# --- TS-27 (#71), the injection-resistance cases -------------------------------------------
+#
+# The TS-27 suite (TC-EXTRACT-10, ADV-02) reuses every TS-26 name above and adds exactly one
+# invented name of its own — the judge-reply stand-in below. The judge symbols the ADV-02 file
+# resolves (`aeh.judge:ScoringWorker`, `aeh.judge:prompt_fields`) are **already assumed by the
+# repo** (the `"#78"`, `"#78 review"` and `"#78 rerun review"` registry entries), so they are
+# referenced here rather than re-declared: a second declaration would be a second bet that could
+# drift from the first.
+
+#: The implementing story for `M-JUDGE` — the ADV-02 file resolves judge names against it, so
+#: its writtenahead registry entry is a conjunction over BOTH modules (#68's driver makes the
+#: extract leg runnable, #78's worker makes the band leg runnable — either absent is a red case).
+JUDGE_ISSUE = "#78"
+
+#: The subset of the TS-26 surface the TC-EXTRACT-10 file resolves. The writtenahead registry
+#: entry for that file is built from this tuple (the `TS26_EXTRACT_SYMBOLS` pattern), so the
+#: registry cannot name a symbol the file stopped using.
+TS27_EXTRACT_SYMBOLS = (
+    WORKER,
+    ASSEMBLE,
+    PROMPT_FIELDS,
+    RESULT_TYPE,
+    TEMPLATE_VERSION,
+)
+
+
+def verdict_completion(
+    band: str,
+    self_confidence: float,
+    *,
+    build_id: str,
+    cited_spans: list[dict[str, Any]] | None = None,
+    evidence_assessment: str = "the cited spans support the band",
+    evidence_sufficient: bool = True,
+) -> Any:
+    """A `Completion` whose text is the assumed judge reply for one verdict.
+
+    **Disclosed stand-in** (see the module docstring): the wire format of a judge reply is
+    #78's to fix, but the five field NAMES and their ORDER are design-named — FR-JUDGE-09
+    requires the response fields in exactly this order (`cited_spans`, `evidence_assessment`,
+    `evidence_sufficient`, `band`, `self_confidence`) and rejects a reply whose fields arrive
+    in a different order, so the stand-in serializes them in that order and never re-sorts.
+    `band` is a band NAME from the criterion's declared set (FR-JUDGE-04); `self_confidence`
+    is persisted but never alone determines routing (FR-JUDGE-13).
+    """
+    from aeh.prov import Completion
+
+    reply = {
+        "cited_spans": list(cited_spans or []),
+        "evidence_assessment": evidence_assessment,
+        "evidence_sufficient": evidence_sufficient,
+        "band": band,
+        "self_confidence": self_confidence,
+    }
+    return Completion(
+        text=json.dumps(reply),  # insertion order IS the contract (FR-JUDGE-09)
+        tokens_in=0,
+        tokens_out=0,
+        latency_ms=0,
+        resolved_build=build_id,
+        cached_prefix_tokens=0,
+        cost=None,
+    )
+
+
 #: `ModelRef(role="extractor", ...)` — the single small model of NFR-EXTRACT-01, shaped
 #: like `EDGE_TRANSCRIBER` (`tests/support/conf_builders.py`). Callers who need a
 #: *different family* for #69 build the second ref themselves; both must be
