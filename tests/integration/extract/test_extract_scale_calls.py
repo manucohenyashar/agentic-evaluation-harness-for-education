@@ -19,9 +19,11 @@ measure fixture recording, not call count (disclosed stand-in: the stub returns 
 canned reply for every request; the request-level contract is TC-EXTRACT-01's and
 CT-PROV-05's, not this case's subject).
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+**Written ahead of #68** (`M-EXTRACT`) — the call-count half only: the enumeration
+half runs GREEN against shipped `M-ORCH` (it requires nothing of `aeh.extract`), so it
+carries no marker and guards the gate; the file is still registered in
+`WRITTEN_AHEAD_BLOCKERS` under `"#68 extraction suite (TS-26)"` because it carries the
+marker (symbols conjunction; see `tests/support/extract_vocabulary.py`).
 
 **Interface this case assumes of #68**: `ExtractionWorker(store, provider,
 model_ref).process(unit)` — one `complete` call per unit is the one-call-per-unit
@@ -57,7 +59,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = pytest.mark.integration
 
 ISSUE = EXTRACT_ISSUE
 
@@ -140,6 +142,7 @@ def test_tc_extract_11_enumeration_is_exactly_5250_extract_units(tmp_data_dir):
         store.close()
 
 
+@pytest.mark.writtenahead
 def test_tc_extract_11_one_call_per_unit_at_any_panel_depth(tmp_data_dir):
     """`TC-EXTRACT-11` (call-count half) — driving 30 extract units makes exactly 30
     `complete` calls under a 3-judge panel and exactly 30 under a 1-judge panel: the

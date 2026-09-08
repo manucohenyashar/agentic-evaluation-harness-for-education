@@ -38,7 +38,11 @@ Oracles:
 reads. The canonical document in TC-EXTRACT-09 composes the shipped region headers by
 hand; the production composition is `M-INGEST`'s, and only the header shapes the
 extractor must parse are load-bearing here. The reply format is `span_completion`'s
-disclosed stand-in, with `region_kind` on the spans the same way.
+disclosed stand-in, with `region_kind` on the spans the same way — the label in the
+recorded reply is fixture-supplied, so TC-EXTRACT-09 verifies PRESERVATION of the
+marking through parse and persistence, not its derivation from the document's region
+headers; that derivation is #68's parse, and a worker that relabels freely would be
+caught only by a header-vs-marking comparison this rung cannot force.
 
 **Isolation: rung 2** — real store, real ledger, real blob directory; the provider
 boundary is the only fake (`RecordedFixtureProvider` where the reply succeeds, a

@@ -30,7 +30,7 @@ Oracles:
 
 | Name | Status |
 |---|---|
-| `assemble_request(unit, dependency_evidence=...) -> ExtractionRequest` | **assumed here** — same seam the isolation file keys on |
+| `assemble_request(unit, dependency_evidence=..., question=...) -> ExtractionRequest` | **assumed here** — same seam the isolation file keys on, plus the two disclosed keyword inputs the §3.8 request shape needs that a shipped `WorkUnit` carries no source for (`extract_vocabulary`'s `ASSEMBLE` row); the lint's invariant-element assertions read back the `question=` this file supplies |
 | `prompt_fields(request) -> PromptPayload` | **already assumed by the repo** — the `"#68 review"` registry entry resolves it; `CT-PROV-05` makes the ordered `fields` sequence contract |
 | `EXTRACTION_PROMPT_TEMPLATE_VERSION` | **invented here** — `NFR-EXTRACT-03`'s pinned constant; its exact VALUE is #68's to fix, so only its existence and shape are asserted (disclosed) |
 | `WorkUnit` / `compute_work_id` | **shipped** (`aeh.orch`, #57/#58) |
@@ -130,7 +130,12 @@ def test_tc_extract_04_template_lint_submission_last_fixed_order_fenced():
             ("C4", [{"criterion_id": "C2", "spans": _C2_SPANS}]),  # carries parent spans
         ):
             request = AssembleRequest(
-                _unit(submission_id, criterion_id), dependency_evidence=dependency
+                _unit(submission_id, criterion_id),
+                dependency_evidence=dependency,
+                # The §3.8 request carries a `question` object; a shipped WorkUnit has
+                # no source for it, so the lint supplies it through the disclosed
+                # assembly input (extract_vocabulary's ASSEMBLE row) and reads it back.
+                question=_QUESTION,
             )
             sampled.append((submission_id, criterion_id, request))
 

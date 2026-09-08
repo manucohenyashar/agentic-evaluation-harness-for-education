@@ -11,7 +11,7 @@ in this file and nowhere else.
 | Name in this file | Assumed `aeh.extract` name | Status |
 |---|---|---|
 | `WORKER` | `ExtractionWorker` | **invented here** — the driver class; `ScoringWorker` is the #78 precedent the review suite already keys on for `M-JUDGE` |
-| `ASSEMBLE` | `assemble_request` | **invented here** — pure request assembly; design §3.10 declares the analogous `assemble(unit) -> ScoringRequest` for `M-JUDGE` |
+| `ASSEMBLE` | `assemble_request` | **invented here** — pure request assembly; design §3.10 declares the analogous `assemble(unit) -> ScoringRequest` for `M-JUDGE`. Two keyword inputs the §3.8 request shape needs but a shipped `WorkUnit` carries no source for are disclosed here: `dependency_evidence=[...]` (the parent spans the caller resolved, TC-EXTRACT-03) and `question={"prompt_text": ..., "reference_solution": ...}` (the `question` object §3.8 puts on the request; the shipped criterion spec carries no reference solution, so rung-0 files supply it — the lint reads it back, TC-EXTRACT-04) |
 | `PROMPT_FIELDS` | `prompt_fields` | **already assumed by the repo** — `tests/contract/review/test_ct_review_limits_and_config.py` and the `"#68 review"` registry entry resolve it; this suite aligns with that bet rather than making a second one |
 | `RESULT_TYPE` / `REQUEST_TYPE` | `ExtractionResult` / `ExtractionRequest` | **design-named** (§3.8 Interfaces prose) — the type names, not any member |
 | `TEMPLATE_VERSION` | `EXTRACTION_PROMPT_TEMPLATE_VERSION` | **invented here** — the pinned template version constant `NFR-EXTRACT-03` requires; `SETUP_PROMPT_TEMPLATE_V` is the shipped setup-side precedent |

@@ -15,7 +15,12 @@ Oracles:
   column exists on `evidence` at all; and the evidence **payload bytes** are identical
   across two runs over the same submission that differ only in panel depth — a payload
   that leaked judge or panel context would differ, and that is the differential, not a
-  non-null check.
+  non-null check. **Disclosed substitution**: the plan's literal differential compares
+  the evidence bytes each judge's scoring REQUEST carried — `M-JUDGE` (#78) is not
+  landed, so that comparison is not rung-feasible here; the panel-depth pair is what
+  is. It is deliberately stricter than the plan: any run-level metadata inside the
+  payload (a `work_id` echo, a timestamp) fails the cross-run byte-identity, which pins
+  the payload to the span set and nothing else.
 - **TC-EXTRACT-05 — exact value**: the row's build identity equals the
   `resolved_build` the provider reported on the completion (`FR-PROV-04`: the build that
   actually answered, never the one requested).
@@ -34,7 +39,7 @@ precedent).
 | `assemble_request(unit) -> ExtractionRequest` | **assumed here** — the pure assembly; `submission.transcript` carries the canonical Markdown per the §3.8 Interfaces JSON |
 | `prompt_fields(request) -> PromptPayload` | **already assumed by the repo** — the `"#68 review"` registry entry resolves it; the fixture recording needs the same render (`CT-PROV-05` makes field order contract) |
 | the `evidence` row's build column, read here as `resolved_build` | **assumed here** — `FR-EXTRACT-05`/`CT-EXTRACT-05` put the identity "on every evidence row"; if #68 names the column differently the rename here is one line |
-| the `evidence` row's payload column, read here as `payload` | **assumed here** — where the persisted span set lives; `evidence_id`/`work_id`/`document_id` are the shipped migration-001 columns |
+| the `evidence` row's payload column, read here as `payload` | **assumed here** — where the persisted span set lives, and the span set is ALL it lives with (no run-level metadata: TC-EXTRACT-02's cross-panel byte-identity pins this); `evidence_id`/`work_id`/`document_id` are the shipped migration-001 columns |
 
 **Disclosed stand-ins.** Seeding writes the `document` row and its blob bytes directly —
 the production writer is `M-INGEST` (landed, but driven by files and rasterized pages

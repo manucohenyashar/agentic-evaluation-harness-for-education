@@ -85,7 +85,9 @@ def _span_is_valid(markdown_bytes: bytes, start: int, end: int) -> bool:
 
 @st.composite
 def _valid_span_sets(draw: st.DrawFn) -> tuple[str, list[dict[str, int]]]:
-    """A document plus a span set whose every span satisfies the invariant."""
+    """A document plus a span set whose every span satisfies the invariant — and
+    carries the `text` the disclosed reply format has (`span_completion`'s shape),
+    sliced from the document so the round-trip the property asserts is real."""
     markdown = draw(_DOCUMENTS)
     md_bytes = markdown.encode("utf-8")
     bounds = sorted(_boundaries(md_bytes))
@@ -95,7 +97,12 @@ def _valid_span_sets(draw: st.DrawFn) -> tuple[str, list[dict[str, int]]]:
         end_index = draw(
             st.integers(min_value=start_index, max_value=len(bounds) - 1)
         )
-        spans.append({"start": bounds[start_index], "end": bounds[end_index]})
+        start, end = bounds[start_index], bounds[end_index]
+        spans.append({
+            "start": start,
+            "end": end,
+            "text": md_bytes[start:end].decode("utf-8"),
+        })
     return markdown, spans
 
 
@@ -157,6 +164,15 @@ def test_tc_extract_15_emitted_spans_always_satisfy_the_span_invariant(case):
         )
         assert _span_is_valid(md_bytes, start, end), (
             f"emitted span {start}:{end} splits a UTF-8 code point"
+        )
+        # The round trip the docstring claims: the emitted span re-slices to the text
+        # the reply carried (an empty span re-slices to "").
+        text = getattr(span, "text", None)
+        if text is None and isinstance(span, dict):
+            text = span.get("text")
+        assert text is not None, f"emitted span carries no text: {span!r}"
+        assert md_bytes[start:end].decode("utf-8") == text, (
+            f"emitted span {start}:{end} does not round-trip to {text!r}"
         )
 
 

@@ -22,7 +22,11 @@ import importlib
 import importlib.util
 from typing import Any
 
-from tests.support.extract_vocabulary import TS26_EXTRACT_SYMBOLS
+from tests.support.extract_vocabulary import (
+    SECOND_FAMILY_MODEL,
+    TS26_EXTRACT_SYMBOLS,
+    WORKER,
+)
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -1227,9 +1231,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "#69 second family (TS-26)": (
         # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
         # `second_family_model` — a conjunction, because the driver alone does not make
-        # the case runnable.
+        # the case runnable. Built from the vocabulary, like the #68 entry, so the
+        # registry cannot drift from the tests.
         "symbols",
-        f"{EXTRACT_MODULE}:ExtractionWorker,{EXTRACT_MODULE}:second_family_model",
+        f"{EXTRACT_MODULE}:{WORKER},{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
         ("tests/integration/extract/test_extract_second_family.py",),
     ),
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------

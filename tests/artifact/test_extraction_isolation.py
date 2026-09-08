@@ -301,7 +301,13 @@ def test_tc_extract_03_step3_a_verdict_injected_into_dependency_evidence_fails_v
 def test_tc_extract_03_step4_full_f_synth_run_requests_are_clean_of_verdict_shapes():
     """Step 4 — the corpus assertion: every request the module's own assembly seam
     produces for the `F-SYNTH` reference package is free of band-shaped or
-    score-shaped content, in every string the request carries."""
+    score-shaped content, in every string the request carries.
+
+    Scope disclosure: the corpus contributes the CRITERION SET the requests are
+    assembled for; the submissions are the two hand-built values below (rung 0 has no
+    store to read the corpus's own submissions from, and the reference fixture
+    declares none), so the scan's teeth are over the request shape and the assembly
+    path, not over the corpus's question prose."""
     from tests.support.corpora import reference_package
 
     require(EXTRACT_MODULE, ASSEMBLE, REQUEST_TYPE, issue=ISSUE)
@@ -332,8 +338,13 @@ def test_tc_extract_03_step4_full_f_synth_run_requests_are_clean_of_verdict_shap
 
 def test_tc_extract_03_variant_chain_c2_c4_c7_carries_c4s_spans_and_nothing_from_c4s_verdict():
     """Variant — the chain c2 → c4 → c7: c7's request carries C4's spans (its immediate
-    parent's extracted evidence) and NOTHING derived from c4's verdict, although a
-    completed verdict for c4 exists and is in scope."""
+    parent's extracted evidence) and NOTHING derived from c4's verdict.
+
+    Honesty note: the verdict half of this assertion is STRUCTURAL, not behavioral —
+    the rung-0 caller hands the module only spans, so no verdict can appear unless the
+    schema carries one, and "it cannot" is step 2's prohibition (the load-bearing
+    half). What is behavioral here is the span carry-over along the chain and the
+    absence of verdict-capable field names on the chain request itself."""
     require(EXTRACT_MODULE, ASSEMBLE, REQUEST_TYPE, issue=ISSUE)
 
     c4_spans = [{"start": 0, "end": 42, "text": "The net force points down the slope."}]
