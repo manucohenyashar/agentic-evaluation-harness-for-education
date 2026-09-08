@@ -44,6 +44,7 @@ AGG_MODULE = f"{IMPLEMENTATION_PACKAGE}.agg"
 EXTRACT_MODULE = f"{IMPLEMENTATION_PACKAGE}.extract"
 INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
 SETUP_MODULE = f"{IMPLEMENTATION_PACKAGE}.setup"
+SYNTH_MODULE = f"{IMPLEMENTATION_PACKAGE}.synth"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -1364,6 +1365,75 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbol",
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/integration/orch/test_completion_predicate.py",),
+    ),
+    # --- TS-24 (issue #65), the resume/lease-expiry/taxonomy cases written ahead -------
+    #
+    # #57 (argument-free resume) and #58 (lease, sweeper, fail/complete taxonomy) shipped,
+    # so the GREEN cases (TC-ORCH-04/18, RES-04/05/12/15) run unmarked. These four entries
+    # key the cases the later stories owe, on the §3.7 Protocol members those stories must
+    # add to the concrete class.
+    "#61 TS-24 pause lifecycle (TC-ORCH-16/17/28/29-status, RES-09/10)": (
+        # Every case turns on the pause mechanism #61 ships; start and pause land
+        # together (a pause without a start cannot produce the declared machine), so
+        # the conjunction fires when the story's control surface lands. The `cause=`
+        # keyword the tests pass is disclosed in the test module's docstring.
+        "symbols",
+        (
+            f"{ORCH_MODULE}:Orchestrator.pause,"
+            f"{ORCH_MODULE}:Orchestrator.start"
+        ),
+        ("tests/integration/orch/test_pause_lifecycle.py",),
+    ),
+    "#62 TS-24 residency and concurrency (TC-ORCH-23, RES-11/13)": (
+        # Dispatch-surface cases: residency batching and the dispatch report are
+        # #62's `progress`; the run_metrics WRITE half (swap count/duration,
+        # rate_limited_calls — CT-ORCH-20/CT-PROV-11 make the write contract) is
+        # TS-25's (#66). `record_run_metrics` is an invented-and-disclosed name
+        # (the design's Protocol has no metrics member); if #66 ships the writer
+        # under another name, the rename here and in the test module is one line.
+        "symbols",
+        (
+            f"{ORCH_MODULE}:Orchestrator.progress,"
+            f"{ORCH_MODULE}:Orchestrator.record_run_metrics"
+        ),
+        ("tests/integration/orch/test_residency_and_concurrency.py",),
+    ),
+    "#62 TS-24 failure visibility (TC-ORCH-31)": (
+        # TC-ORCH-31's operator surface IS #62's progress report (AC4: totals by
+        # status and by (stage, criterion, judge)); the completion predicate rides
+        # the same symbol as the TC-ORCH-22 entry above.
+        "symbol",
+        f"{ORCH_MODULE}:Orchestrator.progress",
+        ("tests/resilience/orch/test_failure_visibility.py",),
+    ),
+    "#60 TS-24 escalation boundaries (RES-06, RES-08)": (
+        # Both cases enter at the escalation enqueue (#60's §3.7 member): RES-06
+        # kills after it, RES-08 holds the exact ledger state a permanent judge
+        # failure leaves beside it. The aggregation-side fallback half of RES-08 is
+        # TC-AGG-12's (M-AGG) and is not re-asserted here.
+        "symbol",
+        f"{ORCH_MODULE}:Orchestrator.enqueue_escalation",
+        (
+            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
+            "test_res_06_escalation_survives_the_kill_and_dispatches_after_resume",
+            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
+            "test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked",
+        ),
+    ),
+    "#97 TS-24 synthesis boundary (RES-07)": (
+        # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
+        # Interfaces block returns nothing), so the key is an invented-and-used-together
+        # name — the console-suite precedent. The KEY is RES-07's property (a retried
+        # synthesis conflicts rather than duplicating, ADR-8; the plan's oracle names
+        # the narrative table); `aeh.synth:synthesize` is the minimal entry point that
+        # property lives on. If #97 ships another name, the rename here and in the
+        # test module is one visible line.
+        "symbol",
+        f"{SYNTH_MODULE}:synthesize",
+        (
+            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
+            "test_res_07_retried_synthesis_conflicts_rather_than_duplicating",
+        ),
     ),
 }
 
