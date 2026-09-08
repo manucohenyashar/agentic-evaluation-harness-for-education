@@ -25,12 +25,13 @@ each with its probe evidence:
   the only blob writes from the ingest path are the `described_graphic` crops.
   The case asserts the crop half at full oracle strength and discloses the
   raster half; no open story re-opens the module's write set.
-- **F2** (`TC-INGEST-42`, purge): the plan's "removed by `purge_cohort`" oracle
-  cannot name the blob store — `purge_cohort` does not touch the blob directory
-  (`PurgeReport.blobs_deleted` is the documented honest zero; the dedup-vs-purge
-  rule is the test plan §7.4 accepted risk that `tests/integration/store/
-  test_purge.py` already pins). The Tier C **row** sweep is asserted at full
-  strength; the blob gap is disclosed, not asserted as required behaviour.
+- **F2** (`TC-INGEST-42`, purge) — **resolved by #225**: the plan's "removed by
+  `purge_cohort`" oracle now names the blob store too. Purge reclaims the blobs
+  the cohort's rows referenced (minus hashes another database in the data
+  directory still holds), `PurgeReport.blobs_deleted` carries the real count,
+  and the purge half of the case below asserts the blob directory empty. The
+  §7.4 accepted risk `tests/integration/store/test_purge.py` used to pin was
+  rewritten by the same story.
 - **F3** (`TC-INGEST-44`, run-level signals): the §3.5/`OBS-01` run-level
   signals — `ocr_failure_rate`, the unresolved-mark rate, mean/max divergence
   aggregates, per-gate pass/fail counts, quarantine counts by gate, the
@@ -74,18 +75,17 @@ each with its probe evidence:
   (#146) to make against the scoring pass. The primitive-level **sequence** and
   the **measured wall clock** are asserted here; the swap/comparison halves are
   deferred with the owners named.
-- **F8** (`TC-INGEST-42`, a defect in shipped code): a cohort carrying
-  `unresolved_token` rows **cannot be purged**. `_PURGE_DELETES` gained the
-  #39 token tables, but `_COHORT_PURGE_ORDER` (store 1374) was not extended
-  with them — the sweep deletes `document_region` while the tokens that
-  reference it remain, the foreign key blocks the DELETE, and `purge_cohort`
-  raises a raw `sqlite3.IntegrityError` ("FOREIGN KEY constraint failed")
-  after rolling back. Probe: the same ingest fixture with one
-  `<unresolved>` marker purges with `IntegrityError`; without it, the sweep
-  below runs clean. Every M-INGEST and M-STORE story is closed, so there is no
-  open story to defer to and no keyable `writtenahead` target — the finding is
-  disclosed here for the story that fixes the order tuple, which should also
-  add the token tables' sweep to this case.
+- **F8** (`TC-INGEST-42`, a defect in shipped code) — **resolved by #225**: a
+  cohort carrying `unresolved_token` rows **could not be purged**.
+  `_PURGE_DELETES` gained the #39 token tables, but `_COHORT_PURGE_ORDER`
+  (store 1374) was not extended with them — the sweep deleted
+  `document_region` while the tokens that reference it remained, the foreign
+  key blocked the DELETE, and `purge_cohort` raised a raw
+  `sqlite3.IntegrityError` ("FOREIGN KEY constraint failed") after rolling
+  back. The fixing story extended the order, asserted it against the file's
+  live `pragma foreign_key_list` graph before the first DELETE, and added the
+  token tables' sweep (and the blob reclamation) to the purge case below,
+  which now runs green with an `<unresolved>` marker in the fixture.
 - **F9** (`TC-INGEST-45` live half, a defect in shipped code): the live
   rasterizer cannot serve a live medium whose transcription emits a
   `described_graphic` region. `ingest_document` calls

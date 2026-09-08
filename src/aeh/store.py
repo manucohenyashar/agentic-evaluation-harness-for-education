@@ -1557,6 +1557,11 @@ def _collect_blob_hash_references(
         cursor = _run(connection, _PURGE_BLOB_HASH_SCANS[table], retries=retries)
         for row in cursor:  # streamed row by row: a purge must not materialize the file
             for value in row:
+                if isinstance(value, bytes):
+                    # A BLOB-typed column returns bytes; a hash stored there is a real
+                    # reference the text branch would miss — the unsafe direction. The
+                    # dump walk made the same choice through its case-insensitive form.
+                    value = value.decode("ascii", "ignore")
                 if isinstance(value, str):
                     hashes.update(_BLOB_HASH_RUN.findall(value))
     return hashes

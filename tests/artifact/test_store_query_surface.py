@@ -323,8 +323,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:3719",
     "aeh.pkg:3725",
     "aeh.pkg:3733",
-    "aeh.store:1702",
-    "aeh.store:2458",
+    "aeh.store:1707",
+    "aeh.store:2463",
 })
 
 

@@ -246,3 +246,50 @@ def test_sec_13_after_purge_student_text_is_unrecoverable_and_tier_d_is_pseudony
         "permanent tier is the one purge never touches — a name there outlives every "
         "retention control in the system (RISK-21)."
     )
+
+
+def test_225_purge_refuses_a_file_whose_fk_graph_contradicts_the_order(tmp_data_dir):
+    """#225's durability demand, asserted against its own refusal branch: the sweep order
+    is checked against the file's **live** `pragma foreign_key_list` graph before the
+    first DELETE, so a migration that extends the cohort tier without extending
+    `_COHORT_PURGE_ORDER` refuses with the edge named instead of aborting at COMMIT with
+    a raw IntegrityError (the shape the F8 probe produced). The crafted file carries only
+    names the sweep knows, with one edge inverted — the shipped graph has `roster`
+    referencing `cohort`, this one has `cohort` referencing `roster`, which puts the
+    child after its parent in the order tuple."""
+    store = open_store(tmp_data_dir)
+    cohort_path = tmp_data_dir / "cohorts" / "c-fk.sqlite"
+    cohort_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(cohort_path) as raw:
+        raw.execute(
+            "CREATE TABLE roster ("
+            " cohort_id TEXT NOT NULL, student_ref TEXT NOT NULL,"
+            " PRIMARY KEY (cohort_id, student_ref))"
+        )
+        raw.execute(
+            "CREATE TABLE cohort ("
+            " cohort_id TEXT NOT NULL PRIMARY KEY REFERENCES roster(student_ref),"
+            " consent_class TEXT NOT NULL, created_at TEXT NOT NULL)"
+        )
+        raw.execute("INSERT INTO roster VALUES ('c-fk', 'ref-1')")
+        raw.execute("INSERT INTO cohort VALUES ('c-fk', 'consented', '2026-01-01')")
+        raw.commit()
+    _promote(store, "c-fk")
+
+    with pytest.raises(Exception) as refused:
+        store.purge_cohort("c-fk")
+    assert type(refused.value).__name__ == "ConfigurationProblem", (
+        f"#225: a contradicted FK graph refused with "
+        f"{type(refused.value).__name__}, not ConfigurationProblem — the assertion's "
+        "whole point is a named refusal before the first DELETE, not a late abort."
+    )
+    assert "cohort references roster" in str(refused.value), (
+        f"#225: the refusal must name the edge it refused, got: {refused.value}"
+    )
+    # Zero partial effects: the refusal fired before the sweep's first DELETE.
+    with sqlite3.connect(cohort_path) as raw:
+        assert raw.execute("SELECT COUNT(*) FROM cohort").fetchone()[0] == 1, (
+            "#225: the refused purge removed rows — the honest-refusal shape requires "
+            "zero partial effects."
+        )
+        assert raw.execute("SELECT COUNT(*) FROM roster").fetchone()[0] == 1
