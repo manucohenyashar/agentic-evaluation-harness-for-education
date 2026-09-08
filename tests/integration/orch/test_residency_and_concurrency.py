@@ -24,7 +24,7 @@ rather than discovered:
 | the call seam's shape | `call(unit) -> Completion` for a successful model call, or a raise of the REAL taxonomy error (`RateLimitedError`, `MemoryError`) — `Completion` is shipped (#19), so the double returns the real type and only the *seam* is assumed |
 | `Orchestrator.record_run_metrics` | **invented name** — the design's Protocol has no metrics member; the KEY is the write `CT-ORCH-20` makes contract (M-ORCH is sole `run_metrics` writer, `CT-PROV-11` has it persisting the provider's counters) and the owning story is #66; the name reconciles at landing |
 | run_metrics reads | shipped: the EAV table `(run_id, metric, value)` (store.py `_DURABLE_001`), read through `store.durable().query(...)` |
-| judges stand in for models | each panel judge names its own model, so model identity is `unit.judge_id`; the panel used here has three distinct models |
+| judges stand in for models | each panel judge names its own model, so model identity is the unit's `judge`; the panel used here has three distinct models |
 
 Isolation: rung 2/3 — real store, real Tier P package, real cohort ledger; the
 model-call seam is the only double (§4.2 forbids an in-memory stand-in for the store
@@ -112,7 +112,7 @@ class _OomAtSwapCallSeam:
         self.oom_calls = 0
 
     def call(self, unit):
-        model = unit.judge_id
+        model = unit.judge
         if self.resident is None:
             self.resident = model
         if model != self.resident:
@@ -173,7 +173,7 @@ def test_tc_orch_23_residency_finishes_one_models_batch_before_the_next_loads(
             batch = orch.lease("worker-a", "score", 100)
             if not batch:
                 break
-            models = sorted({unit.judge_id for unit in batch})
+            models = sorted({unit.judge for unit in batch})
             assert len(models) == 1, (
                 f"one lease handed out {models} — with one resident model "
                 "permitted, a batch that mixes models unloads and reloads weights "
