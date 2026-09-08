@@ -1030,7 +1030,11 @@ def test_tc_ingest_07c_order_is_independent_of_the_presentation_order(tmp_data_d
     second = ingest(markers, [blob_a, blob_b])
     assert first == second
     assert first[3] == "marker"
-    # (d) filenames only: same names, opposite presentation, one artifact.
+    # (d) filenames only: same names, opposite presentation, one artifact — and the
+    # order IS the names': 01-part-a.md's pages precede 02-part-b.md's (review S1:
+    # a tier that natural-sorted in reverse, or sorted by blob hash while still
+    # recording order_source="filename", would pass the differential above — both
+    # runs would agree on the same wrong order).
     names = {blob_a: "01-part-a.md", blob_b: "02-part-b.md"}
     first = ingest(plain, [blob_b, blob_a], filenames=names)
     second = ingest(plain, [blob_a, blob_b], filenames=names)
@@ -1039,6 +1043,12 @@ def test_tc_ingest_07c_order_is_independent_of_the_presentation_order(tmp_data_d
         "the natural sort of the names (FR-INGEST-06)."
     )
     assert first[3] == "filename"
+    positions = [first[0].index(word) for word in ("alpha", "gamma", "beta", "delta")]
+    assert positions == sorted(positions), (
+        f"TC-INGEST-07: the filename tier did not order by the names — assembled "
+        f"order {positions} is not 01-part-a.md's pages (alpha, gamma) before "
+        "02-part-b.md's (beta, delta) (FR-INGEST-06)."
+    )
     store.close()
 
 
