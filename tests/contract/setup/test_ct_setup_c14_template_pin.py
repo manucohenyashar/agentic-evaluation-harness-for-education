@@ -119,6 +119,9 @@ def test_tc_setup_c14_packages_under_different_versions_distinguishable(tmp_data
     chain1.doc = ingest_document(chain1.store, kind="assessment")
     p1 = chain1.service.propose_inventory(chain1.doc)
     chain1.service.confirm_inventory(p1.proposal_id)
+    # #53: the staged deterministic criteria need their keys before gate 2 opens.
+    chain1.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                    "CRIT-Q6": ["A"]})
     chain1.service.publish("teacher-1")
 
     # Package 2 under a NEW version string — what a template change is: a new

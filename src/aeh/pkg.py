@@ -3367,6 +3367,32 @@ class PackageCatalog:
         self._invalidate()
         return True
 
+    def set_default_grade_policy(self, v: PackageVersionId,
+                                 policy: GradePolicy) -> bool:
+        """Write the default policy row ONLY where no policy exists — the
+        publish-path twin of `record_default_step` (`FR-SETUP-12`): a policy the
+        teacher declared is never overwritten by the default. Returns whether a
+        row was written. The guards run BEFORE the transaction, for the same
+        reason `record_default_step`'s do: this write sits on the publish path's
+        happy tail, and CT-SETUP-02 audits that path to exactly ONE lock-carrying
+        statement — an in-transaction guard would put a second package_version
+        statement (the guard's SELECT) in the audited window."""
+        if not isinstance(policy, GradePolicy):
+            raise GradePolicyError(
+                f"the grade policy must be a GradePolicy object drawn from the closed "
+                f"rule vocabulary (FR-PKG-14); got {type(policy).__name__}."
+            )
+        if self.grade_policy_declared(v):
+            return False
+        self._refuse_mutation(v)
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["delete_policy"], v=v)
+            tx.execute(PKG_STATEMENTS["insert_policy"], v=v,
+                       policy=json.dumps(policy.to_dict(), sort_keys=True),
+                       review_window_hours=policy.review_window_hours)
+        self._invalidate()
+        return True
+
     def step_record(self, v: PackageVersionId, step_id: str) -> dict | None:
         """One setup step's provenance row, or None — the done half of the console's
         step enumeration reads this."""

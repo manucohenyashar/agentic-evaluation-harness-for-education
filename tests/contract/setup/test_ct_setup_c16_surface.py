@@ -142,6 +142,9 @@ def test_tc_setup_c16_write_operations_refuse_on_a_finished_package(tmp_data_dir
     chain.doc = ingest_document(chain.store, kind="assessment")
     proposal = chain.service.propose_inventory(chain.doc)
     chain.service.confirm_inventory(proposal.proposal_id)
+    # #53: the staged deterministic criteria need their keys before gate 2 opens.
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     version = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(version)
 
@@ -179,6 +182,9 @@ def test_tc_setup_c16_disclosed_g1_propose_after_finish_opens_a_second_root(
     chain.doc = ingest_document(chain.store, kind="assessment")
     proposal = chain.service.propose_inventory(chain.doc)
     chain.service.confirm_inventory(proposal.proposal_id)
+    # #53: the staged deterministic criteria need their keys before gate 2 opens.
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
 
     fresh_doc = ingest_document(chain.store, kind="assessment")

@@ -62,7 +62,9 @@ def test_tc_setup_c08_dependencies_default_to_zero(tmp_data_dir):
         chain.catalog.add_criterion(version, criterion_id,
                                     question_id=f"Q{i + 1}", kind="open",
                                     max_points=4.0)
-    chain.service.set_answer_keys({"CRIT-A": ["b0"], "CRIT-B": ["b0"]})
+    chain.service.set_answer_keys(
+        {"CRIT-A": ["b0"], "CRIT-B": ["b0"]}
+        | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
 
     published = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(published)

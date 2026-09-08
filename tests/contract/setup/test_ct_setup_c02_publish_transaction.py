@@ -75,12 +75,15 @@ KILL_POINTS = ("before_begin", "before_statement", "after_statement",
 
 
 def _fresh_confirmed(data_dir, package_id):
-    """A fresh chain with blocking gate 1 satisfied — the minimal publishable
-    world (gate 2 is vacuous with zero criteria until #53 stages them)."""
+    """A fresh chain with both blocking gates satisfied — the minimal publishable
+    world (the confirmation stages the deterministic criteria; #53 keys them here,
+    since gate 2 is what this file's publishes must pass)."""
     chain = stage_chain(data_dir, package_id=package_id)
     chain.doc = ingest_document(chain.store, kind="assessment")
     proposal = chain.service.propose_inventory(chain.doc)
     chain.service.confirm_inventory(proposal.proposal_id)
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     return chain
 
 

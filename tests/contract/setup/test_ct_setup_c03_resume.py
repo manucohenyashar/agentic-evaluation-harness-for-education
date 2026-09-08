@@ -88,8 +88,12 @@ def test_tc_setup_c03_resume_across_process_boundaries(tmp_data_dir):
     fresh.service.confirm_inventory(resumed.proposal_id)
 
     # Process 3: the same negative across the second boundary, through publish.
+    # #53: the confirmation staged the deterministic criteria — the resuming
+    # process keys them (the teacher's act, gate 2) before the publish.
     del fresh, resumed
     chain3 = stage_chain(data_dir, package_id="pkg-c03")
+    chain3.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                    "CRIT-Q6": ["A"]})
     version = chain3.service.publish("teacher-1")
     assert chain3.catalog.is_locked(version)
     assert chain3.service.steps().remaining_steps == 0

@@ -108,6 +108,10 @@ def test_tc_setup_c11_every_write_targets_a_pkg_table(tmp_data_dir, repo_root):
     try:
         proposal = chain.service.propose_inventory(chain.doc)
         chain.service.confirm_inventory(proposal.proposal_id)
+        # #53: the confirmation staged the deterministic criteria — keyed here
+        # (M-PKG statements only, like every write in this audited window).
+        chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                       "CRIT-Q6": ["A"]})
         version = chain.service.publish("teacher-1")
     finally:
         chain.catalog._handle = audit._inner

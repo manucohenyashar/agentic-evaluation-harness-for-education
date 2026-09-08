@@ -3247,29 +3247,39 @@ class SetupService:
         # (FR-SETUP-12, C10's distinction between a stored default and the read-side
         # fallback) — and recorded as taken, but only where the teacher never
         # spoke: a policy row already present (declared here, or set through M-PKG
-        # directly) is never overwritten.
-        declared = getattr(self._catalog, "grade_policy_declared", None)
+        # directly) is never overwritten. The guard-outside write
+        # (`set_default_grade_policy`, pkg.py) keeps the publish path's audited
+        # window to one lock-carrying statement, exactly as `record_default_step`
+        # does for the skip records.
+        default_setter = getattr(self._catalog, "set_default_grade_policy", None)
         setter = getattr(self._catalog, "set_grade_policy", None)
-        if setter is not None and (declared is None or not declared(v)):
-            setter(v, default_grade_policy())
-            if record(
-                v, step_id="grade_policy", status="default_taken",
-                payload=json.dumps({
-                    "default": (
-                        "the grade-policy step was skipped: the default policy "
-                        "(unweighted sum of criteria, raw points, no boundary "
-                        "table) applies and is stored on the version "
-                        "(FR-SETUP-12)."
-                    ),
-                    "policy": default_grade_policy().to_dict(),
-                }, sort_keys=True),
-                recorded_at=_now(),
-            ):
-                LOGGER.info(
-                    "recorded the grade policy's default for version %s — applied "
-                    "and stored as a default, never silent (FR-SETUP-12, "
-                    "FR-SETUP-14)", v,
-                )
+        if default_setter is not None:
+            applied = default_setter(v, default_grade_policy())
+        elif setter is not None:
+            declared = getattr(self._catalog, "grade_policy_declared", None)
+            applied = (declared is None or not declared(v))
+            if applied:
+                setter(v, default_grade_policy())
+        else:
+            applied = False
+        if applied and record(
+            v, step_id="grade_policy", status="default_taken",
+            payload=json.dumps({
+                "default": (
+                    "the grade-policy step was skipped: the default policy "
+                    "(unweighted sum of criteria, raw points, no boundary "
+                    "table) applies and is stored on the version "
+                    "(FR-SETUP-12)."
+                ),
+                "policy": default_grade_policy().to_dict(),
+            }, sort_keys=True),
+            recorded_at=_now(),
+        ):
+            LOGGER.info(
+                "recorded the grade policy's default for version %s — applied "
+                "and stored as a default, never silent (FR-SETUP-12, "
+                "FR-SETUP-14)", v,
+            )
 
     def _require_draft_version(self) -> PackageVersionId:
         """The draft the operation works on, or the honest refusal: a package whose
