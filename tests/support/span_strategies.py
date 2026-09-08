@@ -68,8 +68,10 @@ def spans_over(draw, documents=None):
         end = draw(st.integers(start, n))
         text = draw(st.text(max_size=8))
     elif kind == "inverted":
-        start = draw(st.integers(1, n))
-        end = draw(st.integers(0, start - 1))
+        # start > end is the point; over an empty document the offsets are still drawn
+        # (both out of bounds), so the kind survives the empty-document arm.
+        start = draw(st.integers(1, n)) if n >= 1 else draw(st.integers(1, 4))
+        end = draw(st.integers(0, max(start - 1, 0)))
         text = draw(st.text(max_size=8))
     else:  # mid-codepoint
         multibyte = [i for i, ch in enumerate(doc.markdown) if ord(ch) > 0x7F]
