@@ -1373,7 +1373,7 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: deterministic order keeps the report stable from run to run.
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "assessment_match_proposal", "v4_cohort_breaker",
+    "evidence", "work_unit", "run", "assessment_match_proposal", "v4_cohort_breaker",
     "document_region", "document", "submission", "roster", "cohort",
 )
 _PURGE_DELETES: Mapping[str, Statement] = {
@@ -1384,6 +1384,10 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "verdict": Statement("DELETE FROM verdict"),
     "evidence": Statement("DELETE FROM evidence"),
     "work_unit": Statement("DELETE FROM work_unit"),
+    # #57's ledger tables: the run registry is run state (it names the cohort, the package
+    # version and the frozen configuration) and dies with the cohort like every other Tier
+    # C/R row — a name the registry lacks would leave a run's provenance behind.
+    "run": Statement("DELETE FROM run"),
     "document_region": Statement("DELETE FROM document_region"),
     "document": Statement("DELETE FROM document"),
     "submission": Statement("DELETE FROM submission"),
@@ -3232,7 +3236,6 @@ class SqliteStore:
         bytes_after = bytes_before
         tables_cleared: tuple[str, ...] = ()
         if path.exists():
-            tables_cleared = tuple(_COHORT_PURGE_ORDER)
             connection = _connect(
                 path, read_only=False, busy_timeout_ms=self._busy_timeout_ms,
                 retries=self._retries,
@@ -3286,10 +3289,22 @@ class SqliteStore:
                             "half-purge. A migration extending the cohort tier must extend "
                             "_PURGE_DELETES in the same change. Nothing was removed."
                         )
+                    # Only tables the file actually carries, in dependency order. A file at an
+                    # older schema version than this process's registry — #57's `run` table,
+                    # created by a migration registered when `aeh.orch` is imported, absent
+                    # from a file last written at v6 — holds nothing in a table it does not
+                    # have, so there is nothing to delete. The sweep above already refused
+                    # everything `found` holds that the registry cannot name, so nothing
+                    # cohort-scoped can survive this loop either way.
+                    cleared: list[str] = []
                     for table in _COHORT_PURGE_ORDER:
+                        if table not in found:
+                            continue
                         cursor = _run(connection, _PURGE_DELETES[table], retries=self._retries)
                         count = cursor.rowcount
                         rows[table] = count if count is not None and count >= 0 else 0
+                        cleared.append(table)
+                    tables_cleared = tuple(cleared)
                     _run(connection, _COMMIT, retries=self._retries)
                 except BaseException as error:
                     try:

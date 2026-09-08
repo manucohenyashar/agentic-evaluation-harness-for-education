@@ -3,23 +3,21 @@
 Case: `TC-CONF-17` (`FR-CONF-09`, `NFR-SYS-11`, P1), test plan §5.1.
 **Isolation: rung 2** — real SQLite, real blob directory. Oracle: **differential**.
 
-**Written ahead of implementation, and the only case in TS-04 that is.** Its rung is not
-achievable today: rung 2 means a *finished run's* audit record, which needs `M-STORE` (#10–13)
-for the store and `M-ORCH` (#57–62) to write the record. Neither exists.
+**Written ahead of implementation, and the only case in TS-04 that is.** Its rung was not
+achievable until both halves existed: `M-STORE` (#10–13) for the store and `M-ORCH` (#57)
+to write the record. It ran red under `writtenahead` until #57 landed `record_run_start`,
+which is when the marker came off and the entry left `WRITTEN_AHEAD_BLOCKERS`.
 
-Registered on **#57**, not #10, and the distinction matters. `M-STORE` alone would let this file
-import and the marker come off — and the case would then report as covered while comparing a
-value to itself, because the test would still be the thing writing the row. The blocker is the
-producer, not the storage.
+Registered on **#57**, not #10, and the distinction mattered. `M-STORE` alone would have let
+this file import and the marker come off — and the case would then have reported as covered
+while comparing a value to itself, because the test would still have been the thing writing
+the row. The blocker was the producer, not the storage.
 
 A rung-0 stand-in — comparing `log_run_start`'s record against `to_persisted_dict()` in memory —
-would be green today and would assert the wrong thing. What this case exists to catch is the two
-*paths* diverging: `M-ORCH` serializing the summary its own way when it writes the audit record,
-so the stored bytes and the logged bytes differ. Both paths have to be real for that to be
-visible, which is why the plan says rung 2.
-
-Remove the `writtenahead` marker — not the test — when `M-STORE` lands, and drop the entry from
-`WRITTEN_AHEAD_BLOCKERS`.
+would have been green before either existed and would have asserted the wrong thing. What this
+case exists to catch is the two *paths* diverging: `M-ORCH` serializing the summary its own way
+when it writes the audit record, so the stored bytes and the logged bytes differ. Both paths
+have to be real for that to be visible, which is why the plan says rung 2.
 
 `ProfileSummary.to_canonical_json()` exists so this comparison is possible at all: one serializer
 called by both paths. If `M-ORCH` reaches for `json.dumps(asdict(...))` instead, this case is
@@ -37,7 +35,7 @@ from aeh.conf import log_run_start, resolve_run_config
 from tests.support.conf_builders import HOSTED_PANEL_3, SYNTHETIC_COHORT, hosted_cfg
 from tests.support.impl import ORCH_MODULE, STORE_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#57"
 

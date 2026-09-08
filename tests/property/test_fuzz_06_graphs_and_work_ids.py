@@ -124,7 +124,6 @@ def test_fuzz_06_topological_order_always_satisfies_every_edge(graph):
 # --- FR-ORCH-01: work-ID derivation --------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(work_id_input_pairs())
 def test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids(pair):

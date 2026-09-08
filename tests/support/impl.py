@@ -361,47 +361,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_sec_04_a_full_run_discloses_no_name_to_the_provider",
         ),
     ),
-    # `TC-CONF-17` is the one case in TS-04 whose rung is not achievable: rung 2 means a
-    # *finished run's* audit record. Keyed on `M-ORCH` rather than `M-STORE`, deliberately --
-    # the case is a **differential** between what the orchestrator stores and what the run start
-    # logged, so it needs the *producer*, not the storage. Unmarking it when `M-STORE` alone
-    # landed would report a P1 case as covered while the test still wrote the row itself and
-    # compared a value to itself.
-    "#57": (
-        # `symbol`, not `module`. `find_spec("aeh.orch")` resolves against an **empty file**, so a
-        # module key fires on the first `M-ORCH` commit -- while `record_run_start` is still
-        # absent and the test still cannot run. Whoever acted on that would unmark a P1 case and
-        # get a failure nobody expects, which is how a gate stops being believed.
-        #
-        # `record_run_start` is the symbol the test actually calls, and its own docstring marks it
-        # "**invented here** -- the orchestrator's write of the audit record". It appears in no
-        # Interfaces block in either design document, so unlike a Protocol member it cannot exist
-        # before an implementation does. (Checked: zero occurrences in detailed-design.md and
-        # test-plan.md.)
-        #
-        # The case needs `M-STORE` too -- it calls `open_store` -- and keying on #57 alone is
-        # still right: #57 depends on #11, which depends on #10, so `M-ORCH` landing means the
-        # store already has.
-        "symbol",
-        f"{ORCH_MODULE}:record_run_start",
-        ("tests/integration/conf/test_audit_record.py",),
-    ),
-    # The same issue, a different target. `TC-CONF-17` above needs the whole orchestrator, so a
-    # module key is right for it; `FUZZ-06`'s work-ID half needs one function, and `aeh.orch` as an
-    # empty file would fire the module key while `compute_work_id` was still absent. The dict key
-    # carries the symbol so the two entries can coexist and the gate message names which is which.
-    "#57 compute_work_id": (
-        "symbol",
-        f"{ORCH_MODULE}:compute_work_id",
-        (
-            "tests/property/test_fuzz_06_graphs_and_work_ids.py"
-            "::test_fuzz_06_distinct_input_tuples_always_yield_distinct_work_ids",
-            # TS-01 (#2). `TC-REG-06`'s baseline is the `work_id` reference values, computed by
-            # the same function over the ten committed input tuples. Same blocker, same symbol —
-            # a second key would only split one unmarking instruction into two.
-            "tests/regression/test_reg_06_work_id_reference.py",
-        ),
-    ),
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
     # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
     # run in the gate today; only the sweep is blocked.
