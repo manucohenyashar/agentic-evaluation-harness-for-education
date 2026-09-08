@@ -23,7 +23,7 @@ Disclosures the plan's wording forces:
   teacher time *structurally*: at most `SETUP_MAX_CONFIRMATIONS` (6) decomposability
   confirmations plus the two blocking screens — asserted exactly. The scripted replies
   make all 15 criteria unclear (so every one surfaces), which means an implementation
-  that surfaces every criterion reds here; only the cap makes the count 6.
+  that surfaces every criterion fails here; only the cap makes the count 6.
 - **Stated bets**, the same policy as the rung-0 decomposition file: §3.6 pins the
   method signatures and `DecomposabilityVerdict`'s fields, not the model replies. The
   read-back reply's payload, the per-criterion classify replies, the empty dependency
@@ -34,6 +34,16 @@ Disclosures the plan's wording forces:
   do not change. The confirmation count reads the per-verdict
   `needs_teacher_confirmation` flags, sharing `TC-SETUP-10`'s stated bet about where
   #52 enforces the cap.
+- **The S3 answer-keys call is the sharpest bet.** Shipped
+  `PackageCatalog.set_answer_key` refuses unknown criterion ids, so the flow turns
+  green only if #53 stages the deterministic criteria's creation from the confirmed
+  inventory at or before the key screen — the moment the shipped `steps()` docstring
+  promises ("no deterministic criterion exists until #53 stages their creation from
+  the confirmed inventory"). The flow also keys `CRIT-Q6` for the *mixed* question:
+  a mixed question carries an option set (FR-SETUP-01), and an unkeyable mcq part
+  would make FR-SETUP-03's no-default, no-skip promise unsatisfiable — so a #53 that
+  stages keys for pure `mcq` questions only makes these tests fail on a wrong
+  implementation, not on a broken test.
 - **UAT-02's "the teacher can state what the system will do with the rubric"** is
   pinned to the observable that exists today and §3.6 keeps stable: the enumerated step
   list (`TC-SETUP-03`'s shape) names a non-blocking `rubric_readback` step whose name
@@ -202,8 +212,9 @@ def _teacher_package(tmp_data_dir):
     proposal = service.propose_inventory(assessment_doc)
     # Blocking screen 1 of 2 (S2, FR-SETUP-02): the teacher confirms what was proposed.
     service.confirm_inventory(proposal.proposal_id)
-    # Blocking screen 2 of 2 (S3): the answer keys for the mcq questions' criteria,
-    # named by the shipped criterion-id convention (`CRIT-Q4`, the rung-2 precedent).
+    # Blocking screen 2 of 2 (S3): the answer keys for the deterministic criteria —
+    # the two mcq questions and the mixed question's mcq part — named by the shipped
+    # criterion-id convention (`CRIT-Q4`, the rung-2 precedent).
     service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
     readback = service.read_back_rubric(rubric_doc, assessment_doc)
     ids = _criterion_ids(readback)
