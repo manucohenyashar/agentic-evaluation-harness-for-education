@@ -343,6 +343,14 @@ def _byte_range_oracle(markdown: str, tokens) -> None:
             f"flag: {marker!r}.")
 
 
+def _fence_outside(fenced: str) -> str:
+    """The fence oracle, `TC-INGEST-35`'s byte-range rule at the escalation
+    fence: a downstream template splits the payload at the FIRST closing marker,
+    so the remainder is what it reads OUTSIDE the untrusted block. A closed
+    fence leaves nothing after its own terminator."""
+    return fenced[fenced.index(UNTRUSTED_CLOSE) + len(UNTRUSTED_CLOSE):]
+
+
 def test_tc_ingest_35_the_escape_construction_stays_inside_marked_regions(
         tmp_data_dir):
     """`TC-INGEST-35` (issue #224, artifact half) — a transcript crafted to
@@ -372,14 +380,6 @@ def test_tc_ingest_35_the_fence_writer_neutralizes_terminator_content(
     trusts the transcript."""
     fx, markdown = _ingest_transcript(tmp_data_dir, "escape-fence",
                                       ESCAPE_TRANSCRIPT)
-
-    def fence_outside(fenced: str) -> str:
-        """What a downstream template reads OUTSIDE the untrusted block: it
-        splits at the FIRST closing marker, so the remainder is outside. A closed
-        fence leaves nothing after its own terminator."""
-        return fenced[fenced.index(UNTRUSTED_CLOSE)
-                      + len(UNTRUSTED_CLOSE):]
-
     fenced = _fence_untrusted_content(markdown)
     assert fenced.startswith(UNTRUSTED_OPEN + "\n"), (
         f"TC-INGEST-35: the fenced payload does not open with the harness's "
@@ -390,9 +390,9 @@ def test_tc_ingest_35_the_fence_writer_neutralizes_terminator_content(
     assert fenced.count(UNTRUSTED_CLOSE) == 1, (
         "TC-INGEST-35: the fenced payload carries the closing marker more than "
         "once — a terminator inside the content escaped escaping.")
-    assert fence_outside(fenced) == "", (
+    assert _fence_outside(fenced) == "", (
         f"TC-INGEST-35: submission bytes follow the untrusted block: "
-        f"{fence_outside(fenced)!r} — the fence leaks (FR-INGEST-35).")
+        f"{_fence_outside(fenced)!r} — the fence leaks (FR-INGEST-35).")
     inside = fenced[len(UNTRUSTED_OPEN) + 1:fenced.index(UNTRUSTED_CLOSE)]
     for token in FENCE_TOKENS:
         assert token in inside, (
@@ -407,8 +407,72 @@ def test_tc_ingest_35_the_fence_writer_neutralizes_terminator_content(
     assert mutant.count(UNTRUSTED_CLOSE) == 2, (
         "TC-INGEST-35: the mutant corpus case stopped carrying a raw "
         "terminator — the mutant discriminator is vacuous.")
-    assert fence_outside(mutant) != "" and "tokenescapeout" in fence_outside(
+    assert _fence_outside(mutant) != "" and "tokenescapeout" in _fence_outside(
         mutant), (
         "TC-INGEST-35: the oracle did not flag the plain-concatenation mutant — "
         "a writer that trusts the transcript would pass this test.")
+    fx.close()
+
+
+class _CapturingProvider:
+    """Records the payload of every call and replies `match` — the escalation's
+    captured `submission_transcript` is what the fence test reads."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict] = []
+
+    def complete(self, prompt, model_ref, params) -> Completion:
+        self.payloads.append(dict(prompt.fields))
+        return Completion(text="match", tokens_in=1, tokens_out=1,
+                          latency_ms=1, resolved_build=model_ref.build_id,
+                          cached_prefix_tokens=0, cost=None)
+
+
+class _StubCatalog:
+    """The smallest package catalog the escalation call can run against."""
+
+    package_id = "pkg-stub"
+
+    def criteria(self, package_version: str) -> list[dict]:
+        return [{"question_id": "Q1", "kind": "open"}]
+
+
+def test_tc_ingest_35_the_escalation_path_uses_the_neutralizing_writer(
+        tmp_data_dir):
+    """`TC-INGEST-35` (issue #224, enforcement half) — the pinned writer is the
+    one `_v4_escalate` actually sends: a capturing provider records the
+    escalation payload for the escape construction's stored markdown, and the
+    captured `submission_transcript` carries the closing marker exactly ONCE
+    with nothing after it. This is the tripwire against the regression the
+    mutant demo cannot see: the helper staying correct while the call site is
+    reverted to plain concatenation."""
+    fx, markdown = _ingest_transcript(tmp_data_dir, "escape-enforcement",
+                                      ESCAPE_TRANSCRIPT)
+    provider = _CapturingProvider()
+    fx.ingestor._provider = provider  # swap the double at the seam only
+    signals: dict = {}
+    fx.ingestor._v4_escalate(markdown, signals, "v0", _StubCatalog())
+    assert len(provider.payloads) == 1, (
+        f"TC-INGEST-35: the escalation made {len(provider.payloads)} calls "
+        "(ADR-7: exactly one in the uncertain band).")
+    captured = provider.payloads[0]["submission_transcript"]
+    assert captured.count(UNTRUSTED_CLOSE) == 1, (
+        "TC-INGEST-35: the SENT payload carries the closing marker more than "
+        "once — the call site embeds terminator content raw (the G6 vector is "
+        "reopened at the enforcement point).")
+    assert captured.startswith(UNTRUSTED_OPEN + "\n") and captured.endswith(
+        "\n" + UNTRUSTED_CLOSE), (
+        "TC-INGEST-35: the SENT payload is not bounded by the harness's own "
+        "markers.")
+    assert _fence_outside(captured) == "", (
+        f"TC-INGEST-35: the SENT payload leaks submission bytes beyond the "
+        f"block: {_fence_outside(captured)!r} (FR-INGEST-35).")
+    for token in FENCE_TOKENS:
+        assert token in captured[:captured.index(UNTRUSTED_CLOSE)], (
+            f"TC-INGEST-35: the sent payload dropped the student token "
+            f"{token!r} from inside the block.")
+    assert signals["semantic_escalation"]["fence_terminators_escaped"] == 1, (
+        f"TC-INGEST-35: the escape was silent in the signals record: "
+        f"{signals['semantic_escalation']} — stage-level detail is the seam "
+        "(CT-INGEST-08).")
     fx.close()
