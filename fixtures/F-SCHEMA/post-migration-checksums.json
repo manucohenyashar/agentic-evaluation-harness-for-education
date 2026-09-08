@@ -24,11 +24,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -239,11 +244,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -454,11 +464,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -669,11 +684,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -884,11 +904,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -1099,11 +1124,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -1314,11 +1344,16 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
-        "band"
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -1529,11 +1564,236 @@
       "rows": 1
     },
     "criterion_score": {
-      "checksum": "b1e8c3639d8c70f72352a0c7bd0781835faa33678f01889703fb695ea1a5af89",
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
       "columns": [
         "submission_id",
         "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
+      ],
+      "rows": 1
+    },
+    "document": {
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9",
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "document_region": {
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268",
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content"
+      ],
+      "rows": 1
+    },
+    "evidence": {
+      "checksum": "45f70fec5a514f3585c8ad8c612890c7e696d21b1757922965d9f7cd310fed9f",
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id"
+      ],
+      "rows": 1
+    },
+    "narrative": {
+      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a",
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id"
+      ],
+      "rows": 1
+    },
+    "review_queue": {
+      "checksum": "93b39e25df2787f86d613da71e999838d549da467e81945ffb8ff25ecca6b1d8",
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason"
+      ],
+      "rows": 1
+    },
+    "roster": {
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0",
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "rows": 1
+    },
+    "run": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at"
+      ],
+      "rows": 0
+    },
+    "submission": {
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a",
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "rows": 1
+    },
+    "submission_grade": {
+      "checksum": "e8913276c4952f64b4947ccdf304043c077c7502815888785e28002e7714e097",
+      "columns": [
+        "submission_id",
+        "revision"
+      ],
+      "rows": 1
+    },
+    "token_cluster": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "rows": 0
+    },
+    "unresolved_token": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "rows": 0
+    },
+    "v4_cohort_breaker": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "rows": 0
+    },
+    "verdict": {
+      "checksum": "f44c9ddeff36e061b1d32a49251a5f8d234cfe83e7c7132d6e66931cbc20c6b8",
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
         "band"
+      ],
+      "rows": 1
+    },
+    "work_unit": {
+      "checksum": "a7123e8324d6eb2024ec394211e7be2be2b4cfb2128bed5c0832af1dcb010499",
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at"
+      ],
+      "rows": 1
+    }
+  },
+  "cohort@v9": {
+    "assessment_match_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "rows": 0
+    },
+    "cohort": {
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4",
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "rows": 1
+    },
+    "criterion_score": {
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f",
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
       ],
       "rows": 1
     },
@@ -1721,12 +1981,22 @@
   },
   "durable@v1": {
     "audit_record": {
-      "checksum": "bbbb113f05b7313d267288de7922a91b1e3bcb24b84d5b118641bcc655863c4f",
+      "checksum": "d3061486157abc8eb1e601f2360fdbc179f728b4bece62453281029250013a4f",
       "columns": [
         "audit_record_id",
         "run_id",
         "recorded_at",
-        "profile_summary"
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read"
       ],
       "rows": 1
     },
@@ -1742,32 +2012,38 @@
       "rows": 1
     },
     "label": {
-      "checksum": "97433d2fad00aabcc9ab4329948d99cf9b757f1294ad4bb5e5db32fa3c9ed0a2",
+      "checksum": "f8a299a45f4229a69328e353b4038615d2c9a71b664c4191c320e525c84b1153",
       "columns": [
         "label_id",
         "run_id",
         "student_ref",
         "criterion_id",
         "label_type",
-        "band"
+        "band",
+        "evaluation_mode"
       ],
       "rows": 1
     },
     "mcq_item_stats": {
-      "checksum": "55994b31db19328cdd6bbbfe6835d7e16e896741dd890d7bbaa0da43dafa6a73",
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77",
       "columns": [
         "package_version_id",
         "criterion_id",
         "option",
-        "chosen"
+        "chosen",
+        "is_key"
       ],
       "rows": 1
     },
     "mcq_item_summary": {
-      "checksum": "aeaf679b219c6f80eaedb8fd2b51c75759759f8114a554752f5fbb4cff566b84",
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667",
       "columns": [
         "package_version_id",
-        "criterion_id"
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
       ],
       "rows": 1
     },
@@ -1792,12 +2068,22 @@
   },
   "durable@v2": {
     "audit_record": {
-      "checksum": "bbbb113f05b7313d267288de7922a91b1e3bcb24b84d5b118641bcc655863c4f",
+      "checksum": "d3061486157abc8eb1e601f2360fdbc179f728b4bece62453281029250013a4f",
       "columns": [
         "audit_record_id",
         "run_id",
         "recorded_at",
-        "profile_summary"
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read"
       ],
       "rows": 1
     },
@@ -1813,32 +2099,212 @@
       "rows": 1
     },
     "label": {
-      "checksum": "97433d2fad00aabcc9ab4329948d99cf9b757f1294ad4bb5e5db32fa3c9ed0a2",
+      "checksum": "f8a299a45f4229a69328e353b4038615d2c9a71b664c4191c320e525c84b1153",
       "columns": [
         "label_id",
         "run_id",
         "student_ref",
         "criterion_id",
         "label_type",
-        "band"
+        "band",
+        "evaluation_mode"
       ],
       "rows": 1
     },
     "mcq_item_stats": {
-      "checksum": "55994b31db19328cdd6bbbfe6835d7e16e896741dd890d7bbaa0da43dafa6a73",
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77",
       "columns": [
         "package_version_id",
         "criterion_id",
         "option",
-        "chosen"
+        "chosen",
+        "is_key"
       ],
       "rows": 1
     },
     "mcq_item_summary": {
-      "checksum": "aeaf679b219c6f80eaedb8fd2b51c75759759f8114a554752f5fbb4cff566b84",
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667",
       "columns": [
         "package_version_id",
-        "criterion_id"
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
+      ],
+      "rows": 1
+    },
+    "run_metrics": {
+      "checksum": "3338fbfbce1f4c37a24acdf36d406a2ff7843c6f4bcb11570aa63ba146fb3cea",
+      "columns": [
+        "run_id",
+        "metric",
+        "value"
+      ],
+      "rows": 1
+    },
+    "store_lease_clock": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "id",
+        "ticks",
+        "wall_clock"
+      ],
+      "rows": 0
+    }
+  },
+  "durable@v3": {
+    "audit_record": {
+      "checksum": "d3061486157abc8eb1e601f2360fdbc179f728b4bece62453281029250013a4f",
+      "columns": [
+        "audit_record_id",
+        "run_id",
+        "recorded_at",
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read"
+      ],
+      "rows": 1
+    },
+    "criterion_stats": {
+      "checksum": "7cc1c51cadb477ca055baa40f51083300a627d7d81aa61246932c4c21f8fed99",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "backend_profile",
+        "panel_build_ref",
+        "n"
+      ],
+      "rows": 1
+    },
+    "label": {
+      "checksum": "f8a299a45f4229a69328e353b4038615d2c9a71b664c4191c320e525c84b1153",
+      "columns": [
+        "label_id",
+        "run_id",
+        "student_ref",
+        "criterion_id",
+        "label_type",
+        "band",
+        "evaluation_mode"
+      ],
+      "rows": 1
+    },
+    "mcq_item_stats": {
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option",
+        "chosen",
+        "is_key"
+      ],
+      "rows": 1
+    },
+    "mcq_item_summary": {
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
+      ],
+      "rows": 1
+    },
+    "run_metrics": {
+      "checksum": "3338fbfbce1f4c37a24acdf36d406a2ff7843c6f4bcb11570aa63ba146fb3cea",
+      "columns": [
+        "run_id",
+        "metric",
+        "value"
+      ],
+      "rows": 1
+    },
+    "store_lease_clock": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "id",
+        "ticks",
+        "wall_clock"
+      ],
+      "rows": 0
+    }
+  },
+  "durable@v4": {
+    "audit_record": {
+      "checksum": "d3061486157abc8eb1e601f2360fdbc179f728b4bece62453281029250013a4f",
+      "columns": [
+        "audit_record_id",
+        "run_id",
+        "recorded_at",
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read"
+      ],
+      "rows": 1
+    },
+    "criterion_stats": {
+      "checksum": "7cc1c51cadb477ca055baa40f51083300a627d7d81aa61246932c4c21f8fed99",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "backend_profile",
+        "panel_build_ref",
+        "n"
+      ],
+      "rows": 1
+    },
+    "label": {
+      "checksum": "f8a299a45f4229a69328e353b4038615d2c9a71b664c4191c320e525c84b1153",
+      "columns": [
+        "label_id",
+        "run_id",
+        "student_ref",
+        "criterion_id",
+        "label_type",
+        "band",
+        "evaluation_mode"
+      ],
+      "rows": 1
+    },
+    "mcq_item_stats": {
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option",
+        "chosen",
+        "is_key"
+      ],
+      "rows": 1
+    },
+    "mcq_item_summary": {
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
       ],
       "rows": 1
     },
@@ -1875,7 +2341,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -1887,7 +2353,219 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
+      ],
+      "rows": 2
+    },
+    "criterion_dependency": {
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "rows": 1
+    },
+    "elicitation_history": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "elicitation_id",
+        "package_version_id",
+        "question",
+        "options_offered",
+        "answer_given",
+        "resulting_edit",
+        "asked_at"
+      ],
+      "rows": 0
+    },
+    "exemplar": {
+      "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74",
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance",
+        "blob_hash"
+      ],
+      "rows": 1
+    },
+    "grade_boundary": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "grade",
+        "scaled_floor"
+      ],
+      "rows": 0
+    },
+    "grade_policy": {
+      "checksum": "b03a7dd22bfbb3919ce32b9b49f60d2a2df89538455f49bda581eb03424869e6",
+      "columns": [
+        "package_version_id",
+        "policy",
+        "review_window_hours"
+      ],
+      "rows": 1
+    },
+    "mcq_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option_id",
+        "label"
+      ],
+      "rows": 0
+    },
+    "package": {
+      "checksum": "0c06bb8920d9c05b105661a0ec03c2ead24be777326406d167cd365927506d79",
+      "columns": [
+        "package_id",
+        "created_at",
+        "contains_real_student_text"
+      ],
+      "rows": 1
+    },
+    "package_version": {
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab",
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "rows": 1
+    },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_classification": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "classification",
+        "decomposition_basis",
+        "source",
+        "recorded_at"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "setup_readback": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "rubric_doc_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at"
+      ],
+      "rows": 0
+    },
+    "setup_step_record": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "step_id",
+        "status",
+        "payload",
+        "recorded_at"
+      ],
+      "rows": 0
+    },
+    "validation_record": {
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
+      ],
+      "rows": 1
+    }
+  },
+  "package@v10": {
+    "band": {
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "rows": 1
+    },
+    "criterion": {
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag",
+        "answer_key",
+        "evidence_type",
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -2083,7 +2761,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -2095,7 +2773,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -2291,7 +2971,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -2303,7 +2983,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -2499,7 +3181,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -2511,7 +3193,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -2707,7 +3391,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -2719,7 +3403,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -2915,7 +3601,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -2927,7 +3613,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -3123,7 +3811,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -3135,7 +3823,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -3331,7 +4021,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -3343,7 +4033,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },
@@ -3539,7 +4231,7 @@
       "rows": 1
     },
     "criterion": {
-      "checksum": "2645a5923136d18c314dbd56d5f7544c8e327a4f10c100492f00f4943610c044",
+      "checksum": "d66cb39334ad3a3a31c76cdee18f33f1d8bb0aa8f94a43c10090cad938e02b7e",
       "columns": [
         "criterion_id",
         "package_version_id",
@@ -3551,7 +4243,9 @@
         "construct_tag",
         "answer_key",
         "evidence_type",
-        "band_justification"
+        "band_justification",
+        "multi_select",
+        "partial_credit"
       ],
       "rows": 2
     },

@@ -15,9 +15,10 @@ genuinely empty answer IS a zero. Collapsing that in either direction silently
 grades students down for their scanner.
 
 Scope (#86): the pure kernel, the score-row write, and the cohort pass with
-`mcq_item_stats` / `mcq_item_summary`. `rederive_for_key_change`, the
-`item_stats` read API and the audit-record columns are #87's (`FR-DET-07`
-through `FR-DET-10` land there).
+`mcq_item_stats` / `mcq_item_summary` writes. #87 added, on top of it and
+without restructuring it (`FR-DET-07` through `FR-DET-10`): the `item_stats`
+read API, `rederive_for_key_change`, the audit-record columns, and the
+statistical-separation filter of `NFR-DET-03`.
 
 Design interpretations this implementation commits to (the design fixes the
 behaviour; each of these names the column-level reading it implies, and each is
@@ -72,14 +73,89 @@ recorded for review):
   wiring (console, orchestrator, tests) does. Importing `aeh.det` alone
   applies only the store's cohort migrations and det's own, and the first
   cohort read would then fail on the missing ingest/orch columns.
+
+Design interpretations #87 commits to (same discipline as the list above;
+each is a column-level reading the design leaves to the implementer, recorded
+for review):
+
+- Audit records are written for SCORED rows only (band `correct` /
+  `incorrect`). An unresolved row has no grade and NULL points, and the
+  HLD §9.7 `audit_record.final_points` is NOT NULL — there is no honest value
+  for a row that was never scored. Its audit is the `criterion_score` row's
+  own `state`/`routing` pair, which names `unresolved_selection`/`triage` in
+  the cohort tier.
+- `audit_record.selection_read` holds the JSON list of the extracted option
+  ids — `[]` for a blank answer, which was READ (as an empty answer) and is a
+  legitimate zero, never a judged row. Every deterministic audit row carries a
+  non-null `selection_read` and a non-null `answer_key_ref`; the null of these
+  columns is how a JUDGED row (written by `M-AGG`/`M-GRADE`, never here) is
+  recognized from the data.
+- `answer_key_ref` is `"<package_version_id>:<json list of option ids>"` —
+  the version AND the key bytes in one resolvable string (ADR-1: a correction
+  is a new version, so the pair resolves to exactly the key that produced the
+  grade; pkg's version lineage keeps the old version's key readable).
+- `audit_record.evaluation_mode` and `label.evaluation_mode` are added with
+  `DEFAULT 'judged'`: the migration must be additive over rows that already
+  exist (orch's run-level audit row predates the column), and every row in the
+  store before det wrote grades was a judged artifact. #59 owns reconciling
+  the run-level row's mode with its own unit semantics; det's per-grade rows
+  always write `'deterministic'` explicitly.
+- `final_points` is added NULLABLE, though the HLD §9.7 column says NOT
+  NULL: SQLite cannot add a NOT NULL column without a default to a
+  populated table, and orch's pre-existing run-level rows legitimately
+  carry no points. The invariant is the writer's, not the schema's — det
+  appends an audit row only for a scored (band, points) outcome — so
+  nothing in the DDL stops a future writer from a deterministic row with
+  NULL points. The gap is named here rather than papered over by this
+  docstring.
+- The summary's denominator: `n` counts every submission of the cohort for
+  the criterion, and `correct_rate = correct / n` keeps blanks (a legitimate
+  zero) AND unresolved reads in the denominator — a scanning-problem
+  question reads as harder than it is, which is exactly why
+  `unresolved_count` (and the report's `unresolved_rate`) are their own
+  figures. The identity `correct + incorrect + unresolved = n` holds; a
+  blank is inside `incorrect` band-wise, an unresolved read is in neither.
+- The separation filter (`NFR-DET-03`, `FR-DET-09`) is defined in this module
+  exactly once — `DETERMINISTIC_EXCLUSION` below, composed into
+  `select_agreement_labels` as the canonical agreement-figure query. det owns
+  the COLUMN (`CT-DET-06`); `M-STATS` owns the admissible-label conjunction's
+  other half (`label_type = 'blind'`, `NFR-STATS-04`). A consumer that
+  re-spells the exclusion predicate instead of importing the constant or the
+  statement is the defect `TC-DET-09`'s structural assertion exists to catch.
+- `label.evaluation_mode` is det's column but not det's row: `CT-DET-09`'s
+  write set admits no `label` writes. Population is the duty of whichever
+  module records a label over a deterministic result (`M-REVIEW`/`M-GRADE`).
+- `rederive_for_key_change` re-derives scores and appends audit records and
+  does NOT rewrite `mcq_item_stats`/`mcq_item_summary`: those tables are
+  keyed by package version, and the corrected figures belong to the new
+  version's own full pass. The report's changed counts tell the caller when
+  the old version's stats no longer describe the cohort's rows.
+- That version-keying has a disclosed hazard: the store's Tier D DDL keys
+  the stats `(package_version_id, criterion_id)`, not the HLD §9.7
+  `(cohort_id, question_id)`. The rollup is computed over one cohort's
+  rows, but a SECOND cohort whose runs name the same version overwrites the
+  first's figures, and `item_stats` cannot detect that from the cohort it
+  was asked about — it reads what survives. One cohort per version per
+  store is the working assumption this column set leaves; re-keying is a
+  schema change this story does not own.
+- The audit append is per evaluation event and deliberately NOT deduplicated:
+  the design's idempotency-under-redelivery constraint names
+  `rederive_for_key_change` and the item-stats writes, not the audit trail —
+  an append-only trail of grading events is the trail's point.
+- `item_stats` resolves the cohort's single package version from its run rows
+  and refuses a cohort whose runs name SEVERAL versions: the report would
+  silently mix two instruments' figures, and refusing names the ambiguity
+  instead (`aeh.det` makes no claim about which one a caller meant).
 """
 
 from __future__ import annotations
 
 import json
 import os
-from collections.abc import Callable, Mapping, Sequence
+import uuid
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -133,6 +209,23 @@ REASON_SELECTION_OUTSIDE_OPTION_SET = "selection_outside_option_set"
 DEFAULT_UNRESOLVED_ALERT_RATE = 0.05
 UNRESOLVED_ALERT_RATE_ENV = "HARNESS_DET_UNRESOLVED_ALERT_RATE"
 
+# --- the audit record and the statistical separation (FR-DET-09 / FR-DET-10) -----------------------
+
+EVALUATION_MODE_JUDGED = "judged"
+EVALUATION_MODE_DETERMINISTIC = "deterministic"
+EVALUATION_MODES = (EVALUATION_MODE_JUDGED, EVALUATION_MODE_DETERMINISTIC)
+DECIDED_BY_SYSTEM = "system"
+
+#: `NFR-DET-03` — the statistical-separation filter, defined here EXACTLY ONCE.
+#: Every agreement, kappa, alpha and grader-quality figure excludes deterministic
+#: results through THIS predicate (`FR-DET-09`, `CT-DET-06`, R53): agreement with
+#: an answer key is not agreement between judges, and mixing the two inflates
+#: kappa toward whatever share of the assessment is multiple choice. det owns the
+#: column (`label.evaluation_mode`); the consumer owns the rest of its admissible-
+#: label conjunction (`NFR-STATS-04`'s `label_type = 'blind'`). The qualified form
+#: survives a join, because the consumers' queries join.
+DETERMINISTIC_EXCLUSION = "label.evaluation_mode <> 'deterministic'"
+
 
 def unresolved_alert_rate(environ: Mapping[str, str] | None = None) -> float:
     """The unresolved-count alert rate, read at call time (`CLAUDE.md` seam 3).
@@ -153,6 +246,20 @@ def unresolved_alert_rate(environ: Mapping[str, str] | None = None) -> float:
     if not 0.0 < value <= 1.0:
         return DEFAULT_UNRESOLVED_ALERT_RATE
     return value
+
+
+def _now() -> str:
+    """The one wall-clock read the audit trail writes, UTC ISO-8601 — the same
+    form `ingest._now` and `orch._now` use, so every recorded_at in the store
+    reads the same way."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _newest_run(runs: list[Any]) -> Any:
+    """The cohort's newest run — latest non-null `started_at`, then `run_id` —
+    the run a re-derivation attributes its audit rows to: the one whose grades
+    the correction supersedes."""
+    return max(runs, key=lambda row: (row["started_at"] or "", row["run_id"]))
 
 
 # --- errors ----------------------------------------------------------------------------------------
@@ -195,6 +302,12 @@ class UnknownCriterion(DeterministicError):
 
 class UnknownRun(DeterministicError):
     """No run row in any cohort ledger for the given run id."""
+
+
+class UnknownCohort(DeterministicError):
+    """No cohort ledger on file for the given cohort id. Opening the tier handle
+    would CREATE the file, so the lookup checks the ledger directory first — a
+    typo'd cohort id must be named, not silently materialized."""
 
 
 # --- the pure kernel: the §7.8 situation table ------------------------------------------------------
@@ -374,8 +487,8 @@ def evaluate(
 
 # --- migrations ------------------------------------------------------------------------------------
 # Appended to the registry at import, in the pattern pkg/ingest/orch set. Versions
-# claimed: package 10, cohort 9, durable 3 — renumber on rebase if a sibling took one
-# (#52's pkg_setup_classification took package 9, #58's orch_leasing took cohort 8).
+# claimed: package 10, cohort 9, durable 3 and 4 — renumber on rebase if a sibling took
+# one (#52's pkg_setup_classification took package 9, #58's orch_leasing took cohort 8).
 
 _DET_SELECTION_POLICY = Migration(
     version=10,
@@ -456,6 +569,43 @@ _DET_ITEM_STATISTICS = Migration(
     ),
 )
 
+_DET_AUDIT_SEPARATION = Migration(
+    version=4,
+    name="det_audit_separation_columns",
+    statements=(
+        # FR-DET-10 / CT-DET-09: the deterministic grade's audit record, at the
+        # HLD §9.7 column set. The per-grade columns (submission/criterion/
+        # points/decided_by/version) are NULL on orch's run-level rows, which
+        # predate this migration and carry only the profile summary; the
+        # vocabulary columns default to 'judged' because every pre-existing row
+        # is a judged artifact, and det writes 'deterministic' explicitly. The
+        # NOT NULL + DEFAULT form is what an additive SQLite column on a
+        # populated table can carry — see the module docstring's interpretations.
+        Statement("ALTER TABLE audit_record ADD COLUMN submission_id TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN criterion_id TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN final_points REAL"),
+        Statement("ALTER TABLE audit_record ADD COLUMN decided_by TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN package_version_id TEXT"),
+        Statement(
+            "ALTER TABLE audit_record ADD COLUMN evaluation_mode TEXT "
+            "NOT NULL DEFAULT 'judged' CHECK (evaluation_mode IN "
+            "('judged', 'deterministic'))"
+        ),
+        Statement("ALTER TABLE audit_record ADD COLUMN panel_config TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN prompt_template_v TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN answer_key_ref TEXT"),
+        Statement("ALTER TABLE audit_record ADD COLUMN selection_read TEXT"),
+        # FR-DET-09 / CT-DET-06: the separation column itself. The exclusion it
+        # enforces is DETERMINISTIC_EXCLUSION above — one predicate, every
+        # statistics consumer (NFR-DET-03).
+        Statement(
+            "ALTER TABLE label ADD COLUMN evaluation_mode TEXT "
+            "NOT NULL DEFAULT 'judged' CHECK (evaluation_mode IN "
+            "('judged', 'deterministic'))"
+        ),
+    ),
+)
+
 
 DET_STATEMENTS: dict[str, Statement] = {
     "select_run": Statement(
@@ -518,11 +668,74 @@ DET_STATEMENTS: dict[str, Statement] = {
         "correct_rate, blank_count, unresolved_count) VALUES (:v, "
         ":criterion_id, :n, :correct_rate, :blank_count, :unresolved_count)"
     ),
+    # --- #87: rederivation, the audit record, the shared filter, the read API ---
+    "select_cohort_runs": Statement(
+        "SELECT run_id, cohort_id, package_version_id, package_id, started_at "
+        "FROM run WHERE cohort_id = :cohort_id ORDER BY run_id"
+    ),
+    "select_criterion_scores": Statement(
+        # criterion_score.points is the STORED SCORE, not the band-to-points
+        # mapping (whose only reader is pkg's points_for_band, CT-PKG-C05) —
+        # the alias keeps that net unambiguous about which column this reads.
+        "SELECT submission_id, band,"
+        " points AS prev_points, state, routing FROM criterion_score"
+        " WHERE criterion_id = :criterion_id ORDER BY submission_id"
+    ),
+    "upsert_rederived_score": Statement(
+        # The same shape as upsert_criterion_score: a re-derivation is an
+        # evaluation under the corrected key, and a re-run of the same
+        # (submission, criterion) lands on the same row.
+        "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+        "judge_count, agreement, state, routing) VALUES (:submission_id, "
+        ":criterion_id, :band, :points, :judge_count, :agreement, :state, "
+        ":routing) ON CONFLICT (submission_id, criterion_id) DO UPDATE SET "
+        "band = excluded.band, points = excluded.points, "
+        "judge_count = excluded.judge_count, agreement = excluded.agreement, "
+        "state = excluded.state, routing = excluded.routing"
+    ),
+    "insert_audit_record": Statement(
+        "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, "
+        "profile_summary, submission_id, criterion_id, final_points, decided_by, "
+        "package_version_id, evaluation_mode, panel_config, prompt_template_v, "
+        "answer_key_ref, selection_read) VALUES (:audit_record_id, :run_id, "
+        ":recorded_at, :profile_summary, :submission_id, :criterion_id, "
+        ":final_points, :decided_by, :package_version_id, :evaluation_mode, "
+        ":panel_config, :prompt_template_v, :answer_key_ref, :selection_read)"
+    ),
+    # NFR-DET-03's canonical composition: the agreement-figure query. The
+    # exclusion half is DETERMINISTIC_EXCLUSION above — the ONE definition — and
+    # the blind half is NFR-STATS-04's, recorded here so the whole conjunction
+    # has a readable home. Consumers use this statement or compose the constant;
+    # neither is re-spelled at a call site.
+    "select_agreement_labels": Statement(
+        "SELECT label_id, run_id, student_ref, criterion_id, label_type, band, "
+        "evaluation_mode FROM label WHERE label_type = 'blind' AND "
+        "label.evaluation_mode <> 'deterministic' ORDER BY label_id"
+    ),
+    "select_item_stats_for_version": Statement(
+        "SELECT criterion_id, option, chosen, is_key FROM mcq_item_stats "
+        "WHERE package_version_id = :v ORDER BY criterion_id, option"
+    ),
+    "select_item_summary_for_version": Statement(
+        "SELECT criterion_id, n, correct_rate, blank_count, unresolved_count "
+        "FROM mcq_item_summary WHERE package_version_id = :v ORDER BY criterion_id"
+    ),
 }
 STATEMENTS.update(DET_STATEMENTS)
+# SEC-15 refuses assembled SQL, so the composition is not an f-string: the statement
+# above spells the filter as a pure literal, and this assert is what ties it to the
+# ONE definition — a drift in either is a failed import, not a silent second filter.
+assert DETERMINISTIC_EXCLUSION in DET_STATEMENTS["select_agreement_labels"], (
+    "select_agreement_labels must carry DETERMINISTIC_EXCLUSION verbatim: the "
+    "deterministic-exclusion filter is defined once (NFR-DET-03), and the "
+    "literal-only statement (the SEC-15 rule) is bound to that constant here."
+)
 TIER_MIGRATIONS[Tier.PACKAGE] = TIER_MIGRATIONS[Tier.PACKAGE] + (_DET_SELECTION_POLICY,)
 TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (_DET_SCORE_STATE,)
-TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DET_ITEM_STATISTICS,)
+TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (
+    _DET_ITEM_STATISTICS,
+    _DET_AUDIT_SEPARATION,
+)
 
 
 # --- the stored result and the pass report ----------------------------------------------------------
@@ -596,8 +809,85 @@ class DeterministicReport:
     blank: int
     unresolved: int
     unresolved_alert_rate: float
+    #: Audit records appended for this pass's scored rows (`FR-DET-10`). Unresolved
+    #: rows write none — no grade, no points, nothing for `final_points NOT NULL`
+    #: to carry (see the module docstring's interpretations).
+    audit_records_written: int
     summaries: tuple[CriterionSummary, ...]
     alerts: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class ItemOptionCount:
+    """One option's chosen count within one question's stats (`FR-DET-07`):
+    the count, and the denormalized key flag (`CT-DET-08`'s rollup needs no
+    join)."""
+
+    criterion_id: str
+    option: str
+    chosen: int
+    is_key: bool
+
+
+@dataclass(frozen=True)
+class ItemStatsEntry:
+    """One question's read-back statistics (`FR-DET-07`): the summary figures
+    and the per-option counts they were built from. blank_count and
+    unresolved_count stay separate figures here for the same reason they are
+    separate columns (`CT-DET-08`)."""
+
+    criterion_id: str
+    n: int
+    correct_rate: float
+    blank_count: int
+    unresolved_count: int
+    options: tuple[ItemOptionCount, ...]
+
+
+@dataclass(frozen=True)
+class ItemStatsReport:
+    """What `item_stats` returns for one cohort (`FR-DET-07`, `CT-DET-08`).
+    `package_version_id` is None exactly when the cohort has no run rows — an
+    empty report on an evaluated cohort is impossible, because the cohort pass
+    writes the stats it summarizes."""
+
+    cohort_id: str
+    package_version_id: str | None
+    items: tuple[ItemStatsEntry, ...]
+
+
+@dataclass(frozen=True)
+class RederiveChange:
+    """One submission's score difference under the corrected key (`FR-DET-08`).
+    `old_band` is None when no score row existed — the re-derivation created
+    one. Unresolved rows appear here only as no-changes: they never depended on
+    the key."""
+
+    submission_id: str
+    old_band: str | None
+    new_band: str
+    old_points: float | None
+    new_points: float | None
+
+
+@dataclass(frozen=True)
+class RederiveReport:
+    """What one key-correction re-derivation did (`FR-DET-08`, `CT-DET-07`):
+    the versions involved, the diff, and the declared zeros — zero panel work
+    enqueued is a FIELD, not an absence, so the refusal to enqueue is visible
+    in the result (`CLAUDE.md` seam 4, `TC-DET-C07`'s exact zero)."""
+
+    cohort_id: str
+    criterion_id: str
+    question_id: str | None
+    new_version: str
+    from_versions: tuple[str, ...]
+    submissions_examined: int
+    scores_changed: int
+    scores_unchanged: int
+    audit_records_written: int
+    panel_units_enqueued: int
+    changes: tuple[RederiveChange, ...]
 
 
 def _cohort_keys_on_filesystem(store: Any) -> tuple[str, ...]:
@@ -682,6 +972,9 @@ class DeterministicEvaluator:
                 state=outcome.state,
                 routing=outcome.routing,
             )
+        self._append_audit_records(
+            run, run["package_version_id"], [(submission_id, criterion, outcome, points)]
+        )
         return CriterionScore(
             run_id=run_id,
             submission_id=submission_id,
@@ -796,6 +1089,9 @@ class DeterministicEvaluator:
                     routing=outcome.routing,
                 )
         self._write_item_statistics(tallies, version)
+        audit_records_written = self._append_audit_records(
+            run, version, scored
+        )
         summaries: list[CriterionSummary] = []
         alerts: list[dict[str, Any]] = []
         for criterion in criteria:
@@ -845,8 +1141,207 @@ class DeterministicEvaluator:
             blank=sum(t["blank"] for t in tallies.values()),
             unresolved=sum(t["unresolved"] for t in tallies.values()),
             unresolved_alert_rate=alert_rate,
+            audit_records_written=audit_records_written,
             summaries=tuple(summaries),
             alerts=tuple(alerts),
+        )
+
+    # -- the key-correction path and the read API (FR-DET-08 / FR-DET-07) ----
+
+    def rederive_for_key_change(
+        self, cohort_id: str, criterion_id: str, new_version: str
+    ) -> RederiveReport:
+        """Re-derive one criterion's scores for one cohort under a corrected
+        answer key (`FR-DET-08`, `CT-DET-07`). A correction is a new package
+        version (`FR-PKG-18`); this reads the criterion, its options and its
+        points from THAT version, re-runs the same §7.8 kernel over every
+        submission's stored selection read — a lookup, not a re-judgement —
+        and upserts only the rows whose value actually moves. No panel work,
+        no review-queue row, no model call: `panel_units_enqueued` is a
+        declared zero, and the audit records appended for the changed rows
+        name `new_version` in their `answer_key_ref`, which is what makes a
+        correction answerable years later while the untouched rows' audit
+        trail still resolves each old grade to its old key.
+
+        Idempotent (`CT-DET-07`, the M-ORCH redelivery constraint): against
+        an unchanged key every re-derived value equals the stored one, so the
+        change set is empty, nothing is written, and a second pass reports
+        zeros across the board.
+
+        The appended audit rows carry the cohort's NEWEST run as their
+        `run_id` (latest non-null `started_at`, then run_id — the run whose
+        grades the correction supersedes); which KEY version produced each
+        grade travels in `answer_key_ref`, so the attribution stays exact
+        even when the run named several versions.
+        """
+        runs = self._cohort_runs(cohort_id)
+        if not runs:
+            return RederiveReport(
+                cohort_id=cohort_id,
+                criterion_id=criterion_id,
+                question_id=None,
+                new_version=new_version,
+                from_versions=(),
+                submissions_examined=0,
+                scores_changed=0,
+                scores_unchanged=0,
+                audit_records_written=0,
+                panel_units_enqueued=0,
+                changes=(),
+            )
+        package_ids = sorted({row["package_id"] for row in runs})
+        if len(package_ids) > 1:
+            raise DeterministicError(
+                f"cohort {cohort_id!r}'s runs name several packages "
+                f"({package_ids}); which one a key correction applies to is a "
+                "caller decision this module will not guess at."
+            )
+        package_id = package_ids[0]
+        from_versions = tuple(sorted({row["package_version_id"] for row in runs}))
+        package_handle = self._store.package(package_id)
+        criterion = self._criterion(package_handle, new_version, criterion_id)
+        option_set = (
+            tuple(
+                row["option_id"]
+                for row in package_handle.query(
+                    DET_STATEMENTS["select_options"],
+                    v=new_version,
+                    criterion_id=criterion_id,
+                )
+            )
+            or None
+        )
+        catalog = PackageCatalog(package_handle, package_id=package_id)
+        catalog.criteria(new_version)  # pins the cache to the corrected version
+        cohort_handle = self._store.cohort(cohort_id)
+        submissions = [
+            row["submission_id"]
+            for row in cohort_handle.query(
+                DET_STATEMENTS["select_cohort_submissions"], cohort_id=cohort_id
+            )
+        ]
+        existing = {
+            row["submission_id"]: row
+            for row in cohort_handle.query(
+                DET_STATEMENTS["select_criterion_scores"], criterion_id=criterion_id
+            )
+        }
+        changed: list[tuple[str, dict[str, Any], DetOutcome, float | None]] = []
+        report_changes: list[RederiveChange] = []
+        unchanged = 0
+        for submission_id in submissions:
+            outcome, points = self._score_one(
+                cohort_handle,
+                package_handle,
+                new_version,
+                criterion,
+                submission_id,
+                option_set=option_set,
+                catalog=catalog,
+            )
+            current = existing.get(submission_id)
+            same = current is not None and (
+                current["band"] == outcome.band
+                and current["prev_points"] == points
+                and current["state"] == outcome.state
+                and current["routing"] == outcome.routing
+            )
+            if same:
+                unchanged += 1
+                continue
+            changed.append((submission_id, criterion, outcome, points))
+            report_changes.append(
+                RederiveChange(
+                    submission_id=submission_id,
+                    old_band=current["band"] if current is not None else None,
+                    new_band=outcome.band,
+                    old_points=current["prev_points"] if current is not None else None,
+                    new_points=points,
+                )
+            )
+        if changed:
+            with cohort_handle.transaction() as tx:
+                for submission_id, criterion_row, outcome, points in changed:
+                    tx.execute(
+                        DET_STATEMENTS["upsert_rederived_score"],
+                        submission_id=submission_id,
+                        criterion_id=criterion_row["criterion_id"],
+                        band=outcome.band,
+                        points=points,
+                        judge_count=0,
+                        agreement=None,
+                        state=outcome.state,
+                        routing=outcome.routing,
+                    )
+            audit_records_written = self._append_audit_records(
+                _newest_run(runs), new_version, changed
+            )
+        else:
+            audit_records_written = 0
+        return RederiveReport(
+            cohort_id=cohort_id,
+            criterion_id=criterion_id,
+            question_id=criterion["question_id"],
+            new_version=new_version,
+            from_versions=from_versions,
+            submissions_examined=len(submissions),
+            scores_changed=len(changed),
+            scores_unchanged=unchanged,
+            audit_records_written=audit_records_written,
+            panel_units_enqueued=0,
+            changes=tuple(report_changes),
+        )
+
+    def item_stats(self, cohort_id: str) -> ItemStatsReport:
+        """Read back one cohort's item statistics (`FR-DET-07`, `CT-DET-08`):
+        per question, the summary figures and the per-option counts behind
+        them, exactly as the cohort pass wrote them. blank_count and
+        unresolved_count travel as the separate figures they are stored as —
+        the unresolved count is a scanning problem, never item difficulty.
+        A cohort with no runs reports an empty population under a None
+        version; a cohort whose runs name several package versions is
+        refused (see the module docstring)."""
+        runs = self._cohort_runs(cohort_id)
+        if not runs:
+            return ItemStatsReport(
+                cohort_id=cohort_id, package_version_id=None, items=()
+            )
+        versions = sorted({row["package_version_id"] for row in runs})
+        if len(versions) > 1:
+            raise DeterministicError(
+                f"cohort {cohort_id!r}'s runs name several package versions "
+                f"({versions}); one report cannot mix two instruments' figures "
+                "and this module will not pick for you."
+            )
+        version = versions[0]
+        durable_handle = self._store.durable()
+        option_counts: dict[str, list[ItemOptionCount]] = {}
+        for row in durable_handle.query(
+            DET_STATEMENTS["select_item_stats_for_version"], v=version
+        ):
+            option_counts.setdefault(row["criterion_id"], []).append(
+                ItemOptionCount(
+                    criterion_id=row["criterion_id"],
+                    option=row["option"],
+                    chosen=row["chosen"],
+                    is_key=bool(row["is_key"]),
+                )
+            )
+        items = tuple(
+            ItemStatsEntry(
+                criterion_id=row["criterion_id"],
+                n=row["n"],
+                correct_rate=row["correct_rate"],
+                blank_count=row["blank_count"],
+                unresolved_count=row["unresolved_count"],
+                options=tuple(option_counts.get(row["criterion_id"], ())),
+            )
+            for row in durable_handle.query(
+                DET_STATEMENTS["select_item_summary_for_version"], v=version
+            )
+        )
+        return ItemStatsReport(
+            cohort_id=cohort_id, package_version_id=version, items=items
         )
 
     # -- private helpers -------------------------------------------------------------------------
@@ -866,6 +1361,79 @@ class DeterministicEvaluator:
             f"no run row named {run_id!r} exists in any cohort ledger; an "
             "explicit run_id that resolves to nothing is a caller error."
         )
+
+    def _cohort_runs(self, cohort_id: str) -> list[Any]:
+        """The cohort's run rows, the cohort-grain lookup `rederive_for_key_change`
+        and `item_stats` resolve versions and package ids from. A cohort id that
+        matches no ledger file on disk raises before the tier handle is touched —
+        `store.cohort` would CREATE the missing file, and a typo must not
+        materialize a cohort."""
+        if cohort_id not in self._cohort_keys_for(self._store):
+            raise UnknownCohort(
+                f"no cohort ledger named {cohort_id!r} exists on the store's "
+                "cohort tier; an explicit cohort_id that resolves to nothing is "
+                "a caller error."
+            )
+        cohort_handle = self._store.cohort(cohort_id)
+        return list(
+            cohort_handle.query(
+                DET_STATEMENTS["select_cohort_runs"], cohort_id=cohort_id
+            )
+        )
+
+    def _append_audit_records(
+        self,
+        run: Any,
+        version: str,
+        entries: Iterable[tuple[str, dict[str, Any], DetOutcome, float | None]],
+    ) -> int:
+        """Append the audit records for scored rows (`FR-DET-10`, `CT-DET-09`):
+        one Tier D transaction, one row per (submission, criterion) grade that
+        actually carries points, in the shape the design fixes —
+        `evaluation_mode='deterministic'`, NULL `panel_config` and
+        `prompt_template_v` (a populated one would make the row look
+        panel-scored to every statistic downstream), non-null
+        `answer_key_ref` and `selection_read`. Unresolved rows are skipped:
+        no grade, no points, nothing `final_points NOT NULL` could carry —
+        their audit is the score row's `state`/`routing` (module docstring).
+        Append-only: the trail records grading events, and the design's
+        idempotency constraint names the rederivation and the stats writes,
+        not the trail. Returns the count written."""
+        written = 0
+        durable_handle = self._store.durable()
+        with durable_handle.transaction() as tx:
+            for submission_id, criterion, outcome, points in entries:
+                if outcome.band == BAND_UNRESOLVED:
+                    continue
+                tx.execute(
+                    DET_STATEMENTS["insert_audit_record"],
+                    audit_record_id=uuid.uuid4().hex,
+                    run_id=run["run_id"],
+                    recorded_at=_now(),
+                    profile_summary=json.dumps(
+                        {
+                            "band": outcome.band,
+                            "reason": outcome.reason,
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ),
+                    submission_id=submission_id,
+                    criterion_id=criterion["criterion_id"],
+                    final_points=points,
+                    decided_by=DECIDED_BY_SYSTEM,
+                    package_version_id=version,
+                    evaluation_mode=EVALUATION_MODE_DETERMINISTIC,
+                    panel_config=None,
+                    prompt_template_v=None,
+                    answer_key_ref=(
+                        f"{version}:"
+                        f"{json.dumps(list(criterion['answer_key']))}"
+                    ),
+                    selection_read=json.dumps(list(outcome.selection_read or ())),
+                )
+                written += 1
+        return written
 
     def _criterion(
         self, package_handle: Any, version: str, criterion_id: str
