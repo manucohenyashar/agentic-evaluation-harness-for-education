@@ -261,12 +261,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # four Tier D writes that rewrite `mcq_item_stats`/`mcq_item_summary` per
     # criterion (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
     # Every one from DET_STATEMENTS, keyword-parameterized.
-    "aeh.det:673",
-    "aeh.det:786",
-    "aeh.det:1070",
-    "aeh.det:1078",
-    "aeh.det:1086",
-    "aeh.det:1092",
+    "aeh.det:674",
+    "aeh.det:787",
+    "aeh.det:1071",
+    "aeh.det:1079",
+    "aeh.det:1087",
+    "aeh.det:1093",
     "aeh.ingest:2371",
     "aeh.ingest:2382",
     "aeh.ingest:2404",

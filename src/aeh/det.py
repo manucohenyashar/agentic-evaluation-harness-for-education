@@ -374,10 +374,11 @@ def evaluate(
 
 # --- migrations ------------------------------------------------------------------------------------
 # Appended to the registry at import, in the pattern pkg/ingest/orch set. Versions
-# claimed: package 9, cohort 8, durable 3 — renumber on rebase if a sibling took one.
+# claimed: package 10, cohort 9, durable 3 — renumber on rebase if a sibling took one
+# (#52's pkg_setup_classification took package 9, #58's orch_leasing took cohort 8).
 
 _DET_SELECTION_POLICY = Migration(
-    version=9,
+    version=10,
     name="det_selection_policy_columns",
     statements=(
         # FR-DET-05: the partial-credit policy is DECLARED in the package or it
@@ -397,7 +398,7 @@ _DET_SELECTION_POLICY = Migration(
 )
 
 _DET_SCORE_STATE = Migration(
-    version=8,
+    version=9,
     name="det_score_state_columns",
     statements=(
         # FR-DET-02/03/04: the deterministic score row's shape. judge_count is
