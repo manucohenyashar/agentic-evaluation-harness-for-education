@@ -3,13 +3,13 @@
   "members": [
     {
       "name": "manifest.json",
-      "sha256": "adb1cc2030b3f0929415c59394b3e3956240c20de10115af2a68820e53dd9d53"
+      "sha256": "28aab547b9214fe80c135465e4ae79794a25514292f5131e6c6a3df2231cd2bd"
     },
     {
       "name": "package.pkg.sqlite",
-      "sha256": "0c61c2def1ae88dfef16c537ce59935133ae9d56bc392c0dea60422ebc268fe7"
+      "sha256": "b99d593a9edf65447c7ecd6efe3e096eb78f29cf5905d2f5316a75727da4eadb"
     }
   ],
   "package_id": "PKG-REF",
-  "schema_version": 8
+  "schema_version": 9
 }

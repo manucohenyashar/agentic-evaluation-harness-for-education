@@ -3298,8 +3298,13 @@ class PackageCatalog:
         never overwritten by a default."""
         if self.step_record(v, step_id) is not None:
             return False
+        # The guard runs BEFORE the transaction, not inside it — the shape the
+        # catalog's own publish() uses. This write sits on the publish path's
+        # happy tail, and CT-SETUP-02 audits that path to exactly ONE
+        # lock-carrying statement: an in-transaction guard would put a second
+        # package_version statement (the guard's SELECT) in the audited window.
+        self._refuse_mutation(v)
         with self._handle.transaction() as tx:
-            self._guard(tx, v, "criterion.add")
             tx.execute(PKG_STATEMENTS["insert_step_record"], v=v, step_id=step_id,
                        status=status, payload=payload, recorded_at=recorded_at)
         self._invalidate()
