@@ -2270,6 +2270,20 @@ class PackageCatalog:
         before dependents, which is `M-ORCH`'s extraction sweep order (`FR-PKG-05`)."""
         return self._toposort(self._version_graph(v))
 
+    def dependency_graph(self, v: PackageVersionId) -> dict[str, tuple[str, ...]]:
+        """The version's dependency topology, criterion -> its direct dependencies
+        (`FR-PKG-05`) — the read side of `set_dependencies`, over the same graph
+        `topological_order` sorts. `M-ORCH` consumes the topology rather than
+        re-deriving it: the extraction sweep's order is `topological_order`'s, and the
+        scoring gate (`FR-ORCH-06`) needs the edges themselves. Every criterion of the
+        version appears as a key, dependencies sorted — deterministic where nothing
+        depends on the order."""
+        graph = self._version_graph(v)
+        return {
+            criterion_id: tuple(sorted(deps))
+            for criterion_id, deps in graph.items()
+        }
+
     def criteria(self, v: PackageVersionId, question_id: str | None = None) -> tuple:
         """The version's criteria, from the per-run cache (`NFR-PKG-05`: read on every
         one of ~23,000 units)."""

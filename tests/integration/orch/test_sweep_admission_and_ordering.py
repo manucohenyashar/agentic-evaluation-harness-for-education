@@ -77,7 +77,7 @@ from tests.support.conf_builders import (
     edge_cfg,
     hosted_cfg,
 )
-from tests.support.impl import ORCH_MODULE, require
+from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import (
     ORCH_COHORT_ID,
     seed_cohort,
@@ -85,7 +85,7 @@ from tests.support.orch_run import (
     seed_run,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#59"
 
@@ -284,8 +284,8 @@ def test_tc_orch_06_sweep1_is_judged_only_and_dispatched_topologically(tmp_data_
     """`TC-ORCH-06` — extract units exist for judged criteria only and are dispatched in
     topological order over the dependency graph; the deterministic criterion produces no
     extraction unit."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         orchestrator, run_id, _ = seed_run(
@@ -341,8 +341,8 @@ def test_tc_orch_07_sweep2_gates_on_dependency_extraction_then_orders_by_key_onl
     """`TC-ORCH-07` — with c2's extraction incomplete, Sweep 2 for c4 does not begin;
     once every extraction is done, Sweep 2's order is the FR-ORCH-07 key and nothing
     else — c4 dispatches before c2 despite c2 -> c4."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         orchestrator, run_id, _ = seed_run(
@@ -407,8 +407,8 @@ def test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable(
     """`TC-ORCH-08` — the same run on `edge-local` and on `dev-ci`: Sweep 2 order is
     judge, then question, then criterion, then parallel over submissions, on both, and
     the two traces are comparable."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         submissions = ("SYN-001", "SYN-002")
