@@ -1315,9 +1315,16 @@ PKG_STATEMENTS.update({
         "SELECT COUNT(*) AS n FROM package WHERE package_id = :p"
     ),
     "pkg_revision_copy_criterion": Statement(
+        # The columns migration 8 added (evidence_type, band_justification) join the
+        # copy from their first commit: a revision copies the read-back payload row
+        # too, and a copied payload that asserts an evidence_type beside criterion
+        # rows whose evidence_type is NULL would contradict itself. (The max_points-
+        # era columns this statement already dropped are a pre-existing gap, not
+        # #51's to close silently.)
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
-        "answer_key) SELECT :new, criterion_id, question_id, kind, answer_key "
-        "FROM criterion WHERE package_version_id = :old"
+        "answer_key, evidence_type, band_justification) "
+        "SELECT :new, criterion_id, question_id, kind, answer_key, evidence_type, "
+        "band_justification FROM criterion WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
         "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
@@ -3197,6 +3204,12 @@ class PackageCatalog:
                 raise PackageError(
                     f"{where} ({criterion_id!r}): max_points {max_points} is negative."
                 )
+            if not math.isfinite(max_points):
+                raise PackageError(
+                    f"{where} ({criterion_id!r}): max_points {max_points} is not a "
+                    "finite number — SQLite stores NaN as NULL, so a NaN would trip "
+                    "the NOT NULL constraint instead of a validation error."
+                )
             construct_tag = str(record.get("construct_tag", "") or "")
             evidence_type = record.get("evidence_type")
             if evidence_type is not None and not str(evidence_type).strip():
@@ -3254,6 +3267,12 @@ class PackageCatalog:
                     ) from error
                 if points < 0:
                     raise BandSetError(f"{band_where}: points {points} is negative.")
+                if not math.isfinite(points):
+                    raise BandSetError(
+                        f"{band_where}: points {points} is not a finite number — "
+                        "SQLite stores NaN as NULL, and an infinity is not a points "
+                        "value a band can carry."
+                    )
                 bands.append({"band": label, "ordinal": ordinal, "points": points,
                               "descriptor": str(band.get("descriptor", "") or "")})
             validated.append({

@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import uuid
@@ -878,6 +879,12 @@ def _parse_readback_reply(
             raise _ReplyError(
                 f"criterion {criterion_id!r}: max_points {max_points} is negative."
             )
+        if not math.isfinite(max_points):
+            raise _ReplyError(
+                f"criterion {criterion_id!r}: max_points {max_points} is not a finite "
+                "number — NaN would fail the band write outright and an infinity would "
+                "make every band unreachable."
+            )
         construct = raw.get("construct")
         if not isinstance(construct, str) or not construct.strip():
             raise _ReplyError(
@@ -947,6 +954,12 @@ def _parse_readback_reply(
                     raise _ReplyError(
                         f"criterion {criterion_id!r} band {label!r}: points "
                         f"{points} is negative."
+                    )
+                if not math.isfinite(points):
+                    raise _ReplyError(
+                        f"criterion {criterion_id!r} band {label!r}: points {points} "
+                        "is not a finite number — the JSON decoder accepts NaN and "
+                        "Infinity, and neither is a points value a band can carry."
                     )
                 descriptor = raw_band.get("descriptor")
                 if not isinstance(descriptor, str) or not descriptor.strip():
@@ -1035,6 +1048,22 @@ def _criterion_record(draft: CriterionDraft) -> dict:
     }
 
 
+def _stored_readback_status(row: Mapping[str, Any] | None) -> str:
+    """The stored read-back row's status — a field of the PAYLOAD, not a column.
+
+    `steps()` reads this to report done / degraded honestly (`NFR-SETUP-04`): the
+    row's own columns are provenance (documents, prompt, build, attempts), and the
+    status word the module wrote lives inside the payload it mirrors. A row whose
+    payload cannot be parsed reads as not-done rather than crashing the console's
+    enumeration — the row is provenance, and provenance is not silently replaced."""
+    if not row:
+        return ""
+    try:
+        return str(json.loads(row["payload"]).get("status") or "")
+    except (KeyError, TypeError, ValueError):
+        return ""
+
+
 def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricReadback:
     """Rebuild the stored read back — the resume path's read (`CT-SETUP-03`: state is
     the database). A malformed stored payload raises `SetupError` naming the corruption
@@ -1069,6 +1098,7 @@ def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricRea
             justification=str(entry.get("justification", "")),
             evidence_type=str(entry.get("evidence_type",
                                         SETUP_EVIDENCE_TYPE_DEFAULT)),
+            bands_source=str(entry.get("bands_source", "proposed")),
         )
         for entry in entries
     )
@@ -1240,12 +1270,13 @@ class SetupService:
             keys_note = "no deterministic criteria yet — #53 stages their creation"
         # The rubric read-back went live with #51: available once gate 1 is met, done
         # when the stored read-back row reads `proposed` (the degraded row is a fact
-        # the note carries, not a done). The getattr guard keeps the enumeration
-        # honest over rung-0 doubles that do not model the write surface — a missing
-        # member reads as "not done", never as a console crash.
+        # the note carries, not a done). The status lives in the row's PAYLOAD — the
+        # row's own columns are provenance only. The getattr guard keeps the
+        # enumeration honest over rung-0 doubles that do not model the write surface —
+        # a missing member reads as "not done", never as a console crash.
         readback_member = getattr(self._catalog, "readback", None)
         stored_readback = readback_member(v) if readback_member is not None else None
-        readback_status = str((stored_readback or {}).get("status") or "")
+        readback_status = _stored_readback_status(stored_readback)
         readback_note = ""
         if not confirmed:
             readback_note = "unlocks when the question inventory is confirmed (§4.2.1)"
@@ -1566,6 +1597,22 @@ class SetupService:
                 f"the inventory for version {v!r} is not confirmed yet — the rubric "
                 "read-back anchors criteria to confirmed questions, so gate 1 "
                 "(§4.2.1) must be met before it runs (FR-SETUP-02)."
+            )
+        taken = [row["criterion_id"] for row in self._catalog.criteria(v)]
+        if taken:
+            # Reachable through M-PKG's public add_criterion — the same manual path
+            # the degraded note directs a teacher to. The read back writes criteria
+            # onto a clean draft (CT-PKG-11: a rejected write is a no-op, so the next
+            # attempt re-proposes onto that clean draft); merging its output with
+            # hand-added criteria is a decision a model call cannot make, so refuse
+            # BEFORE spending the attempt budget rather than letting M-PKG's refusal
+            # escape mid-write.
+            raise SetupOrderError(
+                f"version {v!r} already carries criterion rows ({', '.join(taken[:4])}"
+                f"{', …' if len(taken) > 4 else ''}) — the rubric read-back writes "
+                "criteria onto a clean draft and would collide with them. A version "
+                "is either hand-authored or read back, not both; a fresh read-back is "
+                "a new version (FR-PKG-02)."
             )
         rubric_markdown = self._ingestor.read_document(rubric_doc)
         assessment_markdown = self._ingestor.read_document(assessment_doc)
