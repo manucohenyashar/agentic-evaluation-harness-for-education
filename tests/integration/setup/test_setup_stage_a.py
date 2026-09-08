@@ -55,7 +55,7 @@ def test_tc_setup_01_one_proposal_per_package_with_option_sets_and_no_call_durin
     setup transport: re-proposing returns the stored proposal without a second call, and
     ingesting a submission makes no proposal call at all."""
     chain = stage_chain(tmp_data_dir)
-    doc_id = ingest_document(chain.store, chain.ingestor)
+    doc_id = ingest_document(chain.store)
 
     proposal = chain.service.propose_inventory(doc_id)
 
@@ -78,7 +78,7 @@ def test_tc_setup_01_one_proposal_per_package_with_option_sets_and_no_call_durin
     assert len(chain.provider.calls) == 1
 
     # ...and submission ingest — the pipeline's other model customer — triggers no proposal.
-    ingest_document(chain.store, chain.ingestor, kind="submission", name="scan-01.md")
+    ingest_document(chain.store, kind="submission", name="scan-01.md")
     assert len(chain.provider.calls) == 1
 
 
@@ -94,7 +94,7 @@ def test_tc_setup_02_publish_refused_before_confirmation_permitted_after_and_row
     after it, and from that moment a `prompt_text` edit raises `SchemaLockViolation` while
     the reference solution stays writable."""
     chain = stage_chain(tmp_data_dir)
-    doc_id = ingest_document(chain.store, chain.ingestor)
+    doc_id = ingest_document(chain.store)
 
     assert chain.catalog.draft_version() is None  # nothing minted before setup starts
     proposal = chain.service.propose_inventory(doc_id)
@@ -142,7 +142,7 @@ def test_tc_setup_04_deterministic_criterion_needs_its_key_no_default_no_skip_no
     behavioural one: `SetupService` carries no `infer*` member at all. (The fuller S4
     semantics — key validation against the stored option sets — is #53's story.)"""
     chain = stage_chain(tmp_data_dir)
-    doc_id = ingest_document(chain.store, chain.ingestor)
+    doc_id = ingest_document(chain.store)
     _, version = _confirm(chain, doc_id)
 
     with pytest.raises(
@@ -232,7 +232,7 @@ def test_tc_setup_19_publish_is_one_transaction_and_the_lock_engages_exactly_at_
     effect *exactly* at publication — a version edit one moment before the publish is
     accepted, and refused the moment it is published."""
     chain = stage_chain(tmp_data_dir)
-    doc_id = ingest_document(chain.store, chain.ingestor)
+    doc_id = ingest_document(chain.store)
     _, version = _confirm(chain, doc_id)
     chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
     assert chain.service.steps().ready_to_publish
@@ -273,7 +273,7 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     both blocking steps are done, and — after a *fresh* `SetupService` over the same tiers
     resumes the same version — the confirmed proposal, the done flags, and the publish."""
     chain = stage_chain(tmp_data_dir)
-    doc_id = ingest_document(chain.store, chain.ingestor)
+    doc_id = ingest_document(chain.store)
 
     proposal = chain.service.propose_inventory(doc_id)
     version = chain.catalog.draft_version()

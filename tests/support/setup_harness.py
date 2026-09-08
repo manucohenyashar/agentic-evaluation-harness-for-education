@@ -47,6 +47,29 @@ ASSESSMENT_MD = (
     "Q6. Part (a) circle one: (A) yes (B) no. Part (b) explain. (3 marks)\n"
 )
 
+#: The rubric the read-back cases consume: two criteria whose constructs the scripted
+#: replies elaborate into band sets. Kept distinct from `ASSESSMENT_MD` so a #51 that
+#: reads or validates the rubric document is never satisfied by the assessment's text.
+RUBRIC_MD = (
+    "Marking rubric — Physics 102\n"
+    "\n"
+    "CRIT-IMP (Q1). The response defines impulse as force acting over contact time.\n"
+    "\n"
+    "CRIT-STEPS (Q3). The response carries the derivation through to a stated result.\n"
+)
+
+#: The student submission the ingest-side cases use (a scan of an answer script): distinct
+#: from the assessment it answers, and carrying answers rather than questions.
+SUBMISSION_MD = (
+    "Submission — Physics 102, student 2101\n"
+    "\n"
+    "Q1. Impulse is the net force acting over the contact time.\n"
+    "\n"
+    "Q3. Starting from impulse, the range follows by eliminating the flight time.\n"
+    "\n"
+    "Q4. (A)\n"
+)
+
 #: The proposal the scripted setup transport returns for `ASSESSMENT_MD`: one entry per
 #: question, with option sets only where the plan says they belong (`mcq` and `mixed`).
 INVENTORY_REPLY = json.dumps({"questions": [
@@ -150,12 +173,28 @@ def build_ingestor(store, transcript: str = ASSESSMENT_MD) -> Ingestor:
     )
 
 
-def ingest_document(store, ingestor: Ingestor, *, kind: str = "assessment",
-                    name: str = "assessment.pdf") -> str:
-    """Ingest one single-page document of `kind` and return its document id."""
+#: Per-kind canonical transcripts: what the transcriber returns for each document kind.
+KIND_TRANSCRIPTS = {"assessment": ASSESSMENT_MD, "rubric": RUBRIC_MD,
+                    "submission": SUBMISSION_MD}
+
+
+def ingest_document(store, *, kind: str = "assessment",
+                    name: str | None = None) -> str:
+    """Ingest one single-page document of `kind` and return its document id.
+
+    The transcriber is built per call so the canonical transcript matches the document's
+    `kind` — a rubric is never transcribed as the assessment. A kind missing from
+    `KIND_TRANSCRIPTS` fails loudly here rather than transcribing as another kind.
+    """
     assert kind in DOCUMENT_KINDS, f"{kind!r} is not a document kind"
+    assert kind in KIND_TRANSCRIPTS, (
+        f"{kind!r} has no canonical transcript in setup_harness — add one to "
+        "KIND_TRANSCRIPTS rather than transcribing it as a different kind"
+    )
     source = store.blobs().put(f"{kind} bytes".encode())
-    return ingestor.ingest_document([source], kind=kind, filenames={source: name})
+    doc_ingestor = build_ingestor(store, KIND_TRANSCRIPTS[kind])
+    return doc_ingestor.ingest_document([source], kind=kind,
+                                        filenames={source: name or f"{kind}.pdf"})
 
 
 class ScriptedCatalog:

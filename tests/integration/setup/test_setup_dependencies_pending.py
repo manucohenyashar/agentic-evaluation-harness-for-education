@@ -111,8 +111,8 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
     require_attr(setup, "propose_dependencies", issue=ISSUE)
 
     chain = stage_chain(tmp_data_dir)
-    assessment = ingest_document(chain.store, chain.ingestor)
-    rubric = ingest_document(chain.store, chain.ingestor, kind="rubric", name="rubric.pdf")
+    assessment = ingest_document(chain.store)
+    rubric = ingest_document(chain.store, kind="rubric", name="rubric.pdf")
     chain.provider.replies = [
         INVENTORY_REPLY, ECF_RUBRIC_REPLY, ECF_DEPENDENCY_REPLY,
     ]
@@ -141,9 +141,19 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
             f"TC-SETUP-13: the proposal does not name both criteria: {rendered!r} — "
             "FR-SETUP-10 renders each proposal in plain language naming both criteria"
         )
-        assert "{" not in rendered and "}" not in rendered, (
+        assert "{" not in rendered and "}" not in rendered and "=" not in rendered, (
             f"TC-SETUP-13: the proposal reads as a payload dump, not plain language: "
-            f"{rendered!r}"
+            f"{rendered!r} — a dict dump carries braces and a dataclass repr carries "
+            "'=' between field and value; neither is a sentence"
+        )
+        # The rendering must bind to the facts the reply carried — a default repr of an
+        # unrendered object names the ids without ever surfacing the reason, so this
+        # assertion is what makes "plain language" mean *this* proposal's language.
+        assert "presupposes" in rendered.lower(), (
+            "TC-SETUP-13: the rendered proposal does not carry the reply's own reason "
+            "(error carried forward: the derivation is graded on work that presupposes "
+            f"the impulse definition) — what rendered was {rendered!r}, which is not "
+            "this proposal's plain language"
         )
 
     # Declined. No edge exists.

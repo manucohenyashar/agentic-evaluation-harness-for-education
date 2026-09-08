@@ -71,8 +71,10 @@ def test_tc_setup_03_exactly_two_steps_block_and_every_other_step_exposes_a_skip
     for step in skipped:
         # Present-and-unavailable with a note that says why: what a teacher defers must
         # be rendered as deferrable, not as a missing feature (NFR-SETUP-04).
-        assert step.note, f"{step.step_id} is enumerated without a note — the console "
-        "would render an unexplained blank"
+        assert step.note, (
+            f"{step.step_id} is enumerated without a note — the console would render an "
+            "unexplained blank"
+        )
     assert "publish" not in [step.step_id for step in progress.steps]
     assert progress.remaining_steps == 1  # only the blocking inventory step counts
 

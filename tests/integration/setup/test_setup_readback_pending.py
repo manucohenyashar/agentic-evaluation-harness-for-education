@@ -22,6 +22,13 @@ Two things are **deliberately open** and are this file's stated bets, not oversi
   back performs, and doubling a write path whose shape is #51's to decide would put the
   mock where the behaviour is. The assertions are identical at either rung; a rung-0
   variant can move to a scripted catalog once #51's write calls are known.
+- **TC-SETUP-05's justification is asserted on the read-back's return, not on stored
+  rows.** FR-SETUP-04 says the *package* records the justification, but no justification
+  column exists anywhere in `aeh.pkg`'s schema and §3.6 pins no storage shape for one —
+  asserting a stored half here would invent it (the TC-INGEST-38 precedent). The test
+  asserts the return object carries it; when #51 lands its persistence, extend this file
+  to read the stored half the way `test_setup_policy_pending.py` reads its `grade_policy`
+  rows.
 """
 
 from __future__ import annotations
@@ -45,8 +52,8 @@ ISSUE = "#51"
 def _chain_ready(tmp_data_dir):
     """The chain through S2: propose, confirm — the state `read_back_rubric` follows."""
     chain = stage_chain(tmp_data_dir)
-    assessment = ingest_document(chain.store, chain.ingestor)
-    rubric = ingest_document(chain.store, chain.ingestor, kind="rubric", name="rubric.pdf")
+    assessment = ingest_document(chain.store)
+    rubric = ingest_document(chain.store, kind="rubric", name="rubric.pdf")
     proposal = chain.service.propose_inventory(assessment)
     chain.service.confirm_inventory(proposal.proposal_id)
     return chain, rubric, assessment, chain.catalog.draft_version()
@@ -128,6 +135,10 @@ def test_tc_setup_05_band_sets_are_even_two_to_six_default_two_bands_justificati
     )
 
     chain, rubric, assessment, version = _chain_ready(tmp_data_dir)
+    # The propose/confirm rounds above consumed the provider's default; the read back
+    # gets exactly this reply — without it the call would see the inventory payload and
+    # the criteria below could never come into existence.
+    chain.provider.replies = [PARTIAL_RUBRIC_REPLY]
     readback = chain.service.read_back_rubric(rubric, assessment)
 
     criteria = {row["criterion_id"]: row for row in chain.catalog.criteria(version)}
@@ -198,8 +209,8 @@ def test_tc_setup_06_magnitude_descriptors_rejected_and_regenerated_behavioural_
     )
 
     chain = stage_chain(tmp_data_dir)
-    assessment = ingest_document(chain.store, chain.ingestor)
-    rubric = ingest_document(chain.store, chain.ingestor, kind="rubric", name="rubric.pdf")
+    assessment = ingest_document(chain.store)
+    rubric = ingest_document(chain.store, kind="rubric", name="rubric.pdf")
     # One offending descriptor per configured phrase, plus the bare numeral the FR names.
     offenders = [f"the response is {phrase}" for phrase in phrases]
     offenders.append("the response scores 5")
@@ -299,7 +310,10 @@ def test_tc_setup_07_no_band_descriptor_in_the_published_package_carries_magnitu
     assert phrases, "TC-SETUP-07: SETUP_MAGNITUDE_PHRASES is empty — the scan sees nothing"
 
     chain, rubric, assessment, _ = _chain_ready(tmp_data_dir)
-    chain.provider.replies = [INVENTORY_REPLY, CLEAN_DESCRIPTOR_REPLY]
+    # The propose/confirm rounds above consumed the provider's default; this case is
+    # about the stored artifact, not about regeneration, so the read back gets exactly
+    # one clean round — no malformed first round it would have to re-request past.
+    chain.provider.replies = [CLEAN_DESCRIPTOR_REPLY]
     chain.service.read_back_rubric(rubric, assessment)
 
     version = chain.service.publish("teacher-1")
