@@ -127,7 +127,10 @@ def test_tc_setup_05_band_sets_are_even_two_to_six_default_two_bands_justificati
     readback = chain.service.read_back_rubric(rubric, assessment)
 
     criteria = {row["criterion_id"]: row for row in chain.catalog.criteria(version)}
-    assert set(criteria) == {"CRIT-MET", "CRIT-STEPS"}
+    # #53 stages CRIT-Q4/Q5/Q6 from the confirmed inventory's mcq/mixed questions, so the
+    # stored set is the read-back's two criteria plus the staged deterministic ones.
+    assert set(criteria) == {"CRIT-MET", "CRIT-STEPS",
+                             "CRIT-Q4", "CRIT-Q5", "CRIT-Q6"}
     for criterion_id, row in criteria.items():
         count = row["band_count"]
         assert count % 2 == 0 and 2 <= count <= 6, (
@@ -265,11 +268,13 @@ def _clean_criterion(descriptor: str) -> dict:
 
 def _stored_descriptor_text(chain) -> str:
     version = chain.catalog.draft_version()
+    # Descriptors only: the FR-SETUP-05 bar governs descriptor text, and rows carry
+    # non-descriptor fields (criterion ids like CRIT-Q5 — #53's staged criteria) whose
+    # digits are not a points scale leaking into a judge prompt.
     return " ".join(
-        str(value)
+        str(band_row["descriptor"])
         for row in chain.catalog.criteria(version)
         for band_row in chain.catalog.bands(row["criterion_id"])
-        for value in band_row.values()
     ).lower()
 
 
@@ -310,6 +315,8 @@ def test_tc_setup_07_no_band_descriptor_in_the_published_package_carries_magnitu
     chain.provider.replies = [CLEAN_DESCRIPTOR_REPLY]
     chain.service.read_back_rubric(rubric, assessment)
 
+    # #53: the staged deterministic criteria need their keys before gate 2 opens.
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
     version = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(version)
 

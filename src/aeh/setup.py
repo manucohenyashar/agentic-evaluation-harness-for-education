@@ -1,6 +1,8 @@
 """M-SETUP — Stage A: the question inventory proposal, the rubric read-back, the
-decomposability classification, the dependency proposals, the two blocking gates, and
-publication (#50, #51, #52; design §3.6, FR-SETUP-01/-02/-04/-05/-06/-07/-08/-09/-10/-14/-16,
+decomposability classification, the dependency proposals, the answer keys, the grade
+policy, the prefix budget, the two blocking gates, and publication
+(#50, #51, #52, #53; design §3.6,
+FR-SETUP-01/-02/-03/-04/-05/-06/-07/-08/-09/-10/-11/-12/-14/-15/-16,
 NFR-SETUP-01/-02/-04).
 
 Stage A runs ONCE per package version (`CT-SETUP-16`): the assessment document the
@@ -39,10 +41,19 @@ tells the teacher the truth about what remains (`NFR-SETUP-04`, `FR-CONSOLE-25`)
   are written only on explicit teacher approval (`FR-SETUP-10`), and every verdict —
   teacher-confirmed or taken as the module's default — is recorded through `M-PKG`
   (`R62`: M-CALIB and M-STATS can tell the two apart),
-- grade policy, grade boundaries and the prefix budget: #53 — which also stages S4's
-  full `FR-SETUP-03` validation semantics. Here `set_answer_keys` is the thin,
-  blocking write-through to `PackageCatalog.set_answer_key`, and publish's second gate
-  reads the same structural fact it will enforce: every deterministic criterion keyed.
+- grade policy and the prefix budget: HERE since #53 — `set_grade_policy` captures the
+  teacher's declared policy or takes the default explicitly, and publication writes the
+  default for a teacher who never spoke, recording which it was (`FR-SETUP-12`, R62);
+  `check_prefix_budget` counts each (question, criterion) prefix against the configured
+  ceiling and drops the lowest-value exemplars where it is over — never the reference
+  solution, never the criterion text (`FR-SETUP-11`). #53 also completed S4's
+  `FR-SETUP-03` semantics: the confirmed inventory's deterministic questions get their
+  criteria staged (`CRIT-<question id>`, exactly the two bands correct/incorrect, never
+  submitted to the §5.3 test — `CT-SETUP-07`), every key is validated against the
+  question's own option vocabulary, and publication stays refused while any
+  deterministic criterion is unkeyed. The calibration-paper intake (`FR-SETUP-15`)
+  records what the teacher uploaded and that nothing was derived from it — ambiguity
+  discovery waits for M-CALIB (the `TC-SETUP-18` intake test is deferred with it).
 
 **State is the database, never memory** (`CT-SETUP-03`): a process that dies after the
 proposal resumes by constructing a fresh `SetupService` over the same Tier P file and
@@ -57,9 +68,12 @@ The four seams, from the first commit:
 2. **Deterministic transport** — every model call goes through the `InferenceProvider`
    seam (`CT-PROV-01`); tests script a double, production passes a real provider, and
    no other egress exists (`CT-PROV-15`).
-3. **Env-gated knobs** — `HARNESS_SETUP_PROPOSAL_ATTEMPTS` and
-   `HARNESS_SETUP_READBACK_ATTEMPTS` (the degraded-path attempt budgets, read at CALL
-   time per this codebase's knob doctrine).
+3. **Env-gated knobs** — `HARNESS_SETUP_PROPOSAL_ATTEMPTS`,
+   `HARNESS_SETUP_READBACK_ATTEMPTS`, `HARNESS_SETUP_CLASSIFY_ATTEMPTS` (the
+   degraded-path attempt budgets) and `HARNESS_SETUP_PREFIX_TOKEN_CEILING` (the prefix
+   budget's ceiling, production default 1500 tokens — the exact token-counting seam is
+   `TC-SETUP-14`'s deferred story and the estimate is documented at the constant), all
+   read at CALL time per this codebase's knob doctrine.
 4. **Stage-level observability** — `LOGGER` ("aeh.setup") logs every proposal attempt,
    confirmation, gate refusal and publication; the proposal row carries its attempt
    count and status, so a degraded proposal is visible in the database, not just the
@@ -83,10 +97,12 @@ from typing import Any, Mapping, Sequence
 
 from aeh.ingest import DocumentId
 from aeh.pkg import (
+    GradePolicy,
     PackageCatalog,
     PackageDraft,
     PackageVersionId,
     QUESTION_TYPES,
+    default_grade_policy,
 )
 from aeh.prov import InferenceProvider, ModelRef, PromptPayload, SamplingParams
 
@@ -103,6 +119,7 @@ __all__ = [
     "InventoryProposal",
     "PROPOSAL_ATTEMPTS_DEFAULT",
     "PROPOSAL_ATTEMPTS_ENV",
+    "PrefixBudgetReport",
     "ProposedBand",
     "ProposedOption",
     "ProposedQuestion",
@@ -117,6 +134,9 @@ __all__ = [
     "SETUP_EVIDENCE_TYPE_DEFAULT",
     "SETUP_MAGNITUDE_PHRASES",
     "SETUP_MAX_CONFIRMATIONS",
+    "SETUP_MCQ_BAND_NAMES",
+    "SETUP_PREFIX_TOKEN_CEILING_DEFAULT",
+    "SETUP_PREFIX_TOKEN_CEILING_ENV",
     "SETUP_PROMPT_TEMPLATE_V",
     "SETUP_READBACK_TEMPLATE_V",
     "SetupError",
@@ -186,6 +206,69 @@ SETUP_DEPENDENCIES_TEMPLATE_V = "setup-dependencies-v1"
 #: partial credit gets two bands — met / not met — derived from the criterion's own
 #: text. Configuration §3.6: `SETUP_DEFAULT_BAND_COUNT` (2).
 SETUP_DEFAULT_BAND_COUNT = 2
+
+#: The two bands every staged deterministic criterion carries (`FR-SETUP-03`, #53):
+#: an mcq question's criterion is atomic with EXACTLY `correct`/`incorrect` — the key
+#: decides, so there is no partial credit to model and nothing for the §5.3 table to
+#: ask (`CT-SETUP-07`).
+SETUP_MCQ_BAND_NAMES: tuple[str, ...] = ("correct", "incorrect")
+
+#: The prefix-budget ceiling knob (`FR-SETUP-11`, #53): the per-(question, criterion)
+#: token ceiling the budget check compares against, read at CALL time (the knob
+#: doctrine). The counting seam itself — a real tokenizer behind the same report — is
+#: `TC-SETUP-14`'s deferred story; the estimate `_estimate_tokens` makes is documented
+#: at that function, and this default (1500 tokens) is the production value the knob
+#: exists to move without a code change.
+SETUP_PREFIX_TOKEN_CEILING_ENV = "HARNESS_SETUP_PREFIX_TOKEN_CEILING"
+SETUP_PREFIX_TOKEN_CEILING_DEFAULT = 1500
+
+
+def _configured_prefix_token_ceiling() -> int:
+    """The prefix ceiling for THIS call (`FR-SETUP-11`): the env knob's value when
+    set, the production default otherwise."""
+    raw = os.environ.get(SETUP_PREFIX_TOKEN_CEILING_ENV)
+    if not raw:
+        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        LOGGER.warning(
+            "%s carries %r, which is not an integer — the production default %d "
+            "applies for this call", SETUP_PREFIX_TOKEN_CEILING_ENV, raw,
+            SETUP_PREFIX_TOKEN_CEILING_DEFAULT,
+        )
+        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
+    if value < 1:
+        LOGGER.warning(
+            "%s carries %d below 1 — the production default %d applies for this "
+            "call", SETUP_PREFIX_TOKEN_CEILING_ENV, value,
+            SETUP_PREFIX_TOKEN_CEILING_DEFAULT,
+        )
+        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
+    return value
+
+
+def _estimate_tokens(text: str) -> int:
+    """The token estimate behind `check_prefix_budget` (`FR-SETUP-11`, #53).
+
+    Characters divided by four, rounded up — the coarse constant the industry uses
+    for English prose, and deliberately NOT a tokenizer call: the exact counting
+    seam is `TC-SETUP-14`'s deferred story, and this module's obligation is the
+    EVENT (an over-budget prefix is reported before publication, and the
+    remediation never touches the reference solution or the criterion text), not
+    the exact count. A real tokenizer lands behind the same report; until then the
+    estimate's bias is stated here rather than hidden: it under-counts code and
+    heavily symbol-dense text and over-counts long runs of short words."""
+    if not text:
+        return 0
+    return -(-len(text) // 4)
+
+
+def _deterministic_criterion_id(question_id: str) -> str:
+    """The criterion id the staging convention gives a confirmed question's
+    deterministic part (`FR-SETUP-03`, #53): `CRIT-<question id>` — the convention
+    the answer keys name (`CRIT-Q4`, the rung-2 precedent)."""
+    return f"CRIT-{question_id}"
 
 #: The magnitude-phrase bar (`FR-SETUP-05`, Configuration §3.6: `SETUP_MAGNITUDE_PHRASES`):
 #: a generated band descriptor matching any of these (case-insensitive substring) is
@@ -574,6 +657,41 @@ class DependencyProposal:
             f"When grading {self.criterion_id}, the grader will also see the work you "
             f"credited under {self.depends_on}, because {self.reason.rstrip('.')}."
         )
+
+
+@dataclass(frozen=True)
+class PrefixBudgetReport:
+    """What `check_prefix_budget` found, per (question, criterion) pair (`FR-SETUP-11`,
+    `#53`) — the stage-level detail the four seams demand: not one boolean but the
+    per-pair counts, the ceiling they were compared against, what the remediation
+    dropped, and what is still over.
+
+    `over_budget` is the POST-remediation fact: true when some pair's assembled prefix
+    still exceeds the ceiling AFTER the drop policy ran (the drops stop at the
+    calibration floor, so a prefix that cannot shrink further without stripping a
+    band's last exemplar reports its residual honestly). Which exemplars were dropped
+    is ON the report (`dropped_exemplars`, in drop order) — a silent drop would leave
+    the teacher unable to audit what left the prefix. `per_pair` carries one entry per
+    (question, criterion) pair; the report never re-reads storage."""
+
+    package_version_id: str | None
+    ceiling_tokens: int
+    over_budget: bool
+    dropped_exemplars: tuple[str, ...]
+    per_pair: tuple[dict, ...] = ()
+    residual_tokens: int = 0
+    note: str = ""
+
+    def __str__(self) -> str:
+        if not self.over_budget and not self.dropped_exemplars:
+            return (f"prefix budget OK: every assembled prefix fits the "
+                    f"{self.ceiling_tokens}-token ceiling.")
+        head = (f"prefix budget: {len(self.dropped_exemplars)} exemplar(s) dropped "
+                f"to fit the {self.ceiling_tokens}-token ceiling")
+        if self.over_budget:
+            head += (f"; {self.residual_tokens} token(s) still over — the "
+                     "calibration floor holds each band's last exemplar")
+        return head + "."
 
 
 @dataclass(frozen=True)
@@ -1544,8 +1662,10 @@ class SetupService:
     `read_back_rubric`            here — #51: criteria and even band sets, magnitude
                                   descriptors rejected and re-requested; one read
                                   back per version (`CT-SETUP-16`)
-    `set_answer_keys`             here — BLOCKING gate 2 (thin; #53 stages the
-                                  full `FR-SETUP-03` semantics)
+    `set_answer_keys`             here — BLOCKING gate 2; the full FR-SETUP-03
+                                  semantics since #53 (the confirmed inventory's
+                                  deterministic criteria are staged, every key is
+                                  validated against its question's options)
     `classify_decomposability`    here — #52: the §5.3 ANSWERS from the model, the
                                   decision table from the module; confirmations
                                   capped at `SETUP_MAX_CONFIRMATIONS` headlessly
@@ -1554,11 +1674,17 @@ class SetupService:
     `propose_dependencies`        here — #52: plain-language proposals, nothing
                                   written; `confirm_dependencies` writes only on
                                   explicit approval
-    `publish`                     here — refused until both gates hold
+    `publish`                     here — refused until both gates hold; records
+                                  each skipped step's default (FR-SETUP-14)
     `ensure_version`, `steps`,    here — the resume and console surfaces
     `current_proposal`
-    `set_grade_policy`            #53 (grade boundaries land there too)
-    `check_prefix_budget`         #53
+    `set_grade_policy`            here — #53: the declared policy, or the default
+                                  taken explicitly and recorded (FR-SETUP-12)
+    `check_prefix_budget`         here — #53: per-(question, criterion) counts,
+                                  lowest-value exemplar drops behind a calibration
+                                  floor (FR-SETUP-11)
+    `store_calibration_papers`    here — #53: stored-not-used intake; ambiguity
+                                  discovery waits for M-CALIB (FR-SETUP-15)
     ============================  =============================================
     """
 
@@ -1617,11 +1743,12 @@ class SetupService:
         can be acted on, and a count that says otherwise is the console lying).
 
         `answer_keys`' done state is the structural fact `publish` enforces — every
-        deterministic criterion keyed — which with zero criteria is vacuously true:
-        no deterministic criterion exists until #53 stages their creation from the
-        confirmed inventory, so in this story's world a confirmed inventory is
-        publishable and the console must say so rather than demand a step whose work
-        does not exist yet."""
+        deterministic criterion keyed. Since #53 stages the confirmed inventory's
+        deterministic criteria (`CRIT-<question id>`, `FR-SETUP-03`), a confirmed
+        inventory with mcq/mixed questions carries unkeyed criteria until the teacher
+        keys them and the count says so; an inventory with none is vacuously keyed,
+        which the console says too rather than demanding a step whose work does not
+        exist."""
         v = self._catalog.draft_version()
         if v is None:
             # No draft. Two states, told apart (`has_version`): a package with NO
@@ -1630,6 +1757,29 @@ class SetupService:
             # FINISHED — no step can be acted on, and the remaining count is 0
             # because a count that says otherwise is the console lying.
             started = self._catalog.has_version()
+            # The finished package's grade-policy record still tells the truth about
+            # what was taken (#53): the draft is gone, but the step records the
+            # published version carries are read through `latest_version` — a catalog
+            # without the surface (a rung-0 double, or a version published without
+            # M-SETUP) reads as "no record", never as a console crash.
+            latest_reader = getattr(self._catalog, "latest_version", None)
+            latest = latest_reader() if latest_reader is not None else None
+            grade_record = (self._grade_policy_record(latest)
+                            if latest is not None else None)
+            if grade_record is not None:
+                grade_note = (
+                    f"recorded: {grade_record['status']} at "
+                    f"{grade_record['recorded_at']} (FR-SETUP-14); the applied "
+                    "policy is stored on the published version (FR-SETUP-12)")
+            elif started:
+                grade_note = (
+                    "setup has finished; the published version carries no recorded "
+                    "grade-policy step — it may not have been set up through "
+                    "M-SETUP (FR-SETUP-12)")
+            else:
+                grade_note = (
+                    "setup has not started — the policy is captured (or the default "
+                    "taken and recorded) once a draft exists (FR-SETUP-12)")
             later_steps = (
                 SetupStep(
                     step_id="rubric_readback",
@@ -1649,8 +1799,8 @@ class SetupService:
                 SetupStep(
                     step_id="grade_policy",
                     name="Grade policy, boundaries and the prefix budget",
-                    blocking=False, available=False, done=False,
-                    note="staged by #53",
+                    blocking=False, available=False, done=grade_record is not None,
+                    note=grade_note,
                 ),
             )
             return SetupProgress(
@@ -1689,7 +1839,8 @@ class SetupService:
         elif unkeyed:
             keys_note = f"answer keys missing for: {', '.join(unkeyed)}"
         elif not any(row.get("scoring_model") == "atomic" for row in criteria):
-            keys_note = "no deterministic criteria yet — #53 stages their creation"
+            keys_note = ("no deterministic criteria in this inventory — nothing to "
+                         "key, and gate 2 does not hold this publish")
         # The rubric read-back went live with #51: available once gate 1 is met, done
         # when the stored read-back row reads `proposed` (the degraded row is a fact
         # the note carries, not a done). The status lives in the row's PAYLOAD — the
@@ -1729,6 +1880,27 @@ class SetupService:
             decomposability_note = (
                 "surfaced confirmations await the teacher; dependencies stay at "
                 "zero until explicitly approved (FR-SETUP-07, FR-SETUP-10)")
+        # The grade-policy step's record (#53): written by `set_grade_policy` (the
+        # teacher's declared policy, or the default taken explicitly) or by publish's
+        # default recording — read through the same getattr guard, so a catalog
+        # without the recording surface reads as "not done", never as a crash.
+        grade_policy_record = (step_reader(v, "grade_policy")
+                               if step_reader is not None else None)
+        if not confirmed:
+            grade_policy_note = (
+                "unlocks when the question inventory is confirmed (§4.2.1)")
+        elif readback_status != "proposed":
+            grade_policy_note = (
+                "unlocks once the rubric read-back has run — the policy is captured "
+                "after the criteria exist (§4.2.1's S5)")
+        elif grade_policy_record is not None:
+            grade_policy_note = (
+                f"recorded: {grade_policy_record['status']} at "
+                f"{grade_policy_record['recorded_at']} (FR-SETUP-14)")
+        else:
+            grade_policy_note = (
+                "the default weighted-sum policy applies when this step is skipped — "
+                "taken and recorded at publication (FR-SETUP-12, FR-SETUP-14)")
         later = (
             SetupStep(
                 step_id="rubric_readback",
@@ -1753,8 +1925,14 @@ class SetupService:
             SetupStep(
                 step_id="grade_policy",
                 name="Grade policy, boundaries and the prefix budget",
-                blocking=False, available=False, done=False,
-                note="staged by #53",
+                blocking=False,
+                # The policy is captured after the criteria exist (§4.2.1's S5): the
+                # same unlock the decomposability step carries. An unlocked-but-
+                # unrecorded step's note states the default the skip takes, so the
+                # console can say what WILL happen if the teacher moves on.
+                available=confirmed and readback_status == "proposed",
+                done=grade_policy_record is not None,
+                note=grade_policy_note,
             ),
         )
         steps = (
@@ -2016,6 +2194,11 @@ class SetupService:
             "the question rows are locked (FR-SETUP-02)", v, len(questions),
             len(corrections),
         )
+        # S4's criteria exist the moment the inventory they come from is confirmed
+        # (#53, FR-SETUP-03): the deterministic questions' criteria are staged here,
+        # so the teacher keys what already has its shape rather than authoring
+        # criteria by hand on the side. Idempotent; the ids staged are recorded.
+        self._stage_deterministic_criteria(v)
 
     def read_back_rubric(self, rubric_doc: DocumentId,
                          assessment_doc: DocumentId) -> RubricReadback:
@@ -2050,18 +2233,27 @@ class SetupService:
                 "read-back anchors criteria to confirmed questions, so gate 1 "
                 "(§4.2.1) must be met before it runs (FR-SETUP-02)."
             )
-        taken = [row["criterion_id"] for row in self._catalog.criteria(v)]
-        if taken:
+        criteria_rows = self._catalog.criteria(v)
+        staged_ids = self._staged_criterion_ids(v)
+        foreign = [
+            row["criterion_id"] for row in criteria_rows
+            if row["criterion_id"] not in staged_ids
+            or row.get("kind") != "mcq" or row.get("scoring_model") != "atomic"
+        ]
+        if foreign:
             # Reachable through M-PKG's public add_criterion — the same manual path
             # the degraded note directs a teacher to. The read back writes criteria
             # onto a clean draft (CT-PKG-11: a rejected write is a no-op, so the next
             # attempt re-proposes onto that clean draft); merging its output with
-            # hand-added criteria is a decision a model call cannot make, so refuse
-            # BEFORE spending the attempt budget rather than letting M-PKG's refusal
-            # escape mid-write.
+            # hand-authored criteria is a decision a model call cannot make, so
+            # refuse BEFORE spending the attempt budget rather than letting M-PKG's
+            # refusal escape mid-write. The staged criteria are NOT foreign — #53
+            # created them from this very inventory, in exactly the produced shape,
+            # and the read back anchors around them.
             raise SetupOrderError(
-                f"version {v!r} already carries criterion rows ({', '.join(taken[:4])}"
-                f"{', …' if len(taken) > 4 else ''}) — the rubric read-back writes "
+                f"version {v!r} already carries hand-authored criterion rows "
+                f"({', '.join(foreign[:4])}"
+                f"{', …' if len(foreign) > 4 else ''}) — the rubric read-back writes "
                 "criteria onto a clean draft and would collide with them. A version "
                 "is either hand-authored or read back, not both; a fresh read-back is "
                 "a new version (FR-PKG-02)."
@@ -2171,12 +2363,21 @@ class SetupService:
         )
 
     def set_answer_keys(self, keys: Mapping[str, Sequence[str]]) -> None:
-        """The teacher's answer keys — BLOCKING gate 2 (`§4.2.1`). A thin write-through
-        to `PackageCatalog.set_answer_key` (`FR-PKG-17`'s single canonical
-        representation): `#53` stages S4's full `FR-SETUP-03` semantics on top of this
-        surface, so the operation exists and blocks NOW and does not change shape
-        later. Requires the confirmed inventory first — the keys name criteria the
-        inventory's questions become, and §4.2.1's order is S3 then S4."""
+        """The teacher's answer keys — BLOCKING gate 2 (`§4.2.1`), with `FR-SETUP-03`'s
+        full semantics since #53.
+
+        The confirmed inventory's deterministic criteria are staged first (idempotent
+        — `confirm_inventory` already ran the same staging, so this is a top-up for a
+        draft that resumed mid-setup). Every named criterion must exist — the staging
+        convention is `CRIT-<question id>` — and every key element is validated
+        against the option vocabulary the criterion's question declares: a key naming
+        an option the teacher never offered is refused HERE, before anything is
+        written. A question with no option set (an open criterion keyed by its band
+        ids) has no vocabulary to validate against and accepts the key as given —
+        there is no default, no skip and no inference (`FR-SETUP-03`): publication
+        stays refused while any deterministic criterion is unkeyed. The write itself
+        is `PackageCatalog.set_answer_key` (`FR-PKG-17`'s single canonical
+        representation)."""
         v = self._require_draft_version()
         stored = self._catalog.proposal(v)
         if stored is None or stored["confirmed_at"] is None:
@@ -2190,11 +2391,268 @@ class SetupService:
                 "set_answer_keys with an empty mapping keys nothing — name at least "
                 "one criterion and its acceptable option ids."
             )
+        self._stage_deterministic_criteria(v)
+        criteria = {row["criterion_id"]: row for row in self._catalog.criteria(v)}
+        unknown = [criterion_id for criterion_id in keys
+                   if criterion_id not in criteria]
+        if unknown:
+            raise SetupError(
+                f"set_answer_keys names criterion(s) {', '.join(unknown)} that do "
+                f"not exist in version {v!r} — the confirmed inventory's "
+                "deterministic criteria are staged as CRIT-<question id>; key those, "
+                "or author a criterion through M-PKG first."
+            )
         for criterion_id, key in keys.items():
+            question_id = criteria[criterion_id]["question_id"]
+            allowed = {row["option_id"] for row in (
+                self._catalog.question_options(v, question_id)
+                if question_id else ())}
+            if allowed:
+                bad = [option for option in key if option not in allowed]
+                if bad:
+                    raise SetupError(
+                        f"the key for {criterion_id!r} names option(s) "
+                        f"{', '.join(bad)} that question {question_id!r} does not "
+                        "offer — a key is a choice among the options the teacher "
+                        "declared (FR-SETUP-03: no inference from the reference "
+                        "solution, no default key)."
+                    )
             self._catalog.set_answer_key(v, criterion_id, list(key))
         LOGGER.info(
-            "set %d answer key(s) for version %s — blocking step S4 (its full "
-            "FR-SETUP-03 validation semantics land with #53)", len(keys), v,
+            "set %d answer key(s) for version %s — blocking step S4, each validated "
+            "against its question's option vocabulary (FR-SETUP-03)", len(keys), v,
+        )
+
+    # -- Stage A: grade policy, prefix budget, calibration papers (#53, skippable) ----------
+
+    def set_grade_policy(self, policy: GradePolicy | None) -> GradePolicy:
+        """Capture the teacher's grade policy — or take the default explicitly
+        (`FR-SETUP-12`, #53). Returns the policy that APPLIES: the declared one, or
+        `default_grade_policy()` when `policy` is None.
+
+        Either way the step records WHICH it was (`policy_declared` vs
+        `default_taken`), so M-CALIB and M-STATS can tell a teacher's judgment from
+        the system's (R62); publication later writes the default for a teacher who
+        never spoke, but a step that ran here is never overwritten. The policy object
+        itself is validated by `PackageCatalog.set_grade_policy` against the closed
+        rule vocabulary (FR-PKG-14) — a free-text formula is refused there, and an
+        invalid policy writes nothing.
+
+        Requires the confirmed inventory first (the policy is S5 in §4.2.1's
+        sequence — captured after the criteria exist)."""
+        v = self._require_draft_version()
+        stored = self._catalog.proposal(v)
+        if stored is None or stored["confirmed_at"] is None:
+            raise SetupOrderError(
+                "the grade policy comes after the confirmed inventory (§4.2.1's S5): "
+                "confirm_inventory first — the policy grades criteria that must "
+                "already exist."
+            )
+        if policy is None:
+            applied = default_grade_policy()
+            status = "default_taken"
+        else:
+            applied = policy
+            status = "policy_declared"
+        self._catalog.set_grade_policy(v, applied)
+        self._catalog.record_step(
+            v, step_id="grade_policy", status=status,
+            payload=json.dumps({
+                "source": "declared" if policy is not None else "default",
+                "policy": applied.to_dict(),
+            }, sort_keys=True),
+            recorded_at=_now(),
+        )
+        LOGGER.info(
+            "grade policy %s for version %s (%s) — recorded as %s (FR-SETUP-12, "
+            "R62)", "declared" if policy is not None else "defaulted", v,
+            applied.combination, status,
+        )
+        return applied
+
+    def check_prefix_budget(self) -> PrefixBudgetReport:
+        """Count each (question, criterion) prefix against the configured ceiling
+        and remediate the overage by dropping the lowest-value exemplars
+        (`FR-SETUP-11`, `CT-SETUP-09`, #53).
+
+        A pair's prefix is what a judge prompt would assemble: the question's prompt
+        and reference solution, the criterion's construct, its band descriptors, and
+        every exemplar's material — counted with the documented estimate
+        (`_estimate_tokens`; the exact token seam is `TC-SETUP-14`'s deferred story)
+        against `HARNESS_SETUP_PREFIX_TOKEN_CEILING` (read at call time). Where a
+        pair is over, the drop policy runs BEFORE publication, so the overage is
+        still fixable: exemplars leave lowest-value first (value is the points of
+        the band the exemplar anchors), and the remediation NEVER touches the
+        reference solution or the criterion text. A band's LAST remaining exemplar
+        is never dropped — the calibration floor: stripping a band's last example
+        would leave the judge nothing to calibrate that band against, a cure worse
+        than the overage. What still does not fit is reported as the residual, not
+        hidden; the drops are recorded in a `prefix_budget` step record and on the
+        report itself.
+
+        Requires the confirmed inventory (the pairs are the inventory's questions
+        with the criteria that exist for them)."""
+        v = self._require_draft_version()
+        stored = self._catalog.proposal(v)
+        if stored is None or stored["confirmed_at"] is None:
+            raise SetupOrderError(
+                "the prefix budget is checked against the confirmed inventory's own "
+                "criteria (§4.2.1): confirm_inventory first."
+            )
+        ceiling = _configured_prefix_token_ceiling()
+        questions = {row["question_id"]: row for row in self._catalog.questions(v)}
+        exemplar_reader = getattr(self._catalog, "exemplars", None)
+        all_exemplars = exemplar_reader(v) if exemplar_reader is not None else ()
+        blob_reader = getattr(self._catalog, "blob_text", None)
+        by_pair: dict[str, list[dict]] = {}
+        for row in all_exemplars:
+            by_pair.setdefault(row.get("criterion_id", ""), []).append(row)
+        per_pair: list[dict] = []
+        dropped: list[str] = []
+        for criterion in self._catalog.criteria(v):
+            question = questions.get(criterion["question_id"])
+            if question is None:
+                # A criterion anchored to nothing has no question half to assemble —
+                # the criterion's own text is still the judge's material.
+                question = {"prompt_text": "", "reference_solution": ""}
+            bands = self._catalog.bands(criterion["criterion_id"])
+            static_text = "\n".join(filter(None, (
+                question["prompt_text"], question["reference_solution"],
+                criterion.get("construct_tag"),
+                *(band["descriptor"] for band in bands),
+            )))
+            static_tokens = _estimate_tokens(static_text)
+            pair_exemplars = by_pair.pop(criterion["criterion_id"], [])
+            if not pair_exemplars:
+                per_pair.append({
+                    "question_id": criterion["question_id"],
+                    "criterion_id": criterion["criterion_id"],
+                    "assembled_tokens": static_tokens,
+                    "ceiling_tokens": ceiling,
+                    "exemplars_before": 0, "exemplars_after": 0,
+                    "over_by_tokens": max(0, static_tokens - ceiling),
+                    "dropped": (),
+                })
+                continue
+            # Each exemplar's own material, counted once, so a drop's subtraction is
+            # the estimate's arithmetic and not a re-read.
+            scored = []
+            for row in pair_exemplars:
+                text = (blob_reader(row["blob_hash"])
+                        if blob_reader is not None else "")
+                scored.append({
+                    "exemplar_id": row["exemplar_id"],
+                    "band": row["band"],
+                    "band_points": next(
+                        (float(band["points"]) for band in bands
+                         if band["band"] == row["band"]), 0.0),
+                    "tokens": _estimate_tokens(text),
+                })
+            assembled = static_tokens + sum(item["tokens"] for item in scored)
+            pair_dropped: list[str] = []
+            if assembled > ceiling:
+                # Lowest value first: band points, then the id (a stable, stated
+                # order — RISK-33's answer to "which exemplar left" is not a coin
+                # flip). The calibration floor: an exemplar whose band carries no
+                # other survivor is never dropped.
+                survivors = list(scored)
+                while assembled > ceiling:
+                    droppable = [
+                        item for item in survivors
+                        if sum(1 for other in survivors
+                               if other["band"] == item["band"]) > 1
+                    ]
+                    if not droppable:
+                        break  # the floor holds: report the residual honestly
+                    victim = min(droppable,
+                                 key=lambda item: (item["band_points"],
+                                                   item["exemplar_id"]))
+                    survivors.remove(victim)
+                    self._catalog.remove_exemplar(v, victim["exemplar_id"])
+                    assembled -= victim["tokens"]
+                    dropped.append(victim["exemplar_id"])
+                    pair_dropped.append(victim["exemplar_id"])
+                LOGGER.warning(
+                    "prefix over the %d-token ceiling for (%s, %s) in version %s — "
+                    "dropped %d exemplar(s), %d token(s) residual",
+                    ceiling, criterion["question_id"], criterion["criterion_id"],
+                    v, len(pair_dropped), max(0, assembled - ceiling),
+                )
+            per_pair.append({
+                "question_id": criterion["question_id"],
+                "criterion_id": criterion["criterion_id"],
+                "assembled_tokens": assembled,
+                "ceiling_tokens": ceiling,
+                "exemplars_before": len(scored),
+                "exemplars_after": len(survivors),
+                "over_by_tokens": max(0, assembled - ceiling),
+                "dropped": tuple(pair_dropped),
+            })
+        residual = sum(entry["over_by_tokens"] for entry in per_pair)
+        report = PrefixBudgetReport(
+            package_version_id=v, ceiling_tokens=ceiling,
+            over_budget=residual > 0, dropped_exemplars=tuple(dropped),
+            per_pair=tuple(per_pair), residual_tokens=residual,
+            note=("the token count is the documented estimate; the exact counting "
+                  "seam is TC-SETUP-14's deferred story"),
+        )
+        # The check's own provenance row: what was compared, what left, what is
+        # still over — readable without this process (the state-is-the-database
+        # rule), and NOT a member of the enumerated steps (the enumeration is the
+        # five the design names; the budget check is the grade_policy step's other
+        # half).
+        record_step = getattr(self._catalog, "record_step", None)
+        if record_step is not None:
+            record_step(
+                v, step_id="prefix_budget",
+                status=("within_budget" if residual == 0 and not dropped
+                        else "over_budget_remediated" if residual == 0
+                        else "over_budget_residual"),
+                payload=json.dumps({
+                    "ceiling_tokens": ceiling,
+                    "dropped_exemplars": dropped,
+                    "residual_tokens": residual,
+                    "pairs": per_pair,
+                    "estimate": "chars/4 (TC-SETUP-14's exact seam deferred)",
+                }, sort_keys=True),
+                recorded_at=_now(),
+            )
+        LOGGER.info(
+            "prefix budget checked for version %s: ceiling %d, %d exemplar(s) "
+            "dropped, %d token(s) residual (FR-SETUP-11)",
+            v, ceiling, len(dropped), residual,
+        )
+        return report
+
+    def store_calibration_papers(self, document_ids: Sequence[DocumentId]) -> None:
+        """Accept the teacher-marked calibration papers and record that they were
+        stored — and that nothing was derived from them (`FR-SETUP-15`, #53).
+
+        The papers travel with the package version as a step record naming every
+        uploaded document; no ambiguity discovery runs over them here, and the
+        record says so explicitly: the ambiguity-discovery claim cannot exist until
+        M-CALIB ships (`TC-SETUP-18`'s intake test is deferred with it). Nothing is
+        read, judged or scored — storage of the fact, not use of the papers."""
+        v = self._require_draft_version()
+        ids = [str(document_id) for document_id in document_ids]
+        if not ids:
+            raise SetupError(
+                "store_calibration_papers with an empty list stores nothing — name "
+                "at least one uploaded document id."
+            )
+        self._catalog.record_step(
+            v, step_id="calibration_papers", status="stored_not_used",
+            payload=json.dumps({
+                "document_ids": ids,
+                "used": False,
+                "note": "no ambiguity discovery ran and none can claim to until "
+                        "M-CALIB ships (FR-SETUP-15)",
+            }, sort_keys=True),
+            recorded_at=_now(),
+        )
+        LOGGER.info(
+            "stored %d calibration paper(s) for version %s — unused, pending "
+            "M-CALIB (FR-SETUP-15)", len(ids), v,
         )
 
     # -- Stage A: decomposability and dependencies (#52, skippable steps) ---------------------
@@ -2650,17 +3108,120 @@ class SetupService:
 
     # -- internals ----------------------------------------------------------------------------
 
+    def _staged_criterion_ids(self, v: PackageVersionId) -> set[str]:
+        """The criterion ids the staging convention creates for the confirmed
+        inventory (`#53`) — the set the read-back guard tolerates: the staged
+        criteria are the read back's anchors, not its collisions."""
+        return {
+            _deterministic_criterion_id(row["question_id"])
+            for row in self._catalog.questions(v)
+            if row["question_type"] in ("mcq", "mixed")
+        }
+
+    def _stage_deterministic_criteria(self, v: PackageVersionId) -> list[str]:
+        """Stage the deterministic criteria the confirmed inventory implies
+        (`FR-SETUP-03`, `CT-SETUP-07`, #53): one criterion per mcq/mixed question,
+        id `CRIT-<question id>`, kind `mcq`, scoring model `atomic` (the carrier the
+        gate and the acceptance rule read — the evaluation_mode vocabulary has no
+        storage yet, the disclosed bet C07 records), EXACTLY the two bands
+        correct/incorrect — the zero-point band at the lower ordinal, per FR-PKG-06's
+        monotone mapping — and the question's own option set mirrored onto the
+        criterion. Never submitted to the §5.3 test —
+        the shape is fixed by the key, not classified.
+
+        Idempotent: an id already present is left exactly as the teacher left it
+        (keyed, perhaps). Returns the ids staged BY THIS CALL. A catalog without
+        the M-PKG write surface (a rung-0 double) stages nothing."""
+        add_criterion = getattr(self._catalog, "add_criterion", None)
+        if add_criterion is None:
+            return []
+        staged: list[str] = []
+        existing = {row["criterion_id"] for row in self._catalog.criteria(v)}
+        for question in self._catalog.questions(v):
+            if question["question_type"] not in ("mcq", "mixed"):
+                continue
+            criterion_id = _deterministic_criterion_id(question["question_id"])
+            if criterion_id in existing:
+                continue
+            max_points = float(question["max_points"] or 0.0)
+            add_criterion(
+                v, criterion_id, question_id=question["question_id"], kind="mcq",
+                scoring_model="atomic", max_points=max_points, band_count=2,
+            )
+            # The bands are the two names with FR-PKG-06's monotone mapping — points
+            # non-decreasing in ordinal, so the zero-point `incorrect` band sits at
+            # the lower ordinal and `correct` carries the question's points above it.
+            self._catalog.add_band(
+                v, criterion_id, 0, SETUP_MCQ_BAND_NAMES[1], 0.0,
+                descriptor="the response marks only options the answer key does "
+                           "not accept")
+            self._catalog.add_band(
+                v, criterion_id, 1, SETUP_MCQ_BAND_NAMES[0], max_points,
+                descriptor="the response marks an option the answer key accepts")
+            self._catalog.set_mcq_options(
+                v, criterion_id,
+                [(row["option_id"], row["label"])
+                 for row in self._catalog.question_options(
+                     v, question["question_id"])])
+            staged.append(criterion_id)
+        if staged:
+            self._catalog.record_step(
+                v, step_id="answer_keys", status="criteria_staged",
+                payload=json.dumps({
+                    "staged_criterion_ids": staged,
+                    "reason": "the confirmed inventory carries deterministic "
+                              "questions; their criteria are staged for the "
+                              "teacher's keys (FR-SETUP-03)",
+                }, sort_keys=True),
+                recorded_at=_now(),
+            )
+            LOGGER.info(
+                "staged %d deterministic criterion(s) for version %s (%s) — the "
+                "confirmed inventory's mcq/mixed questions, awaiting the teacher's "
+                "keys (FR-SETUP-03)", len(staged), v, ", ".join(staged),
+            )
+        return staged
+
+    def _grade_policy_record(self, v: PackageVersionId | None) -> dict | None:
+        """The grade_policy step's provenance row, or None — read through the same
+        getattr guard the other step reads use: a catalog without the recording
+        surface reads as "no record", never as a console crash."""
+        if v is None:
+            return None
+        reader = getattr(self._catalog, "step_record", None)
+        return reader(v, "grade_policy") if reader is not None else None
+
     def _record_uncompleted_step_default(self, v: PackageVersionId) -> None:
-        """Record the decomposability step's default where the step never recorded
-        itself (`FR-SETUP-14`, `#52`): completing setup by skipping the step leaves
+        """Record each skipped step's default where the step never recorded itself
+        (`FR-SETUP-14`, `#52`/`#53`): completing setup by skipping a step leaves
         stored provenance naming it, so the default is never indistinguishable from
-        an explicit choice (`R62`, `CT-SETUP-01`). A step that DID record — the
-        teacher confirmed classifications, or proposals were made — is never
-        overwritten. The gate checks have already passed, so this write is on the
-        publish path's happy tail, immediately before the lock flip."""
+        an explicit choice (`R62`, `CT-SETUP-01`). A step that DID record — the read
+        back ran, the teacher confirmed classifications, the policy was set — is
+        never overwritten. The gate checks have already passed, so these writes are
+        on the publish path's happy tail, immediately before the lock flip."""
         record = getattr(self._catalog, "record_default_step", None)
         if record is None:
             return
+        # The rubric read-back: skipped when NO read-back row exists — the row is
+        # that step's own record (proposed or degraded), so its absence is the skip.
+        readback_reader = getattr(self._catalog, "readback", None)
+        if readback_reader is not None and readback_reader(v) is None:
+            if record(
+                v, step_id="rubric_readback", status="default_taken",
+                payload=json.dumps({
+                    "default": (
+                        "the rubric read-back was skipped: no criteria were read "
+                        "from the rubric, so no derived default band set was "
+                        "applied and the package carries only the staged and "
+                        "hand-authored criteria (FR-SETUP-04)."
+                    ),
+                }, sort_keys=True),
+                recorded_at=_now(),
+            ):
+                LOGGER.info(
+                    "recorded the rubric read-back's default for version %s — the "
+                    "skip is stored provenance, not silence (FR-SETUP-14)", v,
+                )
         written = record(
             v, step_id="decomposability", status="default_taken",
             payload=json.dumps({
@@ -2681,6 +3242,34 @@ class SetupService:
                 "recorded the decomposability step's default for version %s — the "
                 "skip is stored provenance, not silence (FR-SETUP-14)", v,
             )
+        # The grade policy: the default is APPLIED — written as the stored row,
+        # because the recording obligation is discharged by storing the policy
+        # (FR-SETUP-12, C10's distinction between a stored default and the read-side
+        # fallback) — and recorded as taken, but only where the teacher never
+        # spoke: a policy row already present (declared here, or set through M-PKG
+        # directly) is never overwritten.
+        declared = getattr(self._catalog, "grade_policy_declared", None)
+        setter = getattr(self._catalog, "set_grade_policy", None)
+        if setter is not None and (declared is None or not declared(v)):
+            setter(v, default_grade_policy())
+            if record(
+                v, step_id="grade_policy", status="default_taken",
+                payload=json.dumps({
+                    "default": (
+                        "the grade-policy step was skipped: the default policy "
+                        "(unweighted sum of criteria, raw points, no boundary "
+                        "table) applies and is stored on the version "
+                        "(FR-SETUP-12)."
+                    ),
+                    "policy": default_grade_policy().to_dict(),
+                }, sort_keys=True),
+                recorded_at=_now(),
+            ):
+                LOGGER.info(
+                    "recorded the grade policy's default for version %s — applied "
+                    "and stored as a default, never silent (FR-SETUP-12, "
+                    "FR-SETUP-14)", v,
+                )
 
     def _require_draft_version(self) -> PackageVersionId:
         """The draft the operation works on, or the honest refusal: a package whose

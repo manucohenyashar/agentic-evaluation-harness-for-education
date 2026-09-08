@@ -34,12 +34,13 @@ pytestmark = pytest.mark.integration
 
 
 def _confirm(chain, doc_id: str):
-    """S1→S3: propose, confirm, and key the one deterministic criterion the package has."""
+    """S1→S2: propose and confirm — #53 stages the confirmed inventory's
+    deterministic criteria (`CRIT-Q4` and its fellow mcq/mixed criteria) at the
+    confirmation itself, so the hand-added criterion the pre-#53 fixture needed is
+    gone; the KEYS are each test's own move (gate 2's refusal is what TC-04 pins)."""
     proposal = chain.service.propose_inventory(doc_id)
     version = chain.catalog.draft_version()
     chain.service.confirm_inventory(proposal.proposal_id)
-    chain.catalog.add_criterion(version, "CRIT-Q4", question_id="Q4", kind="mcq",
-                                scoring_model="atomic", max_points=2.0)
     return proposal, version
 
 
@@ -110,8 +111,6 @@ def test_tc_setup_02_publish_refused_before_confirmation_permitted_after_and_row
         chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
 
     chain.service.confirm_inventory(proposal.proposal_id)
-    chain.catalog.add_criterion(version, "CRIT-Q4", question_id="Q4", kind="mcq",
-                                scoring_model="atomic", max_points=2.0)
     rows = {row["question_id"]: row for row in chain.catalog.questions(version)}
     assert list(rows) == ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"]
     assert all(row["confirmed_at"] is not None for row in rows.values())
@@ -121,8 +120,10 @@ def test_tc_setup_02_publish_refused_before_confirmation_permitted_after_and_row
         chain.catalog.update_question_field(version, "Q1", "prompt_text", "reworded")
     chain.catalog.update_question_field(version, "Q1", "reference_solution", "impulse = F dt")
 
-    # Permitted after: the same publish that was refused above now goes through.
-    chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
+    # Permitted after: the same publish that was refused above now goes through —
+    # every staged deterministic criterion keyed (the teacher's act, gate 2).
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     assert published == version
     assert chain.catalog.is_locked(published)
@@ -172,8 +173,10 @@ def test_tc_setup_04_deterministic_criterion_needs_its_key_no_default_no_skip_no
         "gives the key no default, no skip and no inference path"
     )
 
-    # With the key supplied by the teacher, publication is permitted.
-    chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
+    # With the keys supplied by the teacher, publication is permitted — every
+    # staged deterministic criterion keyed, none defaulted.
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     assert published == version
 
@@ -234,7 +237,8 @@ def test_tc_setup_19_publish_is_one_transaction_and_the_lock_engages_exactly_at_
     chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store)
     _, version = _confirm(chain, doc_id)
-    chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     assert chain.service.steps().ready_to_publish
 
     # The lock is not engaged yet: a question edit one moment before publication is legal.
@@ -281,9 +285,8 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     version = chain.catalog.draft_version()
     assert chain.service.steps().remaining_steps == 1  # unconfirmed inventory blocks
     chain.service.confirm_inventory(proposal.proposal_id)
-    chain.catalog.add_criterion(version, "CRIT-Q4", question_id="Q4", kind="mcq",
-                                scoring_model="atomic", max_points=2.0)
-    chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
 
     # Abandoned here: no publish. The version persists, unpublished, and is continuable.
     assert not chain.catalog.is_locked(version)
