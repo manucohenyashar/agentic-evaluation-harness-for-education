@@ -1419,8 +1419,21 @@ class Orchestrator:
         the deterministic mode names, so `kind='mcq'` IS `evaluation_mode='deterministic'`
         for this module and no `evaluation_mode` column is added. Extract and score units
         are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
-        deterministic unit is enumerated for every submission. Escalations and the random
-        arm remain later stories' (#60).
+        deterministic unit is enumerated for every submission.
+
+        **The random arm** (`FR-ORCH-11`, this story): after a judged pair's base score
+        units, the pair draws at `HARNESS_ORCH_RANDOM_ARM_RATE` (default 0.07) — a
+        deterministic hash draw over `(run_id, submission_id, criterion_id)`, so the
+        byte-identical enumeration guarantee (NFR-ORCH-05) survives: the same inputs
+        draw the same pairs every pass, and `INSERT OR IGNORE` keeps a drawn pair's
+        units from duplicating. A drawn pair gets the widened panel an escalation
+        would build (1→3, 3→5), marked `origin='random_arm'` — the origin is why the
+        work exists, deliberately NOT a `work_id` input, so a base panel and a
+        random-arm panel for the same (submission, criterion, judge) share rows
+        rather than double-scoring. The draw consults neither confidence, nor the
+        escalation budget, nor a breaker (`CT-ORCH-15`: suppression would make the
+        routing policy unfalsifiable). Explicit escalations stay with
+        `enqueue_escalation` below — enumeration does not create them.
 
         Commit batches of `HARNESS_ORCH_ENUM_COMMIT_BATCH` inserts keep one pass from
         holding a write lock across 23,000 inserts; the knob exists so a slower box can
@@ -1488,8 +1501,13 @@ class Orchestrator:
         )
 
         batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
+        random_arm_rate = _env_float(
+            RANDOM_ARM_RATE_ENV, ORCH_RANDOM_ARM_RATE, low=0.0, high=1.0
+        )
 
         computed: list[tuple[str, dict[str, Any]]] = []
+        random_arm_pairs = 0
+        random_arm_units = 0
         for submission in submissions:
             for criterion in criteria:
                 kind = criterion["kind"]
@@ -1511,6 +1529,31 @@ class Orchestrator:
                     computed.append(self._unit(
                         row, STAGE_SCORE, submission, criterion, arm,
                     ))
+                # The random arm (`FR-ORCH-11`, `CT-ORCH-15`): the pair draws at the
+                # configured rate, independent of confidence — the draw takes the
+                # pair's identities and the rate and nothing else — and a drawn pair
+                # gets the widened panel an escalation would build, marked
+                # `origin = 'random_arm'` so the sample stays statistically separable
+                # (`M-STATS`/`M-REVIEW` read the mark). **Nothing suppresses it**: the
+                # draw runs before any escalation exists to gate and consults neither
+                # the budget nor a breaker — the arm measures the routing policy
+                # itself (`FR-STATS-08`), and a budget that could silence it would
+                # make the policy unfalsifiable. It spends compute, never teacher
+                # minutes, and produces no review item (`FR-REVIEW-07`).
+                if in_random_arm(
+                    run_id,
+                    submission["submission_id"],
+                    criterion["criterion_id"],
+                    random_arm_rate,
+                ):
+                    widened = escalation_plan(arms[:depth], panel_arms=arms)
+                    for judge in widened[depth:]:
+                        computed.append(self._unit(
+                            row, STAGE_SCORE, submission, criterion, judge,
+                            origin="random_arm",
+                        ))
+                    random_arm_pairs += 1
+                    random_arm_units += len(widened) - depth
 
         work_ids = sorted(work_id for work_id, _ in computed)
         existing = {
@@ -1560,6 +1603,15 @@ class Orchestrator:
         gates["ledger_counts"] = ", ".join(
             f"{status}={by_status[status]}" for status in sorted(by_status)
         ) or "ledger empty for this run"
+        # `CT-ORCH-15`'s observability: the arm's sample size is visible next to the
+        # enumeration's status, and the gate names its independence — a reader of the
+        # report can tell drawn units from suppressed ones without re-deriving the
+        # draw.
+        gates["random_arm"] = (
+            f"{random_arm_pairs} pair(s) drawn at rate {random_arm_rate} "
+            f"({random_arm_units} unit(s), origin='random_arm'); independent of "
+            "confidence — never suppressed by the escalation budget or a breaker"
+        )
 
         return EnumerationReport(
             run_id=run_id,

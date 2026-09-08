@@ -232,32 +232,31 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
-    # aeh.orch's sites: #57's four (the run-row insert at 871, the ledger's batched
-    # unit insert at 1048 with the `SELECT changes()` read at 1057 in that same
+    # aeh.orch's sites: #57's four (the run-row insert, the ledger's batched
+    # unit insert with the `SELECT changes()` read in that same
     # transaction — the insert is `OR IGNORE`, so the ledger's own count of what the
-    # write did is the only honest one — and the audit-record insert at 1901), plus
+    # write did is the only honest one — and the audit-record insert), plus
     # #58's leasing and failure taxonomy (every one from ORCH_STATEMENTS,
-    # keyword-parameterized): the guarded lease claim at 1297 with its changes() read
-    # at 1304, the heartbeat's lease extension at 1499 with its changes() read at
-    # 1506, the sweeper's guarded requeue at 1557 with its changes() read at 1561,
-    # the completion at 1611 with its changes() read at 1612, and the failure record
-    # at 1660 with its changes() read at 1666. Lines moved with #59's sweep-plan
-    # additions, its reviewer fixes' order cache, and that cache's requeue
-    # invalidation above them; the sites are the same statements as #57/#58's.
-    "aeh.orch:872",
-    "aeh.orch:1049",
-    "aeh.orch:1058",
-    "aeh.orch:1298",
-    "aeh.orch:1305",
-    "aeh.orch:1500",
-    "aeh.orch:1507",
-    "aeh.orch:1558",
-    "aeh.orch:1562",
-    "aeh.orch:1612",
-    "aeh.orch:1613",
-    "aeh.orch:1661",
-    "aeh.orch:1667",
-    "aeh.orch:1902",
+    # keyword-parameterized): the guarded lease claim with its changes() read,
+    # the heartbeat's lease extension with its changes() read, the sweeper's guarded
+    # requeue with its changes() read, the completion with its changes() read, and
+    # the failure record with its changes() read. Lines moved with #59's sweep-plan
+    # additions and with #60's random-arm block and escalation policy in
+    # enumerate_units; the sites are the same statements as #57/#58's.
+    "aeh.orch:1360",
+    "aeh.orch:1580",
+    "aeh.orch:1589",
+    "aeh.orch:1838",
+    "aeh.orch:1845",
+    "aeh.orch:2040",
+    "aeh.orch:2047",
+    "aeh.orch:2098",
+    "aeh.orch:2102",
+    "aeh.orch:2152",
+    "aeh.orch:2157",
+    "aeh.orch:2205",
+    "aeh.orch:2211",
+    "aeh.orch:2456",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -267,14 +266,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # FR-DET-10 column set is written in exactly one place. The four Tier D
     # stat writes rewrite `mcq_item_stats`/`mcq_item_summary` per criterion
     # (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
-    # Every one from DET_STATEMENTS, keyword-parameterized.
-    "aeh.det:964",
-    "aeh.det:1080",
-    "aeh.det:1265",
-    "aeh.det:1408",
-    "aeh.det:1639",
-    "aeh.det:1647",
-    "aeh.det:1655",
+    # Every one from DET_STATEMENTS, keyword-parameterized. Lines moved with #60's
+    # sorted-merge comment on the cohort registry append; same statements.
+    "aeh.det:970",
+    "aeh.det:1086",
+    "aeh.det:1271",
+    "aeh.det:1414",
+    "aeh.det:1645",
+    "aeh.det:1653",
     "aeh.det:1661",
     # The ingest sites are #226's line numbers (the live-crop/raster-persistence
     # story and its review fixes shifted the module; every statement verified
