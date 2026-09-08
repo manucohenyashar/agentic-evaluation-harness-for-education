@@ -1,11 +1,12 @@
-"""`M-SETUP` Stage A's decomposability decision table — written ahead of **#52** (issue #54).
+"""`M-SETUP` Stage A's decomposability decision table — **#52**'s unit cases (issue #54).
 
 Cases `TC-SETUP-08`, `TC-SETUP-09` and `TC-SETUP-10` (test plan §5.6, P0/P1), all planned
 unit / 0 and all honored at that rung: the service runs over the pure in-memory doubles in
-`tests/support/setup_harness.py`, no store at all. They carry `writtenahead` and sit
-outside `TEST_CMD` until #52 lands `classify_decomposability` together with
-`SETUP_MAX_CONFIRMATIONS`; the "#52 decomposition" entry in `tests/support/impl.py` is a
-`symbols` conjunction over both, so the gate fires exactly when the file can run.
+`tests/support/setup_harness.py`, no store at all. The file landed red with `writtenahead`
+and went green when #52 landed `classify_decomposability` together with
+`SETUP_MAX_CONFIRMATIONS` (the "#52 decomposition" entry in `tests/support/impl.py` was a
+`symbols` conjunction over both, so the gate fired exactly when the file could run; the
+marker and the entry are gone now that it has).
 
 `TC-SETUP-09` arrived with TS-21 (issue #55) and lives here rather than in its own file
 because it is the same classifier at the same rung over the same doubles: the
@@ -27,8 +28,8 @@ because no verdict is scripted.
 
 The payload shape below is this file's stated bet, not a pinned interface: §3.6 pins the
 method's signature and `DecomposabilityVerdict`'s fields, not the model reply or the
-`CriterionDraft` construction. When #52 lands, align the scripting and the `_draft`
-helper to its shapes — the per-cell expectations do not change.
+`CriterionDraft` construction. When #52 landed, the scripting and the `_draft` helper
+were aligned to its shapes — the per-cell expectations did not change.
 """
 
 from __future__ import annotations
@@ -44,8 +45,6 @@ from tests.support.setup_harness import (
     ScriptedSetupProvider,
     make_setup_service,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#52"
 

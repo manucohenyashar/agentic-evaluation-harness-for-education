@@ -1215,30 +1215,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `evaluation_mode` column that does not exist (16), the cross-story skip sweep whose
     # recorded-default storage is unpinned (17), and calibration-paper intake no surface
     # accepts (18). That is the TC-INGEST-38 precedent; disclosed on the #54 PR.
-    "#52 decomposition": (
-        # TC-SETUP-08/10 (the §5.3 decision table, the confirmation cap) need the
-        # classifier and the cap constant together. TC-SETUP-13 is deliberately NOT in
-        # this file: its criteria come out of the read back, so it needs #51 too, and it
-        # has its own entry below — a conjunction here would hold two unit cases outside
-        # the gate for a story neither of them needs.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SETUP_MAX_CONFIRMATIONS,"
-            f"{SETUP_MODULE}:SetupService.classify_decomposability"
-        ),
-        ("tests/integration/setup/test_setup_decomposition_pending.py",),
-    ),
-    "#52 dependencies": (
-        # TC-SETUP-13: the proposal is #52's (`propose_dependencies`) but the criteria it
-        # attaches to are #51's (`read_back_rubric`), and the issues are siblings — so the
-        # conjunction, not a single symbol that is a coin flip between the two stories.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{SETUP_MODULE}:SetupService.propose_dependencies"
-        ),
-        ("tests/integration/setup/test_setup_dependencies_pending.py",),
-    ),
+    # "#52 decomposition" and "#52 dependencies" left with #52: the classifier, the cap
+    # constant and the proposal surface landed, and #51's read back (PR #216) supplies
+    # the criteria half of the dependencies conjunction — both pending files run green,
+    # so their markers and these entries are gone.
     "#53 policy": (
         # TC-SETUP-15: keyed on the SetupService member, not `aeh.pkg:set_grade_policy` —
         # M-PKG's half (the policy object, the vocabulary, the storage) shipped with #50,
@@ -1289,23 +1269,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         ("tests/contract/setup/test_ct_setup_c01_blocking_and_defaults.py",),
     ),
-    "#56 C04 classification": (
-        # TC-SETUP-C04's sweep and unclear partition both drive the classifier; the
-        # verdict type rides on the method's return, so the method is the whole blocker.
-        "symbol",
-        f"{SETUP_MODULE}:SetupService.classify_decomposability",
-        ("tests/contract/setup/test_ct_setup_c04_classification.py",),
-    ),
-    "#56 C05 panel depth": (
-        # TC-SETUP-C05: the classification is #52's, the criteria it classifies come out
-        # of #51's read back — the same pairing as "#52 dependencies".
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{SETUP_MODULE}:SetupService.classify_decomposability"
-        ),
-        ("tests/contract/setup/test_ct_setup_c05_panel_depth.py",),
-    ),
+    # "#56 C04 classification" and "#56 C05 panel depth" left with #52: the
+    # classifier landed and the file runs green against it (C05's read-back half
+    # was already green with #51) — markers and entries gone.
     # "#56 C06 bands" left with #51 (PR #216): the read back and its two constants
     # landed, and the file's descriptor half runs green against them — the rebase
     # check the suite's issue names.
@@ -1319,16 +1285,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         ("tests/contract/setup/test_ct_setup_c07_mcq_criteria.py",),
     ),
-    "#56 C08 dependencies": (
-        # TC-SETUP-C08's approval half: the proposal is #52's, the criteria it attaches
-        # to are #51's — same conjunction as "#52 dependencies".
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{SETUP_MODULE}:SetupService.propose_dependencies"
-        ),
-        ("tests/contract/setup/test_ct_setup_c08_dependencies.py",),
-    ),
+    # "#56 C08 dependencies" left with #52: the proposal surface landed and #51's read
+    # back supplies the criteria it attaches to — the file runs green, marker and
+    # entry gone.
     "#56 C09 prefix budget": (
         # TC-SETUP-C09 drives only the budget check (the drop-policy record is on its
         # report), so the single pinned symbol is the whole blocker.
@@ -1343,15 +1302,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{SETUP_MODULE}:SetupService.set_grade_policy",
         ("tests/contract/setup/test_ct_setup_c10_grade_policy.py",),
     ),
-    "#56 C13 confirmation cap": (
-        # TC-SETUP-C13 drives the classifier AND reads the cap constant — both #52's.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SETUP_MAX_CONFIRMATIONS,"
-            f"{SETUP_MODULE}:SetupService.classify_decomposability"
-        ),
-        ("tests/contract/setup/test_ct_setup_c13_confirmation_cap.py",),
-    ),
+    # "#56 C13 confirmation cap" left with #52: the classifier and the cap constant
+    # landed and the file runs green against them — marker and entry gone.
     "#56 C15 consumer sweep": (
         # TC-SETUP-C15: the read back produces the corrections (#51) and the sweep runs
         # over the three consumer modules' surfaces. #52/#53 are deliberately absent —

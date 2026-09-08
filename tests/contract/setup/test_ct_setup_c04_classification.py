@@ -1,11 +1,11 @@
 """`CT-SETUP-04` — the classification sweep and the asymmetric unclear default
 (`TC-SETUP-C04`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD of #52** — both
-halves drive `SetupService.classify_decomposability`, which does not exist yet
-(FR-SETUP-06's decision table lands with #52). The file carries `writtenahead`
-and a `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C04 classification") keyed on the
-method; it fails ONLY via `NotImplementedYet` until #52 lands.
+Case of test plan §6.11.6; issue #56 (TS-63). Both halves drive
+`SetupService.classify_decomposability`, which landed with #52 (FR-SETUP-06's
+decision table). The file landed red under `writtenahead` with a
+`WRITTEN_AHEAD_BLOCKERS` entry ("#56 C04 classification") keyed on the method;
+the marker and the entry are gone now that the table is green.
 
 The clause: sweep `classification` over its three values (`atomic`,
 `holistic`, `atomic_with_gate`) and assert `deciding_question` names **which of
@@ -49,8 +49,6 @@ from tests.support.setup_harness import (
     ScriptedIngestor,
     ScriptedSetupProvider,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#52"
 

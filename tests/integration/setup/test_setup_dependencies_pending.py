@@ -1,11 +1,11 @@
-"""`M-SETUP` Stage A's dependency proposals — written ahead of **#52**, needing **#51**
-too (issue #54).
+"""`M-SETUP` Stage A's dependency proposals — **#52**'s integration case (issue #54).
 
-Case `TC-SETUP-13` (FR-SETUP-10, P0), rung 2. It waits on a *pair*, and that is stated in
-its registry entry rather than papered over: the criteria a dependency attaches to come
-out of the read back (#51's `read_back_rubric`), and the proposal itself is #52's
-`propose_dependencies`. The entry keyed "#52 dependencies" in `tests/support/impl.py` is
-a `symbols` conjunction over both, so the gate cannot fire while either is missing.
+Case `TC-SETUP-13` (FR-SETUP-10, P0), rung 2. It waited on a *pair*, and that was stated
+in its registry entry rather than papered over: the criteria a dependency attaches to come
+out of the read back (#51's `read_back_rubric`, landed via PR #216), and the proposal
+itself is #52's `propose_dependencies`. The entry keyed "#52 dependencies" in
+`tests/support/impl.py` was a `symbols` conjunction over both — the marker and the entry
+are gone now that both halves are green.
 
 The case's own oracle decides what is asserted here: *"asserted by declining and
 confirming no edge exists"*. So the file asserts the three quarters that need no approval
@@ -37,8 +37,6 @@ from tests.support.setup_harness import (
     stage_chain,
 )
 from tests.support.store_api import statement
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#52"
 

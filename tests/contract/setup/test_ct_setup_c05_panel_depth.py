@@ -1,7 +1,7 @@
 """`CT-SETUP-05` — a `holistic` criterion is written so no consumer needs a
 special case at run time (`TC-SETUP-C05`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD of #51+#52**, with
+Case of test plan §6.11.6; issue #56 (TS-63), green since #52+#51 landed, with
 one half **disclosed-deferred** — the disposition follows what the design
 actually pins, probed:
 
@@ -23,10 +23,11 @@ written `atomic`. With that, the depth-3-vs-1 and ceiling values are functions
 of the stored column, and a consumer special case would be redundant rather
 than merely absent.
 
-Fails ONLY via `NotImplementedYet` (through `require_attr`) until both stories
-land: the classification is #52's (`classify_decomposability`), and the
-criteria it classifies come out of #51's read back (`read_back_rubric`) — the
-same conjunction #54's pending files key on.
+Fails ONLY via `NotImplementedYet` (through `require_attr`) was its landing
+state until both stories landed: the classification is #52's
+(`classify_decomposability`, landed with it), and the criteria it classifies
+come out of #51's read back (`read_back_rubric`, landed via PR #216) — the
+same conjunction #54's pending files keyed on; marker and entry are gone.
 
 **Disclosed deferrals** (on record here, not shipped red — the TC-INGEST-38
 precedent: no assertion may invent storage):
@@ -47,13 +48,9 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from aeh.setup import SetupService
 from tests.contract.setup._doubles import ingest_document, stage_chain
 from tests.support.impl import require_attr
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE_CLASSIFIER = "#52"
 ISSUE_READBACK = "#51"
