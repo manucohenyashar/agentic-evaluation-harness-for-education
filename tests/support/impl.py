@@ -43,6 +43,7 @@ REVIEW_MODULE = f"{IMPLEMENTATION_PACKAGE}.review"
 AGG_MODULE = f"{IMPLEMENTATION_PACKAGE}.agg"
 EXTRACT_MODULE = f"{IMPLEMENTATION_PACKAGE}.extract"
 INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
+SETUP_MODULE = f"{IMPLEMENTATION_PACKAGE}.setup"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -1229,6 +1230,74 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
         ),
+    ),
+    # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
+    #
+    # `aeh.setup` itself landed with #50 (propose, confirm, the two gates, publish), so
+    # nothing here is keyed on the module — the four files below run against shipped code
+    # up to the member each case actually drives. Every entry is keyed on the §3.6
+    # Interface members (`read_back_rubric`, `classify_decomposability`,
+    # `propose_dependencies`, `set_grade_policy`) and §3.6 Configuration constants
+    # (`SETUP_DEFAULT_BAND_COUNT`, `SETUP_MAGNITUDE_PHRASES`, `SETUP_MAX_CONFIRMATIONS`).
+    #
+    # **Each entry is a `symbols` conjunction covering its file's FULL blocker set**, so no
+    # entry can fire while a sibling symbol the same file needs is still missing — the
+    # TC-STORE-15 lesson (a conjunction, never a coin flip), applied at file granularity.
+    # Per-test granularity was considered and rejected: each file's cases share one story
+    # and one blocker set, so a file-level conjunction is both exact and readable.
+    #
+    # TC-SETUP-09 and -21 are not this issue's cases (a repetition invariant and a UAT
+    # measurement). TC-SETUP-11, -12, -14, -16, -17 and -18 are **deferred, not written
+    # ahead**: their oracles turn on storage or surfaces the design does not pin — the
+    # panel-depth/auto-acceptance columns (11), an `evidence_type` column that does not
+    # exist and no interface member carries (12), the prefix token-counting seam (14), an
+    # `evaluation_mode` column that does not exist (16), the cross-story skip sweep whose
+    # recorded-default storage is unpinned (17), and calibration-paper intake no surface
+    # accepts (18). That is the TC-INGEST-38 precedent; disclosed on the #54 PR.
+    "#51 readback": (
+        # TC-SETUP-05/06/07 (band counts, descriptor regeneration, the published-package
+        # scan) all drive the read back AND its two declared constants, so the conjunction
+        # is the file's full blocker set.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SETUP_DEFAULT_BAND_COUNT,"
+            f"{SETUP_MODULE}:SETUP_MAGNITUDE_PHRASES,"
+            f"{SETUP_MODULE}:SetupService.read_back_rubric"
+        ),
+        ("tests/integration/setup/test_setup_readback_pending.py",),
+    ),
+    "#52 decomposition": (
+        # TC-SETUP-08/10 (the §5.3 decision table, the confirmation cap) need the
+        # classifier and the cap constant together. TC-SETUP-13 is deliberately NOT in
+        # this file: its criteria come out of the read back, so it needs #51 too, and it
+        # has its own entry below — a conjunction here would hold two unit cases outside
+        # the gate for a story neither of them needs.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SETUP_MAX_CONFIRMATIONS,"
+            f"{SETUP_MODULE}:SetupService.classify_decomposability"
+        ),
+        ("tests/integration/setup/test_setup_decomposition_pending.py",),
+    ),
+    "#52 dependencies": (
+        # TC-SETUP-13: the proposal is #52's (`propose_dependencies`) but the criteria it
+        # attaches to are #51's (`read_back_rubric`), and the issues are siblings — so the
+        # conjunction, not a single symbol that is a coin flip between the two stories.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{SETUP_MODULE}:SetupService.propose_dependencies"
+        ),
+        ("tests/integration/setup/test_setup_dependencies_pending.py",),
+    ),
+    "#53 policy": (
+        # TC-SETUP-15: keyed on the SetupService member, not `aeh.pkg:set_grade_policy` —
+        # M-PKG's half (the policy object, the vocabulary, the storage) shipped with #50,
+        # so a pkg key would resolve today while the step that records the default as
+        # taken is still #53's.
+        "symbol",
+        f"{SETUP_MODULE}:SetupService.set_grade_policy",
+        ("tests/integration/setup/test_setup_policy_pending.py",),
     ),
 }
 
