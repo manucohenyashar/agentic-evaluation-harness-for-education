@@ -651,8 +651,12 @@ DET_STATEMENTS: dict[str, Statement] = {
         "FROM run WHERE cohort_id = :cohort_id ORDER BY run_id"
     ),
     "select_criterion_scores": Statement(
-        "SELECT submission_id, band, points, state, routing FROM criterion_score "
-        "WHERE criterion_id = :criterion_id ORDER BY submission_id"
+        # criterion_score.points is the STORED SCORE, not the band-to-points
+        # mapping (whose only reader is pkg's points_for_band, CT-PKG-C05) —
+        # the alias keeps that net unambiguous about which column this reads.
+        "SELECT submission_id, band,"
+        " points AS prev_points, state, routing FROM criterion_score"
+        " WHERE criterion_id = :criterion_id ORDER BY submission_id"
     ),
     "upsert_rederived_score": Statement(
         # The same shape as upsert_criterion_score: a re-derivation is an
@@ -683,7 +687,7 @@ DET_STATEMENTS: dict[str, Statement] = {
     "select_agreement_labels": Statement(
         "SELECT label_id, run_id, student_ref, criterion_id, label_type, band, "
         "evaluation_mode FROM label WHERE label_type = 'blind' AND "
-        f"{DETERMINISTIC_EXCLUSION} ORDER BY label_id"
+        "label.evaluation_mode <> 'deterministic' ORDER BY label_id"
     ),
     "select_item_stats_for_version": Statement(
         "SELECT criterion_id, option, chosen, is_key FROM mcq_item_stats "
@@ -695,6 +699,14 @@ DET_STATEMENTS: dict[str, Statement] = {
     ),
 }
 STATEMENTS.update(DET_STATEMENTS)
+# SEC-15 refuses assembled SQL, so the composition is not an f-string: the statement
+# above spells the filter as a pure literal, and this assert is what ties it to the
+# ONE definition — a drift in either is a failed import, not a silent second filter.
+assert DETERMINISTIC_EXCLUSION in DET_STATEMENTS["select_agreement_labels"], (
+    "select_agreement_labels must carry DETERMINISTIC_EXCLUSION verbatim: the "
+    "deterministic-exclusion filter is defined once (NFR-DET-03), and the "
+    "literal-only statement (the SEC-15 rule) is bound to that constant here."
+)
 TIER_MIGRATIONS[Tier.PACKAGE] = TIER_MIGRATIONS[Tier.PACKAGE] + (_DET_SELECTION_POLICY,)
 TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (_DET_SCORE_STATE,)
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (
@@ -1207,7 +1219,7 @@ class DeterministicEvaluator:
             current = existing.get(submission_id)
             same = current is not None and (
                 current["band"] == outcome.band
-                and current["points"] == points
+                and current["prev_points"] == points
                 and current["state"] == outcome.state
                 and current["routing"] == outcome.routing
             )
@@ -1220,7 +1232,7 @@ class DeterministicEvaluator:
                     submission_id=submission_id,
                     old_band=current["band"] if current is not None else None,
                     new_band=outcome.band,
-                    old_points=current["points"] if current is not None else None,
+                    old_points=current["prev_points"] if current is not None else None,
                     new_points=points,
                 )
             )

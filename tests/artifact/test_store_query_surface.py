@@ -256,17 +256,24 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch:1252",
     "aeh.orch:1258",
     "aeh.orch:1450",
-    # aeh.det's six sites (#86): the single-row score upsert in `evaluate`, the
-    # batched score upsert in `evaluate_cohort`'s one Tier C transaction, and the
-    # four Tier D writes that rewrite `mcq_item_stats`/`mcq_item_summary` per
-    # criterion (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
+    # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
+    # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
+    # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
+    # the rows whose value moved under the corrected key), and #87's audit-record
+    # insert in `_append_audit_records` — one site shared by all three grading
+    # paths (`evaluate`, `evaluate_cohort`, `rederive_for_key_change`), so the
+    # FR-DET-10 column set is written in exactly one place. The four Tier D
+    # stat writes rewrite `mcq_item_stats`/`mcq_item_summary` per criterion
+    # (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
     # Every one from DET_STATEMENTS, keyword-parameterized.
-    "aeh.det:674",
-    "aeh.det:787",
-    "aeh.det:1071",
-    "aeh.det:1079",
-    "aeh.det:1087",
-    "aeh.det:1093",
+    "aeh.det:941",
+    "aeh.det:1057",
+    "aeh.det:1242",
+    "aeh.det:1385",
+    "aeh.det:1616",
+    "aeh.det:1624",
+    "aeh.det:1632",
+    "aeh.det:1638",
     "aeh.ingest:2461",
     "aeh.ingest:2472",
     "aeh.ingest:2494",
