@@ -141,6 +141,22 @@ class WarnAndContinueSanitizer(PypdfSanitizer):
             return SanitizeResult(pdf_bytes=bytes(pdf_bytes))
 
 
+#: A tiny benign one-pager whose only job is to pay pypdf's lazy import cost
+#: OUTSIDE a traced window: first use of `PypdfSanitizer` imports pypdf, and
+#: that import allocates ~9.6 MiB — toolchain overhead, not the run's
+#: allocation. Without the warmup the peak cells are order-dependent on
+#: whether an earlier test in the session happened to import pypdf first
+#: (the TS-18 watermark finding, #47's B2).
+_WARMUP_PDF = (b"%PDF-1.4\n"
+               b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n"
+               b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n"
+               b"3 0 obj << /Type /Page /Parent 2 0 R >> endobj\n"
+               b"4 0 obj << /Length 0 >>\nstream\n\nendstream\nendobj\n"
+               b"xref\n0 5\n0000000000 65535 f \n"
+               b"trailer << /Size 5 /Root 1 0 R >>\n"
+               b"startxref\n0\n%%EOF")
+
+
 @dataclass
 class NeutralizationRun:
     """One corpus construct through the real pipeline: the report, the
@@ -187,6 +203,14 @@ def _run(tmp_data_dir, name: str, construct_id: str, *, sanitizer=None,
         source = fx.put(original)
         provider.texts[(source, 1)] = "Student: gus\nplain page"
         if trace:
+            # Warm pypdf's lazy import outside the traced window — a first-use
+            # import allocates ~9.6 MiB and would be charged to this run's
+            # peak, making the cell order-dependent instead of about the
+            # ceiling (the TS-18 watermark convention, #47's B2).
+            PypdfSanitizer().sanitize(_WARMUP_PDF, strip=True,
+                                      max_decompressed_bytes=None,
+                                      max_embedded_objects=None,
+                                      deadline=None)
             tracemalloc.start()
         try:
             report = fx.ingestor.ingest_submission(
