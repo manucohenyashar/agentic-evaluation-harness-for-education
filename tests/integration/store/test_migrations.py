@@ -29,6 +29,7 @@ from pathlib import Path
 import pytest
 
 import aeh.pkg  # noqa: F401 -- imports the owning module so Tier P's registry is complete
+import aeh.ingest  # noqa: F401 -- imports the owning module so the cohort tier's registry is complete
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,
