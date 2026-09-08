@@ -108,11 +108,14 @@ each with its probe evidence:
   transcriber co-resident by policy under one GPU — is #62/#59 territory; the
   case pins the shipped exclusive default (`for_policy(("transcriber",))`),
   whose blocking primitive `TC-INGEST-36` already covers in isolation. The
+  slot's missing waiter state — **resolved by #222**: `holder`/`waiters`/
+  `snapshot()` are observable, and every ingest report carries the slot's
+  stage detail — so the stage-end emptiness is asserted on the result, and
+  the primitive suite asserts a blocked acquire reads `waiters == 1`. The
   run-level **hold scope** (the acquire wraps the whole page loop, not each
-  page) is enforced best-effort only: the slot exposes no waiter state, and
-  the mid-document judge probe is scheduling-race-limited, so the enforced
-  run-level oracle is the boundary unload sequence plus the stage-end
-  emptiness.
+  page) stays best-effort: the mid-document judge probe remains
+  scheduling-race-limited, so the enforced run-level oracle is still the
+  boundary unload sequence plus the stage-end emptiness.
 
 One more platform fact, for `TC-INGEST-42`'s mode half: this suite runs on
 Windows, where `os.chmod` maps every mode but read-only to a no-op and
@@ -1243,21 +1246,23 @@ def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a
       scheduling-race-limited (the main thread holds the GIL through the
       pure-Python assembly, so it can reach the next page's call before a
       freed probe runs) — the **enforced** hold-scope evidence stays with the
-      primitive suite (`TC-INGEST-36`), because the slot exposes no waiter
-      state to assert on (F11);
+      primitive suite (`TC-INGEST-36`), which since #222 (F11) can assert on
+      the slot's exposed waiter state directly;
     - **unloaded at every document boundary** — a judge probe spawned inside
       document N acquires the slot between document N and N+1: it could only
       get through if the transcriber unloaded at that boundary. This is the
       issue's oracle ("unloads before the first judge loads"), enforced as a
       sequence, not a timing;
-    - **empty at stage end** — after the last document, no role holds.
+    - **empty at stage end** — after the last document, no role holds, and
+      the report's `residency` stage detail (`#222`, F11: no bare slot on a
+      result) records the empty, unblocked slot observably.
 
     The judge probe is a plain `acquire`/`release` pair on the slot itself;
     `TC-INGEST-36` already covers the slot's blocking mechanics in isolation,
     so this case pins what the *run* does with the slot, not the primitive.
-    Disclosed (F11): the E4 residency-policy swap (the judge and the
-    transcriber co-resident by policy) is story territory (#62/#59) — this
-    case pins the exclusive default the shipped pipeline actually runs."""
+    Disclosed: the E4 residency-policy swap (the judge and the transcriber
+    co-resident by policy) is story territory (#62/#59) — this case pins the
+    exclusive default the shipped pipeline actually runs."""
     fx = _Fixture(tmp_data_dir, "residency-boundaries", "c-46")
     sources = []
     for index in (1, 2, 3):
@@ -1305,7 +1310,7 @@ def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a
                 f"(document {document_index}, call {position}).")
 
         fx.provider.on_call = on_call
-        fx.ingestor.ingest_submission(
+        report = fx.ingestor.ingest_submission(
             [source], cohort_id=fx.cohort_id, package_version="v0",
             filenames={source: f"scan-{document_index:02d}.md"})
 
@@ -1330,6 +1335,14 @@ def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a
         f"{fx.provider.holders}.")
     assert fx.slot._holder is None, (
         "TC-INGEST-46: the stage finished with the slot still held.")
+    # The F11 seam (#222): the report never carries a bare slot — its
+    # stage-detail dict records the slot's state at the stage boundary, and
+    # at stage end that is empty-and-unblocked, observably.
+    assert report.detail["residency"] == {"exclusive": True, "holder": None,
+                                          "waiters": 0}, (
+        f"TC-INGEST-46: the report's residency stage detail is "
+        f"{report.detail.get('residency')} — the slot's waiter state is not "
+        "on the result.")
     statuses = [row["ingest_status"] for row in fx.submission_rows()]
     assert statuses == ["ok"] * 3, (
         f"TC-INGEST-46: the run itself did not complete cleanly: {statuses}.")

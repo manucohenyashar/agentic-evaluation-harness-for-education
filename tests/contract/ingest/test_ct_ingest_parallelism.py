@@ -80,6 +80,9 @@ class TimelineResidency:
     def holds(self, role: str = "transcriber") -> bool:
         return self._slot._holder == role  # noqa: SLF001 -- test-side probe
 
+    def snapshot(self) -> dict:
+        return self._slot.snapshot()
+
 
 class GatedProvider(ScriptedProvider):
     """The scripted model with a deterministic mid-ingest hold: the FIRST call
@@ -246,7 +249,10 @@ def test_tc_ingest_c18_the_policy_slot_is_exclusive_without_coexistence(
     shared.acquire("judge")  # returns: coexistence admitted
     shared.release("judge")
     shared.release("transcriber")
-    # Exclusive: a second role waits for the release.
+    # Exclusive: a second role waits for the release — and the waiting is
+    # OBSERVABLE (#222, F11): the slot exposes its holder, its waiter count
+    # and a snapshot dict, so a hold is a fact a test (or an operator) can
+    # read, not a scheduling race.
     exclusive.acquire("transcriber")
     admitted = threading.Event()
 
@@ -261,12 +267,38 @@ def test_tc_ingest_c18_the_policy_slot_is_exclusive_without_coexistence(
             "TC-INGEST-C18: the exclusive policy slot admitted a second role "
             "while the first held it."
         )
+        assert exclusive.exclusive is True
+        assert exclusive.holder == "transcriber", (
+            f"TC-INGEST-C18: the slot's holder reads {exclusive.holder!r} "
+            "while the transcriber holds it — the waiter state is not "
+            "observable."
+        )
+        assert exclusive.waiters == 1, (
+            f"TC-INGEST-C18: the blocked judge reads waiters="
+            f"{exclusive.waiters} — the slot exposes no waiter state (F11)."
+        )
+        assert exclusive.snapshot() == {"exclusive": True,
+                                        "holder": "transcriber",
+                                        "waiters": 1}, (
+            f"TC-INGEST-C18: the slot snapshot is {exclusive.snapshot()} — "
+            "the stage-detail dict a result carries."
+        )
     finally:
         exclusive.release("transcriber")
         waiter.join(timeout=5)
     assert admitted.is_set(), (
         "TC-INGEST-C18: the waiter was never admitted after the release."
     )
+    assert exclusive.holder == "judge" and exclusive.waiters == 0, (
+        f"TC-INGEST-C18: after the grant the slot reads holder="
+        f"{exclusive.holder!r}, waiters={exclusive.waiters}."
+    )
+    # The shared slot never holds and never blocks — its waiter state is
+    # structurally empty, and the snapshot says so rather than hiding it.
+    assert shared.holder is None and shared.waiters == 0 \
+        and shared.exclusive is False
+    assert shared.snapshot() == {"exclusive": False, "holder": None,
+                                 "waiters": 0}
 
 
 def test_tc_ingest_c18_a_shuffled_work_order_produces_identical_output(

@@ -222,6 +222,11 @@ class RecordingResidency:
         another thread by the blocking half of CT-INGEST-18."""
         return self._slot._holder == role  # noqa: SLF001 -- test-side probe
 
+    def snapshot(self) -> dict:
+        """The wrapped slot's stage detail (#222, F11): the ingest report
+        carries it, so the double delegates like the real slot."""
+        return self._slot.snapshot()
+
 
 # -- the contract fixture --------------------------------------------------------------------------------
 

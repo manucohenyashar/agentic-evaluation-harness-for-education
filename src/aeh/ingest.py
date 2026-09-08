@@ -1135,11 +1135,17 @@ class ResidencySlot:
     A slot whose policy admits both roles concurrently (shared-memory profiles where
     the design allows coexistence) admits them: `acquire` is then a no-op guard, and
     the slot exists so the call sites do not change when a profile tightens.
+
+    Waiter state is observable (#222, the F11 fix): `holder`, `waiters` and
+    `exclusive` read the slot's live state, and `snapshot()` returns the
+    stage-detail dict the results carry — a slot reference on a result is never
+    bare.
     """
 
     def __init__(self, *, exclusive: bool) -> None:
         self._exclusive = exclusive
         self._holder: str | None = None
+        self._waiters = 0
         if exclusive:
             import threading
 
@@ -1156,13 +1162,50 @@ class ResidencySlot:
         exclusive = not (judge_role in roles and transcriber_role in roles)
         return cls(exclusive=exclusive)
 
+    @property
+    def exclusive(self) -> bool:
+        """Whether the slot admits one resident at a time."""
+        return self._exclusive
+
+    @property
+    def holder(self) -> str | None:
+        """The role currently holding the slot, or None — a shared slot never
+        holds (its acquire is a guard, not a hold)."""
+        if not self._exclusive:
+            return None
+        with self._lock:
+            return self._holder
+
+    @property
+    def waiters(self) -> int:
+        """How many threads are currently blocked in `acquire` (#222, F11) —
+        the waiter state the mid-run probes were scheduling-race-blind to. A
+        shared slot never blocks, so it reads 0."""
+        if not self._exclusive:
+            return 0
+        with self._lock:
+            return self._waiters
+
+    def snapshot(self) -> dict:
+        """The slot's state as a stage-detail dict (`CLAUDE.md` seam 4): no
+        result carries a bare slot reference."""
+        if not self._exclusive:
+            return {"exclusive": False, "holder": None, "waiters": 0}
+        with self._lock:
+            return {"exclusive": True, "holder": self._holder,
+                    "waiters": self._waiters}
+
     def acquire(self, role: str = "transcriber") -> None:
         if not self._exclusive:
             return
         self._lock.acquire()
         try:
             while self._holder is not None:
-                self._released.wait()
+                self._waiters += 1
+                try:
+                    self._released.wait()
+                finally:
+                    self._waiters -= 1
             self._holder = role
         finally:
             self._lock.release()
@@ -3419,11 +3462,17 @@ class Ingestor:
             "ingested submission %s status=%s gates=%s findings=%d",
             submission_id, ingest_status, gates, len(findings),
         )
+        detail = {"findings": findings, "v2_failures": v2_failures,
+                  "neutralized": neutralized}
+        if self._residency is not None:
+            # The F11 seam (#222): a slot on a result is never bare — the
+            # report carries the slot's stage detail (holder, waiter count)
+            # next to the gates it gated.
+            detail["residency"] = self._residency.snapshot()
         return IngestReport(
             submission_id=submission_id, document_id=document_id or "",
             gates=gates, ingest_status=ingest_status,
-            detail={"findings": findings, "v2_failures": v2_failures,
-                    "neutralized": neutralized},
+            detail=detail,
             v4_signals=v4_signals,
         )
 
