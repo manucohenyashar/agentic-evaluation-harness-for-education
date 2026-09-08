@@ -23,7 +23,11 @@ import importlib.util
 from typing import Any
 
 from tests.support.extract_vocabulary import (
+    ASSEMBLE as _EXTRACT_ASSEMBLE,
+    PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
+    RESULT_TYPE as _EXTRACT_RESULT_TYPE,
     SECOND_FAMILY_MODEL,
+    TEMPLATE_VERSION as _EXTRACT_TEMPLATE_VERSION,
     TS26_EXTRACT_SYMBOLS,
     WORKER,
 )
@@ -1237,6 +1241,51 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbols",
         f"{EXTRACT_MODULE}:{WORKER},{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
         ("tests/integration/extract/test_extract_second_family.py",),
+    ),
+    # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
+    #
+    # Two entries, keyed separately from the TS-26 suite because each resolves a DIFFERENT
+    # symbol set than the fourteen TS-26 files (the `#69` precedent: an entry whose key
+    # overstates what its file resolves would fire while a needed name is still absent).
+    # Both are built from `tests/support/extract_vocabulary.py`, so the registry cannot
+    # name a symbol the tests stopped using. The disclosure PR #252 left behind —
+    # "TC-EXTRACT-10 adversarial directives — not this PR — assigned to #71" — lands here.
+    #
+    # TC-EXTRACT-10 runs the real F-ADV-INJ twin pairs through the extraction boundary:
+    # the differential needs the driver, the request assembly, the rendered prompt
+    # fields, the parsed result and the pinned template version, and nothing else.
+    "#71 TS-27 injection differential (TC-EXTRACT-10)": (
+        "symbols",
+        ",".join(
+            f"{EXTRACT_MODULE}:{name}"
+            for name in (
+                _EXTRACT_ASSEMBLE,
+                _EXTRACT_PROMPT_FIELDS,
+                _EXTRACT_RESULT_TYPE,
+                _EXTRACT_TEMPLATE_VERSION,
+                WORKER,
+            )
+        ),
+        ("tests/security/extract/test_extract_injection_resistance.py",),
+    ),
+    # ADV-02's band differential runs the same pairs THROUGH the judge boundary: the
+    # extract leg needs #68's driver, assembly and prompt fields (to put the evidence
+    # rows the verdict rests on into the store), and the band leg needs #78's
+    # `ScoringWorker` and `prompt_fields` — both already assumed by the repo's `"#78"`
+    # and `"#78 review"` entries. Either module absent is a red case, so the key is a
+    # conjunction over BOTH.
+    "#71 TS-27 band-forcing (ADV-02)": (
+        "symbols",
+        ",".join(
+            [
+                f"{JUDGE_MODULE}:ScoringWorker",
+                f"{JUDGE_MODULE}:prompt_fields",
+                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
+                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
+                f"{EXTRACT_MODULE}:{WORKER}",
+            ]
+        ),
+        ("tests/security/extract/test_judge_band_forcing.py",),
     ),
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
     #
