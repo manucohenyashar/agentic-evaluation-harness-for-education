@@ -8,18 +8,17 @@ Case of test plan §6.11.6; issue #56 (TS-63). **Split disposition**, probed:
    enumerates every atomic criterion lacking a key and refuses BY NAME with
    "blocking gate 2 of 2" (src/aeh/setup.py:1041-1048); the refusal is pre-lock,
    and keying unblocks the same version. Probed on shipped code.
-2. **The mcq-production half is written ahead of #53.** For every `mcq`
+2. **The mcq-production half landed with #53.** For every `mcq`
    question, the PRODUCED criterion is deterministic — the shipped gate's own
    definition (scoring_model `atomic`, the column the acceptance rule reads) —
    carries EXACTLY two bands named `correct`/`incorrect`, and is NOT submitted
-   to the §5.3 test. Criteria production is #53's to land (the shipped surface
-   stages it: src/aeh/setup.py:690 "no deterministic criteria yet — #53 stages
-   their creation"), so the test carries `writtenahead` and a
-   `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C07 mcq criteria") keyed on #53's
-   `set_grade_policy` + `check_prefix_budget` conjunction — the pairing this
-   suite keys every #53 half on, since §3.6 pins no criteria-creation symbol
-   for the production to key on directly. It fails ONLY via `NotImplementedYet`
-   until #53 lands.
+   to the §5.3 test. #53 stages it at the confirmation itself; the
+   `writtenahead` marker and its `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C07 mcq
+   criteria") are gone. One oracle alignment was forced by the landing: the
+   bands' ORDER in ordinal is `incorrect` (0.0) then `correct` (max_points),
+   because FR-PKG-06 requires the band points non-decreasing in ordinal —
+   the names-SET assertion below is the invariant; a tuple-in-ordinal-order
+   assertion could not hold alongside the points rule.
 
 **Disclosed bet** (stated, not hidden): the clause's `evaluation_mode =
 'deterministic'` vocabulary has NO storage anywhere — no such column exists in
@@ -84,19 +83,24 @@ def test_tc_setup_c07_no_deterministic_criterion_publishes_without_a_key(
         "a default answer key was invented by the refused publish (CT-SETUP-C07)"
     )
 
-    # The key is the teacher's act, and it unblocks the SAME version.
-    chain.service.set_answer_keys({"CRIT-DET": ["b0"]})
+    # The key is the teacher's act, and it unblocks the SAME version — every
+    # deterministic criterion keyed: the hand-added CRIT-DET plus the ones #53
+    # staged from the confirmed inventory (CRIT-Q4/Q5/Q6).
+    chain.service.set_answer_keys({"CRIT-DET": ["b0"]}
+                                  | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                     "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(published)
 
 
-@pytest.mark.writtenahead
 def test_tc_setup_c07_every_mcq_question_yields_a_keyed_shape_criterion(
         tmp_data_dir):
-    """WRITTEN AHEAD of #53. For EVERY mcq question the produced criterion is
+    """#53 landed the staging: for EVERY mcq question the produced criterion is
     deterministic (the shipped gate's carrier: scoring_model `atomic`), carries
-    EXACTLY two bands `correct`/`incorrect`, and was NOT submitted to the §5.3
-    test — the classifier never sees an mcq question."""
+    EXACTLY two bands named `correct`/`incorrect`, and was NOT submitted to the
+    §5.3 test — the classifier never sees an mcq question. The staging happens
+    at the confirmation itself (#53), so the produced criteria exist before any
+    #53 call is made."""
     require_attr(SetupService, "set_grade_policy", issue="#53")
     require_attr(SetupService, "check_prefix_budget", issue="#53")
 
@@ -131,10 +135,15 @@ def test_tc_setup_c07_every_mcq_question_yields_a_keyed_shape_criterion(
             "(CT-SETUP-C07)"
         )
         # Exactly two bands, named correct/incorrect — not the derived
-        # met/not-met set, not the criterion's declared count.
+        # met/not-met set, not the criterion's declared count. The ORDER is
+        # disclosed: FR-PKG-06 requires the band POINTS to be non-decreasing in
+        # ordinal, so the zero-point `incorrect` band sits at ordinal 0 and
+        # `correct` (max_points) at ordinal 1 — the shape #53 stages. The set is
+        # the invariant; a tuple assertion in ordinal order would contradict the
+        # points rule the same schema enforces.
         bands = chain.catalog.bands(criterion["criterion_id"])
         names = tuple(band["band"] for band in bands)
-        assert names == ("correct", "incorrect"), (
+        assert set(names) == {"correct", "incorrect"} and len(names) == 2, (
             f"mcq {question_id!r}'s criterion carries bands {names} — exactly "
             "correct/incorrect is the produced shape (CT-SETUP-C07)"
         )

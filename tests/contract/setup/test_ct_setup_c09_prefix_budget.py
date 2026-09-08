@@ -1,12 +1,16 @@
 """`CT-SETUP-09` — the prefix-budget check runs before publication; the drop
 policy spares the reference solution and criterion text (`TC-SETUP-C09`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD of #53** — the
-budget check (`check_prefix_budget`, §3.6's signature) is #53's. The file
-carries `writtenahead` and a `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C09 prefix
-budget") keyed on it; it fails ONLY via `NotImplementedYet` until #53 lands.
+Case of test plan §6.11.6; issue #56 (TS-63). **Landed with #53** — the
+budget check (`check_prefix_budget`, §3.6's signature) exists, and the
+`writtenahead` marker and its `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C09 prefix
+budget") are gone. The fixture was aligned once at the landing: the two bands'
+POINTS were re-ordered to be non-decreasing in ordinal (FR-PKG-06 — the
+zero-point band at ordinal 0), which moved the band names with them; the
+value semantics the stated bet describes (the zero-point band's exemplars are
+the lowest-value things in the prefix) and every assertion are unchanged.
 
-The clause (FR-SETUP-11), asserted in its three parts:
+The clause (FR-SETUP-11), asserted in its four parts:
 
 1. **Event order.** The check runs BEFORE publication and reports the overage
    while it is still fixable — a check that runs after publication is advice
@@ -21,6 +25,9 @@ The clause (FR-SETUP-11), asserted in its three parts:
    differently, this fixture re-orders — the assertions below do not change.
 3. **The record.** WHICH exemplars were dropped is recorded on the report —
    a silent drop would leave the teacher unable to audit what left the prefix.
+4. **The second check** (found by the #53 reviewer, pinned at the landing): the
+   ceiling is the run config's per-profile value, and a resumed service's
+   re-check does not erase the record of what an earlier check removed.
 
 **Payload-shape bets** (§3.6 pins the signature, not `PrefixBudgetReport`'s
 fields — the TC-INGEST-38 rule: no assertion invents storage): the report
@@ -32,15 +39,19 @@ package's record).
 """
 from __future__ import annotations
 
+import json
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
+from aeh.prov import ModelRef
 from aeh.setup import SetupService
 from tests.contract.setup._doubles import db_file_for, ingest_document, stage_chain
 from tests.support.impl import require_attr
+from tests.support.setup_harness import SETUP_BUILD
 
-pytestmark = pytest.mark.writtenahead
+pytestmark = pytest.mark.contract
 
 ISSUE = "#53"
 
@@ -56,6 +67,25 @@ def _stored_exemplar_ids(data_dir, package_id: str, version: str) -> set[str]:
     finally:
         conn.close()
     return {row[0] for row in rows}
+
+
+def _stored_budget_record(data_dir, package_id: str, version: str) -> dict:
+    """The version's `prefix_budget` step record, raw from the package tier file
+    (asserted through the table, not through the accessor the code itself uses)."""
+    conn = sqlite3.connect(f"file:{db_file_for(data_dir, package_id)}?mode=ro",
+                           uri=True)
+    try:
+        row = conn.execute(
+            "SELECT payload FROM setup_step_record "
+            "WHERE package_version_id = ? AND step_id = 'prefix_budget'",
+            (version,)).fetchone()
+    finally:
+        conn.close()
+    assert row is not None, (
+        "the prefix-budget check wrote no step record — the check's own "
+        "provenance is missing (CT-SETUP-C09, the record clause)"
+    )
+    return json.loads(row[0])
 
 
 def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
@@ -78,17 +108,24 @@ def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
                                         reference)
     chain.catalog.add_criterion(version, "CRIT-B", question_id="Q1",
                                 kind="open", max_points=4.0, band_count=2)
-    descriptors = ("the derivation is complete and stated",
-                   "no method appears")
-    for ordinal, descriptor in enumerate(descriptors):
-        chain.catalog.add_band(version, "CRIT-B", ordinal, f"b{ordinal}",
-                               float(1 - ordinal), descriptor=descriptor)
-    chain.service.set_answer_keys({"CRIT-B": ["b0"]})
+    # The points are non-decreasing in ordinal (FR-PKG-06 — the shape the same
+    # schema enforces everywhere), so the ZERO-point band sits at ordinal 0:
+    # its exemplars are the lowest-value things in the prefix, as the stated
+    # bet describes.
+    bands_spec = (("b0", 0.0, "no method appears"),
+                  ("b1", 1.0, "the derivation is complete and stated"))
+    descriptors = tuple(spec[2] for spec in bands_spec)
+    for ordinal, (band, points, descriptor) in enumerate(bands_spec):
+        chain.catalog.add_band(version, "CRIT-B", ordinal, band, points,
+                               descriptor=descriptor)
+    chain.service.set_answer_keys({"CRIT-B": ["b1"]}
+                                  | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                     "CRIT-Q6": ["A"]})
 
     # Exemplars across the value range, each carrying a large blob so the
     # assembled prefix is over ANY configured ceiling.
-    for exemplar_id, band in (("EX-LOW", "b1"), ("EX-MID", "b1"),
-                              ("EX-HIGH", "b0")):
+    for exemplar_id, band in (("EX-LOW", "b0"), ("EX-MID", "b0"),
+                              ("EX-HIGH", "b1")):
         blob = chain.store.blobs().put(b"x" * 400_000)
         chain.catalog.add_exemplar(version, exemplar_id, "CRIT-B", band,
                                    provenance="synthetic", blob_hash=blob)
@@ -135,6 +172,43 @@ def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
     assert "EX-LOW" in set(report.dropped_exemplars), (
         f"the report recorded dropped={report.dropped_exemplars!r} — the drop "
         "was silent about what it removed (CT-SETUP-C09)"
+    )
+
+    # 4. A SECOND check, in the resume shape — a fresh service re-running the
+    # step — with a CONFIG-carried ceiling: the check compares against the run
+    # config's per-profile `prefix_token_ceiling` (FR-SETUP-11 -> FR-CONF-10),
+    # not this module's constant (found by the #53 reviewer: the ceiling never
+    # reached RunConfig, so every package was checked against the fallback).
+    resumed = SetupService(
+        chain.catalog, chain.ingestor, chain.provider,
+        ModelRef(role="extractor", provider="local", build_id=SETUP_BUILD,
+                 quantization="q4"),
+        run_config=SimpleNamespace(prefix_token_ceiling=999))
+    second = resumed.check_prefix_budget()
+    assert second.ceiling_tokens == 999, (
+        f"the second check compared against {second.ceiling_tokens} — the "
+        "ceiling must be the run config's value (FR-SETUP-11), not the module "
+        "fallback"
+    )
+    # This check drops NOTHING — both remaining exemplars are the last of
+    # their band (the calibration floor) — yet the durable record must still
+    # name what the FIRST check removed: the `prefix_budget` row is UPSERTED,
+    # so a second check that overwrote it with its own empty drop list would
+    # erase the only record of EX-LOW (the exemplar rows are gone from
+    # `exemplar`; nothing else in the database names what left the prefix).
+    # Found by the #53 reviewer; the record carries the UNION of every
+    # check's drops on this version.
+    assert second.dropped_exemplars == (), (
+        f"the second check dropped {second.dropped_exemplars!r} — the fixture "
+        "promises both remaining exemplars are their bands' last, so the "
+        "calibration floor leaves nothing to drop"
+    )
+    record = _stored_budget_record(tmp_data_dir, "pkg-c09", version)
+    assert record["dropped_exemplars"] == ["EX-LOW"], (
+        f"the second check's record names {record['dropped_exemplars']!r} — the "
+        "record must carry the UNION of what every check on this version "
+        "removed (FR-SETUP-11: WHICH exemplars were dropped is recorded, "
+        "durably, not only on the report of the call that did it)"
     )
 
     # Remediated, the same package publishes — the check was advice the

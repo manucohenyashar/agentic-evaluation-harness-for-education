@@ -134,7 +134,8 @@ def test_tc_setup_c05_classification_determines_the_written_scoring_model(
     # remain distinguishable from stored data alone, which is what makes a
     # consumer's per-model read (panel depth, ceiling) well-defined.
     chain.service.set_answer_keys(
-        {cid: ["b0"] for cid in ("CRIT-HOL", "CRIT-ATO")})
+        {cid: ["b0"] for cid in ("CRIT-HOL", "CRIT-ATO")}
+        | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     published_models = {c["criterion_id"]: c["scoring_model"]
                         for c in chain.catalog.criteria(published)}

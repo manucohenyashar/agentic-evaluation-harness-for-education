@@ -1,12 +1,12 @@
-"""`M-SETUP` Stage A's grade policy — written ahead of **#53** (issue #54).
+"""`M-SETUP` Stage A's grade policy — **#53** (issue #54).
 
-Case `TC-SETUP-15` (FR-SETUP-12, P0), rung 2. It carries `writtenahead` and sits outside
-`TEST_CMD` until #53 lands `SetupService.set_grade_policy` — the §3.6 Interface member
-the case drives. The entry keyed "#53 policy" in `tests/support/impl.py` is deliberately
+Case `TC-SETUP-15` (FR-SETUP-12, P0), rung 2. It carried `writtenahead` and sat outside
+`TEST_CMD` until #53 landed `SetupService.set_grade_policy` — the §3.6 Interface member
+the case drives. The entry keyed "#53 policy" in `tests/support/impl.py` was deliberately
 keyed on the **SetupService** member and not on `aeh.pkg:set_grade_policy`: M-PKG's half
 (policy object, closed vocabulary, default, storage) already shipped with #50, so a pkg
-key would resolve today while the setup step that *records the default as taken* — the
-clause the case exists for — is still #53's.
+key would have resolved while the setup step that *records the default as taken* — the
+clause the case exists for — was still #53's. The marker and the entry are gone now.
 
 The distinction the case turns on is a row's existence, not a value: `grade_policy(v)`
 returns the default policy for both a never-set version and a recorded-default version,
@@ -30,7 +30,7 @@ from tests.support.setup_harness import (
 )
 from tests.support.store_api import statement
 
-pytestmark = pytest.mark.writtenahead
+pytestmark = pytest.mark.integration
 
 ISSUE = "#53"
 
@@ -50,16 +50,15 @@ def _chain_confirmed(data_dir, package_id: str):
 
 def _policy_rows(data_dir, package_id: str, version, issue: str) -> int:
     """How many `grade_policy` rows the version carries — the recorded-vs-never-set test."""
-    from aeh.pkg import PackageCatalog
-
     from aeh.store import open_store
 
-    handle = PackageCatalog(open_store(data_dir).package(package_id),
-                            package_id=package_id)
+    # The raw tier handle (not a PackageCatalog) is what carries `transaction()` —
+    # the same shape the dependency-edges helper uses.
+    handle = open_store(data_dir).package(package_id)
     with handle.transaction() as tx:
         rows = tx.execute(statement(
             "SELECT policy FROM grade_policy WHERE package_version_id = :v",
-            issue=issue), v=version).fetchall()
+            issue=issue), v=version)
     return len(rows)
 
 

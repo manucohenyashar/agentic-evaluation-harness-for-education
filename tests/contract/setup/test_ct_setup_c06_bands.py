@@ -113,7 +113,8 @@ def test_tc_setup_c06_published_artifact_carries_even_band_counts_in_range(
     # the key names the criterion's acceptable band (the write-through surface
     # stores the ids; #53 stages FR-SETUP-03's full semantics).
     chain.service.set_answer_keys(
-        {f"CRIT-EVEN-{count}": ["b0"] for count in ACCEPTED_BAND_COUNTS})
+        {f"CRIT-EVEN-{count}": ["b0"] for count in ACCEPTED_BAND_COUNTS}
+        | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
 
     # Publish through SETUP (the route the clause governs): the setup publish's
     # own gates run, then M-PKG's publish-boundary validation.
@@ -242,7 +243,8 @@ def test_tc_setup_c06_magnitude_descriptors_are_rejected_and_regenerated(
     # The ARTIFACT half — the same scan over the PUBLISHED descriptors: a
     # read/write mismatch (clean return, phrased rows stored) fails here.
     chain.service.set_answer_keys(
-        {"CRIT-MAG": ["b0"], "CRIT-NUM": ["b0"]})
+        {"CRIT-MAG": ["b0"], "CRIT-NUM": ["b0"]}
+        | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(published)
     for criterion_id in ("CRIT-MAG", "CRIT-NUM"):
@@ -310,7 +312,12 @@ def test_tc_setup_c06_the_magnitude_refusal_is_the_recorded_reason(
         "(CT-SETUP-06)"
     )
     version = proposal.package_version_id
-    assert not chain.catalog.criteria(version), (
+    # The rejected criterion never reached the package. (The version DOES carry
+    # rows now — #53 stages the confirmed inventory's deterministic criteria at
+    # the confirmation itself — so the emptiness the oracle pins is per-criterion:
+    # the refused read back wrote nothing of its own.)
+    stored_ids = {c["criterion_id"] for c in chain.catalog.criteria(version)}
+    assert "CRIT-NUM" not in stored_ids, (
         "a magnitude-refused read back left criterion rows behind — the "
         "rejected descriptors reached the package (CT-SETUP-06)"
     )

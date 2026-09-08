@@ -122,8 +122,9 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
     version = chain.catalog.draft_version()
 
     # The default, before anything is proposed: zero dependencies everywhere.
+    # #53 stages CRIT-Q4/Q5/Q6 from the confirmed inventory, alongside the read-back's two.
     criteria = {row["criterion_id"] for row in chain.catalog.criteria(version)}
-    assert criteria == {"CRIT-IMP", "CRIT-STEPS"}
+    assert criteria == {"CRIT-IMP", "CRIT-STEPS", "CRIT-Q4", "CRIT-Q5", "CRIT-Q6"}
     assert len(_dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE)) == 0, (
         "TC-SETUP-13: a criterion carried a dependency before anyone approved one — "
         "FR-SETUP-10 defaults every criterion to zero dependencies"
@@ -214,7 +215,9 @@ def test_tc_setup_13_approval_writes_exactly_the_proposed_edge_and_survives_a_co
     )
 
     # And the approved edge survives the publish lock: the graph the run reads is
-    # the one the teacher approved, not a re-derivation.
+    # the one the teacher approved, not a re-derivation. #53: the staged deterministic
+    # criteria need their keys before gate 2 opens.
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(published)
     assert len(_dependency_edges(

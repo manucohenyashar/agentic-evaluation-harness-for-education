@@ -1220,89 +1220,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # constant and the proposal surface landed, and #51's read back (PR #216) supplies
     # the criteria half of the dependencies conjunction — both pending files run green,
     # so their markers and these entries are gone.
-    "#53 policy": (
-        # TC-SETUP-15: keyed on the SetupService member, not `aeh.pkg:set_grade_policy` —
-        # M-PKG's half (the policy object, the vocabulary, the storage) shipped with #50,
-        # so a pkg key would resolve today while the step that records the default as
-        # taken is still #53's.
-        "symbol",
-        f"{SETUP_MODULE}:SetupService.set_grade_policy",
-        ("tests/integration/setup/test_setup_policy_pending.py",),
-    ),
-    "#55 setup time budget": (
-        # TS-21's UAT pair (TC-SETUP-21 + UAT-02, tests/uat/setup/test_setup_time_budget.py)
-        # walks the FULL guided path to publish, so its blocker set spans three issues —
-        # #51's read back, #52's classification, confirmation recording and dependency
-        # proposals plus the cap constant both tests read, #53's grade policy and prefix
-        # budget: the three-way conjunction the story names. The members that shipped with
-        # #50 (`propose_inventory`, `confirm_inventory`, `set_answer_keys`, `publish`)
-        # are deliberately absent — they exist today, and a symbol key on them would
-        # resolve while the path the budget is measured over still cannot run.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{SETUP_MODULE}:SetupService.classify_decomposability,"
-            f"{SETUP_MODULE}:SETUP_MAX_CONFIRMATIONS,"
-            f"{SETUP_MODULE}:SetupService.confirm_classifications,"
-            f"{SETUP_MODULE}:SetupService.propose_dependencies,"
-            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
-            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
-        ),
-        ("tests/uat/setup/test_setup_time_budget.py",),
-    ),
-    # -- #56 (TS-63, the Stage A contract suite TC-SETUP-C01..C16) --------------------------
-    #
-    # The contract cases whose clause substance is Stage B (#51/#52/#53). The green halves
-    # of the same cases (and every wholly-green case: C02, C03, C11, C12, C14, C16) carry
-    # no marker and sit inside TEST_CMD already. Each conjunction is the file's FULL
-    # require set, so the gate fires exactly when the file can run.
-    "#56 C01 recorded defaults": (
-        # TC-SETUP-C01's recorded-defaults sweep drives every Stage B surface the skip
-        # sweep records: the read back, the classifier, the dependency proposal, the
-        # grade policy and the prefix budget — one conjunction over all five.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{SETUP_MODULE}:SetupService.classify_decomposability,"
-            f"{SETUP_MODULE}:SetupService.propose_dependencies,"
-            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
-            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
-        ),
-        ("tests/contract/setup/test_ct_setup_c01_blocking_and_defaults.py",),
-    ),
+    # "#53 policy", "#55 setup time budget", and the #56 C01/C07/C09/C10 entries left
+    # with #53 (this issue): set_grade_policy/check_prefix_budget and the staging of the
+    # deterministic criteria landed — the policy-pending, UAT and contract files run
+    # green, so their markers and these entries are gone.
     # "#56 C04 classification" and "#56 C05 panel depth" left with #52: the
     # classifier landed and the file runs green against it (C05's read-back half
     # was already green with #51) — markers and entries gone.
     # "#56 C06 bands" left with #51 (PR #216): the read back and its two constants
     # landed, and the file's descriptor half runs green against them — the rebase
     # check the suite's issue names.
-    "#56 C07 mcq criteria": (
-        # TC-SETUP-C07's mcq-production half: §3.6 pins no criteria-creation symbol, so
-        # the file keys on #53's pinned pair (as its docstring states).
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
-            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
-        ),
-        ("tests/contract/setup/test_ct_setup_c07_mcq_criteria.py",),
-    ),
     # "#56 C08 dependencies" left with #52: the proposal surface landed and #51's read
     # back supplies the criteria it attaches to — the file runs green, marker and
     # entry gone.
-    "#56 C09 prefix budget": (
-        # TC-SETUP-C09 drives only the budget check (the drop-policy record is on its
-        # report), so the single pinned symbol is the whole blocker.
-        "symbol",
-        f"{SETUP_MODULE}:SetupService.check_prefix_budget",
-        ("tests/contract/setup/test_ct_setup_c09_prefix_budget.py",),
-    ),
-    "#56 C10 grade policy": (
-        # TC-SETUP-C10's recorded-as-a-default half, keyed on the SetupService member
-        # for the same reason as "#53 policy" above.
-        "symbol",
-        f"{SETUP_MODULE}:SetupService.set_grade_policy",
-        ("tests/contract/setup/test_ct_setup_c10_grade_policy.py",),
-    ),
     # "#56 C13 confirmation cap" left with #52: the classifier and the cap constant
     # landed and the file runs green against them — marker and entry gone.
     "#56 C15 consumer sweep": (

@@ -148,6 +148,20 @@ def test_tc_setup_c12_degraded_is_complete_never_blocked(tmp_data_dir):
                                     ProposedOption("B", 1, "1.6"))),
     ]
     service.confirm_inventory(proposal.proposal_id, corrections)
+    # #53: the correction's mcq question stages CRIT-Q4 — the teacher keys it
+    # (gate 2) before the degraded path can complete. The refusal half first: a
+    # key naming an option the question never offered raises, and writes
+    # NOTHING — a blocking gate that half-applies would leave the draft
+    # indistinguishable from a partially saved one (found by the #53 reviewer;
+    # the validate-every-key-then-write order is the fix).
+    with pytest.raises(SetupError):
+        service.set_answer_keys({"CRIT-Q4": ["Z"]})
+    assert chain.catalog.answer_key("CRIT-Q4") == (), (
+        "the refused keying call still wrote the valid keys it passed on the "
+        "way to the bad one — set_answer_keys must validate every key BEFORE "
+        "writing any (the refusal leaves the stored keys exactly as they were)"
+    )
+    service.set_answer_keys({"CRIT-Q4": ["A"]})
     version = service.publish("teacher-1")
     assert chain.catalog.is_locked(version), (
         "the degraded path could not complete — manual entry did not reach the "
