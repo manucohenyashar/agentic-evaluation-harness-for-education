@@ -43,7 +43,7 @@ from tests.support.clock import FrozenClock
 from tests.support.impl import ORCH_MODULE, require
 from tests.support.orch_run import seed_run
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
 ISSUE = "#58"
 
