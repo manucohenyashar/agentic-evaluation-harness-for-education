@@ -1387,6 +1387,46 @@
       ],
       "rows": 1
     },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
@@ -1515,6 +1555,46 @@
         "published_at"
       ],
       "rows": 1
+    },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
     },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
@@ -1645,6 +1725,46 @@
       ],
       "rows": 1
     },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
@@ -1773,6 +1893,46 @@
         "published_at"
       ],
       "rows": 1
+    },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
     },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
@@ -1903,6 +2063,46 @@
       ],
       "rows": 1
     },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
       "columns": [
@@ -2031,6 +2231,215 @@
         "published_at"
       ],
       "rows": 1
+    },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "validation_record": {
+      "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n"
+      ],
+      "rows": 1
+    }
+  },
+  "package@v7": {
+    "band": {
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "rows": 1
+    },
+    "criterion": {
+      "checksum": "0ac294e07d7fa3d02ca65c1f99561caeb69081e7d06bf5e4939fd39d37bda656",
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag",
+        "answer_key"
+      ],
+      "rows": 2
+    },
+    "criterion_dependency": {
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "rows": 1
+    },
+    "elicitation_history": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "elicitation_id",
+        "package_version_id",
+        "question",
+        "options_offered",
+        "answer_given",
+        "resulting_edit",
+        "asked_at"
+      ],
+      "rows": 0
+    },
+    "exemplar": {
+      "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74",
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance",
+        "blob_hash"
+      ],
+      "rows": 1
+    },
+    "grade_boundary": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "grade",
+        "scaled_floor"
+      ],
+      "rows": 0
+    },
+    "grade_policy": {
+      "checksum": "b03a7dd22bfbb3919ce32b9b49f60d2a2df89538455f49bda581eb03424869e6",
+      "columns": [
+        "package_version_id",
+        "policy",
+        "review_window_hours"
+      ],
+      "rows": 1
+    },
+    "mcq_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option_id",
+        "label"
+      ],
+      "rows": 0
+    },
+    "package": {
+      "checksum": "0c06bb8920d9c05b105661a0ec03c2ead24be777326406d167cd365927506d79",
+      "columns": [
+        "package_id",
+        "created_at",
+        "contains_real_student_text"
+      ],
+      "rows": 1
+    },
+    "package_version": {
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab",
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "rows": 1
+    },
+    "question": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "rows": 0
+    },
+    "question_option": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "rows": 0
+    },
+    "setup_proposal": {
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "rows": 0
     },
     "validation_record": {
       "checksum": "01455870eef1935cdb2ff650432b746943e58a65d4b3a1118e4784d8e9628f85",

@@ -39,7 +39,7 @@ import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from aeh.store import (
     Migration,
@@ -61,6 +61,8 @@ __all__ = [
     "GradePolicy",
     "GradePolicyError",
     "ImportReport",
+    "InventoryError",
+    "QUESTION_TYPES",
     "InMemoryCatalog",
     "Manifest",
     "NoValidationData",
@@ -266,6 +268,25 @@ class SchemaTooNewError(PackageError):
     `M-STORE`'s refusal of a too-new tier file; this is the package-archive half."""
 
     retryable = False
+
+
+class InventoryError(PackageError):
+    """A confirmed question-inventory write is structurally invalid (`FR-SETUP-01`).
+
+    The question vocabulary, the option-set/type pairing, unique ids and ordinals —
+    these are the structural constraints `M-PKG` owns (`CT-PKG-12`: every Tier P write
+    is validated here, whatever the caller already checked). Retryable by fixing the
+    records, not by re-sending them unchanged."""
+
+    retryable = False
+
+
+#: The question-type vocabulary the `question` table's CHECK enforces (`FR-SETUP-01`,
+#: HLD §9.5). `open` — a ruled response area with nothing to circle; `mcq` — an
+#: enumerated option set; `mixed` — both parts on one question. The list lives here, at
+#: the data layer whose CHECK enforces it; `M-SETUP` reads it from this module rather
+#: than carrying a second copy that could drift from the schema.
+QUESTION_TYPES: tuple[str, ...] = ("open", "mcq", "mixed")
 
 
 #: The §6.2 schema lock, in exactly one place (`NFR-PKG-03`): every `(table, field)` edit
@@ -976,6 +997,216 @@ _PKG_VERSION_LINEAGE = Migration(
     ),
 )
 
+# The question inventory (HLD §9.5's `question` and per-question option tables) and the
+# setup-proposal record #50 stages. Ownership: M-PKG is Tier P's sole writer (`CT-PKG-12`,
+# §3.4's "questions and MCQ options"); M-SETUP reaches these rows only through the catalog
+# methods below. Rows are written ONCE, at `confirm_inventory` — the teacher's assertion
+# about content — and the confirmation lock engages there (FR-SETUP-02), deliberately
+# earlier than publication. The tables are empty until that confirmation.
+#
+# Two locks, in trigger form (NFR-PKG-01: at the data layer, so a caller that routes
+# around the catalog hits the database's own refusal):
+#   * published immunity — the 002 pattern, carried to all three tables: a published
+#     version's rows refuse UPDATE, INSERT and DELETE.
+#   * the confirmation lock — a CONFIRMED question row refuses edits of its content
+#     columns (prompt, ordinal, points, type) and its removal, while
+#     `reference_solution` stays writable (the rubric read-back, #51, fills it on a
+#     confirmed version); an option of a confirmed question refuses UPDATE and DELETE.
+#     The option table's INSERT path is deliberately NOT confirmation-locked: the
+#     revision copy's vehicle is an INSERT into the child version, whose copied
+#     questions are born confirmed — a trigger there would break FR-PKG-02's copy.
+#     The catalog's `write_confirmed_inventory` (which refuses an already-confirmed
+#     proposal) is the only sanctioned writer, and a raw-SQL option INSERT can only
+#     ADD to a confirmed inventory, never unconfirm it: `publish`'s gate reads
+#     `setup_proposal.confirmed_at` plus the question rows, so the hole fails closed.
+#
+# Named divergence from the HLD §9.5 DDL: the per-question option table is
+# `question_option`, because migration 005 took `mcq_option` for the criterion-scoped
+# table (#31) and two tables of one name cannot share a schema. ADR-1's shape is kept:
+# NO correctness column — the key lives on `criterion.answer_key` (FR-PKG-17), and
+# option correctness is not declared at setup time at all.
+_PKG_QUESTION_INVENTORY = Migration(
+    version=7,
+    name="pkg_question_inventory",
+    statements=(
+        # `confirmed_at` is NOT NULL on purpose: a question row exists ONLY because the
+        # inventory was confirmed, and the schema should say so — the same taste as the
+        # §6.2 lock itself (a constraint, not a convention).
+        Statement(
+            """
+            CREATE TABLE question (
+                package_version_id TEXT    NOT NULL REFERENCES package_version(package_version_id),
+                question_id        TEXT    NOT NULL,
+                ordinal            INTEGER NOT NULL CHECK (ordinal >= 0),
+                prompt_text        TEXT    NOT NULL,
+                question_type      TEXT    NOT NULL CHECK (question_type IN ('open', 'mcq', 'mixed')),
+                max_points         REAL    NOT NULL DEFAULT 0.0 CHECK (max_points >= 0),
+                reference_solution TEXT,
+                confirmed_at       TEXT    NOT NULL,
+                PRIMARY KEY (package_version_id, question_id)
+            )
+            """
+        ),
+        Statement(
+            """
+            CREATE TABLE question_option (
+                package_version_id TEXT    NOT NULL,
+                question_id        TEXT    NOT NULL,
+                option_id          TEXT    NOT NULL,
+                ordinal            INTEGER NOT NULL CHECK (ordinal >= 0),
+                label              TEXT    NOT NULL,
+                PRIMARY KEY (package_version_id, question_id, option_id),
+                FOREIGN KEY (package_version_id, question_id)
+                    REFERENCES question(package_version_id, question_id)
+            )
+            """
+        ),
+        # One proposal per version (the PK): `propose_inventory` runs once per version
+        # (CT-SETUP-16); re-requests after an unparseable model reply UPDATE the same
+        # row (payload + attempts), and confirmation stamps `confirmed_at`. The payload
+        # is the proposal JSON as proposed — the provenance of what the teacher saw.
+        Statement(
+            """
+            CREATE TABLE setup_proposal (
+                package_version_id TEXT    NOT NULL PRIMARY KEY
+                    REFERENCES package_version(package_version_id),
+                proposal_id        TEXT    NOT NULL,
+                assessment_doc_id  TEXT    NOT NULL,
+                payload            TEXT    NOT NULL,
+                template_version   TEXT    NOT NULL,
+                model_ref          TEXT    NOT NULL,
+                attempts           INTEGER NOT NULL DEFAULT 1 CHECK (attempts >= 1),
+                created_at         TEXT    NOT NULL,
+                confirmed_at       TEXT
+            )
+            """
+        ),
+        # -- published immunity (the 002 pattern) --
+        Statement(
+            "CREATE TRIGGER question_immutable BEFORE UPDATE ON question "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_insert_locked BEFORE INSERT ON question "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question added "
+            "to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_delete_refused BEFORE DELETE ON question "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question "
+            "removed from a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_option_immutable BEFORE UPDATE ON question_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question_option "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_option_insert_locked BEFORE INSERT ON "
+            "question_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question_option "
+            "added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_option_delete_refused BEFORE DELETE ON "
+            "question_option "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: question_option "
+            "removed from a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_proposal_immutable BEFORE UPDATE ON setup_proposal "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_proposal "
+            "references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_proposal_insert_locked BEFORE INSERT ON "
+            "setup_proposal "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_proposal "
+            "added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_proposal_delete_refused BEFORE DELETE ON "
+            "setup_proposal "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: setup_proposal "
+            "removed from a published version'); END"
+        ),
+        # -- the confirmation lock (FR-SETUP-02): engages at confirm_inventory, before
+        # -- publication. One trigger per content column, so the refusal names the field.
+        Statement(
+            "CREATE TRIGGER question_confirmed_prompt_text BEFORE UPDATE ON question "
+            "WHEN OLD.confirmed_at IS NOT NULL "
+            "AND OLD.prompt_text IS NOT NEW.prompt_text "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): prompt_text is the teacher-confirmed content'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_confirmed_ordinal BEFORE UPDATE ON question "
+            "WHEN OLD.confirmed_at IS NOT NULL "
+            "AND OLD.ordinal IS NOT NEW.ordinal "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): ordinal is the teacher-confirmed order'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_confirmed_max_points BEFORE UPDATE ON question "
+            "WHEN OLD.confirmed_at IS NOT NULL "
+            "AND OLD.max_points IS NOT NEW.max_points "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): max_points is the teacher-confirmed content'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_confirmed_question_type BEFORE UPDATE ON question "
+            "WHEN OLD.confirmed_at IS NOT NULL "
+            "AND OLD.question_type IS NOT NEW.question_type "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): question_type is the teacher-confirmed content — HLD §7.8 "
+            "names the open/mcq conversion a redefinition'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_confirmed_delete_refused BEFORE DELETE ON question "
+            "WHEN OLD.confirmed_at IS NOT NULL "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): a confirmed question is not removed — corrections happen "
+            "before confirmation'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_option_confirmed BEFORE UPDATE ON question_option "
+            "WHEN EXISTS (SELECT 1 FROM question q WHERE q.package_version_id "
+            "= OLD.package_version_id AND q.question_id = OLD.question_id "
+            "AND q.confirmed_at IS NOT NULL) "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): an option of a confirmed question is not editable'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER question_option_confirmed_delete_refused BEFORE DELETE ON "
+            "question_option "
+            "WHEN EXISTS (SELECT 1 FROM question q WHERE q.package_version_id "
+            "= OLD.package_version_id AND q.question_id = OLD.question_id "
+            "AND q.confirmed_at IS NOT NULL) "
+            "BEGIN SELECT RAISE(ABORT, 'confirmed question rows are locked "
+            "(FR-SETUP-02): an option of a confirmed question is not removed'); END"
+        ),
+    ),
+)
+
 # --- the owning-module contribution to the store's migration registry ---------------------------
 #
 # Appended at import: after this module is imported, Tier P's current schema version is 2
@@ -1042,6 +1273,24 @@ PKG_STATEMENTS.update({
         "INSERT INTO grade_boundary (package_version_id, grade, scaled_floor) "
         "SELECT :new, grade, scaled_floor FROM grade_boundary "
         "WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_question": Statement(
+        "INSERT INTO question (package_version_id, question_id, ordinal, prompt_text, "
+        "question_type, max_points, reference_solution, confirmed_at) SELECT :new, "
+        "question_id, ordinal, prompt_text, question_type, max_points, "
+        "reference_solution, confirmed_at FROM question WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_question_option": Statement(
+        "INSERT INTO question_option (package_version_id, question_id, option_id, "
+        "ordinal, label) SELECT :new, question_id, option_id, ordinal, label "
+        "FROM question_option WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_setup_proposal": Statement(
+        "INSERT INTO setup_proposal (package_version_id, proposal_id, "
+        "assessment_doc_id, payload, template_version, model_ref, attempts, "
+        "created_at, confirmed_at) SELECT :new, proposal_id, assessment_doc_id, "
+        "payload, template_version, model_ref, attempts, created_at, confirmed_at "
+        "FROM setup_proposal WHERE package_version_id = :old"
     ),
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
@@ -1190,6 +1439,86 @@ PKG_STATEMENTS.update({
         "DELETE FROM exemplar WHERE package_version_id = :v "
         "AND exemplar_id = :exemplar_id"
     ),
+    # -- question inventory and setup proposal (#50) --------------------------------------
+    # The package row `create_version` refuses to mint (`_refuse_no_such_package`'s
+    # message names M-SETUP as its writer): the initial version's setup flow creates it.
+    "insert_package": Statement(
+        "INSERT INTO package (package_id, created_at) VALUES (:p, datetime('now'))"
+    ),
+    "select_latest_draft_version": Statement(
+        "SELECT package_version_id FROM package_version WHERE package_id = :p "
+        "AND locked = 0 ORDER BY revision DESC LIMIT 1"
+    ),
+    "select_has_version": Statement(
+        "SELECT 1 AS one FROM package_version WHERE package_id = :p LIMIT 1"
+    ),
+    "insert_question": Statement(
+        "INSERT INTO question (package_version_id, question_id, ordinal, prompt_text, "
+        "question_type, max_points, reference_solution, confirmed_at) VALUES (:v, "
+        ":question_id, :ordinal, :prompt_text, :question_type, :max_points, "
+        ":reference_solution, :confirmed_at)"
+    ),
+    "select_questions": Statement(
+        "SELECT question_id, ordinal, prompt_text, question_type, max_points, "
+        "reference_solution, confirmed_at FROM question "
+        "WHERE package_version_id = :v ORDER BY ordinal, question_id"
+    ),
+    "select_question": Statement(
+        "SELECT question_id, ordinal, prompt_text, question_type, max_points, "
+        "reference_solution, confirmed_at FROM question "
+        "WHERE package_version_id = :v AND question_id = :question_id"
+    ),
+    "update_question_prompt_text": Statement(
+        "UPDATE question SET prompt_text = :value WHERE package_version_id = :v "
+        "AND question_id = :question_id"
+    ),
+    "update_question_ordinal": Statement(
+        "UPDATE question SET ordinal = :value WHERE package_version_id = :v "
+        "AND question_id = :question_id"
+    ),
+    "update_question_max_points": Statement(
+        "UPDATE question SET max_points = :value WHERE package_version_id = :v "
+        "AND question_id = :question_id"
+    ),
+    "update_question_question_type": Statement(
+        "UPDATE question SET question_type = :value WHERE package_version_id = :v "
+        "AND question_id = :question_id"
+    ),
+    "update_question_reference_solution": Statement(
+        "UPDATE question SET reference_solution = :value WHERE package_version_id = :v "
+        "AND question_id = :question_id"
+    ),
+    "insert_question_option": Statement(
+        "INSERT INTO question_option (package_version_id, question_id, option_id, "
+        "ordinal, label) VALUES (:v, :question_id, :option_id, :ordinal, :label)"
+    ),
+    "select_question_options": Statement(
+        "SELECT question_id, option_id, ordinal, label FROM question_option "
+        "WHERE package_version_id = :v ORDER BY question_id, ordinal"
+    ),
+    "select_options_by_question": Statement(
+        "SELECT option_id, ordinal, label FROM question_option "
+        "WHERE package_version_id = :v AND question_id = :question_id ORDER BY ordinal"
+    ),
+    "select_proposal": Statement(
+        "SELECT proposal_id, assessment_doc_id, payload, template_version, model_ref, "
+        "attempts, created_at, confirmed_at FROM setup_proposal "
+        "WHERE package_version_id = :v"
+    ),
+    "insert_proposal": Statement(
+        "INSERT INTO setup_proposal (package_version_id, proposal_id, "
+        "assessment_doc_id, payload, template_version, model_ref, attempts, created_at) "
+        "VALUES (:v, :proposal_id, :assessment_doc_id, :payload, :template_version, "
+        ":model_ref, :attempts, datetime('now'))"
+    ),
+    "update_proposal_payload": Statement(
+        "UPDATE setup_proposal SET payload = :payload, attempts = :attempts "
+        "WHERE package_version_id = :v"
+    ),
+    "confirm_proposal": Statement(
+        "UPDATE setup_proposal SET confirmed_at = :confirmed_at "
+        "WHERE package_version_id = :v"
+    ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
     # statement exists, and the guard selects by field name.
@@ -1234,6 +1563,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_VALIDATION_KEYS,)
     + (_PKG_GRADE_POLICY_AND_KEYS,)
     + (_PKG_EXPORT_GATE,)
+    + (_PKG_QUESTION_INVENTORY,)
 )
 
 #: The revision copy order: parents before children, so every copied row's FK is
@@ -1241,15 +1571,24 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
 _REVISION_COPY_KEYS: tuple[str, ...] = (
     "pkg_revision_copy_criterion",
     "pkg_revision_copy_band",
+    "pkg_revision_copy_question",
+    "pkg_revision_copy_question_option",
     "pkg_revision_copy_dependency",
     "pkg_revision_copy_exemplar",
     "pkg_revision_copy_mcq_option",
     "pkg_revision_copy_grade_policy",
     "pkg_revision_copy_grade_boundary",
+    "pkg_revision_copy_setup_proposal",
 )
 # elicitation_history is deliberately NOT a revision copy: it is the append-only
 # calibration trail (FR-PKG-20), whose rows reference the version the conversation was
 # about — copying them would duplicate history, and no process may rewrite it.
+# The question inventory and its proposal ARE copied: a revision of a confirmed version
+# is a clarification of the same instrument, so the child is born with the confirmed
+# inventory (its gate is already satisfied) and the proposal row as provenance. The
+# confirmation lock does not fight the copy — the copy INSERTs into the child (whose
+# version is unlocked), and the lock's triggers fire on UPDATE/DELETE of confirmed
+# rows, which the copy does not do.
 
 
 # --- the catalog --------------------------------------------------------------------------------
@@ -2432,6 +2771,313 @@ class PackageCatalog:
             row = self._handle.query(PKG_STATEMENTS["select_version"], v=current)[0]
             current = row["parent_version_id"] if row["parent_version_id"] else None
         return tuple(reversed(chain))
+
+    # -- the question inventory and setup proposal (#50) --------------------------------------
+    #
+    # The Tier P storage M-SETUP's Stage A reaches: the package row its first version
+    # needs, the proposal record, and the confirmed question inventory. M-PKG validates
+    # every structural constraint on the way in (CT-PKG-12) — whatever M-SETUP checked,
+    # the data layer checks again — and the confirmation lock lives with the data
+    # (FR-SETUP-02): `update_question_field` is the surface that proves it.
+
+    def ensure_package(self) -> None:
+        """Create the package row if absent. `create_version` refuses to mint one —
+        its refusal names M-SETUP's initial version as the writer (`FR-SETUP-16`'s
+        first move is exactly this) — so setup's `ensure_version` calls here first."""
+        if not self._handle.query(PKG_STATEMENTS["count_package"],
+                                  p=self._package_id)[0]["n"]:
+            with self._handle.transaction() as tx:
+                tx.execute(PKG_STATEMENTS["insert_package"], p=self._package_id)
+            LOGGER.info("created package %s (M-SETUP's initial version)", self._package_id)
+
+    def draft_version(self) -> PackageVersionId | None:
+        """The package's latest UNPUBLISHED version, or None — the version setup works
+        on, across processes (nothing is held in memory: resume is a fresh catalog
+        reading the same Tier P file, CT-SETUP-03). A published version is never the
+        draft: setup has already finished for it."""
+        rows = self._handle.query(PKG_STATEMENTS["select_latest_draft_version"],
+                                  p=self._package_id)
+        return rows[0]["package_version_id"] if rows else None
+
+    def has_version(self) -> bool:
+        """Whether the package holds ANY version — the read that distinguishes
+        `setup has not started` (no version at all) from `setup has finished` (a
+        published version, no draft) in the console's step report."""
+        return bool(self._handle.query(PKG_STATEMENTS["select_has_version"],
+                                       p=self._package_id))
+
+    def record_proposal(
+        self, v: PackageVersionId, *, proposal_id: str, assessment_doc_id: str,
+        payload: str, template_version: str, model_ref: str, attempts: int,
+    ) -> None:
+        """Record (first write) or replace (a re-request's payload, CT-SETUP-12) the
+        version's UNCONFIRMED inventory proposal. Refused when a proposal is already
+        confirmed — the inventory is locked then (FR-SETUP-02), and proposing again is
+        out of order (CT-SETUP-16: one proposal per version)."""
+        self._refuse_unknown_version(v)
+        self._refuse_mutation(v)
+        row = self._handle.query(PKG_STATEMENTS["select_proposal"], v=v)
+        if row and row[0]["confirmed_at"] is not None:
+            raise PackageError(
+                f"the inventory for version {v!r} was confirmed at "
+                f"{row[0]['confirmed_at']}; the question rows are locked (FR-SETUP-02) "
+                "and proposing again is out of order (CT-SETUP-16). A new instrument "
+                "is a new version (FR-PKG-02)."
+            )
+        with self._handle.transaction() as tx:
+            if row:
+                tx.execute(PKG_STATEMENTS["update_proposal_payload"], v=v,
+                           payload=payload, attempts=attempts)
+            else:
+                tx.execute(PKG_STATEMENTS["insert_proposal"], v=v,
+                           proposal_id=proposal_id,
+                           assessment_doc_id=assessment_doc_id, payload=payload,
+                           template_version=template_version, model_ref=model_ref,
+                           attempts=attempts)
+        LOGGER.info("recorded inventory proposal %s for version %s (attempt %d)",
+                    proposal_id, v, attempts)
+
+    def proposal(self, v: PackageVersionId) -> dict | None:
+        """The version's proposal row, or None — the read half (resume re-reads it
+        instead of re-proposing)."""
+        rows = self._handle.query(PKG_STATEMENTS["select_proposal"], v=v)
+        return dict(rows[0]) if rows else None
+
+    def write_confirmed_inventory(
+        self, v: PackageVersionId, *, proposal_id: str,
+        questions: Sequence[Mapping], confirmed_at: str,
+    ) -> None:
+        """Write the confirmed inventory in ONE transaction (`FR-SETUP-02`): the
+        question rows, their options, and the proposal's confirmation stamp, all or
+        nothing — a half-written inventory that publish's gate could misread is worse
+        than a refused confirmation.
+
+        Each question record is a mapping with `question_id`, `ordinal`,
+        `prompt_text`, `question_type`, `max_points` and `options` (a sequence of
+        mappings with `option_id`, `ordinal`, `label`). The structural validation here
+        is M-PKG's own (CT-PKG-12) — it does not trust the caller's check. Refused when
+        the proposal is unknown, already confirmed, or a different proposal id; refused
+        on a published version. `reference_solution` is NOT written here: confirmation
+        locks everything except it, and the rubric read-back (#51) fills it."""
+        self._refuse_unknown_version(v)
+        self._refuse_mutation(v)
+        row = self._handle.query(PKG_STATEMENTS["select_proposal"], v=v)
+        if not row:
+            raise PackageError(
+                f"no inventory proposal is recorded for version {v!r}: confirm_inventory "
+                "confirms a proposal, and propose_inventory has not run."
+            )
+        if row[0]["confirmed_at"] is not None:
+            raise PackageError(
+                f"the inventory for version {v!r} is already confirmed "
+                f"(at {row[0]['confirmed_at']}); it is locked (FR-SETUP-02) and cannot "
+                "be confirmed again."
+            )
+        if row[0]["proposal_id"] != proposal_id:
+            raise PackageError(
+                f"confirmation names proposal {proposal_id!r} but version {v!r} holds "
+                f"{row[0]['proposal_id']!r} — a stale or foreign confirmation is "
+                "refused; the teacher confirms what was proposed."
+            )
+        validated = self._validated_inventory(questions)
+        with self._handle.transaction() as tx:
+            for question in validated:
+                tx.execute(PKG_STATEMENTS["insert_question"], v=v,
+                           question_id=question["question_id"],
+                           ordinal=question["ordinal"],
+                           prompt_text=question["prompt_text"],
+                           question_type=question["question_type"],
+                           max_points=question["max_points"],
+                           reference_solution=None, confirmed_at=confirmed_at)
+                for option in question["options"]:
+                    tx.execute(PKG_STATEMENTS["insert_question_option"], v=v,
+                               question_id=question["question_id"],
+                               option_id=option["option_id"],
+                               ordinal=option["ordinal"], label=option["label"])
+            tx.execute(PKG_STATEMENTS["confirm_proposal"], v=v,
+                       confirmed_at=confirmed_at)
+        LOGGER.info("confirmed inventory for version %s: %d question(s), proposal %s",
+                    v, len(validated), proposal_id)
+
+    def questions(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """The version's confirmed question rows, in confirmed order."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_questions"], v=v)
+        )
+
+    def question_options(
+        self, v: PackageVersionId, question_id: str
+    ) -> tuple[dict, ...]:
+        """One confirmed question's option set, in declared order."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_options_by_question"],
+                               v=v, question_id=question_id)
+        )
+
+    def update_question_field(
+        self, v: PackageVersionId, question_id: str, field: str, value: Any
+    ) -> None:
+        """Edit one question field in place — the confirmation lock's write surface.
+
+        A CONFIRMED question row refuses every field except `reference_solution`
+        (`FR-SETUP-02`: the lock engages at confirmation, earlier than publication —
+        the confirmation IS the teacher's assertion about content, and HLD §7.8 names
+        the open/mcq conversion a redefinition). A published version refuses everything
+        (`PublishedVersionImmutableError`), and the triggers backstop the same rule for
+        writes that route around the catalog."""
+        writable = ("prompt_text", "ordinal", "max_points", "question_type",
+                    "reference_solution")
+        if field not in writable:
+            raise PackageError(
+                f"question field {field!r} is not writable here; writable fields: "
+                f"{', '.join(writable)}."
+            )
+        self._refuse_unknown_version(v)
+        self._refuse_mutation(v)
+        rows = self._handle.query(PKG_STATEMENTS["select_question"], v=v,
+                                  question_id=question_id)
+        if not rows:
+            raise PackageError(
+                f"question {question_id!r} does not exist in version {v!r}."
+            )
+        if rows[0]["confirmed_at"] is not None and field != "reference_solution":
+            SCHEMA_LOCK_VIOLATIONS.increment()
+            LOGGER.warning(
+                "schema lock violation: the question.%r edit on question %r in version "
+                "%r is refused (FR-SETUP-02) — the inventory was confirmed and the "
+                "edit would redefine what was asked", field, question_id, v,
+            )
+            raise SchemaLockViolation(
+                f"the question.{field} edit on question {question_id!r} in version "
+                f"{v!r} is refused: the inventory was confirmed at "
+                f"{rows[0]['confirmed_at']} and its content is locked (FR-SETUP-02). "
+                "Corrections happen before confirmation; a published version's "
+                f"sanctioned vehicle is a new version (create_version(parent={v!r}))."
+            )
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS[f"update_question_{field}"], v=v,
+                       question_id=question_id, value=value)
+
+    def _validated_inventory(
+        self, questions: Sequence[Mapping]
+    ) -> tuple[dict, ...]:
+        """The structural half of the confirmed write (`CT-PKG-12`): vocabulary, ids,
+        ordinals, and the option-set/type pairing — `mcq`/`mixed` carry a non-empty
+        option set, `open` carries none (a typed mismatch is a proposal bug, and the
+        schema's CHECK would refuse the row anyway; refusing it here keeps the exact
+        `InventoryError` type instead of a bare sqlite error)."""
+        if not questions:
+            raise InventoryError(
+                "a confirmed inventory carries at least one question — confirming an "
+                "empty inventory would publish an instrument with nothing on it."
+            )
+        validated: list[dict] = []
+        seen_ids: set[str] = set()
+        seen_ordinals: set[int] = set()
+        for index, record in enumerate(questions):
+            where = f"question record #{index}"
+            question_id = str(record.get("question_id", "") or "")
+            if not question_id:
+                raise InventoryError(f"{where}: question_id must be non-empty.")
+            if question_id in seen_ids:
+                raise InventoryError(
+                    f"{where}: duplicate question_id {question_id!r} — questions are "
+                    "distinct."
+                )
+            seen_ids.add(question_id)
+            ordinal = record.get("ordinal")
+            if not isinstance(ordinal, int) or isinstance(ordinal, bool) or ordinal < 0:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): ordinal must be a non-negative "
+                    f"integer, got {ordinal!r}."
+                )
+            if ordinal in seen_ordinals:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): duplicate ordinal {ordinal} — two "
+                    "questions cannot share a position."
+                )
+            seen_ordinals.add(ordinal)
+            prompt_text = str(record.get("prompt_text", "") or "")
+            if not prompt_text.strip():
+                raise InventoryError(
+                    f"{where} ({question_id!r}): prompt_text must be non-empty — an "
+                    "empty prompt asks nothing."
+                )
+            question_type = record.get("question_type")
+            if question_type not in QUESTION_TYPES:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): question_type {question_type!r} is "
+                    f"outside the vocabulary {QUESTION_TYPES} (FR-SETUP-01)."
+                )
+            max_points = record.get("max_points", 0.0)
+            try:
+                max_points = float(max_points)
+            except (TypeError, ValueError) as error:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): max_points must be a number, got "
+                    f"{max_points!r}."
+                ) from error
+            if max_points < 0:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): max_points {max_points} is negative."
+                )
+            raw_options = record.get("options", ()) or ()
+            options: list[dict] = []
+            option_ids: set[str] = set()
+            option_ordinals: set[int] = set()
+            for option_index, option in enumerate(raw_options):
+                option_id = str(option.get("option_id", "") or "")
+                label = str(option.get("label", "") or "")
+                option_ordinal = option.get("ordinal")
+                if not option_id:
+                    raise InventoryError(
+                        f"{where} ({question_id!r}) option #{option_index}: option_id "
+                        "must be non-empty."
+                    )
+                if option_id in option_ids:
+                    raise InventoryError(
+                        f"{where} ({question_id!r}): duplicate option_id {option_id!r} "
+                        "— options are distinct."
+                    )
+                if not label.strip():
+                    raise InventoryError(
+                        f"{where} ({question_id!r}) option {option_id!r}: label must "
+                        "be non-empty — an option a student cannot read."
+                    )
+                if (not isinstance(option_ordinal, int)
+                        or isinstance(option_ordinal, bool) or option_ordinal < 0):
+                    raise InventoryError(
+                        f"{where} ({question_id!r}) option {option_id!r}: ordinal must "
+                        f"be a non-negative integer, got {option_ordinal!r}."
+                    )
+                if option_ordinal in option_ordinals:
+                    raise InventoryError(
+                        f"{where} ({question_id!r}): duplicate option ordinal "
+                        f"{option_ordinal} — two options cannot share a position."
+                    )
+                option_ordinals.add(option_ordinal)
+                option_ids.add(option_id)
+                options.append({"option_id": option_id, "ordinal": option_ordinal,
+                                "label": label})
+            if question_type in ("mcq", "mixed") and not options:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): a {question_type} question carries a "
+                    "non-empty option set — the teacher would have nothing to mark."
+                )
+            if question_type == "open" and options:
+                raise InventoryError(
+                    f"{where} ({question_id!r}): an open question carries no option "
+                    f"set — the model proposed {len(options)} option(s); a typed "
+                    "mismatch is a proposal bug, not a content choice."
+                )
+            validated.append({
+                "question_id": question_id, "ordinal": ordinal,
+                "prompt_text": prompt_text, "question_type": question_type,
+                "max_points": max_points, "options": tuple(options),
+            })
+        return tuple(validated)
 
     # -- the guards ---------------------------------------------------------------------------
 

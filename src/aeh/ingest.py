@@ -2542,6 +2542,21 @@ class Ingestor:
                     f"to {page.width_px}x{page.height_px}, over the {max_pixels}-"
                     "pixel ceiling (FR-INGEST-34).")
 
+    def read_document(self, document_id: DocumentId) -> str:
+        """The document's canonical Markdown, as stored (`FR-INGEST-01`'s immutable
+        row) — the read surface for a module that works FROM the ingest store:
+        `M-SETUP`'s proposal reads the assessment here (`CT-SETUP-11`: setup reads
+        documents through `M-INGEST`, not around it).
+
+        Read-only by construction — no write path exists on this surface, and the
+        canonical text is what the V0-V3 ladder left in the row (#40), so what a
+        reader gets is exactly what was validated."""
+        rows = self._handle.query(INGEST_STATEMENTS["select_document"],
+                                  document_id=document_id)
+        if not rows:
+            raise IngestError(f"document {document_id!r} does not exist.")
+        return str(rows[0]["markdown"])
+
     def revise_document(
         self, document_id: DocumentId, replacement_pages: Sequence[PageReplacement],
     ) -> DocumentId:
