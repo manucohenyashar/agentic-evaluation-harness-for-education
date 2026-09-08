@@ -60,11 +60,9 @@ def test_tc_ingest_c04_every_stored_region_carries_a_domain_value(tmp_data_dir):
     module's declared domain, its `content_state` in present/blank/absent, its
     `ocr_conf` the tagged float, and the two DISTINCT states survive as two
     distinct rows — blank (a legitimate zero) is never collapsed into absent
-    (a scanning failure). Both states arrive as model TAGS here; the
-    declared-minus-recorded complement that would mint absent rows from a
-    MISSING question is dead code in the shipped module (`_absent_regions` has
-    no call site — the FR ladder suite's disclosed F1), so the tag form is the
-    only producer the clause can hold today."""
+    (a scanning failure). Both states arrive as model TAGS here (every declared
+    question is answered, so the V2 declared-set read mints nothing — since
+    #219 that read is live and is the second producer of `absent` rows)."""
     fx = Contract(tmp_data_dir, "c04-domains")
     fx.add_roster("bea")
     catalog, version = fx.catalog(
@@ -175,20 +173,12 @@ def test_tc_ingest_c05_selection_rows_carry_an_option_iff_resolved(tmp_data_dir)
     """`TC-INGEST-C05` — the biconditional over the stored rows: a selection is
     populated ONLY when the mark resolved, and a resolved mark always names its
     option. Asserted over a transcript carrying all three declared mark states
-    (resolved, ambiguous, multiple_marks); the sweep reads the STORED rows, so a
-    parser that mapped an ambiguous mark onto an option turns this red.
-
-    Disclosed hole in shipped code, probe-backed (NOT swept here): the parser
-    DEFAULTS a missing `selection_state=` to `resolved` (`aeh/ingest.py:1947`,
-    `attributes.get("selection_state", "resolved")`), so a MALFORMED mark —
-    no `selection_state=`, no `selection=` — stores `selection_state='resolved'`
-    with `selection=NULL`, violating this same biconditional from the other
-    side. Probe: a `selection_mark` region with no state/option attributes
-    ingests `ok` and stores exactly that pair (the violation recorded). A bug
-    in shipped code has no `writtenahead` target — the module is its own
-    implementer — so it is disclosed for the M-INGEST owner rather than shipped
-    red. The three DECLARED states the clause names are swept above and are
-    clean."""
+    (resolved, ambiguous, multiple_marks) AND the two malformed shapes (#219):
+    a mark tagged with no state and no option, and a mark claiming `resolved`
+    while naming no option. The sweep reads the STORED rows, so a parser that
+    mapped an unresolved mark onto an option — or stored a malformed mark as
+    `resolved` with a NULL `selection`, the hole this same case disclosed
+    before #219 closed it — turns this red."""
     fx = Contract(tmp_data_dir, "c05-biconditional")
     fx.add_roster("cal")
     source = fx.put(b"c05 pdf")
@@ -197,12 +187,17 @@ def test_tc_ingest_c05_selection_rows_carry_an_option_iff_resolved(tmp_data_dir)
         selection_mark("Q1", state="resolved", option="C"),
         selection_mark("Q2", state="ambiguous"),
         selection_mark("Q3", state="multiple_marks"),
+        # The malformed shapes, raw (the `_doubles` helper always tags a
+        # state): no state at all, and `resolved` without its option.
+        "<!-- region: kind=selection_mark question_id=Q4 conf=0.90 -->\n"
+        "the mark as seen\n<!-- /region -->",
+        selection_mark("Q5", state="resolved", option=None),
     )})
     document_id = fx.ingestor.ingest_document([source], kind="submission",
                                               filenames={source: "a.pdf"})
     rows = {row["element_kind"]: row for row in fx.regions(document_id)
             if row["region_kind"] == "selection_mark"}
-    assert set(rows) == {"Q1", "Q2", "Q3"}, (
+    assert set(rows) == {"Q1", "Q2", "Q3", "Q4", "Q5"}, (
         f"TC-INGEST-C05: the mark states did not survive as rows: {set(rows)}."
     )
     resolved = rows["Q1"]
@@ -217,6 +212,20 @@ def test_tc_ingest_c05_selection_rows_carry_an_option_iff_resolved(tmp_data_dir)
             f"TC-INGEST-C05: the {row['selection_state']} mark on {question} was "
             f"mapped onto option {row['selection']!r} — an unresolved mark is "
             "never mapped to an option."
+        )
+    # The malformed shapes (#219): a mark the transcript cannot resolve — no
+    # state tagged, or `resolved` claimed without naming an option — stores as
+    # `ambiguous` with no selection. It is NEVER `resolved` with a NULL
+    # selection, the disclosed pre-#219 form.
+    for question in ("Q4", "Q5"):
+        row = rows[question]
+        assert row["selection_state"] == "ambiguous" \
+            and row["selection"] is None, (
+            f"TC-INGEST-C05: the malformed mark on {question} stored "
+            f"state={row['selection_state']!r} "
+            f"option={row['selection']!r} — an unresolvable mark stores "
+            "`ambiguous` with no selection, never `resolved` with a NULL one "
+            "(FR-INGEST-17)."
         )
     # The biconditional, over the whole stored set.
     violating = [row for row in rows.values()

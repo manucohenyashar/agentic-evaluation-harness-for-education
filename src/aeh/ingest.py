@@ -1961,6 +1961,23 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                 raise IngestError(
                     f"page {page_no}'s crop attribute "
                     f"{attributes['crop']!r} is not x,y,w,h.") from error
+        # FR-INGEST-17 / CT-INGEST-05: the stored mark state is HONEST. The
+        # transcript's own claim counts only when it is complete — a state
+        # outside the triad, a missing state, or `resolved` naming no option is
+        # a mark that could NOT be resolved, and stores as `ambiguous` with no
+        # selection, never as `resolved` with a NULL selection (the disclosed
+        # C05 biconditional hole, #219). An ambiguous or multiple_marks mark is
+        # never mapped to an option or to an incorrect answer.
+        mark_state: str | None = None
+        mark_option: str | None = None
+        if kind == "selection_mark":
+            declared_state = attributes.get("selection_state")
+            if declared_state in ("ambiguous", "multiple_marks"):
+                mark_state = declared_state
+            elif declared_state == "resolved" and attributes.get("selection"):
+                mark_state, mark_option = "resolved", attributes["selection"]
+            else:
+                mark_state = "ambiguous"
         regions.append(new_region(
             position,
             element_kind=element,
@@ -1973,14 +1990,11 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             content_state=(content_state if kind != "described_graphic"
                            else "present"),
             selection_state=(None if kind != "selection_mark"
-                             else attributes.get("selection_state", "resolved")),
+                             else mark_state),
             # FR-INGEST-17: `selection` is the OPTION the mark resolves to, populated
             # ONLY when resolved — an ambiguous, multiple or unreadable mark is never
             # mapped to an option or to an incorrect answer.
-            selection=(None if kind != "selection_mark"
-                       else (attributes.get("selection")
-                             if attributes.get("selection_state", "resolved")
-                             == "resolved" else None)),
+            selection=(None if kind != "selection_mark" else mark_option),
             supersedes_previous=supersedes,
         ))
         if supersedes:
@@ -2857,7 +2871,9 @@ class Ingestor:
         """The package's declared questions MINUS the regions the document records:
         each missing question becomes its own `absent` row — absent (a scanning
         failure, routed to triage) and blank (a legitimate zero) are distinct rows
-        and are never collapsed (`FR-INGEST-16`)."""
+        and are never collapsed (`FR-INGEST-16`). Called from the V2 ladder
+        (`FR-INGEST-23`'s declared-set check, #219); its return names the gap the
+        gate reports."""
         recorded = {question for question, _ in declared_regions}
         absent: list[tuple[str, str]] = []
         rows = package_catalog.criteria(package_version)
@@ -3046,6 +3062,10 @@ class Ingestor:
                        student_ref=student_ref)
         document_id: DocumentId | None = None
         v2_failures: list[dict] = []
+        # Whether V2's declared-set check found questions the package declares
+        # with no region in the transcript (#219). Drives the V4 override guard
+        # below; False whenever the gate never ran.
+        declared_gap = False
         if not v0_failed:
             try:
                 document_id = self.ingest_document(
@@ -3099,6 +3119,17 @@ class Ingestor:
                                 "gate": "v2", "question_id": question_id,
                                 "finding": "selection where the package declares "
                                            "open"})
+                        elif (declared.get(question_id) == "mcq"
+                                and region["selection_state"] != "resolved"):
+                            # FR-INGEST-23: an mcq region must carry a RESOLVABLE
+                            # selection — an ambiguous or multiple mark under a
+                            # declared mcq routes to the operator (the ladder's
+                            # disclosed F2: this used to pass V2 and V4 then
+                            # matched the submission).
+                            v2_failures.append({
+                                "gate": "v2", "question_id": question_id,
+                                "finding": "an unresolved selection where the "
+                                           "package declares mcq"})
                     elif declared.get(question_id) == "mcq":
                         v2_failures.append({
                             "gate": "v2", "question_id": question_id,
@@ -3107,6 +3138,32 @@ class Ingestor:
                         v2_failures.append({
                             "gate": "v2", "question_id": question_id,
                             "finding": "the package declares no such question"})
+                # FR-INGEST-23's declared-set half: the ladder reads the DECLARED
+                # set, not only the regions that exist. A question the package
+                # declares with no region in the transcript is a V2 failure naming
+                # the question, recorded as its own `absent` row — never a blank
+                # answer (FR-INGEST-16). This is `_absent_regions`' call site:
+                # until #219 it had none (the ladder's disclosed F1) and a missing
+                # question passed V2 silently. The check needs a transcript that
+                # ENGAGED the question protocol: one that tagged no question at
+                # all has no tagged inventory to diff — every question would read
+                # "missing" against output that named nothing — and routes through
+                # V3/V4 instead (V4's structural signal reports the empty
+                # inventory and halts scoring; TC-INGEST-44's untagged row pins
+                # that route).
+                tagged = {region["element_kind"] for region in regions
+                          if region["element_kind"] not in ("text", "graphic")}
+                if tagged:
+                    absent = self._absent_regions(
+                        package_version, document_id,
+                        [(region["element_kind"], region["content_state"])
+                         for region in regions], package_catalog)
+                    declared_gap = bool(absent)
+                    for question_id, _ in absent:
+                        v2_failures.append({
+                            "gate": "v2", "question_id": question_id,
+                            "finding": "no region for a question the "
+                                       "assessment declares"})
                 if v2_failures:
                     quarantine("v2", "incomplete", {
                         "gate": "v2", "failures": v2_failures})
@@ -3162,9 +3219,17 @@ class Ingestor:
                 # status naming the specific diagnosis — the ASSESSMENT did not
                 # match, whatever else the ladder found. V4's verdict takes the
                 # status because it is the more specific one; the earlier gates'
-                # findings stay recorded above and in their own columns.
+                # findings stay recorded above and in their own columns — EXCEPT
+                # where V2 named a declared-set gap (#219): the structural dissent
+                # behind an `uncertain` is then the very gap V2 already named, so
+                # the derivative verdict does not rename the V2 diagnosis
+                # (`incomplete` stands). A `mismatch` is independent dissent
+                # (identifier AND semantic both disagreed) and still renames —
+                # the plan's decision table pins it (TC-INGEST-25 cell (b), which
+                # is itself a missing-question shape).
                 quarantined = True
-                ingest_status = "unmatched_assessment"
+                if outcome == "mismatch" or not declared_gap:
+                    ingest_status = "unmatched_assessment"
                 findings.append({
                     "gate": "v4", "finding":
                         f"assessment match: {outcome} — scoring halted for this "

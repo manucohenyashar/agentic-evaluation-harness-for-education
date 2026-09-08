@@ -13,17 +13,22 @@ than shipped red** (the `writtenahead` registry keys on things that do not exist
 a bug in shipped code has no such target), each with its probe evidence:
 
 - **F1** (`TC-INGEST-26`'s first input): a question the package declares but the
-  transcript omits produces **no V2 failure** — the gate iterates the regions that
-  exist and never the declared set, and `_absent_regions` (the expected-region read
-  the plan's oracle needs) has no call site in the module. Probe: catalog declaring
+  transcript omits produced **no V2 failure** — the gate iterated the regions that
+  existed and never the declared set, and `_absent_regions` (the expected-region read
+  the plan's oracle needs) had no call site in the module. Probe: catalog declaring
   `Q1`..`Q3`, transcript carrying `Q1`/`Q2` → `gates[v2] == "pass"`, no failure.
   The half this file pins is the plan's most dangerous consequence: nothing may
-  record the absent question as a blank answer.
+  record the absent question as a blank answer. **Closed by #219**: the declared-set
+  check is wired into V2 (`_absent_regions` mints each missing question its own
+  `absent` row) and the gate names the missing ids; the test below asserts the
+  live form.
 - **F2** (`TC-INGEST-26`'s second input): an `mcq` question whose selection mark is
-  ambiguous is **no V2 failure either** — the gate refuses a selection only where the
-  package declares `open`, and never asks whether a declared-`mcq` selection
+  ambiguous was **no V2 failure either** — the gate refused a selection only where the
+  package declares `open`, and never asked whether a declared-`mcq` selection
   resolved. Probe: ambiguous mark under a declared `mcq` → `gates[v2] == "pass"`
-  (and V4 then *matched* the submission).
+  (and V4 then *matched* the submission). **Closed by #219**: an unresolved
+  selection under a declared `mcq` is a V2 failure naming the question, and the
+  submission quarantines as `incomplete` — asserted below.
 - **F3** (`TC-INGEST-40`, whole case): a page whose transcription fails is **not
   contained** — the provider's exception escapes `ingest_submission` raw (the module
   has no transcription retry loop; the only re-request loop is the evaluative-
@@ -383,18 +388,15 @@ def test_tc_ingest_24_v1_quarantines_naming_the_specific_pages(tmp_data_dir):
 
 def test_tc_ingest_26_an_absent_region_is_never_recorded_as_a_blank_answer(
         tmp_data_dir):
-    """`TC-INGEST-26` — the package declares `Q3`; the transcript never carries it.
-    Whatever the ladder records for the absent question, it must NEVER read
-    `blank`: blank is a legitimate zero, absent is a scanning failure, and
-    collapsing them mis-scores the student (FR-INGEST-16/23). The designed shape —
-    which `TC-INGEST-17`'s expected-region read pins — is an `absent` row of its
-    own; this test accepts that shape and refuses the blank one.
-
-    Disclosed in this file's docstring (F1): the ladder currently raises **no V2
-    failure** for the missing region either — the expected-region read
-    (`_absent_regions`) has no call site, so today no Q3 row exists at all and the
-    assertion below passes on absence. It stays green through the correct fix (an
-    `absent` row) and red against the disaster it exists for (a `blank` one)."""
+    """`TC-INGEST-26` (first input, live since #219) — the package declares `Q3`;
+    the transcript never carries it. The gate must fail V2 **naming the missing
+    question**, and whatever the ladder records for the absent question must read
+    `absent`, NEVER `blank`: blank is a legitimate zero, absent is a scanning
+    failure, and collapsing them mis-scores the student (FR-INGEST-16/23). The
+    designed shape — which `TC-INGEST-17`'s expected-region read pins — is an
+    `absent` row of its own; #219 wired `_absent_regions` into the ladder, so the
+    row is now required, not merely tolerated (the F1 disclosure above recorded
+    the pre-fix silence)."""
     fx = _Fixture(tmp_data_dir, "v2-absent")
     catalog, version = fx.catalog(["open", "mcq", "open"])
     source = fx.put(b"missing-q3")
@@ -406,6 +408,17 @@ def test_tc_ingest_26_an_absent_region_is_never_recorded_as_a_blank_answer(
         [source], cohort_id="c-ladder", package_version=version,
         package_catalog=catalog, filenames={source: "scan-01.md"})
 
+    # The named gap: V2 fails, and the failure names the missing question id
+    # (FR-INGEST-23's routing promise — the operator reads the id, not a bare
+    # failure).
+    assert report.gates["v2"] == "fail", (
+        "TC-INGEST-26: a question the package declares with no region in the "
+        "transcript must fail the structure gate (FR-INGEST-23).")
+    named = [f for f in report.detail["v2_failures"]
+             if f["question_id"] == "Q3"]
+    assert named and "no region for a question" in named[0]["finding"], (
+        "TC-INGEST-26: the V2 gap does not name the missing question: "
+        f"{report.detail['v2_failures']!r}.")
     rows = fx.handle.query(
         "SELECT element_kind, content_state FROM document_region "
         "WHERE document_id = :d", d=report.document_id)
@@ -413,11 +426,68 @@ def test_tc_ingest_26_an_absent_region_is_never_recorded_as_a_blank_answer(
     assert recorded.get("Q3") != "blank", (
         "TC-INGEST-26: the absent question is recorded as a BLANK answer — blank "
         "is a legitimate zero, absent is a scanning failure (FR-INGEST-16).")
-    if "Q3" in recorded:
-        assert recorded["Q3"] == "absent", (
-            f"TC-INGEST-26: the absent question's own row reads "
-            f"{recorded['Q3']!r} — the designed value is `absent` "
-            "(FR-INGEST-16, TC-INGEST-17).")
+    assert recorded.get("Q3") == "absent", (
+        f"TC-INGEST-26: the absent question's own row reads "
+        f"{recorded.get('Q3')!r} — the designed value is `absent`, minted by the "
+        "declared-set read (FR-INGEST-16, TC-INGEST-17).")
+    # The submission halts at V2: quarantined, `incomplete` — it never advances
+    # to scoring, so the absent question can never be read as a blank answer.
+    # V4's own verdict is still recorded (the plan's decision table needs the
+    # recorded signals), but an `uncertain` there is the same missing question
+    # V2 already named and must not rename the diagnosis.
+    row = next(r for r in fx.submission_rows()
+               if r["submission_id"] == report.submission_id)
+    assert row["quarantined"] == 1 and row["ingest_status"] == "incomplete", (
+        f"TC-INGEST-26: the missing-question submission must quarantine as "
+        f"`incomplete`, got quarantined={row['quarantined']}, "
+        f"status={row['ingest_status']!r} (FR-INGEST-23).")
+    assert report.gates["v4"] != "match", (
+        "TC-INGEST-26: an incomplete paper must not be V4-MATCHED into "
+        "proceeding — the submission halted at V2 (FR-INGEST-23).")
+    fx.close()
+
+
+def test_tc_ingest_26_an_unresolved_mcq_selection_is_a_v2_failure(
+        tmp_data_dir):
+    """`TC-INGEST-26` (second input, live since #219) — an `mcq` region whose
+    selection mark did not resolve is a V2 failure routed to the operator,
+    naming the question (FR-INGEST-23). Disclosed in this file's docstring (F2,
+    probe from #45): the gate used to refuse a selection only where the package
+    declares `open` and never asked whether a declared-`mcq` selection resolved —
+    the ambiguous mark passed V2 and V4 then matched the submission. The honest
+    stored pair (`CT-INGEST-05`'s biconditional) is asserted beside the gate."""
+    fx = _Fixture(tmp_data_dir, "v2-mcq-unresolved")
+    fx.add_roster("amara-o")
+    catalog, version = fx.catalog(["mcq"])
+    source = fx.put(b"unresolved-mcq")
+    fx.script(source, {1: _student_answer(
+        "amara-o", _selection("Q1", "ambiguous"))})
+    report = fx.ingestor.ingest_submission(
+        [source], cohort_id="c-ladder", package_version=version,
+        package_catalog=catalog, filenames={source: "scan-01.md"})
+
+    assert report.gates["v2"] == "fail", (
+        "TC-INGEST-26: an mcq question whose selection did not resolve must "
+        "fail the structure gate (FR-INGEST-23).")
+    named = [f for f in report.detail["v2_failures"]
+             if f["question_id"] == "Q1"]
+    assert named and "unresolved selection" in named[0]["finding"], (
+        "TC-INGEST-26: the V2 gap does not name the question and its "
+        f"unresolved selection: {report.detail['v2_failures']!r}.")
+    row = next(r for r in fx.submission_rows()
+               if r["submission_id"] == report.submission_id)
+    assert row["quarantined"] == 1 and row["ingest_status"] == "incomplete", (
+        f"TC-INGEST-26: the unresolved-selection submission must quarantine as "
+        f"`incomplete`, got quarantined={row['quarantined']}, "
+        f"status={row['ingest_status']!r} (FR-INGEST-23).")
+    regions = fx.handle.query(
+        "SELECT selection_state, selection FROM document_region "
+        "WHERE document_id = :d AND region_kind = 'selection_mark'",
+        d=report.document_id)
+    assert regions and regions[0]["selection_state"] == "ambiguous" \
+        and regions[0]["selection"] is None, (
+        "TC-INGEST-26: the ambiguous mark did not store the honest pair — "
+        f"{dict(regions[0])!r} (CT-INGEST-05).")
     fx.close()
 
 
