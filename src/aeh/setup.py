@@ -782,7 +782,7 @@ def _derived_default_bands(construct: str, max_points: float) -> tuple[ProposedB
 def _normalize_bands(raw_bands: Sequence[Mapping], construct: str,
                      max_points: float) -> tuple[ProposedBand, ...]:
     """Fix the band ordering on read-back (`FR-PKG-06`'s order half): sort by points
-    ascending — the reply's own ordinal breaking ties, so the model's ranking survives
+    ascending — the reply's own order breaking ties, so the model's ranking survives
     a flat band set — and re-base the ordinals to contiguous-from-0. The reply's
     descriptor content has already cleared the magnitude bar before this runs.
 
