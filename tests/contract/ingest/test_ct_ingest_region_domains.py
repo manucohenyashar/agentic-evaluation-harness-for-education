@@ -130,6 +130,32 @@ def test_tc_ingest_c04_every_stored_region_carries_a_domain_value(tmp_data_dir):
     assert all(row["content"] == "" for row in blank_rows + absent_rows), (
         "TC-INGEST-C04: a blank or absent row carries content."
     )
+    # The clause's sweep form over the writer shapes the submission path
+    # cannot reach (review C1/C2): a setup artifact ingests the MARKER-LESS
+    # shape — its transcript carries no region protocol at all — and its
+    # regions must backfill exactly like a submission's (a tagless page
+    # records the floor itself).
+    key_source = fx.put(b"c04 assessment pdf")
+    fx.ingestor.ingest_document([key_source], kind="assessment",
+                                filenames={key_source: "key.pdf"})
+    setup_regions = fx.regions(fx.documents("kind = 'assessment'")[0]
+                               ["document_id"])
+    assert setup_regions and all(
+        row["ocr_conf"] is not None for row in setup_regions), (
+        "TC-INGEST-C04: a setup artifact's marker-less transcript stored a "
+        "NULL ocr_conf — the backfill must cover the no-marker early return "
+        "too, not only the marker path submissions take."
+    )
+    # And the tagged front door refuses a NON-FINITE tag: `conf=nan` passes
+    # float() and would store NULL (SQLite has no NaN), reopening the very
+    # hole the backfill closed — while poisoning the page's minimum for every
+    # correctly tagged region beside it (review C3).
+    nan_source = fx.put(b"c04 nan pdf")
+    fx.script(nan_source, {1: student_answer(
+        "bea", answer_text("Q1", "the answer", conf="nan"))})
+    with pytest.raises(IngestError, match="not a finite number"):
+        fx.ingestor.ingest_document([nan_source], kind="submission",
+                                    filenames={nan_source: "a.pdf"})
     fx.close()
 
 

@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import math
 import io
 import json
 import logging
@@ -308,7 +309,11 @@ DEFAULT_V4_SEMANTIC_FLOOR = 0.10
 #: admits it to scoring). Exactly-at is not low, mirroring the divergence
 #: halt's declared boundary rule. It is also the no-evidence value: a region
 #: the transcript left with no reading confidence at all records the floor
-#: itself (see `_parse_regions`' backfill), which does not by itself fire.
+#: itself (see `_backfill_region_conf`), which does not by itself fire.
+#: M-INTEG's impact routing reads the same 0.70 assumption through its own
+#: `HARNESS_INTEG_OCR_CONF_FLOOR` knob (design §3.9/CT-INTEG-09) — two knobs
+#: for one assumption, so the consumer halves (#74/#75) can calibrate
+#: independently; cross-check them when one moves.
 OCR_CONF_FLOOR_ENV = "HARNESS_INGEST_OCR_CONF_FLOOR"
 DEFAULT_OCR_CONF_FLOOR = 0.70
 
@@ -487,15 +492,24 @@ def _configured_dpi() -> int:
 def _ocr_conf_floor() -> float:
     """The OCR confidence floor, read at call time (`CLAUDE.md` seam 3): the
     production default is the design's 0.70 assumption, the knob exists so a
-    slower test box or a differently calibrated transcriber can move it."""
+    slower test box or a differently calibrated transcriber can move it.
+    Range-checked like its `_configured_float` siblings — a floor outside
+    0..1 would silently disable the outcome (nothing below it) or flag every
+    submission, and a fail-silent knob is the one seam defect this rule
+    exists to prevent."""
     raw = os.environ.get(OCR_CONF_FLOOR_ENV)
     if not raw:
         return DEFAULT_OCR_CONF_FLOOR
     try:
-        return float(raw)
+        floor = float(raw)
     except ValueError as error:
         raise IngestError(
             f"{OCR_CONF_FLOOR_ENV}={raw!r} is not a number.") from error
+    if not 0.0 <= floor <= 1.0 or not math.isfinite(floor):
+        raise IngestError(
+            f"{OCR_CONF_FLOOR_ENV}={raw!r} is outside the 0..1 confidence "
+            "range.") from None
+    return floor
 
 
 def _configured_max_tokens() -> int:
@@ -1933,7 +1947,12 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
         body = transcript.strip()
         if body:
             regions.append(new_region(position_start, content=body))
-        return regions
+        # CT-INGEST-04 (#221): the marker-less page backfills TOO — a setup
+        # artifact (assessment/reference/rubric) ingests exactly this shape,
+        # its transcripts carrying no region protocol at all, so only the
+        # submission path (whose transcript the untrusted-content fence wraps
+        # into markers) could ever skip the backfill by accident.
+        return _backfill_region_conf(regions)
 
     position = position_start
     cursor = 0
@@ -1952,8 +1971,11 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                 f"of {REGION_KINDS} — malformed model output."
             )
         # FR-INGEST-15: the per-region reading confidence, as the model tagged it.
-        # A non-numeric tag is malformed model output — the same refusal taxonomy
-        # as a bad kind or state (#221: it used to escape as a raw ValueError).
+        # A non-numeric or NON-FINITE tag is malformed model output — the same
+        # refusal taxonomy as a bad kind or state (#221: a raw ValueError used
+        # to escape, and `nan` used to pass float() and store as NULL — SQLite
+        # has no NaN — reopening the G2 hole through the tagged front door,
+        # worse still poisoning `min()` for every region on the page).
         try:
             ocr_conf = (float(attributes["conf"])
                         if attributes.get("conf") else None)
@@ -1962,6 +1984,11 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                 f"page {page_no}'s region declares conf "
                 f"{attributes['conf']!r}, which is not a number — malformed "
                 "model output.") from error
+        if ocr_conf is not None and not math.isfinite(ocr_conf):
+            raise IngestError(
+                f"page {page_no}'s region declares conf "
+                f"{attributes['conf']!r}, which is not a finite number — "
+                "malformed model output.")
         # FR-INGEST-16: present / blank / absent, as tagged; described_graphic is
         # present by definition.
         content_state = attributes.get("state", "present")
@@ -2048,22 +2075,27 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             # fact and is not overwritten by the supersession link.
             regions[index - 1]["retraction"] = (
                 f"superseded_by:{regions[index]['region_id']}")
-    # CT-INGEST-04's data clause (#221): EVERY stored region carries a non-null
-    # `ocr_conf`. The prompt tags confidence only inside the marker protocol, so
-    # every outside-marker fragment (the 'Student:'/'Assessment:' head every
-    # submission transcript carries) and every region tagged without `conf=`
-    # arrived here with none. Design interpretation, disclosed on the issue:
-    # `ocr_conf` is the region's READING confidence (FR-INGEST-15 — impact
-    # routing intersects per-region confidence with the spans a criterion
-    # cites, and those spans can cite the head text too), so the
-    # design-consistent value is the head region's transcript confidence. The
-    # model expresses none for untagged text, so the module derives it from the
-    # same reading pass's tagged evidence, in the conservative direction: the
-    # page's MINIMUM tagged confidence — an unvouched read is treated as no
-    # better than the page's worst vouched read. A page that tagged no
-    # confidence at all records the floor itself: no reading evidence either
-    # way, and (the floor comparison being strictly-below) the absence of
-    # evidence does not by itself flag the submission.
+    return _backfill_region_conf(regions)
+
+
+def _backfill_region_conf(regions: list[dict]) -> list[dict]:
+    """CT-INGEST-04's data clause (#221): EVERY stored region carries a non-null
+    `ocr_conf`. The prompt tags confidence only inside the marker protocol, so
+    every outside-marker fragment (the 'Student:'/'Assessment:' head every
+    submission transcript carries) and every region tagged without `conf=`
+    arrives with none — and a setup artifact's marker-less transcript arrives
+    with nothing tagged at all. Design interpretation, disclosed on the issue:
+    `ocr_conf` is the region's READING confidence (FR-INGEST-15 — impact
+    routing intersects per-region confidence with the spans a criterion
+    cites, and those spans can cite the head text too), so the
+    design-consistent value is the head region's transcript confidence. The
+    model expresses none for untagged text, so the module derives it from the
+    same reading pass's tagged evidence, in the conservative direction: the
+    page's MINIMUM tagged confidence — an unvouched read is treated as no
+    better than the page's worst vouched read. A page that tagged no
+    confidence at all records the floor itself: no reading evidence either
+    way, and (the floor comparison being strictly-below) the absence of
+    evidence does not by itself flag the submission."""
     tagged_confs = [region["ocr_conf"] for region in regions
                     if region["ocr_conf"] is not None]
     fallback = min(tagged_confs) if tagged_confs else _ocr_conf_floor()
