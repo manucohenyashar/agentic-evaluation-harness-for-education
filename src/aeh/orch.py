@@ -582,29 +582,40 @@ def _dependency_closure(
 
     Input: criterion -> its direct dependencies (`PackageCatalog.dependency_graph`'s
     shape). Output: criterion -> every criterion it depends on, itself excluded (the
-    graph cannot carry a self-edge — `FR-PKG-05` refuses one). Iterative memo sweep, so
-    depth is bounded by the graph, not the call stack; criteria absent from the graph
-    close over nothing.
-    """
-    closure: dict[str, frozenset[str]] = {}
+    graph cannot carry a self-edge — `FR-PKG-05` refuses one).
 
-    def resolve(cid: str) -> frozenset[str]:
-        if cid in closure:
-            return closure[cid]
-        # Reserve first, so a cycle cannot recurse forever — the graph is a DAG
-        # (`FR-PKG-05` refuses cycles), and this turns a violated assumption into a
-        # bounded incomplete answer rather than unbounded work.
-        closure[cid] = frozenset()
-        deps = frozenset().union(
+    **Kahn's sweep, honestly iterative**: an indegree pass, then a worklist drained
+    from the sources inward — every criterion is closed only after all of its
+    dependencies are, so the recursion depth is zero and a deep chain (a criterion per
+    link, a thousand long) costs heap records, not call-stack frames. A criterion a
+    dependency names but the graph does not (a dangling id, which `M-PKG`'s loader
+    refuses but this helper does not trust) contributes itself and closes over
+    nothing. The graph is a DAG (`FR-PKG-05` refuses cycles); a violated assumption
+    leaves the cycle's members at their reserved empty closure — a bounded incomplete
+    answer, not a crash or a hang — and the closure sets themselves are order-
+    independent `frozenset`s, so the sweep's emission order cannot leak into results.
+    """
+    closure: dict[str, frozenset[str]] = {cid: frozenset() for cid in graph}
+    indegree = {cid: 0 for cid in graph}
+    dependents: dict[str, list[str]] = {cid: [] for cid in graph}
+    for cid, deps in graph.items():
+        for dep in deps:
+            if dep in indegree:  # a dangling dep is not a graph edge to wait on
+                indegree[cid] += 1
+                dependents[dep].append(cid)
+    ready = [cid for cid in graph if indegree[cid] == 0]
+    while ready:
+        cid = ready.pop()
+        closure[cid] = frozenset().union(
             *(  # type: ignore[arg-type]
-                {dep} | resolve(dep) for dep in graph.get(cid, ())
+                {dep} | closure.get(dep, frozenset())
+                for dep in graph.get(cid, ())
             )
         )
-        closure[cid] = deps
-        return deps
-
-    for criterion_id in graph:
-        resolve(criterion_id)
+        for dependent in dependents[cid]:
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
     return closure
 
 
@@ -1311,7 +1322,7 @@ class Orchestrator:
         )
 
     @staticmethod
-    def _judge_key(judge_id: str | None, arms: Sequence[str]) -> tuple[int, str]:
+    def _judge_key(judge_id: str | None, arms: Sequence[str]) -> tuple[int, int | str]:
         """`FR-ORCH-07`'s outermost key: the judge's position in the run's panel.
 
         Panel order, not the build id's lexical order — the panel order is the dispatch
@@ -1329,7 +1340,12 @@ class Orchestrator:
                 "module's. Order it by hand only after deciding what judgeless scoring "
                 "means; the orchestrator refuses to guess."
             )
-        return (0, str(arms.index(judge_id))) if judge_id in arms else (1, judge_id)
+        # The index compares as the **integer** it is, never stringified: at ten or
+        # more arms a lexical compare would order `arm-10` before `arm-2` and break
+        # the panel's own ladder. The two branches never compare second elements
+        # across the branch boundary — the leading 0/1 decides first — so an
+        # in-panel int and an out-of-panel str can never meet in a comparison.
+        return (0, arms.index(judge_id)) if judge_id in arms else (1, judge_id)
 
     def _sweep_plan(self, run_row: Any) -> SweepPlan:
         """The dispatch-order data for the run's package version, derived once.
