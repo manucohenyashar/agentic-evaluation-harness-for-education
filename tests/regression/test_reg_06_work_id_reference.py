@@ -18,15 +18,16 @@ So the baseline population is ten tuples: a base, and one variant per input diff
 exactly that one field (`fixtures/baselines/TC-REG-06/work-id-reference.inputs.json`). The
 case asserts both halves — the digests match the frozen values, **and** all ten are distinct.
 
-**The digests are not committed yet, and that is deliberate.** The inputs are `FR-ORCH-01`'s
-nine fields and are knowable today; the digest depends on how a tuple is canonically encoded
-into bytes, which `M-ORCH` has not chosen. A guessed encoding frozen into a baseline would
-dictate the implementation from the test side — the one thing a regression baseline must never
-do. `tests/support/baselines.py` refuses to invent it.
-
-**Written ahead of implementation** (§8.2). `compute_work_id` is #57's. Remove the marker —
-never the test — when #57 closes, and record the baseline in that PR with the migration note
-the grounds above require.
+**The baseline was recorded by #57's PR**, with the migration note the grounds above
+require. Where §3.7 is silent on encoding, `M-ORCH` chose and documented one
+(`aeh.orch._encode_field`): each input is a **type tag plus decimal byte length plus
+UTF-8 bytes** — ``S<len>:<bytes>``, or ``N`` for a null (`judge_id` on a deterministic
+unit) — concatenated in `FR-ORCH-01`'s requirement order and sha256'd once, returned as
+lowercase hex. A change to that encoding changes every `work_id` at once: correct when
+conscious, and exactly what this golden exists to make conscious. Every stored result
+keyed under the old encoding becomes unreachable in the same moment — the migration note
+is that the digest set moves **as a block**, and any such change must say so here and in
+the release notes, never arrive as a silent diff.
 """
 
 from __future__ import annotations
@@ -41,8 +42,6 @@ from tests.support.baselines import (
     work_id_reference_inputs,
 )
 from tests.support.impl import ORCH_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#57"
 CASE = "TC-REG-06"

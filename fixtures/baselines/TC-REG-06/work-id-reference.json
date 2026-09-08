@@ -1,0 +1,25 @@
+{
+  "inputs_in_requirement_order": [
+    "run_id",
+    "stage",
+    "submission_id",
+    "criterion_id",
+    "judge_id",
+    "package_version_id",
+    "panel_config",
+    "prompt_template_version",
+    "extractor_version"
+  ],
+  "work_ids": {
+    "base": "438e9e87e0d26a46c852edc10cf5f90f3a96ecc7ff3cc6c253127fc62255643c",
+    "varied:criterion_id": "a93f475d82f0be2f8727ea5097d4afa0ba3d01f342dbb06015d0327717c36f38",
+    "varied:extractor_version": "11de790cf66b04b505cc150ae063bb0d907be27553d7030d4d12a7df793d0548",
+    "varied:judge_id": "db72dbaefd45615883b33fbc41b91b72707b5008f82b44d9deae9f6da5331689",
+    "varied:package_version_id": "1352b66a28c8289e4fd1f5e1e3501e865d0d4559b7b8400557cd66d5eb67f598",
+    "varied:panel_config": "b6453091e2b294a3ce13ae40ad7f9e980e6c01f6bb16e5e74a4e741453add766",
+    "varied:prompt_template_version": "5f979a8e83cfa58f0bd21b56b03ffab7865fde5677bd96fb21fbb915e5488ef7",
+    "varied:run_id": "fe9bd2c4823c2d0cdbd9b5df28f7e4cc62c85ecc0a97a0baff9a8c5dd27a62f1",
+    "varied:stage": "49135bacf9f9393cf67dcb552d1b75096f000d9c8a9ea0bebe6e3ecab97dcbf1",
+    "varied:submission_id": "765631bcc5b61c161cf10be7d6005f8a0055eb70de733352ed3e5c6a818cd1b7"
+  }
+}
