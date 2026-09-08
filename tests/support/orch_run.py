@@ -37,19 +37,20 @@ ORCH_COHORT_ID = "c-2026-7B-orch"
 _PACKAGE_STAMP = "2026-01-01T00:00:00+00:00"
 
 
-def seed_cohort(store: Any, submissions: Sequence[str]) -> str:
-    """Create `ORCH_COHORT_ID` with one submission row per name given.
+def seed_cohort(store: Any, submissions: Sequence[str], cohort_id: str | None = None) -> str:
+    """Create `ORCH_COHORT_ID` (or `cohort_id`) with one submission row per name given.
 
     `submission` is `(submission_id, cohort_id, student_ref)` — the full shipped column
     set at the point `M-ORCH` reads it. `ingest_status` arrives with the ingest migration
     and defaults per its own DDL; cases that need specific statuses set them explicitly.
     """
-    handle = store.cohort(ORCH_COHORT_ID)
+    cohort_id = cohort_id or ORCH_COHORT_ID
+    handle = store.cohort(cohort_id)
     with handle.transaction() as tx:
         tx.execute(
             "INSERT INTO cohort (cohort_id, consent_class, created_at) "
             "VALUES (:c, 'synthetic', :created)",
-            c=ORCH_COHORT_ID,
+            c=cohort_id,
             created=_PACKAGE_STAMP,
         )
         for submission_id in submissions:
@@ -57,10 +58,10 @@ def seed_cohort(store: Any, submissions: Sequence[str]) -> str:
                 "INSERT INTO submission (submission_id, cohort_id, student_ref) "
                 "VALUES (:s, :c, :r)",
                 s=submission_id,
-                c=ORCH_COHORT_ID,
+                c=cohort_id,
                 r=f"ref-{submission_id}",
             )
-    return ORCH_COHORT_ID
+    return cohort_id
 
 
 def seed_package(
