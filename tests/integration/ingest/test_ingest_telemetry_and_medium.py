@@ -11,7 +11,7 @@ hardware, neither of which this repository can supply yet).
 `Written ahead of implementation: yes` is stale for the shipped surface — the
 ladder, the residency slot, the blob store and the purge landed with #36–#42;
 every case asserted here runs green by design. The **unimplemented halves** are
-another matter, and the probe-first audit behind this file found seven places
+another matter, and the probe-first audit behind this file found eleven places
 where the plan's oracle is not yet (or cannot yet be) enforced. They are
 **disclosed here rather than shipped red** — the `writtenahead` registry keys on
 an interface a not-yet-written story will provide, and every M-INGEST
