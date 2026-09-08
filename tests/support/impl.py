@@ -1554,6 +1554,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "test_adv_12_confidently_wrong_population_is_still_sampled_by_the_random_arm",
         ),
     ),
+    "#60 TS-23 escalation atomicity (TC-ORCH-11)": (
+        "symbol",
+        f"{ORCH_MODULE}:Orchestrator.enqueue_escalation",
+        (
+            "tests/integration/orch/test_escalation_atomicity.py::"
+            "test_tc_orch_11_enqueue_escalation_commits_and_rolls_back_with_the_callers_transaction",
+        ),
+    ),
 }
 
 
