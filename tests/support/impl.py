@@ -1234,8 +1234,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
     #
     # `aeh.setup` itself landed with #50 (propose, confirm, the two gates, publish), so
-    # nothing here is keyed on the module — the four files below run against shipped code
-    # up to the member each case actually drives. Every entry is keyed on the §3.6
+    # nothing here is keyed on the module — the files below run against shipped code
+    # up to the member each case actually drives. (The #51 readback entry left with
+    # #51: the read back, its two constants and the marker went together.) Every entry
+    # is keyed on the §3.6
     # Interface members (`read_back_rubric`, `classify_decomposability`,
     # `propose_dependencies`, `set_grade_policy`) and §3.6 Configuration constants
     # (`SETUP_DEFAULT_BAND_COUNT`, `SETUP_MAGNITUDE_PHRASES`, `SETUP_MAX_CONFIRMATIONS`).
@@ -1254,18 +1256,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `evaluation_mode` column that does not exist (16), the cross-story skip sweep whose
     # recorded-default storage is unpinned (17), and calibration-paper intake no surface
     # accepts (18). That is the TC-INGEST-38 precedent; disclosed on the #54 PR.
-    "#51 readback": (
-        # TC-SETUP-05/06/07 (band counts, descriptor regeneration, the published-package
-        # scan) all drive the read back AND its two declared constants, so the conjunction
-        # is the file's full blocker set.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SETUP_DEFAULT_BAND_COUNT,"
-            f"{SETUP_MODULE}:SETUP_MAGNITUDE_PHRASES,"
-            f"{SETUP_MODULE}:SetupService.read_back_rubric"
-        ),
-        ("tests/integration/setup/test_setup_readback_pending.py",),
-    ),
     "#52 decomposition": (
         # TC-SETUP-08/10 (the §5.3 decision table, the confirmation cap) need the
         # classifier and the cap constant together. TC-SETUP-13 is deliberately NOT in

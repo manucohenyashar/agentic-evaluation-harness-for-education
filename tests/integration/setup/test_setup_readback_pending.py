@@ -1,34 +1,21 @@
-"""`M-SETUP` Stage A's rubric read-back — written ahead of **#51** (issue #54).
+"""`M-SETUP` Stage A's rubric read-back — **#51** (issue #54).
 
-Cases `TC-SETUP-05/06/07` (test plan §5.6, all P0). They carry `writtenahead` and sit
-outside `TEST_CMD` until #51 lands `read_back_rubric` — the §3.6 Interface member every
-one of them drives — together with its two Configuration constants,
-`SETUP_DEFAULT_BAND_COUNT` and `SETUP_MAGNITUDE_PHRASES`. The single entry in
-`tests/support/impl.py` under "#51 readback" is a `symbols` conjunction over all three, so
-the gate fires exactly when the file can actually run; the implementing PR removes the
-marker (never the test) and drops the entry.
+Cases `TC-SETUP-05/06/07` (test plan §5.6, all P0). Written ahead of the implementation
+they carried `writtenahead` and sat outside `TEST_CMD`; #51 landed `read_back_rubric` —
+the §3.6 Interface member every one of them drives — together with its two Configuration
+constants, `SETUP_DEFAULT_BAND_COUNT` and `SETUP_MAGNITUDE_PHRASES`, so the marker is
+gone (never the test) and the entry in `tests/support/impl.py` under "#51 readback" is
+dropped. The scripted replies below matched the payload shape #51 parses
+(`{"criteria": [...]}` with criterion entries carrying bands and a `justification`), so
+no scripting alignment was needed.
 
-Two things are **deliberately open** and are this file's stated bets, not oversights:
+One note kept from the written-ahead state:
 
-- **The read-back reply schema.** Detailed-design pins the method's signature
-  (`read_back_rubric(rubric_doc, assessment_doc) -> RubricReadback`) but not the payload
-  the model returns or the shape of `RubricReadback`; the scripted replies below use the
-  payload shape this suite's oracles imply (criterion entries with bands and a
-  `justification`). When #51 lands, align the *scripting* to its schema — the assertions
-  (even band counts, the met/not-met default, the recorded justification, the magnitude
-  rejection) do not change.
 - **TC-SETUP-06's rung.** The plan says unit / 0. It is implemented here at rung 2 beside
   its siblings: the rejection rule is only observable through the regeneration the read
   back performs, and doubling a write path whose shape is #51's to decide would put the
   mock where the behaviour is. The assertions are identical at either rung; a rung-0
-  variant can move to a scripted catalog once #51's write calls are known.
-- **TC-SETUP-05's justification is asserted on the read-back's return, not on stored
-  rows.** FR-SETUP-04 says the *package* records the justification, but no justification
-  column exists anywhere in `aeh.pkg`'s schema and §3.6 pins no storage shape for one —
-  asserting a stored half here would invent it (the TC-INGEST-38 precedent). The test
-  asserts the return object carries it; when #51 lands its persistence, extend this file
-  to read the stored half the way `test_setup_policy_pending.py` reads its `grade_policy`
-  rows.
+  variant can move to a scripted catalog now that #51's write calls are known.
 """
 
 from __future__ import annotations
@@ -43,8 +30,6 @@ from tests.support.setup_harness import (
     ingest_document,
     stage_chain,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#51"
 
@@ -166,6 +151,15 @@ def test_tc_setup_05_band_sets_are_even_two_to_six_default_two_bands_justificati
         "the field differently, this is the line to align)"
     )
     assert "partial" in str(justification).lower()
+    # The stored half (FR-SETUP-04): the justification lives on the criterion row the
+    # package carries, not only on the read-back's return object — #51's
+    # `band_justification` column is where the wider band set stays auditable.
+    stored_justification = criteria["CRIT-STEPS"]["band_justification"]
+    assert "partial" in str(stored_justification).lower(), (
+        "TC-SETUP-05: the stored criterion row does not carry the band-set "
+        "justification — FR-SETUP-04 records it in the package, where the audit "
+        "actually happens"
+    )
 
 
 def _readback_entry(readback, criterion_id: str):
