@@ -1,0 +1,658 @@
+"""Live-medium transcription, performance and telemetry (`M-INGEST`) — TS-19.
+
+Cases `TC-INGEST-41` … `TC-INGEST-47` of test plan §5.5, §6.4, §6.9 and §6.10
+(issue #48), run against the ladder #36–#41 shipped. Rung 2 for the ingest-side
+halves — real Tier C files, real blob directories, scripted VLM/sanitizer/
+rasterizer doubles with the shapes the gateway and ladder suites pin — and the
+rung-4 E4 halves of `TC-INGEST-46`/`-47` are stated per the plan with their
+prerequisites named (they need M-ORCH's orchestrator and the E4 reference
+hardware, neither of which this repository can supply yet).
+
+`Written ahead of implementation: yes` is stale for the shipped surface — the
+ladder, the residency slot, the blob store and the purge landed with #36–#42;
+every case asserted here runs green by design. The **unimplemented halves** are
+another matter, and the probe-first audit behind this file found seven places
+where the plan's oracle is not yet (or cannot yet be) enforced. They are
+**disclosed here rather than shipped red** — the `writtenahead` registry keys on
+an interface a not-yet-written story will provide, and every M-INGEST
+implementation story is closed, so a gap in shipped code has no keyable target —
+each with its probe evidence:
+
+- **F1** (`TC-INGEST-42`, page rasters): `CT-INGEST-17` says the ingestor
+  "writes page rasters and crops to the blob store"; the shipped ingestor writes
+  **crops only**. `ingest_document` keeps each page raster in memory
+  (`page_images` / `record["image"]`) and has no `blobs.put` call site for it;
+  the only blob writes from the ingest path are the `described_graphic` crops.
+  The case asserts the crop half at full oracle strength and discloses the
+  raster half; no open story re-opens the module's write set.
+- **F2** (`TC-INGEST-42`, purge): the plan's "removed by `purge_cohort`" oracle
+  cannot name the blob store — `purge_cohort` does not touch the blob directory
+  (`PurgeReport.blobs_deleted` is the documented honest zero; the dedup-vs-purge
+  rule is the test plan §7.4 accepted risk that `tests/integration/store/
+  test_purge.py` already pins). The Tier C **row** sweep is asserted at full
+  strength; the blob gap is disclosed, not asserted as required behaviour.
+- **F3** (`TC-INGEST-44`, run-level signals): the §3.5/`OBS-01` run-level
+  signals — `ocr_failure_rate`, the unresolved-mark rate, mean/max divergence
+  aggregates, per-gate pass/fail counts, quarantine counts by gate, the
+  second-pass disagreement rate — have **no emitter anywhere in src/** (grep:
+  zero hits for every name; `IngestReport` carries per-gate columns only). All
+  six M-INGEST implementation stories (#36–#41) are closed and no open story
+  owns an emitter, and the design pins the names in prose only — so there is no
+  keyable `writtenahead` target. The case asserts the **recorded form** fully
+  (exact column names and types, hand-computed per-gate pass/fail counts and
+  quarantine-by-gate derivations); the emitter half is left to the ingest
+  contract suite (#49) and whatever story lands it.
+- **F4** (`TC-INGEST-44`, gate-column reachability): the ladder's final gate
+  write records **every** gate column, and a gate the ladder never reached keeps
+  its initialized `'pass'` — only `v4_match` distinguishes `'not_run'`. Probe: a
+  V0-refused submission's row records `v1_pages`/`v2_structure`/`v3_identity` as
+  `'pass'` although nothing ran. Naive per-gate pass counts over raw rows
+  therefore overcount; the case counts passes over the submissions a
+  construction-known reachability set marks, and the disclosure is what stops
+  the masked columns from being read as evidence.
+- **F5** (`TC-INGEST-43`, consumer): the §6.9 surface-proxy analysis that
+  consumes the per-region confidence is `TC-STATS-13`, owned by the open
+  M-STATS story #117 under TS-43 (#120). The **producer** half — the recorded
+  join form (`submission.student_ref` × `document_region.ocr_conf`, the
+  unresolved-token rows, the per-submission outcomes) — is asserted here at full
+  strength; the consumer half is deferred with the story named.
+- **F6** (`TC-INGEST-44`/`-45`, divergence measure): `text_layer_divergence` is
+  measured over the **raw** transcript *including* the region-marker protocol —
+  lowercase whitespace-token Jaccard against the page's text layer (the
+  tokenizer the duplicate threshold is calibrated against). Probe: a **verbatim**
+  transcription of a marked page records divergence 1 − 2/12 ≈ 0.833, because the
+  prompt itself requires the markers. The shipped measure is asserted exactly;
+  a divergence-is-zero-for-verbatim assertion would ship red against closed
+  stories, so the semantic caveat is disclosed instead.
+- **F7** (`TC-INGEST-46`/`-47`, rung 4): the E4 halves — the VLM's own residency
+  slot swapping to the judge under one GPU, and the same-order-of-magnitude
+  comparison against the scoring pass — need M-ORCH's orchestrator-side
+  residency batching (#62 owns the batched hold; #59 the two-sweep execution
+  plan) and the E4 reference hardware; the measured comparison is TS-53's
+  (#146) to make against the scoring pass. The primitive-level **sequence** and
+  the **measured wall clock** are asserted here; the swap/comparison halves are
+  deferred with the owners named.
+- **F8** (`TC-INGEST-42`, a defect in shipped code): a cohort carrying
+  `unresolved_token` rows **cannot be purged**. `_PURGE_DELETES` gained the
+  #39 token tables, but `_COHORT_PURGE_ORDER` (store 1374) was not extended
+  with them — the sweep deletes `document_region` while the tokens that
+  reference it remain, the foreign key blocks the DELETE, and `purge_cohort`
+  raises a raw `sqlite3.IntegrityError` ("FOREIGN KEY constraint failed")
+  after rolling back. Probe: the same ingest fixture with one
+  `<unresolved>` marker purges with `IntegrityError`; without it, the sweep
+  below runs clean. Every M-INGEST and M-STORE story is closed, so there is no
+  open story to defer to and no keyable `writtenahead` target — the finding is
+  disclosed here for the story that fixes the order tuple, which should also
+  add the token tables' sweep to this case.
+
+One more platform fact, for `TC-INGEST-42`'s mode half: this suite runs on
+Windows, where `os.chmod` maps every mode but read-only to a no-op and
+`os.stat` fabricates POSIX modes. The exact-mode oracle is `skipif`-gated to
+POSIX (the `test_permissions.py` precedent); the chmod-was-called half runs
+everywhere and is the honest portable observable — the blob store has no
+injectable mode seam to drive, so the everywhere-half spies the recorded
+`chmod` calls through `os.chmod` and asserts the staged-file call.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+import stat
+import threading
+import time
+from pathlib import Path
+
+import pytest
+
+from aeh.conf import ModelRef
+from aeh.ingest import (
+    IngestSanitizeError,
+    Ingestor,
+    PageImage,
+    PdfSanitizer,
+    ResidencySlot,
+    SanitizeResult,
+    TRANSCRIPTION_PROMPT_VERSION,
+)
+from aeh.prov import Completion, SamplingParams
+from aeh.store import PurgePreconditionError, open_store
+
+pytestmark = pytest.mark.integration
+
+ISSUE = "#48"
+
+#: The `ingest_status` vocabulary (FR-INGEST-29) — the same five names the ladder
+#: suite pins; repeated here because TC-INGEST-44/45 assert the recorded
+#: outcomes against it.
+INGEST_STATUSES = ("ok", "low_confidence_ocr", "unreadable", "incomplete",
+                   "unmatched_assessment")
+
+#: Per-page transcript bodies for the multi-page fixtures: every page of one
+#: document must carry distinct vocabulary, or the duplicate-page check (the
+#: same tokenizer the divergence measure uses) fires on scripted pages that
+#: differ only by an ordinal.
+DEFAULT_PAGE_TEXTS = {
+    1: "the opening page carries the header line and the first exercise",
+    2: "the second sheet holds the diagram description and its labels",
+    3: "the third sheet continues with the worked computation",
+    4: "the final sheet closes the paper with the summary lines",
+}
+
+
+def _model() -> ModelRef:
+    return ModelRef(role="transcriber", provider="local",
+                    build_id="vlm@sha256:bbbb", quantization="q4")
+
+
+class ThroughSanitizer(PdfSanitizer):
+    """The fast-tier sanitizer double: no constructs, the bytes pass through."""
+
+    def sanitize(self, pdf_bytes, *, strip=True, max_decompressed_bytes=None,
+                 max_embedded_objects=None, deadline=None):
+        return SanitizeResult(pdf_bytes=pdf_bytes)
+
+
+class RefusingSanitizer(PdfSanitizer):
+    """Refuses the sources in its set the way the live `PypdfSanitizer` refuses
+    an unreadable one — before any rasterization, so V0 resolves to quarantine."""
+
+    def __init__(self, sources) -> None:
+        self.sources = set(sources)
+        self.asked: list[bytes] = []
+
+    def sanitize(self, pdf_bytes, *, strip=True, **kwargs):
+        if bytes(pdf_bytes) in self.sources:
+            self.asked.append(bytes(pdf_bytes))
+            raise IngestSanitizeError(
+                "the source is not a PDF (no header); an unreadable artifact "
+                "cannot be ingested")
+        return SanitizeResult(pdf_bytes=pdf_bytes)
+
+
+class ScriptedRasterizer:
+    """A rasterizer double: `plan` maps source bytes to a page list, `layers`
+    maps (source bytes, page) to the PDF's own text layer; every call and every
+    crop request is recorded so a test can prove a stage never ran."""
+
+    def __init__(self, plan: dict | None = None, layers: dict | None = None) -> None:
+        self.plan = plan or {}
+        self.layers = layers or {}
+        self.calls: list[bytes] = []
+        self.crop_calls: list[tuple[bytes, int, tuple | None]] = []
+
+    def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
+        self.calls.append(bytes(pdf_bytes))
+        pages = self.plan.get(bytes(pdf_bytes), [(1, b"page-one", 100, 140)])
+        return [PageImage(page_no=page_no, png=png, width_px=w, height_px=h)
+                for page_no, png, w, h in pages]
+
+    def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
+        self.crop_calls.append((bytes(pdf_bytes), page_no, box))
+        return b"crop"
+
+    def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
+        return self.layers.get((bytes(pdf_bytes), page_no), "")
+
+
+class ScriptedProvider:
+    """A provider double keyed per (source blob, page): one deterministic
+    `Completion` per call, every call's payload fields and residency state
+    recorded. `slot` (when given) is read at call time for TC-INGEST-46's
+    hold-through-the-call sequence; `on_call` runs inside the call for the
+    mid-hold judge probe."""
+
+    def __init__(self, texts: dict | None = None, slot: ResidencySlot | None = None,
+                 on_call=None) -> None:
+        self.texts = texts or {}
+        self.calls: list[tuple[str, int]] = []
+        self.fields: list[dict] = []
+        self.holders: list[str | None] = []
+        self.slot = slot
+        self.on_call = on_call
+
+    def complete(self, prompt, model_ref, params) -> Completion:
+        fields = dict(prompt.fields)
+        page_no = int(fields["page_no"])
+        key = (fields["source_blob_hash"], page_no)
+        self.calls.append(key)
+        self.fields.append(fields)
+        if self.slot is not None:
+            self.holders.append(self.slot._holder)
+        if self.on_call is not None:
+            self.on_call(key, fields)
+        text = self.texts.get(key, DEFAULT_PAGE_TEXTS.get(page_no, "plain page"))
+        return Completion(text=text, tokens_in=1, tokens_out=1, latency_ms=1,
+                          resolved_build=model_ref.build_id,
+                          cached_prefix_tokens=0, cost=None)
+
+
+class _Fixture:
+    """One fresh store, cohort, blob dir and ingestor over them (the ladder's
+    fixture, parameterized by cohort id)."""
+
+    def __init__(self, tmp_data_dir, name: str, cohort_id: str, *,
+                 sanitizer=None, rasterizer: ScriptedRasterizer | None = None,
+                 provider: ScriptedProvider | None = None) -> None:
+        self.root = tmp_data_dir / f"48-{name}"
+        self.store = open_store(self.root)
+        self.blobs = self.store.blobs()
+        self.cohort_id = cohort_id
+        self.handle = self.store.cohort(cohort_id)
+        with self.handle.transaction() as tx:
+            tx.execute("INSERT OR IGNORE INTO cohort (cohort_id, consent_class, "
+                       "created_at) VALUES (:c, 'synthetic', 'x')", c=cohort_id)
+        self.rasterizer = rasterizer or ScriptedRasterizer()
+        self.provider = provider or ScriptedProvider()
+        self.slot = ResidencySlot.for_policy(("transcriber",))
+        if isinstance(self.provider, ScriptedProvider) and self.provider.slot is None:
+            self.provider.slot = self.slot
+        self.ingestor = Ingestor(self.handle, self.blobs, self.provider,
+                                 _model(), SamplingParams(temperature=0.0),
+                                 self.rasterizer, residency=self.slot,
+                                 sanitizer=sanitizer or ThroughSanitizer())
+
+    def put(self, content: bytes) -> str:
+        return self.blobs.put(content)
+
+    def script(self, source: str, page_texts: dict[int, str]) -> None:
+        for page_no, text in page_texts.items():
+            self.provider.texts[(source, page_no)] = text
+
+    def add_roster(self, *refs: str) -> None:
+        with self.handle.transaction() as tx:
+            for ref in refs:
+                tx.execute("INSERT INTO roster (cohort_id, student_ref) "
+                           "VALUES (:c, :r)", c=self.cohort_id, r=ref)
+
+    def catalog(self, kinds: list[str]):
+        from aeh.pkg import PackageCatalog, PackageDraft
+
+        seed = self.store.package("pkg-48")
+        with seed.transaction() as tx:
+            tx.execute("INSERT INTO package (package_id, created_at) "
+                       "VALUES ('pkg-48', 'x')")
+        catalog = PackageCatalog(seed, package_id="pkg-48")
+        version = catalog.create_version(None, PackageDraft(title="ts19"))
+        for index, kind in enumerate(kinds, start=1):
+            catalog.add_criterion(version, f"C{index}", question_id=f"Q{index}",
+                                  kind=kind, max_points=4.0)
+        return catalog, version
+
+    def submission_rows(self) -> list:
+        return self.handle.query(
+            "SELECT submission_id, student_ref, v0_integrity, v1_pages, "
+            "v2_structure, v3_identity, v4_match, ingest_status, quarantined "
+            "FROM submission ORDER BY submission_id")
+
+    def close(self) -> None:
+        self.store.close()
+
+
+def _student_answer(name: str | None, *regions: str) -> str:
+    head = f"Student: {name}\n" if name else ""
+    return head + "\n".join(regions)
+
+
+def _answer_text(question_id: str, body: str) -> str:
+    return (f"<!-- region: kind=transcribed_text question_id={question_id} "
+            f"state=present -->\n{body}\n<!-- /region -->")
+
+
+def _selection(question_id: str, state: str, option: str = "") -> str:
+    return (f"<!-- region: kind=selection_mark question_id={question_id} "
+            f"selection_state={state} selection={option} -->\n"
+            "the mark as seen\n<!-- /region -->")
+
+
+def _divergence(layer: str, raw_transcript: str) -> float:
+    """The shipped divergence measure, re-derived in the test's own arithmetic
+    (F6): 1 − Jaccard over lowercase whitespace tokens — the tokenizer the
+    duplicate threshold is calibrated against. Deliberately an independent
+    implementation, not a call into the module."""
+    left = frozenset(layer.lower().split())
+    right = frozenset(raw_transcript.lower().split())
+    if not left and not right:
+        return 0.0  # identical empty pages
+    if not left or not right:
+        return 1.0
+    return 1.0 - len(left & right) / len(left | right)
+
+
+def _quality_report(legibility_by_ref: dict, region_rows: list,
+                    unresolved_rows: list) -> dict:
+    """The per-legibility-tier transcription measurements, **measured not gated**
+    (Q-05): numbers only — no threshold, no pass/fail, no gate anywhere in the
+    shape. Per tier: the submissions ingested, the regions recorded, the mean
+    recorded OCR confidence over conf-carrying regions, the unresolved-token
+    count, and that count per 1000 regions. A `None` mean is an honest
+    measurement (no region carried a confidence), not an absence."""
+    tiers: dict[str, dict] = {}
+    for row in region_rows:
+        tier = legibility_by_ref.get(row["student_ref"])
+        if tier is None:
+            continue
+        bucket = tiers.setdefault(tier, {"submissions": set(), "regions": 0,
+                                         "confs": [], "tokens": 0})
+        bucket["submissions"].add(row["submission_id"])
+        bucket["regions"] += 1
+        if row["ocr_conf"] is not None:
+            bucket["confs"].append(row["ocr_conf"])
+    for row in unresolved_rows:
+        tier = legibility_by_ref.get(row["student_ref"])
+        if tier is not None:
+            tiers[tier]["tokens"] += 1
+    report: dict[str, dict] = {}
+    for tier, bucket in sorted(tiers.items()):
+        report[tier] = {
+            "submissions": len(bucket["submissions"]),
+            "regions": bucket["regions"],
+            "mean_ocr_conf": (sum(bucket["confs"]) / len(bucket["confs"])
+                              if bucket["confs"] else None),
+            "unresolved_tokens": bucket["tokens"],
+            "unresolved_tokens_per_1000_regions": (
+                1000.0 * bucket["tokens"] / bucket["regions"]
+                if bucket["regions"] else None),
+        }
+    return report
+
+
+def _region_rows(handle, cohort_id: str) -> list:
+    """The producer join the §6.9 surface-proxy analysis consumes: per student
+    ref, the regions and their recorded confidences (F5)."""
+    return handle.query(
+        "SELECT s.student_ref, s.submission_id, r.ocr_conf, r.region_kind "
+        "FROM submission s "
+        "JOIN document d ON d.submission_id = s.submission_id "
+        "JOIN document_region r ON r.document_id = d.document_id "
+        "WHERE s.cohort_id = :c", c=cohort_id)
+
+
+def _unresolved_rows(handle, cohort_id: str) -> list:
+    return handle.query(
+        "SELECT s.student_ref, u.token, u.region_id FROM unresolved_token u "
+        "JOIN document d ON d.document_id = u.document_id "
+        "JOIN submission s ON s.submission_id = d.submission_id "
+        "WHERE s.cohort_id = :c", c=cohort_id)
+
+
+# --- TC-INGEST-42's purge precondition (the test_purge.py promotion pattern) --------------------
+
+PROMOTE_DDL = (
+    "ALTER TABLE audit_record ADD COLUMN cohort_id TEXT",
+    "ALTER TABLE label ADD COLUMN cohort_id TEXT",
+    "ALTER TABLE criterion_stats ADD COLUMN cohort_id TEXT",
+)
+
+
+def _promote(store, cohort_id: str) -> None:
+    """Give Tier D the three promotion gates through an **independent**
+    connection — the owning modules' `ALTER`/`INSERT` shape, exactly the
+    precedent `TC-STORE-11` set."""
+    store.durable()
+    with sqlite3.connect(store.durable_path()) as raw:
+        for ddl in PROMOTE_DDL:
+            try:
+                raw.execute(ddl)
+            except sqlite3.OperationalError as error:
+                if "duplicate column" not in str(error).lower():
+                    raise
+        raw.execute(
+            "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, "
+            "profile_summary, cohort_id) VALUES (?, ?, 't', 'p', ?)",
+            (f"a-{cohort_id}", "run-1", cohort_id))
+        raw.execute(
+            "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
+            "label_type, band, cohort_id) VALUES (?, 'run-1', 'ref-1', 'C1', "
+            "'human', 'b1', ?)", (f"l-{cohort_id}", cohort_id))
+        raw.execute(
+            "INSERT INTO criterion_stats (package_version_id, criterion_id, "
+            "backend_profile, panel_build_ref, n, cohort_id) VALUES (?, 'C1', "
+            "'bp', ?, 5, ?)", (f"pv-{cohort_id}", f"pb-{cohort_id}", cohort_id))
+
+
+# -- TC-INGEST-41: the prompt-template version is on the document row --------------------------------
+
+
+def test_tc_ingest_41_the_document_row_records_the_exact_prompt_template_version(
+        tmp_data_dir, monkeypatch):
+    """`TC-INGEST-41` — *"Every `document` row records the exact
+    prompt-template version used for its transcription."*
+
+    Oracle: **exact value**. The shipped constant is `"ingest-transcribe-v4"`,
+    the row carries it, and the transcription request's payload carries the same
+    version — recorded at request time, not reconstructed later. Because both
+    call sites read the module constant at call time, changing the template
+    (the operator swaps the prompt) is observable: the **next** document records
+    the new version in its row and in its request payload, and the earlier rows
+    keep the version they were actually transcribed with — a row's provenance
+    never rewrites itself."""
+    import aeh.ingest as ingest_module
+
+    fx = _Fixture(tmp_data_dir, "prompt-version", "c-41")
+    assert TRANSCRIPTION_PROMPT_VERSION == "ingest-transcribe-v4", (
+        "TC-INGEST-41: the shipped prompt-template version is not the exact "
+        f"value the design pins: {TRANSCRIPTION_PROMPT_VERSION!r}.")
+
+    source_a = fx.put(b"assessment-a")
+    document_a = fx.ingestor.ingest_document([source_a], kind="assessment",
+                                             filenames={source_a: "scan-a.md"})
+    row_a = fx.handle.query("SELECT prompt_template_version FROM document "
+                            "WHERE document_id = :d", d=document_a)[0]
+    assert row_a["prompt_template_version"] == "ingest-transcribe-v4", (
+        "TC-INGEST-41: the document row does not record the exact "
+        "prompt-template version.")
+    assert fx.provider.fields and all(
+        fields.get("prompt_template_version") == "ingest-transcribe-v4"
+        for fields in fx.provider.fields), (
+        "TC-INGEST-41: the transcription request payload does not carry the "
+        "prompt-template version — the version must be recorded at request "
+        "time, next to the transcript it produced.")
+
+    # The template changes (an operator swap); the next document records the
+    # change in BOTH places, and the first row keeps its provenance.
+    monkeypatch.setattr(ingest_module, "TRANSCRIPTION_PROMPT_VERSION",
+                        "ingest-transcribe-v9")
+    source_b = fx.put(b"assessment-b")
+    document_b = fx.ingestor.ingest_document([source_b], kind="assessment",
+                                             filenames={source_b: "scan-b.md"})
+    rows = {row["prompt_template_version"] for row in fx.handle.query(
+        "SELECT prompt_template_version FROM document")}
+    assert rows == {"ingest-transcribe-v4", "ingest-transcribe-v9"}, (
+        "TC-INGEST-41: after the template changed, the two rows must record "
+        f"the two versions they were each transcribed with, got {rows}.")
+    row_b = fx.handle.query("SELECT prompt_template_version FROM document "
+                            "WHERE document_id = :d", d=document_b)[0]
+    assert row_b["prompt_template_version"] == "ingest-transcribe-v9"
+    assert all(fields.get("prompt_template_version") == "ingest-transcribe-v9"
+               for fields in fx.provider.fields[-1:]), (
+        "TC-INGEST-41: the request made under the changed template does not "
+        "carry the changed version.")
+    fx.close()
+
+
+# -- TC-INGEST-42: crops are content-addressed, staged owner-only; purge sweeps the rows --------------
+
+
+def test_tc_ingest_42_crop_blobs_are_content_addressed_and_staged_owner_only(
+        tmp_data_dir, monkeypatch):
+    """`TC-INGEST-42`'s blob half (part 1, runs everywhere): the ingest path's
+    blob writes — the `described_graphic` crops — are **content-addressed**
+    (`put` is idempotent, the ref is the SHA-256 of the bytes, the crop
+    round-trips) and staged **owner-only**: the staged file is `chmod`'d to
+    0o600 before it lands (F1: page rasters never reach the store at all —
+    the ingest path's only blob writes are these crops).
+
+    The exact-mode half of the permission oracle is the POSIX-gated case below;
+    this half asserts the **chmod-was-called** observable, because this host
+    cannot express the mode. The spy delegates — nothing is weakened."""
+    calls: list[tuple[str, int]] = []
+    real_chmod = os.chmod
+
+    def spy_chmod(path, mode, **kwargs):
+        calls.append((str(path), mode))
+        return real_chmod(path, mode, **kwargs)
+
+    monkeypatch.setattr(os, "chmod", spy_chmod)
+
+    fx = _Fixture(tmp_data_dir, "crop-blobs", "c-42")
+    source = fx.put(b"crop-source")
+    fx.script(source, {1: _student_answer(
+        "amara-o",
+        "<!-- region: kind=transcribed_text -->\nthe margin note\n<!-- /region -->",
+        "<!-- region: kind=described_graphic element_kind=graph_or_plot -->\n"
+        "The plot shows velocity against time.\n<!-- /region -->")})
+    fx.add_roster("amara-o")
+    fx.ingestor.ingest_submission([source], cohort_id=fx.cohort_id,
+                                  package_version="v0",
+                                  filenames={source: "scan-01.md"})
+
+    crop_refs = [row["crop_ref"] for row in fx.handle.query(
+        "SELECT crop_ref FROM document_region "
+        "WHERE crop_ref IS NOT NULL")]
+    assert len(crop_refs) == 1, (
+        f"TC-INGEST-42: expected exactly one retained crop, got {crop_refs}.")
+    crop_ref = crop_refs[0]
+    assert crop_ref == hashlib.sha256(b"crop").hexdigest(), (
+        "TC-INGEST-42: the crop ref is not the SHA-256 of the crop's own "
+        "bytes — the blob store's content addressing is the dedup guarantee.")
+    assert fx.blobs.get(crop_ref) == b"crop", (
+        "TC-INGEST-42: the crop ref does not round-trip to the retained crop.")
+    # Idempotence: re-putting the same bytes is the same ref, one file.
+    again = fx.blobs.put(b"crop")
+    assert again == crop_ref
+    stored = [f for f in (fx.root / "blobs").rglob("*")
+              if f.is_file() and f.read_bytes() == b"crop"]
+    assert len(stored) == 1, (
+        f"TC-INGEST-42: the idempotent put left {len(stored)} copies of the "
+        "same content — dedup is the store's promise.")
+
+    # The staged file was chmod'ed owner-only before it landed (the portable
+    # half of the permission oracle; the exact modes are the POSIX case below).
+    staged = [(path, mode) for path, mode in calls
+              if ".incoming" in path and mode == 0o600]
+    assert staged, (
+        "TC-INGEST-42: no chmod(0o600) was recorded for a staged blob file. "
+        "The staged bytes carry the transcript before the rename lands them — "
+        "an un-staged-world-readable temp file is the same disclosure with a "
+        "different directory. (The store's own DB-file chmods are recorded "
+        "too; only the staged-blob call is asserted here.)")
+    fx.close()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="mode bits are real on POSIX only")
+def test_tc_ingest_42_created_blob_files_are_owner_only(tmp_path):
+    """`TC-INGEST-42`'s exact-mode half, where the modes are real: every file
+    the ingest path leaves in the blob store is 0o600, and the blob root is
+    0o700. The fan-out directories under `blobs/` are created with mkdir's mode
+    argument only (umask-filtered on POSIX, ACL-scoped on Windows) — the store's
+    TC-STORE-10 suite asserts exactly this shape, files only, and this case
+    matches that precedent rather than inventing a stricter one."""
+    from tests.support.store_api import open_store as api_open_store
+
+    data_dir = tmp_path / "data"
+    store = api_open_store(data_dir)
+    blobs = store.blobs()
+    source = blobs.put(b"posix-crop-source")
+    crop = blobs.put(b"crop")
+    assert stat.S_IMODE((data_dir / "blobs").stat().st_mode) == 0o700, (
+        "TC-INGEST-42: the blob root is not owner-only.")
+    for blob_file in (data_dir / "blobs").rglob("*"):
+        if blob_file.is_file():
+            assert stat.S_IMODE(blob_file.stat().st_mode) == 0o600, (
+                f"TC-INGEST-42: {blob_file.name} is "
+                f"{stat.S_IMODE(blob_file.stat().st_mode):03o}, not 0600 — a "
+                "retained crop is student work at the same sensitivity as the "
+                "database files.")
+    store.close()
+
+
+def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_rule_alone(
+        tmp_data_dir):
+    """`TC-INGEST-42`'s purge half: *"the transcription payload is removed by
+    `purge_cohort`, along with Tier C."* The transcription payload lives in the
+    Tier C rows — `document.markdown`, `document_region`'s per-region
+    confidence, the unresolved-token rows — and the sweep removes them after
+    the Tier D promotion gates refuse it until then.
+
+    Two disclosed limits keep this case honest rather than red (F2, F8):
+
+    - **F2 — the blob store**: `purge_cohort` does not touch the blob
+      directory; `PurgeReport.blobs_deleted` is the documented honest zero (the
+      §7.4 accepted risk `tests/integration/store/test_purge.py` pins). The
+      crop therefore survives the purge that removed its region row, and the
+      case asserts that consequence.
+    - **F8 — the unread tokens**: a cohort carrying `unresolved_token` rows
+      **cannot be purged at all** — the sweep's `_COHORT_PURGE_ORDER` (store
+      1374) was not extended when #39 added the token tables to
+      `_PURGE_DELETES`, so `document_region` is deleted while the tokens that
+      reference it remain, the FK blocks the DELETE, and `purge_cohort` dies
+      with a raw `sqlite3.IntegrityError` (rolled back). Probe: the same
+      fixture with one `<unresolved>` token → `IntegrityError: FOREIGN KEY
+      constraint failed`; without it → the sweep below. The defect is in
+      shipped code with no open story behind it — disclosed here, asserted
+      against nothing, for the fixing story to rewrite this case with."""
+    fx = _Fixture(tmp_data_dir, "purge", "c-purge-48")
+    source = fx.put(b"purge-source")
+    fx.script(source, {1: _student_answer(
+        "hana-w",
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present -->\n"
+        "the answer to the one question\n<!-- /region -->",
+        "<!-- region: kind=described_graphic element_kind=graph_or_plot -->\n"
+        "The plot shows velocity against time.\n<!-- /region -->")})
+    fx.add_roster("hana-w")
+    fx.ingestor.ingest_submission([source], cohort_id=fx.cohort_id,
+                                  package_version="v0",
+                                  filenames={source: "scan-01.md"})
+    crop_ref = fx.handle.query(
+        "SELECT crop_ref FROM document_region WHERE crop_ref IS NOT NULL")[0]["crop_ref"]
+    before = {
+        "submission": fx.handle.query("SELECT COUNT(*) AS n FROM submission")[0]["n"],
+        "document": fx.handle.query("SELECT COUNT(*) AS n FROM document")[0]["n"],
+        "document_region": fx.handle.query(
+            "SELECT COUNT(*) AS n FROM document_region")[0]["n"],
+    }
+    assert before["document"] >= 1 and before["document_region"] >= 2, (
+        f"TC-INGEST-42: the fixture did not produce the rows the sweep is "
+        f"measured against: {before}.")
+    cohort_path = fx.store.cohort_path(fx.cohort_id)
+    untouched = cohort_path.read_bytes()
+
+    # The precondition first: nothing promoted, nothing deleted.
+    with pytest.raises(Exception) as refused:
+        fx.store.purge_cohort(fx.cohort_id)
+    assert type(refused.value).__name__ == "PurgePreconditionError", (
+        f"TC-INGEST-42: purge before promotion raised "
+        f"{type(refused.value).__name__}, not PurgePreconditionError.")
+    assert cohort_path.read_bytes() == untouched, (
+        "TC-INGEST-42: the refused purge touched the cohort file.")
+
+    _promote(fx.store, fx.cohort_id)
+    report = fx.store.purge_cohort(fx.cohort_id)
+    assert report.rows_deleted_by_table.get("submission") == 1
+    assert report.rows_deleted_by_table.get("document", 0) >= 1
+    assert report.rows_deleted_by_table.get("document_region", 0) >= 2
+    assert report.rows_deleted_by_table.get("cohort") == 1
+
+    # The post-purge absence, read through an independent connection (the
+    # purge evicted the cached handle — that is part of its contract).
+    with sqlite3.connect(cohort_path) as raw:
+        for table in ("submission", "document", "document_region"):
+            count = raw.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            assert count == 0, (
+                f"TC-INGEST-42: {table} still holds {count} row(s) after the "
+                "purge — the transcription payload is not removed.")
+
+    # The disclosed blob rule (F2): the purge does not reclaim blobs, so the
+    # crop outlives the region row that referenced it. A change to the declared
+    # rule rewrites this assertion with the rule's own story.
+    assert report.blobs_deleted == 0, (
+        "TC-INGEST-42: the purge deleted blobs — the declared rule (test plan "
+        "§7.4, PurgeReport's honest zero) is that it does not.")
+    assert fx.blobs.get(crop_ref) == b"crop", (
+        "TC-INGEST-42: the crop did not survive the purge. Under the declared "
+        "rule a blob referenced by no surviving row still resolves — the dedup "
+        "lifetime is the §7.4 open question, not something purge settles.")
+    fx.close()
