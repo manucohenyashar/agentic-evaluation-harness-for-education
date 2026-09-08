@@ -1562,6 +1562,20 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "test_tc_orch_11_enqueue_escalation_commits_and_rolls_back_with_the_callers_transaction",
         ),
     ),
+    "#60 TS-23 random arm enumeration (TC-ORCH-12 mechanism)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,"
+            f"{ORCH_MODULE}:ORCH_ESCALATION_BUDGET,"
+            f"{ORCH_MODULE}:Orchestrator.enqueue_escalation"
+        ),
+        (
+            "tests/integration/orch/test_random_arm_enumeration.py::"
+            "test_tc_orch_12_the_arm_is_enumerated_up_front_before_any_confidence_exists",
+            "tests/integration/orch/test_random_arm_enumeration.py::"
+            "test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm",
+        ),
+    ),
 }
 
 
