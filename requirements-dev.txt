@@ -24,3 +24,13 @@ hypothesis>=6.100
 # with the same library. The fast tier never imports it (the lazy import IS the
 # seam), but the dependency is declared here so a fresh clone runs every suite.
 pypdf>=6.0
+
+# Issue #226 / F10: the live `PdfiumRasterizer`'s dependency — `crop`, like
+# `rasterize`/`text_layer`, lazy-imports it (the lazy import IS the seam, so the
+# fast tier never touches it), and until now no dependency set declared it: a
+# fresh clone could not run the live path the acceptance run needs. Pillow is
+# declared with it because the rasterizer decodes PNG bytes through
+# `PdfBitmap.to_pil()`, which requires it; neither is imported outside M-INGEST
+# (TC-INGEST-01 sweeps for that).
+pypdfium2>=4.0
+Pillow>=10.0
