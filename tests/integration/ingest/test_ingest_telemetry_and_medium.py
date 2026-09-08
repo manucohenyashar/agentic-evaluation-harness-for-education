@@ -32,19 +32,19 @@ each with its probe evidence:
   and the purge half of the case below asserts the blob directory empty. The
   §7.4 accepted risk `tests/integration/store/test_purge.py` used to pin was
   rewritten by the same story.
-- **F3** (`TC-INGEST-44`, run-level signals): the §3.5/`OBS-01` run-level
-  signals — `ocr_failure_rate`, the unresolved-mark rate, mean/max divergence
-  aggregates, per-gate pass/fail counts, quarantine counts by gate, the
-  second-pass disagreement rate — have **no emitter anywhere in src/** (grep:
-  zero hits for every name; `IngestReport` carries per-gate columns only). All
-  six M-INGEST implementation stories (#36–#41) are closed and no open story
-  owns an emitter, and the design pins the names in prose only — so there is no
-  keyable `writtenahead` target. The case asserts the **recorded form** fully
-  (exact column names and types, hand-computed per-gate pass/fail counts and
-  quarantine-by-gate derivations); the emitter half belongs to the ingest
-  contract suite (#49), and the assertion-side suite that pins the OBS-01..11
-  signals is TS-55 (#148, `type:test`, open) — a `writtenahead` case keyed on
-  an emitter story is the plan's mechanism once that story exists.
+- **F3** (`TC-INGEST-44`, run-level signals) — **resolved by #222**: the
+  §3.5/`OBS-01` run-level signals — `ocr_failure_rate`, the unresolved-mark
+  rate, pages-with-text-layer, mean/max divergence aggregates, per-gate
+  pass/fail counts, quarantine counts by gate, the second-pass disagreement
+  rate — used to have **no emitter anywhere in src/** (grep: zero hits for
+  every name; `IngestReport` carried per-gate columns only). `Ingestor.
+  run_aggregates(cohort_id)` now emits each named signal over the cohort's
+  recorded rows — rates with no denominator read `None`, never a simulated
+  zero — and the case below asserts the **recorded form** fully (exact column
+  names and types, hand-computed per-gate pass/fail counts and
+  quarantine-by-gate derivations) **and** the emitter's values against the
+  same rows. The consumer side — the assertion-side suite that pins the
+  OBS-01..11 signals — stays with TS-55 (#148, `type:test`, open).
 - **F4** (`TC-INGEST-44`, gate-column reachability) — **resolved by #222**: the
   ladder's final gate write records **every** gate column, and a gate the
   ladder never reached used to keep its initialized `'pass'` — only
@@ -829,8 +829,9 @@ PASSED = {gate: REACHED[gate] - FAILED[gate] for gate in REACHED}
 
 #: The per-gate failure values — V3's failure is `unmatched`, not `fail`
 #: (identity is never guessed; unmatched routes to triage). The quarantine-by-
-#: gate derivation scans only these values, so a future fix that stops masking
-#: unreached gates as `'pass'` (F4) keeps the derivation true.
+#: gate derivation scans only these values, so it stays true under the
+#: `not_reached` sentinel (#222/F4): an unreached gate never reads a failure
+#: value.
 FAIL_VALUE = {"v0": "fail", "v1": "fail", "v2": "fail", "v3": "unmatched"}
 GATE_COLUMNS = {"v0": "v0_integrity", "v1": "v1_pages", "v2": "v2_structure",
                 "v3": "v3_identity"}
