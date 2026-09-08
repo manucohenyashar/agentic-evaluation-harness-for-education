@@ -1,11 +1,17 @@
 """`M-SETUP` Stage A's decomposability decision table — written ahead of **#52** (issue #54).
 
-Cases `TC-SETUP-08` and `TC-SETUP-10` (test plan §5.6, P0/P1), both planned unit / 0 and
-both honored at that rung: the service runs over the pure in-memory doubles in
+Cases `TC-SETUP-08`, `TC-SETUP-09` and `TC-SETUP-10` (test plan §5.6, P0/P1), all planned
+unit / 0 and all honored at that rung: the service runs over the pure in-memory doubles in
 `tests/support/setup_harness.py`, no store at all. They carry `writtenahead` and sit
 outside `TEST_CMD` until #52 lands `classify_decomposability` together with
 `SETUP_MAX_CONFIRMATIONS`; the "#52 decomposition" entry in `tests/support/impl.py` is a
 `symbols` conjunction over both, so the gate fires exactly when the file can run.
+
+`TC-SETUP-09` arrived with TS-21 (issue #55) and lives here rather than in its own file
+because it is the same classifier at the same rung over the same doubles: the
+repetition invariant of the NFR-SETUP-02 default that `TC-SETUP-08`'s "unclear" cell
+asserts once. Its blocker set is the classifier alone — already covered by this file's
+registered conjunction, so the "#52 decomposition" entry needed no new key.
 
 `TC-SETUP-13` (the dependency proposals) is **not** in this file, and that is deliberate:
 its criteria come out of the read back, so it needs #51's `read_back_rubric` as well as
@@ -189,4 +195,86 @@ def test_tc_setup_10_borderline_confirmations_capped_at_setup_max_confirmations(
         "TC-SETUP-10: a criterion with no warning signs was surfaced for confirmation — "
         "FR-SETUP-07 surfaces only borderline or warning-sign criteria; an "
         "implementation that surfaces every criterion must fail here"
+    )
+
+
+# --- TC-SETUP-09 (issue #55, TS-21) ---------------------------------------------------------
+
+
+#: The ambiguity space the invariant runs over. Each variant is a genuine "unclear" under
+#: NFR-SETUP-02 — no question answered `no`, so the `gates` route to `atomic_with_gate` is
+#: closed too — and cycling them (rather than repeating one reply) is what makes the
+#: invariant bite over the ambiguity space instead of over one input.
+_AMBIGUOUS_VARIANTS = (
+    ("one-unclear", {"additivity": "unclear"}, ()),
+    ("all-unclear", {question: "unclear" for question in FIVE_QUESTIONS}, ()),
+    ("mixed-yes-unclear", {"completeness": "yes", "non_interference": "unclear",
+                           "independence": "yes", "additivity": "unclear",
+                           "gates": "yes"}, ()),
+    ("unclear-with-warning-sign", {"additivity": "unclear"},
+     ("straddles two constructs",)),
+)
+
+TC_SETUP_09_RUNS = 20
+
+
+def _ambiguous_reply(criterion_id: str, answers: dict, warning_signs: tuple) -> str:
+    """One scripted ambiguous §5.3 answer set — same reply shape as `_answers_reply`,
+    with the answer values themselves carrying the ambiguity."""
+    reply = {
+        "criterion_id": criterion_id,
+        "answers": answers,
+        "reasoning": f"scripted ambiguous §5.3 answers for {criterion_id}",
+    }
+    if warning_signs:
+        reply["warning_signs"] = list(warning_signs)
+    return json.dumps(reply)
+
+
+def test_tc_setup_09_ambiguous_criterion_is_never_auto_classified_atomic_in_any_run():
+    """`TC-SETUP-09` (NFR-SETUP-02, P0) — an ambiguous fixture criterion, run 20 times,
+    is never auto-classified `atomic` in any run: the exact assertion NFR-SETUP-02 names
+    ("a test shall assert that an ambiguous fixture criterion is never auto-classified
+    `atomic`") and CT-SETUP-04 repeats ("the classifier's default on any unclear case is
+    `holistic` — never `atomic`"). The oracle is the invariant over repetitions, so the
+    20-run loop lives inside the test and each run's outcome is asserted with its run
+    number in the message.
+
+    The ambiguity is varied over four scripted reply variants — one unclear answer, all
+    five unclear, a yes/unclear mix, and an unclear answer plus a warning sign — cycled
+    five times. Every run must classify the default `holistic` (RISK-27: a default of
+    `atomic` gives the criterion panel depth 1 and a higher auto-accept ceiling than it
+    deserves, and nothing downstream would notice) and surface for the teacher, which is
+    what makes the default auditable rather than silent."""
+    setup = require(SETUP_MODULE, "SetupService", issue=ISSUE)
+    require_attr(setup, "classify_decomposability", issue=ISSUE)
+
+    classifications: list[str] = []
+    for run in range(TC_SETUP_09_RUNS):
+        name, answers, warning_signs = _AMBIGUOUS_VARIANTS[run % len(_AMBIGUOUS_VARIANTS)]
+        service = _service([_ambiguous_reply("CRIT-AMB", answers, warning_signs)])
+        verdict = service.classify_decomposability(_draft("CRIT-AMB"))
+
+        assert verdict.classification != "atomic", (
+            f"TC-SETUP-09 run {run + 1}/{TC_SETUP_09_RUNS} ({name}): the ambiguous "
+            "criterion was auto-classified 'atomic' — NFR-SETUP-02's default is "
+            "'holistic' on any unclear case, never 'atomic' (CT-SETUP-04, RISK-27)"
+        )
+        assert verdict.classification == "holistic", (
+            f"TC-SETUP-09 run {run + 1}/{TC_SETUP_09_RUNS} ({name}): an unclear "
+            f"classification must default to 'holistic', got "
+            f"{verdict.classification!r}"
+        )
+        assert verdict.needs_teacher_confirmation is True, (
+            f"TC-SETUP-09 run {run + 1}/{TC_SETUP_09_RUNS} ({name}): the unclear case "
+            "must surface for the teacher rather than silently defaulting — the "
+            "auditability half of the NFR-SETUP-02 default (TC-SETUP-08's unclear cell)"
+        )
+        classifications.append(verdict.classification)
+
+    assert classifications.count("holistic") == TC_SETUP_09_RUNS, (
+        f"TC-SETUP-09: the 20-run invariant broke — "
+        f"{classifications.count('holistic')}/{TC_SETUP_09_RUNS} runs classified the "
+        f"ambiguous criterion 'holistic' ({classifications}); NFR-SETUP-02 requires it "
+        "in every run"
     )
