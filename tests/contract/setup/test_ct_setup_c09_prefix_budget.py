@@ -1,10 +1,14 @@
 """`CT-SETUP-09` — the prefix-budget check runs before publication; the drop
 policy spares the reference solution and criterion text (`TC-SETUP-C09`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD of #53** — the
-budget check (`check_prefix_budget`, §3.6's signature) is #53's. The file
-carries `writtenahead` and a `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C09 prefix
-budget") keyed on it; it fails ONLY via `NotImplementedYet` until #53 lands.
+Case of test plan §6.11.6; issue #56 (TS-63). **Landed with #53** — the
+budget check (`check_prefix_budget`, §3.6's signature) exists, and the
+`writtenahead` marker and its `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C09 prefix
+budget") are gone. The fixture was aligned once at the landing: the two bands'
+POINTS were re-ordered to be non-decreasing in ordinal (FR-PKG-06 — the
+zero-point band at ordinal 0), which moved the band names with them; the
+value semantics the stated bet describes (the zero-point band's exemplars are
+the lowest-value things in the prefix) and every assertion are unchanged.
 
 The clause (FR-SETUP-11), asserted in its three parts:
 
@@ -40,7 +44,7 @@ from aeh.setup import SetupService
 from tests.contract.setup._doubles import db_file_for, ingest_document, stage_chain
 from tests.support.impl import require_attr
 
-pytestmark = pytest.mark.writtenahead
+pytestmark = pytest.mark.contract
 
 ISSUE = "#53"
 
@@ -78,17 +82,24 @@ def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
                                         reference)
     chain.catalog.add_criterion(version, "CRIT-B", question_id="Q1",
                                 kind="open", max_points=4.0, band_count=2)
-    descriptors = ("the derivation is complete and stated",
-                   "no method appears")
-    for ordinal, descriptor in enumerate(descriptors):
-        chain.catalog.add_band(version, "CRIT-B", ordinal, f"b{ordinal}",
-                               float(1 - ordinal), descriptor=descriptor)
-    chain.service.set_answer_keys({"CRIT-B": ["b0"]})
+    # The points are non-decreasing in ordinal (FR-PKG-06 — the shape the same
+    # schema enforces everywhere), so the ZERO-point band sits at ordinal 0:
+    # its exemplars are the lowest-value things in the prefix, as the stated
+    # bet describes.
+    bands_spec = (("b0", 0.0, "no method appears"),
+                  ("b1", 1.0, "the derivation is complete and stated"))
+    descriptors = tuple(spec[2] for spec in bands_spec)
+    for ordinal, (band, points, descriptor) in enumerate(bands_spec):
+        chain.catalog.add_band(version, "CRIT-B", ordinal, band, points,
+                               descriptor=descriptor)
+    chain.service.set_answer_keys({"CRIT-B": ["b1"]}
+                                  | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                     "CRIT-Q6": ["A"]})
 
     # Exemplars across the value range, each carrying a large blob so the
     # assembled prefix is over ANY configured ceiling.
-    for exemplar_id, band in (("EX-LOW", "b1"), ("EX-MID", "b1"),
-                              ("EX-HIGH", "b0")):
+    for exemplar_id, band in (("EX-LOW", "b0"), ("EX-MID", "b0"),
+                              ("EX-HIGH", "b1")):
         blob = chain.store.blobs().put(b"x" * 400_000)
         chain.catalog.add_exemplar(version, exemplar_id, "CRIT-B", band,
                                    provenance="synthetic", blob_hash=blob)

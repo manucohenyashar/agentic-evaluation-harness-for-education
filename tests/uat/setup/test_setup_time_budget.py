@@ -1,4 +1,4 @@
-"""`M-SETUP`'s teacher-time budget, rung 4 — written ahead of #51/#52/#53 (issue #55).
+"""`M-SETUP`'s teacher-time budget, rung 4 — #51/#52/#53 landed (issue #55).
 
 `TC-SETUP-21` and `UAT-02` (test plan §5.6 / §6.3) share one scenario — a 15-criterion
 package carried from four uploaded PDFs to a published version by one teacher — and so
@@ -27,23 +27,19 @@ Disclosures the plan's wording forces:
 - **Stated bets**, the same policy as the rung-0 decomposition file: §3.6 pins the
   method signatures and `DecomposabilityVerdict`'s fields, not the model replies. The
   read-back reply's payload, the per-criterion classify replies, the empty dependency
-  proposal reply, the `RubricReadback.criteria` accessor and the `CRIT-Q4/Q5/Q6` ids
-  the answer keys name are this file's bets; when #51/#52/#53 land, the `_replies`,
-  `_criterion_row` and `_criterion_ids` helpers are the lines that move — the
-  per-case expectations (the counts, the blocking pair, the measured-not-gated budget)
-  do not change. The confirmation count reads the per-verdict
-  `needs_teacher_confirmation` flags, sharing `TC-SETUP-10`'s stated bet about where
-  #52 enforces the cap.
-- **The S3 answer-keys call is the sharpest bet.** Shipped
-  `PackageCatalog.set_answer_key` refuses unknown criterion ids, so the flow turns
-  green only if #53 stages the deterministic criteria's creation from the confirmed
-  inventory at or before the key screen — the moment the shipped `steps()` docstring
-  promises ("no deterministic criterion exists until #53 stages their creation from
-  the confirmed inventory"). The flow also keys `CRIT-Q6` for the *mixed* question:
-  a mixed question carries an option set (FR-SETUP-01), and an unkeyable mcq part
-  would make FR-SETUP-03's no-default, no-skip promise unsatisfiable — so a #53 that
-  stages keys for pure `mcq` questions only makes these tests fail on a wrong
-  implementation, not on a broken test.
+  proposal reply and the `RubricReadback.criteria` accessor are this file's bets; the
+  `_replies`, `_criterion_row` and `_criterion_ids` helpers are the lines that move if
+  a later story changes the payloads — the per-case expectations (the counts, the
+  blocking pair, the measured-not-gated budget) do not change. The confirmation count
+  reads the per-verdict `needs_teacher_confirmation` flags, sharing `TC-SETUP-10`'s
+  stated bet about where #52 enforces the cap.
+- **The S3 answer-keys call** — the sharpest bet, now settled: #53 stages the
+  deterministic criteria's creation from the confirmed inventory at the confirmation
+  itself (before the key screen), exactly as the shipped `steps()` docstring promised.
+  The flow keys `CRIT-Q6` for the *mixed* question: a mixed question carries an option
+  set (FR-SETUP-01), and an unkeyable mcq part would make FR-SETUP-03's no-default,
+  no-skip promise unsatisfiable — #53 stages and keys the mixed question's criterion
+  deliberately.
 - **UAT-02's "the teacher can state what the system will do with the rubric"** is
   pinned to the observable that exists today and §3.6 keeps stable: the enumerated step
   list (`TC-SETUP-03`'s shape) names a non-blocking `rubric_readback` step whose name
@@ -69,7 +65,7 @@ from tests.support.setup_harness import (
     stage_chain,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 #: The five §5.3 questions, in the order the HLD names them.
 FIVE_QUESTIONS = ("completeness", "non_interference", "independence", "additivity",
@@ -115,11 +111,18 @@ def _criterion_row(index: int) -> dict:
         "construct": f"the response carries the {question} construct through to a "
                      "stated result",
         "band_count": 2,
+        # The reply DECLARES the holistic model: the read back (a classification
+        # surface too, #52) stores that model and surfaces nothing itself — the
+        # borderline population this scenario surfaces comes from the
+        # per-criterion classify replies below, which is where the confirmation
+        # count reads it. (Holistic also keeps the criteria outside gate 2's
+        # deterministic key screen — the scripted keys stay the mcq part's.)
+        "scoring_model": "holistic",
         "bands": [
-            {"band_id": "met",
-             "descriptor": f"the response carries the {question} construct through "
+            {"band": "met", "ordinal": 0, "points": 1.0,
+             "descriptor": "the response carries the question's construct through "
                            "to a stated result"},
-            {"band_id": "not met",
+            {"band": "not met", "ordinal": 1, "points": 0.0,
              "descriptor": "the response stops before a stated result"},
         ],
     }

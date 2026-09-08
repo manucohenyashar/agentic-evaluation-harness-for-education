@@ -2535,17 +2535,25 @@ class SetupService:
                 })
                 continue
             # Each exemplar's own material, counted once, so a drop's subtraction is
-            # the estimate's arithmetic and not a re-read.
+            # the estimate's arithmetic and not a re-read. The band→points value is
+            # `points_for_band`'s alone (TC-PKG-C05/CT-PKG-05: the mapping is
+            # single-canonical, RISK-05) — this module never maps a stored band row
+            # to a score itself.
+            points_for_band = getattr(self._catalog, "points_for_band", None)
+            band_points: dict[str, float] = {}
             scored = []
             for row in pair_exemplars:
                 text = (blob_reader(row["blob_hash"])
                         if blob_reader is not None else "")
+                band = row["band"]
+                if band not in band_points:
+                    band_points[band] = (
+                        float(points_for_band(criterion["criterion_id"], band))
+                        if points_for_band is not None else 0.0)
                 scored.append({
                     "exemplar_id": row["exemplar_id"],
-                    "band": row["band"],
-                    "band_points": next(
-                        (float(band["points"]) for band in bands
-                         if band["band"] == row["band"]), 0.0),
+                    "band": band,
+                    "band_points": band_points[band],
                     "tokens": _estimate_tokens(text),
                 })
             assembled = static_tokens + sum(item["tokens"] for item in scored)
