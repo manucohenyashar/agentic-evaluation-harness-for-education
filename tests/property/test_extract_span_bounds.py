@@ -135,6 +135,7 @@ def _spans_of(result: Any) -> list[Any]:
 
 @settings(max_examples=EXAMPLES, deadline=None)
 @given(_valid_span_sets())
+@pytest.mark.writtenahead
 def test_tc_extract_15_emitted_spans_always_satisfy_the_span_invariant(case):
     """`TC-EXTRACT-15` — over generated documents, the conversion emits only spans
     that satisfy the bounds and code-point rules, and every span round-trips."""
@@ -161,6 +162,7 @@ def test_tc_extract_15_emitted_spans_always_satisfy_the_span_invariant(case):
 
 @settings(max_examples=EXAMPLES, deadline=None)
 @given(_violating_spans())
+@pytest.mark.writtenahead
 def test_tc_extract_15_a_violating_span_is_impossible_to_persist(case):
     """`TC-EXTRACT-15` — a reply carrying a span that breaks the invariant is REFUSED:
     no exception-free path can hand such a span to persistence."""
