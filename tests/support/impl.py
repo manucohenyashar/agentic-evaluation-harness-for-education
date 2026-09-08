@@ -1347,17 +1347,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         ("tests/contract/setup/test_ct_setup_c05_panel_depth.py",),
     ),
-    "#56 C06 bands": (
-        # TC-SETUP-C06's descriptor half drives the read back AND its two declared
-        # constants — the same conjunction as "#51 readback".
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SETUP_DEFAULT_BAND_COUNT,"
-            f"{SETUP_MODULE}:SETUP_MAGNITUDE_PHRASES,"
-            f"{SETUP_MODULE}:SetupService.read_back_rubric"
-        ),
-        ("tests/contract/setup/test_ct_setup_c06_bands.py",),
-    ),
+    # "#56 C06 bands" left with #51 (PR #216): the read back and its two constants
+    # landed, and the file's descriptor half runs green against them — the rebase
+    # check the suite's issue names.
     "#56 C07 mcq criteria": (
         # TC-SETUP-C07's mcq-production half: §3.6 pins no criteria-creation symbol, so
         # the file keys on #53's pinned pair (as its docstring states).
