@@ -212,12 +212,18 @@ def test_fuzz_01_every_malformation_resolves_to_ingest_or_quarantine(
             "unmatched_assessment"), (
             f"FUZZ-01: ingest_status {report.ingest_status!r} is outside the "
             "declared vocabulary.")
-        if report.ingest_status != "ok":
-            row = fx.handle.query(
-                "SELECT quarantined FROM submission")[0]
-            assert row["quarantined"] == 1, (
-                "FUZZ-01: a non-`ok` outcome must carry the quarantine flag — "
-                "never partial content presented as processed.")
+        # CT-INGEST-11's rule, as the property's own arithmetic: admissible iff
+        # `quarantined = 0` — the two admitted statuses (`ok` and, #221, the
+        # confidence floor's `low_confidence_ocr`) are exactly the unquarantined
+        # ones; the three quarantine statuses never present partial content as
+        # processed.
+        admissible = report.ingest_status in ("ok", "low_confidence_ocr")
+        row = fx.handle.query(
+            "SELECT quarantined FROM submission")[0]
+        assert (row["quarantined"] == 0) == admissible, (
+            f"FUZZ-01: status {report.ingest_status!r} with quarantined="
+            f"{row['quarantined']} breaks CT-INGEST-11's biconditional — "
+            "admissibility and the quarantine flag disagree.")
     finally:
         fx.close()
 

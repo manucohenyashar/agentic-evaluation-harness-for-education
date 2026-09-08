@@ -717,10 +717,12 @@ def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
     The **consumer** half is deferred (F5): the analysis is `TC-STATS-13`,
     owned by the open M-STATS story #117 under TS-43 (#120) — nothing consumes
     this shape yet, and a test asserting a consumer would test the story that
-    does not exist. Note also what the record honestly carries today (F-D, the
-    ladder suite's own disclosure): a confidence of 0.4 sits on an `ok`
-    submission because `low_confidence_ocr` is produced by no ladder path —
-    the routing is the gap, the recording is not."""
+    does not exist. The F-D note this case used to carry — a confidence of 0.4
+    sitting on an `ok` submission because no ladder path produced
+    `low_confidence_ocr` — is CLOSED by #221: the marginal paper now records
+    `low_confidence_ocr` (available, `quarantined = 0`), every region carries a
+    real confidence (the untagged head inheriting the page's minimum tagged
+    reading), and the flag fires without disturbing the recording."""
     fx = _Fixture(tmp_data_dir, "surface-proxy", "c-43")
     legible = fx.put(b"legible-scan")
     fx.script(legible, {1: _student_answer(
@@ -740,7 +742,10 @@ def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
                                       filenames={source: "scan-01.md"})
 
     # The per-submission outcomes, readable by student ref — the analysis's
-    # grouping key is the roster ref the identity gate resolved.
+    # grouping key is the roster ref the identity gate resolved. The legible
+    # paper stays `ok`; the marginal one flags `low_confidence_ocr` — still
+    # admissible (quarantined = 0, CT-INGEST-11), the flag is the routing
+    # signal the analysis builds on.
     outcomes = {row["student_ref"]: dict(row) for row in fx.submission_rows()}
     assert set(outcomes) == {"hana-w", "bram-c"}, (
         f"TC-INGEST-43: the submissions did not record the roster refs the "
@@ -748,30 +753,33 @@ def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
     for ref in ("hana-w", "bram-c"):
         assert outcomes[ref]["v0_integrity"] == "pass"
         assert outcomes[ref]["v3_identity"] == "pass"
-        assert outcomes[ref]["ingest_status"] == "ok", (
-            "TC-INGEST-43: the recorded outcome is `ok` even at confidence "
-            "0.4 — `low_confidence_ocr` is produced by no ladder path (F-D; "
-            "the routing gap is the ladder suite's disclosure, the recording "
-            "is what this case pins).")
         assert outcomes[ref]["quarantined"] == 0
+    assert outcomes["hana-w"]["ingest_status"] == "ok", (
+        "TC-INGEST-43: the legible paper did not ingest ok.")
+    assert outcomes["bram-c"]["ingest_status"] == "low_confidence_ocr", (
+        "TC-INGEST-43: the marginal paper's 0.4 reading did not flag "
+        "`low_confidence_ocr` — the routing signal the §6.9 analysis groups "
+        "on is gone.")
 
-    # The per-region confidence join, exact: one conf-carrying region per
-    # student, plus the header region the prompt's carry-over produces with no
-    # confidence at all.
+    # The per-region confidence join, exact: BOTH of each student's regions
+    # carry a confidence — the tagged answer at its tagged value, the untagged
+    # header region at the page's minimum tagged reading (#221: the G2 NULLs
+    # are gone; a NULL is a CT-INGEST-04 contract violation).
     rows = _region_rows(fx.handle, fx.cohort_id)
     confs: dict[str, list] = {}
-    nulls: dict[str, int] = {}
+    nulls: list[str] = []
     for row in rows:
         if row["ocr_conf"] is None:
-            nulls[row["student_ref"]] = nulls.get(row["student_ref"], 0) + 1
+            nulls.append(row["student_ref"])
         else:
             confs.setdefault(row["student_ref"], []).append(row["ocr_conf"])
-    assert confs == {"hana-w": [0.9], "bram-c": [0.4]}, (
+    assert {ref: sorted(vals) for ref, vals in confs.items()} == {
+        "hana-w": [0.9, 0.9], "bram-c": [0.4, 0.4]}, (
         f"TC-INGEST-43: the recorded per-region confidences are not the "
-        f"values the transcription tagged: {confs}.")
-    assert nulls == {"hana-w": 1, "bram-c": 1}, (
-        f"TC-INGEST-43: the header region's unconfident record moved: {nulls} "
-        "— the analysis reads ocr_conf IS NULL as 'the model tagged none'.")
+        f"tagged value on every region (head included): {confs}.")
+    assert not nulls, (
+        f"TC-INGEST-43: regions stored a NULL ocr_conf: {nulls} — the G2 hole "
+        "is closed; a NULL is a CT-INGEST-04 contract violation.")
 
     # The unresolved tokens, joined to their region and student: the marginal
     # paper carries the scrawl, the legible one carries nothing.
@@ -782,7 +790,7 @@ def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
     bram_region_id = fx.handle.query(
         "SELECT r.region_id FROM document_region r JOIN document d ON "
         "d.document_id = r.document_id WHERE d.submission_id = :s AND "
-        "r.ocr_conf IS NOT NULL",
+        "r.content LIKE '%scrawl%'",
         s=outcomes["bram-c"]["submission_id"])[0]["region_id"]
     assert tokens[0]["region_id"] == bram_region_id, (
         "TC-INGEST-43: the token's region is not the marginal paper's "
@@ -941,9 +949,10 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
         f"TC-INGEST-44: the run recorded a status outside the vocabulary: "
         f"{statuses - set(INGEST_STATUSES)}.")
     assert "low_confidence_ocr" not in statuses, (
-        "TC-INGEST-44: `low_confidence_ocr` appeared — no ladder path "
-        "produces it (F-D); if that changed, this assertion and the ladder "
-        "suite's disclosure change with it.")
+        "TC-INGEST-44: `low_confidence_ocr` appeared in a cohort that tagged "
+        "no low-confidence reading — every region here carries a confidence "
+        "at or above the floor (the untagged ones record the floor itself), "
+        "so the flag (#221) must not fire.")
 
     # The hand-computed derivations, from the recorded rows restricted to the
     # reachability table (F4: raw-row pass counts overcount).
