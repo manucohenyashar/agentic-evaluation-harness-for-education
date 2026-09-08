@@ -51,6 +51,7 @@ EXTRACT_MODULE = f"{IMPLEMENTATION_PACKAGE}.extract"
 INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
 SETUP_MODULE = f"{IMPLEMENTATION_PACKAGE}.setup"
 SYNTH_MODULE = f"{IMPLEMENTATION_PACKAGE}.synth"
+INTEG_MODULE = f"{IMPLEMENTATION_PACKAGE}.integ"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -1377,6 +1378,70 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
             "test_res_07_retried_synthesis_conflicts_rather_than_duplicating",
+        ),
+    ),
+    # --- TS-28 (#75), the M-INTEG span-verification and integrity-signal cases ------------
+    #
+    # M-INTEG is two implementation stories: #73 (`verify_span`, fail-closed) and #74
+    # (signals, routing, the restricted write set), and the cases split on that seam.
+    #
+    # `verify_span` is keyed on an **invented module-level function**: design §3.9's
+    # Protocol declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and
+    # FUZZ-03 are rung 0 — pure over (document bytes, span), no store, no construction —
+    # and a Protocol-only `IntegrityGate` (which #73 could land first) cannot be
+    # instantiated. The module-level name is the `#65` `aeh.synth:synthesize` precedent:
+    # the minimal entry point the pure cases call, reconciled at #73's landing. Keying on
+    # `IntegrityGate` instead would fire against a Protocol shell and send a reader to
+    # unmark tests that then fail on a TypeError — the exact trap TS-56 measured.
+    "#73 verify_span (TC-INTEG-01/09, FUZZ-03)": (
+        "symbol",
+        f"{INTEG_MODULE}:verify_span",
+        (
+            "tests/unit/integ/test_verify_span.py",
+            "tests/property/test_fuzz_03_verify_span.py",
+        ),
+    ),
+    "#73 IntegrityGate (TC-INTEG-02/11)": (
+        # FR-INTEG-02 (discard, retry, quarantine) is #73's own acceptance criterion —
+        # the retry ladder's state transitions are what that story ships. TC-INTEG-11's
+        # differential rides the same class (NFR-INTEG-01 is #73's non-functional row;
+        # the file only requires IntegrityGate, never the signals — reviewer-aligned
+        # ownership). Keyed on the class the files construct; the known residual
+        # weakness (recorded at TS-08 rather than papered over) applies: a
+        # Protocol-shell `IntegrityGate` would resolve this key while the construction
+        # the tests need is still #74's. The class and the ladder reconcile at #73's
+        # landing.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/integration/integ/test_integ_retry_and_quarantine.py",
+            "tests/integration/integ/test_integ_perf.py",
+        ),
+    ),
+    "#74 IntegritySignals (TC-INTEG-03/04/05/06/07/08/10/12)": (
+        # #74 lands the signals, the routing and the restricted write set in one story,
+        # so every file that constructs the gate or asserts the signals resolves at the
+        # same commit — the symbol is the dataclass the tests read, which no Protocol
+        # shell satisfies with an empty shell (a frozen dataclass with six fields is
+        # either there or it is not).
+        "symbol",
+        f"{INTEG_MODULE}:IntegritySignals",
+        (
+            "tests/unit/integ/test_integrity_signals.py",
+            "tests/artifact/test_integ_write_set.py",
+            "tests/integration/integ/test_integ_routing_and_sweeps.py",
+        ),
+    ),
+    "#74 alert constant (TC-INTEG-14)": (
+        # CT-INTEG-14 declares the *alert* but not its spelling; the store's precedent
+        # (ALERT_FREE_DISK, DECLARED_ALERTS) makes the name part of the interface, so
+        # the observability file requires the constant and this key is the exact thing
+        # whose absence holds the case out of the gate — an invented-and-disclosed
+        # name, same reasoning as `aeh.synth:synthesize` above.
+        "symbol",
+        f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES",
+        (
+            "tests/integration/integ/test_integ_observability.py",
         ),
     ),
 }
