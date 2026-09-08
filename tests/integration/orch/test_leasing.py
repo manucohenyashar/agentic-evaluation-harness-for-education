@@ -13,11 +13,20 @@ an abandoned lease returns to `pending` after `ORCH_LEASE_SECONDS` and not befor
   exact value.
 
 **Written ahead of #58** (leasing, heartbeats, the expiry sweeper and the failure
-taxonomy). The case is registered in `WRITTEN_AHEAD_BLOCKERS` keyed on
-`aeh.orch:ORCH_LEASE_SECONDS` — the knob the design's Configuration section names
-(detailed-design §3.7), which appears in no Interfaces block and cannot exist before the
-sweeper that reads it. Until #58 lands this fails via `NotImplementedYet`, which is the
-correct red.
+taxonomy), keyed on `aeh.orch:ORCH_LEASE_SECONDS` — the knob the design's Configuration
+section names (detailed-design §3.7), which appears in no Interfaces block and could not
+exist before the sweeper that reads it. **Landed with #58**; the assumed surface was
+reconciled as follows, all disclosed on the PR:
+
+- `lease`, `heartbeat`, `sweep_expired_leases` and the `clock=` constructor seam shipped
+  exactly as assumed here.
+- The lease surface **self-heals the enumeration**: this module leases without a separate
+  `enumerate_units` step, and a claim pass that finds nothing triggers the idempotent
+  base enumeration (`FR-ORCH-02`'s no-bookkeeping rule applied to leasing) before
+  claiming again.
+- The name-agnostic row scan reads `tuple(row)` rather than `row.values()` — the store's
+  query returns `sqlite3.Row`, which iterates its values; the assertion's semantics are
+  unchanged.
 
 **Interface this case assumes of #58**, listed so it is reconciled deliberately rather
 than discovered (the `record_run_start` precedent):
@@ -43,7 +52,7 @@ from tests.support.clock import FrozenClock
 from tests.support.impl import ORCH_MODULE, require
 from tests.support.orch_run import seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = pytest.mark.integration
 
 ISSUE = "#58"
 
@@ -94,12 +103,12 @@ def test_tc_orch_05_one_worker_wins_the_claim_and_the_abandoned_lease_requeues(
             "the ledger does not hold the claimed units as leased"
         )
         for row in leased:
-            assert "worker-a" in tuple(row.values()), (
+            assert "worker-a" in tuple(row), (
                 f"leased unit {row['work_id'][:12]} records no owner — an abandoned "
                 "lease that cannot name its worker is unauditable"
             )
             expiries = [
-                value for value in tuple(row.values())
+                value for value in tuple(row)
                 if isinstance(value, str) and "T" in value and ":" in value
             ]
             assert expiries, (
