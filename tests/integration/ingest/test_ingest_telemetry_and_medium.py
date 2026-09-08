@@ -40,8 +40,10 @@ each with its probe evidence:
   owns an emitter, and the design pins the names in prose only — so there is no
   keyable `writtenahead` target. The case asserts the **recorded form** fully
   (exact column names and types, hand-computed per-gate pass/fail counts and
-  quarantine-by-gate derivations); the emitter half is left to the ingest
-  contract suite (#49) and whatever story lands it.
+  quarantine-by-gate derivations); the emitter half belongs to the ingest
+  contract suite (#49), and the assertion-side suite that pins the OBS-01..11
+  signals is TS-55 (#148, `type:test`, open) — a `writtenahead` case keyed on
+  an emitter story is the plan's mechanism once that story exists.
 - **F4** (`TC-INGEST-44`, gate-column reachability): the ladder's final gate
   write records **every** gate column, and a gate the ladder never reached keeps
   its initialized `'pass'` — only `v4_match` distinguishes `'not_run'`. Probe: a
@@ -103,7 +105,12 @@ each with its probe evidence:
 - **F11** (`TC-INGEST-46`, rung 4): the E4 residency-policy swap — judge and
   transcriber co-resident by policy under one GPU — is #62/#59 territory; the
   case pins the shipped exclusive default (`for_policy(("transcriber",))`),
-  whose blocking primitive `TC-INGEST-36` already covers in isolation.
+  whose blocking primitive `TC-INGEST-36` already covers in isolation. The
+  run-level **hold scope** (the acquire wraps the whole page loop, not each
+  page) is enforced best-effort only: the slot exposes no waiter state, and
+  the mid-document judge probe is scheduling-race-limited, so the enforced
+  run-level oracle is the boundary unload sequence plus the stage-end
+  emptiness.
 
 One more platform fact, for `TC-INGEST-42`'s mode half: this suite runs on
 Windows, where `os.chmod` maps every mode but read-only to a no-op and
@@ -641,11 +648,8 @@ def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_
     untouched = cohort_path.read_bytes()
 
     # The precondition first: nothing promoted, nothing deleted.
-    with pytest.raises(Exception) as refused:
+    with pytest.raises(PurgePreconditionError):
         fx.store.purge_cohort(fx.cohort_id)
-    assert type(refused.value).__name__ == "PurgePreconditionError", (
-        f"TC-INGEST-42: purge before promotion raised "
-        f"{type(refused.value).__name__}, not PurgePreconditionError.")
     assert cohort_path.read_bytes() == untouched, (
         "TC-INGEST-42: the refused purge touched the cohort file.")
 
@@ -1128,20 +1132,27 @@ def test_tc_ingest_45_live_the_f_hand_medium_transcribes_end_to_end_with_quality
             f"TC-INGEST-45 live: the manifest member {member['id']!r} has no "
             f"scan at {pdf_path}.")
         members_by_blob.append((member, fx.blobs.put(pdf_path.read_bytes())))
-    fx.add_roster(*(member["student_ref"] for member, _ in members_by_blob))
+    # Each member's ref joins the roster once — a manifest may list one
+    # student twice (two papers), and the roster's PK is (cohort_id,
+    # student_ref); a repeated ref must not crash the nightly.
+    fx.add_roster(*sorted({member["student_ref"] for member in members}))
     reports = []
     for member, blob in members_by_blob:
         reports.append(ingestor.ingest_submission(
             [blob], cohort_id=fx.cohort_id, package_version="v0",
             filenames={blob: f"{member['id']}.pdf"}))
-    rows = {row["student_ref"]: dict(row) for row in fx.submission_rows()}
-    assert set(rows) == set(refs), (
-        f"TC-INGEST-45 live: the medium did not produce a submission row per "
-        f"member: {sorted(rows)} vs {sorted(refs)}.")
-    for ref, row in rows.items():
+    # Keyed by submission_id: student_ref is NOT unique over the corpus (two
+    # members may share a ref, and unreadable members record the `unknown`
+    # sentinel this suite's TC-INGEST-44 documents).
+    rows = {row["submission_id"]: dict(row) for row in fx.submission_rows()}
+    assert {report.submission_id for report in reports} == set(rows), (
+        "TC-INGEST-45 live: the medium did not produce exactly one submission "
+        "row per member ingest.")
+    for row in rows.values():
         assert row["ingest_status"] in INGEST_STATUSES, (
-            f"TC-INGEST-45 live: {ref} recorded {row['ingest_status']!r}, "
-            f"outside the vocabulary {INGEST_STATUSES}.")
+            f"TC-INGEST-45 live: {row['student_ref']!r} recorded "
+            f"{row['ingest_status']!r}, outside the vocabulary "
+            f"{INGEST_STATUSES}.")
     report = _quality_report(
         {member["student_ref"]: member.get("legibility") for member in members},
         _region_rows(fx.handle, fx.cohort_id),
@@ -1160,18 +1171,25 @@ def test_tc_ingest_45_live_the_f_hand_medium_transcribes_end_to_end_with_quality
 
 def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a_cohort_run(
         tmp_data_dir):
-    """`TC-INGEST-45`/`TC-INGEST-46` — rung 4: the VLM's own residency slot.
+    """`TC-INGEST-46` — rung 4: the VLM's own residency slot.
 
     The discipline asserted is the pipeline-level one, over a real
     three-document run:
 
-    - **held through the document** — every model call of every document runs
-      with the transcriber holding the slot (`provider.holders`, recorded at
-      call time), and a judge probe spawned *inside* a page call cannot barge
-      in before the document ends;
+    - **held through the document, best-effort** — every model call of every
+      document runs with the transcriber holding the slot
+      (`provider.holders`, recorded at call time); a judge probe spawned
+      inside a page call doubles as the mid-document detector, but it is
+      scheduling-race-limited (the main thread holds the GIL through the
+      pure-Python assembly, so it can reach the next page's call before a
+      freed probe runs) — the **enforced** hold-scope evidence stays with the
+      primitive suite (`TC-INGEST-36`), because the slot exposes no waiter
+      state to assert on (F11);
     - **unloaded at every document boundary** — a judge probe spawned inside
       document N acquires the slot between document N and N+1: it could only
-      get through if the transcriber unloaded at that boundary;
+      get through if the transcriber unloaded at that boundary. This is the
+      issue's oracle ("unloads before the first judge loads"), enforced as a
+      sequence, not a timing;
     - **empty at stage end** — after the last document, no role holds.
 
     The judge probe is a plain `acquire`/`release` pair on the slot itself;
@@ -1213,7 +1231,11 @@ def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a
                 probe.start()
             else:
                 # The second page call, still inside the same document: the
-                # judge must still be waiting — no unload mid-document.
+                # judge should still be waiting. Best-effort mid-document
+                # detector (F11): a scheduling race can let the main thread
+                # reach this call before a freed probe would run, so this
+                # can stay silent under a per-page wrap regression — the
+                # enforced oracle is the boundary sequence below.
                 assert not judge_through.is_set(), (
                     f"TC-INGEST-46: the judge acquired the slot between the "
                     f"pages of document {document_index} — the transcriber "
