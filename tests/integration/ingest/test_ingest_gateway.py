@@ -8,6 +8,10 @@ preference, page provenance, duplicate/gap detection) are #37's and land with it
 left: `TC-INGEST-02`'s four-page input, `TC-INGEST-07`'s differential across
 presentation orders, `TC-INGEST-08`'s per-region artifact assertion, and
 `TC-INGEST-48`'s golden-file regression over the corpora through the gateway.
+#44 (TS-15) closes the FR-INGEST-11 oracles still open after #38's cases: the
+configured-synonym knob and the declared morphology behind `TC-INGEST-13`, and
+`ADV-08`'s drawn-word attack on the description prohibition. `TC-INGEST-38` stays
+Phase 2 — the second-description seam refuses by design until its story lands.
 
 Rung 2 — real Tier C files, real blob directories; the VLM is a scripted
 `InferenceProvider` (the `RecordedFixtureProvider` shape: one `Completion` per call,
@@ -1616,6 +1620,164 @@ def test_tc_ingest_11c_the_f_graphic_fixture_page_round_trips(tmp_data_dir):
     assert stored.strip() == page_text.strip(), (
         "TC-INGEST-11c: the stored description is not the fixture page's own "
         "description — the round-trip through the marker protocol changed it."
+    )
+    store.close()
+
+
+# -- #44 (TS-15): the configured vocabulary's full reach, and ADV-08's drawn-word attack ---------
+
+
+def test_tc_ingest_13d_the_configured_synonyms_extend_the_bar(tmp_data_dir, monkeypatch):
+    """`TC-INGEST-13`'s "and its synonyms" half — the term list is CONFIGURED
+    (`HARNESS_INGEST_EVALUATIVE_TERMS`, design Configuration `INGEST_EVALUATIVE_TERMS`):
+    a school's own synonym is rejected and re-requested exactly like the built-in
+    vocabulary, the built-in terms still apply alongside it (the knob ADDS, never
+    replaces), and a description clean under both is still accepted. The knob is read
+    at call time, so the extension needs no code change — that seam is the case."""
+    from aeh.ingest import EVALUATIVE_MATCH_ENV
+
+    monkeypatch.setenv(EVALUATIVE_MATCH_ENV, "flawless, well done")
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    for term in ("flawless", "well done", "correct"):
+        marked = ("<!-- region: kind=described_graphic "
+                  "element_kind=free_body_diagram -->\n"
+                  f"The diagram is {term}.\n<!-- /region -->")
+        attempts = {"n": 0}
+
+        class CountingMarked(ScriptedProvider):
+            def complete(self, prompt, model_ref, params):
+                attempts["n"] += 1
+                return _region_provider([marked]).complete(
+                    prompt, model_ref, params)
+
+        ingestor = Ingestor(handle, blobs, CountingMarked(), _model(),
+                            SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
+        with pytest.raises(IngestError, match="evaluative"):
+            ingestor.ingest_document([source], kind="submission",
+                                     filenames={source: "scan-01.md"})
+        assert attempts["n"] >= 2, (
+            f"TC-INGEST-13: the configured synonym {term!r} was rejected without a "
+            "re-request — FR-INGEST-11 says reject AND re-request, for the school's "
+            "own vocabulary as much as for the module's list."
+        )
+    clean = ("<!-- region: kind=described_graphic "
+             "element_kind=free_body_diagram -->\n"
+             "The arrow labelled weight points straight down from the crate's "
+             "centre.\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([clean]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
+    assert ingestor.ingest_document([source], kind="submission",
+                                    filenames={source: "scan-01.md"}), (
+        "TC-INGEST-13: with synonyms configured, a description clean under both "
+        "lists was refused — the knob extends the bar, it does not blanket-tighten "
+        "it into rejecting everything."
+    )
+    store.close()
+
+
+def test_tc_ingest_13e_the_bar_reaches_negations_and_suffixes(tmp_data_dir):
+    """`TC-INGEST-13`'s morphology half — the declared matching rule, decided from
+    RISK-17's own motivating example ("the arrow is correctly labelled"): a word that
+    STARTS with a term, negated ("incorrect") or suffixed ("correction"), carries the
+    same judgement as the term. A reworded verdict must be caught without enumerating
+    every inflection in the list."""
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    for wording in ("The answer given is incorrect.",
+                    "The correction the student made is neat.",
+                    "The arrow is correctly labelled."):
+        marked = ("<!-- region: kind=described_graphic "
+                  "element_kind=free_body_diagram -->\n"
+                  f"{wording}\n<!-- /region -->")
+        with pytest.raises(IngestError, match="evaluative"):
+            Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                     SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER
+                     ).ingest_document([source], kind="submission",
+                                       filenames={source: "scan-01.md"})
+    store.close()
+
+
+def test_adv_08_the_drawn_word_is_content_and_the_description_channel_refuses_it(
+        tmp_data_dir):
+    """`ADV-08` — attack the description prohibition: get a verdict into the panel's
+    input through a description. The plan's second ADV-08 input is a diagram with the
+    word `correct` drawn inside it; the first — the near-verdict diagram — is
+    `TC-INGEST-14`'s confusable fixture, already differential-pinned.
+
+    The design's answer is the channel split: the drawn word is the page's CONTENT
+    (its transcription survives, marked as untrusted submission data), while the
+    mechanical bar scans the DESCRIPTION channel — so the benign rendering stores the
+    word as data, and BOTH attacker renderings are refused: the judgement written
+    into a description, and even the verbatim drawn word in a description (the
+    declared morphology: a word starting with the term carries the judgement). After
+    the refusals, nothing else is stored — the verdict never reached any artifact."""
+    from aeh.ingest import _evaluative_offences
+
+    store, blobs, rasterizer, provider, slot, _ = _fixture(tmp_data_dir)
+    handle = store.cohort("c-36")
+    source = blobs.put(b"fixture pdf")
+    drawn_as_content = (
+        "<!-- region: kind=described_graphic element_kind=free_body_diagram -->\n"
+        "A free-body diagram with two labelled arrows; a handwritten annotation "
+        "is written inside the triangle.\n<!-- /region -->\n"
+        "<!-- region: kind=transcribed_text -->\n"
+        "handwritten annotation, transcribed: correct\n<!-- /region -->")
+    ingestor = Ingestor(handle, blobs, _region_provider([drawn_as_content]), _model(),
+                        SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER)
+    document_id = ingestor.ingest_document([source], kind="submission",
+                                           filenames={source: "scan-01.md"})
+    row = handle.query(statement(
+        "SELECT markdown FROM document WHERE document_id = :d", issue=ISSUE),
+        d=document_id)[0]
+    assert "correct" in row["markdown"].lower(), (
+        "ADV-08: the drawn word did not survive as transcribed content — the bar "
+        "dropped the page's data instead of confining the judgement to the "
+        "description channel."
+    )
+    regions = handle.query(statement(
+        "SELECT region_kind, description, content, is_untrusted_content "
+        "FROM document_region WHERE document_id = :d", issue=ISSUE), d=document_id)
+    descriptions = [r["description"] or "" for r in regions]
+    for description in descriptions:
+        assert "correct" not in description.lower() and not _evaluative_offences(
+            description), (
+            f"ADV-08: a stored description carries the drawn word or evaluative "
+            f"vocabulary: {description!r}. The description channel is the one the "
+            "panel reads as a judgement; the word must be confined to content."
+        )
+    content_regions = [r for r in regions if r["region_kind"] == "transcribed_text"]
+    assert any("correct" in (r["content"] or "").lower() for r in content_regions), (
+        "ADV-08: no stored region carries the drawn word as content — the "
+        "transcription of what is drawn must survive."
+    )
+    assert all(r["is_untrusted_content"] == 1 for r in content_regions), (
+        "ADV-08: the transcribed drawn word is submission-origin content and must "
+        "carry the untrusted marker (FR-INGEST-35), so the panel meets it as data "
+        "inside the delimited block, never as harness speech."
+    )
+    # The attacker's renderings, same fixture page: the judgement in the description,
+    # and the verbatim drawn word in the description. Both are the bar's business.
+    for attacking in ("The construction shown is correct, as expected.",
+                      "A free-body diagram; the handwritten word correct inside "
+                      "the triangle."):
+        marked = ("<!-- region: kind=described_graphic "
+                  "element_kind=free_body_diagram -->\n"
+                  f"{attacking}\n<!-- /region -->")
+        another = blobs.put(attacking.encode())
+        with pytest.raises(IngestError, match="evaluative"):
+            Ingestor(handle, blobs, _region_provider([marked]), _model(),
+                     SamplingParams(temperature=0.0), OnePageRasterizer(), sanitizer=THROUGH_SANITIZER
+                     ).ingest_document([another], kind="submission",
+                                       filenames={another: "scan-01.md"})
+    survivors = handle.query(statement(
+        "SELECT COUNT(*) AS n FROM document WHERE document_id <> :d", issue=ISSUE),
+        d=document_id)[0]["n"]
+    assert survivors == 0, (
+        f"ADV-08: the attacker's renderings stored {survivors} document row(s) — "
+        "the verdict reached the panel's input, which is the attack succeeding."
     )
     store.close()
 
