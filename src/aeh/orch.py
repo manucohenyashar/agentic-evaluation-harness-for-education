@@ -423,7 +423,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SELECT work_id FROM work_unit WHERE run_id = :run_id LIMIT 1"
     ),
     "select_leased_units": Statement(
-        "SELECT w.work_id, w.lease_expires_ticks FROM work_unit w "
+        "SELECT w.work_id, w.run_id, w.lease_expires_ticks FROM work_unit w "
         "JOIN run r ON r.run_id = w.run_id "
         "WHERE w.status = 'leased' AND r.status IN ('pending', 'running') "
         "ORDER BY w.work_id"
@@ -808,7 +808,8 @@ class Orchestrator:
         #: The dispatch order of one (run, stage), drained front to back across claim
         #: passes (`_claim_pass`). Keyed `(run_id, stage)`; an entry holds only the
         #: still-unclaimed ready candidates. Rebuilt on exhaustion, on a lost claim
-        #: guard, and on re-enumeration — the invalidation set `_claim_pass` states.
+        #: guard, on a requeue (failure or sweeper reclaim), and on re-enumeration —
+        #: the invalidation set `_claim_pass` states.
         self._order_cache: dict[tuple[str, str], deque[Any]] = {}
 
     # -- run creation ---------------------------------------------------------------------------
@@ -892,6 +893,16 @@ class Orchestrator:
         record_run_start(self._store, cfg, run_id=run_id)
         return run_id
 
+    def _invalidate_order_cache(self, run_id: str) -> None:
+        """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).
+
+        Any write that changes the claimable set — enumeration, a failure requeue, a
+        sweeper reclaim — can falsify a cached order; the next claim pass re-reads
+        instead of trusting it.
+        """
+        for key in [k for k in self._order_cache if k[0] == run_id]:
+            del self._order_cache[key]
+
     # -- enumeration ----------------------------------------------------------------------------
 
     def enumerate_units(self, run_id: str) -> EnumerationReport:
@@ -931,8 +942,7 @@ class Orchestrator:
         # The claim pass's order caches hold rows read before this pass may insert new
         # ones — drop the run's entries, or a cached order would keep the new units
         # undiscoverable until an unrelated exhaustion.
-        for key in [k for k in self._order_cache if k[0] == run_id]:
-            del self._order_cache[key]
+        self._invalidate_order_cache(run_id)
         row = self._run_row(run_id)
         gates: dict[str, str] = {
             "run_row": f"found (status={row['status']}, cohort={row['cohort_id']})",
@@ -1228,10 +1238,14 @@ class Orchestrator:
         invalidation set is exactly the events that can falsify it:
 
         - **Exhaustion** — the remaining candidates were claimed; new units (a later
-          enumeration, the sweeper's requeue of an expired lease) are discoverable
-          only from the ledger, so the entry is dropped and the next pass re-reads.
+          enumeration) are discoverable only from the ledger, so the entry is dropped
+          and the next pass re-reads.
         - **A lost guard** — another writer won a unit this cache held pending, so
           the view of pending is stale; the entry is dropped wholesale.
+        - **A requeue** — a failure below the ceiling (`fail`) or a sweeper reclaim
+          returns a unit this cache has already popped to `pending`; the run's entries
+          are dropped so the next pass re-reads — a requeue the cached order cannot
+          see is a unit lost to the run (`TC-ORCH-18`).
         - **Re-enumeration** — `enumerate_units` drops the run's entries, because it
           may add rows this cache has never seen.
 
@@ -1522,9 +1536,11 @@ class Orchestrator:
         }
         examined = 0
         requeued = 0
+        requeued_runs: set[str] = set()
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             rows = cohort.query(ORCH_STATEMENTS["select_leased_units"])
+            run_by_work = {row["work_id"]: row["run_id"] for row in rows}
             expired: list[str] = []
             for row in rows:
                 ticks = row["lease_expires_ticks"]
@@ -1542,10 +1558,18 @@ class Orchestrator:
                         tx.execute(
                             ORCH_STATEMENTS["requeue_expired"], work_id=work_id
                         )
-                        requeued += int(
+                        won = int(
                             tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
                         )
+                        requeued += won
+                        if won:
+                            requeued_runs.add(run_by_work[work_id])
             examined += len(rows)
+        # A reclaim returns units to `pending` — drop the affected runs' dispatch-order
+        # cache entries so the next claim pass sees them (the same visibility rule as
+        # `fail`'s requeue, `TC-ORCH-18`).
+        for run_id in requeued_runs:
+            self._invalidate_order_cache(run_id)
         gates["sweep"] = (
             f"{examined} leased examined, {requeued} requeued, "
             f"{examined - requeued} still held"
@@ -1606,7 +1630,9 @@ class Orchestrator:
         arms clear the lease columns; the run continues either way — "fail the unit,
         never the run" (`NFR-ORCH-03`) is the whole point of the taxonomy, so **no arm
         of this method raises into the caller's loop over a unit's own failure**: the
-        only raise is for a work id that resolves to no unit at all.
+        only raise is for a work id that resolves to no unit at all. A won report also
+        drops this run's dispatch-order cache entries — the requeued unit must be
+        visible to the very next claim pass (`TC-ORCH-18`).
 
         **A failure report wins over a live lease.** The design fixes this signature at
         `(work_id, error)` — no owner identity — so the report cannot name its holder,
@@ -1645,6 +1671,12 @@ class Orchestrator:
             # here would fail a run over a unit-level race, which is the one thing
             # this taxonomy refuses to do (NFR-ORCH-03).
             return
+        # A won report moved the unit within the claimable set — back to `pending`
+        # below the ceiling, out of it at quarantine — so this run's cached dispatch
+        # order is stale: the requeued unit must be visible to the very next claim
+        # pass, or a requeue the dispatcher cannot see is a unit lost to the run
+        # (`TC-ORCH-18`).
+        self._invalidate_order_cache(row["run_id"])
 
     # -- internals ------------------------------------------------------------------------------
 
