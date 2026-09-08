@@ -25,10 +25,9 @@ from typing import Any
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
-    RESULT_TYPE as _EXTRACT_RESULT_TYPE,
     SECOND_FAMILY_MODEL,
-    TEMPLATE_VERSION as _EXTRACT_TEMPLATE_VERSION,
     TS26_EXTRACT_SYMBOLS,
+    TS27_EXTRACT_SYMBOLS,
     WORKER,
 )
 
@@ -1256,16 +1255,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # fields, the parsed result and the pinned template version, and nothing else.
     "#71 TS-27 injection differential (TC-EXTRACT-10)": (
         "symbols",
-        ",".join(
-            f"{EXTRACT_MODULE}:{name}"
-            for name in (
-                _EXTRACT_ASSEMBLE,
-                _EXTRACT_PROMPT_FIELDS,
-                _EXTRACT_RESULT_TYPE,
-                _EXTRACT_TEMPLATE_VERSION,
-                WORKER,
-            )
-        ),
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS27_EXTRACT_SYMBOLS),
         ("tests/security/extract/test_extract_injection_resistance.py",),
     ),
     # ADV-02's band differential runs the same pairs THROUGH the judge boundary: the
