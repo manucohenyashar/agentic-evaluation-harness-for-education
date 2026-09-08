@@ -59,6 +59,7 @@ import json
 import os
 import sqlite3
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -388,9 +389,13 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # the dispatch order is a function of the run's own package). Ordered by work_id as
     # the base order — the stage's sweep key is applied over these rows in Python, where
     # the run's catalog lives; work_id is the deterministic tie-break beneath every key.
-    # Unbounded on purpose: the sweep order must choose from ALL pending candidates of the
-    # run, and a SQL LIMIT applied before the Python order would truncate by work_id and
-    # silently mis-order the sweep.
+    # Unbounded per read, on purpose: the sweep order must choose from ALL pending
+    # candidates of the run, and a SQL LIMIT applied before the Python order would
+    # truncate by work_id and silently mis-order the sweep. What keeps the fine-grained
+    # drain off the quadratic (NFR-ORCH-01) is not a LIMIT here but `_claim_pass`'s
+    # order cache: the sorted result is derived once and drained front to back, so a
+    # one-at-a-time poll late in a large run serves its head instead of re-reading and
+    # re-sorting the whole pending set.
     "select_run_claimable": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
         "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref "
@@ -800,6 +805,11 @@ class Orchestrator:
         #: for the run's lifetime — the topological positions and the dependency closure
         #: are pure functions of the version.
         self._sweep_plans: dict[str, SweepPlan] = {}
+        #: The dispatch order of one (run, stage), drained front to back across claim
+        #: passes (`_claim_pass`). Keyed `(run_id, stage)`; an entry holds only the
+        #: still-unclaimed ready candidates. Rebuilt on exhaustion, on a lost claim
+        #: guard, and on re-enumeration — the invalidation set `_claim_pass` states.
+        self._order_cache: dict[tuple[str, str], deque[Any]] = {}
 
     # -- run creation ---------------------------------------------------------------------------
 
@@ -918,6 +928,11 @@ class Orchestrator:
         shrink it without a code change (NFR-ORCH-01 keeps per-unit cost trivial; the
         benchmark is S-ORCH-03's, not this module's).
         """
+        # The claim pass's order caches hold rows read before this pass may insert new
+        # ones — drop the run's entries, or a cached order would keep the new units
+        # undiscoverable until an unrelated exhaustion.
+        for key in [k for k in self._order_cache if k[0] == run_id]:
+            del self._order_cache[key]
         row = self._run_row(run_id)
         gates: dict[str, str] = {
             "run_row": f"found (status={row['status']}, cohort={row['cohort_id']})",
@@ -1127,12 +1142,14 @@ class Orchestrator:
 
         **Self-healing enumeration.** A first pass that claims nothing triggers the
         base enumeration `resume()` uses — idempotent by construction — but only for
-        runs whose ledger holds no units at all, and claims again, so a caller that
-        created a run and leased receives units without a separate enumerate step
-        while a drained poll late in a large run pays one claim query and one
-        existence probe, never a full pass. An empty return after that is a true
-        empty (the stage's units are done, in flight, or the run is not dispatching),
-        not a bookkeeping gap.
+        runs whose ledger holds no units at all **and** whose cohort holds an
+        admissible submission (`_runs_missing_units`: a cohort that is all-refused
+        enumerates to the empty set legitimately, and a drained poll must not pay
+        for re-deriving that), and claims again, so a caller that created a run and
+        leased receives units without a separate enumerate step while a drained poll
+        late in a large run pays one claim query and one existence probe, never a
+        full pass. An empty return after that is a true empty (the stage's units are
+        done, in flight, or the run is not dispatching), not a bookkeeping gap.
 
         **The unit handed over.** The returned units carry `student_ref`;
         `student_name` and `submission_text` stay `None` — the ledger holds neither
@@ -1200,6 +1217,32 @@ class Orchestrator:
         the store's own stated conservatism (a restart expires every outstanding lease,
         `CT-STORE-14`), arrived at from the harmless side: a raised counter can only make
         the sweeper *more* willing to reclaim, never less.
+
+        **The order cache** (`NFR-ORCH-01`). The sweep key is not expressible in SQL —
+        it reads the run's package topology and panel — so the ordered candidates are
+        derived in Python, and deriving them per poll made a one-at-a-time drain
+        quadratic (re-reading and re-sorting the whole pending set per claim: measured
+        5.3 ms/unit at 750 pending, over budget, and growing). The ordered ready list
+        is therefore cached per `(run_id, stage)` and drained front to back across
+        passes; the guard on the write stays the only correctness check. The cache's
+        invalidation set is exactly the events that can falsify it:
+
+        - **Exhaustion** — the remaining candidates were claimed; new units (a later
+          enumeration, the sweeper's requeue of an expired lease) are discoverable
+          only from the ledger, so the entry is dropped and the next pass re-reads.
+        - **A lost guard** — another writer won a unit this cache held pending, so
+          the view of pending is stale; the entry is dropped wholesale.
+        - **Re-enumeration** — `enumerate_units` drops the run's entries, because it
+          may add rows this cache has never seen.
+
+        An empty order is never cached: readiness only grows, but it grows outside
+        the cache's view, so a stage whose candidates are all gated out re-derives
+        per pass — caching the empty list would starve the newly ready. What the
+        cache deliberately does **not** re-check per pass is the Sweep 2 gate: the
+        gate was evaluated at derivation, and a unit ready then stays ready (an
+        extraction's `done` is terminal within a run), so serving the cached order
+        can never dispatch a judge over absent evidence; only the not-yet-ready set
+        can change, and those units are not in the cache at all.
         """
         ttl = self._lease_ttl()
         lease_clock_obj = self._lease_clock()
@@ -1213,16 +1256,28 @@ class Orchestrator:
                     break
                 if run_row["status"] not in ("pending", "running"):
                     continue
-                candidates = cohort.query(
-                    ORCH_STATEMENTS["select_run_claimable"],
-                    run_id=run_row["run_id"],
-                    stage=stage,
-                )
-                if not candidates:
-                    continue
-                for row in self._dispatch_order(run_row, stage, candidates, cohort):
-                    if len(claimed) >= n:
-                        break
+                cache_key = (run_row["run_id"], stage)
+                ordered = self._order_cache.get(cache_key)
+                if ordered is None:
+                    candidates = cohort.query(
+                        ORCH_STATEMENTS["select_run_claimable"],
+                        run_id=run_row["run_id"],
+                        stage=stage,
+                    )
+                    if not candidates:
+                        continue
+                    ordered = deque(
+                        self._dispatch_order(run_row, stage, candidates, cohort)
+                    )
+                    if not ordered:
+                        # Every candidate was gated out (Sweep 2 waiting on
+                        # extraction). Readiness only grows, but it grows outside
+                        # this cache's view, so an empty order is re-derived per
+                        # pass — caching it would starve the newly ready.
+                        continue
+                    self._order_cache[cache_key] = ordered
+                while ordered and len(claimed) < n:
+                    row = ordered.popleft()
                     issued = lease_clock_obj.issue(ttl)
                     expires_at = self._wall_expiry(lease_clock_obj.clock, ttl)
                     with cohort.transaction() as tx:
@@ -1236,6 +1291,17 @@ class Orchestrator:
                         won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
                     if won:
                         claimed.append(row)
+                    else:
+                        # The guarded write lost: another writer holds the unit, so
+                        # this cache's view of pending is stale. Drop it wholesale —
+                        # conservative, and the next pass re-derives from the ledger.
+                        self._order_cache.pop(cache_key, None)
+                        break
+                if not ordered:
+                    # Exhausted: the remaining candidates were all claimed. Drop the
+                    # entry so the next pass re-reads — new units (enumeration, the
+                    # sweeper's requeue) can only be discovered from the ledger.
+                    self._order_cache.pop(cache_key, None)
         return claimed
 
     def _dispatch_order(
@@ -1730,16 +1796,42 @@ class Orchestrator:
         run must not pay it (NFR-ORCH-01). A run with rows — even partially populated
         by a crash mid-enumeration — is `resume()`'s repair, not lease's; the
         existence probe is one indexed query per open run.
+
+        **The admissible-submission gate (#59 review).** A run can hold no units
+        *legitimately*, and forever: a cohort whose submissions are all refused — or
+        which has none yet — enumerates to the empty set, and re-deriving that empty
+        set on every drained poll is precisely the full pass this gate exists to
+        prevent ("never enumerated" and "legitimately empty" must not cost the same).
+        A run whose cohort holds no admissible submission — none with a NULL
+        `ingest_status` (pre-ingest, admits per `SWEEP1_ADMITTED_INGEST_STATUSES`'s
+        recorded reading) and none in the admitted set — is therefore skipped. The
+        gate re-opens by itself: a submission re-ingested into an admissible status
+        makes the cohort admissible again on the next poll, which is the self-heal
+        path. A cohort that stays admissible while the package yields no units for
+        another reason (a version with zero criteria — `M-PKG` refuses the shape, so
+        this helper does not defend against it) would still re-enumerate per poll.
         """
         found: list[str] = []
+        admissible_by_cohort: dict[str, bool] = {}
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             for row in cohort.query(ORCH_STATEMENTS["select_open_runs"]):
-                run_id = row["run_id"]
+                cohort_id = row["cohort_id"]
+                if cohort_id not in admissible_by_cohort:
+                    admissible_by_cohort[cohort_id] = any(
+                        s["ingest_status"] is None
+                        or s["ingest_status"] in SWEEP1_ADMITTED_INGEST_STATUSES
+                        for s in cohort.query(
+                            ORCH_STATEMENTS["select_submissions"],
+                            cohort_id=cohort_id,
+                        )
+                    )
+                if not admissible_by_cohort[cohort_id]:
+                    continue
                 if not cohort.query(
-                    ORCH_STATEMENTS["select_any_work_unit"], run_id=run_id
+                    ORCH_STATEMENTS["select_any_work_unit"], run_id=row["run_id"]
                 ):
-                    found.append(run_id)
+                    found.append(row["run_id"])
         return tuple(sorted(found))
 
     def _open_run_ids(self) -> tuple[str, ...]:
