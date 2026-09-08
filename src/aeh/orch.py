@@ -858,6 +858,181 @@ def _dependency_closure(
     return closure
 
 
+# --- the escalation policy, as pure functions (NFR-ORCH-04) -------------------------------------
+#
+# The *decision to escalate* is `M-AGG`'s (`FR-AGG-08`, `CT-AGG-08` — this module must not
+# import that policy, and imports nothing from it). What IS this module's is the plan the
+# decision becomes and the gates the plan passes through: the odd-panel ladder, the
+# random-arm draw, the breaker arithmetic. All three are pure functions of observable
+# signals and configuration — no model call, no store, no clock — which is what
+# `TC-ORCH-32`'s purity assertion evaluates.
+
+
+#: The namespace of derived escalation judges. A run's panel carries the ladder's first
+#: arms (`panel_config_json`); when a widening outruns it — a `holistic` criterion's base
+#: panel is already the whole panel — the ladder continues on derived judge identities
+#: named by ladder position. The ledger does not resolve builds (`M-CONF`/`M-JUDGE` do,
+#: downstream), and a deployment that owns real fifth judges passes them explicitly
+#: (`enqueue_escalation`'s `judges`), which is the design's own `judges` parameter.
+ESCALATION_ARM_PREFIX = "escalation-arm"
+
+
+def _extension_arms(
+    panel_arms: Sequence[str], prior_judges: Sequence[str], count: int = 2
+) -> tuple[str, ...]:
+    """The judges a widening adds when the caller names none, in ladder order.
+
+    The run panel's arms the pair does not already carry come first — panel order is the
+    escalation ladder's first arms (`panel_config_json`) — and past them the ladder
+    continues on derived identities: ``escalation-arm-<k>`` numbered from the panel's end.
+    A derived name a prior rung already put on the panel is skipped, so rung over rung
+    (1 → 3 → 5 → …) never re-adds a judge. Deterministic: the same panel and prior produce
+    the same additions, which is what makes a retried enqueue content-address the same units.
+    """
+    additions: list[str] = [arm for arm in panel_arms if arm not in prior_judges]
+    position = len(tuple(panel_arms))
+    while len(additions) < count:
+        position += 1
+        name = f"{ESCALATION_ARM_PREFIX}-{position}"
+        if name not in prior_judges:
+            additions.append(name)
+    return tuple(additions[:count])
+
+
+def escalation_plan(
+    prior_judges: Sequence[str],
+    *,
+    add_judges: Sequence[str] | None = None,
+    panel_arms: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Build one escalation rung: the widened panel, or the named refusal (`FR-ORCH-10`).
+
+    Pure — `TC-ORCH-20` and `TC-ORCH-32` evaluate it with no store and no model. The
+    result is the FULL widened panel in order: the criterion's prior judges followed by
+    the additions, so the plan's ``judge_count`` is ``len(result)`` and the odd-panel rule
+    reads directly off the return value.
+
+    **The rules, each from the design's own sentence:**
+
+    - The criterion escalates **from one judge to three, never to two** — the canonical
+      rung widens by two. With no caller-named judges the plan widens by exactly two,
+      taken from the run panel's unused arms first, then derived extension arms
+      (`_extension_arms`). An odd panel widened by an even addition stays odd, so the
+      default ladder never leaves the odd numbers: 1 → 3 → 5 → …
+    - **A plan producing an even ``judge_count`` is rejected** — `EvenPanelError`, the
+      exact exception `TC-ORCH-20` asserts for counts 2 and 4. A two-way tie broken by
+      rule is a coin flip presented as a judgement; the ledger's CHECK (`CT-AGG-03`) is
+      the backstop, this refusal is the front.
+    - A plan that does not widen (equal or smaller than the panel it starts from) is
+      refused with `EscalationPlanError`: an escalation that adds nothing looks like work
+      while being the silent no-op shape.
+    - A criterion with **no judges yet** (prior count 0) has no band to widen — refusing
+      rather than treating first enumeration as escalation keeps "escalate" meaning
+      *widen a panel that exists*.
+    - A caller-named judge already on the panel is refused (`EscalationPlanError`): one
+      judge, one seat — a doubled seat would let one verdict outweigh another.
+
+    An even PRIOR panel is refused with `EvenPanelError` as well: the ledger should never
+    hold one (the CHECK refuses the write), and a plan built on top of a corrupted panel
+    would launder it rather than surface it.
+    """
+    prior = tuple(prior_judges)
+    if len(prior) % 2 == 0:
+        raise EvenPanelError(
+            f"the criterion's current panel {prior!r} carries an even judge_count "
+            f"({len(prior)}); an even panel is the state the odd-panel rule exists to "
+            "prevent (CT-AGG-03) and no escalation plan may be built on top of it — "
+            "the panel is corrupt, and widening it would launder the corruption."
+        )
+    if len(prior) == 0:
+        raise EscalationPlanError(
+            "no judges to escalate from: a criterion with judge_count 0 has no panel "
+            "to widen. Enumeration gives every judged criterion its base panel; an "
+            "escalation before that is a caller error."
+        )
+    additions = (
+        _extension_arms(panel_arms, prior)
+        if add_judges is None
+        else tuple(add_judges)
+    )
+    if not additions:
+        raise EscalationPlanError(
+            "the escalation plan adds no judges: a plan that does not widen the panel "
+            "is not an escalation (FR-ORCH-10), and enqueuing it would look like work "
+            "while adding nothing."
+        )
+    overlap = [judge for judge in additions if judge in prior]
+    if overlap:
+        raise EscalationPlanError(
+            f"the escalation plan re-adds judge(s) already on the panel: {overlap!r}. "
+            "One judge, one seat — a doubled seat would let one verdict outweigh "
+            "another in the widened panel's aggregation."
+        )
+    total = len(prior) + len(additions)
+    if total % 2 == 0:
+        raise EvenPanelError(
+            f"the escalation plan produces an even judge_count ({total}: {len(prior)} "
+            f"prior + {len(additions)} added). Escalation goes one judge to three, "
+            "never to two (FR-ORCH-10, R48) — an even panel is a tie broken by rule, "
+            "which is a coin flip presented as a judgement."
+        )
+    if total <= len(prior):
+        raise EscalationPlanError(
+            f"the escalation plan produces a judge_count of {total}, not wider than "
+            f"the panel it starts from ({len(prior)})."
+        )
+    return prior + additions
+
+
+def in_random_arm(
+    run_id: str, submission_id: str, criterion_id: str, rate: float
+) -> bool:
+    """Whether one (submission, criterion) pair draws into the random arm (`FR-ORCH-11`).
+
+    Pure and **seeded by the identities themselves**: the draw is sha256 over the pair's
+    ids read as a uniform integer against the rate, so the same pair draws the same way
+    on every enumeration — `CT-ORCH-02`'s byte-identical enumeration and `NFR-ORCH-05`'s
+    determinism survive the arm being in the pass — while across pairs the draws are
+    uniform, which is what makes the arm's share converge on the rate (`TC-ORCH-12`'s
+    10,000-draw sweep). No confidence input, no store, no clock: the arm is independent
+    of confidence **by construction** (`R22` — that independence is the point of the
+    arm, `FR-STATS-08`), and a rate of 0 disables it honestly.
+    """
+    if rate <= 0:
+        return False
+    digest = hashlib.sha256(
+        b"\x1f".join(
+            field.encode("utf-8")
+            for field in (run_id, submission_id, criterion_id)
+        )
+    ).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**64) < rate
+
+
+def criterion_breaker_trips(
+    *,
+    escalated_in_window: int,
+    window_size: int,
+    rate: float,
+    min_n: int,
+) -> bool:
+    """Whether the criterion escalation breaker trips (`FR-ORCH-13`).
+
+    Pure: the caller reads the ledger's window (the first `min_n` submissions processed
+    for the criterion, by completion order) and this says whether what it saw trips. The
+    design's own sentence, twice over: the breaker evaluates only **at or after the
+    window minimum** (a criterion that escalates 11 of its first 10 processed has not
+    met the window yet), and it trips when the criterion escalated for **more than**
+    ``rate`` of the window — half of twenty is ten, and ten of twenty does not trip;
+    eleven does (`TC-ORCH-13`'s 9/10/11 boundary). The window size the comparison uses
+    is the configured minimum, not the observed count, so the threshold does not drift
+    as the window fills.
+    """
+    if window_size < min_n:
+        return False
+    return escalated_in_window > rate * min_n
+
+
 # --- the worker-facing report types -------------------------------------------------------------
 
 
@@ -961,6 +1136,85 @@ class SweeperReport:
     examined: int
     requeued: int
     still_held: int
+    gates: dict[str, str] = field(default_factory=dict)
+
+
+# --- the escalation reports (CLAUDE.md seam 4) ---------------------------------------------------
+
+
+#: What `enqueue_escalation` decided. All three outcomes are named, never absorbed: the
+#: breaker's halt and the budget's queue are the visible degradations `CT-ORCH-16` demands
+#: — a caller that receives `queued` marks its result provisional (that IS the budget's
+#: "remainder marked provisional", the caller-side half of the contract), and one that
+#: receives `halted_by_breaker` knows scrutiny was reduced and why.
+DECISION_ADMITTED = "admitted"
+DECISION_QUEUED = "queued"
+DECISION_HALTED_BY_BREAKER = "halted_by_breaker"
+
+
+@dataclass(frozen=True)
+class EscalationReport:
+    """What one escalation enqueue did (`FR-ORCH-09/10/13/14`, seam 4).
+
+    `decision` is the enqueue's outcome — `admitted` (units inserted), `queued` (over
+    budget, held in the persisted queue in expected-value order; the caller marks its
+    result provisional), or `halted_by_breaker` (the criterion breaker has tripped;
+    escalation halts for the criterion). The numbers beside the decision — the rate, the
+    budget, the queue depth, the judge counts — are what make the decision auditable:
+    a bare `status=refused` on top of an empty report is the silent-failure shape the
+    `IngestReport.gates` precedent exists to prevent.
+    """
+
+    run_id: str
+    submission_id: str
+    criterion_id: str
+    decision: str
+    prior_judges: tuple[str, ...]
+    added_judges: tuple[str, ...]
+    judge_count: int
+    units_inserted: int
+    expected_value: float | None
+    escalation_rate: float
+    escalation_budget: float
+    queue_depth: int
+    breaker_tripped: bool
+    gates: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BreakerTrip:
+    """One criterion-breaker trip, as the operator surface reads it (`FR-ORCH-13`).
+
+    The alert the design names ("any criterion tripping the circuit breaker") reads
+    these rows: which criterion, when, and the window arithmetic that tripped it —
+    `detail` carries the numbers so the alert answers "why", not just "what".
+    """
+
+    run_id: str
+    criterion_id: str
+    kind: str
+    tripped_at: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class EscalationBudgetState:
+    """The run-wide escalation ledger's state, as the operator reads it (`FR-ORCH-14`).
+
+    The rate-above-budget alert's source (`CT-ORCH-16`: both breakers degrade visibly):
+    the processed/escalated pair the rate is computed from, the budget it is compared
+    against, the queued remainder, and the criteria whose breakers have tripped. Read
+    from the ledger every time — no side-file counters (`FR-ORCH-02`).
+    """
+
+    run_id: str
+    processed_results: int
+    escalated_results: int
+    escalation_rate: float
+    budget: float
+    over_budget: bool
+    queued_requests: int
+    tripped_criteria: tuple[str, ...]
     gates: dict[str, str] = field(default_factory=dict)
 
 
