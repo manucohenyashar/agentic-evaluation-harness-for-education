@@ -37,6 +37,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -315,6 +316,10 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "VALUES (:work_id, :submission_id, :stage, 'pending', :run_id, :criterion_id, "
         ":judge_id, :origin, 0)"
     ),
+    # Read inside the same transaction as each `insert_work_unit`: the ledger's own
+    # count of what that write did, since `OR IGNORE` reports neither an ignored
+    # duplicate nor a refused row.
+    "select_changes": Statement("SELECT changes() AS n"),
     "insert_audit_record": Statement(
         "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, profile_summary) "
         "VALUES (:audit_record_id, :run_id, :recorded_at, :profile_summary)"
@@ -512,8 +517,11 @@ class Orchestrator:
         should not depend on a later story landing. The two writes are two transactions
         on two tiers (a cross-tier transaction is refused by design, `CT-STORE-06`): the
         run row commits first, so a crash between them leaves a run whose audit record
-        is absent — visible, retryable by creating the run again, never a half-written
-        ledger.
+        is absent — visible in the durable tier, and repairable without touching the
+        ledger: read the run's id back from the run table and call
+        `record_run_start(store, cfg, run_id=<that id>)` to write the missing record.
+        Creating the run "again" would mint a second `run_id` and a second audit
+        record, which is not a retry. Never a half-written ledger.
         """
         package_id = self._package_id_for(package_version)
         if run_id is None:
@@ -537,18 +545,29 @@ class Orchestrator:
             sort_keys=True,
         )
         handle = self._store.cohort(cohort_id)
-        with handle.transaction() as tx:
-            tx.execute(
-                ORCH_STATEMENTS["insert_run"],
-                run_id=run_id,
-                cohort_id=cohort_id,
-                package_version_id=package_version,
-                package_id=package_id,
-                panel_config=panel_config,
-                backend_profile=cfg.backend_profile,
-                provider_config=provider_config,
-                prompt_template_v=cfg.prompt_template_v,
-            )
+        try:
+            with handle.transaction() as tx:
+                tx.execute(
+                    ORCH_STATEMENTS["insert_run"],
+                    run_id=run_id,
+                    cohort_id=cohort_id,
+                    package_version_id=package_version,
+                    package_id=package_id,
+                    panel_config=panel_config,
+                    backend_profile=cfg.backend_profile,
+                    provider_config=provider_config,
+                    prompt_template_v=cfg.prompt_template_v,
+                )
+        except sqlite3.IntegrityError as error:
+            # Named, not raw: the two ways this write is refused are caller mistakes
+            # worth naming, in the same posture as `RunNotFoundError` — a nonexistent
+            # cohort (the run row's FK refuses the write) or an explicit `run_id`
+            # already taken. Either way nothing was created and nothing needs cleanup.
+            raise WorkLedgerError(
+                f"run {run_id!r} was not created for cohort {cohort_id!r}: {error}. "
+                "Either the cohort does not exist (create it with ingest first) or the "
+                "run id is already taken by an earlier run."
+            ) from error
         record_run_start(self._store, cfg, run_id=run_id)
         return run_id
 
@@ -657,7 +676,16 @@ class Orchestrator:
                     # the idempotent form regardless: a row that appeared between read
                     # and write is left exactly as the ledger holds it, never rewritten.
                     tx.execute(ORCH_STATEMENTS["insert_work_unit"], **params)
-                    inserted += 1
+                    # `OR IGNORE` cannot report what it did: an ignored row is either a
+                    # duplicate that raced in between the read and this write, or a row
+                    # a constraint refused — and `OR IGNORE` swallows both silently.
+                    # Counting the loop's iterations would report the ledger as having
+                    # taken rows it does not hold, so the count comes from the ledger:
+                    # `changes()` read in the same transaction, of the write that
+                    # transaction itself just made.
+                    inserted += int(
+                        tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
+                    )
 
         counts: dict[tuple[str, str], int] = {}
         for r in cohort.query(ORCH_STATEMENTS["select_run_counts"], run_id=run_id):

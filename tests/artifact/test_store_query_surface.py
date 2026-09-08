@@ -232,11 +232,14 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
-    # aeh.orch's three sites (#57): the run-row insert, the ledger's batched unit insert
-    # and the audit-record insert — every one from ORCH_STATEMENTS, keyword-parameterized.
-    "aeh.orch:541",
-    "aeh.orch:659",
-    "aeh.orch:837",
+    # aeh.orch's four sites (#57): the run-row insert, the ledger's batched unit insert,
+    # the `SELECT changes()` read in that same transaction (the insert is `OR IGNORE`, so
+    # the ledger's own count of what the write did is the only honest one) and the
+    # audit-record insert — every one from ORCH_STATEMENTS, keyword-parameterized.
+    "aeh.orch:550",
+    "aeh.orch:678",
+    "aeh.orch:687",
+    "aeh.orch:865",
     "aeh.ingest:2328",
     "aeh.ingest:2339",
     "aeh.ingest:2361",
