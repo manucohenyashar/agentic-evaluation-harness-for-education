@@ -65,6 +65,13 @@ recorded for review):
   package row (`CT-DET-09`), and its routing vocabulary admits only `'auto'`
   and `'triage'` — a deterministic criterion has no path into the teacher's
   review queue, whose admission is `M-REVIEW`/`M-AGG`'s query concern.
+- Registration assumption: this module's runtime SQL reads M-INGEST's
+  `document` / `document_region` columns and M-ORCH's `run` table in the
+  cohort tier. Migrations register at import, so a process must import
+  `aeh.ingest` and `aeh.orch` before opening a fresh data dir — shipped
+  wiring (console, orchestrator, tests) does. Importing `aeh.det` alone
+  applies only the store's cohort migrations and det's own, and the first
+  cohort read would then fail on the missing ingest/orch columns.
 """
 
 from __future__ import annotations
@@ -970,11 +977,14 @@ class DeterministicEvaluator:
 
     def _read_from_regions(self, mine: list[Any]) -> SelectionRead:
         """R47's retraction discipline applied to one question's regions (see
-        module docstring). Selection-mark regions are preferred; a question
-        whose only regions are other kinds still gets read, because a letter
-        written in the margin is a valid selection captured as a description
-        (§7.8) — but several live regions of any kind are multiple marks:
-        unresolved, never "darkest"."""
+        module docstring). Live selection-mark regions take precedence: if any
+        exist they are the candidates, and several of them are multiple marks
+        — unresolved, never "darkest". A question with no live selection mark
+        but other live regions still gets read — a letter written in the
+        margin is a valid selection captured as a description (§7.8) — one
+        such region is read, several are multiple marks. (So a single live
+        selection_mark wins over coexisting non-mark regions; today's ingest
+        writes one region per question, making the mixed case defensive.)"""
         live = [row for row in mine if row["retraction"] is None]
         if not live:
             # Every region for the question was struck through: the student
