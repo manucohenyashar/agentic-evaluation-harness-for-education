@@ -1627,6 +1627,10 @@ PKG_STATEMENTS.update({
         "DELETE FROM exemplar WHERE package_version_id = :v "
         "AND exemplar_id = :exemplar_id"
     ),
+    "select_exemplars": Statement(
+        "SELECT exemplar_id, criterion_id, band, provenance, blob_hash FROM exemplar "
+        "WHERE package_version_id = :v ORDER BY exemplar_id"
+    ),
     # -- question inventory and setup proposal (#50) --------------------------------------
     # The package row `create_version` refuses to mint (`_refuse_no_such_package`'s
     # message names M-SETUP as its writer): the initial version's setup flow creates it.
@@ -1636,6 +1640,10 @@ PKG_STATEMENTS.update({
     "select_latest_draft_version": Statement(
         "SELECT package_version_id FROM package_version WHERE package_id = :p "
         "AND locked = 0 ORDER BY revision DESC LIMIT 1"
+    ),
+    "select_latest_package_version": Statement(
+        "SELECT package_version_id FROM package_version WHERE package_id = :p "
+        "ORDER BY revision DESC LIMIT 1"
     ),
     "select_has_version": Statement(
         "SELECT 1 AS one FROM package_version WHERE package_id = :p LIMIT 1"
@@ -2224,6 +2232,39 @@ class PackageCatalog:
             tx.execute(PKG_STATEMENTS["refresh_package_flag"], p=self._package_id)
         self._invalidate()
 
+    def exemplars(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """The version's exemplar rows, ordered by exemplar id (`#53`): the read
+        the prefix budget's per-pair assembly consumes (`FR-SETUP-11` — a
+        (question, criterion) prefix includes its exemplars' material)."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_exemplars"], v=v)
+        )
+
+    def blob_text(self, blob_hash: str | None) -> str:
+        """One blob's content as text, by hash — the exemplar material a judge
+        prompt would carry, which the prefix budget counts (`#53`, `FR-SETUP-11`).
+
+        None (a text-only exemplar) answers the empty string. A hash with NO blob
+        store attached to this catalog refuses: silently under-counting the
+        prefix is the opposite of the check's purpose. Missing content answers
+        the empty string — a dangling hash is a storage inconsistency the budget
+        report cannot fix, and the exemplar's absence of material is the honest
+        count."""
+        if blob_hash is None:
+            return ""
+        if self._blobs is None:
+            raise PackageError(
+                f"exemplar blob {blob_hash!r} cannot be read: this catalog was "
+                "opened without a blob store, so the prefix budget would "
+                "under-count the assembled prompt (FR-SETUP-11). Reopen the "
+                "catalog with blobs=store.blobs()."
+            )
+        data = self._blobs.get(blob_hash)
+        if not data:
+            return ""
+        return data.decode("utf-8", errors="replace")
+
     def topological_order(self, v: PackageVersionId) -> tuple[str, ...]:
         """A valid topological order over the version's dependency graph — dependencies
         before dependents, which is `M-ORCH`'s extraction sweep order (`FR-PKG-05`)."""
@@ -2463,6 +2504,13 @@ class PackageCatalog:
             ) from error
         data["review_window_hours"] = rows[0]["review_window_hours"]
         return GradePolicy.from_dict(data)
+
+    def grade_policy_declared(self, v: PackageVersionId) -> bool:
+        """Whether a grade-policy ROW is stored for the version (`#53`): the
+        distinction `grade_policy()` cannot make, since it answers the default
+        when no row exists — `FR-SETUP-12`'s recording obligation needs to know
+        whether the default was ever written down."""
+        return bool(self._handle.query(PKG_STATEMENTS["select_policy"], v=v))
 
     def set_boundaries(
         self, v: PackageVersionId, boundaries: Sequence[tuple[str, float]]
@@ -3069,6 +3117,15 @@ class PackageCatalog:
         published version, no draft) in the console's step report."""
         return bool(self._handle.query(PKG_STATEMENTS["select_has_version"],
                                        p=self._package_id))
+
+    def latest_version(self) -> PackageVersionId | None:
+        """The package's most recent version, published or not (`#53`): the read
+        the FINISHED step report needs — once setup finishes the draft is gone,
+        but the step records the published version carries are still the truth
+        about what was taken, and the console reads them through this."""
+        rows = self._handle.query(PKG_STATEMENTS["select_latest_package_version"],
+                                  p=self._package_id)
+        return rows[0]["package_version_id"] if rows else None
 
     def record_proposal(
         self, v: PackageVersionId, *, proposal_id: str, assessment_doc_id: str,

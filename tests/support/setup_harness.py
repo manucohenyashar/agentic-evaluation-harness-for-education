@@ -278,7 +278,11 @@ def stage_chain(data_dir, package_id: str = "pkg-setup"):
 
     store = open_store(data_dir)
     ingestor = build_ingestor(store)
-    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    # The catalog carries the store's blob handle so the prefix budget (#53) can
+    # read the exemplar material a judge prompt would assemble (FR-SETUP-11) —
+    # the same handle export (CT-STORE-07) already consumes.
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id,
+                             blobs=store.blobs())
     provider = ScriptedSetupProvider()
     return SimpleNamespace(store=store, package_id=package_id, ingestor=ingestor,
                            catalog=catalog, provider=provider,
