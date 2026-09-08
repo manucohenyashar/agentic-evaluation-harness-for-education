@@ -34,6 +34,11 @@ import aeh.orch  # noqa: F401 -- the cohort tier's latest owner; imported last s
 # registry reads [1, 2..6 ingest, 7 orch] in version order, which TC-STORE-04's
 # registry-filtered expectation walks. The store sorts by version when applying, so
 # runtime is order-independent either way; this keeps the test's walk honest.
+import aeh.det  # noqa: F401 -- M-DET owns package 10, cohort 9 and durable 3+4; imported
+# last for the same reason as orch: the registry this test walks and the golden it
+# compares against describe the FULL binary, every owning module's contribution
+# included. (TC-PKG-C12's writership scan imports every aeh module mid-suite, so a
+# det-free registry here was an ordering accident, not a smaller world.)
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,
