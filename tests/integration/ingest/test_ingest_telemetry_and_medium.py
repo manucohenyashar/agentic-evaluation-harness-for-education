@@ -1009,6 +1009,59 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
                     f"TC-INGEST-44: sub-{index}'s unreached {gate} records "
                     f"{_gate_value(row, gate)!r} — only `not_reached` is "
                     "honest (the F4 sweep).")
+
+    # The F3/G4 emitter (#222): `Ingestor.run_aggregates` is the single path
+    # that produces the named signals, and its per-gate counts — read from
+    # the raw rows, like any consumer — must equal this table's
+    # construction-known reachability (the acceptance criterion's equality).
+    aggregates = fx.ingestor.run_aggregates(fx.cohort_id)
+    assert aggregates.submissions == 5
+    assert aggregates.gate_pass_counts == {
+        "v0": len(PASSED["v0"]), "v1": len(PASSED["v1"]),
+        "v2": len(PASSED["v2"]), "v3": len(PASSED["v3"]),
+        "v4": 2}, (
+        f"TC-INGEST-44: the emitter's pass counts "
+        f"{aggregates.gate_pass_counts} do not equal the reachability counts "
+        "(v4's passing outcome is `match`: subs 1 and 4).")
+    assert aggregates.gate_fail_counts == {
+        "v0": 1, "v1": 1, "v2": 1, "v3": 1, "v4": 1}, (
+        f"TC-INGEST-44: the emitter's fail counts moved: "
+        f"{aggregates.gate_fail_counts} (v4's failure side is "
+        "uncertain/mismatch: sub 5).")
+    assert aggregates.quarantine_counts_by_gate == {"v0": 1, "v1": 1, "v2": 1,
+                                                    "v3": 1}, (
+        f"TC-INGEST-44: the emitter's quarantine-by-gate moved: "
+        f"{aggregates.quarantine_counts_by_gate}.")
+    # The rates over this mixed cohort: two of five submissions lost the
+    # file/OCR pipeline (V0 refusal, V1 gap); the one selection mark on the
+    # run resolved; the divergence aggregates re-derive from the recorded
+    # per-document maxima; and the second pass — never implemented — reads
+    # the honest absent, not a simulated zero.
+    assert aggregates.ocr_failure_rate == pytest.approx(2 / 5), (
+        f"TC-INGEST-44: ocr_failure_rate is {aggregates.ocr_failure_rate}.")
+    assert aggregates.unresolved_mark_rate == 0.0, (
+        f"TC-INGEST-44: unresolved_mark_rate is "
+        f"{aggregates.unresolved_mark_rate}.")
+    recorded = [row["text_layer_divergence"] for row in fx.handle.query(
+        "SELECT d.text_layer_divergence FROM document d JOIN submission s "
+        "ON d.submission_id = s.submission_id WHERE s.cohort_id = :c "
+        "AND d.text_layer_divergence IS NOT NULL", c=fx.cohort_id)]
+    assert recorded and aggregates.max_text_layer_divergence == max(recorded) \
+        and aggregates.mean_text_layer_divergence == pytest.approx(
+            sum(recorded) / len(recorded)), (
+        f"TC-INGEST-44: the divergence aggregates "
+        f"({aggregates.mean_text_layer_divergence}, "
+        f"{aggregates.max_text_layer_divergence}) are not the mean/max over "
+        f"the recorded per-document maxima {recorded}.")
+    assert aggregates.second_pass_disagreement_rate is None, (
+        f"TC-INGEST-44: second_pass_disagreement_rate is "
+        f"{aggregates.second_pass_disagreement_rate} — no second pass has "
+        "run and a number here would be simulated (C19).")
+    assert set(aggregates.basis) >= {
+        "ocr_failure_rate", "unresolved_mark_rate", "gate_pass_counts",
+        "quarantine_counts_by_gate", "second_pass_disagreement_rate"}, (
+        "TC-INGEST-44: the emitter carried a signal without its basis — a "
+        "bare number with no provenance (the stage-detail seam).")
     quarantine_by_gate: dict[str, int] = {}
     for row in fx.submission_rows():
         if not row["quarantined"]:

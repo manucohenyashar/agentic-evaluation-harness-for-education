@@ -10,9 +10,10 @@ the operator to the wrong fix), pages-with-text-layer, mean and max
 description second-pass disagreement rate; per-region confidence is recorded
 in a form supporting the §6.9 surface-proxy analysis (NFR-INGEST-07).
 
-**Disclosed finding (G4, in `_doubles`, probe-backed):** the AGGREGATE signals
-are not emitted anywhere — there is no metrics emission in the module;
-`TC-INGEST-44` (TS-19, issue #48) is the open implementation story. What this
+**Finding G4, resolved by #222:** the AGGREGATE signals are now emitted by
+the single emitter `Ingestor.run_aggregates` (its per-gate counts asserted
+against construction-known reachability in `TC-INGEST-44`); the consumer
+half is TS-55 (#148) — cross-referenced, not duplicated. What this
 case holds at full strength is the producer half the aggregates are computed
 from, with the clause's own emphasis asserted at the data level:
 
@@ -32,9 +33,10 @@ from, with the clause's own emphasis asserted at the data level:
   included (CT-INGEST-04's clause, #221).
 
 `description_secondary` is always NULL — the second-pass disagreement signal
-is Phase 2 (#39 landed the column; the pass is not implemented). The emission
-and aggregation halves are M-STATS/M-INTEG's (stories #115..#118 and #73..#74)
-— deferred with disclosure.
+is Phase 2 (#39 landed the column; the pass is not implemented), so the
+emitter reads it as the honest None, never a simulated zero. Consuming the
+aggregates into stats surfaces is M-STATS/M-INTEG's (TS-55/#148) —
+cross-referenced, not duplicated.
 """
 from __future__ import annotations
 

@@ -37,11 +37,15 @@ them rather than shipped red**:
   `quarantined=0`. `NFR-INGEST-02` ("fail the unit, never the run") and
   `TC-INGEST-40` (P0) promise containment. The case asserts the half that holds
   today (no row reaches `ok`; no document is written) and discloses the rest.
-- **G4** (aggregate observability signals, `CT-INGEST-19`): `ocr_failure_rate`,
-  the unresolved-mark rate and per-gate counts are not emitted anywhere —
-  `TC-INGEST-44` (TS-19, issue #48) is open. The case pins the *producer
-  artifacts* the aggregates would be computed from, at the columns the schema
-  already carries.
+- **G4** (aggregate observability signals, `CT-INGEST-19`) — **resolved by
+  #222**: `Ingestor.run_aggregates` is the single emitter that produces every
+  named signal (`ocr_failure_rate`, the unresolved-mark rate, the mean/max
+  divergence aggregates, per-gate pass/fail counts, quarantine counts by
+  gate, the second-pass disagreement rate) from the stored rows, and
+  `TC-INGEST-44` asserts its per-gate counts against the construction-known
+  reachability. This case still pins the *producer artifacts* the aggregates
+  are computed from, at the columns the schema carries. The consumer half is
+  TS-55 (#148) — cross-referenced, not duplicated here.
 - **G5** (span identity, `CT-INGEST-03`): `work_unit` carries no `document_id`
   column, so a span's work-ID-mismatch detection is `M-EXTRACT`/`M-INTEG`'s to
   hold; the producer half pins the durability the offsets point into.
