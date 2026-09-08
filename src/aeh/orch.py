@@ -370,6 +370,13 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_work_unit": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
     ),
+    # The one-row existence probe behind lease()'s enumerate-on-empty gate: a run whose
+    # ledger holds *any* row was enumerated (or partially so, which is a crash
+    # `resume()` repairs) — re-enumerating it on every drained poll would make the
+    # hot claim path a full enumeration pass (NFR-ORCH-01).
+    "select_any_work_unit": Statement(
+        "SELECT work_id FROM work_unit WHERE run_id = :run_id LIMIT 1"
+    ),
     "select_leased_units": Statement(
         "SELECT w.work_id, w.lease_expires_ticks FROM work_unit w "
         "JOIN run r ON r.run_id = w.run_id "
@@ -385,12 +392,15 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "lease_expires_ticks = :expires_ticks, lease_expires_at = :expires_at "
         "WHERE work_id = :work_id AND status = 'pending'"
     ),
-    # The heartbeat: extends a live lease's expiry only — a requeued unit is not this
-    # worker's anymore, and the guard makes that refusal a zero-row write.
+    # The heartbeat: extends a live lease's expiry only. `:owner IS NULL OR` makes the
+    # owner check optional — a caller naming its worker_id cannot extend a lease another
+    # worker holds, and an unnamed heartbeat is still guarded on `leased`. The guard
+    # makes a lost lease a zero-row write, which the caller detects via `changes()`.
     "extend_lease": Statement(
         "UPDATE work_unit SET lease_expires_ticks = :expires_ticks, "
         "lease_expires_at = :expires_at "
-        "WHERE work_id = :work_id AND status = 'leased'"
+        "WHERE work_id = :work_id AND status = 'leased' "
+        "AND (:owner IS NULL OR lease_owner = :owner)"
     ),
     # The sweeper's requeue: expired lease → pending, lease columns cleared. Attempts
     # survive the round-trip: the unit's failure history is not the lease's.
@@ -405,11 +415,16 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "WHERE work_id = :work_id AND status IN ('leased', 'pending')"
     ),
     # The failure taxonomy: requeue with the attempt counted, or quarantine at the
-    # ceiling — last_error retained in both arms, lease columns cleared. The status arm
-    # is a bound parameter (a value, not an identifier) so requeue and quarantine are
-    # one declared statement and the two arms cannot drift apart.
+    # ceiling — last_error retained in both arms, lease columns cleared. The count and
+    # the status arm are computed **inside the statement** (`attempts + 1`; every SET
+    # expression sees the pre-update row), so two failure reports cannot both read the
+    # same count and write the same increment — one attempt can never be lost, and
+    # quarantine lands on the report that actually reaches the ceiling.
     "record_failure": Statement(
-        "UPDATE work_unit SET status = :status, attempts = :attempts, "
+        "UPDATE work_unit SET "
+        "status = CASE WHEN attempts + 1 >= :max_attempts THEN 'quarantined' "
+        "ELSE 'pending' END, "
+        "attempts = attempts + 1, "
         "last_error = :last_error, lease_owner = NULL, "
         "lease_expires_ticks = NULL, lease_expires_at = NULL "
         "WHERE work_id = :work_id AND status IN ('leased', 'pending')"
@@ -580,6 +595,11 @@ class SweeperReport:
     requeued nothing is indistinguishable from one that never ran — so the report names
     all three outcomes: `examined`, `requeued`, `still_held`, plus the `gates` detail
     (the `EnumerationReport`/`IngestReport.gates` precedent).
+
+    `still_held` is derived (`examined - requeued`), and a unit that completes or
+    moves during the sweep counts as still held: the report is a reading taken at
+    sweep time, the ledger row is the truth. Report-level approximation, stated
+    rather than hidden.
     """
 
     examined: int
@@ -943,11 +963,13 @@ class Orchestrator:
         pass:
 
         **Self-healing enumeration.** A first pass that claims nothing triggers the
-        base enumeration `resume()` uses — idempotent by construction — and claims
-        again, so a caller that created a run and leased receives units without a
-        separate enumerate step and a completed ledger costs one no-op pass. An empty
-        return after that is a true empty (the stage's units are done, in flight, or
-        the run is not dispatching), not a bookkeeping gap.
+        base enumeration `resume()` uses — idempotent by construction — but only for
+        runs whose ledger holds no units at all, and claims again, so a caller that
+        created a run and leased receives units without a separate enumerate step
+        while a drained poll late in a large run pays one claim query and one
+        existence probe, never a full pass. An empty return after that is a true
+        empty (the stage's units are done, in flight, or the run is not dispatching),
+        not a bookkeeping gap.
 
         **The unit handed over.** The returned units carry `student_ref`;
         `student_name` and `submission_text` stay `None` — the ledger holds neither
@@ -972,15 +994,16 @@ class Orchestrator:
         if not claimed:
             # **The no-bookkeeping rule applied to leasing** (`FR-ORCH-02`): a caller
             # that created a run and leases — without a separate enumerate step — must
-            # not silently receive zero units because the base enumeration had not been
-            # run. Enumeration is idempotent by construction (`INSERT OR IGNORE` over
-            # computed work ids), so the empty first pass triggers the exact mechanism
-            # `resume()` uses, and the claim runs again against the completed ledger.
-            # A lease that returns empty *after* that is a true empty: every unit of
-            # the stage is done, in flight, or the run is not dispatching. The hot path
-            # stays one claim query — the enumeration costs a full pass and pays for
-            # itself only when the ledger is short of what the run owes.
-            for open_run in self._open_run_ids():
+            # not silently receive zero units because the base enumeration had not
+            # been run. The fallback enumerates only runs whose ledger holds **no
+            # units at all** (`_runs_missing_units`) — a run with rows was enumerated,
+            # and an empty claim against it is a true empty (every unit done, in
+            # flight, or the run not dispatching), not a bookkeeping gap. Re-
+            # enumerating on every drained poll would make the hot path a full
+            # enumeration pass late in a 23,000-unit run; the gate keeps it one claim
+            # query and one existence probe. A ledger partially populated by a crash
+            # mid-enumeration has rows and is `resume()`'s repair, not lease's.
+            for open_run in self._runs_missing_units():
                 self.enumerate_units(open_run)
             claimed = self._claim_pass(worker_id, stage, n)
         return tuple(self._unit_from_row(row) for row in claimed)
@@ -1036,7 +1059,7 @@ class Orchestrator:
                     claimed.append(row)
         return claimed
 
-    def heartbeat(self, work_id: str) -> None:
+    def heartbeat(self, work_id: str, owner: str | None = None) -> None:
         """Extend a live lease by another TTL — the while-it-works half of `FR-ORCH-04`.
 
         A slow-but-alive worker must not lose its unit at the original expiry: the
@@ -1045,10 +1068,18 @@ class Orchestrator:
         like every claim, so the persisted counter moves with it and the extension
         survives an uncontrolled kill.
 
+        `owner` names the calling worker and is checked against `lease_owner` — a
+        heartbeat naming its worker cannot extend a lease another worker holds, which
+        is the double-run `CT-ORCH-04` warns of from the other side. Unnamed
+        heartbeats (the assumed test surface) extend whoever holds the lease; passing
+        the worker id is the recommended form and the only one a multi-worker ledger
+        should rely on.
+
         Refusals are named, never absorbed: a unit that is not `leased` (the sweeper
-        requeued it, another worker completed it) or does not exist raises
-        `WorkLedgerError` — a heartbeat that silently no-ops would let its caller keep
-        working a unit it no longer holds, the double-run `CT-ORCH-04` warns of.
+        requeued it, another worker completed it), is held by a different named worker,
+        or does not exist raises `WorkLedgerError` — and the guard's `changes()` read
+        catches the race where the lease was lost **between** the read and the write,
+        so a heartbeat cannot succeed without having extended anything.
         """
         ttl = self._lease_ttl()
         lease_clock_obj = self._lease_clock()
@@ -1062,12 +1093,28 @@ class Orchestrator:
                 "worker held it, and extending a lease that returned to pending would "
                 "double-claim work another worker may already hold."
             )
+        if owner is not None and row["lease_owner"] != owner:
+            raise WorkLedgerError(
+                f"heartbeat for unit {work_id[:12]} refused: 'lease_owner' names "
+                f"{row['lease_owner']!r}, not {owner!r} — extending another worker's "
+                "live lease would let two workers run one unit."
+            )
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["extend_lease"],
                 work_id=work_id,
+                owner=owner,
                 expires_ticks=issued.expires_ticks,
                 expires_at=expires_at,
+            )
+            won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
+        if not won:
+            raise WorkLedgerError(
+                f"heartbeat for unit {work_id[:12]} could not be applied: the lease "
+                f"was lost between the read ('{row['status']}') and the write — the "
+                "sweeper requeued it or the unit moved underneath this worker. "
+                "Re-lease before continuing; a heartbeat that succeeds without "
+                "extending anything is the silent no-op this method exists to refuse."
             )
 
     def sweep_expired_leases(self) -> SweeperReport:
@@ -1139,9 +1186,11 @@ class Orchestrator:
         completion is then the no-op. A completion for a `quarantined` unit is refused
         with a named error: three failures were recorded, and quietly accepting a
         result underneath that record would un-quarantine by side effect — the
-        operator surface said what happened, and it must stay true. `result` is the
-        worker's `WorkResult`; the ledger records the transition, the payload is the
-        owning stage's to persist (#68 onward).
+        operator surface said what happened, and it must stay true. The guard's
+        `changes()` read catches the race where the unit was quarantined **between**
+        the read and the write — the silent version of the same refusal. `result` is
+        the worker's `WorkResult`; the ledger records the transition, the payload is
+        the owning stage's to persist (#68 onward).
         """
         cohort, row = self._find_unit(work_id)
         if row["status"] == "done":
@@ -1154,6 +1203,14 @@ class Orchestrator:
             )
         with cohort.transaction() as tx:
             tx.execute(ORCH_STATEMENTS["mark_done"], work_id=work_id)
+            won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
+        if not won:
+            raise WorkLedgerError(
+                f"completion for unit {work_id[:12]} could not be recorded: the "
+                f"unit's state moved from '{row['status']}' between the read and the "
+                "write — a failure report quarantined it mid-flight. The ledger's "
+                "record stands; re-read it before reporting again."
+            )
 
     def fail(self, work_id: str, error: WorkError | str) -> None:
         """Count one failed attempt against a unit; requeue it, or quarantine it at the
@@ -1164,44 +1221,47 @@ class Orchestrator:
         again; at the ceiling it becomes `quarantined` with `last_error` retained —
         the operator surface can say *what* happened, not just that something did. Both
         arms clear the lease columns; the run continues either way — "fail the unit,
-        never the run" (`NFR-ORCH-03`) is the whole point of the taxonomy, so no arm of
-        this method raises into the caller's loop over a unit's own failure.
+        never the run" (`NFR-ORCH-03`) is the whole point of the taxonomy, so **no arm
+        of this method raises into the caller's loop over a unit's own failure**: the
+        only raise is for a work id that resolves to no unit at all.
 
-        Refusals stay narrow and named: a failure for a unit that does not exist, or
-        one whose ledger state moved underneath the worker (a completion or a
-        quarantine recorded between the read and the write), raises rather than
-        guessing; a failure for an already-quarantined unit is a no-op — the record
-        stands, and a duplicate report from an at-least-once worker must not
-        double-count it.
+        **A failure report wins over a live lease.** The design fixes this signature at
+        `(work_id, error)` — no owner identity — so the report cannot name its holder,
+        and the ledger treats it as authoritative about the attempt: the unit requeues
+        (or quarantines) and its lease columns clear even if another worker currently
+        shows as holding them. At-least-once leasing makes the holder tolerate losing
+        the claim; its own next heartbeat is a named refusal (the guard catches it), so
+        the stale holder cannot keep working silently.
+
+        Races are absorbed by the ledger's state at write time, not raised: a failure
+        for a unit that completed (a completion beat this report — under
+        `CT-ORCH-04`'s at-least-once that is an expected outcome, and the real result
+        exists), one already quarantined (the record stands; a duplicate report from a
+        double-run worker must not double-count it), or one whose state moved between
+        the read and the guarded write — all no-ops. The count and the ceiling
+        comparison are computed **inside the statement** from the row as the write sees
+        it, so two concurrent reports cannot both read the same count and lose an
+        attempt; quarantine lands on the report that actually reaches the ceiling.
         """
         max_attempts = _env_int(MAX_ATTEMPTS_ENV, ORCH_MAX_ATTEMPTS)
         message = error.message if isinstance(error, WorkError) else str(error)
         cohort, row = self._find_unit(work_id)
-        if row["status"] == "quarantined":
+        if row["status"] in ("quarantined", "done"):
             return
-        if row["status"] == "done":
-            raise WorkLedgerError(
-                f"failure for unit {work_id[:12]} refused: the unit is 'done' — a "
-                "completed unit cannot also have failed; whichever report is wrong is "
-                "a caller bug worth naming, not a state to guess out of."
-            )
-        attempts = int(row["attempts"]) + 1
-        status = "quarantined" if attempts >= max_attempts else "pending"
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["record_failure"],
                 work_id=work_id,
-                status=status,
-                attempts=attempts,
+                max_attempts=max_attempts,
                 last_error=message,
             )
             won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
         if not won:
-            raise WorkLedgerError(
-                f"failure for unit {work_id[:12]} could not be recorded: the unit's "
-                f"state moved from '{row['status']}' while the attempt was being "
-                "counted. Re-read the ledger before reporting again."
-            )
+            # The unit moved underneath the report (reclaimed, completed, quarantined
+            # by a concurrent holder). The ledger's state at write time wins; raising
+            # here would fail a run over a unit-level race, which is the one thing
+            # this taxonomy refuses to do (NFR-ORCH-03).
+            return
 
     # -- internals ------------------------------------------------------------------------------
 
@@ -1333,6 +1393,26 @@ class Orchestrator:
                 "canonical {\"arms\": [...]} form this module writes (panel_config_json)."
             )
         return tuple(arms)
+
+    def _runs_missing_units(self) -> tuple[str, ...]:
+        """Open runs whose ledger holds no work_unit rows at all, in run-id order.
+
+        The gate behind lease()'s enumerate-on-empty fallback: enumerating is a full
+        pass over catalog, roster and computed ids, and a drained poll late in a large
+        run must not pay it (NFR-ORCH-01). A run with rows — even partially populated
+        by a crash mid-enumeration — is `resume()`'s repair, not lease's; the
+        existence probe is one indexed query per open run.
+        """
+        found: list[str] = []
+        for key in self._cohort_keys():
+            cohort = self._store.cohort(key)
+            for row in cohort.query(ORCH_STATEMENTS["select_open_runs"]):
+                run_id = row["run_id"]
+                if not cohort.query(
+                    ORCH_STATEMENTS["select_any_work_unit"], run_id=run_id
+                ):
+                    found.append(run_id)
+        return tuple(sorted(found))
 
     def _open_run_ids(self) -> tuple[str, ...]:
         """Every not-yet-finished run, across every cohort ledger, in run-id order."""
