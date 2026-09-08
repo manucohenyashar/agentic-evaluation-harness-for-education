@@ -1483,6 +1483,65 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/integ/test_integ_observability.py",
         ),
     ),
+    # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
+    #
+    # The pure policy functions are #60's, the estimator is #62's, the policy function
+    # itself is M-AGG's (#95), and the cost-ceiling pause is #61's. Every invented name is
+    # declared in the test module's docstring with its reconciling story — the
+    # `record_run_metrics` precedent: the design pins the semantics and the constants but
+    # no function names, so the tests invent and use them together.
+    "#60 TS-23 criterion breaker (TC-ORCH-13)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:criterion_breaker_tripped,"
+            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_RATE,"
+            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_MIN_N"
+        ),
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum",
+        ),
+    ),
+    "#60 TS-23 escalation budget (TC-ORCH-14)": (
+        "symbols",
+        f"{ORCH_MODULE}:admit_escalations,{ORCH_MODULE}:ORCH_ESCALATION_BUDGET",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_14_budget_rations_above_it_and_marks_the_remainder_provisional",
+        ),
+    ),
+    "#60 TS-23 escalation plan (TC-ORCH-20)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:validate_escalation_plan,"
+            f"{ORCH_MODULE}:EvenEscalationPlanError"
+        ),
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_even_escalation_plans_are_rejected",
+        ),
+    ),
+    "#62 TS-23 estimated completion (TC-ORCH-27)": (
+        "symbol",
+        f"{ORCH_MODULE}:estimated_completion_seconds",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_27_estimated_completion_adjusts_for_the_observed_escalation_rate",
+        ),
+    ),
+    "#95 TS-23 escalation policy purity (TC-ORCH-32)": (
+        # The policy FUNCTION is M-AGG's: design §3.8 declares `should_escalate` on the
+        # Aggregator Protocol and CT-AGG-01 names it the pure escalation policy that
+        # NFR-ORCH-04 requires — so the key is the member, not the module.
+        "symbol",
+        f"{AGG_MODULE}:should_escalate",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
+        ),
+    ),
 }
 
 
