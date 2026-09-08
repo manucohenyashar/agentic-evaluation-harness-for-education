@@ -256,6 +256,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch:1252",
     "aeh.orch:1258",
     "aeh.orch:1450",
+    # aeh.det's six sites (#86): the single-row score upsert in `evaluate`, the
+    # batched score upsert in `evaluate_cohort`'s one Tier C transaction, and the
+    # four Tier D writes that rewrite `mcq_item_stats`/`mcq_item_summary` per
+    # criterion (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
+    # Every one from DET_STATEMENTS, keyword-parameterized.
+    "aeh.det:666",
+    "aeh.det:779",
+    "aeh.det:1060",
+    "aeh.det:1068",
+    "aeh.det:1076",
+    "aeh.det:1082",
     "aeh.ingest:2371",
     "aeh.ingest:2382",
     "aeh.ingest:2404",

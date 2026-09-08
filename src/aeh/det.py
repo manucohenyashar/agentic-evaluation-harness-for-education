@@ -76,6 +76,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from aeh.pkg import PackageCatalog
 from aeh.store import (
     STATEMENTS,
     Migration,
@@ -467,10 +468,6 @@ DET_STATEMENTS: dict[str, Statement] = {
         "partial_credit FROM criterion WHERE package_version_id = :v "
         "AND kind = 'mcq' ORDER BY criterion_id"
     ),
-    "select_bands": Statement(
-        "SELECT band, points FROM band WHERE package_version_id = :v "
-        "AND criterion_id = :criterion_id ORDER BY ordinal"
-    ),
     "select_options": Statement(
         "SELECT option_id FROM mcq_option WHERE package_version_id = :v "
         "AND criterion_id = :criterion_id ORDER BY option_id"
@@ -657,12 +654,13 @@ class DeterministicEvaluator:
         run = self._run_row(run_id)
         cohort_handle = self._store.cohort(run["cohort_id"])
         package_handle = self._store.package(run["package_id"])
+        catalog = self._catalog(run)
         criterion = self._criterion(
             package_handle, run["package_version_id"], criterion_id
         )
         outcome, points = self._score_one(
             cohort_handle, package_handle, run["package_version_id"], criterion,
-            submission_id,
+            submission_id, catalog=catalog,
         )
         with cohort_handle.transaction() as tx:
             tx.execute(
@@ -704,6 +702,7 @@ class DeterministicEvaluator:
         run = self._run_row(run_id)
         cohort_handle = self._store.cohort(run["cohort_id"])
         package_handle = self._store.package(run["package_id"])
+        catalog = self._catalog(run)
         version = run["package_version_id"]
         criteria = [
             dict(row)
@@ -732,17 +731,6 @@ class DeterministicEvaluator:
             )
         ]
         alert_rate = unresolved_alert_rate()
-        band_maps = {
-            criterion["criterion_id"]: {
-                row["band"]: float(row["points"])
-                for row in package_handle.query(
-                    DET_STATEMENTS["select_bands"],
-                    v=version,
-                    criterion_id=criterion["criterion_id"],
-                )
-            }
-            for criterion in criteria
-        }
         tallies: dict[str, dict[str, Any]] = {}
         scored: list[tuple[str, dict[str, Any], DetOutcome, float | None]] = []
         for submission_id in submissions:
@@ -751,7 +739,7 @@ class DeterministicEvaluator:
                 outcome, points = self._score_one(
                     cohort_handle, package_handle, version, criterion, submission_id,
                     option_set=option_sets[criterion["criterion_id"]] or None,
-                    bands=band_maps[criterion["criterion_id"]],
+                    catalog=catalog,
                     read=reads.get(
                         criterion["question_id"], SelectionRead("absent", None, None)
                     ),
@@ -899,14 +887,16 @@ class DeterministicEvaluator:
         criterion: dict[str, Any],
         submission_id: str,
         option_set: tuple[str, ...] | None = None,
-        bands: dict[str, float] | None = None,
+        *,
+        catalog: PackageCatalog,
         read: SelectionRead | None = None,
     ) -> tuple[DetOutcome, float | None]:
-        """Read the selection, run the kernel, derive the points. Returns the
+        """Read the answer, run the kernel, derive the points. Returns the
         outcome and the points to store (None for an unresolved row).
-        `option_set`, `bands` and `read` are injectable so the cohort pass
-        reads each criterion's option and band rows once, and each
-        submission's regions once, instead of per pair (`NFR-DET-01`)."""
+        `option_set`, `catalog` and `read` are injectable so the cohort pass
+        reads each criterion's option rows once, holds one pinned catalog, and
+        reads each submission's regions once, instead of per pair
+        (`NFR-DET-01`)."""
         if criterion["kind"] != "mcq":
             # FR-ORCH-08: a non-mcq criterion reaching the deterministic
             # evaluator is an admission failure upstream, never a score.
@@ -941,9 +931,7 @@ class DeterministicEvaluator:
             partial_credit=criterion["partial_credit"],
             option_set=option_set,
         )
-        return outcome, self._points(
-            package_handle, version, criterion["criterion_id"], outcome, bands=bands
-        )
+        return outcome, self._points(catalog, criterion["criterion_id"], outcome)
 
     def _selection_read(
         self, cohort_handle: Any, submission_id: str, question_id: str
@@ -1009,38 +997,39 @@ class DeterministicEvaluator:
             region["content_state"], selection_state, selection
         )
 
+    def _catalog(self, run: Any) -> PackageCatalog:
+        """pkg's catalog over the run's package file, its per-run cache pinned
+        to the version the run names (never the file's latest — the same
+        version discipline as `_criterion`). Points come from here because
+        `points_for_band` is the band-to-points mapping's single canonical
+        reader (`TC-PKG-C05`, RISK-05): det must not hold a second mapping
+        that can drift from the declared instrument."""
+        catalog = PackageCatalog(
+            self._store.package(run["package_id"]),
+            package_id=run["package_id"],
+        )
+        catalog.criteria(run["package_version_id"])  # pins the cache
+        return catalog
+
     def _points(
         self,
-        package_handle: Any,
-        version: str,
+        catalog: PackageCatalog,
         criterion_id: str,
         outcome: DetOutcome,
-        bands: dict[str, float] | None = None,
     ) -> float | None:
         """The row's points. An unresolved row was never scored: None, not
         zero (`CT-DET-03` — no zero value exists for an unresolved state). A
-        scored row takes the criterion's declared band mapping; a per_option
-        fraction scales the correct band's points (see module docstring).
-        `bands` is injectable so the cohort pass reads each criterion's band
-        rows once instead of once per submission."""
+        scored row takes the criterion's declared band mapping, read through
+        pkg's single-canonical `points_for_band` (`TC-PKG-C05`); a per_option
+        fraction scales the correct band's points (see module docstring). A
+        criterion missing a declared band raises pkg's own `PackageError` —
+        the two-band declaration is pkg's invariant (`FR-SETUP-13`), not a
+        key problem, so det does not re-label it."""
         if outcome.band == BAND_UNRESOLVED:
             return None
-        if bands is None:
-            bands = {
-                row["band"]: float(row["points"])
-                for row in package_handle.query(
-                    DET_STATEMENTS["select_bands"], v=version, criterion_id=criterion_id
-                )
-            }
-        if outcome.band not in bands:
-            raise MalformedAnswerKey(
-                f"criterion {criterion_id!r} declares no {outcome.band!r} band; "
-                "an mcq criterion is declared with exactly two bands "
-                "(FR-SETUP-13), so this is a package-integrity failure."
-            )
         if outcome.credit in (0.0, 1.0):
-            return bands[outcome.band]
-        return outcome.credit * bands[BAND_CORRECT]
+            return catalog.points_for_band(criterion_id, outcome.band)
+        return outcome.credit * catalog.points_for_band(criterion_id, BAND_CORRECT)
 
     def _most_chosen_distractor(
         self, chosen: dict[str, int], key: tuple[str, ...]
