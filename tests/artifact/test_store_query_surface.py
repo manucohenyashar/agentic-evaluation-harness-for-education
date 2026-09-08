@@ -232,10 +232,30 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
-    # aeh.orch's four sites (#57): the run-row insert, the ledger's batched unit insert,
-    # the `SELECT changes()` read in that same transaction (the insert is `OR IGNORE`, so
-    # the ledger's own count of what the write did is the only honest one) and the
-    # audit-record insert — every one from ORCH_STATEMENTS, keyword-parameterized.
+    # aeh.orch's sites: #57's four (the run-row insert at 733, the ledger's batched
+    # unit insert at 861 with the `SELECT changes()` read at 870 in that same
+    # transaction — the insert is `OR IGNORE`, so the ledger's own count of what the
+    # write did is the only honest one — and the audit-record insert at 1450), plus
+    # #58's leasing and failure taxonomy (every one from ORCH_STATEMENTS,
+    # keyword-parameterized): the guarded lease claim at 1050 with its changes() read
+    # at 1057, the heartbeat's lease extension at 1103 with its changes() read at
+    # 1110, the sweeper's guarded requeue at 1159 with its changes() read at 1163,
+    # the completion at 1205 with its changes() read at 1206, and the failure record
+    # at 1252 with its changes() read at 1258.
+    "aeh.orch:733",
+    "aeh.orch:861",
+    "aeh.orch:870",
+    "aeh.orch:1050",
+    "aeh.orch:1057",
+    "aeh.orch:1103",
+    "aeh.orch:1110",
+    "aeh.orch:1159",
+    "aeh.orch:1163",
+    "aeh.orch:1205",
+    "aeh.orch:1206",
+    "aeh.orch:1252",
+    "aeh.orch:1258",
+    "aeh.orch:1450",
     "aeh.ingest:2371",
     "aeh.ingest:2382",
     "aeh.ingest:2404",
@@ -251,10 +271,6 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest:3256",
     "aeh.ingest:3650",
     "aeh.ingest:3673",
-    "aeh.orch:550",
-    "aeh.orch:678",
-    "aeh.orch:687",
-    "aeh.orch:865",
     "aeh.pkg:1911",
     "aeh.pkg:1953",
     "aeh.pkg:1967",

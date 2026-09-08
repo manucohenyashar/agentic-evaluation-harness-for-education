@@ -1321,19 +1321,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # #57 shipped the ledger slice (work units, `compute_work_id`, enumeration), so these
     # are keyed on the *symbols* the later stories owe, not on the module.
-    "#58 leasing (TC-ORCH-05/09)": (
-        # TC-ORCH-05 and TC-ORCH-09 drive lease/heartbeat/sweeper. `ORCH_LEASE_SECONDS`
-        # is the knob design §3.7's Configuration section names and no Interfaces block
-        # declares — it cannot exist before the sweeper that reads it, so it is the
-        # discriminating symbol for both cases. (TC-ORCH-09 additionally carries `slow`:
-        # §4.6's one sanctioned sleep.) The assumed surface the tests call —
-        # `lease`, `heartbeat`, `sweep_expired_leases`, the `clock=` constructor seam —
-        # is declared in the test module's docstring so #58 reconciles names
-        # deliberately.
-        "symbol",
-        f"{ORCH_MODULE}:ORCH_LEASE_SECONDS",
-        ("tests/integration/orch/test_leasing.py",),
-    ),
     "#59 admission filter (TC-ORCH-25)": (
         # TC-ORCH-25 drives the ingest_status admission rule, which #57's enumeration
         # deliberately does not apply. `SWEEP1_ADMITTED_INGEST_STATUSES` is invented here
