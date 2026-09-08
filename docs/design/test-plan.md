@@ -980,7 +980,10 @@ sentinel absent from the file bytes; the cohort's blobs gone; Tier D intact and 
 
 **Variants**: a blob shared by two cohorts through content-addressing must not be deleted while the
 other cohort still references it. Asserted explicitly, because deduplication and per-cohort purge are
-in direct tension and the design does not say which wins — raised in §7.4.
+in direct tension and the design does not say which wins — raised in §7.4. Since #225 the variant
+asserts the declared rule (a hash a surviving database still references is kept; a hash nothing
+references is reclaimed), and an inline regression case asserts the purge order is refused, before
+the first DELETE, on a file whose live FK graph contradicts `_COHORT_PURGE_ORDER`.
 
 **Automatable**: yes — `tests/integration/store/test_purge.py`
 
