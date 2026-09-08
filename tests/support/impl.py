@@ -22,6 +22,8 @@ import importlib
 import importlib.util
 from typing import Any
 
+from tests.support.extract_vocabulary import TS26_EXTRACT_SYMBOLS
+
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
 # package (`harness.*`, §4.7) but never name the source package. Chosen here, isolated to
@@ -1189,6 +1191,46 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
         ),
+    ),
+    # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
+    #
+    # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
+    # ExtractionResult SHAPES but **no Python names at all** — no Interfaces block, no
+    # Protocol — so every name the suite resolves is an invented-and-used-together name
+    # declared once in `tests/support/extract_vocabulary.py` (the record_run_start
+    # precedent), and the conjunction below is BUILT from that file's
+    # `TS26_EXTRACT_SYMBOLS`, so the registry cannot name a symbol the tests stopped
+    # using (or vice versa). Keying on any single symbol would resolve early — the
+    # Protocol-only trap TS-56/TS-74 documented does not apply here (no Protocol
+    # declares these), but the full conjunction is still the honest blocker set: the
+    # suite's files use most of the names together.
+    #
+    # `TC-EXTRACT-06` (deterministic criteria) and TC-EXTRACT-11's enumeration half,
+    # TC-EXTRACT-13's cross-check half run GREEN against shipped M-ORCH and carry no
+    # marker; they sit inside the marked files whose other cases wait on #68. The
+    # second-family case is keyed separately below: #69 owns `FR-EXTRACT-07`'s
+    # mechanism (Phase 2) and lands independently of #68.
+    "#68 extraction suite (TS-26)": (
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
+        (
+            "tests/artifact/test_extraction_isolation.py",
+            "tests/artifact/test_extraction_prompt_template.py",
+            "tests/integration/extract/test_extract_spans_and_rows.py",
+            "tests/integration/extract/test_extract_failure_and_graphics.py",
+            "tests/integration/extract/test_extract_scale_calls.py",
+            "tests/integration/extract/test_extract_document_invalidation.py",
+            "tests/security/extract/test_extract_pii_purge.py",
+            "tests/property/test_extract_span_bounds.py",
+        ),
+    ),
+    "#69 second family (TS-26)": (
+        # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
+        # `second_family_model` — a conjunction, because the driver alone does not make
+        # the case runnable.
+        "symbols",
+        f"{EXTRACT_MODULE}:ExtractionWorker,{EXTRACT_MODULE}:second_family_model",
+        ("tests/integration/extract/test_extract_second_family.py",),
     ),
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
     #
