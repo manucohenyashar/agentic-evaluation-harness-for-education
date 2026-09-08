@@ -51,6 +51,7 @@ EXTRACT_MODULE = f"{IMPLEMENTATION_PACKAGE}.extract"
 INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
 SETUP_MODULE = f"{IMPLEMENTATION_PACKAGE}.setup"
 SYNTH_MODULE = f"{IMPLEMENTATION_PACKAGE}.synth"
+INTEG_MODULE = f"{IMPLEMENTATION_PACKAGE}.integ"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
