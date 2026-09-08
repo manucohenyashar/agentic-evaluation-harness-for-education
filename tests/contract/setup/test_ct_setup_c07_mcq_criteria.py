@@ -52,7 +52,8 @@ def _chain_with_atomic_criterion(tmp_data_dir, package_id):
     version = chain.service.ensure_version()
     chain.catalog.add_criterion(version, "CRIT-DET", question_id="Q1",
                                 kind="open", max_points=4.0,
-                                scoring_model="atomic")
+                                scoring_model="atomic",
+                                evidence_type="textual_span")  # FR-SETUP-09
     return chain, version
 
 

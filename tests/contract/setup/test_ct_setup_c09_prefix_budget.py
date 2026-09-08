@@ -107,7 +107,8 @@ def test_tc_setup_c09_overage_reported_while_fixable_and_drops_spare_the_text(
     chain.catalog.update_question_field(version, "Q1", "reference_solution",
                                         reference)
     chain.catalog.add_criterion(version, "CRIT-B", question_id="Q1",
-                                kind="open", max_points=4.0, band_count=2)
+                                kind="open", max_points=4.0, band_count=2,
+                                evidence_type="textual_span")  # FR-SETUP-09
     # The points are non-decreasing in ordinal (FR-PKG-06 — the shape the same
     # schema enforces everywhere), so the ZERO-point band sits at ordinal 0:
     # its exemplars are the lowest-value things in the prefix, as the stated

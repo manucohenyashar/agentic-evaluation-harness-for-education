@@ -53,9 +53,11 @@ def _published_without_policy(tmp_data_dir, package_id: str):
     chain.service.confirm_inventory(proposal.proposal_id)
     version = chain.service.ensure_version()
     chain.catalog.add_criterion(version, "CRIT-A", question_id="Q1",
-                                kind="open", max_points=4.0)
+                                kind="open", max_points=4.0,
+                                evidence_type="textual_span")  # FR-SETUP-09
     chain.catalog.add_criterion(version, "CRIT-B", question_id="Q2",
-                                kind="open", max_points=6.0)
+                                kind="open", max_points=6.0,
+                                evidence_type="textual_span")  # FR-SETUP-09
     chain.service.set_answer_keys({"CRIT-A": ["b0"], "CRIT-B": ["b0"]}
                                   | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
                                      "CRIT-Q6": ["A"]})

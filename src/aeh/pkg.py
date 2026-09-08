@@ -1481,9 +1481,9 @@ PKG_STATEMENTS.update({
     ),
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
-        "max_points, scoring_model, construct_tag, band_count) VALUES (:v, "
-        ":criterion_id, :question_id, :kind, :max_points, :scoring_model, "
-        ":construct_tag, :band_count)"
+        "max_points, scoring_model, construct_tag, band_count, evidence_type) VALUES "
+        "(:v, :criterion_id, :question_id, :kind, :max_points, :scoring_model, "
+        ":construct_tag, :band_count, :evidence_type)"
     ),
     "insert_dependency": Statement(
         "INSERT INTO criterion_dependency (package_version_id, criterion_id, "
@@ -2066,12 +2066,20 @@ class PackageCatalog:
         self, v: PackageVersionId, criterion_id: str, *, question_id: str = "",
         kind: str = "open", max_points: float = 0.0, scoring_model: str = "atomic",
         construct_tag: str = "", dependencies: Sequence[str] = (),
-        band_count: int | None = None,
+        band_count: int | None = None, evidence_type: str | None = None,
     ) -> None:
         """Add a criterion with its dependency edges, refusing a cycle (`FR-PKG-05`) —
         the guard's add-refusal applies to published versions; drafts add freely. The
         content arguments default so a published version's refusal fires before any
         content is needed (TC-PKG-03 row 2 passes only the id).
+
+        `evidence_type` (`FR-SETUP-09`, #232) declares what kind of textual evidence
+        satisfies a JUDGED criterion — the declaration M-INTEG routes on
+        (`FR-INTEG-03`). The read back attaches it for every criterion it commits;
+        a criterion entered through THIS surface (the degraded read back routes the
+        teacher here) carries the declaration from its write or stays NULL — and
+        M-SETUP's publish gate refuses a draft holding a judged criterion without
+        one. `mcq` criteria are keyed, not judged, and legitimately carry NULL.
 
         `band_count` is the DECLARED band-set size (`FR-PKG-06`): odd or outside 2..6
         fails at the declare — a set that can never satisfy the even-count rule should
@@ -2089,7 +2097,8 @@ class PackageCatalog:
             tx.execute(PKG_STATEMENTS["insert_criterion"],
                        v=v, criterion_id=criterion_id, question_id=question_id,
                        kind=kind, max_points=max_points, scoring_model=scoring_model,
-                       construct_tag=construct_tag, band_count=band_count)
+                       construct_tag=construct_tag, band_count=band_count,
+                       evidence_type=evidence_type)
             for depends_on in dependencies:
                 if depends_on == criterion_id:
                     # Same self-edge refusal as set_dependencies: the graph error the

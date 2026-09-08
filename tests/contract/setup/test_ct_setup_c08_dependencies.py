@@ -61,7 +61,8 @@ def test_tc_setup_c08_dependencies_default_to_zero(tmp_data_dir):
     for i, criterion_id in enumerate(("CRIT-A", "CRIT-B")):
         chain.catalog.add_criterion(version, criterion_id,
                                     question_id=f"Q{i + 1}", kind="open",
-                                    max_points=4.0)
+                                    max_points=4.0,
+                                    evidence_type="textual_span")  # FR-SETUP-09
     chain.service.set_answer_keys(
         {"CRIT-A": ["b0"], "CRIT-B": ["b0"]}
         | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"], "CRIT-Q6": ["A"]})

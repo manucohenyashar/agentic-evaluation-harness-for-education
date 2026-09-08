@@ -103,7 +103,8 @@ def test_tc_setup_c06_published_artifact_carries_even_band_counts_in_range(
         criterion_id = f"CRIT-EVEN-{count}"
         chain.catalog.add_criterion(version, criterion_id,
                                     question_id=f"Q{i + 1}", kind="open",
-                                    max_points=float(count), band_count=count)
+                                    max_points=float(count), band_count=count,
+                                    evidence_type="textual_span")  # FR-SETUP-09
         for ordinal, descriptor in enumerate(descriptors[count]):
             chain.catalog.add_band(version, criterion_id, ordinal,
                                    f"b{ordinal}", float(ordinal),
