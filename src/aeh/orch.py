@@ -747,9 +747,10 @@ class PackageCatalogProtocol(Protocol):
 
 class Orchestrator:
     """The ledger slice of §3.7's Orchestrator: create a run, enumerate its units,
-    resume. Leasing, sweeps, escalation and the control-row lifecycle arrive with
-    #58/#59/#60/#61 — the members here are the ones `FR-ORCH-01/02/03` and `NFR-ORCH-05`
-    own, and `resume` takes no arguments from its first commit.
+    resume, lease them under the two-sweep plan. Escalation and the circuit breakers
+    are #60's; the control-row lifecycle (start/pause status transitions) is #61's;
+    dispatch isolation and `ProgressReport` are #62's. `resume` takes no arguments from
+    its first commit.
 
     The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
     or contacts a judge: enumeration is a pure function of the ledger, the package
