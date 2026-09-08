@@ -784,17 +784,24 @@ def _normalize_bands(raw_bands: Sequence[Mapping], construct: str,
     """Fix the band ordering on read-back (`FR-PKG-06`'s order half): sort by points
     ascending — the reply's own ordinal breaking ties, so the model's ranking survives
     a flat band set — and re-base the ordinals to contiguous-from-0. The reply's
-    descriptor content has already cleared the magnitude bar before this runs."""
+    descriptor content has already cleared the magnitude bar before this runs.
 
-    ranked = sorted(
-        enumerate(raw_bands),
-        key=lambda pair: (float(pair[1]["points"]), pair[0]),
-    )
-    return tuple(
-        ProposedBand(band=str(band["band"]), ordinal=fixed_ordinal,
-                     points=float(band["points"]),
+    The reply's bands are typed into `ProposedBand` FIRST and ordered through the
+    attribute: this module orders and writes band points, it never reads a stored band
+    row to map a band to a score — that mapping is `points_for_band`'s alone
+    (`TC-PKG-C05`, RISK-05), and the typed shape is what keeps the two apart."""
+
+    typed = tuple(
+        ProposedBand(band=str(band["band"]), ordinal=int(band["ordinal"]),
+                     points=float(band.get("points", 0.0)),
                      descriptor=str(band["descriptor"]))
-        for fixed_ordinal, (_reply_ordinal, band) in enumerate(ranked)
+        for band in raw_bands
+    )
+    ordered = sorted(enumerate(typed), key=lambda pair: (pair[1].points, pair[0]))
+    return tuple(
+        ProposedBand(band=band.band, ordinal=fixed_ordinal, points=band.points,
+                     descriptor=band.descriptor)
+        for fixed_ordinal, (_reply_ordinal, band) in enumerate(ordered)
     )
 
 
@@ -1055,7 +1062,7 @@ def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricRea
             band_count=int(entry["band_count"]),
             bands=tuple(
                 ProposedBand(band=str(band["band"]), ordinal=int(band["ordinal"]),
-                             points=float(band["points"]),
+                             points=float(band.get("points", 0.0)),
                              descriptor=str(band["descriptor"]))
                 for band in entry.get("bands", ())
             ),
