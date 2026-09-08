@@ -100,6 +100,21 @@ for review):
   store before det wrote grades was a judged artifact. #59 owns reconciling
   the run-level row's mode with its own unit semantics; det's per-grade rows
   always write `'deterministic'` explicitly.
+- `final_points` is added NULLABLE, though the HLD §9.7 column says NOT
+  NULL: SQLite cannot add a NOT NULL column without a default to a
+  populated table, and orch's pre-existing run-level rows legitimately
+  carry no points. The invariant is the writer's, not the schema's — det
+  appends an audit row only for a scored (band, points) outcome — so
+  nothing in the DDL stops a future writer from a deterministic row with
+  NULL points. The gap is named here rather than papered over by this
+  docstring.
+- The summary's denominator: `n` counts every submission of the cohort for
+  the criterion, and `correct_rate = correct / n` keeps blanks (a legitimate
+  zero) AND unresolved reads in the denominator — a scanning-problem
+  question reads as harder than it is, which is exactly why
+  `unresolved_count` (and the report's `unresolved_rate`) are their own
+  figures. The identity `correct + incorrect + unresolved = n` holds; a
+  blank is inside `incorrect` band-wise, an unresolved read is in neither.
 - The separation filter (`NFR-DET-03`, `FR-DET-09`) is defined in this module
   exactly once — `DETERMINISTIC_EXCLUSION` below, composed into
   `select_agreement_labels` as the canonical agreement-figure query. det owns
@@ -115,6 +130,14 @@ for review):
   keyed by package version, and the corrected figures belong to the new
   version's own full pass. The report's changed counts tell the caller when
   the old version's stats no longer describe the cohort's rows.
+- That version-keying has a disclosed hazard: the store's Tier D DDL keys
+  the stats `(package_version_id, criterion_id)`, not the HLD §9.7
+  `(cohort_id, question_id)`. The rollup is computed over one cohort's
+  rows, but a SECOND cohort whose runs name the same version overwrites the
+  first's figures, and `item_stats` cannot detect that from the cohort it
+  was asked about — it reads what survives. One cohort per version per
+  store is the working assumption this column set leaves; re-keying is a
+  schema change this story does not own.
 - The audit append is per evaluation event and deliberately NOT deduplicated:
   the design's idempotency-under-redelivery constraint names
   `rederive_for_key_change` and the item-stats writes, not the audit trail —

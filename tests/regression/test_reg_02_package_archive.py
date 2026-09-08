@@ -31,6 +31,13 @@ import zipfile
 
 import pytest
 
+import aeh.det  # noqa: F401 -- the manifest stamps the binary's package-tier schema
+# version, and M-DET owns package 10. Without this import the stamped value
+# depends on which other test file collection happened to import: the full
+# suite registers det (the migration test imports every owning module), a solo
+# run of this file would not, and the baseline would flip between 9 and 10.
+# The import pins the producer to the full binary, the same world the
+# baseline describes.
 from tests.support import corpora
 from tests.support.baselines import assert_matches_golden
 from tests.support.impl import PKG_MODULE, require
