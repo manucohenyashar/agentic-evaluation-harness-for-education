@@ -158,6 +158,61 @@ def ingest_document(store, ingestor: Ingestor, *, kind: str = "assessment",
     return ingestor.ingest_document([source], kind=kind, filenames={source: name})
 
 
+class ScriptedCatalog:
+    """The catalog surface `SetupService` touches, as a pure in-memory double.
+
+    Rung 0: no store. `record_proposal` records its call verbatim — the observation
+    surface `TC-SETUP-22` asserts on — and `proposal(v)` hands the same row back, so the
+    resume-first path and `current_proposal` behave over the double exactly as over
+    `aeh.pkg.PackageCatalog`. Members the later setup stories will write through
+    (`add_criterion`, band sets) are deliberately absent: a rung-0 test that needs them
+    names that in its own file, rather than the double guessing #51/#52/#53's writes.
+    """
+
+    def __init__(self, package_id: str = "pkg-surface") -> None:
+        self.package_id = package_id
+        self.versions: list[str] = []
+        self.proposals: dict[str, dict] = {}
+        self.criteria_rows: tuple[dict, ...] = ()
+        self.recorded: list[dict] = []
+
+    def draft_version(self):
+        return self.versions[-1] if self.versions else None
+
+    def has_version(self) -> bool:
+        return bool(self.versions)
+
+    def ensure_package(self) -> None:
+        pass
+
+    def create_version(self, approved_by) -> str:
+        version = f"{self.package_id}@{len(self.versions) + 1:03d}"
+        self.versions.append(version)
+        return version
+
+    def proposal(self, v):
+        return self.proposals.get(v)
+
+    def record_proposal(self, v, **kwargs) -> None:
+        row = dict(kwargs)
+        row["confirmed_at"] = None
+        self.proposals[v] = row
+        self.recorded.append(row)
+
+    def criteria(self, v):
+        return self.criteria_rows
+
+
+class ScriptedIngestor:
+    """Just `read_document`: the only ingest member the proposal path touches at rung 0."""
+
+    def __init__(self, transcript: str = ASSESSMENT_MD) -> None:
+        self.transcript = transcript
+
+    def read_document(self, document_id) -> str:
+        return self.transcript
+
+
 def make_setup_service(catalog, ingestor, provider):
     """A `SetupService` over the given pieces with the scripted setup build.
 
@@ -169,3 +224,23 @@ def make_setup_service(catalog, ingestor, provider):
     return SetupService(catalog, ingestor, provider,
                         ModelRef(role="extractor", provider="local",
                                  build_id=SETUP_BUILD, quantization="q4"))
+
+
+def stage_chain(data_dir, package_id: str = "pkg-setup"):
+    """The full Stage A chain over real tiers: store, ingestor, catalog, service.
+
+    One call builds what every rung-2 setup test drives; the scripted transports are the
+    only doubles. `package_id` names the package the catalog is opened on — a test that
+    resumes with a *fresh* service re-opens the same package id over the same tiers.
+    """
+    from types import SimpleNamespace
+
+    from aeh.pkg import PackageCatalog
+
+    store = open_store(data_dir)
+    ingestor = build_ingestor(store)
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    provider = ScriptedSetupProvider()
+    return SimpleNamespace(store=store, package_id=package_id, ingestor=ingestor,
+                           catalog=catalog, provider=provider,
+                           service=make_setup_service(catalog, ingestor, provider))

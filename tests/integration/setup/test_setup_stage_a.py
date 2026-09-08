@@ -18,33 +18,19 @@ publish — the exact numbering the shipped error messages use.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from aeh.pkg import PackageCatalog, PublishedVersionImmutableError, SchemaLockViolation
 from aeh.setup import SetupError, SetupOrderError
-from aeh.store import open_store
 
 from tests.support.setup_harness import (
     ScriptedSetupProvider,
-    build_ingestor,
     ingest_document,
     make_setup_service,
+    stage_chain,
 )
 
 pytestmark = pytest.mark.integration
-
-
-def _chain(tmp_data_dir, package_id: str = "pkg-setup"):
-    """Store + ingest chain + catalog + service, over real tiers with scripted transport."""
-    store = open_store(tmp_data_dir)
-    ingestor = build_ingestor(store)
-    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
-    provider = ScriptedSetupProvider()
-    return SimpleNamespace(store=store, package_id=package_id, ingestor=ingestor,
-                           catalog=catalog, provider=provider,
-                           service=make_setup_service(catalog, ingestor, provider))
 
 
 def _confirm(chain, doc_id: str):
@@ -68,7 +54,7 @@ def test_tc_setup_01_one_proposal_per_package_with_option_sets_and_no_call_durin
     a type has choices — and the proposal is produced exactly once per package, spied on the
     setup transport: re-proposing returns the stored proposal without a second call, and
     ingesting a submission makes no proposal call at all."""
-    chain = _chain(tmp_data_dir)
+    chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store, chain.ingestor)
 
     proposal = chain.service.propose_inventory(doc_id)
@@ -107,7 +93,7 @@ def test_tc_setup_02_publish_refused_before_confirmation_permitted_after_and_row
     the schema lock *at confirmation*: they do not exist before it, they exist confirmed
     after it, and from that moment a `prompt_text` edit raises `SchemaLockViolation` while
     the reference solution stays writable."""
-    chain = _chain(tmp_data_dir)
+    chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store, chain.ingestor)
 
     assert chain.catalog.draft_version() is None  # nothing minted before setup starts
@@ -155,7 +141,7 @@ def test_tc_setup_04_deterministic_criterion_needs_its_key_no_default_no_skip_no
     reach for — still leaves the key unset and the gate shut. The API assertion backs the
     behavioural one: `SetupService` carries no `infer*` member at all. (The fuller S4
     semantics — key validation against the stored option sets — is #53's story.)"""
-    chain = _chain(tmp_data_dir)
+    chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store, chain.ingestor)
     _, version = _confirm(chain, doc_id)
 
@@ -245,7 +231,7 @@ def test_tc_setup_19_publish_is_one_transaction_and_the_lock_engages_exactly_at_
     and the same publish succeeds on retry. And the §6.2 published-immunity lock takes
     effect *exactly* at publication — a version edit one moment before the publish is
     accepted, and refused the moment it is published."""
-    chain = _chain(tmp_data_dir)
+    chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store, chain.ingestor)
     _, version = _confirm(chain, doc_id)
     chain.service.set_answer_keys({"CRIT-Q4": ["A"]})
@@ -286,7 +272,7 @@ def test_tc_setup_20_abandoned_after_s3_persists_unpublished_and_resumes_with_th
     tracks the truth across the abandonment: 1 while the inventory is unconfirmed, 0 once
     both blocking steps are done, and — after a *fresh* `SetupService` over the same tiers
     resumes the same version — the confirmed proposal, the done flags, and the publish."""
-    chain = _chain(tmp_data_dir)
+    chain = stage_chain(tmp_data_dir)
     doc_id = ingest_document(chain.store, chain.ingestor)
 
     proposal = chain.service.propose_inventory(doc_id)

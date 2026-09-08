@@ -1,0 +1,170 @@
+"""`M-SETUP` Stage A's decomposability decision table — written ahead of **#52** (issue #54).
+
+Cases `TC-SETUP-08` and `TC-SETUP-10` (test plan §5.6, P0/P1), both planned unit / 0 and
+both honored at that rung: the service runs over the pure in-memory doubles in
+`tests/support/setup_harness.py`, no store at all. They carry `writtenahead` and sit
+outside `TEST_CMD` until #52 lands `classify_decomposability` together with
+`SETUP_MAX_CONFIRMATIONS`; the "#52 decomposition" entry in `tests/support/impl.py` is a
+`symbols` conjunction over both, so the gate fires exactly when the file can run.
+
+`TC-SETUP-13` (the dependency proposals) is **not** in this file, and that is deliberate:
+its criteria come out of the read back, so it needs #51's `read_back_rubric` as well as
+#52's `propose_dependencies`. It lives in `test_setup_dependencies_pending.py`, keyed on
+the pair — a conjunction here would hold two unit cases outside the gate for a story
+neither of them needs.
+
+What gives the decision table its teeth: the scripted reply carries the §5.3 **answers**,
+never a classification. The module owns the table (FR-SETUP-06) — fail one question and
+the classification follows it; answer unclear and the NFR-SETUP-02 default (`holistic`,
+never `atomic`) applies. A module that merely echoed a scripted verdict cannot pass,
+because no verdict is scripted.
+
+The payload shape below is this file's stated bet, not a pinned interface: §3.6 pins the
+method's signature and `DecomposabilityVerdict`'s fields, not the model reply or the
+`CriterionDraft` construction. When #52 lands, align the scripting and the `_draft`
+helper to its shapes — the per-cell expectations do not change.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from tests.support.impl import SETUP_MODULE, require, require_attr
+from tests.support.setup_harness import (
+    ScriptedCatalog,
+    ScriptedIngestor,
+    ScriptedSetupProvider,
+    make_setup_service,
+)
+
+pytestmark = pytest.mark.writtenahead
+
+ISSUE = "#52"
+
+#: The five §5.3 questions, in the order the HLD names them.
+FIVE_QUESTIONS = ("completeness", "non_interference", "independence", "additivity", "gates")
+
+
+def _draft(criterion_id: str) -> dict:
+    """A criterion draft for `classify_decomposability`.
+
+    A dict, not a constructed `CriterionDraft`: §3.6 names the parameter type but defines
+    no fields for it. If #52 lands a dataclass, this helper is the one line that moves.
+    """
+    return {
+        "criterion_id": criterion_id,
+        "question_id": "Q1",
+        "kind": "open",
+        "construct": f"the response does the thing {criterion_id} names",
+    }
+
+
+def _answers_reply(criterion_id: str, *, failing: str | None = None,
+                   warning_signs: list[str] | None = None) -> str:
+    """One scripted §5.3 answer set: every question `yes`, except what the cell fails."""
+    answers = {question: "yes" for question in FIVE_QUESTIONS}
+    if failing == "unclear":
+        answers["additivity"] = "unclear"
+    elif failing is not None:
+        answers[failing] = "no"
+    reply = {
+        "criterion_id": criterion_id,
+        "answers": answers,
+        "reasoning": f"scripted §5.3 answers for {criterion_id}",
+    }
+    if warning_signs:
+        reply["warning_signs"] = warning_signs
+    return json.dumps(reply)
+
+
+def _service(replies: list[str]):
+    """A rung-0 `SetupService` over the pure doubles, scripted to reply in order."""
+    return make_setup_service(ScriptedCatalog(), ScriptedIngestor(),
+                              ScriptedSetupProvider(replies))
+
+
+# --- TC-SETUP-08 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("failing", "expected", "decider"),
+    [
+        # The five §5.3 questions in turn, one criterion failing each ...
+        ("completeness", "holistic", "completeness"),
+        ("non_interference", "holistic", "non_interference"),
+        ("independence", "holistic", "independence"),
+        ("additivity", "holistic", "additivity"),
+        ("gates", "atomic_with_gate", "gates"),
+        # ... one failing none, and one where the answer is genuinely unclear.
+        (None, "atomic", None),
+        ("unclear", "holistic", None),
+    ],
+    ids=["completeness", "non_interference", "independence", "additivity", "gates",
+         "fails-none", "unclear"],
+)
+def test_tc_setup_08_the_five_question_decision_table_classifies_per_cell(
+    failing, expected, decider,
+):
+    """`TC-SETUP-08` (FR-SETUP-06, P0) — the decision table: one criterion failing each of
+    the five §5.3 questions in turn, one failing none, one genuinely unclear. The
+    classification is the table's, `decomposition_basis` (the verdict's
+    `deciding_question`) names **which question decided it**, and the unclear case
+    classifies `holistic` — NFR-SETUP-02's default, never `atomic` (RISK-27)."""
+    setup = require(SETUP_MODULE, "SetupService", issue=ISSUE)
+    require_attr(setup, "classify_decomposability", issue=ISSUE)
+
+    service = _service([_answers_reply("CRIT-T", failing=failing)])
+    verdict = service.classify_decomposability(_draft("CRIT-T"))
+
+    assert verdict.classification == expected, (
+        f"TC-SETUP-08: a criterion failing {failing!r} must classify {expected!r} — "
+        "the table is the module's (FR-SETUP-06), and an unclear answer defaults "
+        "holistic, never atomic (NFR-SETUP-02, RISK-27)"
+    )
+    assert verdict.deciding_question == decider, (
+        f"TC-SETUP-08: decomposition_basis must name the question that decided "
+        f"{expected!r}, not merely carry a classification"
+    )
+    assert verdict.reasoning
+    if failing == "unclear":
+        assert verdict.needs_teacher_confirmation is True, (
+            "TC-SETUP-08: the unclear case surfaces for the teacher rather than "
+            "silently defaulting — that is what makes the default auditable"
+        )
+
+
+# --- TC-SETUP-10 ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("count", [5, 6, 7])
+def test_tc_setup_10_borderline_confirmations_capped_at_setup_max_confirmations(count):
+    """`TC-SETUP-10` (FR-SETUP-07, P1) — a package producing 5, 6 and 7 borderline
+    criteria: only borderline (or warning-sign) criteria surface for confirmation, and the
+    count requested is capped at `SETUP_MAX_CONFIRMATIONS` — at 7, the seventh is not
+    requested. The cap is the module's to enforce (CT-SETUP-13), not the console's."""
+    cap = require(SETUP_MODULE, "SETUP_MAX_CONFIRMATIONS", issue=ISSUE)
+    assert cap == 6, (
+        "TC-SETUP-10: SETUP_MAX_CONFIRMATIONS is the Configuration block's declared cap "
+        "(matching §6.4's elicitation ceiling); a different cap changes NFR-SETUP-01's "
+        "teacher-time promise"
+    )
+    setup = require(SETUP_MODULE, "SetupService", issue=ISSUE)
+    require_attr(setup, "classify_decomposability", issue=ISSUE)
+
+    ids = [f"CRIT-B{index}" for index in range(count)]
+    # Every draft is borderline: the §5.3 answers pass, but each carries a warning sign —
+    # the population FR-SETUP-07 says is the only one surfaced.
+    service = _service([
+        _answers_reply(criterion_id, warning_signs=["straddles two constructs"])
+        for criterion_id in ids
+    ])
+    verdicts = {cid: service.classify_decomposability(_draft(cid)) for cid in ids}
+
+    surfaced = [cid for cid in ids if verdicts[cid].needs_teacher_confirmation]
+    assert len(surfaced) == min(count, cap), (
+        f"TC-SETUP-10: {count} borderline criteria surfaced {len(surfaced)} confirmation "
+        f"requests, expected {min(count, cap)} — the cap is enforced by the module "
+        "(CT-SETUP-13), and the criterion beyond it is not requested"
+    )

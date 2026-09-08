@@ -32,64 +32,13 @@ import pytest
 
 from tests.support.setup_harness import (
     ASSESSMENT_MD,
+    ScriptedCatalog,
+    ScriptedIngestor,
     ScriptedSetupProvider,
     make_setup_service,
 )
 
 pytestmark = [pytest.mark.contract]
-
-
-class ScriptedCatalog:
-    """The catalog surface `SetupService` touches, as a pure in-memory double.
-
-    Rung 0: no store. `record_proposal` records its call verbatim — the observation
-    surface `TC-SETUP-22` asserts on — and `proposal(v)` hands the same row back, so the
-    resume-first path and `current_proposal` behave over the double exactly as over
-    `aeh.pkg.PackageCatalog`.
-    """
-
-    def __init__(self, package_id: str = "pkg-surface") -> None:
-        self.package_id = package_id
-        self.versions: list[str] = []
-        self.proposals: dict[str, dict] = {}
-        self.criteria_rows: tuple[dict, ...] = ()
-        self.recorded: list[dict] = []
-
-    def draft_version(self):
-        return self.versions[-1] if self.versions else None
-
-    def has_version(self) -> bool:
-        return bool(self.versions)
-
-    def ensure_package(self) -> None:
-        pass
-
-    def create_version(self, approved_by) -> str:
-        version = f"{self.package_id}@{len(self.versions) + 1:03d}"
-        self.versions.append(version)
-        return version
-
-    def proposal(self, v):
-        return self.proposals.get(v)
-
-    def record_proposal(self, v, **kwargs) -> None:
-        row = dict(kwargs)
-        row["confirmed_at"] = None
-        self.proposals[v] = row
-        self.recorded.append(row)
-
-    def criteria(self, v):
-        return self.criteria_rows
-
-
-class ScriptedIngestor:
-    """Just `read_document`: the only ingest member the proposal path touches at rung 0."""
-
-    def __init__(self, transcript: str = ASSESSMENT_MD) -> None:
-        self.transcript = transcript
-
-    def read_document(self, document_id) -> str:
-        return self.transcript
 
 
 # --- TC-SETUP-03 ---------------------------------------------------------------------------
