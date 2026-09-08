@@ -13,10 +13,11 @@ disabled run as the baseline. The disable switch is `INTEG_SPAN_VERIFICATION_DIS
 cannot be expressed without one and `PERF-06` (TS-53) needs the same switch.
 
 **Timing noise is handled by construction, not by loosening the threshold**: each side
-is the minimum of `_REPS` repetitions (the standard noise reducer — a min converges to
+is the minimum of `_reps()` repetitions (the standard noise reducer — a min converges to
 the true cost from above), and the workload is sized so verification's own cost
 dominates the fixture's. The 1% threshold is the design's number and is not widened;
-if a slower box cannot hold it, the env knob scales the workload, not the assertion.
+the `INTEG_PERF_REPS` env knob widens the repetition count for a slower box — it never
+moves the assertion.
 
 The linearity half (`O(total span bytes)`) is asserted as a growth bound over an
 8x-bytes workload — time(8x) must stay within a generous linear window — rather than a
@@ -49,9 +50,17 @@ _COHORT = "c-2026-7B-integ"
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 _DISABLE_ENV = "INTEG_SPAN_VERIFICATION_DISABLED"
+_REPS_ENV = "INTEG_PERF_REPS"  # seam rule 3: a slow box widens the min-of, not the budget
 _REPS = 5
 _LINEAR_WINDOW = 12.0  # time(8x bytes) <= 12x time(1x bytes): O(bytes) with headroom
 _DIFFERENTIAL_BUDGET = 1.01  # the design's own "under 1%"
+
+
+def _reps() -> int:
+    import os
+
+    raw = os.environ.get(_REPS_ENV)
+    return int(raw) if raw and raw.strip().isdigit() else _REPS
 
 
 def _sentence(i: int) -> str:
@@ -78,7 +87,7 @@ def _timed_verify(tmp_data_dir, docs, *, disabled: bool) -> float:
     """
     store = open_store(tmp_data_dir)
     handle = store.cohort(_COHORT)
-    IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
+    IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#73")
     gates = []
     for i, (markdown, span) in enumerate(docs):
         submission = f"SUB-{i:03d}"
@@ -87,10 +96,16 @@ def _timed_verify(tmp_data_dir, docs, *, disabled: bool) -> float:
         gates.append((submission,
                       IntegrityGate(handle, store.blobs(), view, ocr_conf_floor=0.70)))
     previous = os.environ.get(_DISABLE_ENV)
-    os.environ[_DISABLE_ENV] = "1" if disabled else ""
+    if disabled:
+        os.environ[_DISABLE_ENV] = "1"
+    else:
+        # The enabled arm POPS the variable rather than setting it empty (review
+        # finding): a knob implemented as `ENV in os.environ` must not disable
+        # verification in both arms, which would vacate the differential.
+        os.environ.pop(_DISABLE_ENV, None)
     try:
         best = float("inf")
-        for _ in range(_REPS):
+        for _ in range(_reps()):
             start = time.perf_counter()
             for submission, gate in gates:
                 gate.verify("run-perf", submission, "C1")

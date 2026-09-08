@@ -15,6 +15,16 @@ hallucinating, a model or prompt problem, not a data problem — is only support
 when the rate is dimensioned per criterion and the alert sits on it (RISK-01's
 earliest detector).
 
+**The emission surface is the durable `run_metrics` table** — the table the landed
+modules already write through — read through `store.durable()`, not the cohort handle
+(review finding: the table lives in the durable tier; a cohort-scoped reader could
+never see it). The landed schema is `(run_id, metric, value)` with PK
+`(run_id, metric)`, which structurally cannot hold a per-criterion rate, so the
+per-criterion rows (`submission_id`, `criterion_id` columns) are the part of the
+surface `#74` lands with a migration — recorded in the interface table in
+`tests/support/integ_vocabulary.py`; a `#74` that keeps the aggregate PK fails the
+dimensionality case below rather than the reader drifting.
+
 Interface assumed of `#74` (reconcile at landing; full table in
 `tests/support/integ_vocabulary.py`):
 
@@ -22,7 +32,7 @@ Interface assumed of `#74` (reconcile at landing; full table in
 |---|---|
 | `aeh.integ.INTEG_RATE_METRICS` | **invented-and-used-together constant**: the design names the six rates but not their spellings; the tuple is required by name so the case fails loudly if the names move, and reconciles at #74's landing |
 | `aeh.integ.ALERT_SPAN_VERIFICATION_FAILURES` | **invented spelling** of CT-INTEG-14's declared alert, named after the store's own precedent (`ALERT_FREE_DISK`, `DECLARED_ALERTS` — the name is interface, not log text) |
-| emission surface | rows in the store's `run_metrics` table, one per (metric, submission, criterion), value per row — the table the landed modules already emit through |
+| emission surface | durable `run_metrics` rows, one per (metric, submission, criterion), value per row — see above |
 """
 
 from __future__ import annotations
@@ -61,7 +71,12 @@ def _unit_spans(doc: Doc, hallucinated: bool) -> tuple[Span, ...]:
 
 
 def _scenario(tmp_data_dir, hallucinated_units: int):
-    """A real run over four units; `hallucinated_units` of them carry forged spans."""
+    """A real run over four units; `hallucinated_units` of them carry forged spans.
+
+    Everything lives under the caller's directory — two scenarios in one test get two
+    directories, because a second `seed_run` over the same store would collide with
+    the first scenario's cohort row (review finding).
+    """
     store = open_store(tmp_data_dir)
     orch, run_id, _version = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
     handle = store.cohort(ORCH_COHORT_ID)
@@ -72,34 +87,43 @@ def _scenario(tmp_data_dir, hallucinated_units: int):
     gates = []
     for i, submission in enumerate(_SUBMISSIONS):
         doc = Doc(markdown=_MARKDOWN)
-        seed_document(handle, document_id_for(submission), submission, doc.markdown, ORCH_COHORT_ID)
+        seed_document(handle, document_id_for(submission), submission, doc.markdown,
+                      ORCH_COHORT_ID)
         view = ExtractionView(
-            spans=_unit_spans(doc, hallucinated=2 * i < hallucinated_units),
+            spans=_unit_spans(doc, hallucinated=i < hallucinated_units),
             panel=PanelFlags((True, True, True)),
         )
         gates.append((submission, IntegrityGate(handle, store.blobs(), view,
                                                 ocr_conf_floor=0.70)))
     orch.enumerate_units(run_id)
-    return store, handle, run_id, gate_metric_reader(handle), gates
+    return store, run_id, gate_metric_reader(store, run_id), gates
 
 
-def gate_metric_reader(handle):
-    """The read side of the emission surface: metric rows for this run."""
+def gate_metric_reader(store, run_id: str):
+    """The read side of the emission surface: one metric's durable rows for this run.
+
+    Reads through the **durable** handle (where `run_metrics` lives) and filters by
+    `run_id`, so two scenarios in one test cannot see each other's rows. The reader
+    names `submission_id` / `criterion_id` / `value` — the per-criterion shape CT-INTEG-14
+    requires and `#74`'s migration adds (see module docstring).
+    """
+    durable = store.durable()
+
     def read(metric_name: str) -> list[dict]:
-        return handle.query(
-            "SELECT submission_id, criterion_id, value FROM run_metrics WHERE "
-            "name = :n ORDER BY submission_id",
+        return durable.query(
+            "SELECT submission_id, criterion_id, value FROM run_metrics "
+            "WHERE run_id = :r AND metric = :n ORDER BY submission_id",
+            r=run_id,
             n=metric_name,
         )
+
     return read
 
 
 def test_tc_integ_14_verification_failure_rate_matches_the_injected_rate(tmp_data_dir):
     """`TC-INTEG-14`'s exact-rate oracle — two of four units hallucinating: the emitted
     span-verification failure rate reads 0.5."""
-    store, handle, run_id, read, gates = _scenario(
-        tmp_data_dir, hallucinated_units=2
-    )
+    store, run_id, read, gates = _scenario(tmp_data_dir, hallucinated_units=2)
     for submission, gate in gates:
         gate.verify(run_id, submission, "C1")
     rate_metrics = require(INTEG_MODULE, "INTEG_RATE_METRICS", issue="#74")
@@ -121,9 +145,7 @@ def test_tc_integ_14_all_six_rates_are_emitted_per_criterion(tmp_data_dir):
     """`TC-INTEG-14`'s dimensionality half (CT-INTEG-14) — all six rates emitted under
     their names, one row per (submission, criterion), not aggregated: the reading 'the
     extractor is hallucinating' is only supportable when the rate is dimensioned."""
-    store, handle, run_id, read, gates = _scenario(
-        tmp_data_dir, hallucinated_units=2
-    )
+    store, run_id, read, gates = _scenario(tmp_data_dir, hallucinated_units=2)
     for submission, gate in gates:
         gate.verify(run_id, submission, "C1")
     rate_metrics = require(INTEG_MODULE, "INTEG_RATE_METRICS", issue="#74")
@@ -143,10 +165,12 @@ def test_tc_integ_14_all_six_rates_are_emitted_per_criterion(tmp_data_dir):
 def test_tc_integ_14_alert_fires_above_threshold_and_not_below(tmp_data_dir):
     """`TC-INTEG-14`'s alert — the verification-failure alert fires when the rate is
     above its threshold (the injected 0.5) and does not fire on a clean run: the
-    earliest detector RISK-01 has, asserted in both directions."""
+    earliest detector RISK-01 has, asserted in both directions. The two scenarios run
+    in separate directories and each read filters by its own run id, so the clean run
+    cannot inherit the dirty run's rows (review finding)."""
     # Above threshold:
-    store, handle, run_id, read, gates = _scenario(
-        tmp_data_dir, hallucinated_units=2
+    store, run_id, read, gates = _scenario(
+        tmp_data_dir / "above", hallucinated_units=2
     )
     alert = require(INTEG_MODULE, "ALERT_SPAN_VERIFICATION_FAILURES", issue="#74")
     for submission, gate in gates:
@@ -156,8 +180,8 @@ def test_tc_integ_14_alert_fires_above_threshold_and_not_below(tmp_data_dir):
     store.close()
 
     # Below threshold (no hallucinations at all):
-    clean_store, clean_handle, clean_run, clean_read, clean_gates = _scenario(
-        tmp_data_dir, hallucinated_units=0
+    clean_store, clean_run, clean_read, clean_gates = _scenario(
+        tmp_data_dir / "below", hallucinated_units=0
     )
     for submission, gate in clean_gates:
         gate.verify(clean_run, submission, "C1")

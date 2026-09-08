@@ -39,6 +39,7 @@ from tests.support.integ_vocabulary import (
     PanelFlags,
     Span,
     document_id_for,
+    seed_verdict,
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
@@ -109,7 +110,11 @@ def test_tc_integ_07_one_insufficient_judge_routes_for_re_extraction(tmp_data_di
         "a single judge's insufficiency must set the flag — 'any panel member' is the "
         "declared rule (FR-INTEG-07), and unanimity's arithmetic does not apply"
     )
-    retries = [u for u in _extract_units(store, run_id) if u["status"] == "pending"]
+    # A NEW request, not the enumeration's original row: the original extract unit is
+    # itself pending at attempts 0, so 'a pending row exists' passes a gate that wrote
+    # nothing (review finding) — the route is the retry whose attempts grew.
+    retries = [u for u in _extract_units(store, run_id)
+               if u["status"] == "pending" and u["attempts"] >= 1]
     assert retries, "an insufficiency flag with no re-extraction request behind it"
     assert not _score_rows(store, run_id), (
         "a criterion_score row exists after an insufficiency routing — the flag was "
@@ -211,15 +216,11 @@ def test_tc_integ_12_sufficiency_reruns_after_scoring_and_reports_the_panel(tmp_
     before = gate.verify(run_id, "SUB-201", "C1")
     assert before.sufficiency_flag is True  # the boundary's conservative default
     # Sweep 2 answers: the panel's verdicts exist (seeded through the real verdict
-    # table, the shape M-JUDGE's rows take), and the view now reports sufficiency.
+    # table via the shared helper, the shape M-JUDGE's rows take), and the view now
+    # reports sufficiency.
     score_units = _score_units(store, run_id)[:_PANEL_SIZE]
-    with handle.transaction() as tx:
-        for i, unit in enumerate(score_units):
-            tx.execute(
-                "INSERT INTO verdict (verdict_id, work_id, judge_id, band) "
-                "VALUES (:v, :w, :j, :b)",
-                v=f"v-integ-{i}", w=unit["work_id"], j=f"judge-{i}", b="B2",
-            )
+    for i, unit in enumerate(score_units):
+        seed_verdict(handle, f"v-integ-{i}", unit["work_id"], f"judge-{i}", "B2")
     after = gate.verify(run_id, "SUB-201", "C1")
     assert after.sufficiency_flag is False, (
         "after the panel answered, the sufficiency signal still reads the conservative "

@@ -105,10 +105,17 @@ def test_tc_integ_04_low_confidence_not_overlapping_a_cited_span_does_not_flag(t
     document-level confidence figure passes a naive test and fails this one."""
     doc = _seed_document(tmp_data_dir)
     spans = _criterion_spans(doc)
-    # The cited span's own region is healthy; a distant low-confidence region is not cited.
+    # The cited span's own region is healthy; a low-confidence region over the SECOND
+    # sentence — wholly outside the cited span — is not cited. (The markdown is ASCII,
+    # so codepoint indices and byte offsets coincide; the review finding this fixes:
+    # a region at (0, 10) actually overlapped the span at [4, 17) and made the
+    # discriminator self-contradictory.)
+    second_start = doc.markdown.index("A described figure")
+    second_end = second_start + len("A described figure follows")
     cited = CitedRegion("r-cited", "transcribed_text", spans[0].start, spans[0].end,
                         ocr_conf=0.95)
-    distant = CitedRegion("r-distant", "transcribed_text", 0, 10, ocr_conf=0.10)
+    distant = CitedRegion("r-distant", "transcribed_text", second_start, second_end,
+                          ocr_conf=0.10)
     gate, _ = _gate(tmp_data_dir, ExtractionView(spans=spans, regions=(cited, distant)))
     signals = gate.verify(_RUN, "SUB-001", "C1")
     assert signals.ocr_overlap_risk is False, (
@@ -184,7 +191,21 @@ def test_tc_integ_05_wholly_described_evidence_is_described_and_its_crop_reachab
         "region is a routing candidate on that basis alone (RISK-17: a model's account "
         "of a picture is never the student's words)"
     )
-    # The crop: retained and reachable in one action from the signal's region.
+    # The crop: the module's routing output must REFERENCE the crop — the reference
+    # has to come from the gate, not from this test's own put, so a gate that never
+    # propagates `crop_ref` fails here. The routing surface is the ledger (the
+    # disclosed reconciliation TC-INTEG-02/07 use); the assertion is shape-agnostic
+    # over the row, because the row's columns are #74's to settle. Retention is then
+    # proven by resolving the reference in one action (CT-INTEG-10).
+    routing_rows = handle.query(
+        "SELECT * FROM work_unit WHERE submission_id = :s AND criterion_id = :c",
+        s="SUB-001", c="C1",
+    )
+    assert crop_ref in repr(routing_rows), (
+        f"the described-evidence routing output does not reference the crop {crop_ref!r} "
+        "— 'retained and reachable in one action' (FR-INTEG-05) needs the routing "
+        "request to carry the reference, and a test-side round-trip cannot prove that"
+    )
     assert store.blobs().get(crop_ref) == crop_bytes, (
         "the described region's crop must resolve to its retained bytes in one action — "
         "the teacher-review path FR-INTEG-05 promises"
