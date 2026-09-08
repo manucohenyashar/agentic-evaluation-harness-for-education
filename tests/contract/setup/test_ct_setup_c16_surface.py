@@ -1,11 +1,9 @@
 """`CT-SETUP-16` — the non-promise: Stage A runs once per package
 (`TC-SETUP-C16`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **Green, with one disclosed
-finding (G1)** — the reflection holds on shipped code; one operation contradicts
-the module's own finished-state report, and shipped-code findings have no
-`writtenahead` target to key on, so they are disclosed here rather than shipped
-red (the G-series precedent, tests/contract/ingest/_doubles.py).
+Case of test plan §6.11.6; issue #56 (TS-63). Green: the reflection held on
+shipped code except for one disclosed finding (G1, the second-root mint route
+below) — and #229 closes it, so the whole clause now holds on shipped code.
 
 The clause: after `publish()` this module offers **no operation that alters a
 published version**, asserted **by reflecting over the surface rather than by
@@ -27,32 +25,30 @@ Asserted here, probed:
    sanctioned vehicle for changing a published instrument is `M-PKG`'s
    `create_version(parent=...)` (FR-PKG-02), and this module's surface does not
    re-export or wrap it.
-3. **Operations that refuse on a finished package.** Driven (the reflection's
-   complement): on a package whose setup has finished, the write operations
-   (`confirm_inventory`, `set_answer_keys`, `publish`) refuse with
-   `SetupOrderError` and the published version stays locked. The read surface
-   reports the finished state with zero remaining steps and nothing available.
+3. **Every mutating entry point refuses on a finished package.** Driven (the
+   reflection's complement): on a package whose setup has finished, ALL of
+   setup's mutating operations refuse with `SetupOrderError` — the mint route
+   (`ensure_version`), the inventory route (`propose_inventory`), the draft
+   writers and `publish` — and the published version stays locked. The read
+   surface reports the finished state with zero remaining steps and nothing
+   available: the finished report and the refusing surface agree.
 4. **No upstream consumers post-publish.** The module imports NOTHING downstream
    of publication: `aeh.setup`'s imports are the store boundary (`aeh.pkg`,
    `aeh.ingest`, `aeh.prov`) — no consumer module of setup's OUTPUT appears in
    the module's own graph, so no post-publish consumer can route through setup
    by construction.
 
-**Disclosed finding G1** (`ensure_version`, src/aeh/setup.py:588-599, reached
-from `propose_inventory` at src/aeh/setup.py:735): on a package whose setup has
-FINISHED, `propose_inventory` does not refuse — `ensure_version` sees
-`draft_version() is None`, never consults `has_version()`, and mints a **second
-root version** (`create_version(None)`, no parent link), opening a fresh Stage A
-on the same package. The module's own `steps()` report for the same state says
-the opposite ("setup has finished …; a new instrument is a new package or a
-revision (FR-PKG-02)"), and CT-SETUP-16's no-route half exists to close exactly
-this route. The published version itself is never altered (the lock holds;
-`TC-PKG-C01` holds the catalog end), so the clause's ALTER half holds and the
-case stays green — but the probe below pins the disclosed behavior so the
-finding cannot silently regress: the probe asserts what IS today (a second root
-appears and the published version is untouched), which is the evidence the
-finding cites, and the moment #50's successor closes the route by refusing, this
-probe's `assert fresh_round is not None` is the line to flip.
+**G1, closed (#229).** The finding #56 disclosed: on a package whose setup has
+FINISHED, `propose_inventory` did not refuse — `ensure_version` (its first move)
+saw `draft_version() is None`, never consulted `has_version()`, and minted a
+**second root version** (`create_version(None)`, no parent link), opening a
+fresh Stage A on the same package while the module's own `steps()` report for
+the same state said the opposite ("setup has finished …; a new instrument is a
+new package or a revision (FR-PKG-02)"). #229 makes the refusal-by-state the
+mint route's behavior — `ensure_version` consults `has_version()` and raises
+`SetupOrderError` naming the published version that blocked it, and the probe
+below (formerly the G1 evidence probe) now asserts the CLOSED shape: the refusal
+happens, the refusal names the published version, and no second version exists.
 """
 from __future__ import annotations
 
@@ -135,9 +131,10 @@ def test_tc_setup_c16_no_downstream_import_in_the_module_graph(repo_root):
 
 
 def test_tc_setup_c16_write_operations_refuse_on_a_finished_package(tmp_data_dir):
-    """Driven (the reflection's complement): on a finished package the write
-    operations refuse with the order error, and the published version stays
-    locked."""
+    """Driven (the reflection's complement): on a finished package EVERY mutating
+    entry point refuses with the order error — the mint route (`ensure_version`,
+    #229), the inventory route (`propose_inventory`, its caller), the draft
+    writers and `publish` — and the published version stays locked."""
     chain = stage_chain(tmp_data_dir, package_id="pkg-c16")
     chain.doc = ingest_document(chain.store, kind="assessment")
     proposal = chain.service.propose_inventory(chain.doc)
@@ -149,10 +146,26 @@ def test_tc_setup_c16_write_operations_refuse_on_a_finished_package(tmp_data_dir
     assert chain.catalog.is_locked(version)
 
     stored = chain.catalog.proposal(version)
+    criterion_draft = {"criterion_id": "CRIT-Q4"}
     for name, call in (
+        # The mint route itself, and its inventory caller (#229's closure).
+        ("ensure_version", chain.service.ensure_version),
+        ("propose_inventory", lambda: chain.service.propose_inventory(chain.doc)),
         ("confirm_inventory", lambda: chain.service.confirm_inventory(
             stored["proposal_id"])),
+        ("read_back_rubric", lambda: chain.service.read_back_rubric(
+            chain.doc, chain.doc)),
         ("set_answer_keys", lambda: chain.service.set_answer_keys({"MCQ-1": ["A"]})),
+        ("set_grade_policy", lambda: chain.service.set_grade_policy(None)),
+        ("check_prefix_budget", chain.service.check_prefix_budget),
+        ("store_calibration_papers",
+         lambda: chain.service.store_calibration_papers((chain.doc,))),
+        ("classify_decomposability",
+         lambda: chain.service.classify_decomposability(criterion_draft)),
+        ("confirm_classifications",
+         lambda: chain.service.confirm_classifications({})),
+        ("propose_dependencies", chain.service.propose_dependencies),
+        ("confirm_dependencies", lambda: chain.service.confirm_dependencies(())),
         ("publish", lambda: chain.service.publish("teacher-1")),
     ):
         with pytest.raises(SetupOrderError):
@@ -170,14 +183,15 @@ def test_tc_setup_c16_write_operations_refuse_on_a_finished_package(tmp_data_dir
     assert all(not step.available for step in progress.steps)
 
 
-def test_tc_setup_c16_disclosed_g1_propose_after_finish_opens_a_second_root(
-        tmp_data_dir):
-    """The G1 probe: the disclosed route is pinned so it cannot silently
-    regress. Today, `propose_inventory` after a finished setup mints a second
-    ROOT version and opens a fresh Stage A on the same package, while the
-    published version stays untouched — the exact evidence the G1 finding cites
-    (see the module docstring). When the route is closed by refusing, this
-    probe flips with it: the refusal IS the fix."""
+def test_tc_setup_c16_no_route_mints_a_version_after_finish(tmp_data_dir):
+    """The G1 probe, flipped by #229: the second-root mint route is CLOSED.
+    Where the probe once pinned the disclosed leak (a post-finish
+    `propose_inventory` minting a fresh root version and opening a second Stage
+    A), it now asserts the closed shape — the refusal happens, the refusal NAMES
+    the published version that blocked it (the observability half of #229), and
+    no second version exists afterward: the store still holds exactly the
+    published root, the finished report still says nothing remains, and the
+    published version stays locked."""
     chain = stage_chain(tmp_data_dir, package_id="pkg-c16-g1")
     chain.doc = ingest_document(chain.store, kind="assessment")
     proposal = chain.service.propose_inventory(chain.doc)
@@ -188,22 +202,37 @@ def test_tc_setup_c16_disclosed_g1_propose_after_finish_opens_a_second_root(
     published = chain.service.publish("teacher-1")
 
     fresh_doc = ingest_document(chain.store, kind="assessment")
-    try:
-        second_round = chain.service.propose_inventory(fresh_doc)
-    except SetupOrderError:
-        # The route has been closed — G1 is fixed; the surface now refuses.
-        return
-    # Today: a second round opens on a NEW root version (no parent link), and
-    # the published version is untouched.
-    assert second_round.package_version_id != published, (
-        "the second round reused the published version — that IS the editable "
-        "published package (CT-SETUP-16, RISK-06)"
+    with pytest.raises(SetupOrderError) as refused:
+        chain.service.propose_inventory(fresh_doc)
+    assert published in str(refused.value), (
+        f"the refusal {str(refused.value)!r} does not name the published "
+        "version that blocked it — the observability half of #229"
     )
-    assert chain.catalog.is_locked(published), (
-        "the published version was altered by the second round (CT-SETUP-16)"
+    # The mint route itself refuses the same way, naming the same version.
+    with pytest.raises(SetupOrderError) as mint_refused:
+        chain.service.ensure_version()
+    assert published in str(mint_refused.value), (
+        "ensure_version's refusal does not name the published version "
+        "(#229's observability half)"
     )
-    lineage = chain.catalog.lineage(second_round.package_version_id)
-    assert lineage == (second_round.package_version_id,), (
-        f"the second round's lineage is {lineage!r} — G1's evidence changed; "
-        "re-read src/aeh/setup.py ensure_version and update this probe"
+    # No second version exists: the store holds exactly the published root —
+    # no draft, no new latest, the lineage is still the single published root.
+    assert chain.catalog.draft_version() is None, (
+        "a draft exists after the refusals — a version was minted post-publish "
+        "(CT-SETUP-16, RISK-06: G1 reopened)"
     )
+    assert chain.catalog.latest_version() == published, (
+        "the package's latest version is not the published one — a second "
+        "version was minted post-publish (CT-SETUP-16, RISK-06: G1 reopened)"
+    )
+    assert chain.catalog.lineage(published) == (published,), (
+        "the published root's lineage grew — a child or a second root appeared "
+        "(CT-SETUP-16, RISK-06)"
+    )
+    assert chain.catalog.is_locked(published)
+    # The finished report and the refused surface agree: the report still says
+    # nothing remains, and it said so before the refusals too — the surface's
+    # new refusals change no step's story.
+    progress = chain.service.steps()
+    assert progress.remaining_steps == 0
+    assert all(not step.available for step in progress.steps)

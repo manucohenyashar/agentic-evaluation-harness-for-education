@@ -97,7 +97,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, NoReturn, Sequence
 
 from aeh.ingest import DocumentId
 from aeh.pkg import (
@@ -1719,10 +1719,19 @@ class SetupService:
         """The draft version setup works on, minted on first call: the package row and
         its initial version are exactly what `create_version` refuses to mint itself
         (`FR-SETUP-16`'s first move). Resumption calls this and gets the SAME draft —
-        the latest unpublished version — because state is the database (`CT-SETUP-03`)."""
+        the latest unpublished version — because state is the database (`CT-SETUP-03`).
+
+        On a package whose setup has FINISHED this is the mint route's refusal
+        (`CT-SETUP-16`'s no-route half, #229): no draft exists and every version is
+        published, so minting would open a second Stage A — a fresh root version — on
+        the same package. The refusal names the published version that blocked it;
+        a new instrument is a new package or a revision (`FR-PKG-02`), never a
+        setup operation."""
         draft = self._catalog.draft_version()
         if draft is not None:
             return draft
+        if self._catalog.has_version():
+            self._refuse_finished_package()
         self._catalog.ensure_package()
         version = self._catalog.create_version(None)
         LOGGER.info("minted initial package version %s for setup", version)
@@ -2717,6 +2726,15 @@ class SetupService:
         is not requested. Every verdict is recorded through `M-PKG` as the module's
         default (`source='default'`), so a skipped confirmation still leaves the
         teacher-vs-system distinction `M-CALIB` and `M-STATS` read (`R62`)."""
+        # Every mutating entry point refuses on a finished package (`CT-SETUP-16`,
+        # #229) — this one included: post-publish there is no draft to record the
+        # verdict against, so the calls would run and the record would skip
+        # silently. The never-started state stays open: the classification is the
+        # module's table applied to a reply, and the rung-0 doubles exercise it
+        # without a draft (the record skips by design there).
+        if (self._catalog.draft_version() is None
+                and self._catalog.has_version()):
+            self._refuse_finished_package()
         identity = _draft_criterion_identity(criterion_draft)
         criterion_id = identity["criterion_id"]
         payload = PromptPayload(fields=(
@@ -3321,16 +3339,37 @@ class SetupService:
                 "FR-SETUP-14)", v,
             )
 
+    def _refuse_finished_package(self) -> NoReturn:
+        """The post-publish refusal every mutating entry point shares (`CT-SETUP-16`'s
+        no-route half, #229): the package's versions are all published, so setup has
+        nothing left to offer — the error names the published version that blocked it
+        (`RISK-06`'s setup end), never a bare "finished" flag a caller could reason
+        around."""
+        latest_reader = getattr(self._catalog, "latest_version", None)
+        latest = latest_reader() if latest_reader is not None else None
+        blocked = (
+            f"version {latest!r} is published and locked (FR-SETUP-02)"
+            if latest is not None else "its version is published"
+        )
+        raise SetupOrderError(
+            f"no unpublished version exists for package {self.package_id!r} — "
+            f"setup has finished: {blocked}; a new instrument is a new package or "
+            "a revision (FR-PKG-02), not a setup operation (CT-SETUP-16)."
+        )
+
     def _require_draft_version(self) -> PackageVersionId:
         """The draft the operation works on, or the honest refusal: a package whose
         setup has finished has a published version and no draft, and operating on a
-        published version is not setup's business."""
+        published version is not setup's business — that refusal names the published
+        version that blocked it (#229's observability half). The other no-draft state
+        is a package that never started, and keeps the mint hint."""
         v = self._catalog.draft_version()
         if v is None:
+            if self._catalog.has_version():
+                self._refuse_finished_package()
             raise SetupOrderError(
                 f"no unpublished version exists for package {self.package_id!r} — "
-                "setup has already finished (its version is published) or the initial "
-                "version was never minted: call ensure_version() first."
+                "the initial version was never minted: call ensure_version() first."
             )
         return v
 
