@@ -1542,6 +1542,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
         ),
     ),
+    "#60 TS-23 random arm sampler (TC-ORCH-12 statistical + ADV-12)": (
+        "symbols",
+        f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,{ORCH_MODULE}:random_arm_selection",
+        (
+            "tests/unit/orch/test_random_arm.py::"
+            "test_tc_orch_12_random_arm_share_converges_on_the_configured_rate",
+            "tests/unit/orch/test_random_arm.py::"
+            "test_tc_orch_12_random_arm_selection_is_independent_of_confidence",
+            "tests/unit/orch/test_random_arm.py::"
+            "test_adv_12_confidently_wrong_population_is_still_sampled_by_the_random_arm",
+        ),
+    ),
 }
 
 
