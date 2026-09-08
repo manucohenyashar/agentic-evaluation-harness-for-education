@@ -3051,7 +3051,7 @@ class PackageCatalog:
             tx.execute(PKG_STATEMENTS["insert_criterion"], v=version_id,
                        criterion_id=criterion_id, question_id=criterion_id,
                        kind="open", max_points=0.0, scoring_model="atomic",
-                       construct_tag="", band_count=None)
+                       construct_tag="", band_count=None, evidence_type=None)
         LOGGER.info("created package version %s (package %s, parent %s)",
                     version_id, self._package_id, parent)
         return version_id
