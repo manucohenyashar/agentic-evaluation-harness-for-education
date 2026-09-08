@@ -1380,6 +1380,27 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "test_res_07_retried_synthesis_conflicts_rather_than_duplicating",
         ),
     ),
+    # --- TS-28 (#75), the M-INTEG span-verification and integrity-signal cases ------------
+    #
+    # M-INTEG is two implementation stories: #73 (`verify_span`, fail-closed) and #74
+    # (signals, routing, the restricted write set), and the cases split on that seam.
+    #
+    # `verify_span` is keyed on an **invented module-level function**: design §3.9's
+    # Protocol declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and
+    # FUZZ-03 are rung 0 — pure over (document bytes, span), no store, no construction —
+    # and a Protocol-only `IntegrityGate` (which #73 could land first) cannot be
+    # instantiated. The module-level name is the `#65` `aeh.synth:synthesize` precedent:
+    # the minimal entry point the pure cases call, reconciled at #73's landing. Keying on
+    # `IntegrityGate` instead would fire against a Protocol shell and send a reader to
+    # unmark tests that then fail on a TypeError — the exact trap TS-56 measured.
+    "#73 verify_span (TC-INTEG-01/09, FUZZ-03)": (
+        "symbol",
+        f"{INTEG_MODULE}:verify_span",
+        (
+            "tests/unit/integ/test_verify_span.py",
+            "tests/property/test_fuzz_03_verify_span.py",
+        ),
+    ),
 }
 
 
