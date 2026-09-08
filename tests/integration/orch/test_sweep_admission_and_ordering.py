@@ -24,19 +24,20 @@ surface: a worker's lease probes *are* the execution trace. `_lease_one_by_one` 
 unit at a time until the stage runs dry and returns the units in the order they were
 handed out.
 
-**Written ahead of #59** (the two-sweep plan, dependency ordering, deterministic-unit
-admission and the `ingest_status` filter). Registered in `WRITTEN_AHEAD_BLOCKERS`:
+**Landed with #59** (the two-sweep plan, dependency ordering, deterministic-unit
+admission and the `ingest_status` filter). This file shipped red-by-design —
+`@pytest.mark.writtenahead` plus two `WRITTEN_AHEAD_BLOCKERS` entries — and the marker
+and entries were removed when #59 landed, per the unmarking procedure; the design
+reasoning they recorded stays:
 
 - `TC-ORCH-25` on `aeh.orch:SWEEP1_ADMITTED_INGEST_STATUSES` — the admission set is the
   one inspectable name the filter needs (`CT-INGEST-11` lets `M-ORCH` treat
   {`ok`, `low_confidence_ocr`} as the complete admission rule, so the set is a constant,
   not a query).
-- `TC-ORCH-06/07/08` on the **conjunction** `Orchestrator.lease` +
-  `SWEEP1_ADMITTED_INGEST_STATUSES`: the ordering cases are observable only through
-  `lease` (#58's), and #59's acceptance criteria bundle the admission filter with the
-  sweep plan, so the conjunction fires when the story lands. The name is one the tests
-  invent and use together (the TS-56 reasoning); if #59 ships the filter under a different
-  name, the rename here and in the registry is one visible line.
+- `TC-ORCH-06/07/08` on `Orchestrator.lease` + `SWEEP1_ADMITTED_INGEST_STATUSES`: the
+  ordering cases are observable only through `lease` (#58's), and #59's acceptance
+  criteria bundle the admission filter with the sweep plan. The name shipped exactly as
+  assumed, so the registry conjunction dissolved into two plain `require` guards.
 
 **Interface this case assumes of #58/#59**, listed so it is reconciled deliberately
 (the `record_run_start` precedent):
@@ -55,10 +56,14 @@ own row update (`update_submission_gates`). No production module may write these
 (`CT-ORCH-17`); this is test scaffolding standing in for their writers.
 
 **What the admission assertions deliberately do not pin:** the requirement scopes the
-filter to Sweep 1 and to *scoring* work (`FR-ORCH-22`, `CT-INGEST-11`); whether the
-`deterministic` stage admits by the same rule is #59's to reconcile, and these tests do
-not bet on it — the deterministic units of non-admitted submissions are unasserted here
-(their extract and score units are not).
+filter to Sweep 1 and to *scoring* work (`FR-ORCH-22`, `CT-INGEST-11`); the
+`deterministic` stage is #59's reconciliation — `kind='mcq'` IS the design's
+`evaluation_mode='deterministic'`, and its units are enumerated for every submission
+regardless of admission. That shape is pinned transitively by `TC-ORCH-25`'s re-ingest
+count: `units_inserted == 2` (extract + score for the rejoined submission) holds only
+because the deterministic unit was already present from the first pass. What remains
+unasserted here is the deterministic stage's own claim order — its sweep key is
+`work_id`, and no case in this file leases that stage.
 """
 
 from __future__ import annotations
@@ -77,7 +82,7 @@ from tests.support.conf_builders import (
     edge_cfg,
     hosted_cfg,
 )
-from tests.support.impl import ORCH_MODULE, require
+from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import (
     ORCH_COHORT_ID,
     seed_cohort,
@@ -85,7 +90,7 @@ from tests.support.orch_run import (
     seed_run,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#59"
 
@@ -284,8 +289,8 @@ def test_tc_orch_06_sweep1_is_judged_only_and_dispatched_topologically(tmp_data_
     """`TC-ORCH-06` — extract units exist for judged criteria only and are dispatched in
     topological order over the dependency graph; the deterministic criterion produces no
     extraction unit."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         orchestrator, run_id, _ = seed_run(
@@ -341,8 +346,8 @@ def test_tc_orch_07_sweep2_gates_on_dependency_extraction_then_orders_by_key_onl
     """`TC-ORCH-07` — with c2's extraction incomplete, Sweep 2 for c4 does not begin;
     once every extraction is done, Sweep 2's order is the FR-ORCH-07 key and nothing
     else — c4 dispatches before c2 despite c2 -> c4."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         orchestrator, run_id, _ = seed_run(
@@ -407,8 +412,8 @@ def test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable(
     """`TC-ORCH-08` — the same run on `edge-local` and on `dev-ci`: Sweep 2 order is
     judge, then question, then criterion, then parallel over submissions, on both, and
     the two traces are comparable."""
-    require(ORCH_MODULE, "Orchestrator.lease", "SWEEP1_ADMITTED_INGEST_STATUSES",
-            issue=ISSUE)
+    require(ORCH_MODULE, "SWEEP1_ADMITTED_INGEST_STATUSES", issue=ISSUE)
+    require_attr(Orchestrator, "lease", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         submissions = ("SYN-001", "SYN-002")

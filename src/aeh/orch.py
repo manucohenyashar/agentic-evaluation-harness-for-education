@@ -28,12 +28,21 @@ from the wall clock, so a clock moved backwards across a restart still reads an 
 lease as expired. The wall-clock timestamp beside the ticks is for the operator reading
 the row; the sweeper's comparison is the counter's alone.
 
-**Not in this slice, and deliberately so.** The two-sweep execution plan, dependency
-ordering, deterministic-unit admission and the `ingest_status` admission filter are #59's;
-escalation, the random arm and the circuit breakers are #60's; the control-row run
-lifecycle (start/pause status transitions), the cost ceiling and provider pauses are
-#61's; dispatch isolation, concurrency and `ProgressReport` are #62's. The `run` row is
-created in `status='pending'` and no story before #61 flips it: the lifecycle is #61's.
+**This slice (#59) adds the two-sweep execution plan** (`FR-ORCH-05/06/07/08/22`):
+Sweep 1 (extraction) is enumerated over **admitted** submissions only —
+`SWEEP1_ADMITTED_INGEST_STATUSES` is the admission rule — and dispatched in topological
+order over the criterion dependency graph; Sweep 2 (scoring) for a criterion does not
+begin until every extraction unit it depends on is `done`, and is then ordered judge →
+question → criterion → parallel over submissions on every backend profile (`FR-ORCH-07`'s
+fixed key — no dependency ordering in Sweep 2, per the design's technical note). A
+`deterministic` criterion generates exactly one `stage='deterministic'` unit with a null
+`judge_id` and no extraction and no scoring unit (`FR-ORCH-08`).
+
+**Not in this slice, and deliberately so.** Escalation, the random arm and the circuit
+breakers are #60's; the control-row run lifecycle (start/pause status transitions), the
+cost ceiling and provider pauses are #61's; dispatch isolation, concurrency and
+`ProgressReport` are #62's. The `run` row is created in `status='pending'` and no story
+before #61 flips it: the lifecycle is #61's.
 
 **The four seams** (CLAUDE.md): the orchestrator runs end-to-end from code and returns a
 structured result with per-gate detail (`EnumerationReport`, the `IngestReport.gates`
@@ -50,6 +59,7 @@ import json
 import os
 import sqlite3
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -64,6 +74,13 @@ from aeh.store import (
     Tier,
     lease_clock,
 )
+
+# The admission filter (`FR-ORCH-22`) reads `submission.ingest_status` — a column the
+# ingest migration adds. M-ORCH depends on M-INGEST ("submission readiness", design §3.7's
+# dependency table); importing the owning module here is that dependency made literal, so
+# a ledger opened after `import aeh.orch` alone still holds the column the filter selects.
+# Migrations apply in version order regardless of registration order (`store`'s apply loop).
+import aeh.ingest  # noqa: F401 — the admission read's schema dependency
 
 #: The canonical JSON separators used for every config string the ledger stores. Chosen
 #: once, here, so two code paths cannot serialize the same panel differently and silently
@@ -82,6 +99,21 @@ EXTRACTOR_VERSION = "extract/1"
 STAGE_EXTRACT = "extract"
 STAGE_SCORE = "score"
 STAGE_DETERMINISTIC = "deterministic"
+
+#: The complete `ingest_status` admission rule for Sweep 1 (`FR-ORCH-22`, `CT-ORCH-14`):
+#: a submission's extraction and scoring work is enumerated only when its status is in
+#: this set. `CT-INGEST-11` fixes the set as the complete rule — the orchestrator treats
+#: it as the whole of admission, never re-deriving ingest's gates.
+#:
+#: **Interpretation recorded (#59): a `NULL` `ingest_status` admits.** The column carries
+#: no default (the ingest migration adds it bare), so a submission ingest has not yet
+#: judged reads NULL — a state the five-value CHECK does not cover and the requirement's
+#: three refused values are not. The refused work the requirement names is the work ingest
+#: *assigned a refused status*; a row ingest has not judged is not that. The enumeration
+#: tests' seeded submissions (which set no status) depend on this reading.
+SWEEP1_ADMITTED_INGEST_STATUSES: frozenset[str] = frozenset(
+    {"ok", "low_confidence_ocr"}
+)
 
 #: Where the base enumeration's depths come from (`FR-SETUP-08`): base scoring depth 1
 #: for `atomic`/`atomic_with_gate` criteria and 3 for `holistic` ones. Unknown scoring
@@ -329,8 +361,8 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SELECT work_id FROM work_unit WHERE run_id = :run_id"
     ),
     "select_submissions": Statement(
-        "SELECT submission_id, student_ref FROM submission WHERE cohort_id = :cohort_id "
-        "ORDER BY submission_id"
+        "SELECT submission_id, student_ref, ingest_status FROM submission "
+        "WHERE cohort_id = :cohort_id ORDER BY submission_id"
     ),
     "select_run_counts": Statement(
         "SELECT stage, status, COUNT(*) AS n FROM work_unit WHERE run_id = :run_id "
@@ -352,20 +384,33 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "VALUES (:audit_record_id, :run_id, :recorded_at, :profile_summary)"
     ),
     # -- leasing (FR-ORCH-04) ------------------------------------------------------------------
-    # Claim candidates: pending units of one stage, on runs that are still dispatching
-    # (a paused run schedules nothing — CT-ORCH-12; that transition is #61's, and the
-    # filter here is where it will bite first). Ordered by work_id so two claimers walk
-    # the same candidates in the same order — determinism the scheduling tests can stand
-    # on — and limited to what the caller asked for.
-    "select_claimable": Statement(
+    # Claim candidates: pending units of one stage **of one run** (a paused run schedules
+    # nothing — CT-ORCH-12 — and #59's claim pass walks open runs individually, because
+    # the dispatch order is a function of the run's own package). Ordered by work_id as
+    # the base order — the stage's sweep key is applied over these rows in Python, where
+    # the run's catalog lives; work_id is the deterministic tie-break beneath every key.
+    # Unbounded per read, on purpose: the sweep order must choose from ALL pending
+    # candidates of the run, and a SQL LIMIT applied before the Python order would
+    # truncate by work_id and silently mis-order the sweep. What keeps the fine-grained
+    # drain off the quadratic (NFR-ORCH-01) is not a LIMIT here but `_claim_pass`'s
+    # order cache: the sorted result is derived once and drained front to back, so a
+    # one-at-a-time poll late in a large run serves its head instead of re-reading and
+    # re-sorting the whole pending set.
+    "select_run_claimable": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
         "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref "
         "FROM work_unit w "
-        "JOIN run r ON r.run_id = w.run_id "
         "JOIN submission s ON s.submission_id = w.submission_id "
-        "WHERE w.status = 'pending' AND w.stage = :stage "
-        "AND r.status IN ('pending', 'running') "
-        "ORDER BY w.work_id LIMIT :n"
+        "WHERE w.run_id = :run_id AND w.status = 'pending' AND w.stage = :stage "
+        "ORDER BY w.work_id"
+    ),
+    # The Sweep 2 gate's read (`FR-ORCH-06`): the extraction units of the run that are
+    # not done — pending, leased, or quarantined. A score unit is claimable only when
+    # neither its own criterion's extraction nor any dependency's is in this set. One
+    # indexed query per run per claim pass; the set it returns is what the gate diffs.
+    "select_not_done_extracts": Statement(
+        "SELECT criterion_id, submission_id FROM work_unit "
+        "WHERE run_id = :run_id AND stage = 'extract' AND status != 'done'"
     ),
     "select_work_unit": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
@@ -378,7 +423,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SELECT work_id FROM work_unit WHERE run_id = :run_id LIMIT 1"
     ),
     "select_leased_units": Statement(
-        "SELECT w.work_id, w.lease_expires_ticks FROM work_unit w "
+        "SELECT w.work_id, w.run_id, w.lease_expires_ticks FROM work_unit w "
         "JOIN run r ON r.run_id = w.run_id "
         "WHERE w.status = 'leased' AND r.status IN ('pending', 'running') "
         "ORDER BY w.work_id"
@@ -523,6 +568,62 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _known_key(value: Any) -> tuple[int, Any]:
+    """A sort key that sends an absent value last, without ever comparing it.
+
+    Present values key ``(0, value)``; absent ones ``(1, None)`` — the first element
+    decides before the second is ever compared, so `None` is never ordered against a real
+    value and two absentees tie into the next key. The dispatch order uses it for a
+    candidate whose criterion the version's maps do not name (a shape the immutable
+    package cannot produce): the order stays total and deterministic either way.
+    """
+    return (0, value) if value is not None else (1, None)
+
+
+def _dependency_closure(
+    graph: Mapping[str, Sequence[str]],
+) -> dict[str, frozenset[str]]:
+    """The transitive closure of a dependency graph, per criterion.
+
+    Input: criterion -> its direct dependencies (`PackageCatalog.dependency_graph`'s
+    shape). Output: criterion -> every criterion it depends on, itself excluded (the
+    graph cannot carry a self-edge — `FR-PKG-05` refuses one).
+
+    **Kahn's sweep, honestly iterative**: an indegree pass, then a worklist drained
+    from the sources inward — every criterion is closed only after all of its
+    dependencies are, so the recursion depth is zero and a deep chain (a criterion per
+    link, a thousand long) costs heap records, not call-stack frames. A criterion a
+    dependency names but the graph does not (a dangling id, which `M-PKG`'s loader
+    refuses but this helper does not trust) contributes itself and closes over
+    nothing. The graph is a DAG (`FR-PKG-05` refuses cycles); a violated assumption
+    leaves the cycle's members at their reserved empty closure — a bounded incomplete
+    answer, not a crash or a hang — and the closure sets themselves are order-
+    independent `frozenset`s, so the sweep's emission order cannot leak into results.
+    """
+    closure: dict[str, frozenset[str]] = {cid: frozenset() for cid in graph}
+    indegree = {cid: 0 for cid in graph}
+    dependents: dict[str, list[str]] = {cid: [] for cid in graph}
+    for cid, deps in graph.items():
+        for dep in deps:
+            if dep in indegree:  # a dangling dep is not a graph edge to wait on
+                indegree[cid] += 1
+                dependents[dep].append(cid)
+    ready = [cid for cid in graph if indegree[cid] == 0]
+    while ready:
+        cid = ready.pop()
+        closure[cid] = frozenset().union(
+            *(  # type: ignore[arg-type]
+                {dep} | closure.get(dep, frozenset())
+                for dep in graph.get(cid, ())
+            )
+        )
+        for dependent in dependents[cid]:
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+    return closure
+
+
 # --- the worker-facing report types -------------------------------------------------------------
 
 
@@ -588,6 +689,27 @@ class EnumerationReport:
 
 
 @dataclass(frozen=True)
+class SweepPlan:
+    """The two sweeps' ordering data for one package version, derived once (`FR-ORCH-05/07`).
+
+    Everything the dispatch order needs, read off the immutable package and cached:
+    `extract_positions` is the criterion's position in `M-PKG`'s topological order
+    (`FR-PKG-05` — dependencies before dependents, Kahn's with sorted emission, so the
+    order is reproducible); `question_of` maps a criterion to its question, `FR-ORCH-07`'s
+    second key; `dependency_closure` maps a criterion to the transitive set of criteria it
+    depends on — the extraction units whose completion gates its scoring (`FR-ORCH-06`).
+
+    The closure is computed here, not in `M-PKG`: the topology is `M-PKG`'s data (this
+    module consumes it rather than re-deriving the graph), and what the *gate* needs —
+    transitive closure over that topology — is scheduling policy, this module's own.
+    """
+
+    extract_positions: Mapping[str, int]
+    question_of: Mapping[str, str]
+    dependency_closure: Mapping[str, frozenset[str]]
+
+
+@dataclass(frozen=True)
 class SweeperReport:
     """What one lease-expiry sweep did (`CLAUDE.md` seam 4).
 
@@ -641,9 +763,10 @@ class PackageCatalogProtocol(Protocol):
 
 class Orchestrator:
     """The ledger slice of §3.7's Orchestrator: create a run, enumerate its units,
-    resume. Leasing, sweeps, escalation and the control-row lifecycle arrive with
-    #58/#59/#60/#61 — the members here are the ones `FR-ORCH-01/02/03` and `NFR-ORCH-05`
-    own, and `resume` takes no arguments from its first commit.
+    resume, lease them under the two-sweep plan. Escalation and the circuit breakers
+    are #60's; the control-row lifecycle (start/pause status transitions) is #61's;
+    dispatch isolation and `ProgressReport` are #62's. `resume` takes no arguments from
+    its first commit.
 
     The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
     or contacts a judge: enumeration is a pure function of the ledger, the package
@@ -672,6 +795,22 @@ class Orchestrator:
         #: claims the store's clock slot from one that leases.
         self._clock = clock
         self._lease_clock_obj: LeaseClock | None = None
+        #: Package catalogs held open per (package_id, package_version_id) — the claim
+        #: pass reads the catalog on every dispatch, and `NFR-PKG-05`'s per-run cache is
+        #: per instance, so one live catalog per version is what makes the hot path one
+        #: indexed query instead of a version load.
+        self._catalogs: dict[tuple[str, str], Any] = {}
+        #: The two sweeps' derived ordering data, per package version (`_sweep_plan`).
+        #: The package is immutable for the run, so the plan is computed once and reused
+        #: for the run's lifetime — the topological positions and the dependency closure
+        #: are pure functions of the version.
+        self._sweep_plans: dict[str, SweepPlan] = {}
+        #: The dispatch order of one (run, stage), drained front to back across claim
+        #: passes (`_claim_pass`). Keyed `(run_id, stage)`; an entry holds only the
+        #: still-unclaimed ready candidates. Rebuilt on exhaustion, on a lost claim
+        #: guard, on a requeue (failure or sweeper reclaim), and on re-enumeration —
+        #: the invalidation set `_claim_pass` states.
+        self._order_cache: dict[tuple[str, str], deque[Any]] = {}
 
     # -- run creation ---------------------------------------------------------------------------
 
@@ -754,6 +893,16 @@ class Orchestrator:
         record_run_start(self._store, cfg, run_id=run_id)
         return run_id
 
+    def _invalidate_order_cache(self, run_id: str) -> None:
+        """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).
+
+        Any write that changes the claimable set — enumeration, a failure requeue, a
+        sweeper reclaim — can falsify a cached order; the next claim pass re-reads
+        instead of trusting it.
+        """
+        for key in [k for k in self._order_cache if k[0] == run_id]:
+            del self._order_cache[key]
+
     # -- enumeration ----------------------------------------------------------------------------
 
     def enumerate_units(self, run_id: str) -> EnumerationReport:
@@ -770,25 +919,30 @@ class Orchestrator:
         new `work_id` and the prior result is simply unreachable from the new unit
         (NFR-EXTRACT-02/03) — there is no cleanup step to forget.
 
-        **Base shapes** (§3.7's data flow, as far as #57's slice reaches): a judged
-        criterion (the catalog's `kind='open'`) gets one `stage='extract'` unit with a
-        null judge — extraction is judge-independent by §7.2 Rule 2 — plus one
-        `stage='score'` unit per panel arm up to the criterion's base depth
-        (`FR-SETUP-08`: 1 for `atomic`/`atomic_with_gate`, 3 for `holistic`). An
-        `kind='mcq'` criterion — deterministic evaluation, §7.8 — gets exactly one
+        **Base shapes** (§3.7's data flow): a judged criterion (the catalog's
+        `kind='open'`) gets one `stage='extract'` unit with a null judge — extraction is
+        judge-independent by §7.2 Rule 2 — plus one `stage='score'` unit per panel arm up
+        to the criterion's base depth (`FR-SETUP-08`: 1 for `atomic`/`atomic_with_gate`,
+        3 for `holistic`). An `kind='mcq'` criterion gets exactly one
         `stage='deterministic'` unit with a null judge and no extraction and no scoring
-        unit. **Interpretation recorded on #57:** the design's `evaluation_mode` column
-        does not exist until #59 adds it; the catalog's `kind` is the stand-in, and #59
-        owns reconciling the two. Admission by `ingest_status` (FR-ORCH-22), sweep
-        ordering, escalations and the random arm are later stories' — enumerated base
-        units here are deliberately every (submission, criterion) pair the shapes above
-        produce, with no admission filter.
+        unit. **Reconciliation recorded (#59, completing #57's note):** the design's
+        `evaluation_mode = 'deterministic'` column exists in no shipped schema; the
+        catalog's `kind='mcq'` — deterministic evaluation, §7.8 — is the criterion shape
+        the deterministic mode names, so `kind='mcq'` IS `evaluation_mode='deterministic'`
+        for this module and no `evaluation_mode` column is added. Extract and score units
+        are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
+        deterministic unit is enumerated for every submission. Escalations and the random
+        arm remain later stories' (#60).
 
         Commit batches of `HARNESS_ORCH_ENUM_COMMIT_BATCH` inserts keep one pass from
         holding a write lock across 23,000 inserts; the knob exists so a slower box can
         shrink it without a code change (NFR-ORCH-01 keeps per-unit cost trivial; the
         benchmark is S-ORCH-03's, not this module's).
         """
+        # The claim pass's order caches hold rows read before this pass may insert new
+        # ones — drop the run's entries, or a cached order would keep the new units
+        # undiscoverable until an unrelated exhaustion.
+        self._invalidate_order_cache(run_id)
         row = self._run_row(run_id)
         gates: dict[str, str] = {
             "run_row": f"found (status={row['status']}, cohort={row['cohort_id']})",
@@ -813,6 +967,38 @@ class Orchestrator:
         )
         gates["submissions"] = f"{len(submissions)} submission(s) in the cohort"
 
+        # The admission filter (`FR-ORCH-22`): Sweep 1 work is enumerated for admitted
+        # submissions only; a quarantined (or otherwise refused) submission generates no
+        # scoring work until it is re-ingested — re-ingestion flips the row's status, and
+        # the next enumeration inserts its units into the SAME run (`INSERT OR IGNORE`
+        # keeps everything already there). **The `deterministic` stage admits every
+        # submission**: a deterministic criterion has no extraction unit for admission to
+        # gate (`FR-ORCH-08` — none exists to wait for), and M-DET scores the structured
+        # answer data ingest validated, not the extracted evidence the refused statuses
+        # describe. The sweep-ordering tests' `units_inserted == 2` on re-ingest pins
+        # this shape: had the deterministic unit waited for admission, three units would
+        # arrive, not two.
+        admitted = [
+            s for s in submissions
+            if s["ingest_status"] is None
+            or s["ingest_status"] in SWEEP1_ADMITTED_INGEST_STATUSES
+        ]
+        admitted_ids = {s["submission_id"] for s in admitted}
+        withheld = len(submissions) - len(admitted)
+        refused = sorted(
+            {
+                s["ingest_status"] for s in submissions
+                if s["ingest_status"] is not None
+                and s["ingest_status"] not in SWEEP1_ADMITTED_INGEST_STATUSES
+            }
+        )
+        gates["admission"] = (
+            f"{len(admitted)} of {len(submissions)} admitted to Sweep 1 "
+            f"(rule: {sorted(SWEEP1_ADMITTED_INGEST_STATUSES)} or unjudged); "
+            f"{withheld} withheld"
+            + (f" (statuses: {refused})" if refused else "")
+        )
+
         batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
 
         computed: list[tuple[str, dict[str, Any]]] = []
@@ -823,6 +1009,8 @@ class Orchestrator:
                     computed.append(self._unit(
                         row, STAGE_DETERMINISTIC, submission, criterion, None,
                     ))
+                    continue
+                if submission["submission_id"] not in admitted_ids:
                     continue
                 computed.append(self._unit(
                     row, STAGE_EXTRACT, submission, criterion, None,
@@ -964,12 +1152,14 @@ class Orchestrator:
 
         **Self-healing enumeration.** A first pass that claims nothing triggers the
         base enumeration `resume()` uses — idempotent by construction — but only for
-        runs whose ledger holds no units at all, and claims again, so a caller that
-        created a run and leased receives units without a separate enumerate step
-        while a drained poll late in a large run pays one claim query and one
-        existence probe, never a full pass. An empty return after that is a true
-        empty (the stage's units are done, in flight, or the run is not dispatching),
-        not a bookkeeping gap.
+        runs whose ledger holds no units at all **and** whose cohort holds an
+        admissible submission (`_runs_missing_units`: a cohort that is all-refused
+        enumerates to the empty set legitimately, and a drained poll must not pay
+        for re-deriving that), and claims again, so a caller that created a run and
+        leased receives units without a separate enumerate step while a drained poll
+        late in a large run pays one claim query and one existence probe, never a
+        full pass. An empty return after that is a true empty (the stage's units are
+        done, in flight, or the run is not dispatching), not a bookkeeping gap.
 
         **The unit handed over.** The returned units carry `student_ref`;
         `student_name` and `submission_text` stay `None` — the ledger holds neither
@@ -1018,6 +1208,16 @@ class Orchestrator:
         still compares honestly after a restart whose wall clock moved backwards
         (`FR-STORE-11`, `CT-STORE-14`).
 
+        **The walk and its order (#59's two-sweep plan).** Cohorts are walked sorted, and
+        within a cohort each open run individually — the dispatch order is a function of
+        the run's own package (its dependency topology and criteria), so candidates are
+        gathered, ordered and claimed per run, in `run_id` order. A paused run schedules
+        nothing (`CT-ORCH-12`): its units are never candidates. The stage's order is
+        `_dispatch_order`'s: Sweep 1 in topological dependency order (`FR-ORCH-05`),
+        Sweep 2 gated on done extraction and then keyed judge → question → criterion
+        (`FR-ORCH-06/07`); every other stage keeps `work_id` order. The claim applies the
+        order front to back, so the units a claim hands out are the sweep's head.
+
         **Exclusivity is the guard on the write**, not the read: candidates are read
         `status = 'pending'`, the expiry is issued, and the claim is an
         `UPDATE ... WHERE status = 'pending'` whose `changes()` — read in the same
@@ -1028,10 +1228,35 @@ class Orchestrator:
         `CT-STORE-14`), arrived at from the harmless side: a raised counter can only make
         the sweeper *more* willing to reclaim, never less.
 
-        Claims walk cohorts and their open runs in sorted order and candidates by
-        `work_id` — deterministic where nothing depends on it (the sweep order itself is
-        #59's). A paused run schedules nothing (`CT-ORCH-12`): its units are not
-        candidates.
+        **The order cache** (`NFR-ORCH-01`). The sweep key is not expressible in SQL —
+        it reads the run's package topology and panel — so the ordered candidates are
+        derived in Python, and deriving them per poll made a one-at-a-time drain
+        quadratic (re-reading and re-sorting the whole pending set per claim: measured
+        5.3 ms/unit at 750 pending, over budget, and growing). The ordered ready list
+        is therefore cached per `(run_id, stage)` and drained front to back across
+        passes; the guard on the write stays the only correctness check. The cache's
+        invalidation set is exactly the events that can falsify it:
+
+        - **Exhaustion** — the remaining candidates were claimed; new units (a later
+          enumeration) are discoverable only from the ledger, so the entry is dropped
+          and the next pass re-reads.
+        - **A lost guard** — another writer won a unit this cache held pending, so
+          the view of pending is stale; the entry is dropped wholesale.
+        - **A requeue** — a failure below the ceiling (`fail`) or a sweeper reclaim
+          returns a unit this cache has already popped to `pending`; the run's entries
+          are dropped so the next pass re-reads — a requeue the cached order cannot
+          see is a unit lost to the run (`TC-ORCH-18`).
+        - **Re-enumeration** — `enumerate_units` drops the run's entries, because it
+          may add rows this cache has never seen.
+
+        An empty order is never cached: readiness only grows, but it grows outside
+        the cache's view, so a stage whose candidates are all gated out re-derives
+        per pass — caching the empty list would starve the newly ready. What the
+        cache deliberately does **not** re-check per pass is the Sweep 2 gate: the
+        gate was evaluated at derivation, and a unit ready then stays ready (an
+        extraction's `done` is terminal within a run), so serving the cached order
+        can never dispatch a judge over absent evidence; only the not-yet-ready set
+        can change, and those units are not in the cache at all.
         """
         ttl = self._lease_ttl()
         lease_clock_obj = self._lease_clock()
@@ -1040,24 +1265,196 @@ class Orchestrator:
             if len(claimed) >= n:
                 break
             cohort = self._store.cohort(key)
-            candidates = cohort.query(
-                ORCH_STATEMENTS["select_claimable"], stage=stage, n=n - len(claimed)
-            )
-            for row in candidates:
-                issued = lease_clock_obj.issue(ttl)
-                expires_at = self._wall_expiry(lease_clock_obj.clock, ttl)
-                with cohort.transaction() as tx:
-                    tx.execute(
-                        ORCH_STATEMENTS["mark_leased"],
-                        work_id=row["work_id"],
-                        owner=worker_id,
-                        expires_ticks=issued.expires_ticks,
-                        expires_at=expires_at,
+            for run_row in cohort.query(ORCH_STATEMENTS["select_open_runs"]):
+                if len(claimed) >= n:
+                    break
+                if run_row["status"] not in ("pending", "running"):
+                    continue
+                cache_key = (run_row["run_id"], stage)
+                ordered = self._order_cache.get(cache_key)
+                if ordered is None:
+                    candidates = cohort.query(
+                        ORCH_STATEMENTS["select_run_claimable"],
+                        run_id=run_row["run_id"],
+                        stage=stage,
                     )
-                    won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
-                if won:
-                    claimed.append(row)
+                    if not candidates:
+                        continue
+                    ordered = deque(
+                        self._dispatch_order(run_row, stage, candidates, cohort)
+                    )
+                    if not ordered:
+                        # Every candidate was gated out (Sweep 2 waiting on
+                        # extraction). Readiness only grows, but it grows outside
+                        # this cache's view, so an empty order is re-derived per
+                        # pass — caching it would starve the newly ready.
+                        continue
+                    self._order_cache[cache_key] = ordered
+                while ordered and len(claimed) < n:
+                    row = ordered.popleft()
+                    issued = lease_clock_obj.issue(ttl)
+                    expires_at = self._wall_expiry(lease_clock_obj.clock, ttl)
+                    with cohort.transaction() as tx:
+                        tx.execute(
+                            ORCH_STATEMENTS["mark_leased"],
+                            work_id=row["work_id"],
+                            owner=worker_id,
+                            expires_ticks=issued.expires_ticks,
+                            expires_at=expires_at,
+                        )
+                        won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
+                    if won:
+                        claimed.append(row)
+                    else:
+                        # The guarded write lost: another writer holds the unit, so
+                        # this cache's view of pending is stale. Drop it wholesale —
+                        # conservative, and the next pass re-derives from the ledger.
+                        self._order_cache.pop(cache_key, None)
+                        break
+                if not ordered:
+                    # Exhausted: the remaining candidates were all claimed. Drop the
+                    # entry so the next pass re-reads — new units (enumeration, the
+                    # sweeper's requeue) can only be discovered from the ledger.
+                    self._order_cache.pop(cache_key, None)
         return claimed
+
+    def _dispatch_order(
+        self, run_row: Any, stage: str, rows: Sequence[Any], cohort: Any
+    ) -> list[Any]:
+        """The candidates of one run's stage, in the order they may be handed out.
+
+        `Sweep 1` (`extract`) is **topological order over the criterion dependency
+        graph** (`FR-ORCH-05`) — a priority order over pending units, not a completion
+        gate: the design dispatches extraction in dependency order, and nothing in it
+        says a criterion's extraction waits for another's to finish. `Sweep 2`
+        (`score`) first **gates** (`FR-ORCH-06`) — a score unit is ready only when its
+        own criterion's extraction and every extraction in its dependency closure, for
+        its submission, are `done` — and then **orders by the fixed key and nothing
+        else** (`FR-ORCH-07`): judge model outermost, then question, then criterion, the
+        submissions parallel beneath. No criterion-graph term appears in the key; the
+        graph was Sweep 1's, and re-ordering scoring by it would cost cache locality for
+        nothing. Every other stage (the deterministic units, and the stages later stories
+        add) keeps `work_id` order.
+
+        The gate reads `done` on the extraction units of the run — one indexed query per
+        pass (`select_not_done_extracts`); a quarantined extraction is not `done`, so the
+        scoring it feeds stays gated until an operator re-queues it: the gate never
+        scores over nothing. Deterministic criteria carry no extraction unit, so a
+        dependency on one is satisfied vacuously — there is nothing to wait for.
+
+        **Interpretations recorded (#59):** the gate is per (criterion, submission) — a
+        score unit reads that submission's evidence — and it includes the criterion's own
+        extraction plus the transitive closure of its dependencies; the requirement's
+        "every extraction unit that criterion depends on" leaves direct-vs-transitive and
+        own-extraction open (`TC-ORCH-07` discloses the same), and this reading is the
+        one under which no judge ever reads absent evidence. Within a `(judge, question,
+        criterion)` group the submission order is `work_id`'s — `CT-ORCH-21` explicitly
+        does not promise submission order inside a batch. The key's judge term is the
+        judge's position in the run's panel order (the dispatch order, not the build
+        id's lexical order), and its criterion term is the criterion id ascending;
+        `FR-ORCH-07` fixes the levels, not the within-level measure, and these are the
+        stable choices.
+        """
+        if stage not in (STAGE_EXTRACT, STAGE_SCORE):
+            return list(rows)
+        plan = self._sweep_plan(run_row)
+        if stage == STAGE_EXTRACT:
+            return sorted(
+                rows,
+                key=lambda r: (
+                    _known_key(plan.extract_positions.get(r["criterion_id"])),
+                    r["criterion_id"] or "",
+                    r["work_id"],
+                ),
+            )
+        blocked = {
+            (r["criterion_id"], r["submission_id"])
+            for r in cohort.query(
+                ORCH_STATEMENTS["select_not_done_extracts"],
+                run_id=run_row["run_id"],
+            )
+        }
+        arms = self._panel_arms(run_row["panel_config"])
+        ready = [
+            r for r in rows
+            if self._score_dependencies_done(r, blocked, plan)
+        ]
+        return sorted(
+            ready,
+            key=lambda r: (
+                self._judge_key(r["judge_id"], arms),
+                _known_key(plan.question_of.get(r["criterion_id"])),
+                r["criterion_id"] or "",
+                r["work_id"],
+            ),
+        )
+
+    @staticmethod
+    def _score_dependencies_done(
+        row: Any, blocked: set[tuple[str, str]], plan: SweepPlan
+    ) -> bool:
+        """Whether one score unit's extraction evidence is all `done` (`FR-ORCH-06`)."""
+        if (row["criterion_id"], row["submission_id"]) in blocked:
+            return False
+        closure = plan.dependency_closure.get(row["criterion_id"], frozenset())
+        return all(
+            (dep, row["submission_id"]) not in blocked for dep in closure
+        )
+
+    @staticmethod
+    def _judge_key(judge_id: str | None, arms: Sequence[str]) -> tuple[int, int | str]:
+        """`FR-ORCH-07`'s outermost key: the judge's position in the run's panel.
+
+        Panel order, not the build id's lexical order — the panel order is the dispatch
+        order and the escalation ladder's first arm (`panel_config_json`), and the fixed
+        cross-profile key reads the same on every backend (`TC-ORCH-08`'s arm-index
+        oracle). A judge outside the panel (later stories' escalation arms) sorts after
+        every panel judge, deterministically. A score unit without a judge is a ledger
+        this module did not write, and ordering it anywhere would dispatch judgeless
+        work to a judge — refused, not absorbed.
+        """
+        if judge_id is None:
+            raise WorkLedgerError(
+                "a 'score' unit without a judge reached the dispatch order — the base "
+                "enumeration gives every score unit a panel arm, so the row is not this "
+                "module's. Order it by hand only after deciding what judgeless scoring "
+                "means; the orchestrator refuses to guess."
+            )
+        # The index compares as the **integer** it is, never stringified: at ten or
+        # more arms a lexical compare would order `arm-10` before `arm-2` and break
+        # the panel's own ladder. The two branches never compare second elements
+        # across the branch boundary — the leading 0/1 decides first — so an
+        # in-panel int and an out-of-panel str can never meet in a comparison.
+        return (0, arms.index(judge_id)) if judge_id in arms else (1, judge_id)
+
+    def _sweep_plan(self, run_row: Any) -> SweepPlan:
+        """The dispatch-order data for the run's package version, derived once.
+
+        Pure functions of the immutable version: the topological order comes from
+        `M-PKG` (`FR-PKG-05`, consumed rather than re-derived), the question map from the
+        version's criteria, the closure from the version's dependency graph. Cached per
+        version on the orchestrator, so a claim pass pays the derivation once per run
+        lifetime, never per unit (`NFR-ORCH-01`).
+        """
+        version = run_row["package_version_id"]
+        plan = self._sweep_plans.get(version)
+        if plan is None:
+            catalog = self._catalog(run_row)
+            order = catalog.topological_order(version)
+            positions = {criterion_id: i for i, criterion_id in enumerate(order)}
+            question_of = {
+                c["criterion_id"]: c["question_id"]
+                for c in catalog.criteria(version)
+            }
+            plan = SweepPlan(
+                extract_positions=positions,
+                question_of=question_of,
+                dependency_closure=_dependency_closure(
+                    catalog.dependency_graph(version)
+                ),
+            )
+            self._sweep_plans[version] = plan
+        return plan
 
     def heartbeat(self, work_id: str, owner: str | None = None) -> None:
         """Extend a live lease by another TTL — the while-it-works half of `FR-ORCH-04`.
@@ -1139,9 +1536,11 @@ class Orchestrator:
         }
         examined = 0
         requeued = 0
+        requeued_runs: set[str] = set()
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             rows = cohort.query(ORCH_STATEMENTS["select_leased_units"])
+            run_by_work = {row["work_id"]: row["run_id"] for row in rows}
             expired: list[str] = []
             for row in rows:
                 ticks = row["lease_expires_ticks"]
@@ -1159,10 +1558,18 @@ class Orchestrator:
                         tx.execute(
                             ORCH_STATEMENTS["requeue_expired"], work_id=work_id
                         )
-                        requeued += int(
+                        won = int(
                             tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
                         )
+                        requeued += won
+                        if won:
+                            requeued_runs.add(run_by_work[work_id])
             examined += len(rows)
+        # A reclaim returns units to `pending` — drop the affected runs' dispatch-order
+        # cache entries so the next claim pass sees them (the same visibility rule as
+        # `fail`'s requeue, `TC-ORCH-18`).
+        for run_id in requeued_runs:
+            self._invalidate_order_cache(run_id)
         gates["sweep"] = (
             f"{examined} leased examined, {requeued} requeued, "
             f"{examined - requeued} still held"
@@ -1223,7 +1630,9 @@ class Orchestrator:
         arms clear the lease columns; the run continues either way — "fail the unit,
         never the run" (`NFR-ORCH-03`) is the whole point of the taxonomy, so **no arm
         of this method raises into the caller's loop over a unit's own failure**: the
-        only raise is for a work id that resolves to no unit at all.
+        only raise is for a work id that resolves to no unit at all. A won report also
+        drops this run's dispatch-order cache entries — the requeued unit must be
+        visible to the very next claim pass (`TC-ORCH-18`).
 
         **A failure report wins over a live lease.** The design fixes this signature at
         `(work_id, error)` — no owner identity — so the report cannot name its holder,
@@ -1262,6 +1671,12 @@ class Orchestrator:
             # here would fail a run over a unit-level race, which is the one thing
             # this taxonomy refuses to do (NFR-ORCH-03).
             return
+        # A won report moved the unit within the claimable set — back to `pending`
+        # below the ceiling, out of it at quarantine — so this run's cached dispatch
+        # order is stale: the requeued unit must be visible to the very next claim
+        # pass, or a requeue the dispatcher cannot see is a unit lost to the run
+        # (`TC-ORCH-18`).
+        self._invalidate_order_cache(row["run_id"])
 
     # -- internals ------------------------------------------------------------------------------
 
@@ -1356,13 +1771,24 @@ class Orchestrator:
         database. Imported here, not at module top: `aeh.pkg` appends its own migrations
         to the Tier P registry on import, and the import order of the owning modules is
         each module's own concern — `test_migrations.py` imports them explicitly for the
-        same reason."""
-        from aeh.pkg import PackageCatalog
+        same reason.
 
-        return PackageCatalog(
-            self._store.package(row["package_id"]),
-            package_id=row["package_id"],
-        )
+        One catalog instance is held open per (package_id, package_version_id): the
+        catalog's own cache is per instance (`NFR-PKG-05`), and the claim pass reads the
+        version on every dispatch, so a fresh instance per read would reload the version
+        per claim — the per-instance cache is the point of holding it open.
+        """
+        key = (row["package_id"], row["package_version_id"])
+        catalog = self._catalogs.get(key)
+        if catalog is None:
+            from aeh.pkg import PackageCatalog
+
+            catalog = PackageCatalog(
+                self._store.package(row["package_id"]),
+                package_id=row["package_id"],
+            )
+            self._catalogs[key] = catalog
+        return catalog
 
     def _run_row(self, run_id: str) -> Any:
         """The run's ledger row, found by walking the cohort files.
@@ -1402,16 +1828,42 @@ class Orchestrator:
         run must not pay it (NFR-ORCH-01). A run with rows — even partially populated
         by a crash mid-enumeration — is `resume()`'s repair, not lease's; the
         existence probe is one indexed query per open run.
+
+        **The admissible-submission gate (#59 review).** A run can hold no units
+        *legitimately*, and forever: a cohort whose submissions are all refused — or
+        which has none yet — enumerates to the empty set, and re-deriving that empty
+        set on every drained poll is precisely the full pass this gate exists to
+        prevent ("never enumerated" and "legitimately empty" must not cost the same).
+        A run whose cohort holds no admissible submission — none with a NULL
+        `ingest_status` (pre-ingest, admits per `SWEEP1_ADMITTED_INGEST_STATUSES`'s
+        recorded reading) and none in the admitted set — is therefore skipped. The
+        gate re-opens by itself: a submission re-ingested into an admissible status
+        makes the cohort admissible again on the next poll, which is the self-heal
+        path. A cohort that stays admissible while the package yields no units for
+        another reason (a version with zero criteria — `M-PKG` refuses the shape, so
+        this helper does not defend against it) would still re-enumerate per poll.
         """
         found: list[str] = []
+        admissible_by_cohort: dict[str, bool] = {}
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             for row in cohort.query(ORCH_STATEMENTS["select_open_runs"]):
-                run_id = row["run_id"]
+                cohort_id = row["cohort_id"]
+                if cohort_id not in admissible_by_cohort:
+                    admissible_by_cohort[cohort_id] = any(
+                        s["ingest_status"] is None
+                        or s["ingest_status"] in SWEEP1_ADMITTED_INGEST_STATUSES
+                        for s in cohort.query(
+                            ORCH_STATEMENTS["select_submissions"],
+                            cohort_id=cohort_id,
+                        )
+                    )
+                if not admissible_by_cohort[cohort_id]:
+                    continue
                 if not cohort.query(
-                    ORCH_STATEMENTS["select_any_work_unit"], run_id=run_id
+                    ORCH_STATEMENTS["select_any_work_unit"], run_id=row["run_id"]
                 ):
-                    found.append(run_id)
+                    found.append(row["run_id"])
         return tuple(sorted(found))
 
     def _open_run_ids(self) -> tuple[str, ...]:

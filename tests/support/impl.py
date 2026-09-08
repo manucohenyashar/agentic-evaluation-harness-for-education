@@ -1299,41 +1299,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # #57 shipped the ledger slice (work units, `compute_work_id`, enumeration), so these
     # are keyed on the *symbols* the later stories owe, not on the module.
-    "#59 admission filter (TC-ORCH-25)": (
-        # TC-ORCH-25 drives the ingest_status admission rule, which #57's enumeration
-        # deliberately does not apply. `SWEEP1_ADMITTED_INGEST_STATUSES` is invented here
-        # (the `record_run_start` precedent): CT-INGEST-11 lets M-ORCH treat
-        # {ok, low_confidence_ocr} as the complete admission rule, so the filter is a
-        # constant, and the tests assert the constant AND the behavior it names.
-        "symbol",
-        f"{ORCH_MODULE}:SWEEP1_ADMITTED_INGEST_STATUSES",
-        (
-            "tests/integration/orch/test_sweep_admission_and_ordering.py::"
-            "test_tc_orch_25_only_admitted_submissions_enter_sweep_1_until_reingested",
-        ),
-    ),
-    "#59 sweep plan (TC-ORCH-06/07/08)": (
-        # The ordering cases are observable only through lease (#58's), and #59's
-        # acceptance criteria bundle the admission filter with the two-sweep plan, so the
-        # conjunction fires when the story lands. The constant is one the tests invent
-        # and use together (the TS-56 reasoning); if #59 ships the filter under a
-        # different name, the rename here and in the test module is one visible line.
-        # Never-fires risk accepted and disclosed rather than keying on lease alone,
-        # which would fire three P0 cases red inside TEST_CMD at #58.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.lease,"
-            f"{ORCH_MODULE}:SWEEP1_ADMITTED_INGEST_STATUSES"
-        ),
-        (
-            "tests/integration/orch/test_sweep_admission_and_ordering.py::"
-            "test_tc_orch_06_sweep1_is_judged_only_and_dispatched_topologically",
-            "tests/integration/orch/test_sweep_admission_and_ordering.py::"
-            "test_tc_orch_07_sweep2_gates_on_dependency_extraction_then_orders_by_key_only",
-            "tests/integration/orch/test_sweep_admission_and_ordering.py::"
-            "test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable",
-        ),
-    ),
+    # The #59 entries (TC-ORCH-25, TC-ORCH-06/07/08) were dropped when #59 landed:
+    # `SWEEP1_ADMITTED_INGEST_STATUSES` and the two-sweep dispatch order are in.
     "#62 completion predicate (TC-ORCH-22)": (
         # TC-ORCH-22 reads FR-ORCH-12's predicate off #62's run-state report;
         # `Orchestrator.progress` is a §3.7 Interfaces member no earlier story's
