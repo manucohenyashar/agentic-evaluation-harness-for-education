@@ -70,10 +70,14 @@ The four seams, from the first commit:
    no other egress exists (`CT-PROV-15`).
 3. **Env-gated knobs** — `HARNESS_SETUP_PROPOSAL_ATTEMPTS`,
    `HARNESS_SETUP_READBACK_ATTEMPTS`, `HARNESS_SETUP_CLASSIFY_ATTEMPTS` (the
-   degraded-path attempt budgets) and `HARNESS_SETUP_PREFIX_TOKEN_CEILING` (the prefix
-   budget's ceiling, production default 1500 tokens — the exact token-counting seam is
-   `TC-SETUP-14`'s deferred story and the estimate is documented at the constant), all
-   read at CALL time per this codebase's knob doctrine.
+   degraded-path attempt budgets), all read at CALL time per this codebase's knob
+   doctrine. The prefix budget's ceiling is deliberately NOT one of them: it is
+   `RunConfig.prefix_token_ceiling`, the per-profile value M-CONF derives
+   (conf.py's recorded decision — a separate env key would permit `unified-large`
+   with a ceiling of 500); this module's fallback for a service constructed
+   without a resolved run config is documented at
+   `SETUP_PREFIX_TOKEN_CEILING_DEFAULT`, and the exact token-counting seam is
+   `TC-SETUP-14`'s deferred story.
 4. **Stage-level observability** — `LOGGER` ("aeh.setup") logs every proposal attempt,
    confirmation, gate refusal and publication; the proposal row carries its attempt
    count and status, so a degraded proposal is visible in the database, not just the
@@ -136,7 +140,6 @@ __all__ = [
     "SETUP_MAX_CONFIRMATIONS",
     "SETUP_MCQ_BAND_NAMES",
     "SETUP_PREFIX_TOKEN_CEILING_DEFAULT",
-    "SETUP_PREFIX_TOKEN_CEILING_ENV",
     "SETUP_PROMPT_TEMPLATE_V",
     "SETUP_READBACK_TEMPLATE_V",
     "SetupError",
@@ -213,39 +216,32 @@ SETUP_DEFAULT_BAND_COUNT = 2
 #: ask (`CT-SETUP-07`).
 SETUP_MCQ_BAND_NAMES: tuple[str, ...] = ("correct", "incorrect")
 
-#: The prefix-budget ceiling knob (`FR-SETUP-11`, #53): the per-(question, criterion)
-#: token ceiling the budget check compares against, read at CALL time (the knob
-#: doctrine). The counting seam itself — a real tokenizer behind the same report — is
-#: `TC-SETUP-14`'s deferred story; the estimate `_estimate_tokens` makes is documented
-#: at that function, and this default (1500 tokens) is the production value the knob
-#: exists to move without a code change.
-SETUP_PREFIX_TOKEN_CEILING_ENV = "HARNESS_SETUP_PREFIX_TOKEN_CEILING"
+#: The prefix-budget ceiling's fallback (`FR-SETUP-11`, `FR-CONF-10`, #53): the
+#: budget check compares the assembled per-(question, criterion) prefix against
+#: `RunConfig.prefix_token_ceiling` — the per-profile value M-CONF derives (2000 on
+#: `unified-large`, 1500 otherwise; the `hosted_prefix_token_ceiling` cfg key moves
+#: the hosted one, per conf.py's recorded decision that NO separate env key exists
+#: for this ceiling, since one would permit `unified-large` with a ceiling of 500).
+#: This constant is only the fallback for a service constructed without a resolved
+#: run config. The counting seam itself — a real tokenizer behind the same report —
+#: is `TC-SETUP-14`'s deferred story; the estimate `_estimate_tokens` makes is
+#: documented at that function.
 SETUP_PREFIX_TOKEN_CEILING_DEFAULT = 1500
 
 
-def _configured_prefix_token_ceiling() -> int:
-    """The prefix ceiling for THIS call (`FR-SETUP-11`): the env knob's value when
-    set, the production default otherwise."""
-    raw = os.environ.get(SETUP_PREFIX_TOKEN_CEILING_ENV)
-    if not raw:
-        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
-    try:
-        value = int(raw)
-    except ValueError:
-        LOGGER.warning(
-            "%s carries %r, which is not an integer — the production default %d "
-            "applies for this call", SETUP_PREFIX_TOKEN_CEILING_ENV, raw,
-            SETUP_PREFIX_TOKEN_CEILING_DEFAULT,
-        )
-        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
-    if value < 1:
-        LOGGER.warning(
-            "%s carries %d below 1 — the production default %d applies for this "
-            "call", SETUP_PREFIX_TOKEN_CEILING_ENV, value,
-            SETUP_PREFIX_TOKEN_CEILING_DEFAULT,
-        )
-        return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
-    return value
+def _prefix_ceiling(run_config: Any) -> int:
+    """The ceiling THIS check compares against (`FR-SETUP-11`): the resolved run
+    config's per-profile value (`FR-CONF-06`/`-10` derive it from the profile)
+    when the service carries one, the fallback default otherwise.
+
+    The config arrives duck-typed — whatever the caller resolved carries
+    `prefix_token_ceiling` (aeh.conf's `RunConfig` is the intended shape) — read
+    through `Any` deliberately: this module's import graph is the store boundary
+    (`aeh.pkg`, `aeh.ingest`, `aeh.prov`) and nothing else (`CT-SETUP-16`'s
+    module-graph probe), so M-CONF's type is consumed, never imported."""
+    if run_config is not None:
+        return int(run_config.prefix_token_ceiling)
+    return SETUP_PREFIX_TOKEN_CEILING_DEFAULT
 
 
 def _estimate_tokens(text: str) -> int:
@@ -1691,12 +1687,21 @@ class SetupService:
     def __init__(
         self, catalog: PackageCatalog, ingestor: Any, provider: InferenceProvider,
         model_ref: ModelRef, *, params: SamplingParams | None = None,
+        run_config: Any = None,
     ) -> None:
         self._catalog = catalog
         self._ingestor = ingestor
         self._provider = provider
         self._model_ref = model_ref
         self._params = params if params is not None else SamplingParams(temperature=0.0)
+        # The resolved run config (`FR-SETUP-11`, #53): the prefix-budget check
+        # compares against ITS per-profile `prefix_token_ceiling` (FR-CONF-06/-10;
+        # aeh.conf's RunConfig is the intended shape, consumed duck-typed so the
+        # import graph stays the store boundary — CT-SETUP-16). Optional so a
+        # harness that stages setup before a run config is resolved still
+        # constructs; the fallback is documented at
+        # `SETUP_PREFIX_TOKEN_CEILING_DEFAULT`.
+        self._run_config = run_config
         # The confirmation cap's counter (`FR-SETUP-07`, `CT-SETUP-13`): confirmations
         # REQUESTED per draft version, this service's accounting of what the teacher
         # has been asked so far. Keyed by version so one service carrying several
@@ -2402,6 +2407,12 @@ class SetupService:
                 "deterministic criteria are staged as CRIT-<question id>; key those, "
                 "or author a criterion through M-PKG first."
             )
+        # Validate EVERY key before writing ANY (`FR-SETUP-03`): a refused call
+        # must leave the stored keys exactly as they were — a blocking gate that
+        # half-applies would make its refusal indistinguishable from a partial
+        # save, and the docstring's "refused HERE, before anything is written"
+        # would be a lie on the second key.
+        validated: list[tuple[str, list[str]]] = []
         for criterion_id, key in keys.items():
             question_id = criteria[criterion_id]["question_id"]
             allowed = {row["option_id"] for row in (
@@ -2415,9 +2426,11 @@ class SetupService:
                         f"{', '.join(bad)} that question {question_id!r} does not "
                         "offer — a key is a choice among the options the teacher "
                         "declared (FR-SETUP-03: no inference from the reference "
-                        "solution, no default key)."
+                        "solution, no default key). Nothing was written."
                     )
-            self._catalog.set_answer_key(v, criterion_id, list(key))
+            validated.append((criterion_id, list(key)))
+        for criterion_id, key in validated:
+            self._catalog.set_answer_key(v, criterion_id, key)
         LOGGER.info(
             "set %d answer key(s) for version %s — blocking step S4, each validated "
             "against its question's option vocabulary (FR-SETUP-03)", len(keys), v,
@@ -2479,7 +2492,9 @@ class SetupService:
         and reference solution, the criterion's construct, its band descriptors, and
         every exemplar's material — counted with the documented estimate
         (`_estimate_tokens`; the exact token seam is `TC-SETUP-14`'s deferred story)
-        against `HARNESS_SETUP_PREFIX_TOKEN_CEILING` (read at call time). Where a
+        against `RunConfig.prefix_token_ceiling` — the per-profile ceiling
+        (`FR-CONF-06`/`-10`; the fallback for a service without a resolved run
+        config is `SETUP_PREFIX_TOKEN_CEILING_DEFAULT`). Where a
         pair is over, the drop policy runs BEFORE publication, so the overage is
         still fixable: exemplars leave lowest-value first (value is the points of
         the band the exemplar anchors), and the remediation NEVER touches the
@@ -2499,7 +2514,7 @@ class SetupService:
                 "the prefix budget is checked against the confirmed inventory's own "
                 "criteria (§4.2.1): confirm_inventory first."
             )
-        ceiling = _configured_prefix_token_ceiling()
+        ceiling = _prefix_ceiling(self._run_config)
         questions = {row["question_id"]: row for row in self._catalog.questions(v)}
         exemplar_reader = getattr(self._catalog, "exemplars", None)
         all_exemplars = exemplar_reader(v) if exemplar_reader is not None else ()
@@ -2608,17 +2623,34 @@ class SetupService:
         # still over — readable without this process (the state-is-the-database
         # rule), and NOT a member of the enumerated steps (the enumeration is the
         # five the design names; the budget check is the grade_policy step's other
-        # half).
+        # half). The row is keyed (version, step_id) and UPSERTED, so a second
+        # check — a resumed service re-running the step — would otherwise overwrite
+        # the first one's `dropped_exemplars` with its own (empty) list, and the
+        # dropped rows are gone from `exemplar`: nothing in the database would name
+        # what left the prefix (FR-SETUP-11's record clause). The durable record
+        # therefore carries the UNION of what every check on this version removed;
+        # the report object stays per-call.
         record_step = getattr(self._catalog, "record_step", None)
         if record_step is not None:
+            prior_dropped: list[str] = []
+            read_record = getattr(self._catalog, "step_record", None)
+            if read_record is not None:
+                prior = read_record(v, "prefix_budget")
+                if prior and prior.get("payload"):
+                    try:
+                        prior_dropped = list(
+                            json.loads(prior["payload"]).get("dropped_exemplars", ()))
+                    except (TypeError, ValueError):
+                        prior_dropped = []
+            merged_dropped = sorted({*dropped, *prior_dropped})
             record_step(
                 v, step_id="prefix_budget",
-                status=("within_budget" if residual == 0 and not dropped
+                status=("within_budget" if residual == 0 and not merged_dropped
                         else "over_budget_remediated" if residual == 0
                         else "over_budget_residual"),
                 payload=json.dumps({
                     "ceiling_tokens": ceiling,
-                    "dropped_exemplars": dropped,
+                    "dropped_exemplars": merged_dropped,
                     "residual_tokens": residual,
                     "pairs": per_pair,
                     "estimate": "chars/4 (TC-SETUP-14's exact seam deferred)",
