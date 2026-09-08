@@ -274,6 +274,16 @@ DEFAULT_DUPLICATE_THRESHOLD = 0.9
 #: else in the column is a bug, so the set is the data-layer guard's vocabulary too.
 V4_MATCH_OUTCOMES: tuple[str, ...] = ("match", "uncertain", "mismatch", "not_run")
 
+#: The gate columns' not-reached sentinel (#222, the F4 probe): a gate the ladder
+#: never reached records `not_reached`, never the initialized `'pass'` — the
+#: final gate write records EVERY column, so an initialized `'pass'` would sit on
+#: top of a gate that never ran and naive per-gate pass counts over raw rows
+#: would overcount. The sentinel is data, not absence: counting passes over raw
+#: rows then equals counting over construction-known reachability. V4 keeps its
+#: own `not_run` (`V4_MATCH_OUTCOMES`, FR-INGEST-25's shipped vocabulary); the
+#: gate columns carry no CHECK, so the sentinel needs no migration.
+GATE_NOT_REACHED = "not_reached"
+
 #: The V4 cohort circuit breaker's rate threshold (`FR-INGEST-28`; design
 #: Configuration: `INGEST_V4_COHORT_BREAKER_RATE`, the design's 20% assumption). The
 #: combined `mismatch`-plus-`uncertain` rate across the cohort AT OR ABOVE this trips
@@ -3089,8 +3099,13 @@ class Ingestor:
         if (tripped := self.cohort_breaker(cohort_id)) is not None:
             raise IngestCohortBreakerTripped(tripped["finding"])
         submission_id = f"sub-{uuid.uuid4().hex[:12]}"
-        gates: dict[str, str] = {"v0": "pass", "v1": "pass", "v2": "pass",
-                                 "v3": "pass", "v4": "not_run"}
+        # Every gate starts NOT REACHED (#222, the F4 fix): the final write
+        # records every column, so a `'pass'` init would ride to the row on
+        # gates the ladder never reached. Each gate flips to its own outcome
+        # only at the point the ladder actually runs it.
+        gates: dict[str, str] = {"v0": GATE_NOT_REACHED, "v1": GATE_NOT_REACHED,
+                                 "v2": GATE_NOT_REACHED,
+                                 "v3": GATE_NOT_REACHED, "v4": "not_run"}
         findings: list[dict] = []
         ingest_status = "ok"
         quarantined = False
@@ -3151,6 +3166,9 @@ class Ingestor:
                     "gate": "v0", "blob_hash": blob_hash[:12],
                     "finding": f"{blank}/{len(pages)} blank pages exceed tolerance"})
                 v0_failed = True
+        if not v0_failed:
+            # V0 completed every source without quarantining — its verdict.
+            gates["v0"] = "pass"
 
         # The submission row exists before anything references it: the document's
         # FK points here, and the gate columns write to it after the ladder runs.
@@ -3171,6 +3189,7 @@ class Ingestor:
                     package_version=package_version, filenames=filenames,
                     submission_id=submission_id,
                 )
+                gates["v1"] = "pass"
             except (IngestGapError, IngestDuplicateError) as error:
                 # V1 page completeness (FR-INGEST-22): #37's gap and duplicate
                 # findings become gate outcomes here — quarantined, naming the
@@ -3265,6 +3284,8 @@ class Ingestor:
                 if v2_failures:
                     quarantine("v2", "incomplete", {
                         "gate": "v2", "failures": v2_failures})
+                else:
+                    gates["v2"] = "pass"
             # V3 identity (FR-INGEST-24): the transcript's declared identity,
             # matched against the roster — ambiguous or unmatched routes to triage
             # and is NEVER guessed.

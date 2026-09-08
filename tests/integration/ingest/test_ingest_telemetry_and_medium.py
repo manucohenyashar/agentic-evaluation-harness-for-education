@@ -45,14 +45,16 @@ each with its probe evidence:
   contract suite (#49), and the assertion-side suite that pins the OBS-01..11
   signals is TS-55 (#148, `type:test`, open) — a `writtenahead` case keyed on
   an emitter story is the plan's mechanism once that story exists.
-- **F4** (`TC-INGEST-44`, gate-column reachability): the ladder's final gate
-  write records **every** gate column, and a gate the ladder never reached keeps
-  its initialized `'pass'` — only `v4_match` distinguishes `'not_run'`. Probe: a
-  V0-refused submission's row records `v1_pages`/`v2_structure`/`v3_identity` as
-  `'pass'` although nothing ran. Naive per-gate pass counts over raw rows
-  therefore overcount; the case counts passes over the submissions a
-  construction-known reachability set marks, and the disclosure is what stops
-  the masked columns from being read as evidence.
+- **F4** (`TC-INGEST-44`, gate-column reachability) — **resolved by #222**: the
+  ladder's final gate write records **every** gate column, and a gate the
+  ladder never reached used to keep its initialized `'pass'` — only
+  `v4_match` distinguished `'not_run'`. An unreached gate now records
+  `not_reached`, the case's pass counts run over the RAW rows and must equal
+  the construction-known reachability counts (the discriminator), and the
+  sweep asserts an unreached gate never reads `'pass'`. The reachability
+  table itself was corrected: V3 runs for every submission that stored a
+  document (the ladder's guard predates V2's quarantine), so sub-4's v3 pass
+  is a real reached pass.
 - **F5** (`TC-INGEST-43`, consumer): the §6.9 surface-proxy analysis that
   consumes the per-region confidence is `TC-STATS-13`, owned by the open
   M-STATS story #117 under TS-43 (#120). The **producer** half — the recorded
@@ -805,16 +807,20 @@ def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
 # -- TC-INGEST-44: the recorded run's exact names and hand-computed gate counts -----------------------
 
 #: The mixed-outcome cohort's construction table (TC-INGEST-44). Reachability
-#: is construction knowledge — which gate **ran** for which submission is not
-#: derivable from the rows alone (F4: unreached gates keep their initialized
-#: `'pass'`), so the sets are written out with the reason each entry is absent:
-#: - sub-2 (V0 refusal) stops before rasterization: no V1+ gate ran.
+#: is construction knowledge — which gate **ran** for which submission — and
+#: since #222 the rows agree with it: an unreached gate records `not_reached`,
+#: so raw-row pass counts equal these sets (the F4 discriminator). The sets,
+#: with the reason each entry is absent:
+#: - sub-2 (V0 refusal) stops before rasterization: no document, so no V1+ gate ran.
 #: - sub-3 (V1 gap) stores no document: no V2+ gate ran.
-#: - sub-4 (V2 failure) quarantines at V2: V3 did not run.
+#: - sub-4 (V2 failure) quarantines at V2, but V3 STILL RUNS — the ladder's
+#:   `document is not None and not quarantined` guard predates V2, so every
+#:   submission that stored a document reaches V3 (ref-4 is on the roster: a
+#:   real pass beside the V2 fail).
 #: - sub-5 (V3 unmatched) quarantines at V3; V4 still evaluates (a document
 #:   and the catalog both exist) and its `uncertain` overrides the status.
 REACHED = {"v0": {1, 2, 3, 4, 5}, "v1": {1, 3, 4, 5}, "v2": {1, 4, 5},
-           "v3": {1, 5}}
+           "v3": {1, 4, 5}}
 FAILED = {"v0": {2}, "v1": {3}, "v2": {4}, "v3": {5}}
 PASSED = {gate: REACHED[gate] - FAILED[gate] for gate in REACHED}
 
@@ -833,24 +839,30 @@ EXPECTED_ROWS = {
            "v2_structure": "pass", "v3_identity": "pass", "v4_match": "match",
            "ingest_status": "ok", "quarantined": 0},
     "unreadable": {"student_ref": "unknown", "v0_integrity": "fail",
-                   "v1_pages": "pass", "v2_structure": "pass",
-                   "v3_identity": "pass", "v4_match": "not_run",
+                   "v1_pages": "not_reached", "v2_structure": "not_reached",
+                   "v3_identity": "not_reached", "v4_match": "not_run",
                    "ingest_status": "unreadable", "quarantined": 1},
     # ^ the refusal stops before any document is stored, so the row records
     # the `unknown` sentinel — even though ref-2 is on the roster, the
     # identity is NOT guessed from the caller's roster (OBS-01's honest row).
+    # #222: the gates the refusal never reached record `not_reached` — the
+    # F4 probe used to leave an initialized `'pass'` on all three.
     "incomplete-v1": {"student_ref": "unknown", "v0_integrity": "pass",
-                      "v1_pages": "fail", "v2_structure": "pass",
-                      "v3_identity": "pass", "v4_match": "not_run",
+                      "v1_pages": "fail", "v2_structure": "not_reached",
+                      "v3_identity": "not_reached", "v4_match": "not_run",
                       "ingest_status": "incomplete", "quarantined": 1},
     # ^ the V1 gap also stores no document, so `Student: ref-3` in the raw
-    # scan is never parsed either — the same `unknown` sentinel.
+    # scan is never parsed either — the same `unknown` sentinel — and V2+
+    # never run (#222: `not_reached`, never a masked `'pass'`).
     "incomplete-v2": {"student_ref": "ref-4", "v0_integrity": "pass",
                       "v1_pages": "pass", "v2_structure": "fail",
                       "v3_identity": "pass", "v4_match": "match",
                       "ingest_status": "incomplete", "quarantined": 1},
     # ^ ref-4 IS recorded: the document survived V1, and the Student line is
     # parsed from the marked transcript regardless of the later quarantine.
+    # V3's `pass` here is a REACHED pass — V3 runs for every submission that
+    # stored a document (the ladder's guard predates V2's quarantine), so
+    # this row's v3 is a real verdict, not a masked init.
     "unmatched-v3": {"student_ref": "unknown", "v0_integrity": "pass",
                      "v1_pages": "pass", "v2_structure": "pass",
                      "v3_identity": "unmatched", "v4_match": "uncertain",
@@ -877,15 +889,21 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
       §6.10 rule that every field is present and correctly typed, and that the
       divergence is a per-document maximum, not a mean);
     - every submission's complete per-gate row (the mixed outcomes live in
-      their own columns — no boolean collapse, `CT-INGEST-08`);
+      their own columns — no boolean collapse, `CT-INGEST-08`; an unreached
+      gate records `not_reached`, never the `'pass'` the F4 probe used to
+      leave in place — #222);
     - the per-gate **pass/fail counts** and the quarantine counts **by gate**,
-      hand-computed against the reachability table above.
+      and the F4 discriminator: counting passes over the RAW rows must equal
+      counting over the construction-known reachability table — it could not
+      before #222, because unreached gates kept an initialized `'pass'`.
 
-    What is disclosed, not asserted (F3): the named run-level signals
-    themselves — `ocr_failure_rate`, the unresolved-mark rate, the mean/max
-    divergence aggregates, the second-pass disagreement rate — have no emitter
-    anywhere in src/ and no open story owns one; the derivations here are what
-    a consumer can compute from the recorded rows today."""
+    What is disclosed, not asserted here (F3): the run-level aggregate
+    EMITTER — `Ingestor.run_aggregates`, the single emitter the OBS-01 names
+    (`ocr_failure_rate`, the unresolved-mark rate, the mean/max divergence
+    aggregates, the per-gate counts, quarantine counts by gate, the
+    second-pass disagreement rate) — now exists in src/ (#222); its per-gate
+    counts are asserted below against this table, and the consumer half of
+    the aggregates stays with TS-55 (#148)."""
     fx = _Fixture(tmp_data_dir, "run-signals", "c-44")
     catalog, version = fx.catalog(["open"])
     fx.add_roster("ref-1", "ref-2", "ref-3", "ref-4", "ref-5")
@@ -954,8 +972,12 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
         "at or above the floor (the untagged ones record the floor itself), "
         "so the flag (#221) must not fire.")
 
-    # The hand-computed derivations, from the recorded rows restricted to the
-    # reachability table (F4: raw-row pass counts overcount).
+    # The hand-computed derivations. Since #222 the F4 discriminator holds at
+    # full strength: counting gate passes over the RAW rows — no reachability
+    # restriction — must equal counting over the construction-known
+    # reachability table. Before #222 the raw rows overcounted (an unreached
+    # gate kept its initialized `'pass'`) and this count had to be restricted
+    # to the reachability sets to be true.
     def _gate_value(row, gate):
         return row[GATE_COLUMNS[gate]]
 
@@ -964,14 +986,26 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
                    for gate in ("v0", "v1", "v2", "v3")}
     assert fail_counts == {gate: len(FAILED[gate]) for gate in FAILED}, (
         f"TC-INGEST-44: the per-gate fail counts moved: {fail_counts}.")
-    pass_counts = {
-        gate: sum(1 for row in fx.submission_rows()
-                  if row["submission_id"] in {
-                      reports[i].submission_id for i in PASSED[gate]}
-                  and _gate_value(row, gate) == "pass")
-        for gate in ("v0", "v1", "v2", "v3")}
+    pass_counts = {gate: sum(1 for row in fx.submission_rows()
+                             if _gate_value(row, gate) == "pass")
+                   for gate in ("v0", "v1", "v2", "v3")}
     assert pass_counts == {gate: len(PASSED[gate]) for gate in PASSED}, (
-        f"TC-INGEST-44: the per-gate pass counts moved: {pass_counts}.")
+        f"TC-INGEST-44: the per-gate pass counts over the RAW rows "
+        f"{pass_counts} do not equal the construction-known reachability "
+        f"counts {{gate: len(PASSED[gate])}} — the F4 discriminator failed: "
+        "an unreached gate is reading 'pass' again.")
+    # The sweep behind the discriminator: every gate a submission did not
+    # reach records `not_reached` — never `'pass'`, never any verdict.
+    by_id = {report.submission_id: index
+             for index, report in reports.items()}
+    for gate in ("v0", "v1", "v2", "v3"):
+        for row in fx.submission_rows():
+            index = by_id[row["submission_id"]]
+            if index not in REACHED[gate]:
+                assert _gate_value(row, gate) == "not_reached", (
+                    f"TC-INGEST-44: sub-{index}'s unreached {gate} records "
+                    f"{_gate_value(row, gate)!r} — only `not_reached` is "
+                    "honest (the F4 sweep).")
     quarantine_by_gate: dict[str, int] = {}
     for row in fx.submission_rows():
         if not row["quarantined"]:
