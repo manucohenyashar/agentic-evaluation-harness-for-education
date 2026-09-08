@@ -63,6 +63,9 @@ not bet on it — the deterministic units of non-admitted submissions are unasse
 
 from __future__ import annotations
 
+import aeh.ingest  # noqa: F401 — registers the ingest migration that adds the
+# submission's ingest_status/quarantined columns; without it a targeted run of this file
+# applies cohort migrations [1, 7] only and the fixture UPDATEs hit "no such column".
 import pytest
 
 from aeh.conf import CohortRef, resolve_run_config
@@ -115,6 +118,12 @@ _CHAIN_CRITERIA: tuple[dict, ...] = (
      "question_id": "Q1", "dependencies": ("c2",)},
     {"criterion_id": "c7", "kind": "open", "scoring_model": "atomic",
      "question_id": "Q5", "dependencies": ("c4",)},
+    # Alphabetically FIRST, topologically LAST: on c2 -> c4 -> c7 alone the topological
+    # order coincides with criterion-id order (which is the order the shipped
+    # enumeration walks), so a lease that ignores dependencies would pass. a1 breaks the
+    # coincidence — it must dispatch after c7 despite sorting before it.
+    {"criterion_id": "a1", "kind": "open", "scoring_model": "atomic",
+     "question_id": "Q6", "dependencies": ("c7",)},
     {"criterion_id": "i1", "kind": "open", "scoring_model": "atomic",
      "question_id": "Q3"},
     {"criterion_id": "i2", "kind": "open", "scoring_model": "atomic",
@@ -124,7 +133,7 @@ _CHAIN_CRITERIA: tuple[dict, ...] = (
 
 #: All-atomic package, one judge each, so every score unit shares a judge and the key
 #: reduces to question -> criterion.
-_EXPECTED_SCORE_ORDER = ("c4", "c2", "i1", "i2", "c7")
+_EXPECTED_SCORE_ORDER = ("c4", "c2", "i1", "i2", "c7", "a1")
 
 
 def _set_ingest_status(cohort_handle, submission_id: str, status: str, quarantined: int):
@@ -285,9 +294,9 @@ def test_tc_orch_06_sweep1_is_judged_only_and_dispatched_topologically(tmp_data_
         report = orchestrator.enumerate_units(run_id)
 
         cohort = store.cohort("c-2026-7B-orch")
-        # Exact enumeration: 5 judged criteria x (1 extract + 1 score) + 1 deterministic.
-        assert report.units_enumerated == 11, (
-            f"expected 11 units (5 extract + 5 score + 1 deterministic), "
+        # Exact enumeration: 6 judged criteria x (1 extract + 1 score) + 1 deterministic.
+        assert report.units_enumerated == 13, (
+            f"expected 13 units (6 extract + 6 score + 1 deterministic), "
             f"got {report.units_enumerated}"
         )
         m1_rows = _units_of(cohort, run_id)
@@ -304,15 +313,18 @@ def test_tc_orch_06_sweep1_is_judged_only_and_dispatched_topologically(tmp_data_
             unit.criterion_id for unit in _lease_one_by_one(orchestrator, "worker-a",
                                                             "extract")
         ]
-        assert sorted(extract_order) == ["c2", "c4", "c7", "i1", "i2"], (
+        assert sorted(extract_order) == ["a1", "c2", "c4", "c7", "i1", "i2"], (
             f"Sweep 1 handed out {extract_order} — judged criteria only, exactly one "
             "extraction unit each"
         )
+        # a1 sorts before c2 but depends on c7, so id order and topological order
+        # disagree — an id-ordered dispatch is not a topological one, and only the
+        # second satisfies FR-ORCH-05.
         assert extract_order.index("c2") < extract_order.index("c4") < (
             extract_order.index("c7")
-        ), (
+        ) < extract_order.index("a1"), (
             f"Sweep 1 dispatch order {extract_order} is not topological over "
-            "c2 -> c4 -> c7 — a criterion ran before the dependency it consumes"
+            "c2 -> c4 -> c7 -> a1 — a criterion ran before the dependency it consumes"
         )
     finally:
         store.close()
@@ -439,7 +451,7 @@ def test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable(
             trace: list[tuple[int, str, str]] = []
             for unit in _lease_one_by_one(orchestrator, "worker-a", "score"):
                 trace.append(
-                    (arm_ids.index(unit.judge_id),
+                    (arm_ids.index(unit.judge),
                      "Q2" if unit.criterion_id == "h1" else "Q1",
                      unit.criterion_id)
                 )
