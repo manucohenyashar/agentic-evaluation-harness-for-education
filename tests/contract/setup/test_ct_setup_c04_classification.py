@@ -74,10 +74,18 @@ def _draft(criterion_id: str) -> dict:
 
 
 def _answers_reply(criterion_id: str, *, failing: str | None = None,
+                   unclear_question: str | None = None,
                    warning_signs: list[str] | None = None) -> str:
-    """One scripted §5.3 answer set: every question `yes`, except what the cell fails."""
+    """One scripted §5.3 answer set: every question `yes`, except what the cell fails.
+
+    `failing` scripts a DECIDED failure (`no`); `unclear_question` scripts the
+    genuinely-unclear answer the default exists for. They are different inputs
+    and must never be conflated — a `no` on gates decides `atomic_with_gate`,
+    while an unclear answer anywhere defaults `holistic`."""
     answers = {question: "yes" for question in FIVE_QUESTIONS}
-    if failing == "unclear":
+    if unclear_question is not None:
+        answers[unclear_question] = "unclear"
+    if failing == "unclear":  # the sweep's sentinel cell: additivity unclear
         answers["additivity"] = "unclear"
     elif failing is not None:
         answers[failing] = "no"
@@ -153,7 +161,7 @@ def test_tc_setup_c04_sweep_three_values_with_question_level_deciders():
 
 
 @pytest.mark.parametrize(
-    ("unclear", "warning_signs"),
+    ("unclear_question", "warning_signs"),
     [
         ("completeness", None),
         ("non_interference", None),
@@ -167,13 +175,15 @@ def test_tc_setup_c04_sweep_three_values_with_question_level_deciders():
          "warning-only-straddle", "warning-only-mixed-scale"],
 )
 def test_tc_setup_c04_unclear_partition_defaults_holistic_never_atomic(
-        unclear, warning_signs):
+        unclear_question, warning_signs):
     """The RISK-27 partition, directionally: EVERY deliberately unclear input —
-    any question unclear, or warning signs with no unclear answer — classifies
+    any question's answer UNCLEAR (a `no` would be a decided failure, a
+    different cell), or warning signs with no unclear answer — classifies
     `holistic`, never `atomic`. The default is asymmetric on purpose: `atomic`
     grants panel depth 1 and a higher auto-acceptance ceiling than an unclear
     criterion deserves, and nothing downstream would notice."""
-    verdict = _verdict("CRIT-U", failing=unclear, warning_signs=warning_signs)
+    verdict = _verdict("CRIT-U", unclear_question=unclear_question,
+                       warning_signs=warning_signs)
     assert verdict.classification == "holistic", (
         f"an unclear input (unclear={unclear!r}, warnings={warning_signs!r}) "
         f"classified {verdict.classification!r} — the default is `holistic`, "

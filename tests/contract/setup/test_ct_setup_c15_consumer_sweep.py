@@ -135,10 +135,12 @@ def test_tc_setup_c15_no_consumer_treats_readback_as_validation(tmp_data_dir):
                         )
 
 
-def test_tc_setup_c15_calib_gates_still_fire_with_a_correction_in_hand():
+def test_tc_setup_c15_calib_gate_types_are_not_setup_bound():
     """M-CALIB's gate discipline is intact against the read back: its refusal
     types are its own, and nothing in its surface binds setup machinery — a
-    correction is data, never a passport."""
+    correction is data, never a passport. (The behavioral half — driving a gate
+    refusal WITH a correction in hand — is M-CALIB's own suite's; this file
+    pins the binding the read back must not create.)"""
     require_attr(SetupService, "read_back_rubric", issue="#51")
     require(CALIB_MODULE, "TriageCategoryRequired",
             issue=f"{CALIB_MODULE} implementing story")

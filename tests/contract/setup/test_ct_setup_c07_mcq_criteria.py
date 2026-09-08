@@ -139,10 +139,14 @@ def test_tc_setup_c07_every_mcq_question_yields_a_keyed_shape_criterion(
             "correct/incorrect is the produced shape (CT-SETUP-C07)"
         )
     # NOT submitted to the §5.3 test: the scripted provider's call log carries
-    # no decomposability request for the produced criteria — the model was
-    # asked for the inventory only.
+    # no decomposability request for the produced criteria — a §5.3 request
+    # names the five questions it asks about, which the inventory prompt never
+    # does.
+    classifier_signature = ("completeness", "non_interference", "independence",
+                            "additivity", "gates")
     classify_calls = [call for call in chain.provider.calls
-                      if "answers" in json.dumps(call)]
+                      if any(word in json.dumps(call)
+                             for word in classifier_signature)]
     assert not classify_calls, (
         "an mcq question was submitted to the §5.3 test — its criterion shape "
         "is fixed, not classified (CT-SETUP-C07)"

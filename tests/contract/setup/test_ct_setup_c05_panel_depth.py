@@ -80,9 +80,11 @@ def test_tc_setup_c05_classification_determines_the_written_scoring_model(
     chain.service.confirm_inventory(proposal.proposal_id)
     version = proposal.package_version_id
 
-    # Two criteria the §5.3 table decides OPPOSITELY. The replies carry the
-    # ANSWERS, never a classification — the module owns the table, so a module
-    # that echoed a scripted verdict cannot produce the pair below.
+    # Two criteria the §5.3 table decides OPPOSITELY. The provider replies
+    # carry the ANSWERS, never a classification — the module owns the table, so
+    # a module that echoed a scripted verdict cannot produce the pair below.
+    # (The same payload bet as TC-SETUP-C04/C13: answers in the REPLY, drafts
+    # carry only the criterion's identity.)
     holistic_reply = json.dumps({
         "criterion_id": "CRIT-HOL", "question_id": "Q1", "kind": "open",
         "construct": "the response shows integrated understanding",
@@ -95,12 +97,17 @@ def test_tc_setup_c05_classification_determines_the_written_scoring_model(
         "answers": {"completeness": "yes", "non_interference": "yes",
                     "independence": "yes", "additivity": "yes", "gates": "yes"},
     })
+    chain.provider.replies = [holistic_reply, atomic_reply]
+    holistic_draft = {"criterion_id": "CRIT-HOL", "question_id": "Q1",
+                      "kind": "open",
+                      "construct": "the response shows integrated understanding"}
+    atomic_draft = {"criterion_id": "CRIT-ATO", "question_id": "Q2",
+                    "kind": "open",
+                    "construct": "the response states the definition"}
 
     # The classifier's own table decides oppositely for the same shapes.
-    holistic_verdict = chain.service.classify_decomposability(
-        json.loads(holistic_reply))
-    atomic_verdict = chain.service.classify_decomposability(
-        json.loads(atomic_reply))
+    holistic_verdict = chain.service.classify_decomposability(holistic_draft)
+    atomic_verdict = chain.service.classify_decomposability(atomic_draft)
     assert holistic_verdict.classification == "holistic"
     assert atomic_verdict.classification == "atomic"
 

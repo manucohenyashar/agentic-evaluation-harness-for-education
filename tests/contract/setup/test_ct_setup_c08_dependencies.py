@@ -82,12 +82,18 @@ def test_tc_setup_c08_dependencies_default_to_zero(tmp_data_dir):
 
 
 @pytest.mark.writtenahead
-def test_tc_setup_c08_dependency_is_written_only_on_explicit_approval(
+def test_tc_setup_c08_proposal_writes_nothing_without_explicit_approval(
         tmp_data_dir):
     """WRITTEN AHEAD of #51+#52. A dependency is PROPOSED, rendered in plain
-    language, and written only on explicit teacher approval — attempting the
-    write without approval is refused, and an approval-less flow still publishes
-    with the empty graph.
+    language, and nothing is written by the proposal itself — the graph stays
+    empty until a teacher acts.
+
+    What this body pins while #52's approval vehicle does not exist: the
+    proposal writes NOTHING (the stored graph is empty after it), and no
+    proposal arrives pre-approved. The refusal assertion PROPER — attempting
+    the unapproved write against #52's vehicle and asserting it refuses —
+    lands when that surface exists; the green companion test already pins the
+    end-to-end half (a publish with no approvals carries exactly zero edges).
 
     Fails ONLY via `NotImplementedYet` (through `require_attr`) until both
     stories land: the proposal surface is #52's; the criteria a dependency
@@ -131,15 +137,14 @@ def test_tc_setup_c08_dependency_is_written_only_on_explicit_approval(
         "(CT-SETUP-08)"
     )
 
-    # The refusal: without explicit approval, nothing is written. The draft
-    # graph stays empty after the proposal.
-    edges_before = _stored_dependency_edges(tmp_data_dir, "pkg-c08d",
-                                            proposal.package_version_id)
-    assert edges_before == []
+    # Nothing is written by the proposal: the draft graph is empty after it —
+    # the write happens only when the teacher approves (the vehicle #52 pins).
+    edges_after_proposal = _stored_dependency_edges(
+        tmp_data_dir, "pkg-c08d", proposal.package_version_id)
+    assert edges_after_proposal == []
 
-    # Approval is the teacher's explicit act; the refusal without it is the
-    # clause's exact assertion. (The approving call's shape is #52's to pin —
-    # the refusal assertion below is what this case exists for.)
+    # And no proposal arrives pre-approved: approval is the teacher's act, so
+    # the proposal objects cannot carry it as a default.
     assert all(not getattr(p, "approved", False) for p in proposals), (
         "a dependency proposal arrived pre-approved (CT-SETUP-08)"
     )

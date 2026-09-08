@@ -138,7 +138,7 @@ def test_tc_setup_c14_packages_under_different_versions_distinguishable(tmp_data
     rows_v2 = _stored_proposals(shared, "pkg-c14-v2")
     assert len(rows_v1) == 1 and len(rows_v2) == 1
     versions = {rows_v1[0][1], rows_v2[0][1]}
-    assert versions == {"setup-inventory-v1", "setup-inventory-v2"}, (
+    assert versions == {original, "setup-inventory-v2"}, (
         "two packages created under different template versions are not "
         "distinguishable from stored data alone — a validation record cannot "
         "separate the two instruments (CT-SETUP-14, RISK-06)"

@@ -203,3 +203,29 @@ def test_tc_setup_c06_magnitude_descriptors_are_rejected_and_regenerated(
         "the magnitude-carrying descriptor passed through unchanged — no "
         "regeneration happened (CT-SETUP-06)"
     )
+
+    # The ARTIFACT half — the clause's oracle is a scan of the PUBLISHED
+    # descriptors, not the return value: a read/write mismatch (clean return,
+    # magnitude-phrased rows stored) must fail here. The read back WRITES the
+    # criteria it classified (the bet TC-SETUP-C05 states); the stored bands
+    # are what M-JUDGE reads, so those are what get scanned.
+    chain.service.set_answer_keys({"CRIT-MAG": ["b0"]})
+    published = chain.service.publish("teacher-1")
+    assert chain.catalog.is_locked(published)
+    stored_bands = chain.catalog.bands("CRIT-MAG")
+    assert stored_bands, (
+        "the read back's criterion carried no stored bands — the artifact scan "
+        "has nothing to read (CT-SETUP-06)"
+    )
+    for band in stored_bands:
+        lowered = band["descriptor"].lower()
+        assert not any(phrase in lowered for phrase in phrases), (
+            f"the PUBLISHED band descriptor {band['descriptor']!r} carries "
+            "magnitude phrasing — M-JUDGE would have to filter it "
+            "(CT-SETUP-06, the second enforcement point)"
+        )
+        assert band["descriptor"] != offending, (
+            "the offending descriptor reached the PUBLISHED artifact although "
+            "the read back returned a regenerated one — the write path ignored "
+            "the regeneration (CT-SETUP-06)"
+        )

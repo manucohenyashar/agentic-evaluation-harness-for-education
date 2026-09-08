@@ -230,6 +230,16 @@ def test_tc_setup_c02_randomized_kills_are_all_or_nothing(tmp_data_dir):
             killed = True
         finally:
             chain.catalog._handle = real_handle
+        if index < 4:
+            # The deterministic half: each of the four kill points MUST fire.
+            # If publish() moved off the transaction() door, every iteration
+            # would silently degrade to a happy path and the all-or-nothing
+            # sweep would assert nothing.
+            assert killed, (
+                f"[{point}] the kill never fired — publish() no longer executes "
+                "through the audited transaction door, so this sweep is "
+                "asserting happy paths (CT-SETUP-02)"
+            )
 
         # A FRESH process view: new catalog object over the same file.
         fresh_catalog = PackageCatalog(
