@@ -1299,6 +1299,26 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{SETUP_MODULE}:SetupService.set_grade_policy",
         ("tests/integration/setup/test_setup_policy_pending.py",),
     ),
+    "#55 setup time budget": (
+        # TS-21's UAT pair (TC-SETUP-21 + UAT-02, tests/uat/setup/test_setup_time_budget.py)
+        # walks the FULL guided path to publish, so its blocker set spans three issues —
+        # #51's read back, #52's classification, confirmation recording and dependency
+        # proposals, #53's grade policy and prefix budget: the three-way conjunction the
+        # story names. The members that shipped with #50 (`propose_inventory`,
+        # `confirm_inventory`, `set_answer_keys`, `publish`) are deliberately absent —
+        # they exist today, and a symbol key on them would resolve while the path the
+        # budget is measured over still cannot run.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{SETUP_MODULE}:SetupService.classify_decomposability,"
+            f"{SETUP_MODULE}:SetupService.confirm_classifications,"
+            f"{SETUP_MODULE}:SetupService.propose_dependencies,"
+            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
+            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
+        ),
+        ("tests/uat/setup/test_setup_time_budget.py",),
+    ),
 }
 
 
