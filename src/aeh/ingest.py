@@ -191,6 +191,13 @@ REGION_OPEN = "<!-- region:"
 REGION_CLOSE = "<!-- /region -->"
 STRUCK_OPEN = "<s>"
 STRUCK_CLOSE = "</s>"
+#: The escalation fence (`FR-INGEST-35` at `_v4_escalate`'s prompt-assembly site):
+#: the markers the instruction names as the untrusted block's boundary, byte-exact —
+#: the template that extracts the block splits on this exact string, so the fence
+#: writer (`_fence_untrusted_content`) guarantees it: the content can never carry
+#: the closing marker (issue #224).
+UNTRUSTED_OPEN = "<untrusted_student_content>"
+UNTRUSTED_CLOSE = "</untrusted_student_content>"
 #: The supersession note the pinned prompt asks the model to write before the
 #: correcting content: the region it names (or the immediately preceding one) is
 #: the earlier version, and BOTH stay (`FR-INGEST-12`).
@@ -1767,6 +1774,28 @@ def _wrap_untrusted(body: str) -> str:
     that names it data (`FR-INGEST-35`)."""
     return (f"{REGION_OPEN} kind=transcribed_text is_untrusted_content=1 -->\n"
             f"{body}\n{REGION_CLOSE}")
+
+
+#: The closing marker's escaped form: visually adjacent to the original, a legal
+#: Markdown text span, and byte-different from the terminator the template splits
+#: on — so the escaped content stays readable while the boundary stays singular.
+_ESCAPED_UNTRUSTED_CLOSE = "<\\/" + UNTRUSTED_CLOSE[2:]
+
+
+def _fence_untrusted_content(content: str) -> str:
+    """The escalation fence writer (`FR-INGEST-35`'s rule at `_v4_escalate`'s
+    prompt-assembly site, issue #224): submission-origin content is emitted ONLY
+    inside the delimited block the instruction names as data, and the writer does
+    not trust the transcript to leave that boundary alone — every occurrence of
+    the closing marker inside the content is escaped, so the only terminator in
+    the fenced payload is the harness's own and no submission byte can step
+    outside the block. Plain concatenation was the disclosed G6 probe (#49, PR
+    #212): a transcript carrying a literal `</untrusted_student_content>` line
+    terminated the fence early and let the remainder of the student text address
+    the model from beyond the fence. The substitution is idempotent and
+    byte-stable on content that carries no terminator."""
+    escaped = content.replace(UNTRUSTED_CLOSE, _ESCAPED_UNTRUSTED_CLOSE)
+    return f"{UNTRUSTED_OPEN}\n{escaped}\n{UNTRUSTED_CLOSE}"
 
 
 def _mark_untrusted_content(transcript: str) -> str:
@@ -3392,11 +3421,21 @@ class Ingestor:
 
         The transcript is fenced (`FR-INGEST-35`'s discipline, applied at this
         module's own prompt-assembly site): student-origin content sits inside one
-        delimited block the instruction names as data — a submission cannot steer
-        the verdict by addressing the model."""
+        delimited block the instruction names as data — and the fence writer
+        (`_fence_untrusted_content`) escapes any terminator the transcript or the
+        stored artifact carries rather than trusting it (issue #224), so a
+        submission cannot step outside the block and steer the verdict by
+        addressing the model from beyond the fence."""
         signals["semantic_escalation"] = {"requested": True}
         declared = {row["question_id"]: row["kind"]
                     for row in package_catalog.criteria(package_version)}
+        fence_terminators = markdown.count(UNTRUSTED_CLOSE)
+        if fence_terminators:
+            # The fence closed only because the writer escaped what the transcript
+            # carried: surface it next to the verdict (CT-INGEST-08's per-stage
+            # detail) rather than letting the substitution be silent.
+            signals["semantic_escalation"]["fence_terminators_escaped"] = \
+                fence_terminators
         payload = PromptPayload(fields=(
             ("instruction",
              "Decide whether the submitted work inside the UNTRUSTED_STUDENT_CONTENT "
@@ -3409,9 +3448,7 @@ class Ingestor:
             ("assessment", str(package_catalog.package_id)),
             ("declared_questions", json.dumps(declared, sort_keys=True)),
             ("deterministic_signals", json.dumps(signals, sort_keys=True, default=str)),
-            ("submission_transcript",
-             "<untrusted_student_content>\n" + markdown
-             + "\n</untrusted_student_content>"),
+            ("submission_transcript", _fence_untrusted_content(markdown)),
         ))
         if self._residency is not None:
             self._residency.acquire("transcriber")
