@@ -24,18 +24,20 @@ outside the protocol is wrapped into a marked region. Probed idempotent: a
 re-parse of the STORED markdown produces the same regions — the demarcation
 does not compound.
 
-**Disclosed finding (probe-backed, shipped code, no open implementing story —
-PR body carries the evidence):** the V4 escalation's fence (the module's own
-prompt-assembly site) is plain concatenation —
+**Disclosed finding — RESOLVED by #224 (was probe-backed, shipped code):** the
+V4 escalation's fence (the module's own prompt-assembly site) WAS plain
+concatenation —
 `"<untrusted_student_content>\n" + markdown + "\n</untrusted_student_content>"`
 (`aeh/ingest.py`, `_v4_escalate`). A submission whose transcript contains a
-literal `</untrusted_student_content>` line terminates the fence early, so the
-remainder of the student text sits OUTSIDE the block the instruction names as
+literal `</untrusted_student_content>` line terminated the fence early, so the
+remainder of the student text sat OUTSIDE the block the instruction names as
 data — the exact prompt-injection vector the fence exists to close
-(FR-INGEST-35's discipline at this site). The deterministic signals are
-unaffected and the verdict is never applied, but the recorded escalation
-verdict is steerable. Not shippable red (no writtenahead target — the module
-is the implementer); disclosed for the M-INGEST owner.
+(FR-INGEST-35's discipline at this site). The deterministic signals were
+unaffected and the verdict was never applied, but the recorded escalation
+verdict was steerable. The implementing story closed it: the fence writer
+(`_fence_untrusted_content`) now escapes terminator content rather than
+trusting the transcript, and TC-INGEST-35's enforcement half pins the call
+site itself (tests/security/ingest/test_demarcation.py).
 
 Consumer half deferred with disclosure: M-EXTRACT (#68..#71) and M-JUDGE
 (#78..#84) are the consumers whose prompt assembly must enclose marked
