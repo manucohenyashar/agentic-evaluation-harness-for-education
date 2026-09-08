@@ -2665,8 +2665,14 @@ class Ingestor:
         # unsanitized original than the page raster does).
         for region in all_regions:
             if region["region_kind"] == "described_graphic":
+                # The region's OWN page record — matching the page index, not
+                # the blob's first page: a boxless described_graphic crops the
+                # whole page IT sits on, and on a multi-page source the pages
+                # differ in size (review, #226 — the scripted doubles' box-
+                # blind crop masked this until the live rasterizer landed).
                 record = next(r for r in ordered
-                              if r["blob_hash"] == region["source_hash"])
+                              if r["blob_hash"] == region["source_hash"]
+                              and r["page_no"] == region["page_index"])
                 box = region.get("crop_box")
                 crop_png = self._rasterizer.crop(
                     sanitized_of[region["source_hash"]], region["page_index"],
@@ -2778,11 +2784,16 @@ class Ingestor:
         return self._blobs.put(page.png)
 
     def _retain_crops(self, regions: list[dict],
-                      sanitized_of: dict[str, bytes]) -> list[dict]:
+                      sanitized_of: dict[str, bytes],
+                      page: PageImage) -> list[dict]:
         """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
         page raster through the rasterizer seam, retained in the blob store. The
         crop reads the SANITIZED source bytes (#42, review B1) — never the
-        original blob."""
+        original blob. A region with no box crops the WHOLE page raster — the
+        rect of the page these regions were parsed from (`page`, the same image
+        the model saw), matching the ingest path's default; a zero rect would
+        be refused by the live crop rather than silently clamped, and the
+        scripted doubles masked that disagreement for years (review, #226)."""
         for region in regions:
             if region["region_kind"] != "described_graphic":
                 continue
@@ -2790,7 +2801,8 @@ class Ingestor:
             crop_png = self._rasterizer.crop(sanitized_of[region["source_hash"]],
                                              region["page_index"],
                                              box if box is not None
-                                             else (0, 0, 0, 0),
+                                             else (0, 0, page.width_px,
+                                                   page.height_px),
                                              _configured_dpi())
             region["crop_ref"] = self._blobs.put(crop_png)
         return regions
@@ -3071,8 +3083,8 @@ class Ingestor:
                         text, blob_hash, page_no, len(markdown_parts) - 1,
                         "revision")
                     revision_regions = self._enforce_evaluative_bar(revision_regions)
-                    revision_regions = self._retain_crops(revision_regions,
-                                                          sanitized_cache)
+                    revision_regions = self._retain_crops(
+                        revision_regions, sanitized_cache, page)
                     revision_regions_all.extend(revision_regions)
                     new_provenance_pages.append({
                         "blob_hash": blob_hash, "page_no": page_no,
@@ -3136,8 +3148,8 @@ class Ingestor:
                             len(markdown_parts) - 1, "revision")
                         revision_regions = self._enforce_evaluative_bar(
                             revision_regions)
-                        revision_regions = self._retain_crops(revision_regions,
-                                                              sanitized_cache)
+                        revision_regions = self._retain_crops(
+                            revision_regions, sanitized_cache, page)
                         revision_regions_all.extend(revision_regions)
                         new_provenance_pages.append({
                             "blob_hash": blob_hash, "page_no": page.page_no,

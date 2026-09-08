@@ -50,6 +50,7 @@ from aeh.conf import ModelRef
 from aeh.ingest import (
     IngestError,
     Ingestor,
+    PageReplacement,
     PdfiumRasterizer,
     PdfSanitizer,
     SanitizeResult,
@@ -65,16 +66,27 @@ ISSUE = "#226"
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
-def minimal_pdf() -> bytes:
-    """One-page 612x792pt PDF with a blue rectangle — a REAL pdfium-decodable
-    document, built inline with a computed xref (no fixture file, no writer
-    library: the bytes are the fixture)."""
-    objects = [
+def minimal_pdf(pages: list[tuple[int, int]] | None = None) -> bytes:
+    """A REAL pdfium-decodable PDF, built inline with a computed xref (no
+    fixture file, no writer library: the bytes are the fixture). Each page is
+    a `(width_pt, height_pt)` MediaBox with a blue rectangle; the default is
+    one 612x792pt page. Varying the page sizes is what lets a case tell
+    "cropped the page the region sits on" from "cropped page 1"."""
+    dims = list(pages) if pages else [(612, 792)]
+    kids = " ".join(f"{3 + 2 * index} 0 R" for index in range(len(dims)))
+    objects: list[bytes] = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>",
-        b"<< /Length 32 >>\nstream\n0 0 1 rg\n40 40 200 150 re f\nendstream",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(dims)} >>".encode(),
     ]
+    for index, (width, height) in enumerate(dims):
+        page_id = 3 + 2 * index
+        content_id = page_id + 1
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} {height}] "
+            f"/Contents {content_id} 0 R >>".encode())
+        stream = b"0 0 1 rg\n40 40 200 150 re f\n"
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode()
+                       + stream + b"endstream")
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for index, body in enumerate(objects, start=1):
@@ -114,18 +126,21 @@ class ThroughSanitizer(PdfSanitizer):
         return SanitizeResult(pdf_bytes=bytes(pdf_bytes))
 
 
-class SingleTranscriptProvider:
-    """One deterministic `Completion` per call, the page-1 transcript carrying a
-    described_graphic region with an explicit crop box; every call recorded."""
+class PerPageTranscriptProvider:
+    """One deterministic `Completion` per call, the transcript chosen per page
+    number; every call recorded."""
 
-    def __init__(self, transcript: str) -> None:
-        self.transcript = transcript
+    def __init__(self, texts: dict[int, str], default: str) -> None:
+        self.texts = texts
+        self.default = default
         self.calls: list[int] = []
 
     def complete(self, prompt, model_ref, params) -> Completion:
-        self.calls.append(dict(prompt.fields)["page_no"])
+        page_no = dict(prompt.fields)["page_no"]
+        self.calls.append(page_no)
+        text = self.texts.get(int(page_no), self.default)
         return Completion(
-            text=self.transcript, tokens_in=10, tokens_out=5, latency_ms=1,
+            text=text, tokens_in=10, tokens_out=5, latency_ms=1,
             resolved_build=model_ref.build_id, cached_prefix_tokens=0, cost=None,
         )
 
@@ -134,6 +149,15 @@ GRAPHIC_TRANSCRIPT = (
     "<!-- region: kind=described_graphic element_kind=graph_or_plot "
     "conf=0.9 crop=40,40,200,150 -->\n"
     "a line graph plotting attendance across the term\n"
+    "<!-- /region -->\n"
+)
+
+#: A described_graphic with NO crop box: the crop is the whole page the
+#: region sits on.
+GRAPHIC_NO_BOX = (
+    "<!-- region: kind=described_graphic element_kind=graph_or_plot "
+    "conf=0.8 -->\n"
+    "the whole page is one figure with its caption\n"
     "<!-- /region -->\n"
 )
 
@@ -174,6 +198,7 @@ def test_tc_ingest_49_live_crop_refuses_out_of_bounds_never_clamps():
         ((0, 0, 100, 0), "degenerate height"),
         ("40,40,200,150", "a string, not a box"),
         ((40, 40, 200), "three numbers, not a box"),
+        ((True, False, True, True), "booleans, not integers"),
     ]
     for box, why in refusals:
         try:
@@ -203,7 +228,8 @@ def test_tc_ingest_49_described_graphic_ingests_end_to_end_through_the_live_rast
     store = open_store(tmp_data_dir)
     blobs = store.blobs()
     ingestor = Ingestor(
-        store.cohort("c-live"), blobs, SingleTranscriptProvider(GRAPHIC_TRANSCRIPT),
+        store.cohort("c-live"), blobs,
+        PerPageTranscriptProvider({}, GRAPHIC_TRANSCRIPT),
         _model(), SamplingParams(temperature=0.0), PdfiumRasterizer(),
         sanitizer=ThroughSanitizer())
     pdf = minimal_pdf()
@@ -253,7 +279,8 @@ def test_tc_ingest_49_retention_knob_off_skips_rasters_keeps_crops(
     store = open_store(tmp_data_dir)
     blobs = store.blobs()
     ingestor = Ingestor(
-        store.cohort("c-live"), blobs, SingleTranscriptProvider(GRAPHIC_TRANSCRIPT),
+        store.cohort("c-live"), blobs,
+        PerPageTranscriptProvider({}, GRAPHIC_TRANSCRIPT),
         _model(), SamplingParams(temperature=0.0), PdfiumRasterizer(),
         sanitizer=ThroughSanitizer())
     blob_hash = blobs.put(minimal_pdf())
@@ -277,3 +304,76 @@ def test_tc_ingest_49_retention_knob_off_skips_rasters_keeps_crops(
         "retention must still hold."
     )
     assert png_dimensions(blobs.get(graphics[0]["crop_ref"])) == (200, 150)
+
+
+def test_tc_ingest_49_boxless_described_graphic_crops_the_page_it_sits_on(
+        tmp_data_dir, monkeypatch):
+    """A region with no `crop=` box crops the WHOLE page the region sits on —
+    and on a multi-page source that is that page's OWN rect, not page 1's
+    (review finding, #226): page 1 is letter-height, page 2 is half-height,
+    and the page-2 region's crop must come out half-height. The scripted
+    doubles' box-blind crop could never tell the two apart."""
+    monkeypatch.setenv("HARNESS_INGEST_DPI", "72")
+    store = open_store(tmp_data_dir)
+    blobs = store.blobs()
+    ingestor = Ingestor(
+        store.cohort("c-live"), blobs,
+        PerPageTranscriptProvider(
+            {1: "plain text, no figure on the first page"}, GRAPHIC_NO_BOX),
+        _model(), SamplingParams(temperature=0.0), PdfiumRasterizer(),
+        sanitizer=ThroughSanitizer())
+    pdf = minimal_pdf(pages=[(612, 792), (612, 396)])
+    blob_hash = blobs.put(pdf)
+
+    document_id = ingestor.ingest_document(
+        [blob_hash], kind="assessment", order_hint=[blob_hash])
+
+    regions = store.cohort("c-live").query(
+        statement("SELECT * FROM document_region WHERE document_id = :d"),
+        d=document_id)
+    graphics = [r for r in regions if r["region_kind"] == "described_graphic"]
+    assert len(graphics) == 1, "expected the page-2 described_graphic region."
+    assert graphics[0]["page_index"] == 2, (
+        "the graphic region should sit on page 2."
+    )
+    assert png_dimensions(blobs.get(graphics[0]["crop_ref"])) == (612, 396), (
+        "TC-INGEST-49: the boxless crop is not the region's own page — the "
+        "no-box default used the wrong page's rect."
+    )
+
+
+def test_tc_ingest_49_revision_crops_live_through_the_real_rasterizer(
+        tmp_data_dir, monkeypatch):
+    """The revision path's crop stage runs LIVE too: a rescan transcribed as a
+    boxless described_graphic crops the whole rescan page — the page the model
+    actually saw — and the revision lands its own document row. The original
+    page is letter-height, the rescan half-height; the revision's crop must be
+    half-height (review finding, #226: the zero-rect default is gone)."""
+    monkeypatch.setenv("HARNESS_INGEST_DPI", "72")
+    store = open_store(tmp_data_dir)
+    blobs = store.blobs()
+    ingestor = Ingestor(
+        store.cohort("c-live"), blobs,
+        PerPageTranscriptProvider({}, GRAPHIC_NO_BOX),
+        _model(), SamplingParams(temperature=0.0), PdfiumRasterizer(),
+        sanitizer=ThroughSanitizer())
+    original_hash = blobs.put(minimal_pdf())
+    rescan_hash = blobs.put(minimal_pdf(pages=[(612, 396)]))
+
+    document_id = ingestor.ingest_document(
+        [original_hash], kind="assessment", order_hint=[original_hash])
+    new_id = ingestor.revise_document(
+        document_id, [PageReplacement(blob_hash=rescan_hash, page_no=1)])
+
+    assert new_id != document_id, "a revision returns a new document id."
+    regions = store.cohort("c-live").query(
+        statement("SELECT * FROM document_region WHERE document_id = :d"),
+        d=new_id)
+    graphics = [r for r in regions if r["region_kind"] == "described_graphic"]
+    assert len(graphics) == 1, "the revision's described_graphic did not land."
+    crop_ref = graphics[0]["crop_ref"]
+    assert crop_ref, "FR-INGEST-13: the revision's graphic carries no crop_ref."
+    assert png_dimensions(blobs.get(crop_ref)) == (612, 396), (
+        "TC-INGEST-49: the revision's boxless crop is not the rescan page's "
+        "rect — the crop stage did not use the page it transcribed."
+    )
