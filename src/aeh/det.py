@@ -732,13 +732,29 @@ class DeterministicEvaluator:
             )
         ]
         alert_rate = unresolved_alert_rate()
+        band_maps = {
+            criterion["criterion_id"]: {
+                row["band"]: float(row["points"])
+                for row in package_handle.query(
+                    DET_STATEMENTS["select_bands"],
+                    v=version,
+                    criterion_id=criterion["criterion_id"],
+                )
+            }
+            for criterion in criteria
+        }
         tallies: dict[str, dict[str, Any]] = {}
         scored: list[tuple[str, dict[str, Any], DetOutcome, float | None]] = []
         for submission_id in submissions:
+            reads = self._selection_reads(cohort_handle, submission_id)
             for criterion in criteria:
                 outcome, points = self._score_one(
                     cohort_handle, package_handle, version, criterion, submission_id,
                     option_set=option_sets[criterion["criterion_id"]] or None,
+                    bands=band_maps[criterion["criterion_id"]],
+                    read=reads.get(
+                        criterion["question_id"], SelectionRead("absent", None, None)
+                    ),
                 )
                 scored.append((submission_id, criterion, outcome, points))
                 tally = tallies.setdefault(
@@ -883,11 +899,14 @@ class DeterministicEvaluator:
         criterion: dict[str, Any],
         submission_id: str,
         option_set: tuple[str, ...] | None = None,
+        bands: dict[str, float] | None = None,
+        read: SelectionRead | None = None,
     ) -> tuple[DetOutcome, float | None]:
         """Read the selection, run the kernel, derive the points. Returns the
         outcome and the points to store (None for an unresolved row).
-        `option_set` is injectable so the cohort pass reads each criterion's
-        option rows once instead of once per submission."""
+        `option_set`, `bands` and `read` are injectable so the cohort pass
+        reads each criterion's option and band rows once, and each
+        submission's regions once, instead of per pair (`NFR-DET-01`)."""
         if criterion["kind"] != "mcq":
             # FR-ORCH-08: a non-mcq criterion reaching the deterministic
             # evaluator is an admission failure upstream, never a score.
@@ -902,9 +921,10 @@ class DeterministicEvaluator:
                 "FR-SETUP-03 makes this a publication-time failure that a "
                 "published package cannot produce."
             )
-        read = self._selection_read(
-            cohort_handle, submission_id, criterion["question_id"]
-        )
+        if read is None:
+            read = self._selection_read(
+                cohort_handle, submission_id, criterion["question_id"]
+            )
         if option_set is None:
             option_rows = package_handle.query(
                 DET_STATEMENTS["select_options"],
@@ -922,34 +942,51 @@ class DeterministicEvaluator:
             option_set=option_set,
         )
         return outcome, self._points(
-            package_handle, version, criterion["criterion_id"], outcome
+            package_handle, version, criterion["criterion_id"], outcome, bands=bands
         )
 
     def _selection_read(
         self, cohort_handle: Any, submission_id: str, question_id: str
     ) -> SelectionRead:
-        """The question's answer regions in the head document, resolved to the
-        kernel's inputs under R47's retraction discipline (see module docstring).
-        Selection-mark regions are preferred; a question whose only regions are
-        other kinds still gets read, because a letter written in the margin is
-        a valid selection captured as a description (§7.8) — but several live
-        regions of any kind are multiple marks: unresolved, never "darkest". """
+        """One question's answer regions in the head document, resolved to the
+        kernel's inputs under R47's retraction discipline. The cohort pass uses
+        `_selection_reads` (one query per submission) and looks the question up;
+        this method is the single-criterion path."""
+        return self._selection_reads(cohort_handle, submission_id).get(
+            question_id,
+            SelectionRead("absent", None, None),
+        )
+
+    def _selection_reads(
+        self, cohort_handle: Any, submission_id: str
+    ) -> dict[str, SelectionRead]:
+        """Every question's answer in the head document, from one head query
+        and one regions query — the shape the cohort pass needs to stay a
+        single pass (`NFR-DET-01`)."""
         documents = cohort_handle.query(
             DET_STATEMENTS["select_document_head"], submission_id=submission_id
         )
         if not documents:
-            return SelectionRead("absent", None, None)
+            return {}
         head = documents[-1]
         regions = cohort_handle.query(
             DET_STATEMENTS["select_regions"], document_id=head["document_id"]
         )
-        mine = [
-            row
-            for row in regions
-            if row["element_kind"] == question_id
-        ]
-        if not mine:
-            return SelectionRead("absent", None, None)
+        mine: dict[str, list[Any]] = {}
+        for row in regions:
+            mine.setdefault(row["element_kind"], []).append(row)
+        reads: dict[str, SelectionRead] = {}
+        for question_id, rows in mine.items():
+            reads[question_id] = self._read_from_regions(rows)
+        return reads
+
+    def _read_from_regions(self, mine: list[Any]) -> SelectionRead:
+        """R47's retraction discipline applied to one question's regions (see
+        module docstring). Selection-mark regions are preferred; a question
+        whose only regions are other kinds still gets read, because a letter
+        written in the margin is a valid selection captured as a description
+        (§7.8) — but several live regions of any kind are multiple marks:
+        unresolved, never "darkest"."""
         live = [row for row in mine if row["retraction"] is None]
         if not live:
             # Every region for the question was struck through: the student
@@ -978,19 +1015,23 @@ class DeterministicEvaluator:
         version: str,
         criterion_id: str,
         outcome: DetOutcome,
+        bands: dict[str, float] | None = None,
     ) -> float | None:
         """The row's points. An unresolved row was never scored: None, not
         zero (`CT-DET-03` — no zero value exists for an unresolved state). A
         scored row takes the criterion's declared band mapping; a per_option
-        fraction scales the correct band's points (see module docstring)."""
+        fraction scales the correct band's points (see module docstring).
+        `bands` is injectable so the cohort pass reads each criterion's band
+        rows once instead of once per submission."""
         if outcome.band == BAND_UNRESOLVED:
             return None
-        bands = {
-            row["band"]: float(row["points"])
-            for row in package_handle.query(
-                DET_STATEMENTS["select_bands"], v=version, criterion_id=criterion_id
-            )
-        }
+        if bands is None:
+            bands = {
+                row["band"]: float(row["points"])
+                for row in package_handle.query(
+                    DET_STATEMENTS["select_bands"], v=version, criterion_id=criterion_id
+                )
+            }
         if outcome.band not in bands:
             raise MalformedAnswerKey(
                 f"criterion {criterion_id!r} declares no {outcome.band!r} band; "
