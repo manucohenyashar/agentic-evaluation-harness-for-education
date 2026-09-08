@@ -8,14 +8,14 @@ The clause: a submission is admissible to scoring **iff** `ingest_status` is
 rule (FR-ORCH-22); no other state is ever scorable; and re-ingestion after
 operator action produces a new document that rejoins the same run.
 
-**Disclosed finding (probe-backed, shipped code):** `low_confidence_ocr` is a
-DECLARED member of the vocabulary (the tuple at `aeh/ingest.py:164` and the
-schema CHECK at `:1294`) but has NO producing path — the token occurs nowhere
-else in the module, and no route of the sweep below can drive it. The state
-sweep therefore drives the four producible states; the fifth is held by the
-closed-vocabulary assertion (its CHECK admits it, nothing mints it). When a
-producing path lands, the sweep must be extended — the complement arithmetic
-here stays true either way.
+**Disclosed finding (probe-backed, shipped code) — CLOSED by #221:**
+`low_confidence_ocr` used to be a DECLARED member of the vocabulary with NO
+producing path (the token occurred nowhere else in the module). The ladder now
+mints it — a clean-ladder submission with a stored region whose `ocr_conf`
+sits strictly below the `HARNESS_INGEST_OCR_CONF_FLOOR` floor (0.70 default)
+flags `low_confidence_ocr`, `quarantined = 0`, and the state sweep below
+drives ALL FIVE statuses, the biconditional (admissible iff
+`quarantined = 0`) holding on each.
 
 Consumer half deferred with disclosure: "`M-ORCH` applies no additional filter
 of its own" is the orchestrator's assertion, and M-ORCH does not exist yet
@@ -62,15 +62,35 @@ def _clean_fixture(fx: Contract, label: str):
     return report
 
 
+def _low_confidence_fixture(fx: Contract, label: str):
+    """One clean-but-low-confidence ingest: the `low_confidence_ocr` route
+    (#221). The reading sits below the floor, so the ladder flags the status —
+    without quarantining: CT-INGEST-11 admits it exactly like `ok`."""
+    fx.add_roster("gus")
+    source = fx.put(f"c11 {label} pdf".encode())
+    fx.script(source, {1: student_answer("gus", answer_text(
+        "Q1", "the barely legible answer", conf="0.05"))})
+    report = fx.ingestor.ingest_submission(
+        [source], cohort_id=COHORT, package_version="v0",
+        filenames={source: "a.pdf"})
+    assert report.ingest_status == "low_confidence_ocr", (
+        f"TC-INGEST-C11: the low-confidence route did not flag: "
+        f"{report.ingest_status} / {report.gates}."
+    )
+    return report
+
+
 def test_tc_ingest_c11_admissibility_is_exactly_ok_and_low_confidence_ocr(
         tmp_data_dir):
-    """`TC-INGEST-C11` (state sweep) — across every producible status the
+    """`TC-INGEST-C11` (state sweep) — across the WHOLE declared vocabulary the
     biconditional holds: a row is admissible (`ingest_status` in the two) IFF
-    it carries `quarantined = 0`. The three non-admissible states are each
-    driven by a producing route (V0 unreadable, V1 incomplete, V4
-    unmatched_assessment); none is scorable, and the producer's own flag
-    agrees with the status on every row — no state sits in the admitted set
-    while flagged quarantined, or outside it while clean."""
+    it carries `quarantined = 0`. Each of the five statuses is driven by its
+    own producing route (V0 unreadable, V1 incomplete, V4
+    unmatched_assessment, the confidence floor's `low_confidence_ocr` — the
+    fifth, admissible and unquarantined); the three non-admissible states are
+    never scorable, and the producer's own flag agrees with the status on
+    every row — no state sits in the admitted set while flagged quarantined,
+    or outside it while clean."""
     routes: list[tuple[str, Contract, object]] = []
 
     ok = Contract(tmp_data_dir, "c11-ok")
@@ -99,6 +119,10 @@ def test_tc_ingest_c11_admissibility_is_exactly_ok_and_low_confidence_ocr(
         [source], cohort_id=COHORT, package_version=version,
         filenames={source: "a.pdf"}, package_catalog=catalog)))
 
+    low = Contract(tmp_data_dir, "c11-lco")
+    routes.append(("low_confidence_ocr", low,
+                   _low_confidence_fixture(low, "lco")))
+
     produced = set()
     for label, fx, report in routes:
         rows = fx.submission_rows()
@@ -121,14 +145,13 @@ def test_tc_ingest_c11_admissibility_is_exactly_ok_and_low_confidence_ocr(
         )
         produced.add(status)
         fx.close()
-    # The sweep is complete over every PRODUCIBLE state: the one missing member
-    # is the disclosed G1 (`low_confidence_ocr` is declared, never minted). If
-    # this set grows beyond the four, a producing path landed — extend the sweep.
-    assert produced == {"ok", "unreadable", "incomplete",
-                        "unmatched_assessment"}, (
+    # The sweep is complete over the WHOLE vocabulary: every one of the five
+    # statuses is driven by its own producing route (G1, closed by #221 — a
+    # reading below the confidence floor flags `low_confidence_ocr` without
+    # quarantining).
+    assert produced == set(INGEST_STATUSES), (
         f"TC-INGEST-C11: the sweep produced {sorted(produced)} — the producible "
-        "set moved; extend the sweep (G1: low_confidence_ocr has no producing "
-        "path on shipped code)."
+        "set no longer covers the declared vocabulary exactly."
     )
 
 

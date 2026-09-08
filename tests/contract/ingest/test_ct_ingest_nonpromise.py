@@ -153,12 +153,15 @@ def test_tc_ingest_c20_a_second_builds_reading_is_accepted_and_recorded(
 def test_tc_ingest_c20_low_confidence_never_becomes_a_correctness_claim(
         tmp_data_dir):
     """`TC-INGEST-C20` (the conf is a signal, not a warranty) — a region at
-    conf 0.05 ingests `ok`: the low confidence is recorded and NOTHING is
-    concluded — no correctness flag, no verdict column, no thresholded claim
-    anywhere on the row or the region. The flip side is disclosed G1: no
-    aggregate lowers confidence into a status either — the module neither
-    warrants nor warns; both are M-INTEG/M-CONSOLE's to build on the
-    signal."""
+    conf 0.05 has its low confidence RECORDED and flags the submission
+    `low_confidence_ocr` (FR-INGEST-29's outcome, #221: available, flagged for
+    impact routing, `quarantined = 0` — CT-INGEST-11 admits it to scoring like
+    `ok`) and NOTHING is concluded about CORRECTNESS — no correctness flag, no
+    verdict column, no thresholded claim anywhere on the row or the region.
+    The G1 disclosure (no producing path) is closed: the flag is the module's
+    own state-model arm, not a verdict about the transcript's accuracy —
+    correctness of the content is still M-INTEG's and the operator's to check
+    (this clause's own text)."""
     fx = Contract(tmp_data_dir, "c20-lowconf")
     fx.add_roster("gus")
     source = fx.put(b"c20 low conf pdf")
@@ -167,15 +170,25 @@ def test_tc_ingest_c20_low_confidence_never_becomes_a_correctness_claim(
     report = fx.ingestor.ingest_submission(
         [source], cohort_id=COHORT, package_version="v0",
         filenames={source: "a.pdf"})
-    assert report.ingest_status == "ok", (
-        f"TC-INGEST-C20: conf 0.05 became a status ({report.ingest_status}) — "
-        "the module thresholded the signal into a claim."
+    assert report.ingest_status == "low_confidence_ocr", (
+        f"TC-INGEST-C20: conf 0.05 did not flag the reading ({report.ingest_status}) "
+        "— the low-confidence outcome never fired."
+    )
+    assert report.detail["findings"] and \
+        any(finding.get("gate") == "ocr" for finding in report.detail["findings"]), (
+        f"TC-INGEST-C20: the flag carried no finding: "
+        f"{report.detail['findings']}."
     )
     regions = fx.regions(fx.documents()[0]["document_id"])
     tagged = [row for row in regions if row["element_kind"] == "Q1"]
     assert len(tagged) == 1 and tagged[0]["ocr_conf"] is not None \
         and tagged[0]["ocr_conf"] < 0.1, (
         f"TC-INGEST-C20: the low conf was not recorded: {tagged}."
+    )
+    row = fx.submission_rows()[0]
+    assert row["quarantined"] == 0, (
+        f"TC-INGEST-C20: the flagged submission quarantined: {dict(row)} — "
+        "low_confidence_ocr is available to scoring, never quarantined."
     )
     # No correctness-shaped column carries a value: the region row's fields
     # are the declared ones, and none of them is a verdict.
