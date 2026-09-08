@@ -1576,6 +1576,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm",
         ),
     ),
+    "#61 TS-23 cost ceiling (TC-ORCH-15)": (
+        "symbols",
+        f"{ORCH_MODULE}:Orchestrator.start,{ORCH_MODULE}:Orchestrator.pause",
+        (
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch",
+        ),
+    ),
 }
 
 
