@@ -1282,6 +1282,111 @@ _PKG_SETUP_READBACK = Migration(
     ),
 )
 
+_PKG_SETUP_CLASSIFICATION = Migration(
+    # #52: the decomposability verdicts and the setup steps' provenance rows. Two
+    # tables, because they answer two different audit questions:
+    #
+    # `setup_classification` — one row per (version, criterion): the classification
+    # the §5.3 table produced (`source='default'`, the module's own decision) and the
+    # one the teacher confirmed over it (`source='teacher'`, upserted by
+    # `confirm_classifications`). HLD R62's distinction: M-CALIB and M-STATS must be
+    # able to tell a teacher's judgment from a system default, so a skipped
+    # confirmation leaves the default row standing rather than nothing at all.
+    # `decomposition_basis` is FR-SETUP-06's record of WHICH question decided —
+    # an audit field, not a scoring input (the scoring input is the criterion's
+    # `scoring_model`, which the read back writes from the same table).
+    #
+    # `setup_step_record` — one row per (version, step_id): how each non-blocking
+    # setup step was completed (`FR-SETUP-14`: a default taken is recorded, never
+    # indistinguishable from an explicit choice). #53's grade-policy and prefix-budget
+    # steps write the same table; the row exists so a skip-only run still leaves
+    # stored provenance naming the step.
+    version=9,
+    name="pkg_setup_classification",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE setup_classification (
+                package_version_id TEXT    NOT NULL,
+                criterion_id       TEXT    NOT NULL,
+                classification     TEXT    NOT NULL,
+                decomposition_basis TEXT,
+                source             TEXT    NOT NULL
+                    CHECK (source IN ('default', 'teacher')),
+                recorded_at        TEXT    NOT NULL,
+                PRIMARY KEY (package_version_id, criterion_id),
+                FOREIGN KEY (package_version_id)
+                    REFERENCES package_version(package_version_id)
+            )
+            """
+        ),
+        Statement(
+            """
+            CREATE TABLE setup_step_record (
+                package_version_id TEXT    NOT NULL,
+                step_id            TEXT    NOT NULL,
+                status             TEXT    NOT NULL,
+                payload            TEXT    NOT NULL,
+                recorded_at        TEXT    NOT NULL,
+                PRIMARY KEY (package_version_id, step_id),
+                FOREIGN KEY (package_version_id)
+                    REFERENCES package_version(package_version_id)
+            )
+            """
+        ),
+        # -- published immunity (the 002/8 pattern): a published version's setup
+        #    provenance is part of the record a defended grade leans on --
+        Statement(
+            "CREATE TRIGGER setup_classification_immutable BEFORE UPDATE ON "
+            "setup_classification "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_classification references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_classification_insert_locked BEFORE INSERT ON "
+            "setup_classification "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_classification added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_classification_delete_refused BEFORE DELETE ON "
+            "setup_classification "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_classification removed from a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_step_record_immutable BEFORE UPDATE ON "
+            "setup_step_record "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_step_record references a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_step_record_insert_locked BEFORE INSERT ON "
+            "setup_step_record "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= NEW.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_step_record added to a published version'); END"
+        ),
+        Statement(
+            "CREATE TRIGGER setup_step_record_delete_refused BEFORE DELETE ON "
+            "setup_step_record "
+            "WHEN EXISTS (SELECT 1 FROM package_version pv WHERE pv.package_version_id "
+            "= OLD.package_version_id AND pv.locked = 1) "
+            "BEGIN SELECT RAISE(ABORT, 'published version is immutable: "
+            "setup_step_record removed from a published version'); END"
+        ),
+    ),
+)
+
 # --- the owning-module contribution to the store's migration registry ---------------------------
 #
 # Appended at import: after this module is imported, Tier P's current schema version is 2
@@ -1627,6 +1732,52 @@ PKG_STATEMENTS.update({
         "SELECT :new, rubric_doc_id, assessment_doc_id, payload, template_version, "
         "model_ref, attempts, created_at FROM setup_readback WHERE package_version_id = :old"
     ),
+    # -- #52: the classification and step-provenance writes ------------------------------
+    "insert_classification": Statement(
+        "INSERT INTO setup_classification (package_version_id, criterion_id, "
+        "classification, decomposition_basis, source, recorded_at) VALUES (:v, "
+        ":criterion_id, :classification, :decomposition_basis, :source, :recorded_at) "
+        "ON CONFLICT (package_version_id, criterion_id) DO UPDATE SET "
+        "classification = excluded.classification, "
+        "decomposition_basis = excluded.decomposition_basis, "
+        "source = excluded.source, recorded_at = excluded.recorded_at"
+    ),
+    "select_classifications": Statement(
+        "SELECT criterion_id, classification, decomposition_basis, source, "
+        "recorded_at FROM setup_classification WHERE package_version_id = :v "
+        "ORDER BY criterion_id"
+    ),
+    "select_classification": Statement(
+        "SELECT criterion_id, classification, decomposition_basis, source, "
+        "recorded_at FROM setup_classification WHERE package_version_id = :v "
+        "AND criterion_id = :criterion_id"
+    ),
+    "insert_step_record": Statement(
+        "INSERT INTO setup_step_record (package_version_id, step_id, status, payload, "
+        "recorded_at) VALUES (:v, :step_id, :status, :payload, :recorded_at) "
+        "ON CONFLICT (package_version_id, step_id) DO UPDATE SET "
+        "status = excluded.status, payload = excluded.payload, "
+        "recorded_at = excluded.recorded_at"
+    ),
+    "select_step_record": Statement(
+        "SELECT step_id, status, payload, recorded_at FROM setup_step_record "
+        "WHERE package_version_id = :v AND step_id = :step_id"
+    ),
+    "select_step_records": Statement(
+        "SELECT step_id, status, payload, recorded_at FROM setup_step_record "
+        "WHERE package_version_id = :v ORDER BY step_id"
+    ),
+    "pkg_revision_copy_setup_classification": Statement(
+        "INSERT INTO setup_classification (package_version_id, criterion_id, "
+        "classification, decomposition_basis, source, recorded_at) "
+        "SELECT :new, criterion_id, classification, decomposition_basis, source, "
+        "recorded_at FROM setup_classification WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copy_setup_step_record": Statement(
+        "INSERT INTO setup_step_record (package_version_id, step_id, status, payload, "
+        "recorded_at) SELECT :new, step_id, status, payload, recorded_at "
+        "FROM setup_step_record WHERE package_version_id = :old"
+    ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
     # statement exists, and the guard selects by field name.
@@ -1673,6 +1824,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_EXPORT_GATE,)
     + (_PKG_QUESTION_INVENTORY,)
     + (_PKG_SETUP_READBACK,)
+    + (_PKG_SETUP_CLASSIFICATION,)
 )
 
 #: The revision copy order: parents before children, so every copied row's FK is
@@ -1689,6 +1841,8 @@ _REVISION_COPY_KEYS: tuple[str, ...] = (
     "pkg_revision_copy_grade_boundary",
     "pkg_revision_copy_setup_proposal",
     "pkg_revision_copy_setup_readback",
+    "pkg_revision_copy_setup_classification",
+    "pkg_revision_copy_setup_step_record",
 )
 # elicitation_history is deliberately NOT a revision copy: it is the append-only
 # calibration trail (FR-PKG-20), whose rows reference the version the conversation was
@@ -3076,6 +3230,99 @@ class PackageCatalog:
         only after a read back completed or degraded, never mid-flight)."""
         rows = self._handle.query(PKG_STATEMENTS["select_readback"], v=v)
         return dict(rows[0]) if rows else None
+
+    # -- #52: the decomposability verdicts and the setup steps' provenance ---------------
+
+    def record_classification(
+        self, v: PackageVersionId, *, criterion_id: str, classification: str,
+        decomposition_basis: str | None, source: str, recorded_at: str,
+    ) -> None:
+        """Write one decomposability classification row (`#52`, `FR-SETUP-06`, R62).
+
+        `source` is `'default'` (the module's §5.3 table decided, the teacher has not
+        spoken) or `'teacher'` (`confirm_classifications` upserts over the default row
+        — the teacher's judgment replaces it as the stored record, which is exactly
+        the distinction M-CALIB and M-STATS read). Refused on a published version
+        (the published-immunity triggers)."""
+        if source not in ("default", "teacher"):
+            raise PackageError(
+                f"classification source {source!r} is outside the vocabulary "
+                "('default', 'teacher') — a row that cannot say who spoke cannot "
+                "distinguish a teacher's judgment from a system default (R62)."
+            )
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.add")
+            tx.execute(PKG_STATEMENTS["insert_classification"], v=v,
+                       criterion_id=criterion_id, classification=classification,
+                       decomposition_basis=decomposition_basis, source=source,
+                       recorded_at=recorded_at)
+        self._invalidate()
+
+    def classifications(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """The version's stored classification rows, ordered by criterion id — the
+        audit read (`M-CALIB`/`M-STATS`'s teacher-vs-default distinction)."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_classifications"], v=v)
+        )
+
+    def classification(self, v: PackageVersionId,
+                       criterion_id: str) -> dict | None:
+        """One criterion's stored classification row, or None."""
+        rows = self._handle.query(PKG_STATEMENTS["select_classification"], v=v,
+                                  criterion_id=criterion_id)
+        return dict(rows[0]) if rows else None
+
+    def record_step(
+        self, v: PackageVersionId, *, step_id: str, status: str, payload: str,
+        recorded_at: str,
+    ) -> None:
+        """Upsert one setup step's provenance row (`FR-SETUP-14`, `#52`).
+
+        The write half of "a default taken is recorded": each optional setup step
+        names itself here when it completes — by the teacher's action or, at
+        publish, as a recorded default. `payload` is the step's own JSON summary."""
+        with self._handle.transaction() as tx:
+            self._guard(tx, v, "criterion.add")
+            tx.execute(PKG_STATEMENTS["insert_step_record"], v=v, step_id=step_id,
+                       status=status, payload=payload, recorded_at=recorded_at)
+        self._invalidate()
+
+    def record_default_step(
+        self, v: PackageVersionId, *, step_id: str, status: str, payload: str,
+        recorded_at: str,
+    ) -> bool:
+        """Record a step's default-taken row ONLY where the step carries no row of
+        its own — the publish-time skip record (`FR-SETUP-14`). Returns whether a
+        row was written: a step the teacher (or the step itself) already recorded is
+        never overwritten by a default."""
+        if self.step_record(v, step_id) is not None:
+            return False
+        # The guard runs BEFORE the transaction, not inside it — the shape the
+        # catalog's own publish() uses. This write sits on the publish path's
+        # happy tail, and CT-SETUP-02 audits that path to exactly ONE
+        # lock-carrying statement: an in-transaction guard would put a second
+        # package_version statement (the guard's SELECT) in the audited window.
+        self._refuse_mutation(v)
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["insert_step_record"], v=v, step_id=step_id,
+                       status=status, payload=payload, recorded_at=recorded_at)
+        self._invalidate()
+        return True
+
+    def step_record(self, v: PackageVersionId, step_id: str) -> dict | None:
+        """One setup step's provenance row, or None — the done half of the console's
+        step enumeration reads this."""
+        rows = self._handle.query(PKG_STATEMENTS["select_step_record"], v=v,
+                                  step_id=step_id)
+        return dict(rows[0]) if rows else None
+
+    def step_records(self, v: PackageVersionId) -> tuple[dict, ...]:
+        """All of the version's step-provenance rows, ordered by step id."""
+        return tuple(
+            dict(row) for row in
+            self._handle.query(PKG_STATEMENTS["select_step_records"], v=v)
+        )
 
     def write_readback(
         self, v: PackageVersionId, *, rubric_doc_id: str, assessment_doc_id: str,

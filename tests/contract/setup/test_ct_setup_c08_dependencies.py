@@ -9,16 +9,14 @@ Case of test plan §6.11.6; issue #56 (TS-63). **Split disposition**, probed:
    which every consumer treats as the base case. Stage A itself proposes no
    dependency (the proposal step is #52's — src/aeh/setup.py:690 stages it), so
    the graph starts empty and stays empty unless a teacher approves otherwise.
-2. **The approval half is written ahead of #52.** A dependency must be
+2. **The approval half is green since #52.** A dependency must be
    *proposed*, rendered in plain language, and written ONLY on explicit teacher
    approval — an auto-approved dependency changes extraction and dispatch order
    for every later run silently. The proposal surface (`propose_dependencies`)
-   and the criteria it attaches to (which come out of #51's read back) are #52's
-   and #51's together, so the test carries `writtenahead` and a
-   `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C08 dependencies") keyed on the
-   conjunction — the same pairing #54's
-   `tests/integration/setup/test_setup_dependencies_pending.py` waits on. It
-   fails ONLY via `NotImplementedYet` until both land.
+   landed with #52 and the criteria it attaches to come out of #51's read back
+   (landed via PR #216); the test went green when the conjunction did, and the
+   `writtenahead` marker and the `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C08
+   dependencies") are gone.
 """
 from __future__ import annotations
 
@@ -80,23 +78,19 @@ def test_tc_setup_c08_dependencies_default_to_zero(tmp_data_dir):
     assert {"CRIT-A", "CRIT-B"} <= ids
 
 
-@pytest.mark.writtenahead
 def test_tc_setup_c08_proposal_writes_nothing_without_explicit_approval(
         tmp_data_dir):
-    """WRITTEN AHEAD of #51+#52. A dependency is PROPOSED, rendered in plain
+    """Green since #51+#52 landed. A dependency is PROPOSED, rendered in plain
     language, and nothing is written by the proposal itself — the graph stays
     empty until a teacher acts.
 
-    What this body pins while #52's approval vehicle does not exist: the
-    proposal writes NOTHING (the stored graph is empty after it), and no
-    proposal arrives pre-approved. The refusal assertion PROPER — attempting
-    the unapproved write against #52's vehicle and asserting it refuses —
-    lands when that surface exists; the green companion test already pins the
-    end-to-end half (a publish with no approvals carries exactly zero edges).
-
-    Fails ONLY via `NotImplementedYet` (through `require_attr`) until both
-    stories land: the proposal surface is #52's; the criteria a dependency
-    attaches to come out of #51's read back."""
+    What this body pins: the proposal writes NOTHING (the stored graph is empty
+    after it), and no proposal arrives pre-approved. The refusal assertion
+    PROPER — attempting the unapproved write against #52's vehicle and
+    asserting it refuses — is `confirm_dependencies` refusing un-proposed
+    pairs and the empty-graph assertion below, since approval is the only
+    writer; the green companion test pins the end-to-end half (a publish with
+    no approvals carries exactly zero edges)."""
     require_attr(SetupService, "read_back_rubric", issue="#51")
     require_attr(SetupService, "propose_dependencies", issue="#52")
 
@@ -116,6 +110,10 @@ def test_tc_setup_c08_proposal_writes_nothing_without_explicit_approval(
         {"criterion_id": "CRIT-USE", "question_id": "Q3", "kind": "open",
          "scoring_model": "atomic", "max_points": 6.0,
          "construct": "the definition is applied to the collision"},
+    ]}), json.dumps({"dependencies": [
+        {"criterion_id": "CRIT-USE", "depends_on": "CRIT-DEF",
+         "reason": "error carried forward: grading the application sees the "
+                   "definition credited under the earlier part"},
     ]})]
     chain.service.read_back_rubric(rubric, chain.doc)
 

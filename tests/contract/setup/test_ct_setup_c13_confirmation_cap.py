@@ -1,12 +1,12 @@
 """`CT-SETUP-13` — at most `SETUP_MAX_CONFIRMATIONS` decomposability
 confirmations, enforced by the module, headlessly (`TC-SETUP-C13`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD of #52** — the
-cap (`SETUP_MAX_CONFIRMATIONS`) and the classifier whose confirmations it caps
-(`classify_decomposability`) are #52's. The file carries `writtenahead` and a
-`WRITTEN_AHEAD_BLOCKERS` entry ("#56 C13 confirmation cap") keyed on the
-conjunction — the same pairing #54's "#52 decomposition" entry keys. It fails
-ONLY via `NotImplementedYet` until #52 lands.
+Case of test plan §6.11.6; issue #56 (TS-63), green since #52 landed — the cap
+(`SETUP_MAX_CONFIRMATIONS`) and the classifier whose confirmations it caps
+(`classify_decomposability`) are #52's. The file landed red under
+`writtenahead` with a `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C13 confirmation
+cap") keyed on the conjunction — the same pairing #54's "#52 decomposition"
+entry keys; the marker and the entry are gone.
 
 The clause: the threshold is on TEACHER INTERACTION, not machine time — for a
 15-criterion package, at most `SETUP_MAX_CONFIRMATIONS` (6) decomposability
@@ -27,8 +27,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from aeh.setup import SetupService
 from tests.contract.setup._doubles import make_setup_service
 from tests.support.impl import require_attr
@@ -37,8 +35,6 @@ from tests.support.setup_harness import (
     ScriptedIngestor,
     ScriptedSetupProvider,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#52"
 

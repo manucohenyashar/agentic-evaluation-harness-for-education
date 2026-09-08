@@ -1,19 +1,20 @@
-"""`M-SETUP` Stage A's dependency proposals — written ahead of **#52**, needing **#51**
-too (issue #54).
+"""`M-SETUP` Stage A's dependency proposals — **#52**'s integration case (issue #54).
 
-Case `TC-SETUP-13` (FR-SETUP-10, P0), rung 2. It waits on a *pair*, and that is stated in
-its registry entry rather than papered over: the criteria a dependency attaches to come
-out of the read back (#51's `read_back_rubric`), and the proposal itself is #52's
-`propose_dependencies`. The entry keyed "#52 dependencies" in `tests/support/impl.py` is
-a `symbols` conjunction over both, so the gate cannot fire while either is missing.
+Case `TC-SETUP-13` (FR-SETUP-10, P0), rung 2. It waited on a *pair*, and that was stated
+in its registry entry rather than papered over: the criteria a dependency attaches to come
+out of the read back (#51's `read_back_rubric`, landed via PR #216), and the proposal
+itself is #52's `propose_dependencies`. The entry keyed "#52 dependencies" in
+`tests/support/impl.py` was a `symbols` conjunction over both — the marker and the entry
+are gone now that both halves are green.
 
 The case's own oracle decides what is asserted here: *"asserted by declining and
 confirming no edge exists"*. So the file asserts the three quarters that need no approval
 API — every criterion defaults to zero dependencies, a proposal is rendered in plain
-language naming both criteria, and declining leaves the graph empty — and discloses the
-fourth: the *positive* write on explicit approval is #52's to expose (the data layer's
-`set_dependencies`, cycle-refusing inside its transaction, already landed with #31 and is
-covered by its own cases).
+language naming both criteria, and declining leaves the graph empty. The fourth quarter —
+the *positive* write on explicit approval — is `confirm_dependencies`' to expose, and the
+second test below pins it (the reviewer finding this PR closes: the sole edge-write path
+was otherwise unasserted end to end; the data layer's `set_dependencies`, cycle-refusing
+inside its transaction, already landed with #31 and is covered by its own cases).
 
 The scripted dependency reply is this file's bet, as in the sibling pending files: the
 reply carries the **facts** (a criterion pair and an error-carried-forward reason); the
@@ -37,8 +38,6 @@ from tests.support.setup_harness import (
     stage_chain,
 )
 from tests.support.store_api import statement
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#52"
 
@@ -84,18 +83,19 @@ ECF_DEPENDENCY_REPLY = json.dumps({"dependencies": [
 ]})
 
 
-def _dependency_edges(data_dir, package_id: str, issue: str) -> int:
-    """How many dependency edges the version's stored graph carries."""
-    # A raw handle is needed for the row count: the criteria read does not carry the
-    # graph, and `set_dependencies` *replaces* rather than reads it.
-    handle = PackageCatalog(open_store(data_dir).package(package_id),
-                            package_id=package_id)
+def _dependency_edges(data_dir, package_id: str, version: str, issue: str) -> list:
+    """The version's stored dependency edges as raw (criterion_id, depends_on) rows."""
+    # A raw tier handle is needed for the row read: the criteria read does not
+    # carry the graph, and `set_dependencies` *replaces* rather than reads it.
+    # The version is the caller's (`chain.catalog.draft_version()`) — a fresh
+    # `PackageCatalog` has no `transaction()` to borrow, and re-opening the tier
+    # for its draft would race the chain's own view of "latest unpublished".
+    handle = open_store(data_dir).package(package_id)
     with handle.transaction() as tx:
-        version = handle.draft_version()
-        rows = tx.execute(statement(
+        return tx.execute(statement(
             "SELECT criterion_id, depends_on FROM criterion_dependency "
-            "WHERE package_version_id = :v", issue=issue), v=version).fetchall()
-    return len(rows)
+            "WHERE package_version_id = :v ORDER BY criterion_id, depends_on",
+            issue=issue), v=version)
 
 
 @pytest.mark.integration
@@ -124,7 +124,7 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
     # The default, before anything is proposed: zero dependencies everywhere.
     criteria = {row["criterion_id"] for row in chain.catalog.criteria(version)}
     assert criteria == {"CRIT-IMP", "CRIT-STEPS"}
-    assert _dependency_edges(tmp_data_dir, chain.package_id, ISSUE) == 0, (
+    assert len(_dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE)) == 0, (
         "TC-SETUP-13: a criterion carried a dependency before anyone approved one — "
         "FR-SETUP-10 defaults every criterion to zero dependencies"
     )
@@ -157,8 +157,68 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
         )
 
     # Declined. No edge exists.
-    assert _dependency_edges(tmp_data_dir, chain.package_id, ISSUE) == 0, (
+    assert len(_dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE)) == 0, (
         "TC-SETUP-13: an edge exists after the teacher declined — FR-SETUP-10 writes a "
         "dependency only on explicit teacher approval"
     )
     assert not chain.catalog.is_locked(version)  # nothing was published on the way
+
+
+@pytest.mark.integration
+def test_tc_setup_13_approval_writes_exactly_the_proposed_edge_and_survives_a_confirmation(
+    tmp_data_dir,
+):
+    """`TC-SETUP-13`'s positive half (`FR-SETUP-10`) — the write on EXPLICIT approval:
+    approving a recorded proposal writes exactly that edge, in the contamination
+    direction the proposal names (the later criterion sees the earlier work), and the
+    approval SURVIVES the natural console ordering — §4.2.1 S5 presents classification
+    confirmations and dependency proposals under one step, so the teacher confirms a
+    classification between proposing and approving, and the approval must still find
+    the proposals it approves. The step's provenance row is MERGED, never replaced:
+    a whole-payload upsert would erase the proposals at confirmation time and the
+    approval would then refuse the teacher's own act."""
+    chain = stage_chain(tmp_data_dir)
+    assessment = ingest_document(chain.store)
+    rubric = ingest_document(chain.store, kind="rubric", name="rubric.pdf")
+    chain.provider.replies = [
+        INVENTORY_REPLY, ECF_RUBRIC_REPLY, ECF_DEPENDENCY_REPLY,
+    ]
+    proposal = chain.service.propose_inventory(assessment)
+    chain.service.confirm_inventory(proposal.proposal_id)
+    chain.service.read_back_rubric(rubric, assessment)
+    version = chain.catalog.draft_version()
+
+    # The natural console order: the teacher confirms a classification FIRST.
+    chain.service.confirm_classifications({"CRIT-STEPS": "holistic"})
+    proposals = chain.service.propose_dependencies()
+    assert proposals, (
+        "TC-SETUP-13: a classification confirmation erased the dependency proposals "
+        "— the step's provenance row is merged, never replaced (FR-SETUP-10)"
+    )
+
+    # Explicit approval: exactly the proposed edge, contamination flowing the way
+    # the proposal names — the derivation (CRIT-STEPS) sees the credited definition
+    # (CRIT-IMP), not the reverse.
+    chain.service.confirm_dependencies(proposals)
+    edges = _dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE)
+    assert len(edges) == 1, (
+        f"TC-SETUP-13: approving one proposal wrote {len(edges)} edge(s) — approval "
+        "writes exactly what was approved (FR-SETUP-10)"
+    )
+    assert (edges[0]["criterion_id"], edges[0]["depends_on"]) == (
+        "CRIT-STEPS", "CRIT-IMP"), (
+        f"TC-SETUP-13: the edge runs ({edges[0]['depends_on']!r} -> "
+        f"{edges[0]['criterion_id']!r}), not (CRIT-IMP -> CRIT-STEPS) — contamination "
+        "must flow from the earlier criterion's credited work INTO the later one "
+        "(§7.2 Rule 2: a dependency the wrong way round hides evidence)"
+    )
+
+    # And the approved edge survives the publish lock: the graph the run reads is
+    # the one the teacher approved, not a re-derivation.
+    published = chain.service.publish("teacher-1")
+    assert chain.catalog.is_locked(published)
+    assert len(_dependency_edges(
+        tmp_data_dir, chain.package_id, published, ISSUE)) == 1, (
+        "TC-SETUP-13: the approved edge did not survive the publish lock — the "
+        "published graph is the teacher's approval, stored (FR-SETUP-10)"
+    )
