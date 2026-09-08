@@ -1310,6 +1310,110 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         ("tests/uat/setup/test_setup_time_budget.py",),
     ),
+    # -- #56 (TS-63, the Stage A contract suite TC-SETUP-C01..C16) --------------------------
+    #
+    # The contract cases whose clause substance is Stage B (#51/#52/#53). The green halves
+    # of the same cases (and every wholly-green case: C02, C03, C11, C12, C14, C16) carry
+    # no marker and sit inside TEST_CMD already. Each conjunction is the file's FULL
+    # require set, so the gate fires exactly when the file can run.
+    "#56 C01 recorded defaults": (
+        # TC-SETUP-C01's recorded-defaults sweep drives every Stage B surface the skip
+        # sweep records: the read back, the classifier, the dependency proposal, the
+        # grade policy and the prefix budget — one conjunction over all five.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{SETUP_MODULE}:SetupService.classify_decomposability,"
+            f"{SETUP_MODULE}:SetupService.propose_dependencies,"
+            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
+            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
+        ),
+        ("tests/contract/setup/test_ct_setup_c01_blocking_and_defaults.py",),
+    ),
+    "#56 C04 classification": (
+        # TC-SETUP-C04's sweep and unclear partition both drive the classifier; the
+        # verdict type rides on the method's return, so the method is the whole blocker.
+        "symbol",
+        f"{SETUP_MODULE}:SetupService.classify_decomposability",
+        ("tests/contract/setup/test_ct_setup_c04_classification.py",),
+    ),
+    "#56 C05 panel depth": (
+        # TC-SETUP-C05: the classification is #52's, the criteria it classifies come out
+        # of #51's read back — the same pairing as "#52 dependencies".
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{SETUP_MODULE}:SetupService.classify_decomposability"
+        ),
+        ("tests/contract/setup/test_ct_setup_c05_panel_depth.py",),
+    ),
+    "#56 C06 bands": (
+        # TC-SETUP-C06's descriptor half drives the read back AND its two declared
+        # constants — the same conjunction as "#51 readback".
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SETUP_DEFAULT_BAND_COUNT,"
+            f"{SETUP_MODULE}:SETUP_MAGNITUDE_PHRASES,"
+            f"{SETUP_MODULE}:SetupService.read_back_rubric"
+        ),
+        ("tests/contract/setup/test_ct_setup_c06_bands.py",),
+    ),
+    "#56 C07 mcq criteria": (
+        # TC-SETUP-C07's mcq-production half: §3.6 pins no criteria-creation symbol, so
+        # the file keys on #53's pinned pair (as its docstring states).
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.set_grade_policy,"
+            f"{SETUP_MODULE}:SetupService.check_prefix_budget"
+        ),
+        ("tests/contract/setup/test_ct_setup_c07_mcq_criteria.py",),
+    ),
+    "#56 C08 dependencies": (
+        # TC-SETUP-C08's approval half: the proposal is #52's, the criteria it attaches
+        # to are #51's — same conjunction as "#52 dependencies".
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{SETUP_MODULE}:SetupService.propose_dependencies"
+        ),
+        ("tests/contract/setup/test_ct_setup_c08_dependencies.py",),
+    ),
+    "#56 C09 prefix budget": (
+        # TC-SETUP-C09 drives only the budget check (the drop-policy record is on its
+        # report), so the single pinned symbol is the whole blocker.
+        "symbol",
+        f"{SETUP_MODULE}:SetupService.check_prefix_budget",
+        ("tests/contract/setup/test_ct_setup_c09_prefix_budget.py",),
+    ),
+    "#56 C10 grade policy": (
+        # TC-SETUP-C10's recorded-as-a-default half, keyed on the SetupService member
+        # for the same reason as "#53 policy" above.
+        "symbol",
+        f"{SETUP_MODULE}:SetupService.set_grade_policy",
+        ("tests/contract/setup/test_ct_setup_c10_grade_policy.py",),
+    ),
+    "#56 C13 confirmation cap": (
+        # TC-SETUP-C13 drives the classifier AND reads the cap constant — both #52's.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SETUP_MAX_CONFIRMATIONS,"
+            f"{SETUP_MODULE}:SetupService.classify_decomposability"
+        ),
+        ("tests/contract/setup/test_ct_setup_c13_confirmation_cap.py",),
+    ),
+    "#56 C15 consumer sweep": (
+        # TC-SETUP-C15: the read back produces the corrections (#51) and the sweep runs
+        # over the three consumer modules' surfaces. #52/#53 are deliberately absent —
+        # nothing in the file drives their surfaces.
+        "symbols",
+        (
+            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
+            f"{CALIB_MODULE},"
+            f"{STATS_MODULE},"
+            f"{CONSOLE_MODULE}"
+        ),
+        ("tests/contract/setup/test_ct_setup_c15_consumer_sweep.py",),
+    ),
 }
 
 
