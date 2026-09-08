@@ -305,7 +305,10 @@ def test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store(network_guard)
 
     # Any shape of decision is fine — the oracle is the absence of I/O, not the value.
     # Determinism is the one behavioural corollary of purity that is checkable here:
-    # the same inputs, evaluated again, must return an equal decision.
+    # the same inputs, evaluated again, must return an equal decision. Declared landing
+    # assumption: the decision type compares by value (the enum / dataclass /
+    # NamedTuple / bool shape §3.8's Protocol implies); a decision type with identity
+    # equality cannot express this corollary and reconciles at #95's landing.
     again = should_escalate(
         score=score, criterion=criterion, history=history, baseline=baseline, **spy_kwargs
     )

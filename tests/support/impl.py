@@ -1499,7 +1499,26 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         (
             "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum",
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[9-20-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[10-20-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[11-20-True]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[10-19-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[11-19-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[12-24-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[13-24-True]",
         ),
     ),
     "#60 TS-23 escalation budget (TC-ORCH-14)": (
@@ -1518,9 +1537,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         (
             "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three",
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[1-3]",
             "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_even_escalation_plans_are_rejected",
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[3-3]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[5-5]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_even_escalation_plans_are_rejected[2]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_even_escalation_plans_are_rejected[4]",
         ),
     ),
     "#62 TS-23 estimated completion (TC-ORCH-27)": (
@@ -1577,11 +1605,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
     ),
     "#61 TS-23 cost ceiling (TC-ORCH-15)": (
+        # The test also requires `Orchestrator(store, provider=...)` — a constructor
+        # kwarg no registry kind can express. The conjunction below is therefore
+        # necessary but not sufficient: if #61 lands start/pause without the provider
+        # seam, this entry resolves, the unmark happens, and the test reds inside
+        # TEST_CMD with the seam-naming assertion (test_cost_ceiling.py) as the message.
         "symbols",
         f"{ORCH_MODULE}:Orchestrator.start,{ORCH_MODULE}:Orchestrator.pause",
         (
             "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch",
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[99pct-runs]",
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[100pct-pauses-at]",
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[101pct-refuses-and-pauses]",
         ),
     ),
 }

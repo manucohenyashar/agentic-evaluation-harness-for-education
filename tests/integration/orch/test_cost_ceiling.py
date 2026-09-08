@@ -88,10 +88,24 @@ def _run_row(store, run_id: str) -> dict:
     return rows[0]
 
 
+#: The frozen backend snapshot's columns. They are EXCLUDED from every display scan:
+#: `provider_config` serializes the run's configuration — the ceiling itself, the
+#: panel's model refs and the prompt template version — so it echoes digits like the
+#: ceiling's own `9.90` and the refs' `1`s regardless of what the orchestrator displays.
+#: A scan that reads the snapshot would pass with no estimate, no spend and no remaining
+#: count named anywhere: the exact vacuity the figures exist to prevent.
+_SNAPSHOT_COLUMNS = frozenset({"provider_config", "panel_config"})
+
+
 def _row_shows(row: dict, figure: str) -> bool:
-    """Whether the figure is readable anywhere on the row — as text, a numeric string, or
-    a numeric column. Name-agnostic on purpose: which column carries the display is #61's."""
-    for value in row.values():
+    """Whether the figure is readable anywhere the operator reads the run — as text, a
+    numeric string, or a numeric column. Name-agnostic on purpose: which column carries
+    the display is #61's — but the frozen backend snapshot columns are excluded (see
+    `_SNAPSHOT_COLUMNS`): they echo the config's own digits unconditionally, and a match
+    found there proves the config was stored, never that a figure was displayed."""
+    for key, value in row.items():
+        if key in _SNAPSHOT_COLUMNS:
+            continue
         if isinstance(value, str) and figure in value:
             return True
         try:
