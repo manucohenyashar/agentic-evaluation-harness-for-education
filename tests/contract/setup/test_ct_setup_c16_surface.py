@@ -168,8 +168,16 @@ def test_tc_setup_c16_write_operations_refuse_on_a_finished_package(tmp_data_dir
         ("confirm_dependencies", lambda: chain.service.confirm_dependencies(())),
         ("publish", lambda: chain.service.publish("teacher-1")),
     ):
-        with pytest.raises(SetupOrderError):
+        with pytest.raises(SetupOrderError) as refused:
             call()
+        # Every refusal routes through the shared helper, so every one names
+        # the published version that blocked it (#229's observability half) —
+        # a generic "finished" message that lost the version would still be a
+        # SetupOrderError and must not pass here.
+        assert version in str(refused.value), (
+            f"{name}()'s refusal {str(refused.value)!r} does not name the "
+            "published version that blocked it (CT-SETUP-16, #229)"
+        )
         assert chain.catalog.is_locked(version), (
             f"{name}() on a finished package disturbed the published version "
             "(CT-SETUP-16)"
@@ -201,6 +209,12 @@ def test_tc_setup_c16_no_route_mints_a_version_after_finish(tmp_data_dir):
                                    "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
 
+    # The finished report was honest BEFORE the surface was challenged: zero
+    # remaining, nothing available — the refusals below change no step's story.
+    progress = chain.service.steps()
+    assert progress.remaining_steps == 0
+    assert all(not step.available for step in progress.steps)
+
     fresh_doc = ingest_document(chain.store, kind="assessment")
     with pytest.raises(SetupOrderError) as refused:
         chain.service.propose_inventory(fresh_doc)
@@ -230,9 +244,9 @@ def test_tc_setup_c16_no_route_mints_a_version_after_finish(tmp_data_dir):
         "(CT-SETUP-16, RISK-06)"
     )
     assert chain.catalog.is_locked(published)
-    # The finished report and the refused surface agree: the report still says
-    # nothing remains, and it said so before the refusals too — the surface's
-    # new refusals change no step's story.
+    # The finished report and the refused surface agree: after the refusals the
+    # report is unchanged from the pre-refusal one asserted above — no refusal
+    # moved a step's story.
     progress = chain.service.steps()
     assert progress.remaining_steps == 0
     assert all(not step.available for step in progress.steps)
