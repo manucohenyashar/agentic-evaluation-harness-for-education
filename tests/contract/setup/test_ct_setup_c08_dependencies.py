@@ -27,7 +27,6 @@ import sqlite3
 
 import pytest
 
-import aeh.setup as aeh_setup  # not `setup_module`: pytest reads that name as the xunit hook
 from aeh.setup import SetupService
 from tests.contract.setup._doubles import db_file_for, ingest_document, stage_chain
 from tests.support.impl import require_attr
@@ -98,7 +97,6 @@ def test_tc_setup_c08_proposal_writes_nothing_without_explicit_approval(
     Fails ONLY via `NotImplementedYet` (through `require_attr`) until both
     stories land: the proposal surface is #52's; the criteria a dependency
     attaches to come out of #51's read back."""
-    require_attr(aeh_setup, "SETUP_DEFAULT_BAND_COUNT", issue="#51")
     require_attr(SetupService, "read_back_rubric", issue="#51")
     require_attr(SetupService, "propose_dependencies", issue="#52")
 
