@@ -656,3 +656,315 @@ def test_tc_ingest_42_purge_sweeps_the_ingest_rows_and_leaves_the_declared_blob_
         "rule a blob referenced by no surviving row still resolves — the dedup "
         "lifetime is the §7.4 open question, not something purge settles.")
     fx.close()
+
+
+# -- TC-INGEST-43: the ingest record the surface-proxy analysis consumes ------------------------------
+
+
+def test_tc_ingest_43_the_ingest_record_the_surface_proxy_analysis_consumes(
+        tmp_data_dir):
+    """`TC-INGEST-43` — *"Per-region confidence and per-submission OCR outcomes
+    are consumable by the §6.9 surface-proxy analysis."*
+
+    The **producer** half is asserted at full strength over a cohort that spans
+    the handwriting-quality span: the join the analysis consumes is
+    `submission.student_ref` × `document_region.ocr_conf` (one confidence per
+    region, nullable where the model tagged none), the `unresolved_token` rows
+    joined to their region and student, and the per-submission outcome columns
+    readable by the same student ref.
+
+    The **consumer** half is deferred (F5): the analysis is `TC-STATS-13`,
+    owned by the open M-STATS story #117 under TS-43 (#120) — nothing consumes
+    this shape yet, and a test asserting a consumer would test the story that
+    does not exist. Note also what the record honestly carries today (F-D, the
+    ladder suite's own disclosure): a confidence of 0.4 sits on an `ok`
+    submission because `low_confidence_ocr` is produced by no ladder path —
+    the routing is the gap, the recording is not."""
+    fx = _Fixture(tmp_data_dir, "surface-proxy", "c-43")
+    legible = fx.put(b"legible-scan")
+    fx.script(legible, {1: _student_answer(
+        "hana-w",
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present "
+        "conf=0.9 -->\nthe answer one, cleanly written\n<!-- /region -->")})
+    marginal = fx.put(b"marginal-scan")
+    fx.script(marginal, {1: _student_answer(
+        "bram-c",
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present "
+        "conf=0.4 -->\nthe answer <unresolved>scrawl</unresolved>\n"
+        "<!-- /region -->")})
+    fx.add_roster("hana-w", "bram-c")
+    for source in (legible, marginal):
+        fx.ingestor.ingest_submission([source], cohort_id=fx.cohort_id,
+                                      package_version="v0",
+                                      filenames={source: "scan-01.md"})
+
+    # The per-submission outcomes, readable by student ref — the analysis's
+    # grouping key is the roster ref the identity gate resolved.
+    outcomes = {row["student_ref"]: dict(row) for row in fx.submission_rows()}
+    assert set(outcomes) == {"hana-w", "bram-c"}, (
+        f"TC-INGEST-43: the submissions did not record the roster refs the "
+        f"analysis groups by: {sorted(outcomes)}.")
+    for ref in ("hana-w", "bram-c"):
+        assert outcomes[ref]["v0_integrity"] == "pass"
+        assert outcomes[ref]["v3_identity"] == "pass"
+        assert outcomes[ref]["ingest_status"] == "ok", (
+            "TC-INGEST-43: the recorded outcome is `ok` even at confidence "
+            "0.4 — `low_confidence_ocr` is produced by no ladder path (F-D; "
+            "the routing gap is the ladder suite's disclosure, the recording "
+            "is what this case pins).")
+        assert outcomes[ref]["quarantined"] == 0
+
+    # The per-region confidence join, exact: one conf-carrying region per
+    # student, plus the header region the prompt's carry-over produces with no
+    # confidence at all.
+    rows = _region_rows(fx.handle, fx.cohort_id)
+    confs: dict[str, list] = {}
+    nulls: dict[str, int] = {}
+    for row in rows:
+        if row["ocr_conf"] is None:
+            nulls[row["student_ref"]] = nulls.get(row["student_ref"], 0) + 1
+        else:
+            confs.setdefault(row["student_ref"], []).append(row["ocr_conf"])
+    assert confs == {"hana-w": [0.9], "bram-c": [0.4]}, (
+        f"TC-INGEST-43: the recorded per-region confidences are not the "
+        f"values the transcription tagged: {confs}.")
+    assert nulls == {"hana-w": 1, "bram-c": 1}, (
+        f"TC-INGEST-43: the header region's unconfident record moved: {nulls} "
+        "— the analysis reads ocr_conf IS NULL as 'the model tagged none'.")
+
+    # The unresolved tokens, joined to their region and student: the marginal
+    # paper carries the scrawl, the legible one carries nothing.
+    tokens = _unresolved_rows(fx.handle, fx.cohort_id)
+    assert [(row["student_ref"], row["token"]) for row in tokens] == [
+        ("bram-c", "scrawl")], (
+        f"TC-INGEST-43: the unresolved-token join moved: {tokens}.")
+    bram_region_id = fx.handle.query(
+        "SELECT r.region_id FROM document_region r JOIN document d ON "
+        "d.document_id = r.document_id WHERE d.submission_id = :s AND "
+        "r.ocr_conf IS NOT NULL",
+        s=outcomes["bram-c"]["submission_id"])[0]["region_id"]
+    assert tokens[0]["region_id"] == bram_region_id, (
+        "TC-INGEST-43: the token's region is not the marginal paper's "
+        "conf-carrying region.")
+    bram_conf_region = next(row for row in rows
+                            if row["student_ref"] == "bram-c"
+                            and row["ocr_conf"] is not None)
+    assert bram_conf_region["region_kind"] == "transcribed_text"
+    fx.close()
+
+
+# -- TC-INGEST-44: the recorded run's exact names and hand-computed gate counts -----------------------
+
+#: The mixed-outcome cohort's construction table (TC-INGEST-44). Reachability
+#: is construction knowledge — which gate **ran** for which submission is not
+#: derivable from the rows alone (F4: unreached gates keep their initialized
+#: `'pass'`), so the sets are written out with the reason each entry is absent:
+#: - sub-2 (V0 refusal) stops before rasterization: no V1+ gate ran.
+#: - sub-3 (V1 gap) stores no document: no V2+ gate ran.
+#: - sub-4 (V2 failure) quarantines at V2: V3 did not run.
+#: - sub-5 (V3 unmatched) quarantines at V3; V4 still evaluates (a document
+#:   and the catalog both exist) and its `uncertain` overrides the status.
+REACHED = {"v0": {1, 2, 3, 4, 5}, "v1": {1, 3, 4, 5}, "v2": {1, 4, 5},
+           "v3": {1, 5}}
+FAILED = {"v0": {2}, "v1": {3}, "v2": {4}, "v3": {5}}
+PASSED = {gate: REACHED[gate] - FAILED[gate] for gate in REACHED}
+
+#: The per-gate failure values — V3's failure is `unmatched`, not `fail`
+#: (identity is never guessed; unmatched routes to triage). The quarantine-by-
+#: gate derivation scans only these values, so a future fix that stops masking
+#: unreached gates as `'pass'` (F4) keeps the derivation true.
+FAIL_VALUE = {"v0": "fail", "v1": "fail", "v2": "fail", "v3": "unmatched"}
+GATE_COLUMNS = {"v0": "v0_integrity", "v1": "v1_pages", "v2": "v2_structure",
+                "v3": "v3_identity"}
+
+#: The full recorded row per submission — every gate column, the status, the
+#: quarantine flag — as the shipped ladder records it (probe-pinned).
+EXPECTED_ROWS = {
+    "ok": {"student_ref": "ref-1", "v0_integrity": "pass", "v1_pages": "pass",
+           "v2_structure": "pass", "v3_identity": "pass", "v4_match": "match",
+           "ingest_status": "ok", "quarantined": 0},
+    "unreadable": {"student_ref": "unknown", "v0_integrity": "fail",
+                   "v1_pages": "pass", "v2_structure": "pass",
+                   "v3_identity": "pass", "v4_match": "not_run",
+                   "ingest_status": "unreadable", "quarantined": 1},
+    # ^ the refusal stops before any document is stored, so the row records
+    # the `unknown` sentinel — even though ref-2 is on the roster, the
+    # identity is NOT guessed from the caller's roster (OBS-01's honest row).
+    "incomplete-v1": {"student_ref": "unknown", "v0_integrity": "pass",
+                      "v1_pages": "fail", "v2_structure": "pass",
+                      "v3_identity": "pass", "v4_match": "not_run",
+                      "ingest_status": "incomplete", "quarantined": 1},
+    # ^ the V1 gap also stores no document, so `Student: ref-3` in the raw
+    # scan is never parsed either — the same `unknown` sentinel.
+    "incomplete-v2": {"student_ref": "ref-4", "v0_integrity": "pass",
+                      "v1_pages": "pass", "v2_structure": "fail",
+                      "v3_identity": "pass", "v4_match": "match",
+                      "ingest_status": "incomplete", "quarantined": 1},
+    # ^ ref-4 IS recorded: the document survived V1, and the Student line is
+    # parsed from the marked transcript regardless of the later quarantine.
+    "unmatched-v3": {"student_ref": "unknown", "v0_integrity": "pass",
+                     "v1_pages": "pass", "v2_structure": "pass",
+                     "v3_identity": "unmatched", "v4_match": "uncertain",
+                     "ingest_status": "unmatched_assessment",
+                     "quarantined": 1},
+    # ^ no Student line in the prose, so the identity column stays `unknown`
+    # while V3 routes the submission to triage.
+}
+
+#: Which construction each ingest call is (keyed by the call order above).
+EXPECTED_BY_INDEX = {1: "ok", 2: "unreadable", 3: "incomplete-v1",
+                     4: "incomplete-v2", 5: "unmatched-v3"}
+
+
+def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gate_counts(
+        tmp_data_dir):
+    """`TC-INGEST-44` — the run-level signals of §3.5/`OBS-01`, over a cohort
+    whose five submissions span the gate outcomes.
+
+    What is asserted is the **recorded form**, fully:
+
+    - the text-layer fields under their **exact names and types**
+      (`pages_with_text_layer` INTEGER, `text_layer_divergence` REAL — the
+      §6.10 rule that every field is present and correctly typed, and that the
+      divergence is a per-document maximum, not a mean);
+    - every submission's complete per-gate row (the mixed outcomes live in
+      their own columns — no boolean collapse, `CT-INGEST-08`);
+    - the per-gate **pass/fail counts** and the quarantine counts **by gate**,
+      hand-computed against the reachability table above.
+
+    What is disclosed, not asserted (F3): the named run-level signals
+    themselves — `ocr_failure_rate`, the unresolved-mark rate, the mean/max
+    divergence aggregates, the second-pass disagreement rate — have no emitter
+    anywhere in src/ and no open story owns one; the derivations here are what
+    a consumer can compute from the recorded rows today."""
+    fx = _Fixture(tmp_data_dir, "run-signals", "c-44")
+    catalog, version = fx.catalog(["open"])
+    fx.add_roster("ref-1", "ref-2", "ref-3", "ref-4", "ref-5")
+
+    # The ok paper: two pages, both with a text layer — page 1 diverges (the
+    # layer lacks the header tokens and the marker protocol the raw transcript
+    # carries, F6), page 2 is verbatim, so the recorded divergence is the
+    # page-1 maximum and the count is 2.
+    layer_one = "student ref-1 the worked answer for the one question"
+    page_one = _student_answer(
+        "ref-1", _answer_text("Q1", "the worked answer for the one question"))
+    ok_source = fx.put(b"ok-source")
+    fx.rasterizer.plan[b"ok-source"] = [(1, b"a", 100, 140),
+                                        (2, b"b", 100, 140)]
+    fx.rasterizer.layers[(b"ok-source", 1)] = layer_one
+    fx.rasterizer.layers[(b"ok-source", 2)] = DEFAULT_PAGE_TEXTS[2]
+    fx.script(ok_source, {1: page_one, 2: DEFAULT_PAGE_TEXTS[2]})
+
+    # The V0 refusal, the V1 gap, the V2 failure and the V3 unmatched.
+    refusing = RefusingSanitizer({b"refused-src"})
+    refuse_ingestor = Ingestor(fx.handle, fx.blobs, fx.provider, _model(),
+                               SamplingParams(temperature=0.0), fx.rasterizer,
+                               residency=fx.slot, sanitizer=refusing)
+    v1_source = fx.put(b"v1-gap-src")
+    v2_source = fx.put(b"v2-fail-src")
+    v3_source = fx.put(b"v3-unmatched-src")
+    fx.script(v1_source, {1: "Student: ref-3\nPage 1 of 2, the ink is fresh"})
+    fx.script(v2_source, {1: _student_answer("ref-4", _selection("Q1", "resolved", "A"))})
+    fx.script(v3_source, {1: "plain prose with no identity line at all"})
+
+    reports = {}
+    reports[1] = fx.ingestor.ingest_submission(
+        [ok_source], cohort_id=fx.cohort_id, package_version=version,
+        package_catalog=catalog, filenames={ok_source: "scan-01.md"})
+    refused_source = fx.put(b"refused-src")
+    reports[2] = refuse_ingestor.ingest_submission(
+        [refused_source], cohort_id=fx.cohort_id, package_version=version,
+        package_catalog=catalog, filenames={refused_source: "scan-02.md"})
+    reports[3] = fx.ingestor.ingest_submission(
+        [v1_source], cohort_id=fx.cohort_id, package_version=version,
+        package_catalog=catalog, filenames={v1_source: "scan-03.md"})
+    reports[4] = fx.ingestor.ingest_submission(
+        [v2_source], cohort_id=fx.cohort_id, package_version=version,
+        package_catalog=catalog, filenames={v2_source: "scan-04.md"})
+    reports[5] = fx.ingestor.ingest_submission(
+        [v3_source], cohort_id=fx.cohort_id, package_version=version,
+        package_catalog=catalog, filenames={v3_source: "scan-05.md"})
+
+    # Every recorded row, pinned in full (the masked `'pass'` columns are the
+    # F4 disclosure, not an oversight). Keyed by submission_id: `student_ref`
+    # is NOT unique here — three of the five record the `unknown` sentinel.
+    rows = {row["submission_id"]: dict(row) for row in fx.submission_rows()}
+    for index, name in EXPECTED_BY_INDEX.items():
+        row = rows[reports[index].submission_id]
+        for column, value in EXPECTED_ROWS[name].items():
+            assert row[column] == value, (
+                f"TC-INGEST-44 ({name}): the recorded {column} is "
+                f"{row[column]!r}, expected {value!r}.")
+    statuses = {row["ingest_status"] for row in fx.submission_rows()}
+    assert statuses <= set(INGEST_STATUSES), (
+        f"TC-INGEST-44: the run recorded a status outside the vocabulary: "
+        f"{statuses - set(INGEST_STATUSES)}.")
+    assert "low_confidence_ocr" not in statuses, (
+        "TC-INGEST-44: `low_confidence_ocr` appeared — no ladder path "
+        "produces it (F-D); if that changed, this assertion and the ladder "
+        "suite's disclosure change with it.")
+
+    # The hand-computed derivations, from the recorded rows restricted to the
+    # reachability table (F4: raw-row pass counts overcount).
+    def _gate_value(row, gate):
+        return row[GATE_COLUMNS[gate]]
+
+    fail_counts = {gate: sum(1 for row in fx.submission_rows()
+                             if _gate_value(row, gate) == FAIL_VALUE[gate])
+                   for gate in ("v0", "v1", "v2", "v3")}
+    assert fail_counts == {gate: len(FAILED[gate]) for gate in FAILED}, (
+        f"TC-INGEST-44: the per-gate fail counts moved: {fail_counts}.")
+    pass_counts = {
+        gate: sum(1 for row in fx.submission_rows()
+                  if row["submission_id"] in {
+                      reports[i].submission_id for i in PASSED[gate]}
+                  and _gate_value(row, gate) == "pass")
+        for gate in ("v0", "v1", "v2", "v3")}
+    assert pass_counts == {gate: len(PASSED[gate]) for gate in PASSED}, (
+        f"TC-INGEST-44: the per-gate pass counts moved: {pass_counts}.")
+    quarantine_by_gate: dict[str, int] = {}
+    for row in fx.submission_rows():
+        if not row["quarantined"]:
+            continue
+        failed_gates = [gate for gate in ("v0", "v1", "v2", "v3")
+                        if _gate_value(row, gate) == FAIL_VALUE[gate]]
+        assert len(failed_gates) == 1, (
+            f"TC-INGEST-44: a quarantined row names {failed_gates} — the "
+            "quarantining gate must be exactly one.")
+        quarantine_by_gate[failed_gates[0]] = (
+            quarantine_by_gate.get(failed_gates[0], 0) + 1)
+    assert quarantine_by_gate == {"v0": 1, "v1": 1, "v2": 1, "v3": 1}, (
+        f"TC-INGEST-44: the quarantine counts by gate moved: "
+        f"{quarantine_by_gate}.")
+    quarantined_indices = {
+        index for index, report in reports.items()
+        if rows[report.submission_id]["quarantined"]}
+    assert quarantined_indices == {2, 3, 4, 5}
+
+    # The text-layer fields: exact names, exact types, exact values.
+    document_columns = {row["name"]: row["type"] for row in fx.handle.query(
+        "PRAGMA table_info(document)")}
+    assert document_columns.get("pages_with_text_layer") == "INTEGER", (
+        "TC-INGEST-44: `pages_with_text_layer` is missing or mistyped (OBS-01: "
+        "every field present and correctly typed).")
+    assert document_columns.get("text_layer_divergence") == "REAL", (
+        "TC-INGEST-44: `text_layer_divergence` is missing or mistyped.")
+    submission_columns = {row["name"]: row["type"] for row in fx.handle.query(
+        "PRAGMA table_info(submission)")}
+    for column in list(GATE_COLUMNS.values()) + ["v4_match", "ingest_status"]:
+        assert submission_columns.get(column) == "TEXT", (
+            f"TC-INGEST-44: the submission's {column} is "
+            f"{submission_columns.get(column)!r}, not TEXT.")
+    assert submission_columns.get("quarantined") == "INTEGER"
+    ok_document = fx.handle.query(
+        "SELECT pages_with_text_layer, text_layer_divergence FROM document "
+        "WHERE submission_id = :s", s=reports[1].submission_id)[0]
+    assert ok_document["pages_with_text_layer"] == 2
+    expected_divergence = _divergence(layer_one, page_one)
+    assert ok_document["text_layer_divergence"] == pytest.approx(
+        expected_divergence, abs=1e-12), (
+        f"TC-INGEST-44: the recorded divergence "
+        f"{ok_document['text_layer_divergence']} is not the per-document "
+        f"maximum the measure gives ({expected_divergence}) — F6's measure is "
+        "over the raw transcript, markers included.")
+    fx.close()
