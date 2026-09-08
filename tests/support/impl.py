@@ -1401,6 +1401,46 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/property/test_fuzz_03_verify_span.py",
         ),
     ),
+    "#73 IntegrityGate (TC-INTEG-02)": (
+        # FR-INTEG-02 (discard, retry, quarantine) is #73's own acceptance criterion —
+        # the retry ladder's state transitions are what that story ships. Keyed on the
+        # class the file constructs; the known residual weakness (recorded at TS-08
+        # rather than papered over) applies: a Protocol-shell `IntegrityGate` would
+        # resolve this key while the construction the test needs is still #74's. The
+        # class and the ladder reconcile at #73's landing.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/integration/integ/test_integ_retry_and_quarantine.py",
+        ),
+    ),
+    "#74 IntegritySignals (TC-INTEG-03/04/05/06/07/08/10/11/12)": (
+        # #74 lands the signals, the routing and the restricted write set in one story,
+        # so every file that constructs the gate or asserts the signals resolves at the
+        # same commit — the symbol is the dataclass the tests read, which no Protocol
+        # shell satisfies with an empty shell (a frozen dataclass with six fields is
+        # either there or it is not).
+        "symbol",
+        f"{INTEG_MODULE}:IntegritySignals",
+        (
+            "tests/unit/integ/test_integrity_signals.py",
+            "tests/artifact/test_integ_write_set.py",
+            "tests/integration/integ/test_integ_routing_and_sweeps.py",
+            "tests/integration/integ/test_integ_perf.py",
+        ),
+    ),
+    "#74 alert constant (TC-INTEG-14)": (
+        # CT-INTEG-14 declares the *alert* but not its spelling; the store's precedent
+        # (ALERT_FREE_DISK, DECLARED_ALERTS) makes the name part of the interface, so
+        # the observability file requires the constant and this key is the exact thing
+        # whose absence holds the case out of the gate — an invented-and-disclosed
+        # name, same reasoning as `aeh.synth:synthesize` above.
+        "symbol",
+        f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES",
+        (
+            "tests/integration/integ/test_integ_observability.py",
+        ),
+    ),
 }
 
 
