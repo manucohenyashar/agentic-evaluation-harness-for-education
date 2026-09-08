@@ -84,17 +84,18 @@ ECF_DEPENDENCY_REPLY = json.dumps({"dependencies": [
 ]})
 
 
-def _dependency_edges(data_dir, package_id: str, issue: str) -> int:
+def _dependency_edges(data_dir, package_id: str, version: str, issue: str) -> int:
     """How many dependency edges the version's stored graph carries."""
-    # A raw handle is needed for the row count: the criteria read does not carry the
-    # graph, and `set_dependencies` *replaces* rather than reads it.
-    handle = PackageCatalog(open_store(data_dir).package(package_id),
-                            package_id=package_id)
+    # A raw tier handle is needed for the row count: the criteria read does not
+    # carry the graph, and `set_dependencies` *replaces* rather than reads it.
+    # The version is the caller's (`chain.catalog.draft_version()`) — a fresh
+    # `PackageCatalog` has no `transaction()` to borrow, and re-opening the tier
+    # for its draft would race the chain's own view of "latest unpublished".
+    handle = open_store(data_dir).package(package_id)
     with handle.transaction() as tx:
-        version = handle.draft_version()
         rows = tx.execute(statement(
             "SELECT criterion_id, depends_on FROM criterion_dependency "
-            "WHERE package_version_id = :v", issue=issue), v=version).fetchall()
+            "WHERE package_version_id = :v", issue=issue), v=version)
     return len(rows)
 
 
@@ -124,7 +125,7 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
     # The default, before anything is proposed: zero dependencies everywhere.
     criteria = {row["criterion_id"] for row in chain.catalog.criteria(version)}
     assert criteria == {"CRIT-IMP", "CRIT-STEPS"}
-    assert _dependency_edges(tmp_data_dir, chain.package_id, ISSUE) == 0, (
+    assert _dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE) == 0, (
         "TC-SETUP-13: a criterion carried a dependency before anyone approved one — "
         "FR-SETUP-10 defaults every criterion to zero dependencies"
     )
@@ -157,7 +158,7 @@ def test_tc_setup_13_dependencies_default_zero_proposal_plain_language_edge_only
         )
 
     # Declined. No edge exists.
-    assert _dependency_edges(tmp_data_dir, chain.package_id, ISSUE) == 0, (
+    assert _dependency_edges(tmp_data_dir, chain.package_id, version, ISSUE) == 0, (
         "TC-SETUP-13: an edge exists after the teacher declined — FR-SETUP-10 writes a "
         "dependency only on explicit teacher approval"
     )

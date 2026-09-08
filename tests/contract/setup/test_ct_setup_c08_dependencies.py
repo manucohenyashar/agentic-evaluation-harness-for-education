@@ -116,6 +116,10 @@ def test_tc_setup_c08_proposal_writes_nothing_without_explicit_approval(
         {"criterion_id": "CRIT-USE", "question_id": "Q3", "kind": "open",
          "scoring_model": "atomic", "max_points": 6.0,
          "construct": "the definition is applied to the collision"},
+    ]}), json.dumps({"dependencies": [
+        {"criterion_id": "CRIT-USE", "depends_on": "CRIT-DEF",
+         "reason": "error carried forward: grading the application sees the "
+                   "definition credited under the earlier part"},
     ]})]
     chain.service.read_back_rubric(rubric, chain.doc)
 

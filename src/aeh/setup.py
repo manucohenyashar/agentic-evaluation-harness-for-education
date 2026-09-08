@@ -1,6 +1,7 @@
-"""M-SETUP — Stage A: the question inventory proposal, the rubric read-back, the two
-blocking gates, and publication (#50, #51; design §3.6, FR-SETUP-01/-02/-04/-05/-09/-16,
-NFR-SETUP-04).
+"""M-SETUP — Stage A: the question inventory proposal, the rubric read-back, the
+decomposability classification, the dependency proposals, the two blocking gates, and
+publication (#50, #51, #52; design §3.6, FR-SETUP-01/-02/-04/-05/-06/-07/-08/-09/-10/-14/-16,
+NFR-SETUP-01/-02/-04).
 
 Stage A runs ONCE per package version (`CT-SETUP-16`): the assessment document the
 teacher ingested through `M-INGEST` is read (never re-ingested — `CT-SETUP-11`: setup
@@ -29,7 +30,15 @@ tells the teacher the truth about what remains (`NFR-SETUP-04`, `FR-CONSOLE-25`)
   default a criterion without a band set takes is the recorded default, so the step can
   be deferred; the derived set is recorded as `derived_default`, not passed off as an
   explicit choice),
-- decomposability and dependencies: #52,
+- decomposability and dependencies: HERE since #52 — the §5.3 decision table is the
+  module's (`classify_decomposability` asks the model for the five ANSWERS, never a
+  verdict; fail one question and the classification follows it, and an unclear answer
+  defaults `holistic`, never `atomic` — NFR-SETUP-02, RISK-27). The confirmations the
+  borderline criteria surface are capped at `SETUP_MAX_CONFIRMATIONS` by THIS module
+  (`CT-SETUP-13`, headlessly — no console required), dependencies default to zero and
+  are written only on explicit teacher approval (`FR-SETUP-10`), and every verdict —
+  teacher-confirmed or taken as the module's default — is recorded through `M-PKG`
+  (`R62`: M-CALIB and M-STATS can tell the two apart),
 - grade policy, grade boundaries and the prefix budget: #53 — which also stages S4's
   full `FR-SETUP-03` validation semantics. Here `set_answer_keys` is the thin,
   blocking write-through to `PackageCatalog.set_answer_key`, and publish's second gate
@@ -82,7 +91,15 @@ from aeh.pkg import (
 from aeh.prov import InferenceProvider, ModelRef, PromptPayload, SamplingParams
 
 __all__ = [
+    "CLASSIFICATIONS",
+    "CLASSIFY_ATTEMPTS_DEFAULT",
+    "CLASSIFY_ATTEMPTS_ENV",
+    "CONFIRMATIONS_DEFAULT",
+    "CONFIRMATIONS_ENV",
     "CriterionDraft",
+    "DecomposabilityVerdict",
+    "DependencyProposal",
+    "FIVE_QUESTIONS",
     "InventoryProposal",
     "PROPOSAL_ATTEMPTS_DEFAULT",
     "PROPOSAL_ATTEMPTS_ENV",
@@ -94,9 +111,12 @@ __all__ = [
     "READBACK_ATTEMPTS_ENV",
     "RubricReadback",
     "SCORING_MODELS",
+    "SETUP_CLASSIFY_TEMPLATE_V",
     "SETUP_DEFAULT_BAND_COUNT",
+    "SETUP_DEPENDENCIES_TEMPLATE_V",
     "SETUP_EVIDENCE_TYPE_DEFAULT",
     "SETUP_MAGNITUDE_PHRASES",
+    "SETUP_MAX_CONFIRMATIONS",
     "SETUP_PROMPT_TEMPLATE_V",
     "SETUP_READBACK_TEMPLATE_V",
     "SetupError",
@@ -151,6 +171,17 @@ def _configured_proposal_attempts() -> int:
 #: string, never an in-place edit of this constant's meaning.
 SETUP_READBACK_TEMPLATE_V = "setup-readback-v1"
 
+#: The decomposability-classification prompt's pinned version (`#52`, NFR-SETUP-03's
+#: rule at the classifier): a change to it changes every classification made afterwards,
+#: so it is recorded with the verdicts it produced (`CT-SETUP-14`'s rule, applied to
+#: this prompt too).
+SETUP_CLASSIFY_TEMPLATE_V = "setup-classify-v1"
+
+#: The dependency-proposal prompt's pinned version (`#52`): the same record-where-used
+#: rule — the proposals' plain-language renderings are traceable to the prompt that
+#: elicited them.
+SETUP_DEPENDENCIES_TEMPLATE_V = "setup-dependencies-v1"
+
 #: The default band-set size (`FR-SETUP-04`): a criterion whose construct carries no
 #: partial credit gets two bands — met / not met — derived from the criterion's own
 #: text. Configuration §3.6: `SETUP_DEFAULT_BAND_COUNT` (2).
@@ -183,6 +214,82 @@ SETUP_EVIDENCE_TYPE_DEFAULT = "textual_span"
 #: `holistic` (FR-SETUP-13, FR-AGG-06) — so the read back proposes within those and a
 #: third name in a model reply is a schema-validation failure, re-requested.
 SCORING_MODELS: tuple[str, ...] = ("atomic", "holistic")
+
+# -- #52: the decomposability classification (FR-SETUP-06/-07/-08, §5.3) ------------------
+
+#: The five HLD §5.3 questions, in the order the HLD names them. The classifier asks
+#: the model for an ANSWER to each — never for a verdict — and this module's decision
+#: table turns the answers into the classification (FR-SETUP-06: the table is the
+#: module's, so a scripted verdict cannot pass through the model seam).
+FIVE_QUESTIONS: tuple[str, ...] = (
+    "completeness", "non_interference", "independence", "additivity", "gates",
+)
+
+#: The classification vocabulary (`CT-SETUP-04`): `atomic` (judged in isolation),
+#: `atomic_with_gate` (judged in isolation once its gate holds), `holistic` (judged as
+#: a whole). The criterion's stored `scoring_model` IS the classification (`FR-SETUP-08`
+#: — panel depth and the auto-acceptance ceiling are functions of stored data, so
+#: M-ORCH and M-AGG read a number, never a run-time branch).
+CLASSIFICATIONS: tuple[str, ...] = ("atomic", "atomic_with_gate", "holistic")
+
+#: The teacher-time cap (`FR-SETUP-07`, NFR-SETUP-01, Configuration §3.6):
+#: `SETUP_MAX_CONFIRMATIONS` (6, Assumption (6), R9's budget) — at most this many
+#: decomposability confirmations are REQUESTED per package, plus the two blocking
+#: screens, and the cap is enforced by THIS module (`CT-SETUP-13`: headlessly, not by
+#: the console). Env-gated so a slower pilot box can widen it without a code change;
+#: read at import — the tests and the console read the module attribute, so the env
+#: must be set before the process starts.
+CONFIRMATIONS_ENV = "HARNESS_SETUP_MAX_CONFIRMATIONS"
+CONFIRMATIONS_DEFAULT = 6
+
+
+def _configured_max_confirmations() -> int:
+    """The confirmation cap: the design's 6 unless the env widens or narrows it."""
+    raw = os.environ.get(CONFIRMATIONS_ENV)
+    if not raw:
+        return CONFIRMATIONS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise SetupError(
+            f"{CONFIRMATIONS_ENV}={raw!r} is not an integer."
+        ) from error
+    if value < 1:
+        raise SetupError(
+            f"{CONFIRMATIONS_ENV}={value} is below 1: a cap below one confirmation "
+            "cannot surface even the first borderline criterion."
+        )
+    return value
+
+
+SETUP_MAX_CONFIRMATIONS: int = _configured_max_confirmations()
+
+#: The classify attempt budget (`CT-SETUP-12`'s rule at the classifier): a reply that
+#: fails to parse or validate is re-requested up to this many times, then the verdict
+#: degrades to the recorded default (`holistic`, surfaced) — degraded but complete.
+#: Env-gated, read at CALL time (the knob doctrine).
+CLASSIFY_ATTEMPTS_ENV = "HARNESS_SETUP_CLASSIFY_ATTEMPTS"
+CLASSIFY_ATTEMPTS_DEFAULT = 3
+
+
+def _configured_classify_attempts() -> int:
+    """The classify attempt budget, read at call time — never at import."""
+    raw = os.environ.get(CLASSIFY_ATTEMPTS_ENV)
+    if not raw:
+        return CLASSIFY_ATTEMPTS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise SetupError(
+            f"{CLASSIFY_ATTEMPTS_ENV}={raw!r} is not an integer."
+        ) from error
+    if value < 1:
+        raise SetupError(
+            f"{CLASSIFY_ATTEMPTS_ENV}={value} is below 1: at least one classify "
+            "attempt is required."
+        )
+    return value
+
 
 #: The read-back attempt budget (`CT-SETUP-12`'s rule at the read back): a model reply
 #: that fails to parse, to validate, or to clear the magnitude bar is re-requested up to
@@ -355,6 +462,12 @@ class CriterionDraft:
     #: module derived the two-band met / not-met set (`FR-SETUP-14`: a default taken
     #: is recorded, not indistinguishable from an explicit choice).
     bands_source: str = "proposed"
+    #: `#52` (`FR-SETUP-06`): which §5.3 question decided the scoring model the read
+    #: back wrote, when the reply carried the answers for the table to decide — the
+    #: name of the deciding question, or "" when nothing did (all answers pass; the
+    #: unclear default applied). The audit field beside `scoring_model`, not a
+    #: separate scoring input.
+    decomposition_basis: str = ""
 
 
 @dataclass(frozen=True)
@@ -384,6 +497,78 @@ class RubricReadback:
             if criterion.criterion_id == criterion_id:
                 return criterion
         return None
+
+
+# -- #52: the decomposability decision table and its verdict (FR-SETUP-06/-07/-08) --------
+
+
+def _classify_answers(
+    answers: Mapping[str, Any],
+) -> tuple[str, str | None]:
+    """The five-question decision table — THE module's, not the model's (`FR-SETUP-06`).
+
+    The model answers the §5.3 questions; this table turns answers into a
+    classification. Scanned in the HLD's order, the first `no` decides: `gates`
+    failing names `atomic_with_gate` (the criterion is judged in isolation once its
+    gate holds), any other question failing names `holistic` (the construct does not
+    survive being cut apart). With no `no` anywhere, an `unclear` answer — or an
+    answer the vocabulary does not name, which IS unclear — applies NFR-SETUP-02's
+    asymmetric default: `holistic`, never `atomic` (RISK-27: a default of `atomic`
+    would hand the criterion panel depth 1 and a higher auto-acceptance ceiling than
+    it deserves, and nothing downstream would notice). All answers pass and none is
+    unclear: `atomic` — the one classification the table grants, never the default.
+
+    Returns `(classification, deciding_question)`; the deciding question is None
+    exactly when nothing decided (the all-pass cell and the default cell)."""
+    for question in FIVE_QUESTIONS:
+        if str(answers.get(question, "")).strip().lower() == "no":
+            if question == "gates":
+                return "atomic_with_gate", question
+            return "holistic", question
+    for question in FIVE_QUESTIONS:
+        if str(answers.get(question, "")).strip().lower() != "yes":
+            return "holistic", None
+    return "atomic", None
+
+
+@dataclass(frozen=True)
+class DecomposabilityVerdict:
+    """One criterion's decomposability outcome (`§3.6`'s Interface, `#52`).
+
+    `classification` is one of `atomic` / `atomic_with_gate` / `holistic`;
+    `deciding_question` names WHICH §5.3 question decided it — the audit field
+    `decomposition_basis` records (`FR-SETUP-06`), None exactly when nothing decided.
+    `reasoning` is the module's own statement of why, carrying the model's answer set;
+    `needs_teacher_confirmation` is the surfacing half of `FR-SETUP-07` — true for the
+    borderline criteria (an unclear answer anywhere) and the warning-sign criteria, as
+    the confirmation cap allows, because the teacher's time is the budget
+    (`NFR-SETUP-01`)."""
+
+    classification: str
+    deciding_question: str | None
+    reasoning: str
+    needs_teacher_confirmation: bool
+
+
+@dataclass(frozen=True)
+class DependencyProposal:
+    """One proposed criterion dependency (`FR-SETUP-10`, `#52`) — a PROPOSAL, never a
+    write: every criterion defaults to zero dependencies, and an edge exists only once
+    the teacher explicitly approves it (`CT-SETUP-08`).
+
+    `str()` renders the plain language `FR-SETUP-10` demands — both criteria named,
+    the proposal's own reason carried, no payload syntax: a teacher reads a sentence,
+    not a dict."""
+
+    criterion_id: str
+    depends_on: str
+    reason: str
+
+    def __str__(self) -> str:
+        return (
+            f"When grading {self.criterion_id}, the grader will also see the work you "
+            f"credited under {self.depends_on}, because {self.reason.rstrip('.')}."
+        )
 
 
 @dataclass(frozen=True)
@@ -488,6 +673,51 @@ _READBACK_INSTRUCTION = (
     '"bands": [{"band": "met", "ordinal": 1, "points": 4, "descriptor": "the response '
     'does ..."}, {"band": "not met", "ordinal": 2, "points": 0, "descriptor": "the '
     'response does not ..."}]}]}'
+)
+
+_CLASSIFY_INSTRUCTION = (
+    "You are answering the five decomposability questions for ONE grading criterion "
+    "(HLD §5.3): they decide whether a judge can score this criterion in isolation on "
+    "one response, or only as a whole. Do NOT classify the criterion yourself — answer "
+    "the questions; the system applies the decision table.\n"
+    "Answer each question 'yes', 'no', or 'unclear':\n"
+    "- completeness: is everything the criterion judges present in the response "
+    "segment it is scored on, on its own?\n"
+    "- non_interference: can the criterion's evidence be gathered without being "
+    "distorted by how another criterion's evidence is gathered?\n"
+    "- independence: does the judgment not depend on the outcome of another "
+    "criterion's judgment?\n"
+    "- additivity: can the criterion's score be combined additively with the others "
+    "without double counting or interaction effects?\n"
+    "- gates: is there a precondition (a gate) that must hold before the criterion "
+    "can be scored at all?\n"
+    "- warning_signs: list anything about the criterion that warns against decomposing "
+    "it (straddling two constructs, mixed scales, ...); an empty list when none.\n"
+    "Use 'unclear' whenever the criterion's text does not settle a question — never "
+    "guess.\n"
+    "Reply with ONLY a JSON object, no prose, of this shape:\n"
+    '{"criterion_id": "CRIT-1", "answers": {"completeness": "yes", '
+    '"non_interference": "yes", "independence": "unclear", "additivity": "no", '
+    '"gates": "yes"}, "warning_signs": ["straddles two constructs"], '
+    '"reasoning": "what the criterion text shows for the answers given"}'
+)
+
+_DEPENDENCIES_INSTRUCTION = (
+    "You are proposing criterion dependencies for a grading package (FR-SETUP-10). A "
+    "dependency makes one criterion's grading SEE the evidence credited under another "
+    "criterion — a contamination channel that must earn its place — so propose an edge "
+    "ONLY where the subject itself makes error-carried-forward likely (a later "
+    "criterion graded on work that presupposes an earlier criterion's construct). "
+    "Every criterion you do not name keeps its default of zero dependencies.\n"
+    "- criterion_id is the LATER criterion whose grading would see the earlier work; "
+    "depends_on is the EARLIER one whose credited work it presupposes.\n"
+    "- reason states, in the subject's own terms, what the later criterion's grading "
+    "presupposes.\n"
+    "Reply with ONLY a JSON object, no prose, of this shape — an empty list when "
+    "nothing is likely:\n"
+    '{"dependencies": [{"criterion_id": "CRIT-4", "depends_on": "CRIT-2", '
+    '"reason": "error carried forward: the derivation is graded on work that '
+    'presupposes the definition"}]}'
 )
 
 
@@ -864,7 +1094,22 @@ def _parse_readback_reply(
                 "('open', 'mcq')."
             )
         scoring_model = raw.get("scoring_model")
-        if scoring_model not in SCORING_MODELS:
+        decomposition_basis = ""
+        if scoring_model is None:
+            # #52 (`FR-SETUP-06`/`-08`): the reply carried the §5.3 ANSWERS (or none at
+            # all) and no scoring model — the classification is the module's table, not
+            # the reply's word. An `mcq` criterion is FR-SETUP-13's: never submitted to
+            # the §5.3 test, `atomic` outright. Anything else is the table over whatever
+            # answers the reply carried — an absent answer set is the unclear case, and
+            # the default is `holistic`, never `atomic` (NFR-SETUP-02, RISK-27).
+            if kind == "mcq":
+                scoring_model = "atomic"
+            else:
+                raw_answers = raw.get("answers")
+                raw_answers = raw_answers if isinstance(raw_answers, dict) else {}
+                scoring_model, decided = _classify_answers(raw_answers)
+                decomposition_basis = decided or ""
+        elif scoring_model not in SCORING_MODELS:
             raise _ReplyError(
                 f"criterion {criterion_id!r}: scoring_model {scoring_model!r} is "
                 f"outside the vocabulary {SCORING_MODELS} (FR-SETUP-13, FR-AGG-06)."
@@ -999,9 +1244,144 @@ def _parse_readback_reply(
             scoring_model=scoring_model, max_points=float(max_points),
             construct=construct, band_count=band_count, bands=bands,
             justification=justification.strip(), evidence_type=evidence_type.strip(),
-            bands_source=bands_source,
+            bands_source=bands_source, decomposition_basis=decomposition_basis,
         ))
     return tuple(drafts)
+
+
+def _draft_criterion_identity(draft: Any) -> dict:
+    """The classifier's view of one criterion draft, as a plain mapping.
+
+    The draft arrives either as a `CriterionDraft` (the read back's own drafts) or as
+    the plain dict a caller assembled (the payload shape the test suite bets on) — the
+    classifier consumes the identity fields either way, and refuses a draft that names
+    no criterion (`SetupError`: a classification of nothing is not a classification)."""
+    if isinstance(draft, Mapping):
+        get = draft.get
+    else:
+        get = lambda name, default=None: getattr(draft, name, default)  # noqa: E731
+    criterion_id = get("criterion_id")
+    if not isinstance(criterion_id, str) or not criterion_id.strip():
+        raise SetupError(
+            "classify_decomposability needs a draft that names its criterion — "
+            f"got {draft!r} with no usable 'criterion_id'."
+        )
+    return {
+        "criterion_id": criterion_id,
+        "question_id": str(get("question_id", "") or ""),
+        "kind": str(get("kind", "") or ""),
+        "construct": str(get("construct", "") or ""),
+        "max_points": get("max_points", 0.0),
+        "band_count": get("band_count", 0),
+    }
+
+
+def _json_object(text: str) -> dict:
+    """The one JSON object a reply carries, tolerating prose around it (models add
+    it) — the shared first half of the reply parsers."""
+    stripped = text.strip()
+    start, end = stripped.find("{"), stripped.rfind("}")
+    if start < 0 or end <= start:
+        raise _ReplyError("the reply contains no JSON object.")
+    try:
+        parsed = json.loads(stripped[start:end + 1])
+    except ValueError as error:
+        raise _ReplyError(f"the reply is not valid JSON: {error}") from error
+    if not isinstance(parsed, dict):
+        raise _ReplyError("the reply's JSON is not an object.")
+    return parsed
+
+
+def _parse_classify_reply(text: str, criterion_id: str) -> tuple[dict, list[str], str]:
+    """Parse the classifier's reply into (answers, warning_signs, reasoning), raising
+    `_ReplyError` on anything that is not a valid §5.3 answer set — the failure the
+    attempt loop re-requests. The reply carries ANSWERS, never a classification
+    (`FR-SETUP-06`: the table is the module's); a reply naming a different criterion
+    than the draft is a schema failure, not an answer to accept."""
+    parsed = _json_object(text)
+    reply_id = parsed.get("criterion_id")
+    if reply_id is not None and str(reply_id) != criterion_id:
+        raise _ReplyError(
+            f"the reply classifies {str(reply_id)!r} but the draft names "
+            f"{criterion_id!r} — one classification per criterion, and this reply "
+            "answers a different one."
+        )
+    raw_answers = parsed.get("answers")
+    if not isinstance(raw_answers, dict):
+        raise _ReplyError(
+            "the reply's JSON does not carry an 'answers' object — the classifier "
+            "answers the five §5.3 questions; it does not classify."
+        )
+    answers = {
+        question: str(raw_answers.get(question, "unclear")).strip().lower()
+        for question in FIVE_QUESTIONS
+    }
+    raw_warnings = parsed.get("warning_signs", [])
+    if raw_warnings is None:
+        raw_warnings = []
+    if not isinstance(raw_warnings, list):
+        raise _ReplyError(
+            f"criterion {criterion_id!r}: warning_signs must be a list of strings."
+        )
+    warning_signs = [str(item) for item in raw_warnings if str(item).strip()]
+    reasoning = parsed.get("reasoning", "")
+    if reasoning is None:
+        reasoning = ""
+    if not isinstance(reasoning, str):
+        raise _ReplyError(
+            f"criterion {criterion_id!r}: reasoning must be a string."
+        )
+    return answers, warning_signs, reasoning.strip()
+
+
+def _parse_dependencies_reply(
+    text: str, known_ids: frozenset[str] | set[str],
+) -> tuple[tuple[str, str, str], ...]:
+    """Parse the dependency proposal's reply into (criterion_id, depends_on, reason)
+    triples, raising `_ReplyError` on anything that is not a valid proposal set —
+    the failure the attempt loop re-requests. An edge naming a criterion the version
+    does not carry, or an edge whose ends are the same criterion, is a schema
+    failure: the write path would refuse it, so the proposal path does too."""
+    parsed = _json_object(text)
+    items = parsed.get("dependencies")
+    if items is None:
+        items = parsed.get("proposals")
+    if not isinstance(items, list):
+        raise _ReplyError(
+            "the reply's JSON does not carry a 'dependencies' list."
+        )
+    triples: list[tuple[str, str, str]] = []
+    for index, raw in enumerate(items):
+        if not isinstance(raw, dict):
+            raise _ReplyError(f"dependency #{index} is not an object.")
+        criterion_id = raw.get("criterion_id")
+        depends_on = raw.get("depends_on")
+        if not isinstance(criterion_id, str) or not criterion_id.strip():
+            raise _ReplyError(f"dependency #{index}: criterion_id must be a string.")
+        if not isinstance(depends_on, str) or not depends_on.strip():
+            raise _ReplyError(
+                f"dependency #{index} ({criterion_id!r}): depends_on must be a string."
+            )
+        if criterion_id == depends_on:
+            raise _ReplyError(
+                f"dependency #{index}: {criterion_id!r} cannot depend on itself — a "
+                "self-edge is the cycle the write path refuses."
+            )
+        for end in (criterion_id, depends_on):
+            if end not in known_ids:
+                raise _ReplyError(
+                    f"dependency #{index}: criterion {end!r} is not in this version's "
+                    "criteria — a proposal attaches to criteria that exist."
+                )
+        reason = raw.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            raise _ReplyError(
+                f"dependency {criterion_id!r} -> {depends_on!r}: reason must state, "
+                "in words, what the grading presupposes — a dependency without its "
+                "why cannot be rendered as plain language (FR-SETUP-10)."
+            )
+        triples.append((criterion_id, depends_on, reason.strip()))
+    return tuple(triples)
 
 
 def _criterion_to_dict(draft: CriterionDraft) -> dict:
@@ -1019,6 +1399,7 @@ def _criterion_to_dict(draft: CriterionDraft) -> dict:
         "evidence_type": draft.evidence_type,
         "justification": draft.justification,
         "bands_source": draft.bands_source,
+        "decomposition_basis": draft.decomposition_basis,
         "bands": [
             {"band": band.band, "ordinal": band.ordinal, "points": band.points,
              "descriptor": band.descriptor}
@@ -1099,6 +1480,7 @@ def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricRea
             evidence_type=str(entry.get("evidence_type",
                                         SETUP_EVIDENCE_TYPE_DEFAULT)),
             bands_source=str(entry.get("bands_source", "proposed")),
+            decomposition_basis=str(entry.get("decomposition_basis", "")),
         )
         for entry in entries
     )
@@ -1136,12 +1518,17 @@ class SetupService:
                                   back per version (`CT-SETUP-16`)
     `set_answer_keys`             here — BLOCKING gate 2 (thin; #53 stages the
                                   full `FR-SETUP-03` semantics)
+    `classify_decomposability`    here — #52: the §5.3 ANSWERS from the model, the
+                                  decision table from the module; confirmations
+                                  capped at `SETUP_MAX_CONFIRMATIONS` headlessly
+    `confirm_classifications`     here — #52: the teacher's confirmation recorded
+                                  apart from the module's default (`R62`)
+    `propose_dependencies`        here — #52: plain-language proposals, nothing
+                                  written; `confirm_dependencies` writes only on
+                                  explicit approval
     `publish`                     here — refused until both gates hold
     `ensure_version`, `steps`,    here — the resume and console surfaces
     `current_proposal`
-    `classify_decomposability`,   #52
-    `confirm_classifications`,
-    `propose_dependencies`
     `set_grade_policy`            #53 (grade boundaries land there too)
     `check_prefix_budget`         #53
     ============================  =============================================
@@ -1156,6 +1543,11 @@ class SetupService:
         self._provider = provider
         self._model_ref = model_ref
         self._params = params if params is not None else SamplingParams(temperature=0.0)
+        # The confirmation cap's counter (`FR-SETUP-07`, `CT-SETUP-13`): confirmations
+        # REQUESTED per draft version, this service's accounting of what the teacher
+        # has been asked so far. Keyed by version so one service carrying several
+        # drafts never lets one package's spend buy another's confirmations.
+        self._confirmations_requested: dict[str | None, int] = {}
 
     @property
     def package_id(self) -> str:
@@ -1222,7 +1614,9 @@ class SetupService:
                     step_id="decomposability",
                     name="Criterion decomposability and dependencies",
                     blocking=False, available=False, done=False,
-                    note="staged by #52",
+                    note="non-blocking — the §5.3 classification runs once the read "
+                    "back has staged the criteria; skipped steps record their "
+                    "default (FR-SETUP-14)",
                 ),
                 SetupStep(
                     step_id="grade_policy",
@@ -1284,6 +1678,29 @@ class SetupService:
             readback_note = ("the read back degraded to needs_manual_entry after its "
                              "attempt budget — enter criteria through M-PKG, or a new "
                              "version re-reads the rubric (FR-SETUP-04)")
+        # The decomposability step's record (#52): the provenance row the step's own
+        # writes leave (confirmations, dependency proposals, approvals), read back
+        # through the same getattr guard the other write surfaces use — a catalog
+        # without the recording surface reads as "not done", never as a crash.
+        step_reader = getattr(self._catalog, "step_record", None)
+        decomposability_record = (step_reader(v, "decomposability")
+                                  if step_reader is not None else None)
+        decomposability_note = ""
+        if not confirmed:
+            decomposability_note = (
+                "unlocks when the question inventory is confirmed (§4.2.1)")
+        elif readback_status != "proposed":
+            decomposability_note = (
+                "unlocks when the rubric read-back has staged the criteria — the "
+                "§5.3 table judges criteria that exist (FR-SETUP-06)")
+        elif decomposability_record is not None:
+            decomposability_note = (
+                f"recorded: {decomposability_record['status']} at "
+                f"{decomposability_record['recorded_at']} (FR-SETUP-14)")
+        else:
+            decomposability_note = (
+                "surfaced confirmations await the teacher; dependencies stay at "
+                "zero until explicitly approved (FR-SETUP-07, FR-SETUP-10)")
         later = (
             SetupStep(
                 step_id="rubric_readback",
@@ -1295,8 +1712,15 @@ class SetupService:
             SetupStep(
                 step_id="decomposability",
                 name="Criterion decomposability and dependencies",
-                blocking=False, available=False, done=False,
-                note="staged by #52",
+                blocking=False,
+                # Available once criteria EXIST for the table to judge — the read
+                # back is what stages them. Hand-authored criteria alone do not
+                # unlock the step: the §5.3 classification is the read-back
+                # population's step (§4.2.1's S5), and an unlocked-but-empty step
+                # would be the console offering an operation with no work behind it.
+                available=confirmed and readback_status == "proposed",
+                done=decomposability_record is not None,
+                note=decomposability_note,
             ),
             SetupStep(
                 step_id="grade_policy",
@@ -1719,6 +2143,395 @@ class SetupService:
             "FR-SETUP-03 validation semantics land with #53)", len(keys), v,
         )
 
+    # -- Stage A: decomposability and dependencies (#52, skippable steps) ---------------------
+
+    def classify_decomposability(self, criterion_draft: Any) -> DecomposabilityVerdict:
+        """Classify one criterion against the five §5.3 questions (`FR-SETUP-06`,
+        `#52`) — the decision table applied where it belongs.
+
+        The model is asked for ANSWERS (one prompt per criterion, `NFR-SETUP-03`'s
+        version-pinned template), never for a verdict; `_classify_answers` is the
+        module's table, so a scripted or hallucinated classification cannot pass
+        through the seam. An unclear answer — or an attempt budget spent — applies
+        NFR-SETUP-02's asymmetric default: `holistic`, never `atomic` (RISK-27), and
+        the default case SURFACES for the teacher, which is what makes it auditable
+        rather than silent.
+
+        The surfacing half of `FR-SETUP-07` lives here too: only borderline criteria
+        (an unclear answer anywhere) and warning-sign criteria are surfaced, and the
+        number of confirmations REQUESTED per draft version is capped at
+        `SETUP_MAX_CONFIRMATIONS` — enforced by this module, headlessly (`CT-SETUP-13`),
+        never by the console. A criterion beyond the cap keeps its classification but
+        is not requested. Every verdict is recorded through `M-PKG` as the module's
+        default (`source='default'`), so a skipped confirmation still leaves the
+        teacher-vs-system distinction `M-CALIB` and `M-STATS` read (`R62`)."""
+        identity = _draft_criterion_identity(criterion_draft)
+        criterion_id = identity["criterion_id"]
+        payload = PromptPayload(fields=(
+            ("instruction", _CLASSIFY_INSTRUCTION),
+            ("criterion", json.dumps(identity, sort_keys=True)),
+        ))
+        budget = _configured_classify_attempts()
+        last_error = ""
+        for attempt in range(1, budget + 1):
+            try:
+                completion = self._provider.complete(payload, self._model_ref,
+                                                     self._params)
+                answers, warning_signs, reply_reasoning = _parse_classify_reply(
+                    completion.text, criterion_id)
+            except _ReplyError as error:
+                last_error = f"attempt {attempt}: {error}"
+                LOGGER.warning("classify reply for %s failed to parse (%d/%d): %s",
+                               criterion_id, attempt, budget, error)
+                continue
+            except Exception as error:  # contained: the transport's failure is a
+                # failed attempt, and the degraded default — not a crash — is the
+                # honest end of a budget spent (CT-SETUP-12's pattern).
+                last_error = f"attempt {attempt}: {type(error).__name__}: {error}"
+                LOGGER.warning("classify attempt %d/%d for %s failed: %s",
+                               attempt, budget, criterion_id, error)
+                continue
+            verdict = self._verdict_from_answers(
+                criterion_id, answers, warning_signs, reply_reasoning)
+            LOGGER.info(
+                "classified %s for version %s: %s (decided by %s, confirmation "
+                "%s) in %d attempt(s), prompt %s — confirmations requested %d/%d",
+                criterion_id, self._catalog.draft_version(), verdict.classification,
+                verdict.deciding_question or "nothing",
+                "requested" if verdict.needs_teacher_confirmation else "not requested",
+                attempt, SETUP_CLASSIFY_TEMPLATE_V,
+                self._confirmations_requested.get(self._catalog.draft_version(), 0),
+                SETUP_MAX_CONFIRMATIONS,
+            )
+            return verdict
+
+        # The budget is spent and no reply parsed: degraded but complete (`CT-SETUP-12`)
+        # — the default applies, surfaced, and the reason is in the verdict's reasoning
+        # so the audit trail says WHY the teacher is being asked.
+        verdict = self._verdict_from_answers(criterion_id, {}, [], "")
+        degraded = DecomposabilityVerdict(
+            classification="holistic", deciding_question=None,
+            reasoning=(
+                "the classifier could not read a §5.3 answer set "
+                f"({last_error or 'no valid reply within the attempt budget'}); the "
+                "default applies: holistic, never atomic (NFR-SETUP-02) — please "
+                "enter the answers or confirm the criterion by hand."
+            ),
+            needs_teacher_confirmation=True,
+        )
+        self._record_classification(self._catalog.draft_version(), criterion_id,
+                                    degraded)
+        LOGGER.warning(
+            "classify for %s degraded to the holistic default after %d attempt(s): %s",
+            criterion_id, budget, last_error,
+        )
+        return degraded
+
+    def _verdict_from_answers(
+        self, criterion_id: str, answers: Mapping[str, str],
+        warning_signs: Sequence[str], reply_reasoning: str,
+    ) -> DecomposabilityVerdict:
+        """The table, the cap and the record, composed into one verdict — the shared
+        body of the classified path and the degraded one. The cap counts confirmations
+        REQUESTED per draft version (`FR-SETUP-07`): a criterion beyond
+        `SETUP_MAX_CONFIRMATIONS` keeps its classification but is not requested."""
+        classification, deciding = _classify_answers(answers)
+        unclear = any(
+            str(answers.get(question, "")).strip().lower() not in ("yes", "no")
+            for question in FIVE_QUESTIONS
+        )
+        # A warning sign with every answer passing still refuses the atomic grant:
+        # the table's one automatic `atomic` is for criteria with nothing standing
+        # against decomposition — a warning sign is the population FR-SETUP-07
+        # surfaces, and it is judged holistic rather than granted depth 1
+        # (RISK-27's asymmetry, applied to the warning case too).
+        if deciding is None and classification == "atomic" and warning_signs:
+            classification = "holistic"
+        borderline = unclear or bool(warning_signs)
+        needs = False
+        if borderline:
+            v = self._catalog.draft_version()
+            requested = self._confirmations_requested.get(v, 0)
+            if requested < SETUP_MAX_CONFIRMATIONS:
+                needs = True
+                self._confirmations_requested[v] = requested + 1
+        if deciding is not None:
+            reasoning = (
+                f"the §5.3 table decided on {deciding!r} (its answer was 'no'): the "
+                f"criterion classifies {classification!r}."
+            )
+        elif unclear:
+            reasoning = (
+                "the §5.3 answers were unclear: the default applies — holistic, "
+                "never atomic (NFR-SETUP-02, RISK-27); surfaced for the teacher."
+            )
+        elif warning_signs:
+            reasoning = (
+                "the §5.3 answers pass, but the criterion carries warning signs "
+                f"({'; '.join(warning_signs)}): judged holistic and surfaced for "
+                "the teacher (FR-SETUP-07)."
+            )
+        else:
+            reasoning = (
+                "all five §5.3 answers pass and no warning sign stands: the "
+                "criterion is judged in isolation (atomic)."
+            )
+        if reply_reasoning:
+            reasoning = f"{reasoning} The criterion's reader said: {reply_reasoning}"
+        verdict = DecomposabilityVerdict(
+            classification=classification, deciding_question=deciding,
+            reasoning=reasoning, needs_teacher_confirmation=needs,
+        )
+        self._record_classification(self._catalog.draft_version(), criterion_id,
+                                    verdict)
+        return verdict
+
+    def _record_classification(
+        self, v: PackageVersionId | None, criterion_id: str,
+        verdict: DecomposabilityVerdict,
+    ) -> None:
+        """Persist one verdict as the module's default through `M-PKG` (`R62`) — the
+        row a later `confirm_classifications` upserts to `source='teacher'`. Skipped
+        when there is no draft version or no recording surface (the rung-0 doubles):
+        the verdict itself is still returned, since the classification does not
+        depend on the record."""
+        if v is None:
+            return
+        record = getattr(self._catalog, "record_classification", None)
+        if record is None:
+            return
+        record(v, criterion_id=criterion_id, classification=verdict.classification,
+               decomposition_basis=verdict.deciding_question, source="default",
+               recorded_at=_now())
+
+    def confirm_classifications(self, answers: Mapping[str, str]) -> None:
+        """The teacher's confirmations of the surfaced classifications — the
+        skippable step whose skip is itself recorded (`FR-SETUP-14`, `R62`).
+
+        Each entry names a criterion and the classification the teacher confirms; the
+        rows already stored as `source='default'` (the module's table, written at
+        classify time) are upserted to `source='teacher'` — the recorded distinction
+        between a teacher's judgment and the system default that `M-CALIB` and
+        `M-STATS` read. A classification outside the vocabulary, or a criterion the
+        version does not carry, is refused; skipping the call entirely records
+        nothing here and leaves the default rows standing, which is the point."""
+        v = self._require_draft_version()
+        if not answers:
+            LOGGER.info("confirm_classifications confirmed nothing for version %s", v)
+            return
+        misplaced = sorted(
+            criterion_id for criterion_id, classification in answers.items()
+            if classification not in CLASSIFICATIONS
+        )
+        if misplaced:
+            raise SetupError(
+                f"classification(s) for {', '.join(misplaced)} are outside the "
+                f"vocabulary {CLASSIFICATIONS} (FR-SETUP-06) — a confirmed "
+                "classification is one the decision table could have produced."
+            )
+        known = {row["criterion_id"] for row in self._catalog.criteria(v)}
+        unknown = sorted(set(answers) - known)
+        if unknown:
+            raise SetupError(
+                f"confirmation names criterion(s) {', '.join(unknown)} that version "
+                f"{v!r} does not carry — the teacher confirms criteria that exist."
+            )
+        reader = getattr(self._catalog, "classification", None)
+        record = getattr(self._catalog, "record_classification", None)
+        confirmed: dict[str, str] = {}
+        for criterion_id, classification in answers.items():
+            basis = None
+            if reader is not None:
+                prior = reader(v, criterion_id)
+                if prior is not None:
+                    basis = prior.get("decomposition_basis")
+            if record is not None:
+                record(v, criterion_id=criterion_id, classification=classification,
+                       decomposition_basis=basis, source="teacher",
+                       recorded_at=_now())
+            confirmed[criterion_id] = classification
+        step = getattr(self._catalog, "record_step", None)
+        if step is not None:
+            step(v, step_id="decomposability", status="classifications_confirmed",
+                 payload=json.dumps({
+                     "confirmed": confirmed,
+                     "teacher_confirmed_count": len(confirmed),
+                 }, sort_keys=True),
+                 recorded_at=_now())
+        LOGGER.info(
+            "teacher confirmed %d classification(s) for version %s — recorded as "
+            "'teacher' beside the module's 'default' rows (R62)", len(confirmed), v,
+        )
+
+    def propose_dependencies(self) -> tuple[DependencyProposal, ...]:
+        """Propose the dependencies the subject makes likely (`FR-SETUP-10`, `#52`) —
+        and write NOTHING: every criterion defaults to zero dependencies, and a
+        proposal is words for the teacher to act on (`CT-SETUP-08`).
+
+        One version-pinned model call proposes the edges; each comes back rendered in
+        plain language naming both criteria and the reason — the sentence
+        `FR-SETUP-10` gives the standard for. A version with no criteria proposes
+        nothing (there is nothing to attach to). The proposals are recorded on the
+        step's provenance row — the record `confirm_dependencies` approves against
+        (`CT-SETUP-03`: state is the database) — and the step's base case, nothing
+        likely, is recorded too rather than left indistinguishable from a skip."""
+        v = self._require_draft_version()
+        rows = self._catalog.criteria(v)
+        known = frozenset(row["criterion_id"] for row in rows)
+        if not known:
+            LOGGER.info("version %s carries no criteria — no dependency proposal", v)
+            return ()
+        listing = [
+            {"criterion_id": row["criterion_id"], "question_id": row["question_id"],
+             "kind": row["kind"], "construct": row.get("construct_tag", "")}
+            for row in rows
+        ]
+        payload = PromptPayload(fields=(
+            ("instruction", _DEPENDENCIES_INSTRUCTION),
+            ("criteria", json.dumps(listing, sort_keys=True)),
+        ))
+        budget = _configured_proposal_attempts()
+        last_error = ""
+        for attempt in range(1, budget + 1):
+            try:
+                completion = self._provider.complete(payload, self._model_ref,
+                                                     self._params)
+                triples = _parse_dependencies_reply(completion.text, known)
+            except _ReplyError as error:
+                last_error = f"attempt {attempt}: {error}"
+                LOGGER.warning(
+                    "dependency-proposal reply failed to parse (%d/%d): %s",
+                    attempt, budget, error)
+                continue
+            except Exception as error:  # contained: the transport's failure is a
+                # failed attempt (CT-SETUP-12's pattern).
+                last_error = f"attempt {attempt}: {type(error).__name__}: {error}"
+                LOGGER.warning("dependency-proposal attempt %d/%d failed: %s",
+                               attempt, budget, error)
+                continue
+            proposals = tuple(
+                DependencyProposal(criterion_id=criterion_id, depends_on=depends_on,
+                                   reason=reason)
+                for criterion_id, depends_on, reason in triples
+            )
+            self._record_dependency_proposals(v, proposals)
+            LOGGER.info(
+                "proposed %d dependency edge(s) for version %s in %d attempt(s), "
+                "prompt %s — nothing written; approval is the teacher's act "
+                "(FR-SETUP-10)", len(proposals), v, attempt,
+                SETUP_DEPENDENCIES_TEMPLATE_V,
+            )
+            return proposals
+
+        # The budget is spent: degraded but complete (`CT-SETUP-12`) — the default
+        # (zero dependencies) stands, and the failure is on the step's record.
+        self._record_dependency_proposals(v, (), status="dependencies_needs_review",
+                                          reason=last_error)
+        LOGGER.warning(
+            "dependency proposals for version %s degraded to the zero-dependency "
+            "default after %d attempt(s): %s", v, budget, last_error,
+        )
+        return ()
+
+    def _record_dependency_proposals(
+        self, v: PackageVersionId, proposals: Sequence[DependencyProposal],
+        *, status: str | None = None, reason: str = "",
+    ) -> None:
+        """Write the dependency step's provenance row — the proposals as recorded
+        state (`CT-SETUP-03`), which `confirm_dependencies` approves against. Skipped
+        when the catalog offers no recording surface (the rung-0 doubles)."""
+        step = getattr(self._catalog, "record_step", None)
+        if step is None:
+            return
+        if status is None:
+            status = ("dependencies_proposed" if proposals
+                      else "dependencies_none_proposed")
+        step(v, step_id="decomposability", status=status,
+             payload=json.dumps({
+                 "proposals": [
+                     {"criterion_id": item.criterion_id,
+                      "depends_on": item.depends_on,
+                      "reason": item.reason,
+                      "rendered": str(item)}
+                     for item in proposals
+                 ],
+                 "template_version": SETUP_DEPENDENCIES_TEMPLATE_V,
+                 **({"reason": reason} if reason else {}),
+             }, sort_keys=True),
+             recorded_at=_now())
+
+    def confirm_dependencies(
+        self,
+        approved: Sequence[DependencyProposal | tuple[str, str] | Mapping],
+    ) -> None:
+        """The teacher's approval — the ONLY write path for a dependency edge
+        (`FR-SETUP-10`, `CT-SETUP-08`).
+
+        Each approval names a criterion pair; every pair must be among the proposals
+        recorded on the step's row (approval confirms a proposal, not an idea), and
+        the whole approved set is written in ONE `M-PKG` call — transactional, and
+        cycle-refusing inside that transaction (a `PackageError` propagates
+        unchanged, `CT-SETUP-12`). A dependency the teacher declines is simply absent:
+        declining needs no call, and the empty graph it leaves is the design's base
+        case."""
+        v = self._require_draft_version()
+        reader = getattr(self._catalog, "step_record", None)
+        recorded = reader(v, "decomposability") if reader is not None else None
+        proposed: set[tuple[str, str]] = set()
+        if recorded is not None:
+            try:
+                payload = json.loads(recorded["payload"])
+            except (ValueError, TypeError):
+                payload = {}
+            for item in payload.get("proposals", []):
+                if isinstance(item, dict) and "criterion_id" in item \
+                        and "depends_on" in item:
+                    proposed.add((str(item["criterion_id"]),
+                                  str(item["depends_on"])))
+        if not proposed:
+            raise SetupOrderError(
+                f"no dependency proposal is recorded for version {v!r} — call "
+                "propose_dependencies first; approval confirms a proposal, not an "
+                "idea (FR-SETUP-10)."
+            )
+        pairs: list[tuple[str, str]] = []
+        for item in approved:
+            if isinstance(item, DependencyProposal):
+                pairs.append((item.criterion_id, item.depends_on))
+            elif isinstance(item, Mapping):
+                pairs.append((str(item["criterion_id"]), str(item["depends_on"])))
+            else:
+                criterion_id, depends_on = item
+                pairs.append((str(criterion_id), str(depends_on)))
+        unproposed = sorted(set(pairs) - proposed)
+        if unproposed:
+            raise SetupError(
+                f"approval names pair(s) {unproposed} that were never proposed for "
+                f"version {v!r} — a dependency edge is written on the teacher's "
+                "approval OF a proposal (FR-SETUP-10); hand-authored edges are "
+                "M-PKG's own path."
+            )
+        # The edge is (before, after): `after` depends on `before` — the proposal's
+        # `depends_on` is the earlier criterion whose credited work the later one
+        # would see.
+        edges = [(depends_on, criterion_id) for criterion_id, depends_on in pairs]
+        self._catalog.set_dependencies(v, edges)
+        step = getattr(self._catalog, "record_step", None)
+        if step is not None:
+            step(v, step_id="decomposability", status="dependencies_approved",
+                 payload=json.dumps({
+                     "approved": [
+                         {"criterion_id": criterion_id, "depends_on": depends_on}
+                         for criterion_id, depends_on in pairs
+                     ],
+                     "edge_count": len(edges),
+                 }, sort_keys=True),
+                 recorded_at=_now())
+        LOGGER.info(
+            "teacher approved %d dependency edge(s) for version %s — written in one "
+            "M-PKG call (FR-SETUP-10)", len(edges), v,
+        )
+
     def publish(self, approved_by: str) -> PackageVersionId:
         """Publish the version — the point the §6.2 lock takes effect (`FR-SETUP-02`).
 
@@ -1728,6 +2541,7 @@ class SetupService:
         setup assembles and gates; the Tier P writer writes (`CT-PKG-12`)."""
         v = self._require_draft_version()
         self._refuse_unmet_gates(v)
+        self._record_uncompleted_step_default(v)
         self._catalog.publish(v, approved_by)
         LOGGER.info(
             "published package version %s by %r — both blocking gates satisfied; the "
@@ -1736,6 +2550,38 @@ class SetupService:
         return v
 
     # -- internals ----------------------------------------------------------------------------
+
+    def _record_uncompleted_step_default(self, v: PackageVersionId) -> None:
+        """Record the decomposability step's default where the step never recorded
+        itself (`FR-SETUP-14`, `#52`): completing setup by skipping the step leaves
+        stored provenance naming it, so the default is never indistinguishable from
+        an explicit choice (`R62`, `CT-SETUP-01`). A step that DID record — the
+        teacher confirmed classifications, or proposals were made — is never
+        overwritten. The gate checks have already passed, so this write is on the
+        publish path's happy tail, immediately before the lock flip."""
+        record = getattr(self._catalog, "record_default_step", None)
+        if record is None:
+            return
+        written = record(
+            v, step_id="decomposability", status="default_taken",
+            payload=json.dumps({
+                "default": (
+                    "the decomposability step was skipped: the §5.3 table's "
+                    "verdicts stand as recorded (source 'default', holistic on any "
+                    "unclear case) and dependencies stay at zero — no approval was "
+                    "recorded (FR-SETUP-10)."
+                ),
+                "confirmations_requested":
+                    self._confirmations_requested.get(v, 0),
+                "confirmation_cap": SETUP_MAX_CONFIRMATIONS,
+            }, sort_keys=True),
+            recorded_at=_now(),
+        )
+        if written:
+            LOGGER.info(
+                "recorded the decomposability step's default for version %s — the "
+                "skip is stored provenance, not silence (FR-SETUP-14)", v,
+            )
 
     def _require_draft_version(self) -> PackageVersionId:
         """The draft the operation works on, or the honest refusal: a package whose

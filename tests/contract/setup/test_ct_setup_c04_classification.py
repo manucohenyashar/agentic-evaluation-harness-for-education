@@ -185,10 +185,10 @@ def test_tc_setup_c04_unclear_partition_defaults_holistic_never_atomic(
     verdict = _verdict("CRIT-U", unclear_question=unclear_question,
                        warning_signs=warning_signs)
     assert verdict.classification == "holistic", (
-        f"an unclear input (unclear={unclear!r}, warnings={warning_signs!r}) "
-        f"classified {verdict.classification!r} — the default is `holistic`, "
-        "never `atomic` (NFR-SETUP-02, RISK-27; CT-SETUP-C04 directional "
-        "assertion)"
+        f"an unclear input (unclear_question={unclear_question!r}, "
+        f"warnings={warning_signs!r}) classified {verdict.classification!r} — "
+        "the default is `holistic`, never `atomic` (NFR-SETUP-02, RISK-27; "
+        "CT-SETUP-C04 directional assertion)"
     )
     # And the default is AUDITABLE: the unclear case surfaces for the teacher
     # rather than silently passing.
