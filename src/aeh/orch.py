@@ -416,9 +416,11 @@ _ORCH_COHORT_010: tuple[Statement, ...] = (
     ),
 )
 
-TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
-    Migration(version=10, name="orch_escalation_ledger", statements=_ORCH_COHORT_010),
-)
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT]
+    + (Migration(version=10, name="orch_escalation_ledger", statements=_ORCH_COHORT_010),),
+    key=lambda m: m.version,
+))
 
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) -------------------

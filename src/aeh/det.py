@@ -731,7 +731,13 @@ assert DETERMINISTIC_EXCLUSION in DET_STATEMENTS["select_agreement_labels"], (
     "literal-only statement (the SEC-15 rule) is bound to that constant here."
 )
 TIER_MIGRATIONS[Tier.PACKAGE] = TIER_MIGRATIONS[Tier.PACKAGE] + (_DET_SELECTION_POLICY,)
-TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (_DET_SCORE_STATE,)
+# Sorted merge, not a bare append (#60): the registry's version order is a contract
+# (TC-STORE-06's monotonicity walk), and another owning module's import may already
+# have registered a higher cohort version than this one claims — import order across
+# a pytest session cannot be controlled, so the merge keeps the history honest.
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_DET_SCORE_STATE,), key=lambda m: m.version
+))
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (
     _DET_ITEM_STATISTICS,
     _DET_AUDIT_SEPARATION,
