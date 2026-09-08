@@ -56,7 +56,9 @@ def _published_without_policy(tmp_data_dir, package_id: str):
                                 kind="open", max_points=4.0)
     chain.catalog.add_criterion(version, "CRIT-B", question_id="Q2",
                                 kind="open", max_points=6.0)
-    chain.service.set_answer_keys({"CRIT-A": ["b0"], "CRIT-B": ["b0"]})
+    chain.service.set_answer_keys({"CRIT-A": ["b0"], "CRIT-B": ["b0"]}
+                                  | {"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                     "CRIT-Q6": ["A"]})
     published = chain.service.publish("teacher-1")
     return chain, published
 
@@ -96,13 +98,14 @@ def test_tc_setup_c10_the_default_policy_is_always_found(tmp_data_dir):
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_setup_c10_the_default_is_recorded_as_a_default(tmp_data_dir):
-    """WRITTEN AHEAD of #53. The setup flow RECORDS the default: the grade
+    """#53 landed the recording: the setup flow RECORDS the default — the grade
     policy row EXISTS after a publish that declared nothing (discharged by
     storing — distinguishable from the read-side fallback, which answers
     without any row), the stored policy is the default exactly, and the
-    recorded step's provenance says the default was TAKEN."""
+    recorded step's provenance says the default was TAKEN. The `writtenahead`
+    marker and its `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C10 grade policy") are
+    gone."""
     require_attr(SetupService, "set_grade_policy", issue=ISSUE)
 
     chain, published = _published_without_policy(tmp_data_dir, "pkg-c10r")

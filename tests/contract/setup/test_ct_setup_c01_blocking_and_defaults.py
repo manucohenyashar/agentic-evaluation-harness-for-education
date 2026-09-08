@@ -3,9 +3,10 @@ a recorded default (`TC-SETUP-C01`).
 
 Case of test plan §6.11.6; issue #56 (TS-63). The blocking half runs **green by
 design** — `aeh.setup` landed with #50 and the probe confirmed the set. The
-recorded-default sweep over the steps #51/#52/#53 stage is **written ahead** of
-those stories (the provenance write belongs to the step that owns the default; a
-step that does not exist cannot record that it was skipped).
+recorded-default sweep over the steps #51/#52/#53 stage landed with those
+stories: the publish path records each skipped step's default (`record_default_step`,
+pkg.py), so the sweep's `writtenahead` marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry ("#56 C01 recorded defaults") are gone.
 
 The clause: exactly **two** operations block — `confirm_inventory` and
 `set_answer_keys` — and a consumer may **enumerate** the blocking set and assert it
@@ -108,8 +109,12 @@ def test_tc_setup_c01_every_non_blocking_step_is_skippable(tmp_data_dir):
 
     # The only setup calls in this run are the two blocking gates and the read
     # surface. No non-blocking operation is invoked — and the run still finishes.
+    # (#53 stages the deterministic criteria at the confirmation; keying them is
+    # the second blocking gate's own act, not a non-blocking call.)
     proposal = chain.service.propose_inventory(chain.doc)
     chain.service.confirm_inventory(proposal.proposal_id)
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     version = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(version)
 
@@ -122,29 +127,19 @@ def test_tc_setup_c01_every_non_blocking_step_is_skippable(tmp_data_dir):
             assert step.note, f"step {step.step_id!r} carries no provenance note"
 
 
-@pytest.mark.writtenahead
 def test_tc_setup_c01_each_skipped_default_is_recorded_as_taken(tmp_data_dir):
     """The clause's substance, per step: completing a non-blocking step BY
     SKIPPING records in the package that the default was taken — stored
     provenance distinguishable from an explicit choice (`R62`), so `M-CALIB` and
     `M-STATS` can tell a teacher's judgment from the system's.
 
-    Blocked on the steps themselves: `read_back_rubric` (#51),
-    `classify_decomposability`/`propose_dependencies` (#52),
-    `set_grade_policy`/`check_prefix_budget` (#53) — the steps whose defaults
-    this sweep drives; the `require_attr` calls below are the designed blocker.
-    The exact default VALUE per step is each step's own case (TC-SETUP-C06, -C08,
+    Landed with #51/#52/#53: the steps whose defaults this sweep drives exist,
+    and the publish-time default recording writes a row per skipped step (the
+    `writtenahead` marker and its `WRITTEN_AHEAD_BLOCKERS` entry are gone). The
+    exact default VALUE per step is each step's own case (TC-SETUP-C06, -C08,
     -C09, -C10); this sweep pins the provenance rule itself.
     """
     import sqlite3
-
-    from tests.support.impl import require_attr
-
-    require_attr(SetupService, "read_back_rubric", issue="#51")
-    require_attr(SetupService, "classify_decomposability", issue="#52")
-    require_attr(SetupService, "propose_dependencies", issue="#52")
-    require_attr(SetupService, "set_grade_policy", issue="#53")
-    require_attr(SetupService, "check_prefix_budget", issue="#53")
 
     skipped_ids = {"rubric_readback", "decomposability", "grade_policy"}
     chain = stage_chain(tmp_data_dir)
@@ -152,9 +147,12 @@ def test_tc_setup_c01_each_skipped_default_is_recorded_as_taken(tmp_data_dir):
 
     # A skip-only run: the two blocking gates, then publish — no non-blocking
     # operation is ever called, yet setup completes (its half is the green case
-    # above).
+    # above). (#53 stages the deterministic criteria at the confirmation; keying
+    # them is the second blocking gate's own act.)
     proposal = chain.service.propose_inventory(chain.doc)
     chain.service.confirm_inventory(proposal.proposal_id)
+    chain.service.set_answer_keys({"CRIT-Q4": ["A"], "CRIT-Q5": ["A"],
+                                   "CRIT-Q6": ["A"]})
     version = chain.service.publish("teacher-1")
     assert chain.catalog.is_locked(version)
 
