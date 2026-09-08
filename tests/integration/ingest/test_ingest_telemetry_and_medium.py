@@ -968,3 +968,328 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
         f"maximum the measure gives ({expected_divergence}) — F6's measure is "
         "over the raw transcript, markers included.")
     fx.close()
+
+
+# -- TC-INGEST-45: the nightly live-medium transcription, quality measured not gated -----------------
+
+
+def test_tc_ingest_45_the_quality_report_measures_and_reports_without_gating(
+        tmp_data_dir):
+    """`TC-INGEST-45` — *"Nightly live-medium transcription over F-HAND
+    produces per-submission quality measures"*, fast half.
+
+    The **measured-not-gated oracle** (Q-05) runs here at full strength over a
+    deterministic two-tier cohort: per legibility tier, the report is the five
+    measurements and *nothing else* — no threshold, no pass/fail, no gate key.
+    The exact-key-set assertion is the no-gate assertion: a future boolean
+    (`"quality_ok"`) or a threshold (`"mean_ocr_conf_floor"`) appearing in the
+    shape fails here, and the §6.9 analysis decides what the numbers mean.
+
+    The **live-medium half** is the `live`-marked sibling below: the same
+    oracle against the real F-HAND directory and the local inference server,
+    env-gated like every real-medium case (the TC-CONFORM-03 precedent)."""
+    fx = _Fixture(tmp_data_dir, "quality-report", "c-45")
+    fx.add_roster("hana-w", "bram-c")
+    legible = fx.put(b"legible-scan")
+    fx.script(legible, {1: _student_answer(
+        "hana-w",
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present "
+        "conf=0.9 -->\nthe answer one, cleanly written\n<!-- /region -->")})
+    marginal = fx.put(b"marginal-scan")
+    fx.script(marginal, {1: _student_answer(
+        "bram-c",
+        "<!-- region: kind=transcribed_text question_id=Q1 state=present "
+        "conf=0.4 -->\nthe answer <unresolved>scrawl</unresolved>\n"
+        "<!-- /region -->")})
+    for source in (legible, marginal):
+        fx.ingestor.ingest_submission([source], cohort_id=fx.cohort_id,
+                                      package_version="v0",
+                                      filenames={source: "scan-01.md"})
+
+    # The legibility tiers are the F-HAND manifest's own field (the corpus
+    # owner labels each member; the analysis groups by it).
+    legibility_by_ref = {"hana-w": "legible", "bram-c": "marginal"}
+    report = _quality_report(
+        legibility_by_ref, _region_rows(fx.handle, fx.cohort_id),
+        _unresolved_rows(fx.handle, fx.cohort_id))
+    assert report == {
+        "legible": {"submissions": 1, "regions": 2, "mean_ocr_conf": 0.9,
+                    "unresolved_tokens": 0,
+                    "unresolved_tokens_per_1000_regions": 0.0},
+        "marginal": {"submissions": 1, "regions": 2, "mean_ocr_conf": 0.4,
+                     "unresolved_tokens": 1,
+                     "unresolved_tokens_per_1000_regions": 500.0}}, (
+        "TC-INGEST-45: the per-tier measurements moved.")
+    # The no-gate assertion: the shape is measurements, all the way down.
+    assert set(report) == {"legible", "marginal"}
+    for numbers in report.values():
+        assert set(numbers) == {"submissions", "regions", "mean_ocr_conf",
+                                "unresolved_tokens",
+                                "unresolved_tokens_per_1000_regions"}, (
+            f"TC-INGEST-45: the report grew a key outside the measured shape: "
+            f"{sorted(numbers)} — a gate would live there (Q-05).")
+        assert not any(isinstance(value, bool) for value in numbers.values()), (
+            "TC-INGEST-45: a boolean verdict appeared in the quality report — "
+            "measured, not gated.")
+    fx.close()
+
+
+def _live_transcriber_ref() -> ModelRef:
+    """The live model ref, exactly the TC-PROV-19 shape: the local server's
+    model, `build_id`/`quantization` overridable for an acceptance run."""
+    return ModelRef(role="transcriber", provider="ollama",
+                    build_id=os.environ.get("HARNESS_LIVE_BUILD_ID",
+                                            "local-model"),
+                    quantization=os.environ.get("HARNESS_LIVE_QUANTIZATION",
+                                                "q4"))
+
+
+@pytest.mark.live
+@pytest.mark.slow
+def test_tc_ingest_45_live_the_f_hand_medium_transcribes_end_to_end_with_quality_measured(
+        tmp_data_dir):
+    """`TC-INGEST-45` — the live half: the real F-HAND PDFs through the real
+    sanitizer, the real rasterizer and the local inference server, nightly
+    (E2/E3). Skips naming the prerequisite when either half of the medium is
+    absent — the TC-CONFORM-03 rule that a skip naming what is missing is the
+    honest report. Composition is **asserted** (`composition_problems` empty —
+    the one gate Q-05 keeps); quality is **measured, not gated**: the report is
+    printed and embedded in the final assertion, and the per-submission status
+    must be inside the recorded vocabulary, nothing stronger. The numbers are
+    for the §6.9 analysis to judge.
+
+    Disclosed (F10): `pypdfium2` is the live rasterizer's dependency and is
+    not in `requirements-dev.txt` — the acceptance-run box installs it
+    explicitly, exactly as `PdfiumRasterizer`'s own docstring instructs.
+    Disclosed (F9): a live transcription that emits a `described_graphic`
+    region fails at the crop seam (`PdfiumRasterizer` implements no `crop`),
+    which is the disclosure surfacing live, not the medium misbehaving."""
+    from harness.corpora import hand
+
+    corpus_dir = os.environ.get(hand.CORPUS_DIR_ENV)
+    if not corpus_dir:
+        pytest.skip(
+            f"{hand.CORPUS_DIR_ENV} is unset. F-HAND is consented real student "
+            f"work under Tier C handling and is never committed (§4.4); the "
+            f"nightly live-medium transcription (TC-INGEST-45's live half) "
+            f"cannot run until it is arranged.")
+    base_url = os.environ.get("LOCAL_INFERENCE_BASE_URL")
+    if not base_url:
+        pytest.skip(
+            "LOCAL_INFERENCE_BASE_URL is unset. The live half transcribes "
+            "through the local inference server (the TC-PROV-19 prerequisite); "
+            "the fast half above carries the measured-not-gated oracle.")
+
+    from aeh.ingest import PdfiumRasterizer, PypdfSanitizer
+    from aeh.prov import LocalServerProvider
+
+    root = Path(corpus_dir)
+    manifest_path = root / "manifest.json"
+    assert manifest_path.is_file(), (
+        f"{hand.CORPUS_DIR_ENV} points at {root}, which has no manifest.json "
+        "(the corpus declares its own composition).")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    problems = hand.composition_problems(manifest)
+    assert not problems, (
+        f"TC-INGEST-45 live: the F-HAND corpus at {root} is not the nightly "
+        f"medium ({problems}) — composition is the one asserted half (Q-05).")
+
+    fx = _Fixture(tmp_data_dir, "live-medium", "c-45-live")
+    live_provider = LocalServerProvider(base_url=base_url, transport=None)
+    ingestor = Ingestor(fx.handle, fx.blobs, live_provider,
+                        _live_transcriber_ref(), SamplingParams(temperature=0.0),
+                        PdfiumRasterizer(), residency=fx.slot,
+                        sanitizer=PypdfSanitizer())
+    members = manifest["submissions"]
+    members_by_blob = []
+    for member in members:
+        pdf_path = root / f"{member['id']}.pdf"
+        assert pdf_path.is_file(), (
+            f"TC-INGEST-45 live: the manifest member {member['id']!r} has no "
+            f"scan at {pdf_path}.")
+        members_by_blob.append((member, fx.blobs.put(pdf_path.read_bytes())))
+    fx.add_roster(*(member["student_ref"] for member, _ in members_by_blob))
+    reports = []
+    for member, blob in members_by_blob:
+        reports.append(ingestor.ingest_submission(
+            [blob], cohort_id=fx.cohort_id, package_version="v0",
+            filenames={blob: f"{member['id']}.pdf"}))
+    rows = {row["student_ref"]: dict(row) for row in fx.submission_rows()}
+    assert set(rows) == set(refs), (
+        f"TC-INGEST-45 live: the medium did not produce a submission row per "
+        f"member: {sorted(rows)} vs {sorted(refs)}.")
+    for ref, row in rows.items():
+        assert row["ingest_status"] in INGEST_STATUSES, (
+            f"TC-INGEST-45 live: {ref} recorded {row['ingest_status']!r}, "
+            f"outside the vocabulary {INGEST_STATUSES}.")
+    report = _quality_report(
+        {member["student_ref"]: member.get("legibility") for member in members},
+        _region_rows(fx.handle, fx.cohort_id),
+        _unresolved_rows(fx.handle, fx.cohort_id))
+    measured = json.dumps(report, indent=2, sort_keys=True)
+    print(f"\nTC-INGEST-45 live quality report (measured, not gated):\n{measured}")
+    assert report, (
+        "TC-INGEST-45 live: the quality report is empty — no legible tier "
+        "over the corpus? Manifest legibilities: "
+        f"{[m.get('legibility') for m in members]}.\n{measured}")
+    fx.close()
+
+
+# -- TC-INGEST-46: the transcriber's residency slot across a cohort run ------------------------------
+
+
+def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a_cohort_run(
+        tmp_data_dir):
+    """`TC-INGEST-45`/`TC-INGEST-46` — rung 4: the VLM's own residency slot.
+
+    The discipline asserted is the pipeline-level one, over a real
+    three-document run:
+
+    - **held through the document** — every model call of every document runs
+      with the transcriber holding the slot (`provider.holders`, recorded at
+      call time), and a judge probe spawned *inside* a page call cannot barge
+      in before the document ends;
+    - **unloaded at every document boundary** — a judge probe spawned inside
+      document N acquires the slot between document N and N+1: it could only
+      get through if the transcriber unloaded at that boundary;
+    - **empty at stage end** — after the last document, no role holds.
+
+    The judge probe is a plain `acquire`/`release` pair on the slot itself;
+    `TC-INGEST-36` already covers the slot's blocking mechanics in isolation,
+    so this case pins what the *run* does with the slot, not the primitive.
+    Disclosed (F11): the E4 residency-policy swap (the judge and the
+    transcriber co-resident by policy) is story territory (#62/#59) — this
+    case pins the exclusive default the shipped pipeline actually runs."""
+    fx = _Fixture(tmp_data_dir, "residency-boundaries", "c-46")
+    sources = []
+    for index in (1, 2, 3):
+        ref = f"s-{index}"
+        source = fx.put(f"src-{index}".encode())
+        fx.rasterizer.plan[f"src-{index}".encode()] = [
+            (1, b"a", 100, 140), (2, b"b", 100, 140)]
+        fx.script(source, {
+            1: _student_answer(ref, _answer_text("Q1", f"the answer of {ref}")),
+            2: DEFAULT_PAGE_TEXTS[2]})
+        sources.append(source)
+    fx.add_roster("s-1", "s-2", "s-3")
+
+    judge_threads: list[threading.Thread] = []
+    for document_index, source in enumerate(sources, start=1):
+        judge_through = threading.Event()
+
+        def judge_try():
+            fx.slot.acquire("judge")
+            judge_through.set()
+            fx.slot.release("judge")
+
+        def on_call(key, fields):
+            del key, fields
+            position = len(fx.provider.holders)  # the current call included
+            if position % 2 == 1:
+                # The first page call of a document: the judge probe starts
+                # while the transcriber is mid-call.
+                probe = threading.Thread(target=judge_try, name="judge-probe")
+                judge_threads.append(probe)
+                probe.start()
+            else:
+                # The second page call, still inside the same document: the
+                # judge must still be waiting — no unload mid-document.
+                assert not judge_through.is_set(), (
+                    f"TC-INGEST-46: the judge acquired the slot between the "
+                    f"pages of document {document_index} — the transcriber "
+                    "does not hold the slot through its document.")
+            assert fx.slot._holder == "transcriber", (
+                f"TC-INGEST-46: mid-call holder is {fx.slot._holder!r} "
+                f"(document {document_index}, call {position}).")
+
+        fx.provider.on_call = on_call
+        fx.ingestor.ingest_submission(
+            [source], cohort_id=fx.cohort_id, package_version="v0",
+            filenames={source: f"scan-{document_index:02d}.md"})
+
+        # The boundary: the judge — spawned inside this document's calls —
+        # gets through exactly here, because the transcriber unloaded. (The
+        # judge is the only contender while this wait runs: the next document
+        # is not started until after it.)
+        assert judge_through.wait(5.0), (
+            f"TC-INGEST-46: the judge probe never acquired the slot at the "
+            f"boundary of document {document_index} — the transcriber did "
+            "not unload.")
+        judge_threads[-1].join(5.0)
+        assert not judge_threads[-1].is_alive(), (
+            f"TC-INGEST-46: the judge probe for document {document_index} "
+            "did not release the slot.")
+        assert fx.slot._holder is None, (
+            f"TC-INGEST-46: after document {document_index}'s boundary the "
+            f"slot is held by {fx.slot._holder!r}.")
+
+    assert fx.provider.holders == ["transcriber"] * 6, (
+        f"TC-INGEST-46: the recorded mid-call holders moved: "
+        f"{fx.provider.holders}.")
+    assert fx.slot._holder is None, (
+        "TC-INGEST-46: the stage finished with the slot still held.")
+    statuses = [row["ingest_status"] for row in fx.submission_rows()]
+    assert statuses == ["ok"] * 3, (
+        f"TC-INGEST-46: the run itself did not complete cleanly: {statuses}.")
+    fx.close()
+
+
+# -- TC-INGEST-47: the cohort-shape wall clock, measured ---------------------------------------------
+
+
+def test_tc_ingest_47_ingestion_wall_clock_over_the_full_cohort_shape_is_measured(
+        tmp_data_dir):
+    """`TC-INGEST-47` — *"Cohort-scale ingestion (350 submissions × ~4 pages)
+    stays within measured wall-clock bounds (PERF-02)"*, rung 4.
+
+    The **shape** is asserted exactly: 350 rostered submissions, four pages
+    each, all through the scripted transcriber — 1400 model calls, 350
+    submission rows, 350 documents, 1400 regions, every status `ok`. The
+    **wall clock** is measured with `time.perf_counter` around the whole loop
+    and reported — printed, and embedded in the final assertion message — but
+    **not gated**: no threshold here, because the calibrated budget belongs to
+    PERF-02's acceptance run, not to an integration suite whose absolute
+    timing is machine-dependent (the env-knob rule; deferring the gate to
+    #62/#146, TS-53's performance story). What this case pins is that the
+    cohort shape *runs* end to end and that the number a run produces is the
+    number the report carries."""
+    fx = _Fixture(tmp_data_dir, "wall-clock", "c-47")
+    refs = [f"s-{index:04d}" for index in range(350)]
+    fx.add_roster(*refs)
+    sources = []
+    for ref in refs:
+        source = fx.put(f"src-{ref}".encode())
+        fx.rasterizer.plan[f"src-{ref}".encode()] = [
+            (page_no, bytes([page_no]), 100, 140) for page_no in (1, 2, 3, 4)]
+        fx.script(source, {
+            1: f"Student: {ref}\nthe written first page of the paper of {ref}",
+            2: DEFAULT_PAGE_TEXTS[2], 3: DEFAULT_PAGE_TEXTS[3],
+            4: DEFAULT_PAGE_TEXTS[4]})
+        sources.append(source)
+
+    started = time.perf_counter()
+    for source in sources:
+        fx.ingestor.ingest_submission([source], cohort_id=fx.cohort_id,
+                                      package_version="v0",
+                                      filenames={source: "scan.md"})
+    elapsed = time.perf_counter() - started
+    per_call_ms = 1000.0 * elapsed / 1400
+    measured = (f"wall clock {elapsed:.3f}s over 350 submissions x 4 pages "
+                f"(1400 transcriber calls), {per_call_ms:.3f} ms per call")
+    print(f"\nTC-INGEST-47 measured: {measured}")
+
+    assert len(fx.provider.calls) == 1400, (
+        f"TC-INGEST-47: the run made {len(fx.provider.calls)} model calls, "
+        "not the 1400 the shape demands.")
+    rows = fx.submission_rows()
+    assert len(rows) == 350, (
+        f"TC-INGEST-47: {len(rows)} submission rows recorded, not 350.")
+    assert {row["ingest_status"] for row in rows} == {"ok"}, (
+        f"TC-INGEST-47: the cohort did not ingest cleanly: "
+        f"{ {row['ingest_status'] for row in rows} }.")
+    assert fx.handle.query(
+        "SELECT COUNT(*) AS n FROM document")[0]["n"] == 350
+    assert fx.handle.query(
+        "SELECT COUNT(*) AS n FROM document_region")[0]["n"] == 1400
+    assert elapsed > 0.0, f"TC-INGEST-47 measured: {measured}"
+    fx.close()
