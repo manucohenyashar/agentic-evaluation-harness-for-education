@@ -15,6 +15,7 @@ in this file and nowhere else.
 | `PROMPT_FIELDS` | `prompt_fields` | **already assumed by the repo** — `tests/contract/review/test_ct_review_limits_and_config.py` and the `"#68 review"` registry entry resolve it; this suite aligns with that bet rather than making a second one |
 | `RESULT_TYPE` / `REQUEST_TYPE` | `ExtractionResult` / `ExtractionRequest` | **design-named** (§3.8 Interfaces prose) — the type names, not any member |
 | `TEMPLATE_VERSION` | `EXTRACTION_PROMPT_TEMPLATE_VERSION` | **invented here** — the pinned template version constant `NFR-EXTRACT-03` requires; `SETUP_PROMPT_TEMPLATE_V` is the shipped setup-side precedent |
+| `SPAN_PARSE` | `parse_spans` | **invented here** — the pure reply→spans conversion TC-EXTRACT-15's property drives at rung 0; the worker's parse is where a bounds violation is refused, which is what makes one impossible to persist (`NFR-EXTRACT-02`) |
 | `SECOND_FAMILY_MODEL` | `second_family_model` | **invented here** — the different-family model #69 runs flagged criteria with (`FR-EXTRACT-07`); keyed on for TC-EXTRACT-07 |
 
 The assumed *member* surface of the worker, used by the integration files:
@@ -57,6 +58,7 @@ PROMPT_FIELDS = "prompt_fields"
 REQUEST_TYPE = "ExtractionRequest"
 RESULT_TYPE = "ExtractionResult"
 TEMPLATE_VERSION = "EXTRACTION_PROMPT_TEMPLATE_VERSION"
+SPAN_PARSE = "parse_spans"
 SECOND_FAMILY_MODEL = "second_family_model"
 
 #: Every symbol the TS-26 suite resolves from `aeh.extract`, in one tuple — the
@@ -69,6 +71,7 @@ TS26_EXTRACT_SYMBOLS = (
     REQUEST_TYPE,
     RESULT_TYPE,
     TEMPLATE_VERSION,
+    SPAN_PARSE,
 )
 
 #: `ModelRef(role="extractor", ...)` — the single small model of NFR-EXTRACT-01, shaped
