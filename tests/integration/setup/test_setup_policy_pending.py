@@ -41,7 +41,7 @@ DECLARED_POLICY = GradePolicy(combination="best_k_of_n", k=2)
 def _chain_confirmed(data_dir, package_id: str):
     """A chain through S2 (propose, confirm) — the earliest state the policy step follows."""
     chain = stage_chain(data_dir, package_id=package_id)
-    assessment = ingest_document(chain.store, chain.ingestor)
+    assessment = ingest_document(chain.store)
     chain.provider.replies = [INVENTORY_REPLY]
     proposal = chain.service.propose_inventory(assessment)
     chain.service.confirm_inventory(proposal.proposal_id)
