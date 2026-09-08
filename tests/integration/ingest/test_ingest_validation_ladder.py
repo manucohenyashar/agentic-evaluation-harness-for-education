@@ -557,9 +557,9 @@ def test_tc_ingest_29_per_gate_columns_status_vocabulary_and_transitions(
     legal re-ingest transition, and the single-writer rule that makes the illegal
     transitions unreachable.
 
-    The `low_confidence_ocr` status is accepted by the schema but produced by no
-    ladder path yet — an observation, recorded in the PR rather than asserted here,
-    since the plan's oracle is the vocabulary, not its every producer."""
+    (`low_confidence_ocr` was, until #221, accepted by the schema but produced by
+    no ladder path — that disclosure is closed: a clean ladder with a reading
+    below the confidence floor flags it, admissible like `ok`.)"""
     fx = _Fixture(tmp_data_dir, "v29")
     columns = {row["name"] for row in fx.handle.query(
         "PRAGMA table_info(submission)")}

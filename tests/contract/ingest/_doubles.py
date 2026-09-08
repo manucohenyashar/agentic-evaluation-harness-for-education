@@ -13,20 +13,22 @@ a clause's guarantee is not yet enforced on shipped code; a bug in shipped code 
 no `writtenahead` target to key on, so they are **disclosed in the case that names
 them rather than shipped red**:
 
-- **G1** (`low_confidence_ocr`, `CT-INGEST-08`/`C10`): the status is in the
-  declared vocabulary and the column's CHECK admits it, but no path in the ladder
-  ever assigns it — the per-region `conf=` tag is stored (C04 probes it) and the
-  aggregate that would lower confidence into a status is not computed. Probe:
-  regions tagged `conf=0.05` ingest `ok`.
-- **G2** (`ocr_conf` non-null, `CT-INGEST-04`): the parser validates
-  `region_kind` and `content_state` against their domains but reads `conf=`
-  permissively — a region tagged without `conf=` stores NULL and no gate notices.
-  The hole is WIDER than a missing tag on a tagged region: every region without
-  a `conf=` attribute stores NULL — which is every OUTSIDE-MARKER fragment, e.g.
-  the `Student:` head every submission transcript carries, so the common shape
-  of a real transcript already includes NULL-conf rows. The clause's non-null
-  guarantee holds only for well-formed TAGGED regions; the probe is in
-  `test_ct_ingest_region_domains.py`'s docstring.
+- **G1** (`low_confidence_ocr`, `CT-INGEST-08`/`C10`) — **CLOSED by #221**: the
+  status was in the declared vocabulary and the column's CHECK admitted it, but
+  no path in the ladder ever assigned it (probe: regions tagged `conf=0.05`
+  ingested `ok`). The ladder now flags a clean submission whose stored regions
+  record a reading below the `HARNESS_INGEST_OCR_CONF_FLOOR` floor —
+  `low_confidence_ocr`, `quarantined = 0`, admissible (CT-INGEST-11); C11's
+  sweep drives all five statuses.
+- **G2** (`ocr_conf` non-null, `CT-INGEST-04`) — **CLOSED by #221**: the parser
+  validated `region_kind` and `content_state` against their domains but read
+  `conf=` permissively — a region tagged without `conf=` stored NULL, and the
+  hole was WIDER than a missing tag on a tagged region: every OUTSIDE-MARKER
+  fragment (the `Student:` head every submission transcript carries) stored
+  NULL. The parser now derives a reading confidence for every region that
+  arrives without one (the page's minimum tagged confidence; a tagless page
+  records the floor itself) and refuses a non-numeric tag as malformed model
+  output; C04's sweep asserts non-null over EVERY stored row.
 - **G3** (transcription 3-strikes, `CT-INGEST-14`): there is no transcription
   retry loop — the only re-request loop is the evaluative-description one
   (`EVALUATIVE_RETRIES_ENV`). A provider fault on transcription escapes

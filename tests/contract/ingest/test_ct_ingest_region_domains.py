@@ -4,22 +4,16 @@ selection biconditional, and the evaluative bar (`TC-INGEST-C04..C06`).
 Cases of test plan §6.11.5; issue #49 (TS-62). Green by design — #38/#39 landed
 the region protocol, #41 the gate around it.
 
-Audit disclosure for **C04**, probe-backed (G2 in `_doubles`' docstring): the
-clause's "ocr_conf never null" is enforced only on WELL-FORMED transcripts. The
-parser validates `kind=` against `REGION_KINDS` and `state=` against
-present/blank/absent and refuses both on violation — but reads `conf=`
-permissively: a region tagged without `conf=` stores `ocr_conf = NULL`, every
-gate passes, and nothing downstream notices. Probe: a `transcribed_text` region
-with no `conf=` attribute ingests `ok` with a NULL `ocr_conf` (the same probe
-run that produced the C04 sweep below). The hole is wider than a missing tag
-on a tagged region: EVERY region without a `conf=` attribute stores NULL —
-including every outside-marker fragment, e.g. the `Student:` head every
-submission transcript carries (probe: a well-formed transcript yields a
-`('text', None)` row beside its tagged ones). The C04/C19 sweeps therefore
-scope their non-null assertions to TAGGED element kinds, and this disclosure
-names the wider shape. A malformed-`conf` refusal would be the
-shipped behaviour to test; a silent NULL is a clause hole in shipped code with
-no `writtenahead` target, so it is disclosed here rather than shipped red.
+Audit disclosure for **C04** (G2 in `_doubles`' docstring) — CLOSED by #221:
+the parser used to read `conf=` permissively, so a region tagged without
+`conf=` — and every outside-marker fragment, e.g. the `Student:` head every
+submission transcript carries — stored `ocr_conf = NULL` and nothing noticed.
+The shipped parser now refuses a non-numeric tag and derives a reading
+confidence for every region that arrives without one (the page's minimum
+tagged confidence; a page that tagged nothing records the floor itself), so
+the sweep below asserts the clause at full strength: `ocr_conf` non-null on
+EVERY stored row, the untagged `text` head included, and the tagged region's
+own value still exactly the tagged float.
 
 The consumer halves — `M-DET` reading `region_kind`/`content_state` domains and
 `M-JUDGE` reading the crop as description material — are deferred with
@@ -109,9 +103,22 @@ def test_tc_ingest_c04_every_stored_region_carries_a_domain_value(tmp_data_dir):
         f"{tagged[0]['ocr_conf']!r}, not the tagged 0.97 — the per-region "
         "reading confidence did not survive the parse."
     )
-    assert all(row["ocr_conf"] is not None for row in regions
-               if row["element_kind"] in ("Q1", "Q3", "Q4")), (
-        "TC-INGEST-C04: a well-formed tagged region stored a NULL ocr_conf."
+    # The clause at full strength (#221): EVERY stored row — the untagged
+    # `text` head included — carries a real confidence. The head's is the
+    # page's minimum tagged reading (0.93, the selection mark), the
+    # conservative direction for a fragment the prompt carries outside the
+    # marker protocol.
+    untagged = [row for row in regions if row["element_kind"] == "text"]
+    assert untagged and untagged[0]["ocr_conf"] == pytest.approx(0.93), (
+        f"TC-INGEST-C04: the untagged head's ocr_conf is "
+        f"{untagged[0]['ocr_conf']!r}, not the page's minimum tagged reading "
+        "0.93 — the derived confidence for an outside-marker fragment moved."
+    )
+    nulls = [row["element_kind"] for row in regions if row["ocr_conf"] is None]
+    assert not nulls, (
+        f"TC-INGEST-C04: regions stored a NULL ocr_conf: {nulls} — a NULL is "
+        "a CT-INGEST-04 contract violation (the G2 hole is closed; a regression "
+        "here reopens it)."
     )
     blank_rows = [row for row in regions if row["content_state"] == "blank"]
     absent_rows = [row for row in regions if row["content_state"] == "absent"]
@@ -123,6 +130,32 @@ def test_tc_ingest_c04_every_stored_region_carries_a_domain_value(tmp_data_dir):
     assert all(row["content"] == "" for row in blank_rows + absent_rows), (
         "TC-INGEST-C04: a blank or absent row carries content."
     )
+    # The clause's sweep form over the writer shapes the submission path
+    # cannot reach (review C1/C2): a setup artifact ingests the MARKER-LESS
+    # shape — its transcript carries no region protocol at all — and its
+    # regions must backfill exactly like a submission's (a tagless page
+    # records the floor itself).
+    key_source = fx.put(b"c04 assessment pdf")
+    fx.ingestor.ingest_document([key_source], kind="assessment",
+                                filenames={key_source: "key.pdf"})
+    setup_regions = fx.regions(fx.documents("kind = 'assessment'")[0]
+                               ["document_id"])
+    assert setup_regions and all(
+        row["ocr_conf"] is not None for row in setup_regions), (
+        "TC-INGEST-C04: a setup artifact's marker-less transcript stored a "
+        "NULL ocr_conf — the backfill must cover the no-marker early return "
+        "too, not only the marker path submissions take."
+    )
+    # And the tagged front door refuses a NON-FINITE tag: `conf=nan` passes
+    # float() and would store NULL (SQLite has no NaN), reopening the very
+    # hole the backfill closed — while poisoning the page's minimum for every
+    # correctly tagged region beside it (review C3).
+    nan_source = fx.put(b"c04 nan pdf")
+    fx.script(nan_source, {1: student_answer(
+        "bea", answer_text("Q1", "the answer", conf="nan"))})
+    with pytest.raises(IngestError, match="not a finite number"):
+        fx.ingestor.ingest_document([nan_source], kind="submission",
+                                    filenames={nan_source: "a.pdf"})
     fx.close()
 
 

@@ -28,7 +28,8 @@ from, with the clause's own emphasis asserted at the data level:
 - per-gate pass/fail counts and quarantine-by-gate derivable from the five
   gate columns and the findings' gate attribution — distributions asserted
   per column, never one merged total;
-- per-region `ocr_conf` non-null on every tagged region.
+- per-region `ocr_conf` non-null on every stored region, untagged heads
+  included (CT-INGEST-04's clause, #221).
 
 `description_secondary` is always NULL — the second-pass disagreement signal
 is Phase 2 (#39 landed the column; the pass is not implemented). The emission
@@ -57,12 +58,16 @@ def test_tc_ingest_c19_the_separate_observables_are_recorded_in_disjoint_places(
         tmp_data_dir):
     """`TC-INGEST-C19` (the separation property) — one page carrying an OCR
     problem (a blank region), an unresolved mark (ambiguous selection) and an
-    unresolved token ingests `ok`, and the three signals are recorded in
-    disjoint places: blank on `content_state`, the unresolved mark on
-    `selection_state` with NO selection, the token ONLY in its own table keyed
-    to its region — no signal folded into another's column. The document row
-    carries the text-layer observables, per-region `ocr_conf` is non-null on
-    every tagged region, and `description_secondary` is Phase 2's NULL."""
+    unresolved token ingests available-but-flagged (`low_confidence_ocr`,
+    #221: the fixture's marginal readings at 0.50/0.40 sit below the
+    confidence floor; the submission is NOT quarantined — the flag and the
+    signals coexist), and the three signals are recorded in disjoint places:
+    blank on `content_state`, the unresolved mark on `selection_state` with NO
+    selection, the token ONLY in its own table keyed to its region — no signal
+    folded into another's column. The document row carries the text-layer
+    observables, per-region `ocr_conf` is non-null on EVERY stored row — the
+    untagged `Student:` head included (CT-INGEST-04's clause, #221) — and
+    `description_secondary` is Phase 2's NULL."""
     fx = Contract(tmp_data_dir, "c19-observe")
     fx.add_roster("gus")
     content = b"c19 observ pdf"
@@ -83,9 +88,14 @@ def test_tc_ingest_c19_the_separate_observables_are_recorded_in_disjoint_places(
     report = fx.ingestor.ingest_submission(
         [source], cohort_id=COHORT, package_version="v0",
         filenames={source: "a.pdf"})
-    assert report.ingest_status == "ok", (
-        f"TC-INGEST-C19: the observability fixture did not ingest: "
+    assert report.ingest_status == "low_confidence_ocr", (
+        f"TC-INGEST-C19: the marginal readings did not flag the submission: "
         f"{report.ingest_status} / {report.gates}."
+    )
+    assert fx.submission_rows()[0]["quarantined"] == 0, (
+        "TC-INGEST-C19: the flagged submission quarantined — "
+        "low_confidence_ocr is available to scoring (CT-INGEST-11), and the "
+        "flag must not blur into a quarantine signal."
     )
     document = fx.documents()[0]
     assert document["pages_with_text_layer"] == 1, (
@@ -102,13 +112,19 @@ def test_tc_ingest_c19_the_separate_observables_are_recorded_in_disjoint_places(
         f"TC-INGEST-C19: the tagged regions did not store: {sorted(regions)}."
     )
     q1, q2, q3 = regions["Q1"], regions["Q2"], regions["Q3"]
-    # Per-region confidence, the §6.9 surface-proxy input, on every tagged
-    # region.
-    for label, region in (("Q1", q1), ("Q2", q2), ("Q3", q3)):
+    # Per-region confidence, the §6.9 surface-proxy input, on EVERY stored row
+    # — the untagged head included (its confidence is the page's minimum tagged
+    # reading, 0.40, the conservative direction).
+    for label, region in sorted(regions.items()):
         assert region["ocr_conf"] is not None and 0 < region["ocr_conf"] <= 1, (
             f"TC-INGEST-C19: {label}'s ocr_conf is {region['ocr_conf']} — "
             "the per-region confidence was not recorded."
         )
+    assert regions["text"]["ocr_conf"] == pytest.approx(0.40), (
+        f"TC-INGEST-C19: the head region's ocr_conf is "
+        f"{regions['text']['ocr_conf']!r}, not the page's minimum tagged "
+        "reading — the untagged fragment's derived confidence moved."
+    )
     # Signal 1 — the OCR problem: blank is a content_state, nothing else.
     assert q2["content_state"] == "blank" and not (q2["content"] or "").strip(), (
         f"TC-INGEST-C19: the blank page is not recorded as blank: "
