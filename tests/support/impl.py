@@ -1934,6 +1934,86 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/integration/orch/test_ledger_capacity_progress.py",),
     ),
+    # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
+    #
+    # The design declares no M-SYNTH Protocol (the `#97 TS-24 synthesis boundary
+    # (RES-07)` entry above records the grep), so every key is an
+    # invented-and-disclosed name — settled in `tests/support/synth_vocabulary.py`
+    # (the extract_vocabulary precedent), one rename there per reconciled symbol.
+    # Ownership follows the stories' acceptance criteria: #97 ships the two-level
+    # boundary, the request types, the completeness gate, the narrative schema and
+    # the report; #98 ships the score-claim prohibition (the check and the
+    # configured pattern list) and the evidence anchoring.
+    "#97 two-level boundary (TC-SYNTH-01)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_two_level_boundary.py",),
+    ),
+    "#97 request and result types (TC-SYNTH-02/03/07)": (
+        # All three types in one conjunction: the artifact file's three cases
+        # resolve together, and a Protocol shell satisfies none of them (each is
+        # introspected field by field, which is the assertion itself).
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:L1Request,"
+            f"{SYNTH_MODULE}:L2Request,"
+            f"{SYNTH_MODULE}:SynthesisResult"
+        ),
+        ("tests/artifact/test_synth_score_free_schema.py",),
+    ),
+    "#98 score-claim check (TC-SYNTH-04)": (
+        # The rung-0 predicate, the verify_span precedent for a module-level
+        # pure entry the pattern-scan cases call.
+        "symbol",
+        f"{SYNTH_MODULE}:has_score_claim",
+        ("tests/unit/synth/test_score_claim_patterns.py",),
+    ),
+    "#97+#98 stored narratives (TC-SYNTH-05/06)": (
+        # The scan and the suppression ladder both need the module AND the check:
+        # runnable when the LAST lands, whichever story that is.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/integration/synth/test_score_claim_suppression.py",),
+    ),
+    "#97 completeness gate and sentinel (TC-SYNTH-09/10)": (
+        # Both cases drive the worker; TC-SYNTH-10's schema half bites the moment
+        # the module lands — if #97 ships the worker but forgets the narrative
+        # migration, the unmarked test fails visibly in the gate, which is where
+        # it should fail.
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_completeness_and_sentinel.py",),
+    ),
+    "#97 synthesis report (TC-SYNTH-08/12)": (
+        # The observability cases read the report the worker returns; the
+        # conjunction is the worker plus the report type it is assumed to
+        # construct (disclosed in the vocabulary).
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:SynthesisWorker,"
+            f"{SYNTH_MODULE}:SynthesisReport"
+        ),
+        ("tests/integration/synth/test_synthesis_observability.py",),
+    ),
+    "#97 Tier R residency (TC-SYNTH-11)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/security/synth/test_narrative_tier_r_purge.py",),
+    ),
+    "#98 ADV-11 attack (ADV-11)": (
+        # The attack drives the worker against the check: both symbols, like the
+        # stored-narratives entry, because either landing alone leaves the case
+        # unrunnable.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/security/synth/test_adv_11_score_claim_paraphrase.py",),
+    ),
 }
 
 
