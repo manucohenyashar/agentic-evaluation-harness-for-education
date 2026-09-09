@@ -30,6 +30,17 @@ reconciles both files together):
 | `report["by_unit"]` | the counts by `(stage, criterion, judge)` — keyed by that triple |
 | `aeh.orch:ProgressReport` | the §3.7 dataclass the field enumeration runs over; lands with #62 |
 
+**How the two halves' shapes coexist (disclosed deliberately).** The type half
+enumerates `dataclasses.fields(ProgressReport)`; the query half reads mapping
+access on `progress()`'s return and a `by_unit` key that is NOT among the
+declared fields. Both pass together only if the returned object is the §3.7
+dataclass WITH mapping behavior (or #62 returns a mapping view beside it), with
+`by_unit` riding outside the field set — the same mapping assumption
+`test_failure_visibility.py` makes, so #62 reconciles all three surfaces in one
+pass. A `progress()` that returns a bare dataclass with neither mapping behavior
+nor a companion view fails the query half on purpose: the mapping is the
+operator surface the console reads.
+
 Isolation: rung 2 — real store, real Tier P package, real cohort ledger; the
 driver plays the workers (lease / complete / fail are the shipped worker
 surface, #58); no doubles.
@@ -55,7 +66,9 @@ _CRITERIA = (
     {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},
     {"criterion_id": "C2", "kind": "open", "scoring_model": "holistic"},
 )
-_DONE_SUBMISSIONS = frozenset({"SYN-001", "SYN-002"})
+#: Every submission whose score units COMPLETE — all but SYN-003, whose units
+#: (2 criteria x 3 judges = 6) ride the fail ladder into `quarantined`.
+_DONE_SUBMISSIONS = frozenset({"SYN-001", "SYN-002", "SYN-004", "SYN-005", "SYN-006"})
 
 #: The §3.7 dataclass, field for field. Set equality is the oracle: a field
 #: added here that the design did not declare — per-student above all — fails
@@ -120,9 +133,9 @@ def test_tc_orch_26_progress_report_type_has_no_per_student_field():
 
 
 def test_tc_orch_26_live_progress_query_matches_the_ledger(tmp_data_dir):
-    """`TC-ORCH-26` query half — a ledger in a known state (every extract,
-    deterministic and SYN-001/SYN-002 score unit done; every SYN-003 score unit
-    quarantined by the shipped three-fail ladder): `progress()` reports the
+    """`TC-ORCH-26` query half — a ledger in a known state (every extract unit
+    done; every score unit done except SYN-003's six, which quarantined by the
+    shipped three-fail ladder): `progress()` reports the
     same counts a hand-count of the ledger's rows produces, by total and by
     `(stage, criterion, judge)`."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
@@ -138,7 +151,8 @@ def test_tc_orch_26_live_progress_query_matches_the_ledger(tmp_data_dir):
         )
         orch.enumerate_units(run_id)
 
-        # Extract and deterministic units: complete them all (and unlock Sweep 2).
+        # Extract units complete (the deterministic stage is empty in this
+        # all-open fixture), which unlocks Sweep 2.
         for stage in ("extract", "deterministic"):
             while True:
                 batch = orch.lease("report-worker", stage, 64)
@@ -147,9 +161,10 @@ def test_tc_orch_26_live_progress_query_matches_the_ledger(tmp_data_dir):
                 for unit in batch:
                     orch.complete(unit.work_id)
 
-        # Score units: SYN-001/SYN-002 complete; every SYN-003 unit rides the
-        # shipped fail ladder — one fail per lease round, three rounds, so each
-        # ends `quarantined` (FR-ORCH-18) with the run none the wiser.
+        # Score units: every submission completes except SYN-003, whose units
+        # ride the shipped fail ladder — one fail per lease round, three
+        # rounds, so each ends `quarantined` (FR-ORCH-18) with the run none
+        # the wiser.
         for _round in range(3):
             while True:
                 batch = orch.lease("report-worker", "score", 64)
