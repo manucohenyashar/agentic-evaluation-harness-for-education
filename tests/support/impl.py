@@ -31,6 +31,7 @@ from tests.support.extract_vocabulary import (
     TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
+from tests.support.judge_vocabulary import TS30_JUDGE_SYMBOLS, TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -1933,6 +1934,25 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbol",
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/integration/orch/test_ledger_capacity_progress.py",),
+    ),
+    # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
+    #
+    # Two files, one per owning story of the surface they resolve. The isolation
+    # file is pure rung 0 and waits on #78's worker/request pair; the numeral file
+    # renders through #78's worker AND #79's version-pinned template, so its key is
+    # a conjunction over both stories' symbols (the "#71" precedent: the render
+    # alone does not make the case runnable). The symbol tuples live in
+    # `tests/support/judge_vocabulary.py` — the single bet the two suites share;
+    # that module imports nothing from here, so the key import is acyclic.
+    "#78 scoring isolation (TS-30)": (
+        "symbols",
+        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_JUDGE_SYMBOLS),
+        ("tests/artifact/test_scoring_isolation.py",),
+    ),
+    "#79 judge prompt (TS-30)": (
+        "symbols",
+        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS),
+        ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
     ),
 }
 
