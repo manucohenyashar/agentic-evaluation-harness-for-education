@@ -217,10 +217,15 @@ def test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_di
                 f"{expected_pending} — the remaining count the pause must name is a "
                 "ledger fact, and a figure that disagrees with it is a wrong figure"
             )
-            assert _row_shows(row, str(expected_pending)), (
-                f"the pause names no remaining unit count ({expected_pending}) — the "
-                "operator must see how much work the ceiling left undone, not only "
-                "that the money stopped"
+            # ...and the remaining unit count — named IN THE PAUSE REASON, not
+            # scanned name-agnostically: a bare digit always matches some column
+            # (timestamps echo every digit, uuid hex echoes most), so the vacuous
+            # scan would pin nothing. The reason's delimited phrase is the claim.
+            reason = row["pause_reason"] or ""
+            assert f"{expected_pending} unit(s) remaining" in reason, (
+                f"the pause reason {reason!r} names no remaining unit count "
+                f"({expected_pending}) — the operator must see how much work the "
+                "ceiling left undone, not only that the money stopped"
             )
 
         # The ledger is preserved: every unit row the run enumerated is still there,

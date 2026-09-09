@@ -853,6 +853,15 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "UPDATE run_control SET applied_at = :applied_at "
         "WHERE run_id = :run_id AND action = 'pause' AND applied_at IS NULL"
     ),
+    # The same supersede, bounded by request time: a resume supersedes only the
+    # pauses queued BEFORE it — a pause requested after the resume is a later
+    # intent, and marking it applied here would drop a request that was never
+    # effected (it would be honoured at its own pass otherwise).
+    "mark_pauses_applied_before": Statement(
+        "UPDATE run_control SET applied_at = :applied_at "
+        "WHERE run_id = :run_id AND action = 'pause' AND applied_at IS NULL "
+        "AND requested_at < :requested_at"
+    ),
 }
 
 
@@ -1631,15 +1640,20 @@ class Orchestrator:
     **Recorded interpretations (#61).** The ceiling comparison is strict `>` per
     dispatch (a dispatch landing exactly at the ceiling proceeds; the run pauses once
     spend sits at the ceiling) — the breaker's and budget's reading of an "at or above"
-    boundary. The estimate displayed at start is the sum of the units' seam figures.
-    A queued pause on a `pending` run is honoured at `start` (the machine's declared
+    boundary; the at-ceiling sense fires only when the claim actually moved spend (a
+    not-billed figure adds nothing and consumes no ceiling, so replayed work drains
+    past an at-ceiling pause without re-pausing it). The estimate displayed at start is
+    the sum of the units' seam figures. Every pause and resume — operator, sensed, or
+    explicit `resume(run_id)` — is written as a `run_control` row and effected through
+    the control-read pass (request ≠ effect, `CT-ORCH-13`); a resume supersedes the
+    pauses queued before it (latest control intent wins, bounded by request time), and
+    a queued pause on a `pending` run is honoured at `start` (the machine's declared
     edges have no `pending → paused` from mid-flight); a queued pause on a `running`
     run applies at the next claim pass; an operator's pause stays sticky across a
-    no-argument `resume` (a stop outranks a scheduler's restart) while an explicit
-    `resume(run_id)` — or a queued `resume` control — is the `paused → running` edge
-    and supersedes pauses still queued behind it. Run-level `complete` is probed after
-    every won lifecycle write and fires only for a `running` run with at least one
-    unit and none open (quarantined units are not open — their record stands).
+    no-argument `resume` (a stop outranks a scheduler's restart). Run-level `complete`
+    is probed after every won lifecycle write and fires only for a `running` run with
+    at least one unit and none open (quarantined units are not open — their record
+    stands).
 
     The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
     or contacts a judge: enumeration is a pure function of the ledger, the package
@@ -2163,15 +2177,20 @@ class Orchestrator:
         to a no-op. Invoked when nothing is wrong, it inserts nothing and changes
         nothing: the safe no-op the acceptance criterion asks for.
 
-        **Control rows are honoured here** (`CT-ORCH-13`): the no-argument form reads
-        each open run's unapplied control rows first — a resume written while the
-        orchestrator was down flips its paused run back to `running` through the same
-        guarded transition an explicit resume uses. **An explicit `run_id` of a paused
-        run is the `paused → running` edge** (`FR-ORCH-25`): it re-binds to nothing and
-        consults no current configuration — the run's frozen `provider_config`/`panel_config`
-        are the backend (`FR-ORCH-16`'s resume-same-backend is structural: the lifecycle
-        transitions write status columns only, so *no code path exists* by which a resume
-        could substitute a backend). An operator's pause stays sticky across a restart:
+        **Control rows are both the input and the effect here** (`CT-ORCH-13`): the
+        no-argument form reads each open run's unapplied control rows first — a resume
+        written while the orchestrator was down flips its paused run back to `running`
+        through the same guarded transition an explicit resume uses. **An explicit
+        `run_id` is itself written as a control row** — request ≠ effect applies to
+        every resume, no-argument or named: the row is the durable request, the read
+        pass the effect. On a paused run the pass effects the `paused → running` edge
+        (`FR-ORCH-25`) and supersedes the pauses queued before it; on a pending or
+        running one the request is vacuous and is marked applied. Either way the resume
+        re-binds to nothing and consults no current configuration — the run's frozen
+        `provider_config`/`panel_config` are the backend (`FR-ORCH-16`'s
+        resume-same-backend is structural: the lifecycle transitions write status
+        columns only, so *no code path exists* by which a resume could substitute a
+        backend). An operator's pause stays sticky across a restart:
         the no-argument form applies control rows and enumerates but does not auto-unpause
         a run nobody asked to resume — a stop an operator requested outranks a scheduler's
         restart.
@@ -2182,26 +2201,28 @@ class Orchestrator:
         """
         if run_id is not None:
             cohort, row = self._find_run(run_id)
-            if row["status"] == "paused":
-                won = self._transition_run(
-                    cohort,
-                    run_id,
-                    to_status="running",
-                    pause_reason=None,
-                    completed_at=None,
-                    from_status="paused",
-                )
-                if won:
-                    # The resume supersedes any pause still queued behind it — the
-                    # latest control intent wins, and a pause that would re-fire at a
-                    # later start after an explicit resume is a control the operator
-                    # already overrode.
-                    with cohort.transaction() as tx:
-                        tx.execute(
-                            ORCH_STATEMENTS["mark_pauses_applied"],
-                            applied_at=_now(),
-                            run_id=run_id,
-                        )
+            if row["status"] not in ("complete", "failed"):
+                # The explicit resume is a control row like any other (`CT-ORCH-13` —
+                # a resume request is effected by WRITING the row and letting the
+                # control-read pass apply it, never as an in-request state change;
+                # the row is the durable request, `applied_at` the evidence it was
+                # honoured). On a paused run the pass effects the `paused → running`
+                # edge; on a pending/running one the request is vacuous and is marked
+                # applied; either way it supersedes the pauses queued before it.
+                with cohort.transaction() as tx:
+                    tx.execute(
+                        ORCH_STATEMENTS["insert_run_control"],
+                        control_id=f"control-{uuid.uuid4().hex}",
+                        run_id=run_id,
+                        action="resume",
+                        reason=None,
+                        requested_at=_now(),
+                    )
+                status_after, _ = self._apply_control_rows(cohort, run_id)
+                if status_after == "running":
+                    # The resumed run's last open unit may have closed while it was
+                    # paused (completions keep landing; the probe only fires from
+                    # `running`) — a resume that opens a finished run completes it.
                     self._maybe_complete_run(cohort, run_id)
             self.enumerate_units(run_id)
             return
@@ -2286,14 +2307,23 @@ class Orchestrator:
                         from_status="paused",
                     ):
                         status = "running"
-                    self._mark_control_applied(cohort, control_id)
+                # The supersede is bounded by request time: a resume supersedes the
+                # pauses queued BEFORE it — a pause requested after the resume is a
+                # later intent this resume must not consume, and it is honoured at
+                # its own pass (controls apply oldest-request-first).
                 with cohort.transaction() as tx:
                     tx.execute(
-                        ORCH_STATEMENTS["mark_pauses_applied"],
+                        ORCH_STATEMENTS["mark_pauses_applied_before"],
                         applied_at=_now(),
                         run_id=run_id,
+                        requested_at=control["requested_at"],
                     )
                 queued_reason = None
+                # Applied in every arm: the resume was honoured (paused → running)
+                # or is vacuous (the run was never paused) — either way the request
+                # is resolved, and marking it so is what keeps the ledger from
+                # accumulating forever-unapplied rows.
+                self._mark_control_applied(cohort, control_id)
         return status, queued_reason
 
     def _mark_control_applied(self, cohort: Any, control_id: str) -> None:
@@ -2760,7 +2790,8 @@ class Orchestrator:
                                     run_id=row["run_id"],
                                     pause_reason=(
                                         f"cost ceiling reached: spend "
-                                        f"{spend + figure} of ceiling {ceiling}; "
+                                        f"{spend} of ceiling {ceiling}; next "
+                                        f"dispatch would reach {spend + figure}; "
                                         f"{remaining} unit(s) remaining"
                                     ),
                                 )
@@ -2788,11 +2819,20 @@ class Orchestrator:
                                     run_id=row["run_id"],
                                     cost_spend=str(new_spend),
                                 )
-                                if new_spend >= ceiling:
+                                if figure > 0 and new_spend >= ceiling:
                                     # Spend now sits **at** the ceiling: the run
                                     # pauses in the same transaction — the dispatch
                                     # that landed it there proceeded (strict `>`), and
-                                    # the next one would cross.
+                                    # the next BILLED one would cross. A not-billed
+                                    # figure (`None` → 0) adds nothing and consumes no
+                                    # ceiling — that is how replayed work passes a
+                                    # ceiling honestly (`_normalize_figure`) — so a
+                                    # zero accrual must not re-fire this arm: a
+                                    # resumed ceiling-paused run would otherwise
+                                    # re-pause on every replay claim, one operator
+                                    # resume per unit, never draining. The refusal
+                                    # arm above already covers any future crossing
+                                    # dispatch, billed or not.
                                     remaining = tx.execute(
                                         ORCH_STATEMENTS["count_run_pending"],
                                         run_id=row["run_id"],
