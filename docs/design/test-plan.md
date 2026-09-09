@@ -1299,6 +1299,7 @@ escalation into a model call; assert the escalation happens only in the `uncerta
 | TC-INGEST-46 | NFR-INGEST-06 | Performance / 4 | `discrete-gpu` and `unified-small` profiles | The VLM occupies its own residency slot: the whole cohort's ingestion completes and the model unloads before the first judge loads, asserted from the recorded model swap sequence | Sequence assertion, E4 only | P1 |
 | TC-INGEST-47 | NFR-INGEST-01 | Performance / 4 | 350 submissions at about four pages each | Ingestion wall clock is **measured and recorded**, and is within the same order of magnitude as the scoring pass. See `PERF-02` | Metric, measured not estimated | P1 |
 | TC-INGEST-48 | FR-INGEST-04, FR-INGEST-06 | Regression / 2 | The `F-SYNTH` and `F-GRAPHIC` corpora | Canonical assembled Markdown per fixture document matches its committed golden file byte for byte; any diff is reviewed deliberately per §6.9 | Golden file | P0 |
+| TC-INGEST-49 | FR-INGEST-13, FR-STORE-06 | Regression / 2 | A one-page PDF ingested through the LIVE `PdfiumRasterizer` (pypdfium2), its transcript carrying a `described_graphic` region | The live `crop(pdf_bytes, page_no, box, dpi)` matches the test doubles' contract; `crop_ref` and the persisted full-page rasters resolve in the blob store at the requested geometry; an out-of-bounds crop is refused, never clamped; the retention knob off skips rasters while crops still flow | Blob resolution plus exact PNG dimensions | P0 |
 
 ### 5.6 Module: Assessment Setup — Stage A (`M-SETUP`)
 
@@ -4546,7 +4547,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | FR-INGEST-10 | TC-INGEST-11 | Integration | P0 |
 | FR-INGEST-11 | TC-INGEST-13, TC-INGEST-14, TC-INGEST-15, ADV-08 | Integration, Art, Adversarial | P0 |
 | FR-INGEST-12 | TC-INGEST-16 | Integration | P0 |
-| FR-INGEST-13 | TC-INGEST-12 | Integration | P0 |
+| FR-INGEST-13 | TC-INGEST-12, TC-INGEST-49 | Integration, Regression | P0 |
 | FR-INGEST-14 | TC-INGEST-38 | Integration | P1 |
 | FR-INGEST-15 | TC-INGEST-21 | Integration | P0 |
 | FR-INGEST-16 | TC-INGEST-17, FUZZ-02 | Integration, Property | P0 |

@@ -61,6 +61,12 @@ REVIEWED_DEV_DEPENDENCIES: dict[str, str] = {
     "hypothesis": "TS-03 (#7) — the first story carrying Property-level cases",
     "pypdf": "TS-18 (#42) — the live PdfSanitizer (FR-INGEST-33/34) and the "
              "rung-2 security cases' F-ADV-PDF fixtures",
+    "pypdfium2": "#226 (F10) — the live PdfiumRasterizer's engine: rasterize, "
+                 "text_layer and the live crop (FR-INGEST-13). Lazy-imported, "
+                 "so the fast tier never loads it; declared so a fresh clone "
+                 "runs the live path the acceptance run needs",
+    "Pillow": "#226 — PdfBitmap.to_pil() needs it: the persisted page rasters "
+              "and image crops decode their PNG bytes through it (FR-STORE-06)",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

@@ -251,6 +251,16 @@ LOGGER = logging.getLogger("aeh.ingest")
 #: code change. Default is the acceptance run's figure.
 DPI_ENV = "HARNESS_INGEST_DPI"
 DEFAULT_DPI = 200
+#: Whether the full-page rasters persist into the blob store alongside the
+#: crops (`FR-STORE-06` names page rasters among the stored blobs; issue
+#: #226). The production default is ON — retention follows the crop precedent,
+#: kept until the cohort's Tier C purge (`NFR-INGEST-04`, PII) — and this knob
+#: is the environment-sensitive bound (seam 3, read at call time): a
+#: capacity-constrained box can turn full-page retention off while
+#: `FR-INGEST-13`'s retained crops still flow. The skip is recorded honestly
+#: in the provenance (a null `raster_hash`), never silently.
+RETAIN_PAGE_RASTERS_ENV = "HARNESS_INGEST_RETAIN_PAGE_RASTERS"
+DEFAULT_RETAIN_PAGE_RASTERS = True
 
 #: The per-page transcription token ceiling (`NFR-INGEST-05`'s sibling knob: a page
 #: that transcribes past the ceiling is a finding for the ladder, not a bigger budget).
@@ -562,6 +572,13 @@ class Rasterizer:
         """Render every page of `pdf_bytes` at `dpi`. Page numbers are 1-based."""
         raise NotImplementedError
 
+    def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
+        """The box — `(x, y, w, h)` in the raster pixel space of `dpi` — carved
+        from page `page_no` (1-based) of `pdf_bytes`, as PNG bytes
+        (`FR-INGEST-13`, issue #226). A box outside the page is refused, never
+        clamped; the live implementation records the full contract."""
+        raise NotImplementedError
+
     def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
         """The page's embedded text layer, or "" where it has none (`FR-INGEST-03`).
 
@@ -619,6 +636,83 @@ class PdfiumRasterizer(Rasterizer):
             return text_page.get_text_range()
         finally:
             pdf.close()
+
+    def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
+        """The page's image crop as PNG bytes (`FR-INGEST-13`, issue #226): the
+        box — `(x, y, w, h)` in the RASTER PIXEL SPACE of `dpi`, the form the
+        ingest path already speaks when its no-box default passes the full-page
+        rect of the raster it just made — carved from the page rendered at
+        `dpi`. `page_no` is 1-based. The signature is the test doubles'
+        contract: they are the de-facto seam surface, and the live class now
+        matches it.
+
+        A box that reaches outside the page — and a negative, degenerate or
+        malformed one — is REFUSED, never clamped: a clamped crop would resolve
+        a `described_graphic`'s `crop_ref` to an image other than the one its
+        description described, exactly the mismatch `FR-INGEST-13`'s "resolving"
+        forbids. The design is silent on the out-of-bounds case; this refusal
+        (recorded on the issue) is the interpretation."""
+        try:
+            import pypdfium2 as pdfium  # noqa: PLC0415 -- the lazy import IS the seam
+        except ImportError as error:  # pragma: no cover - acceptance-run only
+            raise IngestError(
+                "the live rasterizer needs the pypdfium2 package; the fast tier uses "
+                "a scripted Rasterizer double instead. Install it for the acceptance "
+                "run."
+            ) from error
+        x, y, width, height = _validated_crop_box(box)
+        if page_no < 1:
+            raise IngestError(
+                f"crop page_no {page_no} is not 1-based; the source page "
+                "numbers start at 1.")
+        pdf = pdfium.PdfDocument(pdf_bytes)
+        try:
+            if page_no > len(pdf):
+                raise IngestError(
+                    f"crop page_no {page_no} is out of bounds: the source has "
+                    f"{len(pdf)} page(s); the crop is refused, not clamped.")
+            page = pdf[page_no - 1]
+            bitmap = page.render(scale=dpi / 72.0)
+            pil_image = bitmap.to_pil()
+        finally:
+            pdf.close()
+        if x + width > pil_image.width or y + height > pil_image.height:
+            raise IngestError(
+                f"crop box {box!r} is out of bounds for page {page_no} at "
+                f"{dpi} DPI ({pil_image.width}x{pil_image.height}px raster): "
+                "the crop is refused, not clamped — a clamped crop would not "
+                "be the image the description described (FR-INGEST-13).")
+        import io
+
+        buffer = io.BytesIO()
+        pil_image.crop((x, y, x + width, y + height)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
+def _validated_crop_box(box) -> tuple[int, int, int, int]:
+    """The crop box, validated before any render: exactly four integers, a
+    non-negative origin, positive width and height. Every malformation refuses
+    (`IngestError`) rather than clamping or guessing — issue #226's recorded
+    interpretation for the out-of-bounds case, applied to the malformed ones
+    too."""
+    if not isinstance(box, (tuple, list)) or len(box) != 4:
+        raise IngestError(
+            f"crop box {box!r} is not an (x, y, w, h) four-tuple; the crop is "
+            "refused.")
+    if not all(isinstance(value, int) and not isinstance(value, bool)
+               for value in box):
+        raise IngestError(
+            f"crop box {box!r} is not four integers; the crop is refused.")
+    x, y, width, height = box
+    if x < 0 or y < 0:
+        raise IngestError(
+            f"crop box {box!r} has a negative origin; the crop is refused, "
+            "not clamped.")
+    if width <= 0 or height <= 0:
+        raise IngestError(
+            f"crop box {box!r} is degenerate (width and height must be "
+            "positive); the crop is refused.")
+    return x, y, width, height
 
 
 # --- the sanitizer seam (#42: FR-INGEST-33 / FR-INGEST-34) ----------------------------------------
@@ -2294,6 +2388,7 @@ class Ingestor:
         package_version: str | None = None,
         submission_id: str | None = None,
         filenames: dict[str, str] | None = None,
+        report_detail: dict | None = None,
     ) -> DocumentId:
         """Ingest one logical document: rasterize every page of every source PDF, run
         exactly ONE VLM transcription call per page, and emit exactly ONE immutable
@@ -2382,6 +2477,9 @@ class Ingestor:
                         "transcript": completion.text,
                         "layer": layer,
                         "image": page,
+                        # FR-STORE-06 / issue #226: the full-page raster persists
+                        # alongside the crops — or records its honest skip.
+                        "raster_hash": self._persist_raster(page),
                     })
         finally:
             if self._residency is not None:
@@ -2567,8 +2665,14 @@ class Ingestor:
         # unsanitized original than the page raster does).
         for region in all_regions:
             if region["region_kind"] == "described_graphic":
+                # The region's OWN page record — matching the page index, not
+                # the blob's first page: a boxless described_graphic crops the
+                # whole page IT sits on, and on a multi-page source the pages
+                # differ in size (review, #226 — the scripted doubles' box-
+                # blind crop masked this until the live rasterizer landed).
                 record = next(r for r in ordered
-                              if r["blob_hash"] == region["source_hash"])
+                              if r["blob_hash"] == region["source_hash"]
+                              and r["page_no"] == region["page_index"])
                 box = region.get("crop_box")
                 crop_png = self._rasterizer.crop(
                     sanitized_of[region["source_hash"]], region["page_index"],
@@ -2583,7 +2687,8 @@ class Ingestor:
             "order_source": order_source,
             "pages": [
                 {"blob_hash": record["blob_hash"], "page_no": record["page_no"],
-                 "position": position + 1}
+                 "position": position + 1,
+                 "raster_hash": record.get("raster_hash")}
                 for position, record in enumerate(ordered)
             ],
         }
@@ -2628,12 +2733,25 @@ class Ingestor:
                                    document_id=document_id)
         LOGGER.info(
             "ingested document %s kind=%s pages=%d order=%s content_hash=%s "
-            "transcriber=%s divergence=%s regions=%d re_requests=%d",
+            "transcriber=%s divergence=%s regions=%d re_requests=%d "
+            "rasters=%d persisted, %d skipped",
             document_id, kind, len(page_images), order_source, content_hash[:12],
             transcriber_ref,
             None if divergence is None else round(divergence, 3),
             len(all_regions), re_requests,
+            sum(1 for record in page_records if record.get("raster_hash")),
+            sum(1 for record in page_records
+                if not record.get("raster_hash")),
         )
+        if report_detail is not None:
+            # Seam 4: the new storage surface reports what it did next to the
+            # status — a bare success must not sit on top of an unrecorded one.
+            rasters_persisted = sum(1 for record in page_records
+                                    if record.get("raster_hash"))
+            report_detail["rasters"] = {
+                "persisted": rasters_persisted,
+                "skipped": len(page_records) - rasters_persisted,
+            }
         return document_id
 
     def _enforce_evaluative_bar(self, regions: list[dict]) -> list[dict]:
@@ -2650,12 +2768,32 @@ class Ingestor:
             )
         return regions
 
+    def _persist_raster(self, page: PageImage) -> str | None:
+        """`FR-STORE-06`'s storage form for the full-page raster (issue #226):
+        the blob goes into the same content-addressed store as the source PDFs
+        and the crops — keyed by SHA-256, deduplicated on write — and only the
+        hash is recorded, in `document.source_blobs`' per-page provenance.
+        Retention follows the crop precedent: kept until the cohort's Tier C
+        purge (`NFR-INGEST-04`, student PII). `HARNESS_INGEST_RETAIN_PAGE_RASTERS`
+        is the environment-sensitive bound, read at call time (seam 3): off,
+        the skip is what the provenance honestly records (a null
+        `raster_hash`) and `FR-INGEST-13`'s crops still flow."""
+        if not self._configured_bool(RETAIN_PAGE_RASTERS_ENV,
+                                     DEFAULT_RETAIN_PAGE_RASTERS):
+            return None
+        return self._blobs.put(page.png)
+
     def _retain_crops(self, regions: list[dict],
-                      sanitized_of: dict[str, bytes]) -> list[dict]:
+                      sanitized_of: dict[str, bytes],
+                      page: PageImage) -> list[dict]:
         """FR-INGEST-13: a described_graphic's crop is an IMAGE crop carved from the
         page raster through the rasterizer seam, retained in the blob store. The
         crop reads the SANITIZED source bytes (#42, review B1) — never the
-        original blob."""
+        original blob. A region with no box crops the WHOLE page raster — the
+        rect of the page these regions were parsed from (`page`, the same image
+        the model saw), matching the ingest path's default; a zero rect would
+        be refused by the live crop rather than silently clamped, and the
+        scripted doubles masked that disagreement for years (review, #226)."""
         for region in regions:
             if region["region_kind"] != "described_graphic":
                 continue
@@ -2663,7 +2801,8 @@ class Ingestor:
             crop_png = self._rasterizer.crop(sanitized_of[region["source_hash"]],
                                              region["page_index"],
                                              box if box is not None
-                                             else (0, 0, 0, 0),
+                                             else (0, 0, page.width_px,
+                                                   page.height_px),
                                              _configured_dpi())
             region["crop_ref"] = self._blobs.put(crop_png)
         return regions
@@ -2944,13 +3083,16 @@ class Ingestor:
                         text, blob_hash, page_no, len(markdown_parts) - 1,
                         "revision")
                     revision_regions = self._enforce_evaluative_bar(revision_regions)
-                    revision_regions = self._retain_crops(revision_regions,
-                                                          sanitized_cache)
+                    revision_regions = self._retain_crops(
+                        revision_regions, sanitized_cache, page)
                     revision_regions_all.extend(revision_regions)
                     new_provenance_pages.append({
                         "blob_hash": blob_hash, "page_no": page_no,
                         "position": position, **({"replaced": replaced_from}
                                                  if replaced_from else {}),
+                        # FR-STORE-06 / issue #226: the revision's pages persist
+                        # their rasters like the original ingest's.
+                        "raster_hash": self._persist_raster(page),
                     })
             else:
                 position = 0
@@ -3006,12 +3148,14 @@ class Ingestor:
                             len(markdown_parts) - 1, "revision")
                         revision_regions = self._enforce_evaluative_bar(
                             revision_regions)
-                        revision_regions = self._retain_crops(revision_regions,
-                                                              sanitized_cache)
+                        revision_regions = self._retain_crops(
+                            revision_regions, sanitized_cache, page)
                         revision_regions_all.extend(revision_regions)
                         new_provenance_pages.append({
                             "blob_hash": blob_hash, "page_no": page.page_no,
                             "position": position,
+                            # FR-STORE-06 / issue #226, as above.
+                            "raster_hash": self._persist_raster(page),
                         })
             if replacements:
                 raise IngestError(
@@ -3303,12 +3447,13 @@ class Ingestor:
         # with no region in the transcript (#219). Drives the V4 override guard
         # below; False whenever the gate never ran.
         declared_gap = False
+        raster_detail: dict = {}
         if not v0_failed:
             try:
                 document_id = self.ingest_document(
                     blobs, kind="submission", order_hint=order_hint,
                     package_version=package_version, filenames=filenames,
-                    submission_id=submission_id,
+                    submission_id=submission_id, report_detail=raster_detail,
                 )
                 gates["v1"] = "pass"
             except (IngestGapError, IngestDuplicateError) as error:
@@ -3541,7 +3686,8 @@ class Ingestor:
             submission_id, ingest_status, gates, len(findings),
         )
         detail = {"findings": findings, "v2_failures": v2_failures,
-                  "neutralized": neutralized}
+                  "neutralized": neutralized, "rasters": raster_detail.get(
+                      "rasters")}
         if self._residency is not None:
             # The F11 seam (#222): a slot on a result is never bare — the
             # report carries the slot's stage detail (holder, waiter count)
