@@ -209,7 +209,6 @@ __all__ = [
     "COHORT_ID",
     "FIVE_QUESTION_CRITERIA",
     "LEVEL_L1",
-    "LEVEL_L2",
     "L1_REQUEST",
     "L2_REQUEST",
     "PATTERNS",
@@ -223,8 +222,107 @@ __all__ = [
     "TEST_SENTINEL",
     "WORKER",
     "CaptureProvider",
+    "evidence_marker",
     "narrative_completion",
     "question_of",
     "sampling_params",
+    "seed_scored_submission",
     "synth_ref",
 ]
+
+
+def evidence_marker(question: str) -> str:
+    """The distinctive evidence phrase marker seeded for a question's spans.
+
+    The seeded document embeds `EVIDENCE-Q<n>` markers so a prompt's evidence reads are
+    attributable: an L1 request for `Q1` carries `EVIDENCE-Q1` and must not carry
+    `EVIDENCE-Q2`; an L2 request must carry none at all (evidence is raw material the
+    two-level boundary keeps at L1, FR-SYNTH-01).
+    """
+    return f"EVIDENCE-{question.upper()}"
+
+
+def seed_scored_submission(
+    store: Any,
+    run_id: str,
+    submission_id: str,
+    *,
+    criteria_by_question: "dict[str, tuple[str, ...]] | None" = None,
+    complete_questions: "set[str] | None" = None,
+    judges: tuple[str, ...] = ("judge-a", "judge-b", "judge-c"),
+    band: str = "high",
+    markdown: "str | None" = None,
+) -> "dict[str, list[str]]":
+    """Seed the store state synthesis reads for one submission: done `score` units,
+    three verdicts per criterion, one document with per-question evidence, one evidence
+    row per unit.
+
+    Bypasses `M-EXTRACT`/`M-JUDGE`/`M-AGG` on the `seed_document`/`seed_work_unit`/
+    `seed_verdict` helpers the integ vocabulary already ships — those upstream modules'
+    artifacts are this fixture's *inputs*, and the fixture states them directly rather
+    than standing in for three modules (`test_extract_document_invalidation.py`
+    precedent: "Seeding bypasses the resolution").
+
+    The question grouping is the naming convention (`Q1C1` -> `Q1`); `#97`'s request
+    assembly owns the real mapping and reconciles at landing. An incomplete question
+    (not in `complete_questions`) gets its `score` unit as `pending` with **no verdict
+    rows** — the incomplete state expressed at both surfaces a completeness gate could
+    read, whichever one `#97`'s gate reads.
+
+    Returns `{question: [criterion ids]}`.
+    """
+    from tests.support.integ_vocabulary import (
+        document_id_for,
+        seed_document,
+        seed_verdict,
+        seed_work_unit,
+    )
+
+    criteria_by_question = criteria_by_question or {
+        f"Q{q}": (f"Q{q}C1", f"Q{q}C2") for q in range(1, 6)
+    }
+    complete = complete_questions if complete_questions is not None else set(criteria_by_question)
+    handle = store.cohort(COHORT_ID)
+
+    if markdown is None:
+        markdown = "\n\n".join(
+            f"## Question {q[1:]}\n{evidence_marker(q)}: the student's own work for "
+            f"question {q} — the span the narrative must cite or paraphrase."
+            for q in criteria_by_question
+        )
+    document_id = seed_document(
+        handle, document_id_for(submission_id), submission_id, markdown, COHORT_ID
+    )
+
+    seeded: "dict[str, list[str]]" = {}
+    for question, criteria in criteria_by_question.items():
+        seeded[question] = list(criteria)
+        for criterion_id in criteria:
+            work_id = f"wu-{submission_id}-{criterion_id}-score"
+            seed_work_unit(
+                handle,
+                work_id,
+                run_id,
+                submission_id,
+                criterion_id,
+                stage="score",
+                status="done" if question in complete else "pending",
+            )
+            if question in complete:
+                for judge_id in judges:
+                    seed_verdict(
+                        handle,
+                        f"vd-{work_id}-{judge_id}",
+                        work_id,
+                        judge_id,
+                        band,
+                    )
+            with handle.transaction() as tx:
+                tx.execute(
+                    "INSERT INTO evidence (evidence_id, work_id, document_id) "
+                    "VALUES (:e, :w, :d)",
+                    e=f"ev-{work_id}",
+                    w=work_id,
+                    d=document_id,
+                )
+    return seeded
