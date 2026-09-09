@@ -247,9 +247,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statement reshapes it carried (first_open's schedule-ordered probe, the
     # criteria axis folded into by_unit's aggregate); the sites are the same
     # statements as #57/#58's.
-    "aeh.orch:2163",
-    "aeh.orch:2384",
-    "aeh.orch:2393",
+    "aeh.orch:2167",
+    "aeh.orch:2388",
+    "aeh.orch:2397",
     # #61's lifecycle sites (every one from ORCH_STATEMENTS, keyword-parameterized):
     # start's displayed-estimate write and its guarded pending→running transition with
     # its changes() read; pause's control-row insert and its already-paused satisfied-
@@ -260,37 +260,37 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # changes() read. Lines moved with #61's lifecycle block and the reviewer fixes
     # swapped the two resume sites noted above; the #57/#58 statements are the same
     # as ever.
-    "aeh.orch:2475",
-    "aeh.orch:2481",
-    "aeh.orch:2486",
-    "aeh.orch:2529",
-    "aeh.orch:2541",
-    "aeh.orch:2601",
-    "aeh.orch:2703",
-    "aeh.orch:2721",
-    "aeh.orch:2745",
-    "aeh.orch:2753",
+    "aeh.orch:2479",
+    "aeh.orch:2485",
+    "aeh.orch:2490",
+    "aeh.orch:2533",
+    "aeh.orch:2545",
+    "aeh.orch:2605",
+    "aeh.orch:2707",
+    "aeh.orch:2725",
+    "aeh.orch:2749",
+    "aeh.orch:2757",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:3230",
-    "aeh.orch:3245",
+    "aeh.orch:3234",
     "aeh.orch:3249",
-    "aeh.orch:3261",
-    "aeh.orch:3269",
-    "aeh.orch:3278",
-    "aeh.orch:3297",
+    "aeh.orch:3253",
+    "aeh.orch:3265",
+    "aeh.orch:3273",
+    "aeh.orch:3282",
     "aeh.orch:3301",
-    "aeh.orch:3506",
-    "aeh.orch:3513",
-    "aeh.orch:3564",
+    "aeh.orch:3305",
+    "aeh.orch:3510",
+    "aeh.orch:3517",
     "aeh.orch:3568",
-    "aeh.orch:3618",
-    "aeh.orch:3623",
-    "aeh.orch:3674",
-    "aeh.orch:3680",
+    "aeh.orch:3572",
+    "aeh.orch:3622",
+    "aeh.orch:3627",
+    "aeh.orch:3678",
+    "aeh.orch:3684",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -302,21 +302,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # queue-depth read. The restructure moved the queue's drain into the claim
     # pass's dispatch gate, so the drain's reads are gone and the key's run
     # resolution arrived.
-    "aeh.orch:3786",
-    "aeh.orch:3844",
-    "aeh.orch:3860",
-    "aeh.orch:3880",
-    "aeh.orch:3894",
-    "aeh.orch:3900",
-    "aeh.orch:3918",
-    "aeh.orch:3955",
-    "aeh.orch:3971",
-    "aeh.orch:3993",
+    "aeh.orch:3790",
+    "aeh.orch:3848",
+    "aeh.orch:3864",
+    "aeh.orch:3884",
+    "aeh.orch:3898",
+    "aeh.orch:3904",
+    "aeh.orch:3922",
+    "aeh.orch:3959",
+    "aeh.orch:3975",
+    "aeh.orch:3997",
     # The lines moved again with #61's lifecycle and ceiling blocks and #62's
     # report-index migration (the #60 statements are the same as ever).
-    "aeh.orch:4040",
     "aeh.orch:4044",
-    "aeh.orch:4123",
+    "aeh.orch:4048",
+    "aeh.orch:4127",
     # #62's dispatch additions (every one from ORCH_STATEMENTS, keyword-
     # parameterized, inside the method's own durable transaction): the OOM
     # remedy's reduced-panel write (`record_reduced_panel`, the panel_config
@@ -326,13 +326,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # metrics flush's `insert_run_metric` upsert (the EAV write CT-ORCH-20
     # makes contract). The report's own reads go through the tier's declared
     # `query`, not `execute`, so they are not sites here.
-    "aeh.orch:4774",
-    "aeh.orch:4804",
-    "aeh.orch:4806",
-    "aeh.orch:4986",
+    "aeh.orch:4778",
+    "aeh.orch:4808",
+    "aeh.orch:4810",
+    "aeh.orch:4990",
     # #57's audit-record insert (record_run_start), moved by #62's dispatch
     # block above it; same statement.
-    "aeh.orch:5018",
+    "aeh.orch:5022",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -360,6 +360,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.extract:885",
     "aeh.extract:890",
     "aeh.extract:892",
+    # The judge sites are #78's line numbers: the one write transaction in
+    # `ScoringWorker.persist` — the guarded done-marking, its changes() read, and
+    # the verdict row that commits together with it (the extract shape: every
+    # statement a declared constant in `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`,
+    # keyword-parameterized).
+    "aeh.judge:1145",
+    "aeh.judge:1150",
+    "aeh.judge:1152",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
@@ -381,88 +389,101 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest:3399",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
-    # line move plus one net-new site).
-    "aeh.pkg:1954",
-    "aeh.pkg:1996",
-    "aeh.pkg:2010",
-    "aeh.pkg:2012",
-    "aeh.pkg:2014",
-    "aeh.pkg:2037",
-    "aeh.pkg:2045",
-    "aeh.pkg:2132",
-    "aeh.pkg:2147",
-    "aeh.pkg:2149",
-    "aeh.pkg:2151",
-    "aeh.pkg:2177",
-    "aeh.pkg:2190",
-    "aeh.pkg:2193",
-    "aeh.pkg:2233",
-    "aeh.pkg:2236",
-    "aeh.pkg:2253",
-    "aeh.pkg:2258",
-    "aeh.pkg:2260",
-    "aeh.pkg:2269",
-    "aeh.pkg:2274",
-    "aeh.pkg:2276",
-    "aeh.pkg:2527",
-    "aeh.pkg:2540",
-    "aeh.pkg:2564",
-    "aeh.pkg:2565",
-    "aeh.pkg:2632",
-    "aeh.pkg:2634",
-    "aeh.pkg:2684",
-    "aeh.pkg:2689",
-    "aeh.pkg:2725",
-    "aeh.pkg:2730",
+    # line move plus one net-new site). Lines moved again with #91's module-level
+    # `points_for_band` (the __all__ entry and the delegating method shifted the
+    # module); the tripwire diff being the line move alone — the mapping itself
+    # reads no SQL, it reads the catalog cache.
+    "aeh.pkg:1955",
+    "aeh.pkg:1997",
+    "aeh.pkg:2011",
+    "aeh.pkg:2013",
+    "aeh.pkg:2015",
+    "aeh.pkg:2038",
+    "aeh.pkg:2046",
+    "aeh.pkg:2133",
+    "aeh.pkg:2148",
+    "aeh.pkg:2150",
+    "aeh.pkg:2152",
+    "aeh.pkg:2178",
+    "aeh.pkg:2191",
+    "aeh.pkg:2194",
+    "aeh.pkg:2234",
+    "aeh.pkg:2237",
+    "aeh.pkg:2254",
+    "aeh.pkg:2259",
+    "aeh.pkg:2261",
+    "aeh.pkg:2270",
+    "aeh.pkg:2275",
+    "aeh.pkg:2277",
+    "aeh.pkg:2535",
+    "aeh.pkg:2548",
+    "aeh.pkg:2572",
+    "aeh.pkg:2573",
+    "aeh.pkg:2640",
+    "aeh.pkg:2642",
+    "aeh.pkg:2692",
+    "aeh.pkg:2697",
     "aeh.pkg:2733",
-    "aeh.pkg:2757",
-    "aeh.pkg:2842",
-    "aeh.pkg:3008",
-    "aeh.pkg:3014",
+    "aeh.pkg:2738",
+    "aeh.pkg:2741",
+    "aeh.pkg:2765",
+    "aeh.pkg:2850",
+    "aeh.pkg:3016",
     "aeh.pkg:3022",
-    "aeh.pkg:3029",
-    "aeh.pkg:3097",
+    "aeh.pkg:3030",
+    "aeh.pkg:3037",
     "aeh.pkg:3105",
-    "aeh.pkg:3106",
-    "aeh.pkg:3110",
-    "aeh.pkg:3117",
-    "aeh.pkg:3121",
-    "aeh.pkg:3158",
-    "aeh.pkg:3195",
-    "aeh.pkg:3243",
-    "aeh.pkg:3246",
-    "aeh.pkg:3299",
+    "aeh.pkg:3113",
+    "aeh.pkg:3114",
+    "aeh.pkg:3118",
+    "aeh.pkg:3125",
+    "aeh.pkg:3129",
+    "aeh.pkg:3166",
+    "aeh.pkg:3203",
+    "aeh.pkg:3251",
+    "aeh.pkg:3254",
     "aeh.pkg:3307",
-    "aeh.pkg:3311",
-    "aeh.pkg:3374",
-    "aeh.pkg:3405",
-    "aeh.pkg:3437",
-    "aeh.pkg:3458",
-    "aeh.pkg:3482",
-    "aeh.pkg:3483",
-    "aeh.pkg:3537",
+    "aeh.pkg:3315",
+    "aeh.pkg:3319",
+    "aeh.pkg:3382",
+    "aeh.pkg:3413",
+    "aeh.pkg:3445",
+    "aeh.pkg:3466",
+    "aeh.pkg:3490",
+    "aeh.pkg:3491",
     "aeh.pkg:3545",
     "aeh.pkg:3553",
-    "aeh.pkg:3564",
-    "aeh.pkg:3568",
+    "aeh.pkg:3561",
     "aeh.pkg:3572",
-    "aeh.pkg:3845",
-    "aeh.pkg:3854",
-    "aeh.pkg:3901",
-    "aeh.pkg:3990",
-    "aeh.pkg:4131",
-    "aeh.pkg:4135",
+    "aeh.pkg:3576",
+    "aeh.pkg:3580",
+    "aeh.pkg:3853",
+    "aeh.pkg:3862",
+    "aeh.pkg:3909",
+    "aeh.pkg:3998",
     "aeh.pkg:4139",
-    "aeh.pkg:4142",
-    "aeh.pkg:4148",
+    "aeh.pkg:4143",
+    "aeh.pkg:4147",
+    "aeh.pkg:4150",
     "aeh.pkg:4156",
+    "aeh.pkg:4164",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
-    # in store.py, and again with #62's pin bump (Cohort 12→13 for the report-index
+    # in store.py, and again with #97's and #78's contributions named in the refusal's
+    # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    "aeh.store:1809",
-    "aeh.store:2588",
+    "aeh.store:1813",
+    "aeh.store:2595",
+    # The synth site is #97's line number: the single narrative INSERT, declared in
+    # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
+    # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
+    # which is not a census site (FR-STORE-08). (Line moved once with the reviewer's
+    # isolation check on the payload-less document fallback, again with #98's
+    # score-claim ladder and pattern list landing above the write, again with the
+    # reviewer's pattern-tightening disclosures expanding the comments above it;
+    # same statement, re-pinned from the walker each time.)
+    "aeh.synth:778",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

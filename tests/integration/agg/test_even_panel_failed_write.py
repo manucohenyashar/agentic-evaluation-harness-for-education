@@ -11,10 +11,9 @@ failed write, not a rounded verdict. The oracle asserts **both** halves independ
   is what makes CT-AGG-03 a failed write rather than a convention"), so this half is
   **not written ahead** — it runs in `TEST_CMD` today and stands guard on the constraint
   M-AGG's rows will have to satisfy.
-- **The module refusal** is written ahead of #91 (test plan §8.2): `aggregate` refuses an
-  even panel before any write is attempted, raising the exact exception pinned as
-  `EvenPanelError` (assumed name, reconciles at landing — the design names the refusal,
-  not the exception).
+- **The module refusal** landed at #91 (unmarked there; test plan §8.2): `aggregate`
+  refuses an even panel before any write is attempted, raising the exact exception the
+  vocabulary pinned as `EvenPanelError` — the assumed name shipped as declared.
 
 Isolation: rung 2 — real store, real migrations, real SQLite constraint enforcement; no
 doubles. The submission row the FK needs is INSERTed directly (the `orch_run.py`
@@ -104,10 +103,9 @@ def test_tc_agg_04_the_schema_itself_refuses_an_even_panel_as_a_failed_write(tmp
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_04_the_module_refuses_an_even_panel_before_any_write():
     """`TC-AGG-04` module half (`FR-AGG-03`, unit refusal asserted at the integration
-    tier's case, written ahead of #91) — `aggregate` itself refuses an even panel with
+    tier's case, landed at #91) — `aggregate` itself refuses an even panel with
     the pinned exact exception; the database never sees an even panel from this module
     because the refusal happens first, in the pure layer."""
     aggregate = require(AGG_MODULE, "aggregate", issue=AGG_BLOCKER)

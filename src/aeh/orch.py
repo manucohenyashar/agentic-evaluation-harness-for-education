@@ -545,7 +545,11 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 #: criterion_id)` DISTINCT streams in index order instead of sorting the run's
 #: whole score ledger; `status` sits at position 2, the same maintenance
 #: profile `idx_wu_sched` (the leasing scan it sits beside) already pays.
-_ORCH_COHORT_013: tuple[Statement, ...] = (
+#: The version is 15: #78's `judge_verdict_columns` (13) and #97's
+#: `synth_narrative_key` (14) took the numbers first at their merges, so this
+#: renumbered at the merge — the pin-rot rule's documented dance, and the pin in
+#: `store.py` moved 14→15 in the same change.
+_ORCH_COHORT_015: tuple[Statement, ...] = (
     Statement(
         "CREATE INDEX idx_wu_report ON "
         "work_unit(run_id, stage, criterion_id, judge_id)"
@@ -558,7 +562,7 @@ _ORCH_COHORT_013: tuple[Statement, ...] = (
 
 TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     TIER_MIGRATIONS[Tier.COHORT]
-    + (Migration(version=13, name="orch_report_indexes", statements=_ORCH_COHORT_013),),
+    + (Migration(version=15, name="orch_report_indexes", statements=_ORCH_COHORT_015),),
     key=lambda m: m.version,
 ))
 

@@ -420,12 +420,19 @@ def test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        ("M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123"),
-        ("M-AGG", AGG_MODULE, "describe_agreement", "#91"),
+        # Per-param markers, the sweep's own per-row keying: `M-AGG`'s
+        # `describe_agreement` landed at #91 and runs unmarked; the console row
+        # keeps its marker — #123 has not landed.
+        pytest.param(
+            "M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123",
+            marks=pytest.mark.writtenahead,
+        ),
+        pytest.param(
+            "M-AGG", AGG_MODULE, "describe_agreement", "#91",
+        ),
     ],
     ids=["m_console", "m_agg"],
 )
@@ -436,7 +443,7 @@ def test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_mul
 
     The clause binds the consumers, so a single assertion against `M-STATS` would leave it
     untested. Both are swept and each is keyed on its own story: the console's rendering of scoped
-    agreement is #123's invariant 5, `M-AGG`'s ordinal α is #91's.
+    agreement is #123's invariant 5, `M-AGG`'s ordinal α landed at #91.
 
     Pairs with `TC-AGG-C17`, which asserts the same limitation from the producing side. Two
     consumers and a producer all have to hold it, because the number itself is perfectly valid and

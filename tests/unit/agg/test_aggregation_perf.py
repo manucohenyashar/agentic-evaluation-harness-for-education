@@ -2,8 +2,8 @@
 
 Test plan §5.12 (row form, P2), issue #94 (TS-35). Traces to `NFR-AGG-03` (~5,250
 aggregations per run, each microseconds; CT-AGG-13 folds the run-level half into
-`PERF-06` — this case holds the per-call scale at unit tier). Written ahead of #91
-(test plan §8.2).
+`PERF-06` — this case holds the per-call scale at unit tier). Landed at #91 (unmarked
+there; test plan §8.2).
 
 The production figure is microseconds per aggregation; the ceilings here are the
 generous reading that keeps the case meaningful on a slow box without asserting a
@@ -27,8 +27,6 @@ import pytest
 
 from tests.support.agg_vocabulary import AGG_BLOCKER, band, criterion, favourable_signals, verdict
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 #: NFR-AGG-03's figure, verbatim.
 BATCH = 5_250

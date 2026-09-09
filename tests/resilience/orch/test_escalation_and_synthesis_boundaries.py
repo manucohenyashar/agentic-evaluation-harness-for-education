@@ -28,9 +28,9 @@ uncontrolled kill leaves behind — and the new process constructs a fresh
 | escalation units' ledger shape | score units for the same (submission, criterion) BEYOND the panel's original three, claimable after resume — asserted name-agnostically over counts and claimability; the landed units carry `origin='escalation'` and `judge_id`s the panel never enumerated |
 | the random arm | off under test: the suite-root conftest pins `HARNESS_ORCH_RANDOM_ARM_RATE=0` (`tests/conftest.py`), so the base panel is exactly the three units these counts read |
 | the verdict itself | `M-AGG`'s artifact, not shipped — the test enters at `enqueue_escalation`, the seam §9.10 requires to share the verdict's transaction; the aggregation half of `RES-08` (single-judge provisional fallback) is `TC-AGG-12`'s case and is not re-asserted here |
-| `aeh.synth` with a `synthesize` entry point | **invented**: the design declares no `M-SYNTH` Protocol (grep of detailed-design.md for a Protocol block returns nothing — the console-suite precedent for an invented-and-disclosed key); the KEY is `RES-07`'s property, the name reconciles at #97's landing |
+| `aeh.synth` with a `synthesize` entry point | **invented, reconciled at #97's landing**: the design declares no `M-SYNTH` Protocol (grep of detailed-design.md for a Protocol block returns nothing — the console-suite precedent for an invented-and-disclosed key). Landed shape: `synthesize(store, provider, model_ref, run_id, *, submission_id) -> SynthesisReport` — the headless driver over an injected provider, the four-seam surface. The test constructs the provider double (`synth_vocabulary.CaptureProvider`) and the model ref (`synth_vocabulary.synth_ref`) it needs |
 | `narrative` rows | the plan's own oracle names the table ("No duplicate `narrative` rows"); read through the store handle `M-SYNTH` registers, assumed the cohort handle |
-| synthesis idempotence | ADR-8's conflict-on-duplicate: a retried synthesis for the same identity absorbs into the existing row rather than writing a second |
+| synthesis idempotence | ADR-8's conflict-on-duplicate: a retried synthesis for the same identity absorbs into the existing row rather than writing a second. **Oracle reconciled at #97's landing**: a two-level synthesis writes one row PER QUESTION plus the L2 row (`question_id='__test__'`), so "no duplicate rows" reads per-identity — one L1 row for the question, one L2 row for the submission, none added by the retried call |
 
 Isolation: rung 3 — real store, real Tier P package, real cohort ledger, no doubles
 (§4.2); the model-call seam is not exercised (the driver plays the worker, #58's
@@ -45,11 +45,23 @@ from aeh.orch import WorkError
 from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, SYNTH_MODULE, require, require_attr
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.synth_vocabulary import (
+    CaptureProvider,
+    narrative_completion,
+    seed_scored_submission,
+    synth_ref,
+)
 
 pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
+#: RES-07's own criteria — one question of two, convention-named so the synthesis
+#: question grouping resolves (`C1` names no question and would synthesize nothing).
+_SYNTH_CRITERIA = (
+    {"criterion_id": "Q1C1", "kind": "open", "scoring_model": "holistic"},
+    {"criterion_id": "Q1C2", "kind": "open", "scoring_model": "holistic"},
+)
 
 
 def _score_rows(store, run_id: str, submission_id: str, criterion_id: str) -> list[dict]:
@@ -267,22 +279,46 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_res_07_retried_synthesis_conflicts_rather_than_duplicating(tmp_data_dir):
     """`RES-07` (`FR-ORCH-02`, resilience, P0) — `SIGKILL` during synthesis: resume;
     the retried synthesis unit conflicts rather than duplicating (ADR-8); oracle **no
-    duplicate `narrative` rows**."""
+    duplicate `narrative` rows**.
+
+    Reconciled at #97's landing (the module docstring's table row): the invented
+    `synthesize` entry point landed as `synthesize(store, provider, model_ref, run_id,
+    *, submission_id)` — the driver takes the injected provider and the synthesis model
+    — and the two-level composition writes one row per question PLUS the L2 row
+    (`question_id='__test__'`, ADR-8), so the per-identity oracle is exactly one L1 row
+    for the question and exactly one L2 row for the submission, unchanged by the
+    retried call. The synthesizer runs on its own criteria (`Q1C1`/`Q1C2` — one
+    question, complete for the synthesized submission) rather than this module's shared
+    `_CRITERIA`, whose `C1` names no question and so synthesizes nothing."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#58")
     synthesize = require(SYNTH_MODULE, "synthesize", issue="#97")
 
     data_dir = tmp_data_dir / "res07"
     store = open_store(data_dir)
-    orch, run_id, _ = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
+    orch, run_id, _ = seed_run(store, submissions=_SUBMISSIONS, criteria=_SYNTH_CRITERIA)
     orch.enumerate_units(run_id)
     submission_id = _SUBMISSIONS[0]
+    seed_scored_submission(
+        store,
+        run_id,
+        submission_id,
+        criteria_by_question={"Q1": ("Q1C1", "Q1C2")},
+        complete_questions={"Q1"},
+    )
+    replies = [
+        narrative_completion(
+            "Question 1: the response states the hypothesis and cites the worked "
+            "steps for this question.",
+            ("Q1C1", "Q1C2"),
+        ),
+        narrative_completion("Overall: the submission works through each question in turn."),
+    ]
 
-    # Synthesis begins: the narrative for the submission is written...
-    synthesize(run_id, submission_id=submission_id)
+    # Synthesis begins: the narratives for the submission are written...
+    synthesize(store, CaptureProvider(replies), synth_ref(), run_id, submission_id=submission_id)
 
     # --- the kill: process boundary = close + reopen ---
     store.close()
@@ -292,20 +328,23 @@ def test_res_07_retried_synthesis_conflicts_rather_than_duplicating(tmp_data_dir
 
         # ...and the retried synthesis unit CONFLICTS rather than duplicating
         # (ADR-8): the same identity synthesized again absorbs into the existing
-        # row — whether by refusal, no-op, or an explicit conflict the caller
-        # sees, it must not write a second narrative.
+        # rows — whether by refusal, no-op, or an explicit conflict the caller
+        # sees, it must not write a second narrative at any identity.
         restarted.resume()
-        synthesize(run_id, submission_id=submission_id)
+        synthesize(store, CaptureProvider(replies), synth_ref(), run_id, submission_id=submission_id)
 
-        narratives = store.cohort("c-2026-7B-orch").query(
+        narratives = store.cohort(ORCH_COHORT_ID).query(
             "SELECT * FROM narrative WHERE run_id = :r AND submission_id = :s",
             r=run_id,
             s=submission_id,
         )
-        assert len(narratives) == 1, (
-            f"{len(narratives)} narrative rows for one submission after a retried "
-            "synthesis — the duplicate is ADR-8's named failure: two narratives "
-            "for one student is a coin flip over which one ships"
+        rows = [dict(row) for row in narratives]
+        l1_rows = [row for row in rows if row.get("question_id") == "Q1"]
+        l2_rows = [row for row in rows if row.get("question_id") == "__test__"]
+        assert len(rows) == 2 and len(l1_rows) == 1 and len(l2_rows) == 1, (
+            f"{len(rows)} narrative rows ({len(l1_rows)} L1, {len(l2_rows)} L2) for one "
+            "submission after a retried synthesis — the duplicate is ADR-8's named "
+            "failure: two narratives for one student is a coin flip over which one ships"
         )
     finally:
         store.close()

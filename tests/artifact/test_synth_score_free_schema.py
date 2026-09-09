@@ -55,7 +55,6 @@ from tests.support.synth_vocabulary import (
     SYNTH_ISSUE,
 )
 
-pytestmark = pytest.mark.writtenahead
 
 #: The score-shaped names FR-SYNTH-02 forbids on the result — `points`, `band`, `score`,
 #: `grade` are the clause's own four; the rest are the spellings a "helpful" later
@@ -160,9 +159,14 @@ def test_tc_synth_02_l2_request_type_cannot_carry_a_verdict():
         for j in range(1, 4)
     ][:30]
     cls = require(SYNTH_MODULE, L2_REQUEST, issue=SYNTH_ISSUE)
+    # The probe constructs a VALID request plus the smuggled field, so the TypeError it
+    # expects can only be the unexpected-keyword refusal — not a missing-argument error
+    # that any field set would raise (a probe satisfied by the wrong failure proves
+    # nothing; reviewer, #97).
+    valid_kwargs = {name: ("" if name != "syntheses" else ()) for name in field_names}
     for smuggled_kwarg in ("criterion_verdicts", "verdicts", "raw_verdicts"):
         try:
-            cls(**{smuggled_kwarg: thirty_verdicts})
+            cls(**valid_kwargs, **{smuggled_kwarg: thirty_verdicts})
         except TypeError:
             continue  # the type refused the smuggled field — the boundary held
         raise AssertionError(

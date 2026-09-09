@@ -113,7 +113,7 @@ __all__ = [
 
 BackendProfile = Literal["edge-local", "cloud-hosted", "dev-ci"]
 HardwareProfileName = Literal["unified-large", "unified-small", "discrete-gpu"]
-ModelRole = Literal["judge", "transcriber", "extractor", "off_panel"]
+ModelRole = Literal["judge", "transcriber", "extractor", "off_panel", "synthesizer"]
 BuildForm = Literal["edge-weights", "provider-pinned"]
 
 BACKEND_PROFILES: tuple[str, ...] = ("edge-local", "cloud-hosted", "dev-ci")
@@ -254,7 +254,9 @@ _WEIGHTS_HASH_MARKER = "@sha256:"
 #: `panel_build_ref` is `FR-CONF-05`'s question, on issue #5.)
 _HEX = re.compile(r"\A[0-9a-fA-F]+\Z")
 
-_KNOWN_ROLES: frozenset[str] = frozenset({"judge", "transcriber", "extractor", "off_panel"})
+_KNOWN_ROLES: frozenset[str] = frozenset(
+    {"judge", "transcriber", "extractor", "off_panel", "synthesizer"}
+)
 
 #: ISO-4217 alpha: exactly three uppercase letters. See `_resolve_cost`.
 _ISO_4217 = re.compile(r"\A[A-Z]{3}\Z")
