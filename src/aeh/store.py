@@ -43,7 +43,7 @@ guess is a suite that asserts the wrong thing.
 | `result` table | **Not** created here | It is not in §3.3's data model; `FUZZ-07` reads it and is keyed on #11, which is the story that builds the write path |
 | Schema version is per tier | One `schema_version` table per database; the **set** of applied versions is what pending work is measured against | `FR-STORE-02` says "per tier"; Tier P files are handed between schools and version independently of Tier D |
 | Read-only Tier P | `package(id, read_only=True)` over a `file:...?mode=ro` URI | `FR-STORE-13`; a read-only handle never migrates, because migrating is a write |
-| Too-new is checked before anything else | `SchemaTooNewError` raised before the first migration and before any row is read | `CT-STORE-11`: "refuses to open, **no partial read**" |
+| Too-new is checked before anything else reaches the file | The chain-completeness refusal (`IncompleteMigrationChainError`, #234) comes first — a process whose chain is short cannot judge any file — then `SchemaTooNewError`, both before the first migration and before any row is read | `CT-STORE-11`: "refuses to open, **no partial read**" |
 | `SQLITE_BUSY` retry | Internal and **bounded**; exhausting it re-raises SQLite's own error | §3.3 says busy "should not occur" under WAL. No retry loop can promise *never*, and a helper claiming to would be lying about a lock held outside this process |
 | `query` refuses a write | The connection is in autocommit, so it would otherwise be a synchronous write channel | `CT-STORE-02` makes writing asynchronous; #11 owns both write paths |
 | One file, one mode | A read-only and a writable handle on the same file cannot both be open | `FR-STORE-13` inspects a file whose provenance is in question; two live connections make that inspection meaningless |
@@ -291,8 +291,9 @@ class IncompleteMigrationChainError(StoreError):
     **later, far from the open**, as `sqlite3.OperationalError: no such column:
     parent_version_id` — #46's probe, disclosed in PR #208 and found suite-wide by #94, whose
     seeds chose between the two worlds. #234's guard (`COMPLETE_SCHEMA_VERSIONS`, checked by
-    `_open_tier` before the first directory is made and before any connection is opened) turns
-    that distant phantom into a refusal **at the open site, naming the cause**. The fix on the
+    `_open_tier` before the tier file's parent directory is made and before any connection is
+    opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
+    a refusal **at the open site, naming the cause**. The fix on the
     caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
