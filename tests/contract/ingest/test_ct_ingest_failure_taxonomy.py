@@ -39,7 +39,7 @@ import json
 
 import pytest
 
-from aeh.ingest import IngestError, IngestOrderError
+from aeh.ingest import IngestError, IngestOrderError, TRANSCRIPTION_ATTEMPTS_ENV
 from aeh.prov import Completion
 from tests.contract.ingest._doubles import (
     COHORT,
@@ -68,7 +68,7 @@ class FailingProvider(ScriptedProvider):
 
 
 def test_tc_ingest_c14_a_transcription_fault_scores_nothing_and_stores_nothing(
-        tmp_data_dir):
+        tmp_data_dir, monkeypatch):
     """`TC-INGEST-C14` (transcription fault) — a model fault mid-transcription
     is CONTAINED (#220, `NFR-INGEST-02`): the call returns a quarantine
     report, the exception never escapes raw, and the row is an honestly-marked
@@ -78,6 +78,9 @@ def test_tc_ingest_c14_a_transcription_fault_scores_nothing_and_stores_nothing(
     regions, nothing scored), the strike log is observable in the report's
     stage detail, and the call is retryable — the same blobs re-ingest cleanly
     after."""
+    # The exact-3 assertion below pins the SHIPPED default; a box that sets
+    # the knob (its documented purpose) must not skew it.
+    monkeypatch.delenv(TRANSCRIPTION_ATTEMPTS_ENV, raising=False)
     fx = Contract(tmp_data_dir, "c14-fault", provider=FailingProvider())
     fx.add_roster("gus")
     source = fx.put(b"c14 fault pdf")
