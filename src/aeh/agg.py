@@ -900,7 +900,7 @@ def _passthrough_score(row: Any, criterion: Any) -> CriterionScore:
     histogram = _row_value(row, "histogram")
     return CriterionScore(
         criterion_id=_row_value(row, "criterion_id") or criterion.criterion_id,
-        band=band_name if band_name is not None else "",
+        band=band_name,
         ordinal=int(ordinal) if ordinal is not None else 0,
         points=None if points is None else float(points),
         modal_band=_row_value(row, "modal_band") or band_name or "",
@@ -1171,8 +1171,11 @@ def should_escalate(
     Returns the `EscalationDecision`: `escalate`, the target panel depth (the
     next odd at least two above the current panel — 1 → 3, never 2,
     `FR-AGG-09`; `validate_escalation_plan` in `aeh.orch` is the consumer's
-    odd-plan check) and `reasons`. A decision not to escalate carries the
-    current panel depth unchanged and no reasons.
+    odd-plan check) and `reasons`. Under the production constants a decision
+    not to escalate carries the current panel depth unchanged and no reasons
+    (every weight is sub-threshold alone, so nothing fires without escalating);
+    an injected sub-threshold signal weight can fire a reason without reaching
+    the threshold — the fired observables are recorded either way.
     """
     threshold = _escalation_knob(config, "escalation_threshold", AGG_ESCALATION_THRESHOLD)
     signal_weight = _escalation_knob(
@@ -1194,7 +1197,10 @@ def should_escalate(
     concern = 0.0
     reasons: list[str] = []
 
-    # 1. Interior band position — the panel did not reach a scale edge.
+    # 1. Interior band position — the panel did not reach a scale edge. A
+    # recorded `None` on either figure is a recorded inconclusive, not a claim
+    # (the same absent-vs-None reading as the signals below): the limb is
+    # skipped, never crashed through.
     ordinal = _row_field(score, "ordinal")
     band_count = _row_field(score, "band_count")
     if band_count is _AGG_ABSENT:
@@ -1202,7 +1208,12 @@ def should_escalate(
         if declared is None:
             declared = len(getattr(criterion, "bands", ()) or ())
         band_count = declared if declared else _AGG_ABSENT
-    if ordinal is not _AGG_ABSENT and ordinal is not None and band_count is not _AGG_ABSENT:
+    if (
+        ordinal is not _AGG_ABSENT
+        and ordinal is not None
+        and band_count is not _AGG_ABSENT
+        and band_count is not None
+    ):
         if 0 < int(ordinal) < int(band_count) - 1:
             concern += signal_weight
             reasons.append("interior band position")
@@ -1350,8 +1361,10 @@ def rank_criteria_for_escalation(criteria: Any) -> tuple:
 # themselves: `NULL` is neither favourable nor zero) — a real 0/1 with `NULL`
 # allowed, not a fake third value.
 #
-# `state` and `routing` already exist (det migration v9's CHECK admits both
-# `final` and `queued`, the two values this module's panel path writes);
+# `state` and `routing` already exist (det migration v9's CHECK admits every
+# value this module's paths write — `final`, `queued` and, since #93,
+# `provisional` on routing and `provisional_unreviewed`/`ungradeable_by_panel`
+# on state);
 # only the six columns #92 introduces are added here.
 
 _AGG_CONFIDENCE_COLUMNS = Migration(
