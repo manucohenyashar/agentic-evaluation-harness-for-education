@@ -300,24 +300,32 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.det:1653",
     "aeh.det:1661",
     "aeh.det:1667",
-    # The ingest sites are #231's line numbers (the setup-path fail-closed
-    # guards shifted the module; every statement verified unchanged against
-    # the prior baseline, the tripwire diff being the line move alone).
-    "aeh.ingest:2766",
-    "aeh.ingest:2777",
-    "aeh.ingest:2799",
-    "aeh.ingest:3339",
-    "aeh.ingest:3374",
-    "aeh.ingest:3406",
-    "aeh.ingest:3481",
-    "aeh.ingest:3484",
-    "aeh.ingest:3485",
-    "aeh.ingest:3595",
-    "aeh.ingest:3812",
-    "aeh.ingest:3824",
-    "aeh.ingest:4356",
-    "aeh.ingest:4379",
-    "aeh.ingest:3352",
+    # The extract sites are #68's line numbers: the one write transaction in
+    # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
+    # the evidence row that commits together with it (CT-STORE-03's commit-together;
+    # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
+    "aeh.extract:737",
+    "aeh.extract:742",
+    "aeh.extract:744",
+    # The ingest sites are #220's line numbers (the transcription strike loop
+    # and the honest-quarantine catch shifted the module; every statement
+    # verified unchanged against the prior baseline, the tripwire diff being
+    # the line move alone).
+    "aeh.ingest:2792",
+    "aeh.ingest:2803",
+    "aeh.ingest:2825",
+    "aeh.ingest:3386",
+    "aeh.ingest:3421",
+    "aeh.ingest:3453",
+    "aeh.ingest:3528",
+    "aeh.ingest:3531",
+    "aeh.ingest:3532",
+    "aeh.ingest:3642",
+    "aeh.ingest:3870",
+    "aeh.ingest:3882",
+    "aeh.ingest:4418",
+    "aeh.ingest:4441",
+    "aeh.ingest:3399",
     "aeh.pkg:1919",
     "aeh.pkg:1961",
     "aeh.pkg:1975",
@@ -391,8 +399,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4072",
     "aeh.pkg:4069",
     "aeh.pkg:4086",
-    "aeh.store:1720",
-    "aeh.store:2476",
+    "aeh.store:1735",
+    "aeh.store:2491",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

@@ -172,10 +172,15 @@ def make_world(
     )
 
 
-def resolved_config(panel: tuple) -> Any:
-    """A resolved `RunConfig` over `ORCH_COHORT_ID` with the given judge panel."""
+def resolved_config(panel: Any) -> Any:
+    """A resolved `RunConfig` over `ORCH_COHORT_ID`.
+
+    `panel` is a tuple of `ModelRef`s — or an already-built `edge_cfg` dict, so a
+    case can override a config knob (the pinned `prompt_template_v`,
+    `TC-EXTRACT-C12`) and still resolve through the same door."""
+    cfg = panel if isinstance(panel, dict) else edge_cfg(panel=panel)
     return resolve_run_config(
-        edge_cfg(panel=panel),
+        cfg,
         CohortRef(cohort_id=ORCH_COHORT_ID, consent_class="synthetic"),
     )
 
@@ -208,7 +213,13 @@ def extract_once(
     run_id = orchestrator.create_run(ORCH_COHORT_ID, world.version, resolved_config(panel))
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
 
-    request = AssembleRequest(unit, **(assemble_kwargs or {}))
+    # The lease resolves identities and leaves `submission_text=None` (M-ORCH), so
+    # the assembler resolves the words from the world's store — the disclosed
+    # `store=` keyword (`extract_vocabulary.py`) — unless the case passed its own
+    # kwargs (the D2 `dependency_evidence=`/`question=`).
+    kwargs: dict[str, Any] = {"store": world.store}
+    kwargs.update(assemble_kwargs or {})
+    request = AssembleRequest(unit, **kwargs)
     model_ref = model_ref or extractor_ref()
     (provider or world.provider).record(
         PromptFields(request), model_ref, sampling_params(),
@@ -264,15 +275,17 @@ class CountingProvider:
     """Delegating call counter over a real `RecordedFixtureProvider` (disclosure D4).
 
     Every `complete()` is forwarded unchanged and counted; `calls` records the
-    `(model_ref.build_id, prompt)` pairs so `CT-EXTRACT-11` can assert the exact count
-    and `CT-EXTRACT-06` that the payload dispatched is the payload assembled.
+    `(model_ref, prompt)` pairs — the ref itself, not a projection of it, so
+    `CT-EXTRACT-11` can assert the exact count and `CT-EXTRACT-06` that the two
+    dispatched prompts came from refs differing in provider (two refs sharing a
+    `build_id` differ only in the ref).
     """
 
     _inner: Any
-    calls: list[tuple[str, Any]] = field(default_factory=list)
+    calls: list[tuple[Any, Any]] = field(default_factory=list)
 
     def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
-        self.calls.append((model_ref.build_id, prompt))
+        self.calls.append((model_ref, prompt))
         return self._inner.complete(prompt, model_ref, params)
 
     def __getattr__(self, name: str) -> Any:

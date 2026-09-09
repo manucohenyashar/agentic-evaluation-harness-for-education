@@ -30,9 +30,9 @@ Steps implemented:
    even though a completed verdict for c4 exists and c4's own request carried c2's
    spans.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, built from
+`tests/support/extract_vocabulary.py`) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 
@@ -71,8 +71,6 @@ from tests.support.extract_vocabulary import (
     WORKER,
 )
 from tests.support.impl import EXTRACT_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = EXTRACT_ISSUE
 
@@ -348,10 +346,14 @@ def test_tc_extract_03_variant_chain_c2_c4_c7_carries_c4s_spans_and_nothing_from
     require(EXTRACT_MODULE, ASSEMBLE, REQUEST_TYPE, issue=ISSUE)
 
     c4_spans = [{"start": 0, "end": 42, "text": "The net force points down the slope."}]
+    # Calibration (disclosed in the PR): the scalars are scanned VERBATIM against the
+    # request's string leaves, so they must not collide with this file's own fixture
+    # ids ("s231" contains "3"; "sha256" contains "2"/"5"/"6"; "c4" contains "4").
+    # 8 and 0.88 collide with nothing.
     c4_verdict = {
         "band": "secure",
-        "band_ordinal": 3,
-        "points": 3.0,
+        "band_ordinal": 8,
+        "points": 8.0,
         "confidence": 0.88,
         "judge_id": "judge-1",
     }
