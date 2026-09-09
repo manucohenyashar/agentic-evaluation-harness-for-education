@@ -4,7 +4,7 @@ Test plan §5.12 (row form), issue #94 (TS-35). Traces to `FR-AGG-01`. Boundary:
 1, 3 and 5 verdicts; all-agree; maximally split; adjacent-band split. Median ordinal,
 modal band and `band_spread` in each; `band_spread` is the ordinal distance between the
 lowest and highest verdict — asserted both by hand value and by the definition computed
-from the panel itself. Written ahead of #91 (test plan §8.2).
+from the panel itself. Landed at #91 (unmarked there; test plan §8.2).
 
 **Declared assumption (modal tie-break).** On a maximally split panel two bands can tie
 for the mode and the design pins no tie-break (`FR-AGG-01` says "record the modal band";
@@ -22,8 +22,6 @@ import pytest
 
 from tests.support.agg_vocabulary import AGG_BLOCKER, band, criterion, favourable_signals, panel
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 _FOUR_BAND = criterion(
     [

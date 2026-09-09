@@ -202,27 +202,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-35 (#94), the M-AGG median-band aggregation cases ---------------------------------
     #
-    # The suite's union of blockers is `aggregate`, `EvenPanelError` and `ordinal_alpha` — the
-    # `symbols` kind, because a `symbol` key on `aggregate` alone would read the suite resolved
-    # the moment #91 lands its first member while `test_ordinal_alpha.py` is still red (the
-    # TC-STORE-15 coin-flip). The vocabulary the tests call lives in
-    # `tests/support/agg_vocabulary.py`, which is also where the design gaps are written down:
-    # §3.12 declares the Protocol members but no Interfaces block pins the exception or the
-    # score's degeneracy field, so `EvenPanelError` and `agreement_degenerate` are the tests'
-    # declared pins, reconciling at #91.
-    "#91": (
-        "symbols",
-        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,{AGG_MODULE}:ordinal_alpha",
-        ("tests/unit/agg/test_median_band_mapping.py",
-         "tests/unit/agg/test_median_band_panels.py",
-         "tests/unit/agg/test_ordinal_alpha.py",
-         "tests/unit/agg/test_aggregation_perf.py",
-         "tests/integration/agg/test_even_panel_failed_write.py",
-         "tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band",
-         "tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_no_even_panel_is_ever_aggregated"),
-    ),
+    # `"#91"` is gone because #91 landed: `aeh.agg` ships the median-band aggregate,
+    # the ordinal α and `EvenPanelError` under exactly the vocabulary's declared
+    # names (`tests/support/agg_vocabulary.py`'s table — no rename was needed, and
+    # the module-level-function reading of §3.12's Protocol is the one that landed).
+    # Every TS-35 file runs unmarked. The TS-36 files keep their markers: their
+    # conjunctions name #92's/#93's members and did not resolve here.
+
     # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
     # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
     # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
@@ -301,9 +287,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # multiplier applying, the confidence IS the agreement figure) — the property
     # calls it directly, so it must exist before the marker can drop. The state entry
     # has the same shape one story over — no declared name isolates "the states
-    # landed", so it keys on `aggregate` + `EvenPanelError` (the composition limb
-    # genuinely requires both) and will unmark at #91 while the states are still
-    # #93's; the failure then names FR-AGG-11 in its message.
+    # landed", so it keys on `should_escalate` (the proxy #93 ships beside the state
+    # assignment; re-keyed at #91's landing, whose landing alone would otherwise have
+    # resolved `aggregate` + `EvenPanelError` while the states were still #93's).
     "#95 TS-36 confidence inversion (TC-AGG-06, TC-AGG-10)": (
         "symbols",
         (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC,"
@@ -332,12 +318,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{REVIEW_MODULE}:rank_queue_items",
         ("tests/unit/agg/test_review_queue_rank.py",),
     ),
-    # The states: see the proxy note above. `EvenPanelError` is in the conjunction
-    # because the composition limb genuinely requires it — the same two-verdict panel
-    # must refuse without the fallback mark (TC-AGG-04's pin) and discard with it.
+    # The states: see the proxy note above. `should_escalate` is the conjunction's
+    # #93 gate (re-keyed at #91's landing — `aggregate` + `EvenPanelError` alone
+    # resolved the moment #91 shipped its core, which would have told a reader to
+    # unmark these cases while the state assignment was still #93's). The states'
+    # own assignment is #93's, and the policy function ships in the same story.
     "#95 TS-36 score states (TC-AGG-12, 13, 14)": (
         "symbols",
-        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,"
+         f"{AGG_MODULE}:should_escalate"),
         ("tests/unit/agg/test_score_states.py",),
     ),
     # The round trip needs the caps (#92), the integrity columns #92's migration adds,
@@ -1086,14 +1075,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # payload (`weakest_per_population` beside the per-population headline, never an
     # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked. The
     # `m_console` param keeps its marker — #123 has not landed.
-    "#91 stats": (
-        "symbol",
-        f"{AGG_MODULE}:describe_agreement",
-        (
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_agg]",
-        ),
-    ),
+    #
+    # `"#91 stats"` is gone because #91 landed: `aeh.agg:describe_agreement` is the
+    # module's own disclosure of the figure it produces (CT-STATS-21's M-AGG limb),
+    # and the sweep's `m_agg` param runs unmarked while `m_console` stays #123's.
     "#93 stats": (
         "symbol",
         f"{AGG_MODULE}:rank_criteria_for_escalation",
@@ -1703,14 +1688,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_verify_span_surface.py",
         ),
     ),
-    "#92 IntegritySignals+aggregate (TS-66 C02 None-is-not-False)": (
+    "#92 IntegritySignals+aggregate+threshold (TS-66 C02 None-is-not-False)": (
         # The type half needs only the signals dataclass (#74); the rung-3 consumer
-        # differential drives M-AGG's declared pure surface, which lands with the
-        # confidence story (#92) — the conjunction is the honest key (the TS-08 lesson:
-        # the case is runnable when its LAST blocker lands, and the differential is the
-        # limb the clause exists for).
+        # differential drives M-AGG's confidence surface, which lands with #92 — the
+        # conjunction is the honest key (the TS-08 lesson: the case is runnable when
+        # its LAST blocker lands, and the differential is the limb the clause exists
+        # for). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing: `aggregate`
+        # alone resolved there, which would have unmarked the case while the
+        # differential was still #92's.
         "symbols",
-        f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate",
+        (f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate,"
+         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_signals_data.py",
         ),
@@ -1767,22 +1755,25 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_empty_evidence_routes.py",
         ),
     ),
-    "#92 gate+signals+aggregate (TS-66 C08 sufficiency is an extraction problem)": (
+    "#92 gate+signals+aggregate+threshold (TS-66 C08 sufficiency is an extraction problem)": (
         # Same blocker shape as C07: the positional sweep runs the gate, the static
-        # limb scans the module, and the rung-3 prohibition drives aggregate (#92).
+        # limb scans the module, and the rung-3 prohibition drives the confidence
+        # surface (#92). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing —
+        # `aggregate` alone resolved there (the C07 entry's existing key).
         "symbols",
         (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate"),
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
         ),
     ),
-    "#92 gate+signals+aggregate (TS-66 C09 OCR intersection and cap)": (
+    "#92 gate+signals+aggregate+threshold (TS-66 C09 OCR intersection and cap)": (
         # The discriminating fixtures run the real gate over injected regions (#74);
-        # the cap half drives M-AGG's aggregate against unanimity (#92).
+        # the cap half drives the confidence surface against unanimity (#92).
+        # `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing, as C08.
         "symbols",
         (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate"),
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_ocr_intersection.py",
         ),
