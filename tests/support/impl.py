@@ -28,6 +28,7 @@ from tests.support.extract_vocabulary import (
     SECOND_FAMILY_MODEL,
     TS26_EXTRACT_SYMBOLS,
     TS27_EXTRACT_SYMBOLS,
+    TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
 
@@ -1277,6 +1278,111 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             ]
         ),
         ("tests/security/extract/test_judge_band_forcing.py",),
+    ),
+    # --- TS-65 (#72), the M-EXTRACT contract cases, C01-C15 ---------------------------------
+    #
+    # Written ahead of #68 like the TS-26 suite above, but keyed per BLOCKER rather than
+    # per story: the contract cases are rung-split, and the rung-3 halves wait on their
+    # consumers (#73 verification, #74 signals, #78 assembly, #97 rendering), not on #68.
+    # A file that mixes blockers lists its rung-2 nodes under the #68 entry and its
+    # rung-3 nodes under the consumer entry (node IDs, the calibration precedent), so
+    # every entry names exactly the symbols the tests it covers resolve. Each contract
+    # case resolves the full surface first (`require_extract_surface` = the
+    # `TS26_EXTRACT_SYMBOLS` conjunction), so every conjunction below is that base plus
+    # the consumer symbols — built from the vocabulary and the module constants, like
+    # the entries above, so the registry cannot name a symbol the tests stopped using.
+    "#68 extraction contract suite (TS-65)": (
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
+        (
+            "tests/contract/extract/test_ct_extract_c01_span_offsets.py",
+            "tests/contract/extract/test_ct_extract_c02_no_judgment_in_schema.py",
+            "tests/contract/extract/test_ct_extract_c04_dependency_request.py",
+            "tests/contract/extract/test_ct_extract_c05_resolved_build_identity.py",
+            "tests/contract/extract/test_ct_extract_c06_submission_last_prompt_order.py",
+            "tests/contract/extract/test_ct_extract_c11_call_count_invariant.py",
+            "tests/contract/extract/test_ct_extract_c12_versions_in_work_id.py",
+            "tests/contract/extract/test_ct_extract_c13_tier_r_purge_and_twin_differential.py",
+            "tests/contract/extract/test_ct_extract_c03_no_judge_dimension.py"
+            "::test_tc_extract_c03_one_row_for_the_triple_no_judge_dimension_in_the_schema",
+            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
+            "::test_tc_extract_c07_no_extract_unit_exists_for_a_deterministic_criterion",
+            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
+            "::test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source",
+            "tests/contract/extract/test_quarantine_not_empty_row.py"
+            "::test_tc_extract_c08_three_failures_quarantine_and_never_write_an_evidence_row",
+            "tests/contract/extract/test_quarantine_not_empty_row.py"
+            "::test_tc_extract_c08_exactly_two_failures_retry_rather_than_quarantine",
+            "tests/contract/extract/test_quarantine_not_empty_row.py"
+            "::test_tc_extract_c08_the_2am_empty_row_write_is_silent_but_turns_this_case_red",
+            "tests/contract/extract/test_ct_extract_c09_described_graphic_marker.py"
+            "::test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_row_keeps_it",
+        ),
+    ),
+    "#68 extraction contract metrics (TS-65)": (
+        # C14, the whole file: the suite's names plus #68's own `extraction_metrics`
+        # emitter — the one case that reads the metrics, hence its own conjunction, so
+        # the suite entry above never names a symbol its tests do not use.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS65_EXTRACT_SYMBOLS),
+        ("tests/contract/extract/test_ct_extract_c14_extraction_metrics.py",),
+    ),
+    "#69 extraction contract second family (TS-65)": (
+        # C10, the whole file: the contract file resolves the full surface AND #69's
+        # `second_family_model` — the TS-26 integration file's two-name key above is
+        # not this file's blocker set.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
+        + f",{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
+        ("tests/contract/extract/test_ct_extract_c10_second_family_unreconciled.py",),
+    ),
+    "#73 extraction contract sweep (TS-65)": (
+        # C07's rung-3 node: verification is M-INTEG's — `verify_span` re-derives it
+        # from the document bytes. Keyed on #73 alone because that is the only consumer
+        # symbol the node resolves.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
+        + f",{INTEG_MODULE}:verify_span",
+        (
+            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
+            "::test_tc_extract_c07_m_integ_rederives_verification_rather_than_trusting_a_flag",
+        ),
+    ),
+    "#74 extraction contract sweep (TS-65)": (
+        # The routing differentials that construct M-INTEG's gate and read its
+        # signals: C09's described-graphic routing and C08's M-INTEG-sees-the-blank.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
+        + f",{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/extract/test_ct_extract_c09_described_graphic_marker.py"
+            "::test_tc_extract_c09_m_integ_routes_on_the_marker_alone",
+            "tests/contract/extract/test_quarantine_not_empty_row.py"
+            "::test_tc_extract_c08_m_integ_sees_the_blank_never_the_failure_m_orch_holds_it",
+        ),
+    ),
+    "#78 extraction contract suite (TS-65)": (
+        # The distinguishability differentials at M-JUDGE: C03's byte-identical
+        # evidence across the panel and C08's blank-vs-failure at the scorer.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
+        + f",{JUDGE_MODULE}:ScoringWorker,{JUDGE_MODULE}:assemble",
+        (
+            "tests/contract/extract/test_ct_extract_c03_no_judge_dimension.py"
+            "::test_tc_extract_c03_every_judge_on_the_panel_reads_byte_identical_evidence",
+            "tests/contract/extract/test_quarantine_not_empty_row.py"
+            "::test_tc_extract_c08_the_blank_and_the_failure_are_distinguishable_at_m_judge",
+        ),
+    ),
+    "#73+#74+#78+#97 extraction contract sweep (TS-65)": (
+        # C15, the whole file: every variation sweeps all four consumer stories over
+        # #68's surface — the conjunction is the file's full blocker set.
+        "symbols",
+        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS) + (
+            f",{INTEG_MODULE}:verify_span,{INTEG_MODULE}:IntegrityGate"
+            f",{JUDGE_MODULE}:assemble,{SYNTH_MODULE}:synthesize"
+        ),
+        ("tests/contract/extract/test_ct_extract_c15_non_promise_consumer_sweep.py",),
     ),
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
     #
