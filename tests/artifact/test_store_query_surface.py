@@ -241,22 +241,45 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the heartbeat's lease extension with its changes() read, the sweeper's guarded
     # requeue with its changes() read, the completion with its changes() read, and
     # the failure record with its changes() read. Lines moved with #59's sweep-plan
-    # additions and with #60's random-arm block and escalation policy in
-    # enumerate_units; the sites are the same statements as #57/#58's.
-    "aeh.orch:1360",
-    "aeh.orch:1580",
-    "aeh.orch:1589",
-    "aeh.orch:1838",
-    "aeh.orch:1845",
-    "aeh.orch:2040",
-    "aeh.orch:2047",
-    "aeh.orch:2098",
-    "aeh.orch:2102",
-    "aeh.orch:2152",
-    "aeh.orch:2157",
-    "aeh.orch:2205",
-    "aeh.orch:2211",
+    # additions and #60's random-arm block in enumerate_units; the sites are the
+    # same statements as #57/#58's.
+    "aeh.orch:1407",
+    "aeh.orch:1627",
+    "aeh.orch:1636",
+    "aeh.orch:1885",
+    "aeh.orch:1892",
+    "aeh.orch:2087",
+    "aeh.orch:2094",
+    "aeh.orch:2145",
+    "aeh.orch:2149",
+    "aeh.orch:2199",
+    "aeh.orch:2204",
+    "aeh.orch:2252",
+    "aeh.orch:2258",
+    "aeh.orch:3012",
+    # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
+    # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
+    # or the method's own): the enqueue's reads (the pair's prior panel, the
+    # idempotence probe, the breaker's latch and window and escalated set), the
+    # breaker's latch write, the request row's insert, the drain's queue read and
+    # admit write, and the final queue-depth read; then the drain's unit insertion
+    # helper re-deriving the pair's panel, inserting the widened units (INSERT OR
+    # IGNORE with its own changes() read — the same honest count the enumerate pass
+    # gives) and the report assembler's queue-depth read.
+    "aeh.orch:2401",
+    "aeh.orch:2416",
+    "aeh.orch:2436",
+    "aeh.orch:2450",
     "aeh.orch:2456",
+    "aeh.orch:2474",
+    "aeh.orch:2511",
+    "aeh.orch:2542",
+    "aeh.orch:2555",
+    "aeh.orch:2583",
+    "aeh.orch:2624",
+    "aeh.orch:2642",
+    "aeh.orch:2646",
+    "aeh.orch:2693",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
