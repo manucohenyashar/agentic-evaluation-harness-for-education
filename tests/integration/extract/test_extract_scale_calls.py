@@ -142,7 +142,6 @@ def test_tc_extract_11_enumeration_is_exactly_5250_extract_units(tmp_data_dir):
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_11_one_call_per_unit_at_any_panel_depth(tmp_data_dir):
     """`TC-EXTRACT-11` (call-count half) — driving 30 extract units makes exactly 30
     `complete` calls under a 3-judge panel and exactly 30 under a 1-judge panel: the

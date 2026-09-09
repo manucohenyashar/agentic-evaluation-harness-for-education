@@ -81,7 +81,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = EXTRACT_ISSUE
 
@@ -166,7 +166,7 @@ def _extract_once(
     run_id = orchestrator.create_run(ORCH_COHORT_ID, version, _resolved(panel))
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
 
-    request = AssembleRequest(unit)
+    request = AssembleRequest(unit, store=store)
     model_ref = extractor_ref()
     provider.record(
         PromptFields(request), model_ref, sampling_params(),
