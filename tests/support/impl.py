@@ -240,6 +240,47 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/property/test_fuzz_05_aggregation_and_policy.py"
          "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
     ),
+    # --- TS-38 (#105), the M-GRADE policy, coverage and no-imputation cases -------------------
+    #
+    # Three keys, split the `#118`/`#91` way: the stories' cases unmark at different
+    # seams, and a single module key would hold every case outside the gate until the
+    # last of them landed (the resolved-early trap the `#101` module entry above already
+    # records for the calib rollup half).
+    #
+    # `apply_policy` is design-declared (§3.14's Interfaces block, CT-GRADE-02) and keys
+    # the rung-0 rule cases. The other three unit seams — `resolve_grade`,
+    # `coverage_for`, `boundary_risk` — are **invented** (the design declares their
+    # behaviour on the service, the rung-0 cases need pure entry points; the
+    # `verify_span`/`synthesize` precedent), and the boundaries/coverage and
+    # no-imputation files use them *together with* `apply_policy`, so the key is the
+    # `symbols` conjunction: a module that landed only `apply_policy` would otherwise
+    # resolve the key and name tests that then fail on `require()` — the trap this
+    # registry exists to avoid. `open_grade` is the invented rung-2 constructor (the
+    # `open_review` precedent) the four integration files resolve the service through;
+    # it appears in no Interfaces block, so none can exist before an implementation
+    # does. All names reconcile at #101's landing; the vocabulary lives in
+    # `tests/support/grade_vocabulary.py`.
+    "#105 apply_policy": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        ("tests/unit/grade/test_policy_rules.py",
+         "tests/property/test_tc_grade_21_apply_policy_invariants.py"),
+    ),
+    "#105 pure seams": (
+        "symbols",
+        (f"{GRADE_MODULE}:apply_policy,{GRADE_MODULE}:resolve_grade,"
+         f"{GRADE_MODULE}:coverage_for,{GRADE_MODULE}:boundary_risk"),
+        ("tests/unit/grade/test_boundaries_and_coverage.py",
+         "tests/unit/grade/test_no_imputation.py"),
+    ),
+    "#105 open_grade": (
+        "symbol",
+        f"{GRADE_MODULE}:open_grade",
+        ("tests/integration/grade/test_grade_delivery.py",
+         "tests/integration/grade/test_finalization.py",
+         "tests/integration/grade/test_recompute_on_correction.py",
+         "tests/integration/grade/test_incomplete_and_routing.py"),
+    ),
     # --- TS-36 (#95), the M-AGG confidence-inversion, routing and escalation cases -----------
     #
     # Thirteen cases across seven files, written ahead of THREE stories — #91 lands the
