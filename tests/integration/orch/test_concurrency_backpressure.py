@@ -23,8 +23,20 @@ precedent — the dispatch loop is the unshipped seam; everything else is real):
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; drives the dispatch passes |
 | the model-call seam is injectable at the Orchestrator | `Orchestrator(store, transport=<seam>)`, kwarg reconciled at landing |
-| the seam call is observed in-flight | the seam double counts concurrent entries — the concurrency spy the plan names |
-| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the same field `RES-11` (429 back-off) already assumes |
+| the seam call is observed in-flight | the seam double counts concurrent entries — the concurrency spy the plan names, and the instrument all three legs assert over |
+| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the same field `RES-11` (429 back-off) already assumes; corroborating only, since the implementation under test also writes it |
+
+**Mechanics of the backpressure window (disclosed).** The hold is the shipped
+`TC-STORE-C06` technique: deterministic, but TOTAL — while the writer is held,
+a dispatch that tries to complete units parks on its own writes. The reduce
+leg therefore runs its dispatch passes on a side thread over a FRESH run's
+work (starvation excluded), samples the spy's peak at the release moment, and
+tolerates both shapes a correct implementation can take: passes that return
+under the signal (reports collected, the report field corroborates) and a
+dispatch that throttles itself to stillness (the spy carries the leg). A
+dispatch that instead parks on completions mid-window is released with
+everything else and judged by the peak it reached before the release. The
+exact park-vs-reduce mechanics reconcile at landing.
 | the ceiling is configurable to 32 | `RunConfig.concurrency_ceiling` derives from the hardware profile (`FR-CONF-06`); the fixture supplies a profile whose ceiling is 32 — the shipped `HardwarePolicy` path, so the plan's "ceiling of 32" input is real, not monkey-patched |
 
 Isolation: rung 2 — real store (its write queue driven to saturation), real
@@ -41,7 +53,12 @@ import pytest
 from aeh.prov import Completion
 from aeh.store import open_store, store_metrics
 from tests.support.impl import ORCH_MODULE, require, require_attr
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import (
+    ORCH_COHORT_ID,
+    seed_cohort,
+    seed_package,
+    seed_run,
+)
 from tests.support.store_api import statement
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
@@ -54,13 +71,20 @@ _CRITERIA = (
     {"criterion_id": "C2", "kind": "open", "scoring_model": "holistic"},
 )
 
+#: The fresh run legs 2/3 dispatch against, on its own cohort — sized so even
+#: a worst-case leg-2 consumption (4 passes at the full ceiling = 128 units)
+#: leaves more than a ceiling-width of work for the recovery leg to saturate
+#: on (48 subs x 2 criteria = 48 extract + 144 score = 192 units).
+_BP_SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 49))
+
 #: The plan's input: a concurrency ceiling of 32.
 CEILING = 32
 
 
-def _ceiling_32_config() -> object:
+def _ceiling_32_config(cohort_id: str = ORCH_COHORT_ID) -> object:
     """A resolved config whose hardware profile carries the plan's ceiling of 32
-    (the shipped `FR-CONF-06` path: the ceiling derives from the profile)."""
+    (the shipped `FR-CONF-06` path: the ceiling derives from the profile),
+    naming the given cohort so `create_run`'s FK accepts a run on it."""
     from aeh.conf import CohortRef, HardwarePolicy, resolve_run_config
     from tests.support.conf_builders import edge_cfg
 
@@ -76,7 +100,7 @@ def _ceiling_32_config() -> object:
             hardware_profiles={"capacity-test": profile},
             panel=None,
         ),
-        CohortRef(cohort_id=ORCH_COHORT_ID, consent_class="synthetic"),
+        CohortRef(cohort_id=cohort_id, consent_class="synthetic"),
     )
 
 
@@ -90,6 +114,14 @@ class _ConcurrencySpy:
         self._in_flight = 0
         self.peak = 0
         self.calls = 0
+
+    def reset(self) -> None:
+        """Zero the phase-local counters — each leg's peak is its own. Called
+        only at quiescent points between legs."""
+        with self._lock:
+            self._in_flight = 0
+            self.peak = 0
+            self.calls = 0
 
     def call(self, req):
         with self._lock:
@@ -151,15 +183,18 @@ def _hold_drain_and_saturate(monkeypatch: pytest.MonkeyPatch, store: object) -> 
 def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recovers(
     tmp_data_dir, monkeypatch
 ):
-    """`TC-ORCH-24` — three legs, exactly the plan's expected result:
+    """`TC-ORCH-24` — three legs, exactly the plan's expected result, all
+    asserted over the named instrument (the spy) with the report field as
+    corroboration:
 
     1. **Ceiling**: driving dispatch at a ceiling of 32, the seam's observed
        peak in-flight count never exceeds 32.
     2. **Reduce**: with the store's write queue saturated (the shipped
-       `backpressure_active` level ON, `CT-STORE-06`), the dispatch report's
-       concurrency drops below the ceiling — reduction, not a fault.
-    3. **Recover**: once the queue drains and the level clears, the concurrency
-       returns above its reduced floor — the reduction was a response to the
+       `backpressure_active` level ON, `CT-STORE-06`) and a FRESH run's work
+       enumerated so starvation cannot explain a low level, the dispatch's
+       in-flight peak drops below its healthy level — reduction, not a fault.
+    3. **Recover**: once the queue drains and the level clears, the peak
+       returns above the reduced one — the reduction was a response to the
        signal, not damage.
     """
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
@@ -179,18 +214,39 @@ def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recover
         orch.enumerate_units(run_id)
 
         # Leg 1 — ceiling respected under load.
-        for _ in range(8):
-            orch.progress(run_id)
+        leg1_reports = [orch.progress(run_id) for _ in range(8)]
         assert spy.calls > 0, (
             "the dispatch made no model calls — the ceiling leg asserted nothing"
         )
-        assert spy.peak <= CEILING, (
-            f"the dispatch observed {spy.peak} in-flight requests against a "
+        peak_healthy = spy.peak
+        assert peak_healthy <= CEILING, (
+            f"the dispatch observed {peak_healthy} in-flight requests against a "
             f"ceiling of {CEILING} — FR-ORCH-21's cap is exact, and 'rarely "
             "exceeded' is how a provider bill becomes an incident"
         )
+        for report in leg1_reports:
+            assert report["concurrency"] <= CEILING, (
+                f"the dispatch reported concurrency {report['concurrency']} "
+                f"against a ceiling of {CEILING} — the field the operator "
+                "reads must obey the same cap the spy observes"
+            )
 
-        # Legs 2/3 — the real backpressure level on, then off.
+        # Legs 2/3 dispatch against a FRESH run — enumerated now, on its own
+        # cohort, untouched by leg 1 — so a low level under the signal cannot
+        # be "fewer units ready" (the confound that would make reduction
+        # indistinguishable from starvation).
+        bp_cohort = seed_cohort(
+            store, _BP_SUBMISSIONS, cohort_id=f"{ORCH_COHORT_ID}-bp"
+        )
+        bp_version = seed_package(store, _CRITERIA, package_id="pkg-orch-bp")
+        bp_run = orch.create_run(
+            bp_cohort, bp_version, _ceiling_32_config(bp_cohort)
+        )
+        orch.enumerate_units(bp_run)
+
+        # Leg 2 — reduce under the real backpressure level, observed on the
+        # spy from a side thread (the held writer parks a dispatch that tries
+        # to complete; see the module disclosure).
         release = _hold_drain_and_saturate(monkeypatch, store)
         deadline = time.monotonic() + 30
         while not store_metrics(store)["backpressure_active"]:
@@ -202,25 +258,67 @@ def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recover
             "backpressure — CT-STORE-06's level is the signal FR-ORCH-21 "
             "responds to, and without it leg 2 asserts nothing"
         )
-        reduced = [orch.progress(run_id)["concurrency"] for _ in range(4)]
-        assert any(c < CEILING for c in reduced), (
-            f"with backpressure_active ON the dispatch never reduced "
-            f"(concurrency over passes: {reduced}) — CT-STORE-06 requires a "
-            "slow enqueue_write to be read as a signal to reduce dispatch, "
-            "not ignored"
-        )
 
+        spy.reset()
+        reports: list = []
+        errors: list = []
+
+        def _passes() -> None:
+            try:
+                for _ in range(4):
+                    reports.append(orch.progress(bp_run))
+            except BaseException as exc:  # relayed to the main thread below
+                errors.append(exc)
+
+        worker = threading.Thread(target=_passes, daemon=True)
+        worker.start()
+        worker.join(timeout=8.0)  # the observation window
+        peak_reduced = spy.peak
         release.set()
-        deadline = time.monotonic() + 30
-        while store_metrics(store)["backpressure_active"] and time.monotonic() < deadline:
-            time.sleep(0.01)
-        recovered = [orch.progress(run_id)["concurrency"] for _ in range(4)]
-        assert any(c > min(reduced) for c in recovered), (
-            f"after the backpressure cleared the dispatch stayed at its reduced "
-            f"level (reduced: {reduced} -> recovered: {recovered}) — the "
-            "reduction must recover when the signal clears, or one slow store "
-            "permanently throttles the run"
+        worker.join(timeout=60.0)
+        assert not errors, (
+            f"the dispatch FAILED under the backpressure signal: {errors!r} — "
+            "CT-STORE-06 requires a slow enqueue_write to be read as a "
+            "signal to reduce dispatch, not as a fault"
         )
+        assert peak_reduced < peak_healthy, (
+            f"under an active backpressure level the dispatch's in-flight "
+            f"peak was {peak_reduced} against its healthy {peak_healthy} — "
+            "with a fresh run's work enumerated (starvation excluded), a "
+            "level that does not drop is a dispatch ignoring CT-STORE-06's "
+            "reduce signal"
+        )
+        if reports:
+            assert any(r["concurrency"] < CEILING for r in reports), (
+                f"with backpressure_active ON the dispatch never reported a "
+                f"reduced concurrency (reports: "
+                f"{[r['concurrency'] for r in reports]}) — CT-STORE-06 "
+                "requires reduction, and the field the operator reads must "
+                "show it"
+            )
+
+        # Leg 3 — recover once the level clears.
+        deadline = time.monotonic() + 30
+        while (
+            store_metrics(store)["backpressure_active"]
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
+        spy.reset()
+        recovered = [orch.progress(bp_run) for _ in range(4)]
+        peak_recovered = spy.peak
+        assert peak_recovered > peak_reduced, (
+            f"after the backpressure cleared the dispatch stayed at its "
+            f"reduced level (under signal: {peak_reduced}, after clear: "
+            f"{peak_recovered}) — a reduction that never recovers is one "
+            "slow store permanently throttling the run"
+        )
+        for report in recovered:
+            assert report["concurrency"] <= CEILING, (
+                f"recovered dispatch reported concurrency "
+                f"{report['concurrency']} against the {CEILING} ceiling — "
+                "recovery must not overshoot the cap"
+            )
     finally:
         if release is not None:
             release.set()
