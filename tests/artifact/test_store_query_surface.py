@@ -361,14 +361,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.extract:885",
     "aeh.extract:890",
     "aeh.extract:892",
-    # The judge sites are #78's line numbers: the one write transaction in
-    # `ScoringWorker.persist` — the guarded done-marking, its changes() read, and
-    # the verdict row that commits together with it (the extract shape: every
-    # statement a declared constant in `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`,
-    # keyword-parameterized).
-    "aeh.judge:1145",
-    "aeh.judge:1150",
-    "aeh.judge:1152",
+    # The judge sites are #79's line numbers (moved from #78's 1145/1150/1152 by the
+    # prompt-template work above them: the exemplar view, the seven-field render, the
+    # rerun door): the one write transaction in `ScoringWorker.persist` — the guarded
+    # done-marking, its changes() read, and the verdict row that commits together with
+    # it (the extract shape: every statement a declared constant in
+    # `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`, keyword-parameterized).
+    "aeh.judge:1453",
+    "aeh.judge:1458",
+    "aeh.judge:1460",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
