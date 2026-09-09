@@ -10,11 +10,12 @@ units — "nothing left pending" — would declare the run complete while a scor
 is still in flight, and that judgment is exactly the one whose disagreement can spawn an
 escalation (#60's) and add work to the run after its "completion".
 
-**Written ahead of #62** (dispatch isolation, concurrency and `ProgressReport`, which
-owns `FR-ORCH-12`). Registered in `WRITTEN_AHEAD_BLOCKERS` keyed on
-`aeh.orch:Orchestrator.progress` — design §3.7's Interfaces member that reports run
-state; it appears in no earlier story's acceptance criteria, and the predicate lives on
-its result.
+**Landed with #62** (dispatch isolation, concurrency and `ProgressReport`, which
+owns `FR-ORCH-12`). This file shipped red-by-design, registered in
+`WRITTEN_AHEAD_BLOCKERS` keyed on `aeh.orch:Orchestrator.progress` — design §3.7's
+Interfaces member that reports run state, which appeared in no earlier story's
+acceptance criteria — and the marker and entry were removed when #62 landed, per
+the unmarking procedure; the design reasoning stays.
 
 **Interface this case assumes of #62**, listed so it is reconciled deliberately (the
 `record_run_start` precedent):
@@ -38,10 +39,10 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.support.impl import ORCH_MODULE, require
+from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 
@@ -77,7 +78,7 @@ def test_tc_orch_22_completion_waits_for_in_flight_units_that_could_escalate(
     """`TC-ORCH-22` — not complete while units are pending; not complete while a scoring
     unit is in flight (it could spawn an escalation) even though nothing is pending;
     complete only when every unit is done."""
-    require(ORCH_MODULE, "Orchestrator.progress", issue=ISSUE)
+    require_attr(require(ORCH_MODULE, "Orchestrator", issue=ISSUE), "progress", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         orchestrator, run_id, _ = seed_run(

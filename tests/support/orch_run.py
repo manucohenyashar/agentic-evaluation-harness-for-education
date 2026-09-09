@@ -115,6 +115,57 @@ def orch_cfg(profile: str = "edge-local", *, panel: Any = None) -> Any:
     )
 
 
+#: The fixture transcript the document seeding writes — plain prose, no delimiters,
+#: so a captured request carries ordinary text unless a case seeds otherwise.
+PLAIN_TRANSCRIPT = (
+    "The evidence supports the conclusion, with the caveats noted in section "
+    "two of the cited report."
+)
+
+
+def seed_document(
+    store: Any,
+    submission_id: str,
+    text: str = PLAIN_TRANSCRIPT,
+    cohort_id: str | None = None,
+) -> str:
+    """One `document` row per submission, written directly and disclosedly (the
+    `test_judge_band_forcing.py` seeding precedent): the bytes go into the shipped
+    blob store FIRST, and the row's `content_hash` names what `store.blobs().put`
+    returned.
+
+    Why fixtures need this since #62's assembled-request reconciliation: the dispatch
+    assembles the stage's closed request (`FR-ORCH-20`) and the assembler resolves the
+    words from the store's document path — a submission with no document row would
+    strand the assembly at dispatch. The assembler walks every cohort ledger on the
+    filesystem, so seeding on `ORCH_COHORT_ID` (the default) serves units of any
+    cohort this store holds.
+    """
+    content_hash = store.blobs().put(text.encode("utf-8"))
+    handle = store.cohort(cohort_id or ORCH_COHORT_ID)
+    with handle.transaction() as tx:
+        tx.execute(
+            "INSERT INTO document (document_id, submission_id, content_hash) "
+            "VALUES (:d, :s, :h)",
+            d=f"doc-{submission_id}",
+            s=submission_id,
+            h=content_hash,
+        )
+    return content_hash
+
+
+def seed_documents(
+    store: Any,
+    submissions: Sequence[str],
+    text: str = PLAIN_TRANSCRIPT,
+    cohort_id: str | None = None,
+) -> None:
+    """One document per named submission — the batch form the assembled-request
+    fixtures call after `seed_cohort`."""
+    for submission_id in submissions:
+        seed_document(store, submission_id, text, cohort_id)
+
+
 def seed_run(
     store: Any,
     *,
@@ -125,6 +176,7 @@ def seed_run(
     package_id: str = "pkg-orch",
     cfg: Any = None,
     run_id: str | None = None,
+    transport: Any = None,
 ) -> tuple[Any, str, str]:
     """The whole fixture chain: store state in, `(orchestrator, run_id, version)` out.
 
@@ -132,13 +184,15 @@ def seed_run(
     whose row is born `pending`. Callers enumerate with `orchestrator.enumerate_units`.
     A caller-pinned `run_id` makes run-seeded draws (the random arm's per-run seed)
     deterministic across processes — the knob the arm-enumeration cases pin.
+    `transport` binds the dispatch loop's model-call seam (`Orchestrator(store,
+    transport=...)`, #62); the default `None` leaves the orchestrator report-only.
     """
     from aeh.orch import Orchestrator
 
     cohort_id = seed_cohort(store, submissions)
     version = seed_package(store, criteria, package_id=package_id)
     resolved = cfg if cfg is not None else orch_cfg(profile, panel=panel)
-    orchestrator = Orchestrator(store)
+    orchestrator = Orchestrator(store, transport=transport)
     run_id = orchestrator.create_run(cohort_id, version, resolved, run_id=run_id)
     return orchestrator, run_id, version
 
@@ -148,9 +202,12 @@ __all__ = [
     "EDGE_JUDGE_2",
     "EDGE_JUDGE_3",
     "ORCH_COHORT_ID",
+    "PLAIN_TRANSCRIPT",
     "SYNTHETIC_COHORT",
     "orch_cfg",
     "seed_cohort",
+    "seed_document",
+    "seed_documents",
     "seed_package",
     "seed_run",
 ]

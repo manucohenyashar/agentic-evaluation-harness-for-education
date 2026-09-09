@@ -241,11 +241,16 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the heartbeat's lease extension with its changes() read, the sweeper's guarded
     # requeue with its changes() read, the completion with its changes() read, and
     # the failure record with its changes() read. Lines moved with #59's sweep-plan
-    # additions, #60's random-arm block in enumerate_units and #60's escalation
-    # restructure; the sites are the same statements as #57/#58's.
-    "aeh.orch:1775",
-    "aeh.orch:1996",
-    "aeh.orch:2005",
+    # additions, #60's random-arm block in enumerate_units, #60's escalation
+    # restructure, #62's residency-gate rewrite (the batch boundary's
+    # leased-only check) and #62's report-index migration (Cohort 13) with the
+    # statement reshapes it carried (first_open's schedule-ordered probe, the
+    # criteria axis folded into by_unit's aggregate), and #62's review fix for
+    # the dropped-judges restart hole (the durable `_dropped_judges` read in the
+    # claim walk); the sites are the same statements as #57/#58's.
+    "aeh.orch:2185",
+    "aeh.orch:2406",
+    "aeh.orch:2415",
     # #61's lifecycle sites (every one from ORCH_STATEMENTS, keyword-parameterized):
     # start's displayed-estimate write and its guarded pending→running transition with
     # its changes() read; pause's control-row insert and its already-paused satisfied-
@@ -256,37 +261,37 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # changes() read. Lines moved with #61's lifecycle block and the reviewer fixes
     # swapped the two resume sites noted above; the #57/#58 statements are the same
     # as ever.
-    "aeh.orch:2087",
-    "aeh.orch:2093",
-    "aeh.orch:2098",
-    "aeh.orch:2141",
-    "aeh.orch:2153",
-    "aeh.orch:2213",
-    "aeh.orch:2315",
-    "aeh.orch:2333",
-    "aeh.orch:2357",
-    "aeh.orch:2365",
+    "aeh.orch:2497",
+    "aeh.orch:2503",
+    "aeh.orch:2508",
+    "aeh.orch:2551",
+    "aeh.orch:2563",
+    "aeh.orch:2623",
+    "aeh.orch:2725",
+    "aeh.orch:2743",
+    "aeh.orch:2767",
+    "aeh.orch:2775",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:2769",
-    "aeh.orch:2784",
-    "aeh.orch:2788",
-    "aeh.orch:2800",
-    "aeh.orch:2808",
-    "aeh.orch:2817",
-    "aeh.orch:2836",
-    "aeh.orch:2840",
-    "aeh.orch:3044",
-    "aeh.orch:3051",
-    "aeh.orch:3102",
-    "aeh.orch:3106",
-    "aeh.orch:3156",
-    "aeh.orch:3161",
-    "aeh.orch:3212",
-    "aeh.orch:3218",
+    "aeh.orch:3261",
+    "aeh.orch:3276",
+    "aeh.orch:3280",
+    "aeh.orch:3300",
+    "aeh.orch:3309",
+    "aeh.orch:3292",
+    "aeh.orch:3328",
+    "aeh.orch:3332",
+    "aeh.orch:3537",
+    "aeh.orch:3544",
+    "aeh.orch:3595",
+    "aeh.orch:3599",
+    "aeh.orch:3649",
+    "aeh.orch:3654",
+    "aeh.orch:3705",
+    "aeh.orch:3711",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -298,22 +303,37 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # queue-depth read. The restructure moved the queue's drain into the claim
     # pass's dispatch gate, so the drain's reads are gone and the key's run
     # resolution arrived.
-    "aeh.orch:3324",
-    "aeh.orch:3382",
-    "aeh.orch:3398",
-    "aeh.orch:3418",
-    "aeh.orch:3432",
-    "aeh.orch:3438",
-    "aeh.orch:3456",
-    "aeh.orch:3493",
-    "aeh.orch:3509",
-    "aeh.orch:3531",
-    # The lines moved again with #61's lifecycle and ceiling blocks (the #60
-    # statements are the same as ever).
-    "aeh.orch:3578",
-    "aeh.orch:3582",
-    "aeh.orch:3661",
-    "aeh.orch:4013",
+    "aeh.orch:3817",
+    "aeh.orch:3875",
+    "aeh.orch:3891",
+    "aeh.orch:3911",
+    "aeh.orch:3925",
+    "aeh.orch:3931",
+    "aeh.orch:3949",
+    "aeh.orch:3986",
+    "aeh.orch:4002",
+    "aeh.orch:4024",
+    # The lines moved again with #61's lifecycle and ceiling blocks and #62's
+    # report-index migration (the #60 statements are the same as ever).
+    "aeh.orch:4071",
+    "aeh.orch:4075",
+    "aeh.orch:4154",
+    # #62's dispatch additions (every one from ORCH_STATEMENTS, keyword-
+    # parameterized, inside the method's own durable transaction): the OOM
+    # remedy's reduced-panel write (`record_reduced_panel`, the panel_config
+    # RES-13 requires recorded), the requeue helper's guarded pending-restore
+    # (`requeue_expired`, #58's sweeper statement at its second call site, with
+    # its changes() read — the 429/OOM ladders requeue through it), and the
+    # metrics flush's `insert_run_metric` upsert (the EAV write CT-ORCH-20
+    # makes contract). The report's own reads go through the tier's declared
+    # `query`, not `execute`, so they are not sites here.
+    "aeh.orch:4903",
+    "aeh.orch:4935",
+    "aeh.orch:4937",
+    "aeh.orch:5117",
+    # #57's audit-record insert (record_run_start), moved by #62's dispatch
+    # block above it; same statement.
+    "aeh.orch:5149",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -452,9 +472,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
     # in store.py, and again with #97's and #78's contributions named in the refusal's
-    # text; the sites are the same statements as before.
-    "aeh.store:1811",
-    "aeh.store:2593",
+    # text, and again with #62's pin bump (Cohort 14→15 for the report-index
+    # migration) adding a line above each; the sites are the same statements as before.
+    "aeh.store:1813",
+    "aeh.store:2595",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,

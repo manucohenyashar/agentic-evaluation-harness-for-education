@@ -294,13 +294,14 @@ class IncompleteMigrationChainError(StoreError):
     `_open_tier` before the tier file's parent directory is made and before any connection is
     opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
     a refusal **at the open site, naming the cause**. The fix on the
-    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg,
-    aeh.synth`
+    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.judge,
+    aeh.orch, aeh.pkg, aeh.synth`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
     pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
-    11 of its 13 migrations — and `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
-    the last, #97's `synth_narrative_key`).
+    11 of its 15 migrations — `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
+    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns`, and
+    `aeh.orch` again for the last, #62's `orch_report_indexes`).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1378,13 +1379,14 @@ def current_schema_version(tier: Tier) -> int:
 #: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
 #: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
-#: same phantom bug in mirror image. (The rule has now fired twice since the pin landed:
-#: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12 — both
-#: caught by that gate test, not by a failed open. #78's `judge_verdict_columns`
-#: moved it 12→13 — the same rule, third firing.)
+#: same phantom bug in mirror image. (The rule has now fired four times since the pin
+#: landed: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it
+#: 11→12, #78's `judge_verdict_columns` 12→13, #97's `synth_narrative_key` 13→14, and
+#: #62's `orch_report_indexes` 14→15 — the earliest caught by that gate test, not by a
+#: failed open.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 14,
+    Tier.COHORT: 15,
     Tier.DURABLE: 4,
 }
 

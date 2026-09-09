@@ -137,7 +137,15 @@ def test_tc_orch_30_scheduling_overhead_under_5ms_per_unit_at_23k(tmp_data_dir):
         assert len(deterministic) == 350
 
         # Sweep 2: score units, unlocked once every extraction is done. All
-        # but the reserved tail go out in batch handouts, timed per call.
+        # but the reserved tail go out in batch handouts, timed per call. Each
+        # handout is completed before the next lease (untimed, like the extract
+        # completes): since #62 the residency policy (`FR-ORCH-19`) holds an
+        # edge-local score handout to ONE judge's batch — the box holds one
+        # model resident, a handout never mixes models — so the handouts arrive
+        # judge by judge, and a claimant that left its handout in flight would
+        # stall at the boundary with the resident's batch in flight. Completing
+        # as it goes is what lets the handouts cover all three judges; the
+        # measured quantity (enumerate + lease) is untouched.
         score: list = []
         score_total = 350 * 17 * 3
         chunked_target = score_total - _TAIL_CLAIMS
@@ -155,6 +163,8 @@ def test_tc_orch_30_scheduling_overhead_under_5ms_per_unit_at_23k(tmp_data_dir):
                 "criterion) owes three score units"
             )
             score.extend(batch)
+            for unit in batch:
+                orch.complete(unit.work_id)
 
         # The tail: the last _TAIL_CLAIMS units, one claim per call — the
         # per-claim measurement the batch handout cannot provide.

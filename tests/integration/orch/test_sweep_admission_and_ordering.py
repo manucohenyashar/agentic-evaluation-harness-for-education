@@ -182,14 +182,23 @@ def _reset_stage(cohort_handle, run_id: str, stage: str):
 
 
 def _lease_one_by_one(orchestrator, worker_id: str, stage: str, limit: int = 200) -> list:
-    """Claim one unit at a time until the stage runs dry; the hand-out order is the
-    dispatch order."""
+    """Claim one unit at a time, completing each before the next probe, until the
+    stage runs dry; the hand-out order is the dispatch order.
+
+    The probe **completes every unit it claims** — a worker's real shape, and since
+    #62 a residency requirement on an edge-local score handout (`FR-ORCH-19`): the
+    box holds one judge model resident, so a handout never mixes models, and a
+    claimant that never completes would stall at the boundary with the resident's
+    batch in flight. Completing as it goes is what lets the probe walk the WHOLE
+    judge-major trace instead of the first judge's batch. The other stages have no
+    residency, so completing between probes changes nothing they observe."""
     claimed: list = []
     for _ in range(limit):
         got = orchestrator.lease(worker_id, stage, 1)
         if not got:
             return claimed
         claimed.extend(got)
+        orchestrator.complete(got[0].work_id)
     raise AssertionError(
         f"lease never ran dry on stage {stage!r} after {limit} probes — a bounded run "
         "must exhaust its ledger"

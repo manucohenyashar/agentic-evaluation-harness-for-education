@@ -4,7 +4,7 @@ and escalated units, quarantined units, wall clock, tokens, `cache_hit_rate`,
 peak concurrency, retries, rate-limit counters, estimated and actual cost,
 resolved builds, and model swap count and duration — each present, and each
 matches a hand-counted expectation where the fixture can count it
-(**written ahead of the run-metrics write, #66**).
+(**landed with #62**).
 
 `CT-ORCH-20` makes these names contract: `M-STATS` and the acceptance gate read
 them. Six of them are pinned verbatim by `FR-PROV-12` — `transport_retries`,
@@ -21,14 +21,16 @@ yet — its alert behavior is TC-ORCH-36's synthetic-breach case — so this fil
 claims only what it drives, and the breaker's metric footprint reconciles at
 landing.
 
-**Interface this file assumes** (reconciled deliberately):
+**Interface this file assumes** — landed with #62/#66 per the unmarking
+procedure, and the names shipped exactly as assumed (the
+`test_sweep_admission_and_ordering.py` precedent; the design reasoning stays):
 
 | Name | Status |
 |---|---|
-| `Orchestrator.record_run_metrics` | **invented-and-reserved name** — the design's Protocol has no metrics member; #65 reserved it for TS-25 and this file claims it (see the `WRITTEN_AHEAD_BLOCKERS` entry). Whether dispatch flushes metrics through it internally or the test calls it explicitly reconciles at landing; the file requires the symbol and reads the ledger's `run_metrics` rows |
+| `Orchestrator.record_run_metrics` | the **invented-and-reserved name** shipped as a public method (#65 reserved it for TS-25); dispatch flushes its pass metrics through it internally, and it is callable directly — the file reads the ledger's `run_metrics` rows either way |
 | `Orchestrator.progress(run_id)` | #62's dispatch driver, as `TC-ORCH-31`'s file assumes |
-| the model-call seam is injectable | `Orchestrator(store, transport=<seam>)`, kwarg reconciled at landing; the seam returns the real `Completion` with known token counts, so the token totals are hand-countable |
-| `Orchestrator.enqueue_escalation(run_id, submission_id=..., criterion_id=...)` | #60's member, the same shape `RES-06`/`RES-08`'s file assumes |
+| the model-call seam is injectable | `Orchestrator(store, transport=<seam>)`, shipped exactly as assumed; the seam returns the real `Completion` with known token counts, so the token totals are hand-countable |
+| `Orchestrator.enqueue_escalation(tx, (submission_id, criterion_id))` | #60's shipped form — the caller's transaction first, the key tuple second, the shape `RES-06`/`RES-08` reconciled to |
 | run_metrics reads | shipped: the EAV rows `(run_id, metric, value)`, read through the durable tier |
 
 Isolation: rung 2 — real store, real package, real cohort ledger; the
@@ -43,9 +45,9 @@ from aeh.orch import WorkError
 from aeh.prov import Completion
 from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, require, require_attr
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_documents, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 
@@ -132,7 +134,13 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
             submissions=_SUBMISSIONS,
             criteria=_CRITERIA,
             panel=None,  # orch_cfg's default: the three-judge edge panel
+            transport=seam,
         )
+        # Since #62's assembled-request reconciliation the dispatch assembles the
+        # stage's closed request and the assembler resolves the words from the
+        # store's document path — the fixture seeds one document per submission
+        # (the `test_judge_band_forcing.py` precedent, via the shared helper).
+        seed_documents(store, _SUBMISSIONS)
         orch.enumerate_units(run_id)
 
         # Extract and deterministic units: complete them all (unlock Sweep 2).
@@ -163,13 +171,14 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
                     orch.complete(unit.work_id)
 
         # The escalation leg: one escalated re-check through the §3.7 member
-        # (#60), against a completed unit's (submission, criterion). The
-        # escalated-units count stays PRESENCE-only below: whether an enqueue
-        # mints new ledger units or marks existing ones is #60's
-        # reconciliation, so no fixed number is pinned here.
-        orch.enqueue_escalation(
-            run_id, submission_id="SYN-001", criterion_id="C1"
-        )
+        # (#60's shipped form — the caller's transaction first, the
+        # `(submission_id, criterion_id)` key second), against a completed
+        # unit's pair. The escalated-units count stays PRESENCE-only below: the
+        # enqueue mints new ledger units, and the hand-counted total below
+        # reconciles to the ledger's own rows whatever the enqueue added.
+        cohort = store.cohort(ORCH_COHORT_ID)
+        with cohort.transaction() as tx:
+            orch.enqueue_escalation(tx, ("SYN-001", "C1"))
 
         # Drive the dispatch so the metrics persist through the write (#66).
         for _ in range(4):

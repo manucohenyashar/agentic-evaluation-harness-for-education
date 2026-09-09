@@ -1,6 +1,8 @@
 """`TC-ORCH-19` + `ADV-04` — exactly one submission per request, with no mechanism
 to batch two; and the adversarial attempt to get one submission's content into
-another's judgment (**written ahead of #62's dispatch loop and M-JUDGE**).
+another's judgment. **Landed with #62** (the dispatch loop and the assembled-request
+seam) and M-JUDGE (#80/#81); this file shipped red-by-design ahead of them and
+unmarked when they landed.
 
 `FR-ORCH-20` (RISK-02, Critical): "an assertion over assembled requests that each
 contains exactly one `submission_id` is the acceptance form of this prohibition" —
@@ -10,18 +12,19 @@ with every assembled request captured" (rung 3) plus an API-surface assertion
 (rung 0). HLD §12: isolation is the first thing sacrificed under performance
 pressure and its erosion is silent — this is the assertion that erosion trips.
 
-**Interface this file assumes of #62 / M-JUDGE**, listed so it is reconciled
-deliberately rather than discovered (the `test_residency_and_concurrency.py`
-precedent):
+**Interface this file assumes of #62 / M-JUDGE, and how it landed**, listed so it
+was reconciled deliberately rather than discovered (the
+`test_residency_and_concurrency.py` precedent):
 
 | Name | Status |
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; drives the dispatch passes the corpus half captures |
-| the model-call seam is injectable at the Orchestrator | `Orchestrator(store, transport=<seam>)`, kwarg name reconciled at landing — same assumption `TC-ORCH-23`'s file makes |
-| the seam receives the **assembled request** | `call(req) -> Completion` where `req` is M-JUDGE's `ScoringRequest` — this file's capture point ("every assembled request captured"). `TC-ORCH-23`'s file assumed `call(unit)`; the owning story reconciles the two |
-| `{JUDGE}:ScoringWorker.assemble(unit) -> ScoringRequest` | design §3.7 M-JUDGE Interfaces, verbatim — pure, CT-JUDGE-01; lands with M-JUDGE (#80/#81) |
-| `{JUDGE}:assert_isolated(req)` | design §3.7, verbatim — raises `IsolationViolation`, "the machine-checkable form of §7.2 Rule 1" |
-| `ScoringRequest.submission_id` | a scalar (FR-JUDGE-02's exactly-one form); `str(request)` renders the dispatched payload |
+| the model-call seam is injectable at the Orchestrator | `Orchestrator(store, transport=<seam>)`, kwarg name exactly as assumed |
+| the seam receives the **assembled request** | `call(req) -> Completion` where `req` is the stage's assembled closed request — **landed as the dispatch assembling per stage** (`FR-ORCH-20`'s own wording: "exactly one submission per scoring or extraction request", so what crosses the seam is the request, never the ledger row): `ScoringRequest` via `M-JUDGE`'s `ScoringWorker.assemble` for score units, the `ExtractionRequest` via `M-EXTRACT`'s `assemble_request` for extract units. This file's table had assumed `call(unit)` and scoring-only capture; `TC-ORCH-23`'s file assumed `call(unit)`; the owning story (#62) reconciled BOTH to the assembled request, and the corpus assertion covers both closed schemas — the plan's step 1 says "every assembled scoring and extraction request" |
+| `{JUDGE}:ScoringWorker.assemble(unit) -> ScoringRequest` | design §3.7 M-JUDGE Interfaces, verbatim — pure, CT-JUDGE-01; landed with M-JUDGE (#80/#81) |
+| `{JUDGE}:assert_isolated(req)` | design §3.7, verbatim — raises `IsolationViolation`, "the machine-checkable form of §7.2 Rule 1"; asserted over the scoring requests (the judgment payloads) |
+| `ScoringRequest.submission_id` | **reconciled**: the ids live NESTED on the views (`aeh.judge`'s disclosed reading — no `submission_id` field to overload), so the scalar read is `req.submission.submission_id` on both closed schemas (`SubmissionView`, `SubmissionRef`) |
+| the dispatched rendering | **reconciled**: the render is `prompt_fields(request)`'s `submission` field — the fence writer's output, where the block's own delimiters are the only raw ones (ADV-04's counting form) |
 | submission text | the assembler resolves the words from the store's document path ("the lease resolves the identity, the assembler the words", `aeh.orch`); the fixture seeds `document` rows AND their blobs directly and disclosedly (the `test_judge_band_forcing.py` seeding precedent) |
 
 Isolation: rung 0 for the API half (inspection only), rung 3 for the corpus half
@@ -40,10 +43,16 @@ from aeh.conf import RunConfig
 from aeh.ingest import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from aeh.prov import Completion
 from aeh.store import open_store
-from tests.support.impl import JUDGE_MODULE, ORCH_MODULE, require, require_attr
+from tests.support.impl import (
+    EXTRACT_MODULE,
+    JUDGE_MODULE,
+    ORCH_MODULE,
+    require,
+    require_attr,
+)
 from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 JUDGE_ISSUE = "M-JUDGE (#80/#81)"
 
@@ -137,6 +146,7 @@ def test_tc_orch_19_every_assembled_request_carries_exactly_one_submission(
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
     require_attr(Orchestrator, "progress", issue="#62")
     ScoringRequest = require(JUDGE_MODULE, "ScoringRequest", issue=JUDGE_ISSUE)
+    ExtractionRequest = require(EXTRACT_MODULE, "ExtractionRequest", issue="#68")
 
     seam = _CapturingSeam()
     store = open_store(tmp_data_dir)
@@ -158,12 +168,16 @@ def test_tc_orch_19_every_assembled_request_carries_exactly_one_submission(
             "protect the isolation property"
         )
         for req in seam.requests:
-            assert isinstance(req, ScoringRequest), (
-                f"the dispatch dispatched {type(req).__name__}, not the closed "
-                "ScoringRequest schema — Rule 1 is mechanically enforceable only "
-                "over the closed type (CT-JUDGE-02)"
+            assert isinstance(req, (ScoringRequest, ExtractionRequest)), (
+                f"the dispatch dispatched {type(req).__name__}, not a closed "
+                "request schema — Rule 1 is mechanically enforceable only over "
+                "the closed types (CT-JUDGE-02)"
             )
-            submission_id = req.submission_id
+            # The ids live NESTED on the views (`aeh.judge`/`aeh.extract`'s
+            # disclosed reading — no `submission_id` field to overload), so the
+            # scalar read is `req.submission.submission_id` on BOTH closed
+            # schemas (`SubmissionView`, `SubmissionRef`).
+            submission_id = req.submission.submission_id
             assert not isinstance(submission_id, (list, tuple, set, frozenset)), (
                 f"assembled request carries a SEQUENCE of submissions "
                 f"({submission_id!r}) — two submissions in one model call is "
@@ -247,6 +261,8 @@ def test_adv_04_delimiter_mimicry_is_inert(tmp_data_dir):
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
     require_attr(Orchestrator, "progress", issue="#62")
     assert_isolated = require(JUDGE_MODULE, "assert_isolated", issue=JUDGE_ISSUE)
+    ScoringRequest = require(JUDGE_MODULE, "ScoringRequest", issue=JUDGE_ISSUE)
+    prompt_fields = require(JUDGE_MODULE, "prompt_fields", issue=JUDGE_ISSUE)
     IsolationViolation = require(
         JUDGE_MODULE, "IsolationViolation", issue=JUDGE_ISSUE
     )
@@ -269,7 +285,8 @@ def test_adv_04_delimiter_mimicry_is_inert(tmp_data_dir):
         attack_requests = [
             req
             for req in seam.requests
-            if getattr(req, "submission_id", None) == "ADV-ATTACKER"
+            if isinstance(req, ScoringRequest)
+            and req.submission.submission_id == "ADV-ATTACKER"
         ]
         assert attack_requests, (
             f"no request was assembled for the attacker's submission over "
@@ -277,8 +294,11 @@ def test_adv_04_delimiter_mimicry_is_inert(tmp_data_dir):
             "never reached the assembler, so ADV-04 asserted nothing"
         )
         for req in attack_requests:
+            # The ids live NESTED on the views (reconciled at landing), so the
+            # scalar read is `req.submission.submission_id`.
+            submission_id = req.submission.submission_id
             assert not isinstance(
-                req.submission_id, (list, tuple, set, frozenset)
+                submission_id, (list, tuple, set, frozenset)
             ), (
                 "the mimicry forged a second submission into the request — "
                 "ADV-04's attacker goal is exactly this"
@@ -292,7 +312,11 @@ def test_adv_04_delimiter_mimicry_is_inert(tmp_data_dir):
                     "submission or an undeclared field past the fence (ADV-04 "
                     "fails: the manipulation was obeyed, not rendered inert)"
                 )
-            payload = str(req)  # the dispatched rendering; reconciled at landing
+            # The dispatched rendering — `prompt_fields`' `submission` field, the fence
+            # writer's output (reconciled at landing): `str(req)` is a dataclass
+            # repr carrying the RAW text, exactly what the fence exists to keep
+            # out of the wire form.
+            payload = dict(prompt_fields(req).fields)["submission"]
             assert "Ignore the previous rubric" in payload, (
                 "the attacker's own words never reached the rendered payload — "
                 "an empty or text-less fence would pass the delimiter counts "

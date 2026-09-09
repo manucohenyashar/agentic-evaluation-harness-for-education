@@ -78,15 +78,38 @@ only, so the frozen backend is the resumed backend by construction — there is 
 substitution code path (`FR-ORCH-16`). The ledger is preserved across every pause: a
 pause is a stop and a reason, never a purge.
 
-**Not in this slice, and deliberately so.** Dispatch isolation, concurrency and
-`ProgressReport` are #62's.
+**This slice (#62) adds the dispatch loop and the `ProgressReport`**
+(`FR-ORCH-12/19/21/23/24`): `progress(run_id)` is the dispatch loop's beat — with a
+transport injected it completes the extraction walk through the seam, completes the
+deterministic walk directly (deterministic evaluation makes no model call), and claims ONE
+score batch no larger than the pass's effective concurrency, running its model calls
+concurrently against the injected transport seam (`Orchestrator(store, transport=...)`,
+`call(request) -> Completion` or a raise of the real taxonomy error) — the seam receives
+the **assembled** closed request (`FR-ORCH-20`: what is dispatched is "exactly one
+submission per scoring or extraction request", so the dispatch assembles the stage's
+shipped schema — `ScoringRequest` via `M-JUDGE`'s `ScoringWorker.assemble`, the
+`ExtractionRequest` via `M-EXTRACT`'s `assemble_request` — and sends that, never the
+ledger row); without a transport the call is the
+report-only surface the console polls, which reads the ledger and dispatches nothing.
+On `edge-local` the claim walk is **residency-batched**: one judge model stays resident
+until the ledger holds none of its work, each model change is a recorded swap (count and
+measured duration, `FR-ORCH-19`), and every handout batch is single-model. The
+concurrency governor starts at the run's frozen ceiling, divides on rate-limit/OOM
+signals and clamps further while M-STORE signals write backpressure — a signal to reduce
+dispatch, never a fault (`CT-STORE-06`). The report counts by
+`(stage, criterion, judge)` and totals done/in-flight/pending/quarantined — **no
+per-student figure exists on the type** (`FR-ORCH-23`/`R63`) — with the completion
+predicate read off the ledger (`FR-ORCH-12`: nothing pending and no in-flight scoring
+judgment that could spawn an escalation) and the estimate adjusted by the observed
+escalation rate (`estimated_completion_seconds`, `FR-ORCH-24`).
 
 **The four seams** (CLAUDE.md): the orchestrator runs end-to-end from code and returns a
-structured result with per-gate detail (`EnumerationReport`, `EscalationReport` — the
-`IngestReport.gates` precedent); it has no external dependency to transport — the store
-arrives by injection and no judge is ever contacted here, so the run needs no network;
-every budget, threshold, rate and window constant is env-gated and read at call time;
-and every report carries stage-level detail rather than a bare status.
+structured result with per-gate detail (`EnumerationReport`, `EscalationReport`,
+`ProgressReport` — the `IngestReport.gates` precedent); its one external dependency to
+transport — the model call — is injected (`transport=`), so a dispatch runs with no
+network and the store arrives by injection the same way; every budget, threshold, rate
+and window constant is env-gated and read at call time; and every report carries
+stage-level detail rather than a bare status.
 """
 
 from __future__ import annotations
@@ -94,16 +117,21 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
+import threading
+import time
 import uuid
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, NamedTuple, Protocol, Sequence
 
+from aeh.prov import Completion, RateLimitedError
 from aeh.store import (
     TIER_MIGRATIONS,
     LeaseClock,
@@ -111,6 +139,7 @@ from aeh.store import (
     Statement,
     Tier,
     lease_clock,
+    store_metrics,
 )
 
 # The admission filter (`FR-ORCH-22`) reads `submission.ingest_status` — a column the
@@ -510,6 +539,39 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     key=lambda m: m.version,
 ))
 
+#: #62's report indexes — the poll-serving covering indexes (`NFR-ORCH-06`:
+#: 40,000 units without degradation). The progress report's aggregates must stay
+#: index-served as the ledger grows, or a poll's cost grows with the sort rather
+#: than the scan: `idx_wu_report` carries the `(stage, criterion_id, judge_id)`
+#: triples the report's granularity groups (`FR-ORCH-23`) in index order, so
+#: `select_run_by_unit` streams instead of temp-sorting 40,000 rows per poll —
+#: every indexed column is insert-time constant, so the index never pays
+#: maintenance on a status transition. `idx_wu_pairs` serves the escalation
+#: rate's pair denominator (`FR-ORCH-14`): the done-score `(submission_id,
+#: criterion_id)` DISTINCT streams in index order instead of sorting the run's
+#: whole score ledger; `status` sits at position 2, the same maintenance
+#: profile `idx_wu_sched` (the leasing scan it sits beside) already pays.
+#: The version is 15: #78's `judge_verdict_columns` (13) and #97's
+#: `synth_narrative_key` (14) took the numbers first at their merges, so this
+#: renumbered at the merge — the pin-rot rule's documented dance, and the pin in
+#: `store.py` moved 14→15 in the same change.
+_ORCH_COHORT_015: tuple[Statement, ...] = (
+    Statement(
+        "CREATE INDEX idx_wu_report ON "
+        "work_unit(run_id, stage, criterion_id, judge_id)"
+    ),
+    Statement(
+        "CREATE INDEX idx_wu_pairs ON "
+        "work_unit(run_id, status, stage, submission_id, criterion_id)"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT]
+    + (Migration(version=15, name="orch_report_indexes", statements=_ORCH_COHORT_015),),
+    key=lambda m: m.version,
+))
+
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) -------------------
 
@@ -699,7 +761,10 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # and counting plans instead of outcomes would defer the very units the budget
     # exists to carry (a run's first escalated pair would read as a 100% rate). Both
     # are indexed aggregates over the run's score units, never a side-file counter
-    # (the ledger is the only bookkeeping, FR-ORCH-02).
+    # (the ledger is the only bookkeeping, FR-ORCH-02). `idx_wu_pairs` (the report
+    # indexes' migration) carries the processed side: its (status, stage) range
+    # precedes the (submission_id, criterion_id) pair, so the DISTINCT streams in
+    # index order instead of temp-sorting every done score unit per poll.
     "select_processed_results": Statement(
         "SELECT COUNT(*) AS n FROM (SELECT DISTINCT submission_id, criterion_id "
         "FROM work_unit WHERE run_id = :run_id AND stage = 'score' "
@@ -862,6 +927,76 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "WHERE run_id = :run_id AND action = 'pause' AND applied_at IS NULL "
         "AND requested_at < :requested_at"
     ),
+    # -- progress, dispatch and run metrics (#62/#66) -------------------------------------------
+    # The report's status totals: one GROUP BY over the run's rows. The ledger is the
+    # only bookkeeping (FR-ORCH-02), so the report counts rows — never side-file
+    # counters, which is what makes it right on a ledger that is growing underneath the
+    # poll (CT-ORCH-09).
+    "select_run_status_counts": Statement(
+        "SELECT status, COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id GROUP BY status"
+    ),
+    # The report's (stage, criterion, judge) counts — FR-ORCH-23's granularity. One row
+    # per distinct triple over ALL the run's units (judge NULL for extract and
+    # deterministic units), so the counts sum to the ledger exactly (TC-ORCH-31).
+    # The report's criterion axis rides the same aggregate: the distinct criteria the
+    # run's ledger holds are exactly the criterion members of these groups, so one
+    # pass feeds both and no second ledger scan is spent on the same set.
+    "select_run_by_unit": Statement(
+        "SELECT stage, criterion_id, judge_id, COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id GROUP BY stage, criterion_id, judge_id"
+    ),
+    # The first open unit, for the report's position fields (stage first with open
+    # work, then its criterion and judge positions). The pick is the schedule
+    # order `idx_wu_sched` already keeps — (status, stage, criterion_id), in-flight
+    # first — not `work_id` order: an ordered probe down that index reads a
+    # handful of entries where an `ORDER BY work_id` scan read the ledger's head
+    # on every poll (the 40k-scaling degradation NFR-ORCH-06 exists to prevent).
+    # No case pins WHICH open unit is pointed at — the position fields are coarse
+    # operator pointers, and this reading is the one the index serves.
+    "select_run_first_open": Statement(
+        "SELECT stage, criterion_id, judge_id FROM work_unit "
+        "WHERE run_id = :run_id AND status IN ('pending', 'leased') "
+        "ORDER BY status, stage, criterion_id LIMIT 1"
+    ),
+    # The residency boundary's check (FR-ORCH-19): whether the resident judge still
+    # holds score work **in flight** — its batch, the units already handed out for it.
+    # A swap fires only when the answer is no: unloading a model whose judgments are
+    # still running is the thrash the residency policy exists to prevent. Pending
+    # units do not count — gated or budget-deferred work is not dispatchable (it may
+    # never become ready without an operator), so it is no batch's tail; when it does
+    # become ready the model reloads to serve it.
+    "select_judge_leased_units": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND stage = 'score' AND judge_id = :judge_id "
+        "AND status = 'leased'"
+    ),
+    # The score units in flight: the completion predicate's second clause
+    # (FR-ORCH-12) — a scoring judgment in flight can still disagree with its panel
+    # and spawn an escalation.
+    "select_run_leased_score": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND stage = 'score' AND status = 'leased'"
+    ),
+    # The run's escalation-origin units (any status) — the escalated-units metric's
+    # numerator is the ledger's own rows (FR-ORCH-02).
+    "select_run_escalation_units": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND origin = 'escalation'"
+    ),
+    # The run-metrics write (CT-ORCH-20 makes the names contract): one EAV row per
+    # metric, REPLACE so a re-flush updates in place. M-ORCH is the sole writer
+    # (CT-STORE-03's single-writership: the orchestrator owns what the run did).
+    "insert_run_metric": Statement(
+        "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) "
+        "VALUES (:run_id, :metric, :value)"
+    ),
+    # The OOM remedy's panel record (RES-13): the reduced panel is written to the run
+    # row as a strict subset — a later validation record cannot claim the full panel
+    # the box could not hold.
+    "record_reduced_panel": Statement(
+        "UPDATE run SET panel_config = :panel_config WHERE run_id = :run_id"
+    ),
 }
 
 
@@ -967,6 +1102,48 @@ CRITERION_BREAKER_RATE_ENV = "HARNESS_ORCH_CRITERION_BREAKER_RATE"
 ORCH_CRITERION_BREAKER_MIN_N = 20
 CRITERION_BREAKER_MIN_N_ENV = "HARNESS_ORCH_CRITERION_BREAKER_MIN_N"
 
+#: The extract/deterministic rows one dispatch pass completes directly (`#62`): their
+#: handling is the ledger transition — the extraction payload is `M-EXTRACT`'s — and
+#: scoring gates on the transition, so the pass completes them to unlock the judged
+#: batch. Bounded, not open-ended: a 40,000-unit walk in one pass is exactly the
+#: unbounded dispatch the concurrency story exists to prevent. Production default;
+#: `HARNESS_ORCH_DISPATCH_WALK_BATCH` adjusts it for a slower test box at call time.
+DISPATCH_WALK_BATCH_ENV = "HARNESS_ORCH_DISPATCH_WALK_BATCH"
+DISPATCH_WALK_BATCH_DEFAULT = 4096
+
+#: The divisor the backpressure clamp applies to the governor's cap while M-STORE's
+#: `backpressure_active` level is ON (`FR-ORCH-21`, `CT-STORE-06`): the pass runs at
+#: `max(cap // divisor, 1)`. The clamp is sensed per pass and never persists — a
+#: reduction that never recovers is one slow store throttling a run forever. Production
+#: default 4; `HARNESS_ORCH_BACKPRESSURE_DIVISOR` adjusts it at call time.
+BACKPRESSURE_DIVISOR_ENV = "HARNESS_ORCH_BACKPRESSURE_DIVISOR"
+BACKPRESSURE_DIVISOR_DEFAULT = 4
+
+#: The divisor the governor applies to the cap after a pass in which any model call came
+#: back rate-limited or OOM (`FR-ORCH-21`'s reduce; §9.13's back-off). Floor 1 — the
+#: dispatch never stops on the signal alone, it narrows. Production default 2 (halve);
+#: `HARNESS_ORCH_CONCURRENCY_REDUCTION` adjusts it at call time.
+CONCURRENCY_REDUCTION_ENV = "HARNESS_ORCH_CONCURRENCY_REDUCTION"
+CONCURRENCY_REDUCTION_DEFAULT = 2
+
+#: The cumulative OOM count a judge reaches before the governor drops it from the
+#: panel (§9.11's "drop to a smaller panel", RES-13): the reduced panel is written to
+#: the run row's `panel_config` as a strict subset, never below one judge. Production
+#: default 2; `HARNESS_ORCH_OOM_DROP_THRESHOLD` adjusts it at call time.
+OOM_DROP_THRESHOLD_ENV = "HARNESS_ORCH_OOM_DROP_THRESHOLD"
+OOM_DROP_THRESHOLD_DEFAULT = 2
+
+#: The `backend_profile` value that carries model residency (`FR-ORCH-19`): weights
+#: loaded one model at a time, so the dispatcher keeps one judge resident per run. A
+#: hosted backend holds no weights and batches across judges freely.
+BACKEND_EDGE_LOCAL = "edge-local"
+
+#: The worker identity the dispatch loop leases under (`#62`): the dispatch pass is a
+#: lease holder like any worker — at-least-once, sweepable — so its in-flight batch is
+#: visible on the ledger as exactly what it is, and an interrupted pass's leases are
+#: the sweeper's ordinary reclaim, never a special case.
+DISPATCH_OWNER = "orchestrator-dispatch"
+
 
 def _env_int(name: str, default: int) -> int:
     """One integer environment knob, read at call time (`store._int_env`'s shape).
@@ -1014,6 +1191,26 @@ def _env_float(name: str, default: float, *, low: float, high: float) -> float:
 def _now() -> str:
     """The one wall-clock read the ledger writes, UTC ISO-8601 (`ingest._now`'s form)."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _elapsed_seconds_since(timestamp: str | None) -> float:
+    """Wall seconds since a ledger timestamp, or 0.0 when there is no honest one.
+
+    The report-only path's elapsed anchor (`#62`): a poll with no dispatch state has
+    no monotonic start of its own, so the run's own `started_at` is the throughput
+    window the estimate extrapolates from. A missing or unparseable timestamp is no
+    observed window — 0.0, never an infinity extrapolated from nothing (the same
+    posture `estimated_completion_seconds` takes).
+    """
+    if not timestamp:
+        return 0.0
+    try:
+        started = datetime.fromisoformat(str(timestamp))
+    except ValueError:
+        return 0.0
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return max((datetime.now(timezone.utc) - started).total_seconds(), 0.0)
 
 
 def _known_key(value: Any) -> tuple[int, Any]:
@@ -1484,6 +1681,152 @@ class SweeperReport:
     gates: dict[str, str] = field(default_factory=dict)
 
 
+# --- the progress report and the dispatch loop's report surface (#62) ----------------------------
+
+
+#: The operator extras `ProgressReport` serves beside the designed field set. They are
+#: deliberately NOT dataclass fields — the field set is §3.7's, asserted by set equality
+#: (TC-ORCH-26), and these ride outside it through the mapping protocol.
+PROGRESS_EXTRA_FIELDS = ("complete", "concurrency", "by_unit")
+
+#: The per-student figure FR-ORCH-23 forbids, named once so the prohibition is
+#: checkable: neither the type's fields nor the mapping's keys may carry it.
+_PROGRESS_FORBIDDEN_TOKENS = ("student", "submission", "learner")
+
+
+def estimated_completion_seconds(
+    *,
+    completed: int,
+    remaining: int,
+    elapsed_seconds: float,
+    escalation_rate_so_far: float,
+) -> float:
+    """The run's estimated completion, from observed throughput adjusted for the
+    escalation rate observed so far (`FR-ORCH-24`, pure — `NFR-ORCH-04`).
+
+    The naive figure is `remaining / observed_throughput`, with the throughput the
+    run has actually sustained (`completed` units over `elapsed_seconds`) — not the
+    plan's optimism. Each escalation widens a pair's panel from one judge to three
+    (`FR-ORCH-10`: one to three, never to two), so a widened unit becomes three: the
+    observed rate grows the remaining work by `(1 + 2 * rate)` — one added unit per
+    pair plus the pair's own re-judgment. At a 0% rate the adjustment is a no-op and
+    the estimate IS the naive one; at 15% of 200 remaining it adds 60s; the growth
+    the escalations commit the run to is exactly what a naive estimate hides
+    (TC-ORCH-27).
+
+    No completed work or no elapsed time is no observed throughput — 0.0, not an
+    infinity extrapolated from nothing.
+    """
+    if completed <= 0 or elapsed_seconds <= 0:
+        return 0.0
+    naive = remaining * elapsed_seconds / completed
+    return naive * (1.0 + 2.0 * escalation_rate_so_far)
+
+
+@dataclass(frozen=True)
+class ProgressReport:
+    """The run-state report `progress(run_id)` returns (design §3.7, `FR-ORCH-23`).
+
+    The field set is the design's, exactly and deliberately: the position fields
+    (which stage, which criterion, which judge the open work sits at), the four
+    status totals, the observed escalation rate and the adjusted estimate. It
+    carries **no per-student figure** — `FR-ORCH-23`'s prohibition, paired with
+    `R63`: the console renders what the type holds, so the data must not exist to
+    render (`FR-CONSOLE-08`).
+
+    **The mapping behavior is deliberate** (recorded interpretation): the report is
+    the §3.7 dataclass AND the query surface the console reads — field access
+    (`report.complete`) and mapping access (`report["done"]`, `report.keys()`) are
+    both first-class, with the three operator extras (the completion predicate, the
+    dispatch's current concurrency, the per-unit counts) riding OUTSIDE the field
+    set. `dataclasses.fields(ProgressReport)` stays exactly the designed eleven;
+    an added per-student field would fail that set equality, and the mapping's
+    keys are checked by the same prohibition.
+    """
+
+    stage: str
+    criterion_index: int
+    criterion_total: int
+    judge_index: int
+    judge_total: int
+    done: int
+    in_flight: int
+    pending: int
+    quarantined: int
+    escalation_rate_so_far: float
+    estimated_completion: float
+
+    def __post_init__(self) -> None:
+        # The extras ride outside the field set: attached per instance, not declared,
+        # so the field enumeration the prohibition is asserted over stays the
+        # design's. A report built without dispatch state reports what the ledger
+        # says: not complete, no measured concurrency yet.
+        object.__setattr__(
+            self,
+            "_extras",
+            {
+                "complete": self.pending == 0 and self.in_flight == 0,
+                "concurrency": 0,
+                "by_unit": {},
+            },
+        )
+        for key in (*PROGRESS_EXTRA_FIELDS, *(f.name for f in dataclass_fields(self))):
+            text = str(key).lower()
+            offending = [t for t in _PROGRESS_FORBIDDEN_TOKENS if t in text]
+            if offending:
+                raise ValueError(
+                    f"ProgressReport key {key!r} carries a per-student token "
+                    f"({offending[0]!r}) — FR-ORCH-23: no per-student completion "
+                    "figure exists on the type, so the console cannot render one (R63)."
+                )
+
+    # -- the operator extras, and the mapping protocol over fields + extras ------
+
+    def _map(self) -> dict[str, Any]:
+        mapped = {f.name: getattr(self, f.name) for f in dataclass_fields(self)}
+        mapped.update(self.__dict__.get("_extras", {}))
+        return mapped
+
+    def __getattr__(self, name: str) -> Any:
+        # Only reached for names that are not dataclass fields (normal lookup
+        # already failed): the extras, and nothing else.
+        extras = self.__dict__.get("_extras")
+        if extras is not None and name in extras:
+            return extras[name]
+        raise AttributeError(
+            f"{type(self).__name__} has no field or extra named {name!r} — the "
+            f"designed fields are {tuple(f.name for f in dataclass_fields(self))} "
+            f"and the operator extras are {PROGRESS_EXTRA_FIELDS}."
+        )
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return self._map()[key]
+        except KeyError:
+            raise KeyError(key) from None
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._map()
+
+    def __iter__(self) -> Any:
+        return iter(self._map())
+
+    def __len__(self) -> int:
+        return len(self._map())
+
+    def keys(self) -> Any:
+        return self._map().keys()
+
+    def values(self) -> Any:
+        return self._map().values()
+
+    def items(self) -> Any:
+        return self._map().items()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._map().get(key, default)
+
+
 # --- the escalation reports (CLAUDE.md seam 4) ---------------------------------------------------
 
 
@@ -1634,8 +1977,53 @@ class Orchestrator:
     Pauses touch lifecycle columns only, so a resume re-binds to the frozen backend
     structurally: there is no substitution code path to suppress. Control rows written
     while the orchestrator was not dispatching queue in `run_control` and are honoured
-    at the next read (`CT-ORCH-13`). Dispatch isolation and `ProgressReport` remain
-    #62's. `resume` takes no arguments from its first commit.
+    at the next read (`CT-ORCH-13`). Dispatch isolation and `ProgressReport` are #62's,
+    below. `resume` takes no arguments from its first commit.
+
+    **Recorded interpretations (#62) — dispatch, residency, concurrency, progress.**
+    The dispatch loop's model-call seam takes the stage's ASSEMBLED closed request —
+    `ScoringRequest` via `M-JUDGE`'s `ScoringWorker.assemble`, `ExtractionRequest`
+    via `M-EXTRACT`'s `assemble_request` (`FR-ORCH-20`'s own wording: "exactly one
+    submission per scoring or extraction request" — what is dispatched is the
+    request, and its exactly-one form is assertable only over the closed type,
+    `CT-JUDGE-02`). The loop's classification, batching and residency are untouched
+    by the payload's shape; deterministic units cross nothing (their evaluation
+    makes no model call), so the deterministic walk completes directly. Residency
+    batches **judge models only**:
+    `residency_policy` lists the roles permitted resident, and the units this loop
+    dispatches are score units whose `judge_id` names a model — the transcriber's
+    residency is the transcription stage's, not yet this module's. A judge's
+    **batch** is its dispatchable work: the units the ready order hands out for it,
+    plus the ones in flight; a gated or budget-deferred pending unit is not
+    dispatchable (it may never become ready without an operator) and cannot hold a
+    model resident — a residency held over undispatchable work starves every judge
+    behind it — and when gated work becomes ready the model reloads to serve it. A
+    residency swap's
+    duration is the wall time of the first model call after the swap — the load rides
+    that call; a swap whose first call is still to come records the count and adds the
+    duration when the load is actually paid. The dispatch loop's extract walk sends
+    the assembled `ExtractionRequest` (extraction IS a model call — `FR-ORCH-20`
+    covers extraction requests); the deterministic walk is the ledger transition
+    itself, completed with no transport (a deterministic criterion's evaluation makes
+    no model call): completing the transition is what unlocks the judged batch, and
+    the walks are bounded per pass by `HARNESS_ORCH_DISPATCH_WALK_BATCH`. The
+    concurrency governor's cap is per run, starts at the run's frozen
+    `concurrency_ceiling` (never the environment's — `FR-CONF-07`'s freeze), divides
+    once per pass on any rate-limited/OOM call (floor 1) and is clamped per pass while
+    M-STORE signals write backpressure (`CT-STORE-06`: a signal to reduce, never a
+    fault — the clamp is sensed at the pass's start and does not persist). The report's
+    `concurrency` is the cap the NEXT pass will run at (post-clamp, post-reduction) —
+    the operator reads the reduction that takes effect. The OOM remedy requeues the
+    judge's in-flight units without consuming attempts (the box's condition is not the
+    unit taxonomy's, §9.11), halves the cap, and at the drop threshold removes the
+    judge from the run's `panel_config` as a strict subset (never below one judge) —
+    its un-run units stay in the ledger for an operator to re-queue under a smaller
+    panel, never silently discarded. The completion predicate on the report is
+    **ledger-derived, not run-status-derived** (`FR-ORCH-12`): nothing pending and no
+    in-flight scoring judgment — a score unit in flight can still disagree with its
+    panel and spawn an escalation. The report's estimate feeds
+    `estimated_completion_seconds` with the ledger's own totals. `progress()` with no
+    transport dispatches nothing: it is the report-only surface (the console's poll).
 
     **Recorded interpretations (#61).** The ceiling comparison is strict `>` per
     dispatch (a dispatch landing exactly at the ceiling proceeds; the run pauses once
@@ -1671,6 +2059,7 @@ class Orchestrator:
         cohort_keys_for: Any = None,
         clock: Any = None,
         provider: Any = None,
+        transport: Any = None,
     ) -> None:
         self._store = store
         self._package_id_for = package_id_for
@@ -1686,6 +2075,20 @@ class Orchestrator:
         #: at the claim pass, loudly: a ceiling checked against nothing is the
         #: estimated-optimism shape the seam exists to prevent.
         self._provider = provider
+        #: The model-call transport seam (`FR-ORCH-19/21`, CLAUDE.md seam 2 — built the
+        #: moment the dependency exists). Declared protocol: `call(request) ->
+        #: Completion` (the real shipped type, `aeh.prov.Completion`) or a raise of the
+        #: real taxonomy error (`RateLimitedError`, `MemoryError`) — the dispatch loop
+        #: classifies by type and nothing else. `request` is the stage's ASSEMBLED
+        #: closed request (`FR-ORCH-20`: the dispatch sends "exactly one submission per
+        #: scoring or extraction request", never the ledger row — the assembler is the
+        #: owning stage's shipped door, and `FR-JUDGE-02`'s exactly-one form is
+        #: assertable only over the closed type). No default implementation: a
+        #: fabricated in-process "provider" would be a network-shaped dependency
+        #: smuggled past the seam. None means this orchestrator does not dispatch
+        #: model work: `progress()` is then the report-only surface (the console's
+        #: poll), which reads the ledger and claims nothing.
+        self._transport = transport
         #: Maps the store to its cohort tier keys, for the run discovery `resume()` does
         #: with no arguments. Default: the `cohorts/` directory under the store's data
         #: dir — the ledger's own files are the bookkeeping, which is the whole point of
@@ -1714,6 +2117,13 @@ class Orchestrator:
         #: guard, on a requeue (failure or sweeper reclaim), and on re-enumeration —
         #: the invalidation set `_claim_pass` states.
         self._order_cache: dict[tuple[str, str], deque[Any]] = {}
+        #: Per-run dispatch state (`_dispatch_state`): the concurrency governor's cap,
+        #: the residency batch's state, the OOM ladder's counts and the run-metrics
+        #: accumulators. Keyed by run_id, rebuilt from the ledger when absent — the
+        #: ledger is the bookkeeping (`FR-ORCH-02`); this holds only what the ledger
+        #: cannot say (the seam's in-memory counters); the dropped judges are ledger
+        #: state, not this dict's (`_dropped_judges`).
+        self._dispatch_states: dict[str, dict[str, Any]] = {}
 
     # -- run creation ---------------------------------------------------------------------------
 
@@ -2703,6 +3113,9 @@ class Orchestrator:
                 # current environment. None means no ceiling: the seam is never
                 # consulted and spend is never accrued for a run that froze no budget.
                 ceiling = self._run_ceiling(run_row)
+                # The **dropped judges** (`RES-13`): read from the run row itself,
+                # once per run per pass — the frozen panel minus the recorded one.
+                dropped_judges = self._dropped_judges(run_row)
                 cache_key = (run_row["run_id"], stage)
                 ordered = self._order_cache.get(cache_key)
                 if ordered is None:
@@ -2727,6 +3140,18 @@ class Orchestrator:
                 # pass — the observed rate moves only on completions, which happen
                 # outside claim passes, so one admission decision covers the pass.
                 escalation_admission: frozenset | None = None
+                # The **dispatch state** (`#62`): the per-run governor, residency and
+                # OOM bookkeeping, created lazily the first time any claim walk —
+                # the dispatch pass's or a worker's — reaches the run. The residency
+                # gate below is the only in-walk consumer; the dispatch pass's
+                # counters and the completion report ride the same dict.
+                edge_residency = (
+                    stage == STAGE_SCORE
+                    and run_row["backend_profile"] == BACKEND_EDGE_LOCAL
+                )
+                state = self._dispatch_state(run_row)
+                residency = state["residency"]
+                run_claims = 0
                 while ordered and len(claimed) < n:
                     row = ordered.popleft()
                     if (
@@ -2750,6 +3175,73 @@ class Orchestrator:
                             # a deferral that never lifts.
                             self._order_cache.pop(cache_key, None)
                             continue
+                    if row["judge_id"] in dropped_judges:
+                        # **A dropped judge's un-run units stay in the ledger**
+                        # (`RES-13`): pending, never claimed, never discarded — for
+                        # an operator to re-queue under the smaller panel. The skip
+                        # reads the run row's OWN panels (frozen minus recorded,
+                        # `_dropped_judges`), so it is durable: a fresh
+                        # Orchestrator over the same store skips the same units the
+                        # recording one did, where an in-memory dropped set would
+                        # have re-dispatched them after a restart (#62 review
+                        # finding 1). Extract and deterministic rows carry a null
+                        # judge, which no drop set contains.
+                        continue
+                    if edge_residency:
+                        # **The residency boundary** (`FR-ORCH-19`). On an edge-local
+                        # run the box holds ONE judge model resident, so a score
+                        # handout never mixes models. The gate reads the walk's own
+                        # judge-major order: crossing into a judge that is not the
+                        # resident one is the unload/load boundary, and it is legal
+                        # only when the resident's **batch** is finished — no more
+                        # dispatchable work this walk (`run_claims == 0`: the ready
+                        # order held nothing more for it) and none of its units in
+                        # flight. Gated or budget-deferred pending units are not
+                        # dispatchable — they are not in this order and may never
+                        # become ready without an operator — so they cannot hold a
+                        # model resident; a residency held over undispatchable work
+                        # starves every other judge behind it (their handouts refuse
+                        # empty while the ledger still holds claimable units, the
+                        # stall shape). When gated work does become ready, the walk
+                        # reaches the resident again and the model reloads — a swap —
+                        # to serve it. The FIRST model of a run loads without a
+                        # swap: there is nothing to unload yet.
+                        resident = residency["resident"]
+                        if resident in dropped_judges:
+                            # The OOM remedy unloaded this judge (`RES-13`): it is
+                            # out of the panel, so the next model loads as an
+                            # initial load — the drop already paid the unload.
+                            residency["resident"] = None
+                            resident = None
+                        if row["judge_id"] != resident:
+                            if resident is None:
+                                residency["resident"] = row["judge_id"]
+                            elif (
+                                run_claims == 0
+                                and not cohort.query(
+                                    ORCH_STATEMENTS["select_judge_leased_units"],
+                                    run_id=run_row["run_id"],
+                                    judge_id=resident,
+                                )[0]["n"]
+                            ):
+                                # A clean boundary: nothing claimed yet this walk
+                                # and the resident's work is finished — record the
+                                # swap and load the next model in place. The swap's
+                                # duration is the wall time to the batch's first
+                                # model call (the load rides that call), timed
+                                # from here by the dispatch pass.
+                                residency["swaps"] += 1
+                                residency["swap_started"] = time.monotonic()
+                                residency["resident"] = row["judge_id"]
+                            else:
+                                # Mid-batch crossing (this pass already claimed
+                                # the resident's tail) or the resident still holds
+                                # open work: the boundary row goes back and the
+                                # walk stops — this handout stays single-model,
+                                # and the next pass re-derives from the ledger.
+                                ordered.appendleft(row)
+                                self._order_cache.pop(cache_key, None)
+                                break
                     # The **measured figure** (`FR-ORCH-15`, `FR-PROV-12/04`): before
                     # the claim, this unit's cost comes from the provider seam — the
                     # same measured protocol the run is billed against, never an
@@ -2849,6 +3341,7 @@ class Orchestrator:
                                     at_ceiling = True
                     if won:
                         claimed.append(row)
+                        run_claims += 1
                     if refused or at_ceiling or not won:
                         # The run paused mid-order (sensed ceiling) or the guarded
                         # write lost (stale view): drop the entry wholesale — the next
@@ -3931,6 +4424,32 @@ class Orchestrator:
             )
         return tuple(arms)
 
+    def _dropped_judges(self, run_row: Any) -> frozenset[str]:
+        """The judges the OOM ladder dropped from this run's panel (`RES-13`), read
+        from the run row itself: the arms the FROZEN `provider_config` snapshot named
+        minus the arms the run's `panel_config` names now. The drop is durable in the
+        run row — the remedy rewrote `panel_config` down to the smaller panel — so the
+        skip this set drives survives a restart, where the in-memory dispatch state
+        does not (#62 review: a fresh Orchestrator over the same store must skip the
+        same units the recording one skipped; the dropped judges' un-run units stay
+        pending for an operator to re-queue under the smaller panel). A judge the
+        frozen panel never carried is not a drop: derived escalation arms
+        (`escalation-arm-<k>`, `_extension_arms`) and explicitly-passed escalation
+        judges are outside both panels, so they are never in this set. An unreadable
+        frozen panel skips nothing — stranding units on an unreadable snapshot is the
+        conservative side, and `_concurrency_ceiling` refuses malformed configs
+        loudly beside this."""
+        try:
+            frozen = json.loads(run_row["provider_config"]).get("panel")
+            current = set(self._panel_arms(run_row["panel_config"]))
+        except (TypeError, ValueError, WorkLedgerError):
+            return frozenset()
+        if not isinstance(frozen, list):
+            return frozenset()
+        return frozenset(
+            arm for arm in frozen if isinstance(arm, str) and arm not in current
+        )
+
     def _runs_missing_units(self) -> tuple[str, ...]:
         """Open runs whose ledger holds no work_unit rows at all, in run-id order.
 
@@ -3984,6 +4503,623 @@ class Orchestrator:
             for row in self._store.cohort(key).query(ORCH_STATEMENTS["select_open_runs"]):
                 found.append(row["run_id"])
         return tuple(sorted(found))
+
+    # -- the dispatch loop, residency, concurrency and the report (#62) --------------------------
+
+    def progress(self, run_id: str) -> ProgressReport:
+        """One dispatch pass over `run_id`, then the run-state report (`FR-ORCH-23`).
+
+        **The two modes.** With a transport bound (`Orchestrator(store, transport=...)`)
+        the pass dispatches: the extraction walk sends its assembled `ExtractionRequest`
+        through the model-call seam, the deterministic walk completes its ledger
+        transition directly (no model call exists for it), one judged batch at the
+        governor's effective concurrency runs
+        through the model-call seam as assembled `ScoringRequest`s, and the run's
+        metrics flush to `run_metrics`
+        (`CT-ORCH-20`). With no transport the call is the **report-only surface** — the
+        (`CT-ORCH-20`). With no transport the call is the **report-only surface** — the
+        console's poll (`CT-CONSOLE-01`'s headless driver needs progress to work with no
+        console and no provider): the ledger is read and the report built, and nothing
+        is claimed, called or flushed.
+
+        **The pass drives the shared worker surface.** The walks and the judged batch
+        claim through `lease()` under `DISPATCH_OWNER` — the dispatch loop is a lease
+        holder like any worker, at-least-once and sweepable, so an interrupted pass's
+        in-flight units are the sweeper's ordinary reclaim, never a special case. The
+        claim pass walks the store's open runs (`#59`'s shape), so a poll nominally for
+        `run_id` serves whichever open run the walk reaches first; the single-run store
+        every dispatch case runs against makes the distinction invisible, and a
+        multi-run operator gets run-id-order service from the walk itself — recorded
+        interpretation, reconciled if a case ever pins multi-run dispatch.
+
+        progress() never raises for an expected provider condition: a rate limit or an
+        OOM is absorbed into the governor and the report (`RES-11`, `RES-13` —
+        "expected, not an error"). A failure that is not one of the taxonomy's two
+        transport conditions propagates: an unexpected exception mid-dispatch is a
+        defect, and absorbing it would be the silent-failure shape.
+        """
+        cohort, run_row = self._find_run(run_id)
+        state: dict[str, Any] | None = None
+        if self._transport is not None:
+            state = self._dispatch_state(run_row)
+            self._dispatch_pass(cohort, run_row, state)
+        report = self._progress_report(cohort, run_row, run_id, state)
+        if state is not None:
+            self._flush_run_metrics(cohort, run_id, state, report)
+        return report
+
+    def _concurrency_ceiling(self, run_row: Any) -> int:
+        """The concurrency ceiling the run **froze** at creation (`FR-ORCH-21`).
+
+        Read from the run row's frozen `provider_config` — never from the current
+        environment (`FR-CONF-07`'s freeze, the same discipline `_run_ceiling` states
+        for the cost ceiling: a concurrency ceiling changed mid-run is a ceiling the
+        operator never approved). A row whose frozen config carries no readable
+        ceiling refuses loudly: a dispatch that guessed a width would be a dispatch
+        nobody bounded.
+        """
+        raw = run_row["provider_config"]
+        try:
+            cfg = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise WorkLedgerError(
+                f"run {run_row['run_id'][:12]} carries malformed provider_config — "
+                "the frozen concurrency ceiling cannot be read, and an unreadable "
+                "ceiling must halt dispatch loudly rather than guess a width."
+            ) from exc
+        value = cfg.get("concurrency_ceiling") if isinstance(cfg, dict) else None
+        if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+            raise WorkLedgerError(
+                f"run {run_row['run_id'][:12]} froze a concurrency ceiling of "
+                f"{value!r} — refused: the ceiling bounds how many model calls run "
+                "at once, and a non-positive or non-integer one is not a bound."
+            )
+        return value
+
+    def _dispatch_state(self, run_row: Any) -> dict[str, Any]:
+        """The per-run dispatch state, created lazily and rebuilt-free thereafter.
+
+        Holds the governor's cap (starting at the frozen ceiling, `FR-CONF-07`), the
+        residency state (`FR-ORCH-19`), the per-judge OOM counts (`RES-13`), the
+        provider counters the metrics flush persists (`CT-ORCH-20`, `CT-PROV-11`) and
+        the pass's timing anchors. The OOM drop's skip is NOT here: it reads the run
+        row's own panels (`_dropped_judges`) so it survives a restart. Kept per run —
+        not per pass — so
+        the counters a report reads are the run's own cumulative truth, and the
+        governor's reduction survives between passes. An in-memory dict on a module
+        whose bookkeeping rule is the ledger (`FR-ORCH-02`) is a deliberate exception:
+        these are the OBSERVABILITY accumulators, not the work state — the work lives
+        in `work_unit` rows, and a restart re-derives nothing but fresh counters.
+        """
+        run_id = run_row["run_id"]
+        state = self._dispatch_states.get(run_id)
+        if state is None:
+            state = {
+                "cap": self._concurrency_ceiling(run_row),
+                "residency": {
+                    "resident": None,
+                    "swaps": 0,
+                    "swap_ms": 0.0,
+                    "swap_started": None,
+                },
+                "oom_counts": {},
+                "rate_limited_calls": 0,
+                "transport_retries": 0,
+                "rate_limit_wait_s": 0.0,
+                "tokens_in": 0,
+                "tokens_out": 0,
+                "cache_tokens": 0,
+                "cost": Decimal("0"),
+                "resolved_build": None,
+                "calls": 0,
+                "peak_concurrency": 0,
+                "in_flight_calls": 0,
+                "reduced_this_pass": False,
+                "lock": threading.Lock(),
+                "started_monotonic": time.monotonic(),
+            }
+            self._dispatch_states[run_id] = state
+        return state
+
+    def _dispatch_pass(
+        self, cohort: Any, run_row: Any, state: dict[str, Any]
+    ) -> None:
+        """One dispatch pass: the walks, then one judged batch, at the effective cap.
+
+        **The governor** (`FR-ORCH-21`). The pass runs at the state's cap — starting
+        at the run's frozen ceiling, never the environment's — reduced once per pass
+        on the first rate-limited or OOM call (floor 1; applied the moment the signal
+        lands, so the report this pass returns carries the reduced width) and clamped
+        while `M-STORE` signals write backpressure (`CT-STORE-06`: a signal to reduce,
+        never a fault — sensed per pass, never persisted, so a store that recovers is
+        a dispatch that resumes full width).
+
+        **The walks** (`#62`'s interpretation, recorded on the class): scoring gates on
+        the extraction transition, so the pass completes extract units — through the
+        seam, because extraction IS a model call: the assembled `ExtractionRequest`
+        (`M-EXTRACT`'s `assemble_request`) goes over the wire and a transport that
+        rate-limits rate-limits it too — bounded by
+        `HARNESS_ORCH_DISPATCH_WALK_BATCH`; the deterministic walk completes its units
+        directly (deterministic evaluation makes no model call), then the pass claims
+        one judged batch of at most the effective cap. Residency shapes the judged
+        batch from inside the claim
+        walk (`_claim_pass`'s gate) — the pass itself is residency-blind.
+        """
+        state["reduced_this_pass"] = False
+        effective = state["cap"]
+        if store_metrics(self._store).get("backpressure_active"):
+            effective = max(
+                effective
+                // _env_int(BACKPRESSURE_DIVISOR_ENV, BACKPRESSURE_DIVISOR_DEFAULT),
+                1,
+            )
+        walk_batch = _env_int(DISPATCH_WALK_BATCH_ENV, DISPATCH_WALK_BATCH_DEFAULT)
+        completed_total = 0
+        while completed_total < walk_batch:
+            batch = list(
+                self.lease(
+                    DISPATCH_OWNER,
+                    STAGE_EXTRACT,
+                    min(walk_batch - completed_total, effective),
+                )
+            )
+            if not batch:
+                break
+            completed = self._run_model_batch(
+                cohort, run_row, state, batch, effective
+            )
+            completed_total += completed
+            if completed == 0:
+                # The pass made no headway: every claim came back
+                # transport-blocked (rate-limited or OOM) and requeued. Claiming
+                # again would re-run the same blocked batch until the walk
+                # bound — the back-off is the reduction and the NEXT pass.
+                break
+        # The deterministic walk completes DIRECTLY (`#62`'s assembled-request
+        # reconciliation): a deterministic criterion's evaluation makes no model
+        # call (`TC-ORCH-10`'s shape — the unit carries a null judge and there is
+        # no request schema for it to assemble), so there is nothing to send
+        # across the transport and nothing a rate-limited provider could block —
+        # the ledger transition IS the stage's dispatch, the way the extraction
+        # payload is the owning stage's to persist (#68 onward).
+        for unit in self.lease(DISPATCH_OWNER, STAGE_DETERMINISTIC, walk_batch):
+            self.complete(unit.work_id)
+        judged = list(self.lease(DISPATCH_OWNER, STAGE_SCORE, effective))
+        self._run_model_batch(cohort, run_row, state, judged, effective)
+
+    def _assemble_dispatch_payload(self, unit: Any) -> Any:
+        """Assemble the closed per-stage request the dispatch sends (`FR-ORCH-20`).
+
+        What crosses the model-call boundary is the ASSEMBLED request, never the
+        ledger row: "the module shall dispatch exactly one submission per scoring or
+        extraction request" (`FR-ORCH-20`), and the exactly-one form is assertable
+        only over the closed schema (`CT-JUDGE-02`). The assembler is the OWNING
+        stage's shipped door — `M-JUDGE`'s `ScoringWorker.assemble` for score units,
+        `M-EXTRACT`'s `assemble_request` for extract units — invoked with the store
+        so the words resolve here (the lease resolved the identity). The imports are
+        deferred because the owning modules import this one (the registry's
+        contributor graph has `aeh.orch` as an ancestor, not a leaf).
+
+        Deterministic units never reach the seam (no model call exists — the
+        deterministic walk completes them directly), so no schema is invented here
+        for one: a stage without a request schema reaching this helper is a dispatch
+        defect, not a payload to fabricate.
+        """
+        if unit.stage == STAGE_SCORE:
+            from aeh.judge import ScoringWorker
+
+            return ScoringWorker(store=self._store).assemble(unit)
+        if unit.stage == STAGE_EXTRACT:
+            from aeh.extract import assemble_request
+
+            return assemble_request(unit, store=self._store)
+        raise ValueError(
+            f"unit {unit.work_id[:12]} carries stage {unit.stage!r}, which makes no "
+            f"model call — only extract and score units cross the transport seam; "
+            f"deterministic units complete directly"
+        )
+
+    def _run_model_batch(
+        self,
+        cohort: Any,
+        run_row: Any,
+        state: dict[str, Any],
+        batch: Sequence[Any],
+        effective: int,
+    ) -> int:
+        """Run one claimed batch through the model-call seam at the effective width.
+
+        Each unit's ASSEMBLED request is built on the calling thread BEFORE the pool
+        takes anything — the assembler is the owning stage's shipped door, it reads
+        the store (the words resolve here: "the lease resolves the identity, the
+        assembler the words"), and the store is not a thread-shared surface — so the
+        only thing that runs concurrently is the model call itself. Assembly
+        completes for the WHOLE batch before the first submit, and the submits are
+        then back-to-back: pipelining assembly into the submission loop would pace
+        the ramp at the assembly interval, and Little's law would cap the observed
+        in-flight peak at `call_duration / assembly_interval` — a figure set by the
+        assembler's speed, not by the governor. With the payloads pre-built, calls
+        run on a thread pool bounded by `min(len(batch), effective)` and the pool
+        width IS the observable in-flight concurrency the governor's ceiling governs
+        (`FR-ORCH-21`; the seam's spy counts the peak — the caller bounds a batch to
+        `effective` so the pre-assembly latency is bounded by the same figure). Every
+        outcome is classified, never absorbed silently:
+
+        - **Completion** — the real `Completion`: the unit closes (`complete`), and
+          the answer's tokens, cost, cache prefix and resolved build accrue to the
+          run's counters (`CT-PROV-11`'s shape — M-ORCH reads the provider's
+          counters and persists them).
+        - **`RateLimitedError`** (`RES-11`) — expected, not an error: the counters
+          increment (the parsed `Retry-After` accrues to the honoured wait), the
+          unit requeues **without consuming an attempt and without a unit-level
+          error** (a rate limit is the provider's condition, not the unit's — §9.11),
+          and the governor reduces next pass.
+        - **`MemoryError`** (`RES-13`) — the box's condition: the unit requeues the
+          same way (the box's condition is not the unit taxonomy's, §9.11), the cap
+          reduces, and the OOM ladder's cumulative count may drop the judge from the
+          panel.
+
+        Any other exception propagates — an unexpected transport failure is a defect,
+        and the units stay leased on the ledger where the sweeper reclaims them.
+        Returns the number of units the batch closed — the walk's headway check.
+        """
+        if not batch:
+            return 0
+        workers = max(1, min(len(batch), effective))
+        reduction = _env_int(CONCURRENCY_REDUCTION_ENV, CONCURRENCY_REDUCTION_DEFAULT)
+        lock = state["lock"]
+        requeue_list: list[str] = []
+        oomed: dict[str | None, list[str]] = {}
+        completed = 0
+
+        def invoke(request: Any) -> Any:
+            with lock:
+                state["in_flight_calls"] += 1
+                state["peak_concurrency"] = max(
+                    state["peak_concurrency"], state["in_flight_calls"]
+                )
+            try:
+                return self._transport.call(request)
+            finally:
+                with lock:
+                    state["in_flight_calls"] -= 1
+
+        # Assembly completes for the whole batch BEFORE the pool exists — a raise
+        # here lands with nothing submitted, and the burst that follows reaches the
+        # full pool width (the pipelined alternative would never be observed to).
+        payloads = [
+            (unit, self._assemble_dispatch_payload(unit)) for unit in batch
+        ]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            submitted = [
+                (unit, pool.submit(invoke, payload)) for unit, payload in payloads
+            ]
+            for unit, future in submitted:
+                try:
+                    answer = future.result()
+                except RateLimitedError as error:
+                    self._absorb_rate_limit(state, error)
+                    requeue_list.append(unit.work_id)
+                    continue
+                except MemoryError:
+                    judge = unit.judge
+                    oomed.setdefault(judge, []).append(unit.work_id)
+                    requeue_list.append(unit.work_id)
+                    continue
+                self._absorb_completion(state, answer)
+                # The swap's duration closes on the batch's first successful call
+                # — the load rides that call, so the wall time from the boundary
+                # to here is the duration the swap cost (`FR-ORCH-19`).
+                started = state["residency"]["swap_started"]
+                if started is not None:
+                    state["residency"]["swap_ms"] += (
+                        time.monotonic() - started
+                    ) * 1000.0
+                    state["residency"]["swap_started"] = None
+                self.complete(unit.work_id)
+                completed += 1
+        if requeue_list:
+            self._requeue_units(cohort, run_row["run_id"], requeue_list)
+        for judge, ooms in oomed.items():
+            self._oom_remedy(cohort, run_row, state, judge, ooms=len(ooms))
+        if (requeue_list or oomed) and not state["reduced_this_pass"]:
+            # The governor's reduction (`FR-ORCH-21`): once per pass, on the first
+            # pass that saw a rate-limited or OOM call — applied NOW, not at the
+            # next pass's start, so the report the caller is about to read carries
+            # the reduced width (the operator reads the reduction that takes
+            # effect, `RES-11`'s observable back-off).
+            state["cap"] = max(state["cap"] // reduction, 1)
+            state["reduced_this_pass"] = True
+        return completed
+
+    def _absorb_completion(self, state: dict[str, Any], answer: Any) -> None:
+        """Accrue one successful model answer to the run's counters (`CT-PROV-11`)."""
+        with state["lock"]:
+            state["calls"] += 1
+            state["tokens_in"] += answer.tokens_in
+            state["tokens_out"] += answer.tokens_out
+            state["cache_tokens"] += answer.cached_prefix_tokens or 0
+            if answer.cost is not None:
+                state["cost"] += answer.cost
+            if state["resolved_build"] is None and answer.resolved_build:
+                state["resolved_build"] = answer.resolved_build
+
+    def _absorb_rate_limit(
+        self, state: dict[str, Any], error: RateLimitedError
+    ) -> None:
+        """Count one rate-limited call and honour its `Retry-After` (`FR-PROV-07`).
+
+        The honouring here is the dispatch's own half of §9.13: the wait the provider
+        asked for accrues to the run's counter and the unit defers to a later pass at
+        a reduced cap — the back-off is the deferral, not a sleep inside the dispatch
+        loop (a loop that sleeps holds its worker hostage to the provider's clock).
+        """
+        with state["lock"]:
+            state["rate_limited_calls"] += 1
+            state["transport_retries"] += 1
+            match = re.search(
+                r"retry-after:\s*([0-9]*\.?[0-9]+)", str(error), re.IGNORECASE
+            )
+            if match:
+                state["rate_limit_wait_s"] += float(match.group(1))
+
+    def _oom_remedy(
+        self,
+        cohort: Any,
+        run_row: Any,
+        state: dict[str, Any],
+        judge: str | None,
+        *,
+        ooms: int = 1,
+    ) -> None:
+        """The OOM ladder for one judge (`RES-13`, §9.11): reduce, retry, drop.
+
+        The cumulative per-judge count is of OOM **calls** — every failed load counts,
+        including the several one batch can produce — and the drop lands when the
+        count reaches the threshold: the batch's own requeue IS the "retry" the
+        ladder's remedy names (the units return to pending and are claimed again at
+        the reduced cap before the panel ever shrinks). The drop removes the judge
+        from the run's `panel_config` as a **strict subset, never below one judge**
+        and records it in the run row — a later validation record cannot claim a
+        panel the box could not hold (`CT-PROV-08`: drops, never substitutions). The
+        dropped judge's un-run units stay in the ledger, pending, for an operator to
+        re-queue under the smaller panel; the claim walk skips them — durably,
+        reading the run row's own panels (`_dropped_judges`), so the skip survives a
+        restart.
+        """
+        count = state["oom_counts"].get(judge, 0) + ooms
+        state["oom_counts"][judge] = count
+        threshold = _env_int(OOM_DROP_THRESHOLD_ENV, OOM_DROP_THRESHOLD_DEFAULT)
+        if judge is None or count < threshold:
+            return
+        arms = self._panel_arms(run_row["panel_config"])
+        if judge not in arms or len(arms) <= 1:
+            return
+        reduced = tuple(arm for arm in arms if arm != judge)
+        # The reduced panel is written in `panel_config_json`'s canonical shape —
+        # same separators, same sort — built from the arm STRINGS the row already
+        # carries (the arms are build ids; the frozen row is the identity source).
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["record_reduced_panel"],
+                panel_config=json.dumps(
+                    {"arms": list(reduced)},
+                    separators=_JSON_SEPARATORS,
+                    sort_keys=True,
+                ),
+                run_id=run_row["run_id"],
+            )
+        # The panel the order cache was derived from no longer exists: every cached
+        # order for the run is stale, and a claim that trusted it could hand out a
+        # dropped judge's unit past the walk's skip. The skip itself needs no
+        # in-memory mark — it reads the run row's OWN panels (frozen minus the
+        # just-recorded reduction, `_dropped_judges`), so a fresh Orchestrator over
+        # the same store skips the same units after a restart.
+        self._invalidate_order_cache(run_row["run_id"])
+
+    def _requeue_units(
+        self, cohort: Any, run_id: str, work_ids: Sequence[str]
+    ) -> None:
+        """Return units to `pending` without consuming an attempt or writing an error.
+
+        The transport-condition requeue (rate limit, OOM — `RES-11`, `RES-13`): the
+        unit's failure history is not the provider's or the box's to write, and an
+        attempt consumed here would quarantine a whole cohort under a sustained 429 —
+        the exact failure `RES-11` forbids. One transaction, one guarded write per
+        unit (the sweeper's own shape), and the order cache drops so the very next
+        claim pass sees the requeued units (`TC-ORCH-18`).
+        """
+        requeued = 0
+        with cohort.transaction() as tx:
+            for work_id in work_ids:
+                tx.execute(ORCH_STATEMENTS["requeue_expired"], work_id=work_id)
+                requeued += int(
+                    tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
+                )
+        if requeued:
+            self._invalidate_order_cache(run_id)
+
+    def _progress_report(
+        self,
+        cohort: Any,
+        run_row: Any,
+        run_id: str,
+        state: dict[str, Any] | None,
+    ) -> ProgressReport:
+        """Build the report from the ledger's own aggregates (`FR-ORCH-23`).
+
+        Every figure is a count of rows — the ledger is the only bookkeeping, so a
+        report computed from anything else would drift on exactly the growing ledger
+        `CT-ORCH-09` exists for. The position fields walk the first open unit: its
+        stage, and its criterion's and judge's 1-based positions in the run's
+        criterion list and panel order — with no open work the report points at the
+        end of both axes. The estimate feeds `estimated_completion_seconds` the
+        ledger's own totals and the observed escalation rate (`FR-ORCH-24`), and the
+        completion predicate is ledger-derived (`FR-ORCH-12`): nothing pending, and
+        no in-flight unit — a scoring judgment in flight can still disagree with its
+        panel and spawn an escalation, so a run with one is not done.
+        """
+        counts: dict[str, int] = {}
+        for row in cohort.query(
+            ORCH_STATEMENTS["select_run_status_counts"], run_id=run_id
+        ):
+            counts[row["status"]] = int(row["n"])
+        done = counts.get("done", 0)
+        in_flight = counts.get("leased", 0)
+        pending = counts.get("pending", 0)
+        quarantined = counts.get("quarantined", 0)
+        by_unit: dict[tuple[str, str | None, str | None], int] = {}
+        for row in cohort.query(ORCH_STATEMENTS["select_run_by_unit"], run_id=run_id):
+            by_unit[(row["stage"], row["criterion_id"], row["judge_id"])] = int(
+                row["n"]
+            )
+        # The criterion axis rides the same aggregate (see the statement's note):
+        # every criterion the ledger holds appears in some group's key.
+        criteria = sorted({criterion for _, criterion, _ in by_unit})
+        arms = self._panel_arms(run_row["panel_config"])
+        open_rows = cohort.query(
+            ORCH_STATEMENTS["select_run_first_open"], run_id=run_id
+        )
+        first = open_rows[0] if open_rows else None
+        stage = first["stage"] if first is not None else STAGE_SCORE
+        criterion_index = (
+            criteria.index(first["criterion_id"]) + 1
+            if first is not None and first["criterion_id"] in criteria
+            else len(criteria)
+        )
+        judge_index = (
+            arms.index(first["judge_id"]) + 1
+            if first is not None and first["judge_id"] in arms
+            else len(arms)
+        )
+        _processed, _escalated, rate = self._escalation_rate(cohort.query, run_id)
+        if state is not None:
+            elapsed = max(time.monotonic() - state["started_monotonic"], 0.0)
+        else:
+            elapsed = _elapsed_seconds_since(run_row["started_at"])
+        estimate = estimated_completion_seconds(
+            completed=done,
+            remaining=pending + in_flight,
+            elapsed_seconds=elapsed,
+            escalation_rate_so_far=rate,
+        )
+        report = ProgressReport(
+            stage=stage,
+            criterion_index=criterion_index,
+            criterion_total=len(criteria),
+            judge_index=judge_index,
+            judge_total=len(arms),
+            done=done,
+            in_flight=in_flight,
+            pending=pending,
+            quarantined=quarantined,
+            escalation_rate_so_far=rate,
+            estimated_completion=estimate,
+        )
+        leased_score = int(
+            cohort.query(
+                ORCH_STATEMENTS["select_run_leased_score"], run_id=run_id
+            )[0]["n"]
+        )
+        # The report's concurrency is the cap the NEXT pass will run at (the
+        # reduction a 429/OOM landed this pass is already in `cap`; the backpressure
+        # clamp is sensed again at flush time — the operator reads the width that
+        # takes effect, `RES-11`/`RES-13`'s observable back-off, and a store still
+        # signalling pressure reads as the clamped width).
+        concurrency = 0
+        if state is not None:
+            concurrency = state["cap"]
+            if store_metrics(self._store).get("backpressure_active"):
+                concurrency = max(
+                    concurrency
+                    // _env_int(
+                        BACKPRESSURE_DIVISOR_ENV, BACKPRESSURE_DIVISOR_DEFAULT
+                    ),
+                    1,
+                )
+        object.__setattr__(
+            report,
+            "_extras",
+            {
+                "complete": pending == 0 and in_flight == 0 and leased_score == 0,
+                "concurrency": concurrency,
+                "by_unit": by_unit,
+            },
+        )
+        return report
+
+    def _flush_run_metrics(
+        self,
+        cohort: Any,
+        run_id: str,
+        state: dict[str, Any],
+        report: ProgressReport,
+    ) -> None:
+        """Persist the pass's cumulative signals into `run_metrics` (`CT-ORCH-20`).
+
+        M-ORCH is the table's sole writer (`CT-STORE-03`): the dispatch loop's own
+        counters plus the ledger-derived totals, written at the end of every pass —
+        a poll that flushes nothing would leave `M-STATS` reading a stale record on
+        exactly the runs an operator is watching. The totals are computed FROM the
+        ledger at flush time (the report's own counts), so a metric can never tell a
+        different story from the rows it summarizes.
+        """
+        escalated = int(
+            cohort.query(
+                ORCH_STATEMENTS["select_run_escalation_units"], run_id=run_id
+            )[0]["n"]
+        )
+        total_units = report.done + report.in_flight + report.pending + (
+            report.quarantined
+        )
+        tokens_in = state["tokens_in"]
+        metrics: dict[str, Any] = {
+            "transport_retries": float(state["transport_retries"]),
+            "rate_limited_calls": float(state["rate_limited_calls"]),
+            "rate_limit_wait_s": float(state["rate_limit_wait_s"]),
+            "tokens_in": float(tokens_in),
+            "tokens_out": float(state["tokens_out"]),
+            "cache_hit_rate": (
+                state["cache_tokens"] / tokens_in if tokens_in else 0.0
+            ),
+            "total_units": float(total_units),
+            "escalated_units": float(escalated),
+            "quarantined_units": float(report.quarantined),
+            "wall_clock_ms": max(
+                (time.monotonic() - state["started_monotonic"]) * 1000.0, 0.0
+            ),
+            "peak_concurrency": float(state["peak_concurrency"]),
+            "estimated_completion_s": float(report.estimated_completion),
+            "actual_cost": float(state["cost"]),
+            "model_swap_count": float(state["residency"]["swaps"]),
+            "model_swap_duration_ms": float(state["residency"]["swap_ms"]),
+        }
+        if state["resolved_build"]:
+            # TEXT rides the REAL-affinity column as TEXT: the resolved build is a
+            # label, not a measurement, and the EAV shape carries both.
+            metrics["resolved_build"] = state["resolved_build"]
+        self.record_run_metrics(run_id, metrics)
+
+    def record_run_metrics(self, run_id: str, metrics: Mapping[str, Any]) -> None:
+        """Write one run's metrics as EAV rows — the write `CT-ORCH-20` makes contract.
+
+        **A reserved name, landed** (`#65` reserved it for TS-25; the design's Protocol
+        has no metrics member): whether the dispatch flushes through it internally or a
+        caller records explicitly, the write is this method's — one transaction, one
+        REPLACE per metric, so a re-flush updates in place and the table never holds
+        two rows for one signal. M-ORCH is `run_metrics`' sole writer (`CT-STORE-03`).
+        """
+        if not metrics:
+            return
+        durable = self._store.durable()
+        with durable.transaction() as tx:
+            for name, value in metrics.items():
+                tx.execute(
+                    ORCH_STATEMENTS["insert_run_metric"],
+                    run_id=run_id,
+                    metric=str(name),
+                    value=value,
+                )
 
 
 # --- the audit record (TC-CONF-17's producer) ---------------------------------------------------

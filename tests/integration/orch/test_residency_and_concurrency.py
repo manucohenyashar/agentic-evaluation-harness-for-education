@@ -1,6 +1,7 @@
 """`TS-24`'s residency and concurrency cases — `TC-ORCH-23`, `RES-11`, `RES-13` —
-**written ahead of #62** (dispatch isolation, residency batching, concurrency,
-progress granularity) and #66 (run-metrics persistence).
+**landed with #62** (dispatch isolation, residency batching, concurrency,
+progress granularity) and #66 (run-metrics persistence); this file shipped
+red-by-design ahead of them and unmarked when they landed.
 
 The three cases share one seam: the dispatch loop #62 ships. `TC-ORCH-23` is
 residency — an `edge-local` profile that permits one resident model must finish a
@@ -13,16 +14,16 @@ concurrency, retry, then drop to a smaller panel and record it in `panel_config`
 (§9.11), oracle **the reduced panel is recorded, so a later validation record cannot
 claim the full panel**.
 
-**Interface this file assumes of #62/#66**, listed so it is reconciled deliberately
-rather than discovered:
+**Interface this file assumes of #62/#66** — shipped exactly as assumed (the
+`test_sweep_admission_and_ordering.py` precedent; the design reasoning stays):
 
 | Name | Status |
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; drives one dispatch pass and returns the report (AC4: counts by `(stage, criterion, judge)` plus totals — the four-seams rule's stage-level detail) |
-| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the observable "dispatch respects concurrency / reduces" needs (four-seams rule #4); assumed a mapping, reconciled at landing |
-| the dispatch's model-call seam is injectable at the Orchestrator | the four-seams rule requires a deterministic transport for every external dependency the moment it is added, so #62's dispatch must bind one injectably; assumed as `Orchestrator(store, transport=<call seam>)`, kwarg name reconciled at landing |
-| the call seam's shape | `call(unit) -> Completion` for a successful model call, or a raise of the REAL taxonomy error (`RateLimitedError`, `MemoryError`) — `Completion` is shipped (#19), so the double returns the real type and only the *seam* is assumed |
-| `Orchestrator.record_run_metrics` | **invented name** — the design's Protocol has no metrics member; the KEY is the write `CT-ORCH-20` makes contract (M-ORCH is sole `run_metrics` writer, `CT-PROV-11` has it persisting the provider's counters) and the owning story is #66; the name reconciles at landing |
+| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the observable "dispatch respects concurrency / reduces" needs (four-seams rule #4); shipped as a mapping, exactly as assumed |
+| the dispatch's model-call seam is injectable at the Orchestrator | the four-seams rule requires a deterministic transport for every external dependency the moment it is added, so #62's dispatch binds one injectably; shipped as `Orchestrator(store, transport=<call seam>)`, kwarg name exactly as assumed |
+| the call seam's shape | `call(request) -> Completion` for a successful model call, or a raise of the REAL taxonomy error (`RateLimitedError`, `MemoryError`) — `Completion` is shipped (#19), so the double returns the real type and only the *seam* is assumed. **Reconciled at #62's landing** (the `test_one_submission_per_request.py` table's declared conflict): the seam receives the stage's ASSEMBLED closed request (`FR-ORCH-20`: what is dispatched is the request, never the ledger row), not the `unit` this file assumed — the doubles read nothing off the payload except `_OomAtSwapCallSeam`'s model identity, which is resolved from the ledger's `work_unit.judge_id` (the request carries no judge: the panel's arms are byte-identical, `CT-JUDGE-05`) — and the fixtures seed one `document` row per submission (`seed_documents`, the `test_judge_band_forcing.py` precedent), because the assembler resolves the words from the store's document path |
+| `Orchestrator.record_run_metrics` | the **invented name** shipped as-is — the design's Protocol has no metrics member; the KEY is the write `CT-ORCH-20` makes contract (M-ORCH is sole `run_metrics` writer, `CT-PROV-11` has it persisting the provider's counters) and the owning story is #66 |
 | run_metrics reads | shipped: the EAV table `(run_id, metric, value)` (store.py `_DURABLE_001`), read through `store.durable().query(...)` |
 | judges stand in for models | each panel judge names its own model, so model identity is the unit's `judge`; the panel used here has three distinct models |
 
@@ -47,10 +48,11 @@ from tests.support.orch_run import (
     ORCH_COHORT_ID,
     orch_cfg,
     seed_cohort,
+    seed_documents,
     seed_package,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
 _CRITERIA = (
@@ -105,14 +107,25 @@ class _OomAtSwapCallSeam:
     one raises `MemoryError` (the weights are half-loaded and the box is out of
     memory); the resident model's own calls succeed, so the OOM is specifically a
     swap OOM, not a general outage. After #62's remedy drops the panel, the
-    surviving judge's calls continue to succeed."""
+    surviving judge's calls continue to succeed.
+
+    Reconciled at #62's landing: the seam receives the ASSEMBLED request, which
+    carries no judge identity (the panel's arms are byte-identical, `CT-JUDGE-05` —
+    the ids are the only per-arm bytes and the render carries none), so the model
+    resolves from the ledger's `work_unit.judge_id` by `work_id` — the same
+    identity the dispatcher itself holds. A payload whose `work_id` is not a score
+    unit's is the extraction walk's (its unit's judge is null on the ledger); a
+    request with no model behind it cannot swap one, so it answers clean."""
 
     def __init__(self) -> None:
+        self.judges: dict[str, str] = {}
         self.resident: str | None = None
         self.oom_calls = 0
 
-    def call(self, unit):
-        model = unit.judge
+    def call(self, request):
+        model = self.judges.get(getattr(request, "work_id", ""))
+        if model is None:
+            return _canned_completion()
         if self.resident is None:
             self.resident = model
         if model != self.resident:
@@ -130,11 +143,29 @@ def _seeded_run(store, transport):
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#62")
     seed_cohort(store, _SUBMISSIONS)
     version = seed_package(store, _CRITERIA)
+    # Since #62's assembled-request reconciliation, the dispatch assembles the
+    # stage's closed request and the assembler resolves the words from the store's
+    # document path — the fixture seeds one document per submission (the
+    # `test_judge_band_forcing.py` precedent, via the shared helper).
+    seed_documents(store, _SUBMISSIONS)
     resolved = orch_cfg("edge-local", panel=EDGE_PANEL_3)
     orch = Orchestrator(store, transport=transport)
     run_id = orch.create_run(ORCH_COHORT_ID, version, resolved)
     orch.enumerate_units(run_id)
     return orch, run_id
+
+
+def _score_judges(store, run_id: str) -> dict[str, str]:
+    """The ledger's `work_id -> judge_id` map over the run's score units — the model
+    identity the assembled request does not carry (see `_OomAtSwapCallSeam`)."""
+    return {
+        row["work_id"]: row["judge_id"]
+        for row in store.cohort(ORCH_COHORT_ID).query(
+            "SELECT work_id, judge_id FROM work_unit "
+            "WHERE run_id = :r AND judge_id IS NOT NULL",
+            r=run_id,
+        )
+    }
 
 
 def _metrics(store, run_id: str) -> dict[str, float]:
@@ -324,6 +355,9 @@ def test_res_13_oom_during_swap_reduces_concurrency_and_records_the_smaller_pane
     store = open_store(tmp_data_dir)
     try:
         orch, run_id = _seeded_run(store, transport)
+        # The model identity rides the ledger, not the request (see the double's
+        # docstring) — bound now that the units exist.
+        transport.judges = _score_judges(store, run_id)
         before = store.cohort(ORCH_COHORT_ID).query(
             "SELECT panel_config FROM run WHERE run_id = :r", r=run_id
         )[0]["panel_config"]
@@ -377,6 +411,48 @@ def test_res_13_oom_during_swap_reduces_concurrency_and_records_the_smaller_pane
                 f"{row['last_error']!r}) — the box's condition is §9.11's "
                 "concurrency remedy, not the unit taxonomy's"
             )
+
+        # The drop's skip is DURABLE — the restart half (#62 review finding 1): a
+        # FRESH Orchestrator over the same store, whose in-memory dispatch state is
+        # empty, must skip the same units the recording one did. The dropped
+        # judges' un-run units stay pending (the operator re-queues them under the
+        # smaller panel), while the surviving panel's units drain — the pass count
+        # bounds a wedged dispatch, and the fixture's surviving judge holds exactly
+        # ten units, so the bound is far past exhaustion either way.
+        dropped = set(before_judges) - set(after_judges)
+        fresh_seam = _SucceedingCallSeam()
+        fresh = Orchestrator(store, transport=fresh_seam)
+        for _ in range(24):
+            fresh.progress(run_id)
+        assert fresh_seam.calls > 0, (
+            f"the fresh Orchestrator made no model calls — the restart leg "
+            f"asserted nothing about how the skip treats the surviving panel "
+            f"{after_judges}"
+        )
+        states = store.cohort(ORCH_COHORT_ID).query(
+            "SELECT judge_id, status, COUNT(*) AS n FROM work_unit "
+            "WHERE run_id = :r GROUP BY judge_id, status",
+            r=run_id,
+        )
+        for row in states:
+            # The surviving panel's work drains under the fresh Orchestrator —
+            # the guard that keeps the oracle above from passing on a skip so
+            # broad it starved the whole panel.
+            if row["judge_id"] in set(after_judges):
+                assert row["status"] == "done", (
+                    f"a surviving judge's units are {row['status']} ({row['n']} "
+                    f"of them) after the fresh Orchestrator exhausted its passes "
+                    f"— the durable skip must not starve the recorded panel "
+                    f"{after_judges}"
+                )
+            if row["judge_id"] in dropped:
+                assert row["status"] == "pending", (
+                    f"a dropped judge's units are {row['status']} ({row['n']} of "
+                    f"them) after a FRESH Orchestrator dispatched — the drop "
+                    "lived only in the in-memory dispatch state, and the restart "
+                    "re-dispatched a judge the recorded panel excludes (RES-13: "
+                    "the units wait for an operator to re-queue them)"
+                )
     finally:
         store.close()
 
