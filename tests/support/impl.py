@@ -27,9 +27,7 @@ from tests.support.extract_vocabulary import (
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
-    WORKER,
 )
-from tests.support.judge_vocabulary import TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -1315,14 +1313,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # half stays marked with the file and unmarks with #109, below; keying this entry
     # on a symbol that is no longer what blocks it would have fired the gate and sent
     # someone to unmark a test that then fails on `write_fields`.
-    "#78 rerun review": (
-        "symbol",
-        f"{JUDGE_MODULE}:assemble_prompt",
-        (
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit",
-        ),
-    ),
+    #
+    # The `"#78 rerun review"` entry stood here too (`aeh.judge:assemble_prompt` for
+    # the c14 rerun case): #79 landed the id-keyed door, but the test's BINDING
+    # blocker was always #108's `build_review` -- its first require resolves it before
+    # `assemble_prompt` is read -- and the marker is function-level, shared with the
+    # file's other cases. So the c14 case stays marked with the file and unmarks with
+    # the #108/#109 landings, which still register this file; keying the entry on a
+    # symbol that is no longer what blocks it would have fired the gate for the same
+    # reason the `"#78 review"` entry could not stay.
+    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
+    # so its blocker no longer holds. The `[extract]` param it named stays marked for
+    # now — its first require is #109's `write_fields` (the test resolves it before it
+    # reads either consumer), and the marker is function-level, shared with the
+    # `[judge]` param — so the file is unmarked by #109's implementer, together with
+    # the `#109 review` entry below, which is the file's remaining registration.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
     # so its blocker no longer holds. The `[extract]` param it named stays marked for
     # now — its first require is #109's `write_fields` (the test resolves it before it
@@ -1937,24 +1942,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TS30_JUDGE_SYMBOLS` resolved when #78 landed `aeh.judge`, and
     # `test_scoring_isolation.py` lost its marker and rejoined the fast tier. The
     # vocabulary's `TS30_JUDGE_SYMBOLS` tuple stays in `judge_vocabulary.py` — the
-    # "#79" entry's conjunction below is built from the sibling tuple, and the
+    # "#79" entry's conjunction below was built from the sibling tuple, and the
     # shared bet is the two suites'.
-    "#79 judge prompt (TS-30)": (
-        # The numeral file's world also runs the EXTRACT leg to put evidence rows
-        # into the store (the "#71 TS-27" shape: a conjunction over both modules),
-        # so the extract symbols ride this entry — the file stays red until #68's
-        # leg resolves too, not merely the judge surface.
-        "symbols",
-        ",".join(
-            [f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS]
-            + [
-                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
-                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
-                f"{EXTRACT_MODULE}:{WORKER}",
-            ]
-        ),
-        ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
-    ),
+    #
+    # The "#79 judge prompt (TS-30)" entry stood here: its conjunction over
+    # `TS30_PROMPT_SYMBOLS` (plus the extract leg the numeral file's world runs)
+    # resolved when #79 landed `JUDGE_PROMPT_TEMPLATE_V` and the template it pins,
+    # and `test_no_numerals_in_judge_prompt.py` lost its marker and rejoined the
+    # fast tier. The vocabulary's `TS30_PROMPT_SYMBOLS` tuple stays in
+    # `judge_vocabulary.py` — the settled bet is the suites' record of what they
+    # resolve, even with no registry entry left to build from it.
     # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
     #
     # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
