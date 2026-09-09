@@ -50,7 +50,6 @@ from tests.support.synth_vocabulary import (
     CaptureProvider,
     evidence_marker,
     narrative_completion,
-    sampling_params,
     seed_scored_submission,
     synth_ref,
 )

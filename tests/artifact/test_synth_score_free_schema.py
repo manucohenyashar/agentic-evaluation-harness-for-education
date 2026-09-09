@@ -93,12 +93,20 @@ def _synth_tree() -> tuple[Path, ast.AST]:
 
 
 def _imported_modules(tree: ast.AST) -> set[str]:
+    """Modules `aeh.synth` imports, with every spelling resolved: `import aeh.agg`,
+    `from aeh.agg import x`, `from aeh import agg` and the relative forms (synth.py
+    lives in the `aeh` package, so `level > 0` resolves against it)."""
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            base = "aeh." * node.level + (node.module or "")
+            if base:
+                imported.add(base)
+            imported.update(
+                f"{base}.{alias.name}" if base else alias.name for alias in node.names
+            )
     return imported
 
 
@@ -133,7 +141,7 @@ def test_tc_synth_02_l2_request_type_cannot_carry_a_verdict():
     forbidden = {
         name for name in field_names
         if name.lower() in REQUEST_FORBIDDEN_FIELDS
-        or name.lower().split("_") & {w for w in REQUEST_FORBIDDEN_FIELDS}
+        or set(name.lower().split("_")) & REQUEST_FORBIDDEN_FIELDS
     }
     assert not forbidden, (
         f"aeh.synth.{L2_REQUEST} carries verdict-shaped fields {sorted(forbidden)} — "
@@ -170,7 +178,13 @@ def test_tc_synth_03_result_schema_and_write_graph_are_score_free():
     synthesis result, and no write path to `criterion_score` or `submission_grade`
     exists."""
     field_names = _fields_named(RESULT_TYPE, issue=SYNTH_ISSUE)
-    hit = {name.lower() for name in field_names} & RESULT_FORBIDDEN_FIELDS
+    # Word-component match, not exact match: `total_score` and `score_hint` are the
+    # "helpful later change" spellings this prohibition exists for, and an exact-name
+    # intersection waves them through.
+    hit = {
+        name for name in field_names
+        if set(name.lower().split("_")) & RESULT_FORBIDDEN_FIELDS
+    }
     assert not hit, (
         f"aeh.synth.{RESULT_TYPE} carries score-shaped fields {sorted(hit)} — FR-SYNTH-02: "
         "a consumer cannot read a score out of this module because there is nowhere for "

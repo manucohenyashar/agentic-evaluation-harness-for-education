@@ -107,10 +107,15 @@ def _feed(claim_question: str | None = None, twice_question: str | None = None) 
 
 
 def _narrative_rows(store, run_id: str) -> "list[dict]":
-    return store.cohort(COHORT_ID).query(
-        "SELECT * FROM narrative WHERE run_id = :r",
-        r=run_id,
-    )
+    # `store.cohort(...).query()` yields `sqlite3.Row`, which has no `.get` — convert
+    # so the name-agnostic reads below run against plain dicts.
+    return [
+        dict(row)
+        for row in store.cohort(COHORT_ID).query(
+            "SELECT * FROM narrative WHERE run_id = :r",
+            r=run_id,
+        )
+    ]
 
 
 def test_tc_synth_05_stored_narratives_scan_zero_matches(tmp_data_dir):

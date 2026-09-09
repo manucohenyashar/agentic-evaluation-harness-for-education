@@ -111,9 +111,14 @@ def test_adv_11_pattern_matched_claims_rejected_and_the_rate_measured(tmp_data_d
         report = Worker(store, provider, synth_ref()).synthesize_submission(run_id, _SUBMISSION)
 
         # --- hard half: the pattern-matched claim reaches no stored row ------------
-        rows = store.cohort(COHORT_ID).query(
-            "SELECT * FROM narrative WHERE run_id = :r", r=run_id
-        )
+        # `store.cohort(...).query()` yields `sqlite3.Row`, which has no `.get` —
+        # convert so the name-agnostic reads run against plain dicts.
+        rows = [
+            dict(row)
+            for row in store.cohort(COHORT_ID).query(
+                "SELECT * FROM narrative WHERE run_id = :r", r=run_id
+            )
+        ]
         q1_rows = [row for row in rows if row.get("question_id") == "Q1"]
         assert len(q1_rows) == 1, (
             f"{len(q1_rows)} stored narratives for Q1 — a rejected claim must leave "

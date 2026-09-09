@@ -1990,7 +1990,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "#97 synthesis report (TC-SYNTH-08/12)": (
         # The observability cases read the report the worker returns; the
         # conjunction is the worker plus the report type it is assumed to
-        # construct (disclosed in the vocabulary).
+        # construct (disclosed in the vocabulary). The issue's Req column
+        # traces TC-SYNTH-08 to FR-SYNTH-04 (anchoring, #98); the sample/
+        # rate fields themselves are bet on #97's report surface here — if
+        # they ship with #98 instead, drop THIS entry at #97's landing and
+        # re-key the file on #98's check.
         "symbols",
         (
             f"{SYNTH_MODULE}:SynthesisWorker,"
@@ -2004,9 +2008,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/security/synth/test_narrative_tier_r_purge.py",),
     ),
     "#98 ADV-11 attack (ADV-11)": (
-        # The attack drives the worker against the check: both symbols, like the
-        # stored-narratives entry, because either landing alone leaves the case
-        # unrunnable.
+        # The attack drives the worker against the check: both symbols so the
+        # case stays RED-via-NotImplementedYet until BOTH land — at #97 alone
+        # it would already run and fail behaviorally (no check -> the verbatim
+        # claim stores), which is a red the writtenahead gate cannot
+        # distinguish from an implemented failure.
         "symbols",
         (
             f"{SYNTH_MODULE}:has_score_claim,"

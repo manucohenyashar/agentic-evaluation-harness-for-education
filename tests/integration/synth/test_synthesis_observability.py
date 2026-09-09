@@ -109,11 +109,16 @@ def test_tc_synth_12_signals_are_emitted_and_call_count_is_six_per_submission(tm
             "the rejection rate's numerator is the signal a suppress-heavy module "
             "cannot hide"
         )
-        rows = store.cohort(COHORT_ID).query(
-            "SELECT * FROM narrative WHERE run_id = :r AND submission_id = :s",
-            r=run_id,
-            s=_SUBMISSION,
-        )
+        # `store.cohort(...).query()` yields `sqlite3.Row`, which has no `.get` —
+        # convert so the name-agnostic reads run against plain dicts.
+        rows = [
+            dict(row)
+            for row in store.cohort(COHORT_ID).query(
+                "SELECT * FROM narrative WHERE run_id = :r AND submission_id = :s",
+                r=run_id,
+                s=_SUBMISSION,
+            )
+        ]
         assert len(rows) == 6, f"{len(rows)} narrative rows — the fixture's own shape moved"
         expected_mean = sum(len((row.get("text") or "").split()) for row in rows) / len(rows)
         assert abs(report.mean_narrative_length - expected_mean) < 1e-6, (
@@ -140,11 +145,16 @@ def test_tc_synth_08_sample_is_drawn_and_passed_with_size_attached(tmp_data_dir)
     store = open_store(tmp_data_dir)
     try:
         run_id, result = _run_clean(store)
-        rows = store.cohort(COHORT_ID).query(
-            "SELECT * FROM narrative WHERE run_id = :r AND submission_id = :s",
-            r=run_id,
-            s=_SUBMISSION,
-        )
+        # `store.cohort(...).query()` yields `sqlite3.Row`, which has no `.get` —
+        # convert so the name-agnostic reads run against plain dicts.
+        rows = [
+            dict(row)
+            for row in store.cohort(COHORT_ID).query(
+                "SELECT * FROM narrative WHERE run_id = :r AND submission_id = :s",
+                r=run_id,
+                s=_SUBMISSION,
+            )
+        ]
         stored_texts = [row.get("text") or "" for row in rows]
 
         sample = tuple(result.sample)
@@ -165,9 +175,11 @@ def test_tc_synth_08_sample_is_drawn_and_passed_with_size_attached(tmp_data_dir)
         )
         for name in ("citation_validity_rate", "hallucinated_claim_rate"):
             value = getattr(result, name, None)
-            assert value is None or isinstance(value, (int, float)), (
-                f"report.{name}={value!r} — the two measured rates are reported with "
-                "the sample (not gated, §2.3 Q-06); a non-numeric rate is a report "
+            assert isinstance(value, (int, float)) and not isinstance(value, bool), (
+                f"report.{name}={value!r} — this run's sample is non-empty (asserted "
+                "above), so the two rates are measured and reported WITH the sample, "
+                "not None (the vocabulary's None case is the unsampled run, §2.3 Q-06: "
+                "reported, never gated); a missing rate on a sampled run is a report "
                 "that cannot be read"
             )
     finally:
