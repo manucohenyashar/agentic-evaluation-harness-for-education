@@ -1396,7 +1396,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run",
+    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run_control",
+    "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
     "roster", "cohort",
@@ -1415,6 +1416,11 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # would leave the escalation's audit trail behind (FR-STORE-07).
     "escalation_request": Statement("DELETE FROM escalation_request"),
     "circuit_breaker": Statement("DELETE FROM circuit_breaker"),
+    # #61's control-row queue: pause/resume requests name the run they hang from and
+    # are run state — they die with the cohort like the run they address, before the
+    # run row their FK points at (children before parents); a name the registry lacks
+    # would leave the operator's control history behind (FR-STORE-07).
+    "run_control": Statement("DELETE FROM run_control"),
     # #57's ledger tables: the run registry is run state (it names the cohort, the package
     # version and the frozen configuration) and dies with the cohort like every other Tier
     # C/R row — a name the registry lacks would leave a run's provenance behind.
@@ -1474,6 +1480,10 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     # is read by the same walk without an edit here.
     "escalation_request": Statement("SELECT * FROM escalation_request"),
     "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
+    # #61's control-row queue: no blob references (reason strings name conditions,
+    # never student bytes), but the scan registry covers every swept name so a
+    # column a future migration adds is read by the same walk without an edit here.
+    "run_control": Statement("SELECT * FROM run_control"),
     "run": Statement("SELECT * FROM run"),
     "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),

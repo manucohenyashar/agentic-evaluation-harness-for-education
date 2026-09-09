@@ -243,46 +243,46 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the failure record with its changes() read. Lines moved with #59's sweep-plan
     # additions, #60's random-arm block in enumerate_units and #60's escalation
     # restructure; the sites are the same statements as #57/#58's.
-    "aeh.orch:1758",
-    "aeh.orch:1979",
-    "aeh.orch:1988",
+    "aeh.orch:1761",
+    "aeh.orch:1982",
+    "aeh.orch:1991",
     # #61's lifecycle sites (every one from ORCH_STATEMENTS, keyword-parameterized):
     # start's displayed-estimate write and its guarded pending→running transition with
     # its changes() read; pause's control-row insert, its already-paused satisfied-
     # request arm and the explicit resume's supersede write; the control-read pass's
     # applied marker; the shared guarded run transition with its changes() read. Lines
     # moved with #61's lifecycle block; the #57/#58 statements are the same as ever.
-    "aeh.orch:2070",
-    "aeh.orch:2076",
-    "aeh.orch:2081",
-    "aeh.orch:2124",
-    "aeh.orch:2136",
-    "aeh.orch:2197",
-    "aeh.orch:2288",
-    "aeh.orch:2300",
-    "aeh.orch:2324",
-    "aeh.orch:2332",
+    "aeh.orch:2073",
+    "aeh.orch:2079",
+    "aeh.orch:2084",
+    "aeh.orch:2127",
+    "aeh.orch:2139",
+    "aeh.orch:2200",
+    "aeh.orch:2291",
+    "aeh.orch:2303",
+    "aeh.orch:2327",
+    "aeh.orch:2335",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:2736",
-    "aeh.orch:2751",
-    "aeh.orch:2755",
-    "aeh.orch:2766",
-    "aeh.orch:2774",
-    "aeh.orch:2783",
-    "aeh.orch:2793",
-    "aeh.orch:2797",
-    "aeh.orch:3001",
-    "aeh.orch:3008",
-    "aeh.orch:3059",
-    "aeh.orch:3063",
-    "aeh.orch:3113",
-    "aeh.orch:3118",
-    "aeh.orch:3169",
-    "aeh.orch:3175",
+    "aeh.orch:2739",
+    "aeh.orch:2754",
+    "aeh.orch:2758",
+    "aeh.orch:2769",
+    "aeh.orch:2777",
+    "aeh.orch:2786",
+    "aeh.orch:2796",
+    "aeh.orch:2800",
+    "aeh.orch:3004",
+    "aeh.orch:3011",
+    "aeh.orch:3062",
+    "aeh.orch:3066",
+    "aeh.orch:3116",
+    "aeh.orch:3121",
+    "aeh.orch:3172",
+    "aeh.orch:3178",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -294,22 +294,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # queue-depth read. The restructure moved the queue's drain into the claim
     # pass's dispatch gate, so the drain's reads are gone and the key's run
     # resolution arrived.
-    "aeh.orch:3281",
-    "aeh.orch:3339",
-    "aeh.orch:3355",
-    "aeh.orch:3375",
-    "aeh.orch:3389",
-    "aeh.orch:3395",
-    "aeh.orch:3413",
-    "aeh.orch:3450",
-    "aeh.orch:3466",
-    "aeh.orch:3488",
+    "aeh.orch:3284",
+    "aeh.orch:3342",
+    "aeh.orch:3358",
+    "aeh.orch:3378",
+    "aeh.orch:3392",
+    "aeh.orch:3398",
+    "aeh.orch:3416",
+    "aeh.orch:3453",
+    "aeh.orch:3469",
+    "aeh.orch:3491",
     # The lines moved again with #61's lifecycle and ceiling blocks (the #60
     # statements are the same as ever).
-    "aeh.orch:3535",
-    "aeh.orch:3539",
-    "aeh.orch:3618",
-    "aeh.orch:3970",
+    "aeh.orch:3538",
+    "aeh.orch:3542",
+    "aeh.orch:3621",
+    "aeh.orch:3973",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -428,8 +428,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4072",
     "aeh.pkg:4069",
     "aeh.pkg:4086",
-    "aeh.store:1735",
-    "aeh.store:2491",
+    "aeh.store:1745",
+    "aeh.store:2501",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
