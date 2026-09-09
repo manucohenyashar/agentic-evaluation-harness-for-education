@@ -1648,6 +1648,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_signals_data.py",
         ),
     ),
+    "#92 IntegrityGate+IntegritySignals+aggregate (TS-66 C03 fail-closed)": (
+        # The safety-property case: the sweep and the step-3 honesty cells run through
+        # the gate (#74), the step-2 dropped-signal differential and its
+        # unknown-therefore-fine cap drive M-AGG's confidence surface (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        (
+            "tests/contract/integ/test_fail_closed.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
