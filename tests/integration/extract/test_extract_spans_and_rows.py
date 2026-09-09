@@ -25,11 +25,11 @@ Oracles:
   `resolved_build` the provider reported on the completion (`FR-PROV-04`: the build that
   actually answered, never the one requested).
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"`, a `symbols` conjunction over the module names this
-suite resolves (see `tests/support/extract_vocabulary.py` — design §3.8 pins no Python
-names, so every one is an invented-and-used-together name, the `record_run_start`
-precedent).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, a conjunction over the module names this
+suite resolves, built from `tests/support/extract_vocabulary.py` — design §3.8 pins
+no Python names, so every one is an invented-and-used-together name, the
+`record_run_start` precedent) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 
