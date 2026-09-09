@@ -1709,6 +1709,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
         ),
     ),
+    "#92 gate+signals+aggregate (TS-66 C09 OCR intersection and cap)": (
+        # The discriminating fixtures run the real gate over injected regions (#74);
+        # the cap half drives M-AGG's aggregate against unanimity (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate"),
+        (
+            "tests/contract/integ/test_ct_integ_ocr_intersection.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
