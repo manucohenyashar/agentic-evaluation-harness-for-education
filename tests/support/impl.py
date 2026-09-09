@@ -1768,6 +1768,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_rate_metrics.py",
         ),
     ),
+    "#74 gate+signals, #92 aggregate+threshold (TS-66 C15 non-promise)": (
+        # The premise limb runs the real gate; the consumer limbs construct the
+        # all-clean set (C03's complete shape) and feed it to the pure aggregate
+        # surface. The M-CONSOLE presentation half is deferred to the console
+        # suite (#122) — disclosed in the file.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        (
+            "tests/contract/integ/test_ct_integ_non_promise.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
