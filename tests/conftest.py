@@ -28,8 +28,11 @@ from tests.support.store_spy import StoreSpy
 # store enforces at the open site (`IncompleteMigrationChainError`, #234). #269's
 # `_VersionOrderedRegistry` already makes each chain's *order* independent of import order;
 # these imports are about *completeness* — without them a module importing only `aeh.store`
-# would open files on a truncated chain, and the open site would refuse.
+# would open files on a truncated chain, and the open site would refuse. Five modules
+# contribute: `aeh.extract` owns Cohort's last migration (11) and pulls `aeh.ingest` and
+# `aeh.orch` in transitively, but is listed explicitly.
 import aeh.det  # noqa: E402
+import aeh.extract  # noqa: E402
 import aeh.ingest  # noqa: E402
 import aeh.orch  # noqa: E402
 import aeh.pkg  # noqa: E402

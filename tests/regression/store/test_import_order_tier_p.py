@@ -2,12 +2,13 @@
 
 **The footgun.** The chains in `TIER_MIGRATIONS` are *concatenated at import time* by the
 modules that own the schema they add — `aeh.pkg` and `aeh.det` for Tier P, `aeh.ingest`,
-`aeh.det` and `aeh.orch` for Cohort, `aeh.det` for Tier D — so the chain an open sees is only
-as long as the list of contributing modules the process has imported so far. A process that
-opens a Tier P file before those imports builds the file at the base schema (version 1), and
-the columns the missing migrations would have added surface **later, far from the open**, as
-`sqlite3.OperationalError: no such column: parent_version_id` — #46's probe, disclosed in
-PR #208, found suite-wide by #94 (whose seeds chose between the two worlds).
+`aeh.det`, `aeh.orch` and `aeh.extract` for Cohort, `aeh.det` for Tier D — so the chain an
+open sees is only as long as the list of contributing modules the process has imported so
+far. A process that opens a Tier P file before those imports builds the file at the base
+schema (version 1), and the columns the missing migrations would have added surface **later,
+far from the open**, as `sqlite3.OperationalError: no such column: parent_version_id` —
+#46's probe, disclosed in PR #208, found suite-wide by #94 (whose seeds chose between the two
+worlds).
 
 **The guard** (#234): `COMPLETE_SCHEMA_VERSIONS` pins the version each tier must reach once
 every contributing module is imported, and `_open_tier` refuses an open whose in-process chain
@@ -21,7 +22,11 @@ sorts each tier's chain at write time, and the pin test below asserts that guara
 *completeness* one survives #269, because a module that was never imported contributes no
 migrations at all and sorting cannot add what was never registered — on bare main (PR #269
 landed) a fresh interpreter importing only `aeh.store` still opens a Tier P file at the base
-schema and #46's probe still fails at a distance. The refusal below pins that world.
+schema and #46's probe still fails at a distance. The refusal below pins that world. (The
+same gate caught the fifth contributor the original draft of this file missed: #269's
+`aeh.extract` appends Cohort migration 11, so the pin moved from 10 to 11 with it —
+`COMPLETE_SCHEMA_VERSIONS[Cohort] = 10` failed this file the moment the suites ran on the
+merged tree, which is the pin-rot gate working as documented.)
 
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the
@@ -64,6 +69,7 @@ import sqlite3
 import sys
 
 import aeh.det  # noqa: F401
+import aeh.extract  # noqa: F401
 import aeh.ingest  # noqa: F401
 import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
@@ -154,6 +160,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     ascending version order — `TC-STORE-06`'s no-reverse-step as a property of the registry
     (`_VersionOrderedRegistry`), not of anyone's collection order."""
     import aeh.det  # noqa: F401
+    import aeh.extract  # noqa: F401
     import aeh.ingest  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401

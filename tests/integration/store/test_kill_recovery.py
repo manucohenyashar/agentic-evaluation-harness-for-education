@@ -47,8 +47,8 @@ CHILD = textwrap.dedent(
     from aeh.store import Statement, open_store
     # TC-STORE-25: the migration chains concatenate at import time, so a fresh process
     # imports every contributing module before the first open (#234) — the open site
-    # refuses the truncated chain otherwise.
-    import aeh.det, aeh.ingest, aeh.orch, aeh.pkg  # noqa: E401
+    # refuses the truncated chain otherwise. `aeh.extract` owns Cohort's last migration.
+    import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg  # noqa: E401
 
     store = open_store(sys.argv[1])
     handle = store.cohort("c-kill")

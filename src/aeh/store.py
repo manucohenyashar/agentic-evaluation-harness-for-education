@@ -283,18 +283,21 @@ class IncompleteMigrationChainError(StoreError):
     """The process opened a tier before every module that contributes its migrations was imported.
 
     The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
-    the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det` and
-    `aeh.orch`; Tier D: `aeh.det` — so the chain an open sees is only as long as the list of
-    contributing modules the process has imported so far. A file opened on the short chain
+    the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det`,
+    `aeh.orch` and `aeh.extract`; Tier D: `aeh.det` — so the chain an open sees is only as long
+    as the list of contributing modules the process has imported so far. A file opened on the
+    short chain
     builds at the base schema, and the columns the missing migrations would have added surface
     **later, far from the open**, as `sqlite3.OperationalError: no such column:
     parent_version_id` — #46's probe, disclosed in PR #208 and found suite-wide by #94, whose
     seeds chose between the two worlds. #234's guard (`COMPLETE_SCHEMA_VERSIONS`, checked by
     `_open_tier` before the first directory is made and before any connection is opened) turns
     that distant phantom into a refusal **at the open site, naming the cause**. The fix on the
-    caller's side is one line — `import aeh.det, aeh.ingest, aeh.orch, aeh.pkg` registers every
-    tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not import `aeh.det`,
-    and Tier P's chain is short by one migration without it).
+    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg`
+    registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
+    import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
+    pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's last
+    migration).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1375,7 +1378,7 @@ def current_schema_version(tier: Tier) -> int:
 #: same phantom bug in mirror image.
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 10,
+    Tier.COHORT: 11,
     Tier.DURABLE: 4,
 }
 
@@ -1932,13 +1935,13 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             f"{implemented}, but this binary implements {complete} for the tier once every "
             f"module that contributes migrations has been imported. The chains in "
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
-            f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det and "
-            f"aeh.orch; Tier D: aeh.det), so this process has imported some of them and not "
-            f"the rest. Import the owning modules before the first open — `import aeh.det, "
-            f"aeh.ingest, aeh.orch, aeh.pkg` registers every tier's complete chain — or the "
-            f"file builds short of the full schema and the missing columns surface later, far "
-            f"from this open, as a distant `no such column` (#46's probe: `no such column: "
-            f"parent_version_id`; #234)."
+            f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
+            f"aeh.orch and aeh.extract; Tier D: aeh.det), so this process has imported some "
+            f"of them and not the rest. Import the owning modules before the first open — "
+            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg` registers every "
+            f"tier's complete chain — or the file builds short of the full schema and the "
+            f"missing columns surface later, far from this open, as a distant `no such "
+            f"column` (#46's probe: `no such column: parent_version_id`; #234)."
         )
     if read_only and not path.exists():
         raise ConfigurationProblem(
