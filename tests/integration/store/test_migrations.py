@@ -46,6 +46,10 @@ import aeh.extract  # noqa: F401 -- M-EXTRACT owns cohort 11 (the evidence paylo
 # resolved-build columns; #60's orch_escalation_ledger took 10 first, so the next free
 # number is 11); imported after det so the registry walks in owner order and
 # the golden describes the full binary, extract's columns included.
+import aeh.judge  # noqa: F401 -- M-JUDGE owns cohort 12 (the verdict's band_ordinal and
+# self_confidence columns; #78), imported after extract for the same owner-order rule —
+# without it the registry this test walks depends on whether an earlier test in the
+# session happened to import aeh.judge, and the golden would be order-dependent.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

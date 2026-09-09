@@ -312,9 +312,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the verdict row that commits together with it (the extract shape: every
     # statement a declared constant in `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`,
     # keyword-parameterized).
-    "aeh.judge:1119",
-    "aeh.judge:1124",
-    "aeh.judge:1126",
+    "aeh.judge:1143",
+    "aeh.judge:1148",
+    "aeh.judge:1150",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being

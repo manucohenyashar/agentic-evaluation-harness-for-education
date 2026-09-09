@@ -142,7 +142,7 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         "completed_at FROM run WHERE run_id = :run_id"
     ),
     "select_evidence": Statement(
-        "SELECT e.evidence_id, e.payload, e.resolved_build "
+        "SELECT e.evidence_id, e.payload "
         "FROM evidence e JOIN work_unit w ON w.work_id = e.work_id "
         "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
         "AND w.criterion_id = :criterion_id AND w.stage = :stage "
@@ -784,7 +784,9 @@ def _pseudonymize(text: str, name: Any, ref: Any) -> str:
     return text
 
 
-def _rubric_of(store: Any, run_row: Any, criterion_id: str) -> CriterionView:
+def _rubric_of(
+    store: Any, run_row: Any, criterion_id: str
+) -> tuple[CriterionView, QuestionView]:
     """The criterion's rubric as the request carries it, through the shipped
     `PackageCatalog`: the wording (the criterion's question prompt text — the package's
     criterion rows carry identity, not prose) and the declared band set as names,
@@ -886,8 +888,15 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
     question = QuestionView(prompt_text="", reference_solution="")
     evidence: tuple = ()
     dependency_evidence: tuple = ()
+    # The view's ref slot starts empty — the pure door's arm rows must carry no
+    # identity bytes beyond the ids (TC-JUDGE-05's leaf scan runs over exactly this
+    # shape). It fills below, on the store door only.
+    view_ref = ""
 
     if store is not None:
+        # The lease resolved the identity (the claim select carries `student_ref`,
+        # orch.py's work-unit claim) — the store door is where the view's slot fills.
+        view_ref = str(student_ref)
         cohort = _find_cohort(store, work_id)
         if transcript is None:
             head = _current_document(store, submission_id)
@@ -900,15 +909,18 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
         if run_rows:
             criterion, question = _rubric_of(store, run_rows[0], str(criterion_id))
             evidence = _evidence_spans(cohort, str(run_id), str(submission_id), str(criterion_id))
-            dependency_evidence = tuple(
-                DependencyEvidence(
-                    criterion_id=str(parent),
-                    spans=_evidence_spans(
-                        cohort, str(run_id), str(submission_id), str(parent)
-                    ),
-                )
+            # One evidence query per dependency parent: the spans are read once and
+            # carried, or the parent is dropped when extraction wrote none for it (a
+            # parent with no evidence contributes nothing — no entry, never a guess).
+            parent_spans = (
+                (str(parent), _evidence_spans(
+                    cohort, str(run_id), str(submission_id), str(parent)))
                 for parent in _dependency_parents(store, run_rows[0], str(criterion_id))
-                if _evidence_spans(cohort, str(run_id), str(submission_id), str(parent))
+            )
+            dependency_evidence = tuple(
+                DependencyEvidence(criterion_id=cid, spans=spans)
+                for cid, spans in parent_spans
+                if spans
             )
     if not isinstance(transcript, str):
         # The pure door's arm rows carry no words: an empty submission is what the
@@ -923,7 +935,7 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
         evidence=evidence,
         dependency_evidence=dependency_evidence,
         submission=SubmissionView(
-            submission_id=str(submission_id), student_ref=""
+            submission_id=str(submission_id), student_ref=view_ref
         ),
         submission_text=transcript,
     )
@@ -1110,11 +1122,23 @@ class ScoringWorker:
                 "constructor was given"
             )
         cohort = _find_cohort(self._store, result.work_id)
+        # The identity dispatch actually used comes first (the result carries what the
+        # provider call was addressed by); the unit's own naming next; the worker's
+        # bound judge last — and a judge that names no build identity is a
+        # `JudgmentError` here, not the orchestrator's escalation error: persist is
+        # the judge boundary, and its failures are judgment failures.
         judge_id = (
-            _field_of(unit, "judge")
+            result.judge_id
+            or _field_of(unit, "judge")
             or _field_of(unit, "judge_id")
-            or _judge_id_of(self._judge)
         )
+        if not judge_id:
+            try:
+                judge_id = _judge_id_of(self._judge)
+            except Exception as error:
+                raise JudgmentError(
+                    f"persist cannot name the judge for {result.work_id[:12]}: {error}"
+                ) from error
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["mark_done"],

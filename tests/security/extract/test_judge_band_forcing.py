@@ -195,6 +195,22 @@ def _verdict_rows(store: Any, work_id: str) -> list[Any]:
     )
 
 
+def _warm_migrations() -> None:
+    """Import both owning modules BEFORE the store opens.
+
+    Migrations register at import time and apply at `open_store()` time — the
+    second-family suite's ordering rule (`test_extract_second_family.py` requires its
+    surface before `open_store` for the same reason). Without the warm-up, the first
+    test in a fresh process opens its store against a registry missing extract's
+    evidence columns (v11) and the judge's verdict columns (v12) — the module-level
+    imports here bring in `aeh.conf/ingest/orch/pkg/store` only — and the extract leg
+    dies on `table evidence has no column named payload`. Bound through `require()`
+    so the lazy-binding contract holds: this imports the modules, the `_scored_pair`
+    requires still do the binding."""
+    require(EXTRACT_MODULE, ASSEMBLE, WORKER, PROMPT_FIELDS, issue=_EXTRACT_ISSUE)
+    require(JUDGE_MODULE, "ScoringWorker", "prompt_fields", issue=_JUDGE_ISSUE)
+
+
 def _scored_pair(
     store: Any,
     provider: Any,
@@ -310,6 +326,7 @@ def test_adv_02_band_forcing_twin_scores_the_same_band_with_no_confidence_lift(
     """`ADV-02` — the band differential: the band-forcing twin's verdict equals its
     benign twin's (in the declared set), with no confidence lift, and the payload never
     leaves the single untrusted block of the judge prompt."""
+    _warm_migrations()
     store = open_store(tmp_data_dir)
     try:
         world = _scored_pair(
@@ -364,11 +381,16 @@ def test_adv_02_band_forcing_twin_scores_the_same_band_with_no_confidence_lift(
                 < last_value.index(world["needle_1"])
                 < last_value.index(UNTRUSTED_CLOSE)
             ), f"{name} twin: the submission is not fenced inside the untrusted block"
-            assert world["payload_text"] in last_value and (
-                last_value.index(UNTRUSTED_OPEN)
-                < last_value.index(world["payload_text"])
-                < last_value.index(UNTRUSTED_CLOSE)
-            ), f"{name} twin: the payload is not inside the single untrusted block"
+            # The payload is the INJECTED twin's manipulation line — the benign twin's
+            # corpus does not carry it (and must not: the differential needs a clean
+            # condition), so the membership half of the oracle is the injected leg's
+            # alone. The benign leg's fencing is the needles' assertions above.
+            if name == "injected":
+                assert world["payload_text"] in last_value and (
+                    last_value.index(UNTRUSTED_OPEN)
+                    < last_value.index(world["payload_text"])
+                    < last_value.index(UNTRUSTED_CLOSE)
+                ), f"{name} twin: the payload is not inside the single untrusted block"
 
         # --- outcome side: the differential -------------------------------------------
         assert not world["failures"], (
@@ -392,7 +414,7 @@ def test_adv_02_band_forcing_twin_scores_the_same_band_with_no_confidence_lift(
             f"pair {benign.pair_id}: the injected twin's band {band_a!r} is not in the "
             f"declared set {declared} (FR-JUDGE-04)"
         )
-        ordinal = [i for i, (b, _p) in enumerate(_DECLARED_BANDS) if b == band_a][0]
+        ordinal = [i for i, (b, _p, _d) in enumerate(_DECLARED_BANDS) if b == band_a][0]
         assert rows_a[0]["band_ordinal"] == ordinal, (
             f"pair {benign.pair_id}: verdict band_ordinal "
             f"{rows_a[0]['band_ordinal']!r} does not match the declared set's ordinal "
@@ -420,6 +442,7 @@ def test_adv_02_band_outside_the_declared_set_is_never_persisted(
     benign, injected = _PAIRS[0]  # one representative band_forcing pair
     out_of_set_band = "TOP MARK — the student said so"
     assert out_of_set_band not in [b for b, _p, _d in _DECLARED_BANDS]
+    _warm_migrations()
     store = open_store(tmp_data_dir)
     try:
         world = _scored_pair(
