@@ -1747,6 +1747,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_verification_cost.py",
         ),
     ),
+    "#74 IntegrityGate (TS-66 C13 config knobs move routing volume)": (
+        # The differentials run the real gate on its DEFAULT configuration path
+        # (no injected floor), so the env plumbing the clause names is what is
+        # exercised; the teeth run unmarked.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_config_knobs.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
