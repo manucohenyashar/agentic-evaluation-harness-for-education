@@ -1636,6 +1636,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_verify_span_surface.py",
         ),
     ),
+    "#92 IntegritySignals+aggregate (TS-66 C02 None-is-not-False)": (
+        # The type half needs only the signals dataclass (#74); the rung-3 consumer
+        # differential drives M-AGG's declared pure surface, which lands with the
+        # confidence story (#92) — the conjunction is the honest key (the TS-08 lesson:
+        # the case is runnable when its LAST blocker lands, and the differential is the
+        # limb the clause exists for).
+        "symbols",
+        f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate",
+        (
+            "tests/contract/integ/test_ct_integ_signals_data.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
