@@ -22,8 +22,9 @@ The four seams (`CLAUDE.md`):
    acceptance run. A PDF is never rasterized unsanitized: the sanitizer is a required
    constructor argument, so there is no configuration that skips it.
 3. **Env-gated knobs** — `HARNESS_INGEST_DPI` (the pinned rasterization DPI),
-   `HARNESS_INGEST_MAX_TOKENS_PER_PAGE`, and #42's adversarial-input ceilings
-   (`HARNESS_INGEST_STRIP_ACTIVE_CONTENT`, `HARNESS_INGEST_MAX_PAGES_PER_DOC`,
+   `HARNESS_INGEST_MAX_TOKENS_PER_PAGE`, the transcription strike limit
+   (`HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS`, #220), and #42's adversarial-input
+   ceilings (`HARNESS_INGEST_STRIP_ACTIVE_CONTENT`, `HARNESS_INGEST_MAX_PAGES_PER_DOC`,
    `HARNESS_INGEST_MAX_DECOMPRESSED_BYTES`, `HARNESS_INGEST_MAX_IMAGE_PIXELS`,
    `HARNESS_INGEST_MAX_FILE_SECONDS`, `HARNESS_INGEST_MAX_EMBEDDED_OBJECTS`);
    production values are the defaults.
@@ -68,6 +69,7 @@ __all__ = [
     "IngestDuplicateError",
     "IngestError",
     "IngestSanitizeError",
+    "IngestTranscriptionError",
     "IngestGapError",
     "IngestOrderError",
     "IngestReport",
@@ -501,6 +503,23 @@ class IngestSanitizeError(IngestError):
     the uploading teacher (`FR-INGEST-32`). Any exception raised inside the
     sanitizer — declared or not — is wrapped into this type, so every failure mode
     resolves to refusal rather than to processing."""
+
+
+class IngestTranscriptionError(IngestError):
+    """A page's transcription failed on every attempt of the strike limit
+    (`NFR-INGEST-02`, #220): the model channel never produced a reading, so the
+    page has NO transcript — the unit fails, never the run. Carries the
+    per-attempt log (the strike count is observable, CLAUDE.md seam 4); the
+    submission path catches it and records an honest quarantine with the gate
+    columns marked, and the cohort's remaining submissions continue. A
+    sanitizer refusal never reaches this path — that refusal is raised before
+    any model call and keeps its own no-retry semantics (`FR-INGEST-33`, #42)."""
+
+    def __init__(self, message: str, attempts: list[dict] | None = None):
+        super().__init__(message)
+        #: The per-attempt strike log: page, attempt number, error — and
+        #: `outcome: recovered` on the strike a later attempt survived.
+        self.attempts: list[dict] = list(attempts or [])
 
 
 def _configured_dpi() -> int:
@@ -2455,6 +2474,11 @@ class Ingestor:
             raise IngestError("ingest_document needs at least one source blob.")
         document_id = f"doc-{uuid.uuid4().hex[:12]}"
         transcriber_ref: str | None = None
+        # The per-page transcription strike log (#220): strikes and recoveries
+        # land in the report's stage detail when a report_detail dict is given.
+        attempt_log: list[dict] = (
+            [] if report_detail is None
+            else report_detail.setdefault("transcription_attempts", []))
         page_images: list[PageImage] = []
         page_records: list[dict] = []
         dpi = _configured_dpi()
@@ -2497,7 +2521,8 @@ class Ingestor:
                 pages_used += len(pages)
                 page_images.extend(pages)
                 for page in pages:
-                    completion = self._transcribe_page(page, blob_hash)
+                    completion = self._transcribe_page(page, blob_hash,
+                                                       attempt_log)
                     if (transcriber_ref is not None
                             and completion.resolved_build != transcriber_ref):
                         raise IngestError(
@@ -2707,7 +2732,8 @@ class Ingestor:
                 # VLM call per attempt.
                 re_requests += 1
                 completion = self._transcribe_page(record["image"],
-                                                   record["blob_hash"])
+                                                   record["blob_hash"],
+                                                   attempt_log)
                 record["transcript"] = completion.text
                 if kind == "submission":  # the FR-INGEST-35 demarcation gate, not a path
                     record["transcript"] = _mark_untrusted_content(
@@ -2886,6 +2912,27 @@ class Ingestor:
         except ValueError as error:
             raise IngestError(
                 f"{EVALUATIVE_RETRIES_ENV}={raw!r} is not an integer.") from error
+
+    @staticmethod
+    def _configured_transcription_attempts() -> int:
+        """The strike limit for one page's transcription (`NFR-INGEST-02`, #220),
+        read AT CALL TIME so a slower test box can tune it without a code change
+        (CLAUDE.md seam 3). At least one attempt: zero would quarantine a page
+        the model was never asked to read."""
+        raw = os.environ.get(TRANSCRIPTION_ATTEMPTS_ENV)
+        if not raw:
+            return DEFAULT_TRANSCRIPTION_ATTEMPTS
+        try:
+            attempts = int(raw)
+        except ValueError as error:
+            raise IngestError(
+                f"{TRANSCRIPTION_ATTEMPTS_ENV}={raw!r} is not an integer."
+            ) from error
+        if attempts < 1:
+            raise IngestError(
+                f"{TRANSCRIPTION_ATTEMPTS_ENV}={attempts} is below 1 — a page is "
+                "attempted at least once before it strikes out.")
+        return attempts
 
     @staticmethod
     def _configured_float(env: str, default: float) -> float:
@@ -3610,6 +3657,17 @@ class Ingestor:
                     submission_id=submission_id, report_detail=raster_detail,
                 )
                 gates["v1"] = "pass"
+            except IngestTranscriptionError as error:
+                # The strike limit exhausted (#220, `NFR-INGEST-02`): the page
+                # has NO transcript, so THIS submission quarantines and the
+                # cohort's remaining submissions continue — the exception never
+                # escapes raw and the row is never a NULL-gates zombie. The
+                # columns say what is true: the file passed V0, the page stage
+                # failed, the ladder never reached V2+; `unreadable` is the
+                # operator's diagnosis — the page could not be read.
+                quarantine("v1", "unreadable", {
+                    "gate": "v1", "finding": str(error),
+                    "attempts": error.attempts})
             except (IngestGapError, IngestDuplicateError) as error:
                 # V1 page completeness (FR-INGEST-22): #37's gap and duplicate
                 # findings become gate outcomes here — quarantined, naming the
@@ -3841,7 +3899,11 @@ class Ingestor:
         )
         detail = {"findings": findings, "v2_failures": v2_failures,
                   "neutralized": neutralized, "rasters": raster_detail.get(
-                      "rasters")}
+                      "rasters"),
+                  # #220: the per-page strike log — which pages struck, on
+                  # which attempt, and whether a later attempt recovered.
+                  "transcription_attempts": raster_detail.get(
+                      "transcription_attempts", [])}
         if self._residency is not None:
             # The F11 seam (#222): a slot on a result is never bare — the
             # report carries the slot's stage detail (holder, waiter count)
@@ -4405,9 +4467,17 @@ class Ingestor:
 
     # -- the transcription step ------------------------------------------------------------------
 
-    def _transcribe_page(self, page: PageImage, source_hash: str) -> Completion:
-        """Exactly ONE VLM call for one page (`FR-INGEST-02`): the payload carries the
-        page raster and the pinned transcription prompt; `M-PROV` answers."""
+    def _transcribe_page(self, page: PageImage, source_hash: str,
+                         attempt_log: list | None = None) -> Completion:
+        """One VLM call for one page (`FR-INGEST-02`), retried to the strike
+        limit (`NFR-INGEST-02`, #220): a model outage strikes and is re-asked
+        up to `HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS` times (read at call
+        time); exhausting the limit raises `IngestTranscriptionError` — the
+        caller quarantines the unit, never the run. The payload carries the
+        page raster and the pinned transcription prompt; `M-PROV` answers.
+        Each strike (and a recovery) is appended to `attempt_log` when given —
+        the strike count is observable in the result's stage detail, not just
+        internal (CLAUDE.md seam 4)."""
         payload = PromptPayload(fields=(
             ("instruction", TRANSCRIPTION_PROMPT),
             ("prompt_template_version", TRANSCRIPTION_PROMPT_VERSION),
@@ -4419,7 +4489,39 @@ class Ingestor:
         ))
         params = SamplingParams(
             temperature=0.0, max_tokens=_configured_max_tokens())
-        return self._provider.complete(payload, self._model_ref, params)
+        attempts = self._configured_transcription_attempts()
+        strikes: list[dict] = []
+        for attempt in range(1, attempts + 1):
+            try:
+                completion = self._provider.complete(payload, self._model_ref,
+                                                     params)
+            except Exception as error:  # noqa: BLE001 -- any model-channel
+                # failure is a strike (NFR-INGEST-08's fail-closed reading):
+                # the channel never produced a reading, whatever the cause.
+                strikes.append({
+                    "page_no": page.page_no, "blob_hash": source_hash[:12],
+                    "attempt": attempt, "error": f"{type(error).__name__}: "
+                                                 f"{error}"})
+                LOGGER.warning(
+                    "transcription attempt %d/%d failed for page %d of %s: %s",
+                    attempt, attempts, page.page_no, source_hash[:12], error)
+                continue
+            if strikes and attempt_log is not None:
+                attempt_log.extend(
+                    [{**strike,
+                      **({"outcome": "recovered"}
+                         if strike is strikes[-1] else {})}
+                     for strike in strikes])
+            return completion
+        if attempt_log is not None:
+            attempt_log.extend(strikes)
+        raise IngestTranscriptionError(
+            f"page {page.page_no} of source {source_hash[:12]} failed "
+            f"transcription on all {attempts} attempt(s); last error: "
+            f"{strikes[-1]['error']}. The page has no transcript — the "
+            "submission quarantines, the cohort continues (NFR-INGEST-02).",
+            attempts=strikes,
+        ) from None
 
     @staticmethod
     def _assemble(parts: Sequence[str]) -> str:

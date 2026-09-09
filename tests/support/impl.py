@@ -30,6 +30,7 @@ from tests.support.extract_vocabulary import (
     TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
+from tests.support.judge_vocabulary import TS30_JUDGE_SYMBOLS, TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -1902,6 +1903,122 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbol",
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/integration/orch/test_ledger_capacity_progress.py",),
+    ),
+    # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
+    #
+    # Two files, one per owning story of the surface they resolve. The isolation
+    # file is pure rung 0 and waits on #78's worker/request pair; the numeral file
+    # renders through #78's worker AND #79's version-pinned template, so its key is
+    # a conjunction over both stories' symbols (the "#71" precedent: the render
+    # alone does not make the case runnable). The symbol tuples live in
+    # `tests/support/judge_vocabulary.py` — the single bet the two suites share;
+    # that module imports nothing from here, so the key import is acyclic.
+    "#78 scoring isolation (TS-30)": (
+        "symbols",
+        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_JUDGE_SYMBOLS),
+        ("tests/artifact/test_scoring_isolation.py",),
+    ),
+    "#79 judge prompt (TS-30)": (
+        # The numeral file's world also runs the EXTRACT leg to put evidence rows
+        # into the store (the "#71 TS-27" shape: a conjunction over both modules),
+        # so the extract symbols ride this entry — the file stays red until #68's
+        # leg resolves too, not merely the judge surface.
+        "symbols",
+        ",".join(
+            [f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS]
+            + [
+                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
+                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
+                f"{EXTRACT_MODULE}:{WORKER}",
+            ]
+        ),
+        ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
+    ),
+    # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
+    #
+    # The design declares no M-SYNTH Protocol (the `#97 TS-24 synthesis boundary
+    # (RES-07)` entry above records the grep), so every key is an
+    # invented-and-disclosed name — settled in `tests/support/synth_vocabulary.py`
+    # (the extract_vocabulary precedent), one rename there per reconciled symbol.
+    # Ownership follows the stories' acceptance criteria: #97 ships the two-level
+    # boundary, the request types, the completeness gate, the narrative schema and
+    # the report; #98 ships the score-claim prohibition (the check and the
+    # configured pattern list) and the evidence anchoring.
+    "#97 two-level boundary (TC-SYNTH-01)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_two_level_boundary.py",),
+    ),
+    "#97 request and result types (TC-SYNTH-02/03/07)": (
+        # All three types in one conjunction: the artifact file's three cases
+        # resolve together, and a Protocol shell satisfies none of them (each is
+        # introspected field by field, which is the assertion itself).
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:L1Request,"
+            f"{SYNTH_MODULE}:L2Request,"
+            f"{SYNTH_MODULE}:SynthesisResult"
+        ),
+        ("tests/artifact/test_synth_score_free_schema.py",),
+    ),
+    "#98 score-claim check (TC-SYNTH-04)": (
+        # The rung-0 predicate, the verify_span precedent for a module-level
+        # pure entry the pattern-scan cases call.
+        "symbol",
+        f"{SYNTH_MODULE}:has_score_claim",
+        ("tests/unit/synth/test_score_claim_patterns.py",),
+    ),
+    "#97+#98 stored narratives (TC-SYNTH-05/06)": (
+        # The scan and the suppression ladder both need the module AND the check:
+        # runnable when the LAST lands, whichever story that is.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/integration/synth/test_score_claim_suppression.py",),
+    ),
+    "#97 completeness gate and sentinel (TC-SYNTH-09/10)": (
+        # Both cases drive the worker; TC-SYNTH-10's schema half bites the moment
+        # the module lands — if #97 ships the worker but forgets the narrative
+        # migration, the unmarked test fails visibly in the gate, which is where
+        # it should fail.
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_completeness_and_sentinel.py",),
+    ),
+    "#97 synthesis report (TC-SYNTH-08/12)": (
+        # The observability cases read the report the worker returns; the
+        # conjunction is the worker plus the report type it is assumed to
+        # construct (disclosed in the vocabulary). The issue's Req column
+        # traces TC-SYNTH-08 to FR-SYNTH-04 (anchoring, #98); the sample/
+        # rate fields themselves are bet on #97's report surface here — if
+        # they ship with #98 instead, drop THIS entry at #97's landing and
+        # re-key the file on #98's check.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:SynthesisWorker,"
+            f"{SYNTH_MODULE}:SynthesisReport"
+        ),
+        ("tests/integration/synth/test_synthesis_observability.py",),
+    ),
+    "#97 Tier R residency (TC-SYNTH-11)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/security/synth/test_narrative_tier_r_purge.py",),
+    ),
+    "#98 ADV-11 attack (ADV-11)": (
+        # The attack drives the worker against the check: both symbols so the
+        # case stays RED-via-NotImplementedYet until BOTH land — at #97 alone
+        # it would already run and fail behaviorally (no check -> the verbatim
+        # claim stores), which is a red the writtenahead gate cannot
+        # distinguish from an implemented failure.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/security/synth/test_adv_11_score_claim_paraphrase.py",),
     ),
 }
 
