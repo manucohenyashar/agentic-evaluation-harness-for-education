@@ -23,9 +23,11 @@ Halves:
    closing delimiter, and the submission is still last. (`M-INGEST` escapes an embedded
    close as `<\\/...`; whatever #68's renderer does, the invariant is one raw close and
    the block intact.)
-3. **Cross-backend** — the payload is byte-identical for two `ModelRef`s differing only
-   in `provider`: legitimate only because `M-PROV` dispatches byte-identically
-   (`TC-PROV-C05`), so the ordering consumers rely on holds on every backend.
+3. **Cross-backend** — the DISPATCHED prompt, captured at the provider boundary (D4's
+   counting provider), is byte-identical for two `ModelRef`s differing only in
+   `provider`, modulo the run identity two separate runs legitimately differ in:
+   legitimate only because `M-PROV` dispatches byte-identically (`TC-PROV-C05`), so
+   the ordering consumers rely on holds on every backend.
 
 Discriminator: a template edit that moves an invariant element after the submission,
 or renders the submission outside the block, turns halves 1-2 red; a backend-conditional
@@ -33,8 +35,9 @@ template turns half 3 red — while every `FR-EXTRACT-*` case, which asserts ext
 quality and never the payload shape, stays green.
 
 **Disclosed stand-ins** (suite register, `_doubles.py`): D2 (`question=` kwarg), D3
-(document seeding). **Isolation: rung 0/2** — assembly and payload parsing are pure;
-the backend differential needs no store.
+(document seeding), D4 (the counting provider is half 3's capture surface).
+**Isolation: rung 2** — every half drives the real store, ledger and blob directory
+through the shipped `Orchestrator`; the model boundary is the only fake.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from aeh.ingest import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from tests.support.extract_vocabulary import extractor_ref
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.contract.extract._doubles import (
+    CountingProvider,
     build_markdown,
     extract_once,
     make_world,
@@ -171,9 +175,12 @@ def test_tc_extract_c06_a_delimiter_imitating_submission_does_not_break_the_boun
 def test_tc_extract_c06_the_ordering_holds_on_every_backend(
     tmp_data_dir, make_fixture_provider
 ):
-    """`TC-EXTRACT-C06` half 3 — the payload is byte-identical for two refs differing
-    only in provider: `M-PROV` dispatches as assembled (the TC-PROV-C05 pairing), so a
-    payload that varies by backend is the violation this case exists to catch."""
+    """`TC-EXTRACT-C06` half 3 — the DISPATCHED prompt, captured where the worker hands
+    it to the model boundary, is byte-identical for two refs differing only in
+    provider, modulo the run identity two separate runs legitimately differ in. The
+    capture — not a post-hoc `PromptFields` render — is the surface a
+    backend-conditional template would have to vary (the TC-PROV-C05 pairing, from
+    the extract side)."""
     world = make_world(
         tmp_data_dir, make_fixture_provider,
         markdown=build_markdown(_SUBMISSION), criteria=_CRITERIA,
@@ -181,22 +188,43 @@ def test_tc_extract_c06_the_ordering_holds_on_every_backend(
     try:
         spans = [{"start": 41, "end": 105, "text": _SUBMISSION.strip(),
                   "region_kind": "transcribed_text"}]
-        PromptFields = require(EXTRACT_MODULE, "prompt_fields", issue="#68")
         require_extract_surface()
+        counter = CountingProvider(world.provider)
         backend_a = extractor_ref(provider="ollama")
         backend_b = extractor_ref(provider="llamacpp")
-        request_a, _res_a, _run_a, _u_a = extract_once(
+        _request_a, _res_a, run_a, unit_a = extract_once(
             world, spans=spans, build_id="ct-c06-build", model_ref=backend_a,
+            provider=counter,
         )
-        payload_a = list(PromptFields(request_a).fields)
-        request_b, _res_b, _run_b, _u_b = extract_once(
+        _request_b, _res_b, run_b, unit_b = extract_once(
             world, spans=spans, build_id="ct-c06-build", model_ref=backend_b,
+            provider=counter,
         )
-        payload_b = list(PromptFields(request_b).fields)
-        assert payload_a == payload_b, (
-            "TC-EXTRACT-C06: the assembled payload varies with the backend — but "
-            "M-PROV dispatches byte-identically, so a backend-conditional template "
-            "sends different prompts to different providers"
+        assert counter.count == 2, (
+            f"TC-EXTRACT-C06: precondition — {counter.count} dispatches captured, "
+            f"expected one per backend"
+        )
+        (build_a, prompt_a), (build_b, prompt_b) = counter.calls
+        assert build_a != build_b, (
+            "TC-EXTRACT-C06: fixture bug — the two refs do not differ in provider"
+        )
+        text_a = prompt_a if isinstance(prompt_a, str) else str(prompt_a)
+        text_b = prompt_b if isinstance(prompt_b, str) else str(prompt_b)
+        for identity in (run_a, getattr(unit_a, "work_id", None)):
+            if identity:
+                text_a = text_a.replace(identity, "<run-identity>")
+        for identity in (run_b, getattr(unit_b, "work_id", None)):
+            if identity:
+                text_b = text_b.replace(identity, "<run-identity>")
+        # The dispatch carries the submission on both backends — halves 1-2 pin WHERE.
+        assert _SUBMISSION.strip() in text_a and _SUBMISSION.strip() in text_b, (
+            "TC-EXTRACT-C06: the dispatched prompt does not carry the submission on "
+            "both backends — the cross-backend claim has no ordering to hold"
+        )
+        assert text_a == text_b, (
+            "TC-EXTRACT-C06: the dispatched prompt varies with the backend beyond the "
+            "run identity — M-PROV dispatches as assembled, so a backend-conditional "
+            "template sends different prompts to different providers"
         )
     finally:
         world.close()

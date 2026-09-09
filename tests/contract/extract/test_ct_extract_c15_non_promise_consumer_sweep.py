@@ -91,9 +91,12 @@ def _marked(needle: str) -> dict[str, Any]:
 
 
 def _spans_overlap() -> list[dict[str, Any]]:
-    """Two spans sharing bytes — the tail of S1 sits inside a span over S1."""
+    """Two spans sharing bytes with NEITHER containing the other: one covers all of
+    S1, the other runs from inside S1 through all of S2. A PARTIAL overlap — a
+    consumer that de-overlaps by dropping either span loses bytes only the other
+    carries, which is exactly what the containment oracles detect."""
     return [_marked(_S1),
-            _marked("because the index was never bounds-checked.")]
+            _marked(_S1[-12:] + "\n" + _S2)]
 
 
 def _spans_out_of_order() -> list[dict[str, Any]]:

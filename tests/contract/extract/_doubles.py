@@ -246,7 +246,12 @@ def payload_bytes(value: Any) -> bytes:
         return bytes(value)
     if isinstance(value, str):
         return value.encode("utf-8")
-    return json.dumps(value, sort_keys=True).encode("utf-8")
+    try:
+        return json.dumps(value, sort_keys=True).encode("utf-8")
+    except TypeError:
+        # A rich assembled object (e.g. a dataclass request) renders through str(); the
+        # oracles read containment and identity, not JSON syntax, so either form works.
+        return str(value).encode("utf-8")
 
 
 def judgment_fields(names: list[str]) -> list[str]:

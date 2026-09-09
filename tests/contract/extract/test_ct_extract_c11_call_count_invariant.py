@@ -76,7 +76,8 @@ _JUDGED = [
     {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},
     {"criterion_id": "C2", "kind": "open", "scoring_model": "holistic"},
 ]
-_DETERMINISTIC = {"criterion_id": "C0", "kind": "deterministic",
+# The design's "deterministic criterion" is the shipped catalog's `kind: "mcq"`.
+_DETERMINISTIC = {"criterion_id": "C0", "kind": "mcq",
                   "scoring_model": "deterministic"}
 
 
@@ -95,7 +96,7 @@ def _extract_count(world: Any, panel: tuple) -> int:
     counter = CountingProvider(world.provider)
     for unit in units:
         if unit.criterion_id == "C0":
-            continue  # no extract unit exists for a deterministic criterion (C07)
+            continue  # no extract unit exists for an mcq criterion (C07); guard only
         world.provider.record(
             PromptFields(AssembleRequest(unit)), model_ref, sampling_params(),
             span_completion(_SPANS, build_id="ct-c11-build"),

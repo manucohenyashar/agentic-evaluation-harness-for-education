@@ -73,9 +73,12 @@ def test_tc_extract_c05_the_row_records_the_build_that_actually_answered(
             world, spans=_SPANS, build_id=answered_build,
         )
 
-        # The result reports what answered (`Completion.resolved_build`, FR-PROV-04).
-        assert getattr(result, "resolved_build", None) == answered_build, (
-            "TC-EXTRACT-C05: the result does not report the resolved build"
+        # The result reports what answered: the result type's `extractor` member is the
+        # RESOLVED build identity (the vocabulary's split — `extractor` on the result,
+        # `resolved_build` on the evidence row column; FR-PROV-04's rule).
+        assert getattr(result, "extractor", None) == answered_build, (
+            "TC-EXTRACT-C05: the result does not report the build that actually "
+            "answered — its `extractor` member is not the resolved build"
         )
         rows = evidence_rows(world.store, run_id)
         assert len(rows) == 1, f"TC-EXTRACT-C05: expected one row, got {len(rows)}"

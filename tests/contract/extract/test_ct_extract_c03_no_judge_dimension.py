@@ -169,7 +169,14 @@ def test_tc_extract_c03_every_judge_on_the_panel_reads_byte_identical_evidence(
         )
         for arm in arms:
             scoring_request = Assemble(arm)
-            payloads.append(payload_bytes(scoring_request))
+            payload = payload_bytes(scoring_request)
+            # The arm's own work_id (its primary key) and the judge's identity are NOT
+            # an evidence dimension — normalize them; anything else that differs across
+            # arms is the panel being handed different evidence, which is the violation.
+            for identity in (arm["work_id"], arm["judge_id"]):
+                if identity:
+                    payload = payload.replace(str(identity).encode("utf-8"), b"<arm>")
+            payloads.append(payload)
         assert len({p for p in payloads}) == 1, (
             "TC-EXTRACT-C03: the panel's judges were handed DIFFERENT evidence bytes — "
             "a per-judge evidence dimension is the violation, and it destroys every "

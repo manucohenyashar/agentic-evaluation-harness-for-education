@@ -60,8 +60,11 @@ from tests.contract.extract._doubles import (
 pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
 
 _MARKDOWN = build_markdown("The derivation holds for the open criterion.\n")
+# The design's "deterministic criterion" is the shipped catalog's `kind: "mcq"` (the
+# DDL admits only `open`/`mcq`); the shipped orchestrator enumerates it a
+# `deterministic`-stage unit and NO extract unit — exactly the empty set half 1 asserts.
 _CRITERIA = [
-    {"criterion_id": "C0", "kind": "deterministic", "scoring_model": "deterministic"},
+    {"criterion_id": "C0", "kind": "mcq", "scoring_model": "deterministic"},
     {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},
 ]
 _SPANS = [
