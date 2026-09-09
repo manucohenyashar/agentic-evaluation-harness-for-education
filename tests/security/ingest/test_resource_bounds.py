@@ -23,8 +23,13 @@ import pytest
 
 from aeh.conf import ModelRef
 from aeh.ingest import (
+    IngestSanitizeError,
     Ingestor,
+    MAX_EMBEDDED_OBJECTS_ENV,
+    MAX_IMAGE_PIXELS_ENV,
+    MAX_PAGES_ENV,
     PageImage,
+    PageReplacement,
     PypdfSanitizer,
     ResidencySlot,
 )
@@ -518,4 +523,213 @@ def test_tc_ingest_34_a_nested_bomb_is_bounded_by_the_outer_ceiling(
         f"TC-INGEST-34: the nested stream's peak allocation was {peak} — the "
         "outer ceiling must bound the work, and the inner 64 MiB must never be "
         "decompressed (a recursive design blows this watermark).")
+    fx.close()
+
+
+# -- the setup path: the same bounds guard the artifacts with no operator (#231) --------------------
+#
+# Issue #231: the post-sanitize bound checks guard `ingest_document` /
+# `revise_document` the way the V0 loop guards the submission path — a
+# bound-violating SETUP artifact (assessment / reference / rubric) is refused
+# with the same error vocabulary, not silently bounded or ingested. A setup
+# artifact has no operator, so there is no quarantine row to fall back on:
+# the refusal itself raises to the uploading teacher (FR-INGEST-32), naming
+# the ceiling that fired. SEC-07's fault-injection form closes here too: a
+# fault at the bound-check site fails closed to the declared refusal, never
+# to a foreign exception (the note-level disclosure PR #209 recorded).
+
+ISSUE_231 = "#231"
+
+
+def _setup_refused(fx: _Bounds, source: str, kind: str,
+                   ceiling_name: str) -> str:
+    """Ingest via the SETUP path and assert the declared refusal: the error
+    names the ceiling that fired, nothing reached the model, and no document
+    row was created — refused, not silently bounded or ingested."""
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.ingest_document([source], kind=kind,
+                                    filenames={source: "setup.pdf"})
+    message = str(excinfo.value)
+    assert ceiling_name in message, (
+        f"ISSUE {ISSUE_231}: the setup refusal must name the ceiling that "
+        f"fired ({ceiling_name!r}), got: {message[:200]!r}.")
+    assert fx.provider.calls == 0, (
+        f"ISSUE {ISSUE_231}: the refused setup artifact reached the model.")
+    assert fx.handle.query("SELECT document_id FROM document") == [], (
+        f"ISSUE {ISSUE_231}: a refused setup artifact left a document row — "
+        "the artifact is refused, not ingested.")
+    return message
+
+
+@pytest.mark.parametrize("kind", ["assessment", "reference", "rubric"],
+                         ids=["assessment", "reference", "rubric"])
+def test_issue_231_a_bomb_setup_artifact_is_refused_like_a_submission(
+        tmp_data_dir, kind, monkeypatch):
+    """`#231` / `FR-INGEST-32` — the corpus's decompression bomb, ingested as a
+    SETUP artifact of each kind: refused with the submission path's vocabulary
+    (the same `IngestSanitizeError`, the same `decompressed_bytes` naming). A
+    setup artifact has no operator — the raised refusal IS the teacher surface,
+    and nothing is silently bounded or ingested."""
+    monkeypatch.setenv("HARNESS_INGEST_MAX_DECOMPRESSED_BYTES", str(1024 * 1024))
+    fx = _Bounds(tmp_data_dir, f"setup-bomb-{kind}")
+    source = fx.put_fixture("ADV-PDF-09")
+    _setup_refused(fx, source, kind, "decompressed_bytes")
+    fx.close()
+
+
+def test_issue_231_the_page_bomb_is_refused_on_the_setup_path(
+        tmp_data_dir, monkeypatch):
+    """`#231` — the corpus's well-formed 100k-page document as a SETUP artifact
+    against the declared 200-page default (the object ceiling raised out of the
+    way so the page bound is provably what fires): refused, naming the page
+    ceiling, with zero model calls."""
+    monkeypatch.setenv("HARNESS_INGEST_MAX_EMBEDDED_OBJECTS", "200000")
+    fx = _Bounds(tmp_data_dir, "setup-page-bomb")
+    source = fx.put_fixture("ADV-PDF-10")
+    _setup_refused(fx, source, "reference", "page ceiling")
+    fx.close()
+
+
+def test_issue_231_the_giant_image_is_refused_on_the_setup_path(
+        tmp_data_dir):
+    """`#231` — the corpus's 60000×60000-pixel declaration as a SETUP artifact
+    against the declared 64 M-pixel default: refused, naming the pixel
+    ceiling, with zero model calls."""
+    fx = _Bounds(tmp_data_dir, "setup-giant")
+    source = fx.put_fixture("ADV-PDF-11")
+    _setup_refused(fx, source, "rubric", "pixel ceiling")
+    fx.close()
+
+
+def test_issue_231_the_embedded_object_ceiling_guards_the_setup_path(
+        tmp_data_dir, monkeypatch):
+    """`#231` — a crafted over-ceiling object count on the SETUP path: the
+    walk's mid-stream enforcement refuses the artifact with the same
+    `embedded_objects` naming the submission path uses."""
+    monkeypatch.setenv("HARNESS_INGEST_MAX_EMBEDDED_OBJECTS", "11")
+    fx = _Bounds(tmp_data_dir, "setup-objects")
+    source = fx.blobs.put(_pdf_with_objects(12))
+    _setup_refused(fx, source, "assessment", "embedded_objects")
+    fx.close()
+
+
+def test_issue_231_the_wall_clock_ceiling_cuts_the_setup_path(
+        tmp_data_dir, monkeypatch):
+    """`#231` — the wall-clock ceiling on the SETUP path: with the injected
+    clock jumping past the deadline at the sanitizer's next boundary read, the
+    setup artifact is refused and the error names `wall_clock`. No test sleeps;
+    the clock is the seam §4.6 prescribes."""
+    import aeh.ingest as ingest_module
+
+    monkeypatch.setenv("HARNESS_INGEST_MAX_FILE_SECONDS", "5")
+    fx = _Bounds(tmp_data_dir, "setup-clock")
+    source = fx.blobs.put(_pdf_with_pages(1))  # nothing else refuses this
+    monkeypatch.setattr(ingest_module, "time", _AdvancingClock(jump_on=2))
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.ingest_document([source], kind="assessment",
+                                    filenames={source: "setup.pdf"})
+    assert "wall_clock" in str(excinfo.value), (
+        f"ISSUE {ISSUE_231}: the cut must name the wall clock, got: "
+        f"{str(excinfo.value)[:200]!r}.")
+    assert fx.provider.calls == 0, (
+        f"ISSUE {ISSUE_231}: the cut setup artifact reached the model.")
+    fx.close()
+
+
+def test_issue_231_a_bound_violating_rescan_is_refused_on_the_revision_path(
+        tmp_data_dir, monkeypatch):
+    """`#231` — the revision half: a benign setup artifact ingested, then a
+    correction whose replacement page is the corpus's decompression bomb under
+    a 1 MiB ceiling. `revise_document` refuses with the same vocabulary and
+    leaves the original row as the ONLY document row — a refused correction is
+    a no-op, never a partial effect."""
+    monkeypatch.setenv("HARNESS_INGEST_MAX_DECOMPRESSED_BYTES", str(1024 * 1024))
+    fx = _Bounds(tmp_data_dir, "setup-revise")
+    source = fx.blobs.put(_pdf_with_pages(1))
+    original = fx.ingestor.ingest_document([source], kind="assessment",
+                                           filenames={source: "scan.pdf"})
+    bomb = fx.put_fixture("ADV-PDF-09")
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.revise_document(
+            original, [PageReplacement(blob_hash=bomb, page_no=1)])
+    assert "decompressed_bytes" in str(excinfo.value), (
+        f"ISSUE {ISSUE_231}: the revision refusal must name the ceiling that "
+        f"fired, got: {str(excinfo.value)[:200]!r}.")
+    rows = fx.handle.query("SELECT document_id FROM document")
+    assert [row["document_id"] for row in rows] == [original], (
+        f"ISSUE {ISSUE_231}: the refused revision changed the document table — "
+        "a refusal is a no-op on the store.")
+    assert fx.provider.calls == 1, (  # the original ingest's single page only
+        f"ISSUE {ISSUE_231}: the refused rescan reached the model.")
+    fx.close()
+
+
+def test_issue_231_a_fault_at_the_setup_page_bound_check_fails_closed(
+        tmp_data_dir, monkeypatch):
+    """`SEC-07`'s fault-injection form on the SETUP path (the disclosure PR
+    #209 recorded as note-level, closed by #231): an exception injected at the
+    page-ceiling read — the post-sanitize bound evaluation that sits outside
+    the sanitizer's own try — resolves to the declared refusal
+    (`IngestSanitizeError`, NFR-INGEST-08), never to a foreign exception and
+    never to processing."""
+    real = Ingestor._configured_int  # a staticmethod: (env, default), no self
+
+    def poisoned(self, env, default):
+        if env == MAX_PAGES_ENV:
+            raise RuntimeError("injected: the page-ceiling read exploded")
+        return real(env, default)
+
+    monkeypatch.setattr(Ingestor, "_configured_int", poisoned)
+    fx = _Bounds(tmp_data_dir, "setup-fault-pages")
+    source = fx.blobs.put(_pdf_with_pages(1))  # benign: only the fault refuses
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.ingest_document([source], kind="assessment",
+                                    filenames={source: "scan.pdf"})
+    message = str(excinfo.value)
+    assert "failed closed" in message and "NFR-INGEST-08" in message, (
+        f"ISSUE {ISSUE_231}: the injected fault must fail closed to the "
+        f"declared refusal, got: {message[:200]!r}.")
+    assert isinstance(excinfo.value.__cause__, RuntimeError), (
+        f"ISSUE {ISSUE_231}: the injected fault is not preserved as the "
+        f"cause, got: {excinfo.value.__cause__!r}.")
+    assert fx.provider.calls == 0 and fx.rasterizer.seen == [], (
+        f"ISSUE {ISSUE_231}: the faulted ingest processed the artifact.")
+    fx.close()
+
+
+def test_issue_231_a_fault_at_the_raster_pixel_check_fails_closed(
+        tmp_data_dir, monkeypatch):
+    """`SEC-07` on the SETUP path's post-raster bound: the pixel check against
+    the ACTUAL rasters (`_check_rasters`) is a resource-bound evaluation too,
+    so an exception injected at ITS ceiling read fails closed the same way.
+    The first pixel-ceiling read (the declared-dimension check) passes the
+    benign fixture through; the fault fires at the second read — the raster
+    check the artifact reaches only after rasterization."""
+    real = Ingestor._configured_int  # a staticmethod: (env, default), no self
+    reads = {"n": 0}
+
+    def poisoned(self, env, default):
+        if env == MAX_IMAGE_PIXELS_ENV:
+            reads["n"] += 1
+            if reads["n"] == 2:  # the raster check's own read
+                raise RuntimeError("injected: the raster pixel check exploded")
+        return real(env, default)
+
+    monkeypatch.setattr(Ingestor, "_configured_int", poisoned)
+    fx = _Bounds(tmp_data_dir, "setup-fault-raster")
+    source = fx.blobs.put(_pdf_with_pages(1))  # benign: only the fault refuses
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.ingest_document([source], kind="assessment",
+                                    filenames={source: "scan.pdf"})
+    message = str(excinfo.value)
+    assert "failed closed" in message and "NFR-INGEST-08" in message, (
+        f"ISSUE {ISSUE_231}: the injected fault must fail closed to the "
+        f"declared refusal, got: {message[:200]!r}.")
+    assert reads["n"] == 2, (
+        f"ISSUE {ISSUE_231}: the fault must fire at the raster check's own "
+        f"read (the second), got {reads['n']} reads.")
+    assert fx.rasterizer.seen != [], (
+        f"ISSUE {ISSUE_231}: the probe never reached the raster check.")
+    assert fx.provider.calls == 0, (
+        f"ISSUE {ISSUE_231}: the faulted ingest spent a model call.")
     fx.close()
