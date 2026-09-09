@@ -66,8 +66,8 @@ def _seed_labels(store, cohort_id: str, run_id: str) -> None:
     M-REVIEW/M-GRADE would carry exactly this value."""
     handle = store.durable()
     rows = [
-        ("lbl-j1", "judged", "correct"),
-        ("lbl-j2", "judged", "incorrect"),
+        ("lbl-j1", "blind", "correct"),
+        ("lbl-j2", "blind", "incorrect"),
         ("lbl-j3", "expert", "correct"),  # not blind: excluded by the OTHER half
         ("lbl-d1", "blind", "correct"),
         ("lbl-d2", "blind", "incorrect"),
