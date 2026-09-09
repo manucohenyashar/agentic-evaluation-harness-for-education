@@ -49,7 +49,10 @@ import re
 from typing import Any
 
 from tests.support.extract_vocabulary import JUDGE_ISSUE  # re-export: the single bet
-from tests.support.impl import JUDGE_MODULE
+
+# NOTE: no import of tests.support.impl here — impl.py imports this module for the
+# TS30_* symbol tuples, so a back-import would be circular. Callers resolve names
+# against tests.support.impl.JUDGE_MODULE (see the require() calls in the suites).
 
 __all__ = [
     "JUDGE_ISSUE",
