@@ -1630,6 +1630,41 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "[101pct-refuses-and-pauses]",
         ),
     ),
+    # --- TS-29 (#76), the M-INTEG adversarial forgery cases --------------------------------
+    #
+    # TC-INTEG-13 plus the two adversarial rows the issue traces (ADV-01, ADV-03), one
+    # file. A `symbols` conjunction over the file's full blocker set (the TC-SETUP
+    # file-granularity lesson): the byte-exact half calls `verify_span` (#73), the
+    # rung-2 routing half constructs `IntegrityGate` and reads `IntegritySignals`
+    # (#74) — the three names #75 disclosed and TS-28's files already resolve — and
+    # the ADV-01 cap half drives M-AGG's declared pure surface.
+    #
+    # **The two M-AGG names are design-declared, not invented**: `aggregate` is §3.12's
+    # Protocol member and `AGG_AUTO_THRESHOLD_ATOMIC` is §3.12's Configuration constant
+    # (CT-AGG-14), and both appear in no Interfaces block that any earlier story ships —
+    # `aeh.agg` does not exist at all today. The cap lands with the confidence story
+    # (#92, FR-AGG-05); the test's `require(..., issue="#92")` names it.
+    #
+    # Residual weakness, recorded rather than papered over (the TS-08 pattern): a
+    # Protocol-shell `Aggregator` or a `#91`-only `aggregate` (median band and ordinal α
+    # without the cap table) would resolve this key while the caps were still #92's —
+    # and the test would then fail with an assertion, not a stated reason. No
+    # §3.12-declared name isolates "the cap landed": the cap table's members are
+    # Assumption-numbered, not named. `AGG_AUTO_THRESHOLD_ATOMIC` is the narrowest
+    # available proxy because the test genuinely reads it (the oracle is "capped below
+    # the auto-accept threshold"), and a threshold without a confidence computation is
+    # not a thing #91's acceptance criteria ask for.
+    "#76 forged evidence (TC-INTEG-13, ADV-01, ADV-03)": (
+        "symbols",
+        (
+            f"{INTEG_MODULE}:verify_span,{INTEG_MODULE}:IntegrityGate,"
+            f"{INTEG_MODULE}:IntegritySignals,"
+            f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"
+        ),
+        (
+            "tests/integration/integ/test_integ_forged_evidence.py",
+        ),
+    ),
 }
 
 
