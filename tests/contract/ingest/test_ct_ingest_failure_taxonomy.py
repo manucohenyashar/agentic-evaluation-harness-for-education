@@ -17,12 +17,16 @@ FAULT on transcription escapes `ingest_submission` raw (only
 `IngestGapError` / `IngestDuplicateError` / `IngestError` are caught there),
 leaving the submission row with NULL gate columns, NULL `ingest_status` and
 `quarantined = 0` — a zombie row the operator surface cannot triage.
-NFR-INGEST-02 ("fail the unit, never the run") and `TC-INGEST-40` (P0) promise
-containment; the module is its own implementer, so there is no `writtenahead`
-target — the case asserts the halves that hold (the fault produces NO document,
-NO regions, nothing scored; the call is retryable against the immutable blob
-store) and discloses the rest for the M-INGEST owner. The summary sweep
-accordingly excludes the escape route from the row-level invariant.
+
+**RESOLVED by #220:** the transcription path now carries the three-strike
+loop (`HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS`, read at call time) and
+`ingest_submission` catches `IngestTranscriptionError` into an honest
+quarantine — the row's gate columns are marked (V0 pass, V1 fail, V2/V3
+`not_reached`), the exception never escapes raw, and the strike log is in the
+report's stage detail. The fault case below asserts the containment shape;
+`TC-INGEST-40`'s own suite (#235, exact strike value plus the cohort-
+completion oracle) is the test story that depends on #220. The summary sweep
+now has no excluded escape route from the transcription path.
 
 Consumer halves deferred with disclosure: the run-level "not the run" is
 M-ORCH's (#59..#66); the operator's triage of these findings is M-CONSOLE's
@@ -52,8 +56,9 @@ pytestmark = pytest.mark.contract
 
 
 class FailingProvider(ScriptedProvider):
-    """The faulted model: every call dies. The transcription path has no retry
-    loop to absorb it (G3), so this is the shipped failure shape."""
+    """The faulted model: every call dies. The transcription strike loop
+    absorbs it per page (#220) until the limit is exhausted, then the
+    submission quarantines — the fault exercises every strike."""
 
     def complete(self, prompt, model_ref, params) -> Completion:
         raise RuntimeError("injected: the model died mid-transcription")
@@ -65,18 +70,44 @@ class FailingProvider(ScriptedProvider):
 def test_tc_ingest_c14_a_transcription_fault_scores_nothing_and_stores_nothing(
         tmp_data_dir):
     """`TC-INGEST-C14` (transcription fault) — a model fault mid-transcription
-    produces NO document, NO regions, nothing scored; the escape itself is the
-    disclosed G3 (no three-strike loop, no containment — NFR-INGEST-02). The
-    half that holds: the fault cannot manufacture a complete-looking artifact,
-    and the call is retryable — the same blobs re-ingest cleanly after."""
+    is CONTAINED (#220, `NFR-INGEST-02`): the call returns a quarantine
+    report, the exception never escapes raw, and the row is an honestly-marked
+    quarantine — V0 passed (the file was fine), V1 failed (the page could not
+    be read), V2/V3 `not_reached`; never a NULL-gates `quarantined=0` zombie.
+    The fault cannot manufacture a complete-looking artifact (NO document, NO
+    regions, nothing scored), the strike log is observable in the report's
+    stage detail, and the call is retryable — the same blobs re-ingest cleanly
+    after."""
     fx = Contract(tmp_data_dir, "c14-fault", provider=FailingProvider())
     fx.add_roster("gus")
     source = fx.put(b"c14 fault pdf")
     fx.script(source, {1: student_answer("gus", answer_text("Q1", "answer"))})
-    with pytest.raises(RuntimeError, match="injected"):
-        fx.ingestor.ingest_submission([source], cohort_id=COHORT,
-                                      package_version="v0",
-                                      filenames={source: "a.pdf"})
+    report = fx.ingestor.ingest_submission([source], cohort_id=COHORT,
+                                           package_version="v0",
+                                           filenames={source: "a.pdf"})
+    assert report.ingest_status == "unreadable" and report.gates["v1"] == "fail", (
+        f"TC-INGEST-C14: the faulted transcription did not quarantine: "
+        f"{report.ingest_status} / {report.gates}."
+    )
+    assert (report.gates["v0"] == "pass"
+            and report.gates["v2"] == "not_reached"
+            and report.gates["v3"] == "not_reached"), (
+        f"TC-INGEST-C14: the quarantine's gate columns are not honest: "
+        f"{report.gates}."
+    )
+    strikes = report.detail["transcription_attempts"]
+    assert len(strikes) == 3 and [s["attempt"] for s in strikes] == [1, 2, 3], (
+        f"TC-INGEST-C14: the strike log is not the three-strike limit: "
+        f"{strikes}."
+    )
+    row = fx.submission_rows()[0]
+    assert (row["quarantined"] == 1 and row["ingest_status"] == "unreadable"
+            and row["v0_integrity"] == "pass" and row["v1_pages"] == "fail"
+            and row["v2_structure"] == "not_reached"
+            and row["v3_identity"] == "not_reached"), (
+        f"TC-INGEST-C14: the faulted submission's row is not an honestly-"
+        f"marked quarantine: {dict(row)}."
+    )
     assert fx.documents() == [] and fx.regions() == [], (
         "TC-INGEST-C14: a faulted transcription left an artifact behind — "
         "partial content stored."
