@@ -68,6 +68,7 @@ from aeh.ingest import (
     REGION_OPEN,
     UNTRUSTED_CLOSE,
     UNTRUSTED_OPEN,
+    _fence_untrusted_content,
 )
 from aeh.ingest import STATEMENTS as INGEST_STATEMENTS
 from aeh.orch import (
@@ -123,9 +124,12 @@ EXTRACT_STATEMENTS: dict[str, Statement] = {
 
 # --- vocabulary ----------------------------------------------------------------------------------
 
-#: The pinned extraction-prompt template version (`NFR-EXTRACT-03`). It is a hash
-#: input to `compute_work_id` via the run's `prompt_template_v` — a template change
-#: invalidates dependent extract units automatically, no cleanup job (`TC-EXTRACT-13`).
+#: The pinned extraction-prompt template version (`NFR-EXTRACT-03`). The run's
+#: `prompt_template_v` configuration carries it into `compute_work_id`'s hash at the
+#: orchestration boundary — a caller that configures the run with this constant (as
+#: the contract suite does) gets the automatic invalidation of dependent extract
+#: units on a template change, no cleanup job (`TC-EXTRACT-13`); this module only
+#: pins the value and renders by it.
 EXTRACTION_PROMPT_TEMPLATE_VERSION = "extract-prompt/1"
 
 #: The fixed field order (`FR-EXTRACT-04`, CT-EXTRACT-06): invariant elements first,
@@ -468,7 +472,12 @@ def _render_submission(transcript: str) -> str:
     if UNTRUSTED_OPEN in transcript and UNTRUSTED_CLOSE in transcript:
         fenced = transcript
     else:
-        fenced = f"{UNTRUSTED_OPEN}\n{transcript}\n{UNTRUSTED_CLOSE}"
+        # `M-INGEST`'s fence writer, not a bare wrap: a transcript that carries the
+        # closing marker without the opening one would otherwise terminate the block
+        # early and let the remainder of the student text address the model from
+        # beyond the fence — the G6 shape `M-INGEST` already fixed (ingest
+        # `_fence_untrusted_content` escapes every inner close).
+        fenced = _fence_untrusted_content(transcript)
     # The wrapping line NAMES the treatment but never SPELLS the delimiters: the
     # block must open exactly once (CT-EXTRACT-06's fence-count lint).
     return (
@@ -751,11 +760,15 @@ class ExtractionWorker:
 
     def _result_from_ledger(self, cohort: Any, unit: Any) -> ExtractionResult:
         """The result an already-done unit's evidence row holds — the idempotent
-        re-entry path (no provider call)."""
+        re-entry path (no provider call). With no evidence row, the ledger's own
+        word decides the report: a row is only absent when the unit went to
+        quarantine (or the budget failed it), and `status='extracted'` would lie
+        about a criterion no row was ever written for."""
         rows = cohort.query(EXTRACT_STATEMENTS["select_evidence"], work_id=unit.work_id)
         spans: tuple[ExtractionSpan, ...] = ()
         resolved_build: str | None = None
         document_id: str | None = None
+        status = "extracted"
         if rows:
             row = rows[0]
             document_id = row["document_id"]
@@ -773,6 +786,8 @@ class ExtractionWorker:
                     )
                     for span in payload.get("spans", ())
                 )
+        else:
+            status = self._status_after_budget(cohort, unit.work_id)
         return ExtractionResult(
             work_id=unit.work_id,
             submission_id=unit.submission_id,
@@ -780,6 +795,7 @@ class ExtractionWorker:
             document_id=document_id,
             spans=spans,
             resolved_build=resolved_build,
+            status=status,
         )
 
 
