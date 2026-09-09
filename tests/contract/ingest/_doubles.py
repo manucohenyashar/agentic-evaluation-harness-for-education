@@ -29,14 +29,14 @@ them rather than shipped red**:
   arrives without one (the page's minimum tagged confidence; a tagless page
   records the floor itself) and refuses a non-numeric tag as malformed model
   output; C04's sweep asserts non-null over EVERY stored row.
-- **G3** (transcription 3-strikes, `CT-INGEST-14`): there is no transcription
-  retry loop — the only re-request loop is the evaluative-description one
-  (`EVALUATIVE_RETRIES_ENV`). A provider fault on transcription escapes
-  `ingest_submission` raw (only `IngestGapError` / `IngestDuplicateError` /
-  `IngestError` are caught), leaving the submission row with NULL gate columns and
-  `quarantined=0`. `NFR-INGEST-02` ("fail the unit, never the run") and
-  `TC-INGEST-40` (P0) promise containment. The case asserts the half that holds
-  today (no row reaches `ok`; no document is written) and discloses the rest.
+- **G3** (transcription 3-strikes, `CT-INGEST-14`) — **closed by #220**: the
+  transcription path now carries the three-strike loop
+  (`HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS`, read at call time) and a provider
+  fault on transcription no longer escapes `ingest_submission` raw — the
+  submission quarantines with its gate columns honestly marked (V0 pass, V1
+  fail, V2/V3 `not_reached`), the strike log rides the report's stage detail,
+  and the cohort's remaining submissions continue (`NFR-INGEST-02`,
+  `TC-INGEST-40`). The taxonomy case asserts the containment shape.
 - **G4** (aggregate observability signals, `CT-INGEST-19`) — **resolved by
   #222**: `Ingestor.run_aggregates` is the single emitter that produces every
   named signal (`ocr_failure_rate`, the unresolved-mark rate, the mean/max

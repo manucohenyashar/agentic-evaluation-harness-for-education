@@ -29,13 +29,14 @@ a bug in shipped code has no such target), each with its probe evidence:
   (and V4 then *matched* the submission). **Closed by #219**: an unresolved
   selection under a declared `mcq` is a V2 failure naming the question, and the
   submission quarantines as `incomplete` — asserted below.
-- **F3** (`TC-INGEST-40`, whole case): a page whose transcription fails is **not
-  contained** — the provider's exception escapes `ingest_submission` raw (the module
-  has no transcription retry loop; the only re-request loop is the evaluative-
-  description one), leaving the submission row inserted with NULL gate columns and
-  killing the caller's cohort loop. `NFR-INGEST-02` / the class docstring promise the
-  opposite ("fail the unit, never the run"). No test ships: the case's every
-  observable (quarantine + cohort completion) is the behaviour that is missing.
+- **F3** (`TC-INGEST-40`, whole case) — **closed by #220**: a page whose
+  transcription fails is now contained — the call strikes out to
+  `HARNESS_INGEST_TRANSCRIPTION_ATTEMPTS` (default 3, read at call time), the
+  exception never escapes `ingest_submission` raw, and the submission
+  quarantines with its gate columns honestly marked while the caller's cohort
+  loop continues (`NFR-INGEST-02`). The case's observables (quarantine +
+  cohort completion) are TC-INGEST-40's own suite (#235), which depends on
+  #220.
 - **F4** (`TC-INGEST-23`'s fifth fixture): a raster below the profile's resolution
   floor ingests — `HARNESS_INGEST_RESOLUTION_FLOOR` (default 150) is declared but
   read by nothing; only the pixel *ceiling* is checked. Probe: a 50x70 px page →
