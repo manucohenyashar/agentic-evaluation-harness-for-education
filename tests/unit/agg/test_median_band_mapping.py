@@ -143,32 +143,33 @@ def test_tc_agg_01_variants_single_verdict_two_band_and_even_rejection():
 # --- step 5 — the source-level single-mapping assertion (NFR-AGG-02's acceptance form) ---------
 
 #: The predicate this test applies, declared because a source scan is only as honest as
-#: its convention: the band→points mapping is *applied* in exactly one place — the
-#: definition site in `M-PKG` (CT-PKG-05: `points_for_band` is the single canonical
-#: mapping and the only sanctioned reader of `criterion_band.points`) plus exactly one
-#: call site in `M-AGG` (CT-AGG-02: "M-AGG calls it exactly once per criterion score").
-#: A textual call-site count is the coarsest instrument that still fires on the defect
-#: the plan names — a second module mapping bands to points — and the schema half of the
-#: same acceptance form is asserted live against the store in
-#: `tests/artifact/test_agg_single_mapping.py`.
+#: its convention. "In exactly one place in the source" (the Goal) is asserted
+#: structurally where it is structural — one *definition* of the mapping, in `M-PKG`
+#: (CT-PKG-05: `points_for_band` is the single canonical mapping and the only sanctioned
+#: reader of the band table's points) — and behaviourally where it is behavioural: the
+#: worked examples above pin that the band `M-AGG` maps is the *median* — on a
+#: non-linear table, map-then-average and any modal echo produce different points — and
+#: `tests/artifact/test_agg_single_mapping.py` scans the source for a second definition
+#: or a direct band-table read. A lexical count of exactly one mention would condemn the
+#: real call shape (`PackageCatalog.points_for_band` is a method:
+#: `catalog.points_for_band(...)` and `from aeh.pkg import points_for_band` differ in
+#: mention count), and a same-band repeat lookup is idempotent — unobservable and
+#: harmless. What fires on the defect the plan names: a reimplementation in `M-AGG` that
+#: never routes through the canonical mapping, or a second definition anywhere.
 
 
 def test_tc_agg_01_step5_the_band_to_points_mapping_is_applied_in_exactly_one_place(repo_root):
-    """`TC-AGG-01` step 5 (`NFR-AGG-02`, artifact assertion, P0) — no module other than
-    the mapping owner reads the band table's points, the mapping is defined in exactly
-    one module, and `M-AGG` calls it exactly once per score."""
+    """`TC-AGG-01` step 5 (`NFR-AGG-02`, artifact assertion, P0) — `M-AGG` routes through
+    the canonical mapping rather than reimplementing it, and the mapping is defined in
+    exactly one module."""
     agg_module = require(AGG_MODULE, issue=AGG_BLOCKER)
     agg_source = Path(agg_module.__file__).read_text(encoding="utf-8")
 
-    assert agg_source.count("points_for_band") == 1, (
-        "M-AGG references points_for_band "
-        f"{agg_source.count('points_for_band')} times — CT-AGG-02: it is called exactly "
-        "once per criterion score, after aggregation (NFR-AGG-02, TC-AGG-01 step 5)"
-    )
-    assert "criterion_band" not in agg_source, (
-        "M-AGG reads the band table directly — the mapping must come through M-PKG's "
-        "points_for_band, the only sanctioned reader of criterion_band.points "
-        "(CT-PKG-05, NFR-AGG-02)"
+    assert "points_for_band" in agg_source, (
+        "M-AGG never references points_for_band — the aggregate must route through "
+        "M-PKG's canonical mapping, the only sanctioned reader of the band table's "
+        "points (CT-PKG-05, NFR-AGG-02, TC-AGG-01 step 5); a reimplementation of the "
+        "mapping inside M-AGG is exactly the second place this guards against"
     )
 
     tree = repo_root / "src" / "aeh"

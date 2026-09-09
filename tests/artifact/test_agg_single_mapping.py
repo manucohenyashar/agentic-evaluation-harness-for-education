@@ -28,9 +28,13 @@ points column, or a second definition of the mapping, whenever that is attempted
   table); this file is the structural guard that runs in the gate today and forever.
 - SQL predicates are applied **per string literal** (via `ast`), never per file — prose
   that mentions verdicts and points paragraphs apart must not false-positive.
-- The live-schema half enumerates the real migrated tiers and asserts set equality on the
-  `verdict` table's columns — an ADDED per-judge points column fails the set, which
-  presence-style checks would miss.
+- The live-schema half enumerates the real migrated tiers and checks the `verdict` table
+  for band-present / points-absent. It deliberately does **not** pin today's full column
+  set: CT-JUDGE-06 mandates a persisted verdict carrying `band_ordinal`,
+  `evidence_sufficient`, `self_confidence` and a nullable `cited_spans` (landing with
+  M-JUDGE), and a guard that reds on a conforming landing would be a false alarm. The
+  defect named here — a points column, on the verdict table or anywhere — is caught by
+  the points-absence check plus the schema-wide points-table sweep.
 """
 
 from __future__ import annotations
@@ -43,7 +47,9 @@ from aeh.store import open_store
 _ALLOWED_POINTS_TABLES = {("package", "band"), ("cohort", "criterion_score")}
 
 _SELECT_POINTS_FROM_BAND = re.compile(
-    r"SELECT[^;]*\bpoints\b[^;]*\bFROM\s+band\b", re.IGNORECASE | re.DOTALL
+    r"SELECT[^;]*\bpoints\b[^;]*\bFROM\s+band\b"
+    r"|SELECT\s+\*[^;]*\bFROM\s+band\b",  # the wildcard read a row["points"] index consumes
+    re.IGNORECASE | re.DOTALL,
 )
 _VERDICT_TOUCHES_POINTS = re.compile(
     r"\bverdict\b[^;]*\bpoints\b|\bpoints\b[^;]*\bFROM[^;]*\bverdict\b",
@@ -74,10 +80,14 @@ def test_tc_agg_03_no_per_judge_points_column_exists_anywhere_in_the_schema(tmp_
             if "points" in columns:
                 points_tables.add((tier_name, table))
             if table == "verdict":
-                assert columns == {"verdict_id", "work_id", "judge_id", "band"}, (
+                # band-present / points-absent, not a pinned column set: CT-JUDGE-06
+                # grows this table (band_ordinal, evidence_sufficient, self_confidence,
+                # nullable cited_spans) when M-JUDGE lands, and a guard that reds on a
+                # conforming landing is a false alarm. The defect named here is the
+                # points column; the sweep below catches it on any table.
+                assert "band" in columns and "points" not in columns, (
                     f"the verdict table carries {sorted(columns)} — a judge's verdict "
-                    "names a band and carries no points (design Requires table, "
-                    "CT-AGG-02's 'no per-judge points column anywhere'); a per-judge "
+                    "names a band and carries no points (CT-JUDGE-06); a per-judge "
                     "points column IS the RISK-05 defect in schema form"
                 )
 
@@ -119,8 +129,7 @@ def test_tc_agg_03_the_mapping_has_one_definition_and_no_per_judge_readers(repo_
         name
         for name, text in sources.items()
         if name != "pkg.py"
-        and ("criterion_band" in text
-             or any(_SELECT_POINTS_FROM_BAND.search(lit) for lit in sql_literals(text)))
+        and any(_SELECT_POINTS_FROM_BAND.search(lit) for lit in sql_literals(text))
     }
     assert not direct_readers, (
         f"{sorted(direct_readers)} read the band table's points directly — "

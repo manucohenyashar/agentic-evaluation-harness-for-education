@@ -45,6 +45,25 @@ def criterion(bands, scoring_model: str = "atomic", criterion_id: str = "C-AGG")
     )
 
 
+def score(criterion_id: str, band_name: str, ordinal: int, points: float, *,
+          judge_count: int = 3, agreement: float = 1.0) -> SimpleNamespace:
+    """One aggregated criterion score — the value design §3.14's
+    `apply_policy(scores: Sequence[CriterionScore], policy)` consumes: the shipped
+    `criterion_score` columns (det migration v9) plus the criterion it belongs to.
+    `modal_band`/`band_spread` mirror the aggregate score row (FR-AGG-01); the band
+    name/ordinal pair is inert to the policy, which reads points by criterion."""
+    return SimpleNamespace(
+        criterion_id=criterion_id,
+        band=band_name,
+        ordinal=ordinal,
+        points=points,
+        modal_band=band_name,
+        band_spread=0.0,
+        judge_count=judge_count,
+        agreement=agreement,
+    )
+
+
 def verdict(band_name: str, ordinal: int) -> SimpleNamespace:
     """One judge's verdict: a declared band name with its ordinal, no points (CT-JUDGE)."""
     return SimpleNamespace(band=band_name, ordinal=ordinal)

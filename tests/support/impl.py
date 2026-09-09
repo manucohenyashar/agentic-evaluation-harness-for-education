@@ -219,18 +219,26 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          "tests/unit/agg/test_ordinal_alpha.py",
          "tests/unit/agg/test_aggregation_perf.py",
          "tests/integration/agg/test_even_panel_failed_write.py",
-         "tests/property/test_fuzz_05_aggregation_and_policy.py"),
+         "tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band",
+         "tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_no_even_panel_is_ever_aggregated"),
     ),
-    # FUZZ-05 carries a second, independent blocker: its policy half pins the #101 applicator
-    # (`aeh.grade` does not apply `GradePolicy` yet — no Interfaces block names one; invented
-    # name `apply_grade_policy`, reconciles at landing). Split from the `#101` module entry
-    # above, which resolves against `aeh.grade`'s **first** commit and so names a test the
-    # module's existence does not make runnable — the `#118` split precedent. One file under
-    # two entries is the contract working as designed: each half unmarks with its own blocker.
-    "#101 apply_grade_policy": (
+    # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
+    # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
+    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
+    # declared name; only `GradeComputation`'s field set is unpinned and assumed (`.total`,
+    # declared in the test's docstring). Split from the `#101` module entry above, which
+    # resolves against `aeh.grade`'s **first** commit and so names a test the module's
+    # existence does not make runnable — the `#118` split precedent. The fuzz file's
+    # marker is per-test with node-ID paths (the `#118`/`#138`/`#139` form): a
+    # module-level marker on a two-blocker file would let an early unmark move the
+    # still-red half inside `TEST_CMD`.
+    "#101 apply_policy": (
         "symbol",
-        f"{GRADE_MODULE}:apply_grade_policy",
-        ("tests/property/test_fuzz_05_aggregation_and_policy.py",),
+        f"{GRADE_MODULE}:apply_policy",
+        ("tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
     ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
