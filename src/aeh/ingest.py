@@ -175,8 +175,10 @@ INGEST_STATUSES: tuple[str, ...] = (
 BLANK_TOLERANCE_ENV = "HARNESS_INGEST_BLANK_TOLERANCE"
 DEFAULT_BLANK_TOLERANCE = 0.2
 
-#: The V0 resolution floor in DPI (an artifact rasterized below it quarantines;
-#: `HARNESS_INGEST_RESOLUTION_FLOOR`).
+#: The V0 resolution floor (an artifact rasterized below it quarantines;
+#: `HARNESS_INGEST_RESOLUTION_FLOOR`). The design denominates the floor in DPI;
+#: what the module can measure is the raster's linear extent in px, so the value
+#: is enforced as a px floor — `_check_rasters` carries the interpretation.
 RESOLUTION_FLOOR_ENV = "HARNESS_INGEST_RESOLUTION_FLOOR"
 DEFAULT_RESOLUTION_FLOOR = 150
 
@@ -1828,8 +1830,11 @@ def assemble_canonical_markdown(
     with no tier available the call refuses (`IngestOrderError`, `FR-INGEST-31`) —
     the module never guesses.
 
-    This is the pure seam the regression baseline (`TC-REG-01`) pins; `Ingestor`
-    assembles through it."""
+    This is the pure seam the regression baseline (`TC-REG-01`) pins — the
+    ladder's reference semantics. `Ingestor.ingest_document` implements the same
+    ladder over the blob store (a blob is one file of many pages, the seam's
+    page IS the file); the two move together, ambiguity refusal included
+    (#227)."""
     texts: list[str] = []
     for page in pages:
         if hasattr(page, "read_text"):
@@ -1909,6 +1914,24 @@ def assemble_canonical_markdown(
         names = ([filenames.get(identity) for identity in identities]
                  if filenames is not None else list(identities))
         if all(names):
+            # The ambiguity line (FR-INGEST-31, #227), the same one the gateway's
+            # ladder enforces: the tier resolves iff its natural keys form a
+            # strict total order over the pages; a key collision (identical
+            # names, or digit-variant spellings like page-1 vs page-01) refuses —
+            # never a silent stable sort over the caller's order.
+            keys = [tuple(_natural_key(name)) for name in names]
+            colliding = sorted({
+                names[index] for index, key in enumerate(keys)
+                if keys.count(key) > 1
+            })
+            if colliding:
+                raise IngestOrderError(
+                    f"ambiguous filenames cannot be ordered: "
+                    f"{', '.join(repr(name) for name in colliding)} resolve to "
+                    "the same position, so the filename tier cannot order them. "
+                    "The module never guesses (FR-INGEST-31) — state the order "
+                    "and re-ingest."
+                )
             ordered_indices = sorted(range(len(names)),
                                      key=lambda i: _natural_key(names[i]))
             order_source = "filename"
