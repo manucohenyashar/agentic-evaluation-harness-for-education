@@ -40,7 +40,8 @@ quarantine.
 the provider arrives by injection and `RecordedFixtureProvider` remains the only
 egress. Knobs: the strike budget is the ledger's env knob, and the second family's
 selection is its own pair (`HARNESS_EXTRACT_SECOND_FAMILY`,
-`HARNESS_EXTRACT_SECOND_FAMILY_MODEL`) — all read call-time.
+`HARNESS_EXTRACT_SECOND_FAMILY_MODEL`) — the disable flag read per `process` call,
+the model override resolved at construction like the primary ref itself.
 Observability: the result carries the stage's outcome per unit (a disabled or failed
 second family is said in `notes`), and the evidence row
 carries the document version it addressed (`NFR-EXTRACT-02`'s version binding).

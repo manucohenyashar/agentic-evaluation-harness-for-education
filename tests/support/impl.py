@@ -1281,7 +1281,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # driver plus `second_family_model` resolved when #69 landed the different-family
     # model and the `ExtractionWorker` seam, and the file runs in TEST_CMD again.
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
-    # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
     # Two entries stood here for TS-27. The injection-differential entry
     # (TC-EXTRACT-10, `test_extract_injection_resistance.py`) left with #68: its
