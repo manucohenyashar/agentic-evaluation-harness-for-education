@@ -83,6 +83,7 @@ __all__ = [
     "default_grade_policy",
     "export_package",
     "in_memory_catalog",
+    "points_for_band",
     "record_validation",
 ]
 
@@ -2342,11 +2343,18 @@ class PackageCatalog:
         return cached["bands"].get(criterion_id, ())
 
     def points_for_band(self, criterion_id: str, band: str) -> float:
-        """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee)."""
-        for row in self.bands(criterion_id):
-            if row["band"] == band:
-                return float(row["points"])
-        raise PackageError(f"criterion {criterion_id!r} declares no band {band!r}.")
+        """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee).
+
+        The per-criterion face of the module-level `points_for_band` — the single
+        canonical mapping (`CT-PKG-05`): one definition, in M-PKG, and every
+        consumer (`M-AGG`'s post-aggregation mapping at #91 included) routes
+        through it (`NFR-AGG-02`)."""
+        try:
+            return points_for_band(self.bands(criterion_id), band)
+        except PackageError as error:
+            raise PackageError(
+                f"criterion {criterion_id!r} declares no band {band!r}."
+            ) from error
 
     def _cache_get(self, v: PackageVersionId) -> dict:
         if self._cache_version != v or self._cache is None:
@@ -4169,3 +4177,31 @@ def export_package(package_version: str, dest: Path | str | None = None,
             return catalog.export(version_id, Path(dest))
         finally:
             store.close()
+
+
+# --- the single band→points mapping ---------------------------------------------------------------
+
+
+def points_for_band(bands: Sequence[Any], band_name: str) -> float:
+    """The canonical band→points mapping, module-level and pure (`CT-PKG-05`,
+    `NFR-AGG-02`; issue #91's mapping stage).
+
+    One definition, in M-PKG, of the only sanctioned reader of a band table's
+    points: every consumer routes through this function rather than re-deriving a
+    mapping — `M-AGG`'s aggregation maps the *aggregated* band through it exactly
+    once, after the median is taken (`FR-AGG-02`), and a per-judge average of
+    mapped points has no code path and may not gain one.
+
+    `bands` is the declared band set in any row shape the module already produces
+    — the store cache's mappings (`{"band": ..., "points": ...}`) or the declared
+    value objects (`.band`/`.points`) a criterion carries (`CT-PKG-04`). The
+    points are a **lookup**: the row's own value, returned untouched and never
+    computed (`FR-PKG-06`'s monotone guarantee is the table's property, not this
+    function's to enforce).
+    """
+    for row in bands:
+        name = row["band"] if isinstance(row, dict) else getattr(row, "band")
+        if name == band_name:
+            points = row["points"] if isinstance(row, dict) else getattr(row, "points")
+            return float(points)
+    raise PackageError(f"the declared band set carries no band {band_name!r}.")

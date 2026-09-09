@@ -1,7 +1,8 @@
 """`TC-AGG-05` and `TC-AGG-19` — ordinal agreement and the two-band degeneracy.
 
-Test plan §5.12, issue #94 (TS-35). Traces to `FR-AGG-04`. Written ahead of #91 (test
-plan §8.2).
+Test plan §5.12, issue #94 (TS-35). Traces to `FR-AGG-04`. Landed at #91 (unmarked
+there; test plan §8.2) — with the convention below as shipped: #91's `ordinal_alpha`
+implements α = 1 − D_o/D_e exactly as these cases pin it.
 
 **TC-AGG-05's convention, declared because the oracle is a hand-computed reference.**
 The design requires Krippendorff's α *with an ordinal metric* (`FR-AGG-04`) but §3.12
@@ -42,8 +43,6 @@ import pytest
 
 from tests.support.agg_vocabulary import AGG_BLOCKER, band, criterion, favourable_signals, panel
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 _FOUR_BAND = criterion(
     [

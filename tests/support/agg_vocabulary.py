@@ -1,21 +1,22 @@
 """The M-AGG test vocabulary: stand-in value objects and the favourable-signal fixture.
 
-TS-35 (#94) is written **ahead** of #91, so the value objects these cases pass to the
-aggregation surface do not exist yet. Collecting them here follows the `store_api.py`
-and `orch_run.py` precedents: state the assumption where a reader will find it, keep
-`require()` inside the test body, and make a rename one edit.
+TS-35 (#94) was written **ahead** of #91; #91 has landed, and the assumed surface below
+shipped as declared — `aeh.agg` is a pure module whose module-level functions are the
+tests' module-level reading of §3.12's Protocol, under the declared names. The table is
+kept with its landing statuses (the `test_random_arm.py` precedent): state the assumption
+where a reader will find it, and make a rename one edit.
 
-**Assumed of #91, declared so it is reconciled deliberately rather than discovered**
-(the `test_escalation_policy.py` precedent — stand-ins carrying the design's field
-names, reconciled at the story's landing):
+**Assumed of #91, as declared and as landed** (the `test_escalation_policy.py` precedent —
+stand-ins carrying the design's field names, reconciled at the story's landing):
 
 | Name | Status |
 |---|---|
-| `aeh.agg:aggregate(verdicts, criterion, signals) -> score` | **module-level shape of design §3.12's `Aggregator.aggregate` Protocol member.** The design declares the Protocol; it does not say how a consumer obtains an instance, and CT-AGG-01 makes the computation pure — so the tests call a module-level pure function. If #91 ships only Protocol methods, the adapter in each file's helper changes in one place. |
-| `aeh.agg:ordinal_alpha(verdicts) -> float or None` | design §3.12 Protocol member, same module-level reading. |
-| `aeh.agg:EvenPanelError` | **invented**: FR-AGG-03 and CT-AGG-12 name the refusal ("an even panel is a failed write, not a rounded verdict") but no exception name. The invented name is the "exact exception" oracle's pin and reconciles at #91's landing. |
-| score `.band` `.points` `.modal_band` `.band_spread` `.judge_count` `.agreement` | the shipped `criterion_score` columns (det migration v9) plus FR-AGG-01's recorded modal band and spread. `modal_band`/`band_spread` are assumed to live on the score: §9.9's `AggregationResult` is the console wire shape and carries the same figures, so a split landing reconciles here first. |
-| score `.agreement_degenerate` | **invented**: TC-AGG-19 requires "the degeneracy marker that M-STATS needs" (CT-AGG-17) and the design pins the marker's existence, not its name. |
+| `aeh.agg:aggregate(verdicts, criterion, signals) -> score` | **landed at #91 with this shape**: the module-level pure reading of design §3.12's `Aggregator.aggregate` Protocol member (CT-AGG-01's purity made the module-level function the natural form). |
+| `aeh.agg:ordinal_alpha(verdicts, criterion=None) -> float or None` | **landed at #91**: the Protocol member as a module-level pure function; the criterion is optional (the TC-AGG-19 call passes only the verdicts), and `aggregate` always passes it. |
+| `aeh.agg:EvenPanelError` | **landed at #91 with this name**: FR-AGG-03's refusal raised before any median is taken; the "exact exception" oracle's pin shipped as declared. |
+| score `.band` `.points` `.modal_band` `.band_spread` `.judge_count` `.agreement` | **landed at #91 on `aeh.agg:CriterionScore`**: the shipped `criterion_score` columns (det migration v9) plus FR-AGG-01's recorded modal band and spread — the §9.9 wire shape's figures live on the score, as assumed. |
+| score `.agreement_degenerate` | **landed at #91 with this name**: True exactly on a criterion with fewer than three bands (CT-AGG-17's two-band case). |
+| score `.histogram` | **landed at #91**: the panel's band histogram in the criterion's own band order — §3.12's observability line, surfaced on the result. |
 | verdict `.band` `.ordinal` | the design's Requires table: "every verdict names a declared band with an ordinal" and "carries no points". |
 | criterion `.criterion_id` `.scoring_model` `.bands` `.band_count` | CT-PKG-04: bands ordered by ordinal ascending, `band_count` even and in 2..6, points non-decreasing in ordinal. |
 | signals | the six M-INTEG fields enumerated by TC-AGG-06: `spans_verified`, `evidence_present`, `sufficiency_flag`, `ocr_overlap_risk`, `described_evidence`, `extractor_disagreement`. `None` means "not measured" and is adverse (fail-closed), so the favourable fixture uses explicit `True`/`False` rather than absence. |
@@ -105,11 +106,11 @@ def favourable_signals() -> SimpleNamespace:
 
 # --- TS-36 (#95): the confidence, routing and escalation extension ------------------------
 #
-# The cases of issue #95 (TC-AGG-06..18) are written ahead of #91 (the aggregate core),
-# #92 (the confidence caps and the stored integrity inputs) and #93 (routing, escalation
-# policy, score states). The stand-ins below extend this vocabulary the same additive way
-# the TS-35 section did; every name a design gap forced is listed in the table so the
-# owning story reconciles it deliberately rather than discovering it.
+# The cases of issue #95 (TC-AGG-06..18) are written ahead of #91 (the aggregate core —
+# landed), #92 (the confidence caps and the stored integrity inputs) and #93 (routing,
+# escalation policy, score states). The stand-ins below extend this vocabulary the same
+# additive way the TS-35 section did; every name a design gap forced is listed in the
+# table so the owning story reconciles it deliberately rather than discovering it.
 #
 # | Name | Status |
 # |---|---|
