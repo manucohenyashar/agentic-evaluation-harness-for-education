@@ -29,8 +29,9 @@ from tests.support.store_spy import StoreSpy
 # `_VersionOrderedRegistry` already makes each chain's *order* independent of import order;
 # these imports are about *completeness* — without them a module importing only `aeh.store`
 # would open files on a truncated chain, and the open site would refuse. Five modules
-# contribute: `aeh.extract` owns Cohort's last migration (11) and pulls `aeh.ingest` and
-# `aeh.orch` in transitively, but is listed explicitly.
+# contribute: `aeh.orch` owns Cohort's last migration (12, #61's `orch_run_lifecycle`),
+# `aeh.extract` the one before it (11), and `aeh.extract` pulls `aeh.ingest` and `aeh.orch`
+# in transitively — every contributor is listed explicitly all the same.
 import aeh.det  # noqa: E402
 import aeh.extract  # noqa: E402
 import aeh.ingest  # noqa: E402

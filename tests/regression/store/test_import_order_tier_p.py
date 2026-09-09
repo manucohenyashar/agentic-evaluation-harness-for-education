@@ -23,10 +23,12 @@ sorts each tier's chain at write time, and the pin test below asserts that guara
 migrations at all and sorting cannot add what was never registered — on bare main (PR #269
 landed) a fresh interpreter importing only `aeh.store` still opens a Tier P file at the base
 schema and #46's probe still fails at a distance. The refusal below pins that world. (The
-same gate caught the fifth contributor the original draft of this file missed: #269's
-`aeh.extract` appends Cohort migration 11, so the pin moved from 10 to 11 with it —
-`COMPLETE_SCHEMA_VERSIONS[Cohort] = 10` failed this file the moment the suites ran on the
-merged tree, which is the pin-rot gate working as documented.)
+same gate has now caught two rotations the original draft of this file could not have seen:
+#269's `aeh.extract` appends Cohort migration 11 — the pin moved 10→11 — and #61's
+`orch_run_lifecycle` appends Cohort migration 12 — the pin moved 11→12, with `aeh.orch` now
+owning Cohort's last migration and `aeh.extract` the tail before it. Each time
+`COMPLETE_SCHEMA_VERSIONS[Cohort]` failed this file the moment the suites ran on the merged
+tree, which is the pin-rot gate working as documented.)
 
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the

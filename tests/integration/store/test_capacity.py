@@ -113,8 +113,8 @@ def test_tc_store_19_a_clean_environment_needs_only_the_data_dir(tmp_data_dir, t
     child = (
         "from aeh.store import Statement, open_store\n"
         "# TC-STORE-25: the migration chains concatenate at import time, so a fresh process\n"
-        "# imports every contributing module before the first open (#234). aeh.extract owns\n"
-        "# Cohort's last migration, so the convention's line has five modules now.\n"
+        "# imports every contributing module before the first open (#234). aeh.orch owns\n"
+        "# Cohort's last migration (12, #61), so the convention's line has five modules now.\n"
         "import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg  # noqa: E401\n"
         "store = open_store()  # no argument: HARNESS_DATA_DIR or refusal\n"
         "handle = store.durable()\n"

@@ -1,20 +1,24 @@
 """`TS-24`'s pause-lifecycle cases — `TC-ORCH-16`, `TC-ORCH-17`, `TC-ORCH-28`, the
-`run.status` half of `TC-ORCH-29`, `RES-09` and `RES-10` — **written ahead of #61**
-(the cost ceiling, provider pauses and the control-row run lifecycle).
+`run.status` half of `TC-ORCH-29`, `RES-09` and `RES-10` — **landed by #61**
+(the cost ceiling, provider pauses and the control-row run lifecycle; the file was
+written ahead of the story, red by design, and unmarked when #61's landing made it
+green).
 
 Every case here turns on the pause mechanism: a run that pauses on
 `ProviderUnavailableError` or `BuildChangedError`, a pause effected by a **control
 row** the orchestrator reads on its own schedule, and the `run.status` machine
-`pending → running → (paused ↔ running) → complete | failed`. None of that exists
-before #61 — #57's create_run births the row `pending` and flips nothing, and the
-claim query already refuses a paused run it has never met ("that transition is
-#61's", `select_claimable`'s comment). So the file carries `writtenahead` and each
-test's **first** statements are the `require`/`require_attr` calls naming #61: the
-failure is the designed blocker, never a crash.
+`pending → running → (paused ↔ running) → complete | failed`. None of that existed
+before #61 — #57's create_run birthed the row `pending` and flipped nothing — so
+each test's **first** statements are still the `require`/`require_attr` calls
+naming #61: now always-true sanity gates binding the calls to the class, kept in
+the designed-blocker position.
 
-**Interface this file assumes of #61**, listed so it is reconciled deliberately
-rather than discovered (the `test_leasing.py` precedent — its six assumed names all
-resolved against #58's landing):
+**Interface this file assumed of #61**, reconciled against the landing: `start`
+and `pause` shipped as assumed; `pause` carries the assumed `cause=` keyword and
+renders it onto the run row; illegal transitions raise `RunStateError` (the
+"refuse with a named error" arm of the unpinned row below); control rows live in
+the `run_control` table, applied oldest-request-first. The table records the
+assumptions as made:
 
 | Name | Status |
 |---|---|
@@ -49,9 +53,9 @@ from aeh.prov import BuildChangedError, ProviderUnavailableError
 from aeh.store import open_store
 from tests.support.clock import FrozenClock
 from tests.support.impl import ORCH_MODULE, require, require_attr
-from tests.support.orch_run import seed_run
+from tests.support.orch_run import orch_cfg, seed_cohort, seed_package, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#61"
 
@@ -64,7 +68,7 @@ def _run_row(store, run_id: str) -> dict:
         "SELECT * FROM run WHERE run_id = :r", r=run_id
     )
     assert rows, f"run {run_id} vanished"
-    return rows[0]
+    return dict(rows[0])
 
 
 def _unit_row(store, work_id: str) -> dict:
@@ -266,16 +270,20 @@ def test_tc_orch_29_run_status_transition_matrix_is_exactly_the_declared_set(
 
     store = open_store(tmp_data_dir)
     try:
-        def _fresh_run(index: int) -> tuple:
-            """One seeded run per matrix cell: a transition asserted from a stale
+        orch = Orchestrator(store)
+        # One cohort and one package for the whole matrix: each cell needs a FRESH
+        # RUN, not a fresh ledger — `seed_run` re-seeds the cohort per call and a
+        # cohort id is UNIQUE, so the cells create runs directly over the seeded
+        # chain (create_run mints a distinct run_id per call, which is the freshness
+        # the oracle reads).
+        cohort_id = seed_cohort(store, _SUBMISSIONS)
+        version = seed_package(store, _CRITERIA)
+        resolved = orch_cfg("edge-local")
+
+        def _fresh_run(index: int) -> str:
+            """One fresh run per matrix cell: a transition asserted from a stale
             state is not a transition from the state named."""
-            _, run_id, _ = seed_run(
-                store,
-                submissions=_SUBMISSIONS,
-                criteria=_CRITERIA,
-                package_id=f"pkg-matrix-{index}",
-            )
-            return run_id
+            return orch.create_run(cohort_id, version, resolved)
 
         def _drive_to(orch, run_id: str, state: str) -> None:
             path = {

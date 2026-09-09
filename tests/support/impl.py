@@ -1586,18 +1586,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # so the GREEN cases (TC-ORCH-04/18, RES-04/05/12/15) run unmarked. These four entries
     # key the cases the later stories owe, on the §3.7 Protocol members those stories must
     # add to the concrete class.
-    "#61 TS-24 pause lifecycle (TC-ORCH-16/17/28/29-status, RES-09/10)": (
-        # Every case turns on the pause mechanism #61 ships; start and pause land
-        # together (a pause without a start cannot produce the declared machine), so
-        # the conjunction fires when the story's control surface lands. The `cause=`
-        # keyword the tests pass is disclosed in the test module's docstring.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.pause,"
-            f"{ORCH_MODULE}:Orchestrator.start"
-        ),
-        ("tests/integration/orch/test_pause_lifecycle.py",),
-    ),
     "#62 TS-24 residency and concurrency (TC-ORCH-23, RES-11/13)": (
         # Dispatch-surface cases: residency batching and the dispatch report are
         # #62's `progress`; the run_metrics WRITE half (swap count/duration,
@@ -1887,26 +1875,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/unit/orch/test_escalation_policy.py::"
             "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
-        ),
-    ),
-    "#61 TS-23 cost ceiling (TC-ORCH-15)": (
-        # The test also requires `Orchestrator(store, provider=...)` — a constructor
-        # kwarg no registry kind can express. The conjunction below is therefore
-        # necessary but not sufficient: if #61 lands start/pause without the provider
-        # seam, this entry resolves, the unmark happens, and the test reds inside
-        # TEST_CMD with the seam-naming assertion (test_cost_ceiling.py) as the message.
-        "symbols",
-        f"{ORCH_MODULE}:Orchestrator.start,{ORCH_MODULE}:Orchestrator.pause",
-        (
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[99pct-runs]",
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[100pct-pauses-at]",
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[101pct-refuses-and-pauses]",
         ),
     ),
     # --- TS-29 (#76), the M-INTEG adversarial forgery cases --------------------------------

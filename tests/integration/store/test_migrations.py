@@ -31,7 +31,8 @@ import pytest
 import aeh.pkg  # noqa: F401 -- imports the owning module so Tier P's registry is complete
 import aeh.ingest  # noqa: F401 -- imports the owning module so the cohort tier's registry is complete
 import aeh.orch  # noqa: F401 -- the cohort tier's latest owner (#60's
-# orch_escalation_ledger took cohort 10). The registry stays version-ordered by
+# orch_escalation_ledger took cohort 10; #61's orch_run_lifecycle took 12, the next
+# free number after extract's 11). The registry stays version-ordered by
 # construction — each owning module's append is a sorted merge (#60), because import
 # order across a pytest session cannot be controlled — which is what TC-STORE-04's
 # registry-filtered expectation and TC-STORE-06's monotonicity assertion walk. The

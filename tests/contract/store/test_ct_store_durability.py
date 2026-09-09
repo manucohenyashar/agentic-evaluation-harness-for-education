@@ -55,7 +55,8 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         from aeh.store import Statement, open_store
         # TC-STORE-25: the migration chains concatenate at import time, so a fresh process
         # imports every contributing module before the first open (#234) — the open site
-        # refuses the truncated chain otherwise. `aeh.extract` owns Cohort's last migration.
+        # refuses the truncated chain otherwise. `aeh.orch` owns Cohort's last migration
+        # (12, #61's `orch_run_lifecycle`).
         import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg  # noqa: E401
 
         store = open_store(sys.argv[1])

@@ -297,8 +297,8 @@ class IncompleteMigrationChainError(StoreError):
     caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
-    pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's last
-    migration).
+    pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
+    11 of its 12 migrations — and `aeh.orch` for the last, #61's `orch_run_lifecycle`).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1376,10 +1376,12 @@ def current_schema_version(tier: Tier) -> int:
 #: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
 #: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
-#: same phantom bug in mirror image.
+#: same phantom bug in mirror image. (The rule has now fired twice since the pin landed:
+#: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12 — both
+#: caught by that gate test, not by a failed open.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 11,
+    Tier.COHORT: 12,
     Tier.DURABLE: 4,
 }
 
@@ -1457,7 +1459,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run",
+    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run_control",
+    "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
     "roster", "cohort",
@@ -1476,6 +1479,11 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # would leave the escalation's audit trail behind (FR-STORE-07).
     "escalation_request": Statement("DELETE FROM escalation_request"),
     "circuit_breaker": Statement("DELETE FROM circuit_breaker"),
+    # #61's control-row queue: pause/resume requests name the run they hang from and
+    # are run state — they die with the cohort like the run they address, before the
+    # run row their FK points at (children before parents); a name the registry lacks
+    # would leave the operator's control history behind (FR-STORE-07).
+    "run_control": Statement("DELETE FROM run_control"),
     # #57's ledger tables: the run registry is run state (it names the cohort, the package
     # version and the frozen configuration) and dies with the cohort like every other Tier
     # C/R row — a name the registry lacks would leave a run's provenance behind.
@@ -1535,6 +1543,10 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     # is read by the same walk without an edit here.
     "escalation_request": Statement("SELECT * FROM escalation_request"),
     "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
+    # #61's control-row queue: no blob references (reason strings name conditions,
+    # never student bytes), but the scan registry covers every swept name so a
+    # column a future migration adds is read by the same walk without an edit here.
+    "run_control": Statement("SELECT * FROM run_control"),
     "run": Statement("SELECT * FROM run"),
     "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
