@@ -1669,6 +1669,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_write_surface.py",
         ),
     ),
+    "#74+#68 both module files (TS-66 C05 structural independence)": (
+        # The independence clause is about the PAIR: the import-graph assertion needs
+        # both module files on disk, so the conjunction takes each module's
+        # representative symbol (the #68-review precedent for extract's).
+        "symbols",
+        f"{INTEG_MODULE}:verify_span,{EXTRACT_MODULE}:prompt_fields",
+        (
+            "tests/contract/integ/test_structural_independence.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
