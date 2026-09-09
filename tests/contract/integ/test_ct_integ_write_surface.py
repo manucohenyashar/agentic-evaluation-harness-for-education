@@ -27,7 +27,7 @@ the gap between them:
 | Name | Status |
 |---|---|
 | `IntegrityGate` / `IntegritySignals` | the #74 keys, reused |
-| write-audit surface | real-SQLite table diff (the databases are never doubled, §4.2); the declared touched-tables allowlist is `{work_unit, run_metrics}` — the routing requests and the per-criterion rate rows #75's interface table records. Disclosed: the allowlist is the reconciliation point if `#74` persists signals elsewhere |
+| write-audit surface | real-SQLite table diff (the databases are never doubled, §4.2); the declared touched-tables allowlist is `{work_unit, run_metrics, review_queue}` — the routing requests (ledger and review queue, the plan's declared route destination for empty evidence) and the per-criterion rate rows #75's interface table records. Disclosed: the allowlist is the reconciliation point if `#74` persists signals elsewhere |
 | static scanners | local to this file (no test-to-test imports in this suite); they overlap the artifact file `tests/artifact/test_integ_write_set.py` (TC-INTEG-03/10's scanners) deliberately and independently — the clause case is release-gating on CT-INTEG-04 and must not break when that file is reorganized |
 | INFRA allowlist | `#75`'s `INFRA_WRITE_COLUMNS` vocabulary, restated here so the clause case owns its own allowlist and can be disputed line by line |
 """
@@ -64,17 +64,21 @@ DECLARED_SIGNALS = frozenset({
 FORBIDDEN_SCORE_COLUMNS = frozenset({"band", "points", "confidence"})
 
 #: The non-signal columns routing requests legitimately ride on (the #75
-#: vocabulary, restated so this case owns its own allowlist).
+#: vocabulary, restated so this case owns its own allowlist): the work ledger's
+#: columns, the durable metrics', and the review queue's — the plan's declared
+#: destination for the empty-evidence route (TC-INTEG-C07 step 2).
 INFRA_WRITE_COLUMNS = frozenset({
     "work_id", "submission_id", "criterion_id", "run_id",
     "stage", "status", "attempts", "origin",
     "metric", "name", "value",
+    "queue_id", "reason",
 })
 
 #: The tables the write audit may see touched: the work ledger (routing
-#: requests) and the durable metrics. Everything else — the score-bearing
-#: tables first — must be byte-identical across a verify().
-TOUCHABLE_TABLES = frozenset({"work_unit", "run_metrics"})
+#: requests), the durable metrics, and the review queue (the routing
+#: destination). Everything else — the score-bearing tables first — must be
+#: byte-identical across a verify().
+TOUCHABLE_TABLES = frozenset({"work_unit", "run_metrics", "review_queue"})
 UNTOUCHABLE_TABLES = frozenset({"criterion_score", "verdict", "document", "submission"})
 
 _INSERT_COLUMNS = re.compile(r"INSERT\s+INTO\s+\w+\s*\(([^)]*)\)", re.IGNORECASE)

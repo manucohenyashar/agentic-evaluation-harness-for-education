@@ -77,18 +77,29 @@ def _good_span(doc: Doc) -> Span:
 
 
 def _rejection_cases() -> list[tuple[str, Span]]:
-    """The clause's two families on one document. Byte anatomy: ASCII-only, so
-    byte and codepoint offsets coincide here — the bait below is what a
-    clamping or repairing implementation accepts, not a multibyte trap (that
-    one is C01's)."""
+    """The clause's two families on one document, plus the plan's near-miss
+    sweep — one byte changed, whitespace normalized, a homoglyph substituted,
+    offsets off by one — each of which a fuzzy or repairing matcher would
+    accept and this clause forbids. Byte anatomy: ASCII-only document, so byte
+    and codepoint offsets coincide here; the multibyte trap is C01's."""
     doc = _doc()
     n = len(doc.markdown.encode("utf-8"))
     start = doc.markdown.index("thesis")
     end = start + len("thesis")
     return [
-        # text mismatch, same offsets, same length: one character swapped
+        # text mismatch, same offsets, same length: one byte changed
         ("quoted text does not match the source bytes",
          Span(start, end, "theses")),
+        # near-miss: the trailing whitespace the document carries after the
+        # span, normalized away by a fuzzy matcher against unchanged offsets
+        ("whitespace-normalized text over unchanged offsets",
+         Span(start, end, "thesis ")),
+        # near-miss: the Cyrillic homoglyph ѕ (U+0455, two bytes) in place of
+        # the ASCII s — a unicode-normalizing matcher accepts, the bytes differ
+        ("homoglyph substituted (Cyrillic ѕ for s)", Span(start, end, "theѕis")),
+        # near-miss: both offsets shifted one byte right, text unchanged —
+        # an off-by-one slicer's exact answer
+        ("offsets off by one, text unchanged", Span(start + 1, end + 1, "thesis")),
         # offsets fall outside the canonical Markdown: end past the document
         ("end offset falls outside the canonical Markdown", Span(n - 2, n + 1, ".\n")),
         # offsets fall outside: start before the document
