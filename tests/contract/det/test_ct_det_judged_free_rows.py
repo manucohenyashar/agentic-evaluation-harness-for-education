@@ -29,6 +29,7 @@ from __future__ import annotations
 import pytest
 
 from aeh.det import DeterministicEvaluator
+from aeh.pkg import PackageCatalog
 from tests.support.det_vocabulary import (
     open_det_store,
     seed_det_world,
@@ -106,12 +107,14 @@ def test_tc_det_c02_no_verdicts_is_readable_as_complete_not_missing(
     The distinction the columns carry: the deterministic criterion's score
     rows are PRESENT and COMPLETE (one per submission, `judge_count = 0` on
     every row — work finished, no panel by design), while a criterion whose
-    evaluation never happened has NO rows. Presence-with-zero-judges versus
-    absence is the null-versus-absent line; asserted as a sweep over both
-    shapes in one store."""
+    evaluation never happened has NO rows — constructed here for real, as a
+    criterion added in a LATER package version that this cohort's run never
+    referenced: its catalog row exists (the absence is of scores, not of the
+    criterion), yet the score table carries nothing for it. Presence-with-
+    zero-judges versus absence is the null-versus-absent line."""
     store = open_det_store(tmp_data_dir)
     try:
-        run_id, _version, cohort_id = seed_det_world(
+        run_id, version, cohort_id = seed_det_world(
             store,
             submissions=("S01", "S02", "S03"),
             criteria=[
@@ -128,6 +131,25 @@ def test_tc_det_c02_no_verdicts_is_readable_as_complete_not_missing(
             ],
         )
         DeterministicEvaluator(store).evaluate_cohort(run_id)
+
+        # The absence shape, made real: a criterion in a later version the
+        # run never touched — its catalog row exists, its scores do not.
+        catalog = PackageCatalog(store.package("pkg-det"), package_id="pkg-det")
+        v2 = catalog.create_version(parent=version)
+        catalog.add_criterion(v2, "M-never", question_id="Q3", kind="mcq",
+                              scoring_model="atomic", band_count=2)
+        catalog.add_band(v2, "M-never", 0, "incorrect", 0.0)
+        catalog.add_band(v2, "M-never", 1, "correct", 1.0)
+        catalog.set_mcq_options(v2, "M-never",
+                                [("A", "Option A"), ("B", "Option B")])
+        catalog.set_answer_key(v2, "M-never", ("B",))
+        assert store.package("pkg-det").query(
+            "SELECT COUNT(*) AS n FROM criterion WHERE criterion_id = "
+            "'M-never'"
+        )[0]["n"] == 1, (
+            "TC-DET-C02: the never-evaluated criterion does not exist in the "
+            "catalog — the absence differential would be vacuous."
+        )
 
         cohort = store.cohort(cohort_id)
         scored = cohort.query(
@@ -154,10 +176,13 @@ def test_tc_det_c02_no_verdicts_is_readable_as_complete_not_missing(
             )
             assert shape["judged"] == 0 and shape["null_agr"] == 3
 
-        # "No verdicts because something failed": a criterion id with NO rows
-        # at all — the only absence shape the data offers. The two shapes are
+        # "No verdicts because evaluation never happened": the real absence —
+        # a cataloged criterion with NO score rows at all. The two shapes are
         # disjoint by row presence, so the consumer differential holds.
-        assert "C-never-evaluated" not in by_criterion
+        assert "M-never" not in by_criterion, (
+            "TC-DET-C02: score rows exist for a criterion no run evaluated — "
+            "the score table is not scoped to what actually ran."
+        )
         assert set(by_criterion) == {"M1", "M2"}
     finally:
         store.close()

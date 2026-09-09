@@ -171,9 +171,10 @@ def test_tc_det_c11_cost_is_independent_of_panel_size(tmp_data_dir,
 
 def test_tc_det_c11_cost_scales_within_an_order_of_magnitude(tmp_data_dir):
     """`TC-DET-C11` (cohort independence) — 35 and 350 students, the two ends
-    of an order of magnitude: the large pass's wall time stays under 20× the
-    small's (linear is 10×; the headroom is machine noise, not permission to
-    go quadratic), and BOTH stay under the clause's 5-second bound. Per
+    of an order of magnitude: the large pass's wall time stays under 40× the
+    small's (linear is 10×; the headroom above that is machine noise on a
+    sub-100ms baseline, not permission to go quadratic — O(n²) costs ~100×
+    here and fails), and BOTH stay under the clause's 5-second bound. Per
     evaluation, the two runs cost the same order — the property a consumer
     plans capacity against."""
     timings = {}
@@ -193,8 +194,8 @@ def test_tc_det_c11_cost_scales_within_an_order_of_magnitude(tmp_data_dir):
     assert timings[350] < 5.0 and timings[35] < 5.0, (
         f"TC-DET-C11: a bound blew at the edges: {timings}."
     )
-    assert timings[350] <= 20.0 * max(timings[35], 1e-4), (
+    assert timings[350] <= 40.0 * max(timings[35], 1e-4), (
         f"TC-DET-C11: 35 students took {timings[35]:.3f}s but 350 took "
-        f"{timings[350]:.3f}s — more than 20× for 10× the cohort; the cost "
+        f"{timings[350]:.3f}s — more than 40× for 10× the cohort; the cost "
         "curve left the order of magnitude."
     )

@@ -156,7 +156,6 @@ def test_tc_det_c12_a_deterministic_criterion_generates_no_judge_request(
             f"TC-DET-C12: the judged criterion enumerated {sorted(j1_stages)} "
             "— the contrast half is vacuous."
         )
-        assert run_id  # the enumeration belongs to the run under test
     finally:
         store.close()
 

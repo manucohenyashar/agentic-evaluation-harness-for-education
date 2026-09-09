@@ -19,10 +19,9 @@ single "not answered" figure FAILS rather than quietly reading wrong —
   (the API is the dataclass; the store is the DDL);
 - the read-back figures match a hand-built fixture EXACTLY, per option, per
   figure — including a zero-chosen distractor and the key flag;
-- the two figures cannot be conflated by a consumer reading names alone:
-  neither name contains the other, no shared "not answered" alias exists in
-  the module's vocabulary, and the alert the elevated one fires is a scanning
-  alert, not a difficulty signal.
+- the two figures carry their own names at BOTH layers — the exact field set
+  and column set leave no shared "not answered" alias to conflate them by
+  (the scanning-alert reading of the elevated figure is `TC-DET-C13`'s case).
 """
 
 from __future__ import annotations
@@ -67,13 +66,6 @@ def test_tc_det_c08_the_separation_is_structural():
         f"TC-DET-C08: the per-option API is {sorted(option_fields)} — the "
         "chosen counts and the key flag moved."
     )
-    # The names cannot be conflated by reading alone: neither name contains
-    # the other, and neither contains a difficulty word — the scanning
-    # figure must not read as item difficulty.
-    assert "blank" not in "unresolved_count"
-    assert "unresolved" not in "blank_count"
-    for name in ("blank_count", "unresolved_count"):
-        assert "difficulty" not in name and "hard" not in name
 
     # The schema layer: the DDL's own columns are two, separately named.
     from aeh.store import TIER_MIGRATIONS, Tier

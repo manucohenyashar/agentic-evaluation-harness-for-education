@@ -97,10 +97,11 @@ def _seed_two_question_world(store):
 
 
 def _seed_straddle_world(store):
-    """The threshold straddle: ten submissions, two questions, key B on both.
-    `M1` (Q1): three ambiguous of ten — unresolved rate 0.3. `M2` (Q2): one
-    ambiguous of ten — rate 0.1, but not zero: a question can hold an
-    unresolved row and still sit below the threshold. Everything else answers
+    """The threshold straddle: ten submissions, three questions, key B on all.
+    `M1` (Q1): three ambiguous of ten — unresolved rate 0.3, ABOVE the knob.
+    `M2` (Q2): one ambiguous of ten — rate 0.1, below it. `M3` (Q3): two
+    ambiguous of ten — rate 0.2, EXACTLY the knob, the boundary cell: the
+    clause says "above", so equality does not fire. Everything else answers
     the key."""
     submissions = tuple(f"S{i:02d}" for i in range(1, 11))
     seed_cohort(store, submissions, "c-det-straddle")
@@ -109,6 +110,7 @@ def _seed_straddle_world(store):
         [
             {"criterion_id": "M1", "question_id": "Q1", "key": ("B",)},
             {"criterion_id": "M2", "question_id": "Q2", "key": ("B",)},
+            {"criterion_id": "M3", "question_id": "Q3", "key": ("B",)},
         ],
     )
     for s in submissions:
@@ -123,6 +125,11 @@ def _seed_straddle_world(store):
                            selection=("B" if s != "S01" else None),
                            selection_state=("ambiguous" if s == "S01"
                                             else None))
+        seed_answer_region(store, "c-det-straddle", f"doc-{s}", "Q3",
+                           selection=("B" if s not in ("S01", "S02")
+                                      else None),
+                           selection_state=(None if s not in ("S01", "S02")
+                                            else "ambiguous"))
     resolved = resolve_run_config(
         edge_cfg(), CohortRef(cohort_id="c-det-straddle", consent_class="synthetic")
     )
@@ -189,9 +196,12 @@ def test_tc_det_c13_the_alert_is_threshold_exact_and_a_scanning_problem(
     n, the count, the rate and the threshold crossed, with `kind` naming the
     scan and `reads_as` naming the prohibition; M2's rate (0.1) stays below
     and emits NO alert even though it holds an unresolved row of its own —
-    the threshold, not the count, is what fires. No emitted key anywhere
-    carries difficulty vocabulary: the misreading the separation exists to
-    prevent cannot be built from the emission's names alone."""
+    the threshold, not the count, is what fires; and M3 sits EXACTLY at the
+    knob (0.2 == 0.2) and does not alert either — the clause says "above",
+    so equality is not above, pinned by a cell that would catch a `>=`
+    regression. No emitted key anywhere carries difficulty vocabulary: the
+    misreading the separation exists to prevent cannot be built from the
+    emission's names alone."""
     store = open_det_store(tmp_data_dir)
     try:
         run_id, _version = _seed_straddle_world(store)
@@ -205,12 +215,17 @@ def test_tc_det_c13_the_alert_is_threshold_exact_and_a_scanning_problem(
             "row — the differential is vacuous."
         )
         assert by_criterion["M2"].unresolved_rate == pytest.approx(0.1)
+        # The boundary cell: exactly at the knob, unresolved rows in hand.
+        assert by_criterion["M3"].unresolved_count == 2
+        assert by_criterion["M3"].unresolved_rate == pytest.approx(0.2)
 
         # Exactly one alert, and it names M1 — the question that crossed.
+        # Equality is not above: M3's 0.2 did not fire against knob 0.2.
         assert len(report.alerts) == 1, (
             f"TC-DET-C13: {len(report.alerts)} alerts — one question crossed "
-            "the threshold and one sat below it with unresolved rows in hand; "
-            "the emission must say exactly that."
+            "the threshold, one sat below it and one sat exactly at it, all "
+            "with unresolved rows in hand; the emission must say exactly "
+            "that."
         )
         alert = report.alerts[0]
         assert alert["criterion_id"] == "M1" and alert["question_id"] == "Q1", (

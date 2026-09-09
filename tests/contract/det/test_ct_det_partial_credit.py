@@ -152,7 +152,6 @@ def test_tc_det_c05_the_package_declared_policy_is_what_applies(tmp_data_dir):
             f"TC-DET-C05: per_option stored {(po['band'], po['points'])} — "
             "the fractional credit did not land scaled to the correct band."
         )
-        assert version  # the package version the policy columns live in
     finally:
         store.close()
 

@@ -24,7 +24,6 @@ import pytest
 
 from aeh.conf import CohortRef, resolve_run_config as _resolve
 from aeh.det import UndeclaredPartialCreditPolicy
-from aeh.prov import FixtureMissingError
 from tests.contract.det._doubles import (
     SITUATION_TABLE,
     canonical_table_bytes,
@@ -78,7 +77,6 @@ def test_tc_det_c01_no_model_call_with_the_provider_hard_blocked(
     The guard's attempt count is also asserted EXACTLY zero — the block is the
     backstop, the zero is the oracle (`TC-DET-C11` inherits this discipline)."""
     provider = make_fixture_provider(tmp_data_dir / "empty-fixtures")
-    assert provider is not None
     for cell in SITUATION_TABLE:
         if cell.raises is not None:
             with pytest.raises(UndeclaredPartialCreditPolicy):
@@ -112,7 +110,6 @@ def test_tc_det_c01_byte_reproducible_across_runs_and_backend_profiles(
     but the module under test."""
     blocked_a = make_fixture_provider(tmp_data_dir / "profile-a-fixtures")
     blocked_b = make_fixture_provider(tmp_data_dir / "profile-b-fixtures")
-    assert blocked_a is not None and blocked_b is not None
     # Two resolved backend profiles: the profile the run config would carry
     # around the kernel. Resolving them here is what makes the differential
     # honest — a kernel that consulted the environment or a profile would
@@ -133,7 +130,6 @@ def test_tc_det_c01_byte_reproducible_across_runs_and_backend_profiles(
         "TC-DET-C01: two evaluations of the same table differed — the "
         "kernel is not reproducible run-to-run."
     )
-    assert profile_a is not None and profile_b is not None
 
     # Backend differential: same bytes under both profiles. The profiles
     # are resolved, the providers are constructed and hard-blocked, and the
@@ -157,7 +153,3 @@ def test_tc_det_c01_byte_reproducible_across_runs_and_backend_profiles(
         "against a path that reached out."
     )
     network_guard.assert_no_network()
-    # The blocked providers raise on any call the module makes; the
-    # assertions above proved none happened. FixtureMissingError is
-    # imported to keep the block's shape visible at the case's surface.
-    assert FixtureMissingError is not None
