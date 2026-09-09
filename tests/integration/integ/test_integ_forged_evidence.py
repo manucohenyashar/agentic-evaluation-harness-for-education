@@ -228,9 +228,11 @@ def _extract_retries(store, run_id: str, submission_id: str) -> list[dict]:
 
 
 def _score_rows(store, run_id: str) -> list[dict]:
-    return store.durable().query(
-        "SELECT * FROM criterion_score WHERE run_id = :r", r=run_id
-    )
+    # Unfiltered on purpose: each scenario owns its store (tmp_data_dir), so the table's
+    # whole contents are this run's — and the assertion must not depend on a run_id
+    # column the schema may not carry.
+    del run_id
+    return store.durable().query("SELECT * FROM criterion_score")
 
 
 # --- TC-INTEG-13: every forged citation fails byte-exact verification -----------------------
