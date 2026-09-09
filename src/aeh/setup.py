@@ -3152,6 +3152,8 @@ class SetupService:
 
         Both blocking gates are checked HERE and refused with the gate named: the
         confirmed inventory (gate 1) and every deterministic criterion keyed (gate 2).
+        Beside them, the `FR-SETUP-09` structural check refuses a draft whose judged
+        criteria do not each carry an `evidence_type` (#232, `TC-SETUP-12`).
         The publication itself is `M-PKG`'s one-transaction lock flip (`FR-PKG-01`) —
         setup assembles and gates; the Tier P writer writes (`CT-PKG-12`)."""
         v = self._require_draft_version()
@@ -3376,7 +3378,8 @@ class SetupService:
     def _refuse_unmet_gates(self, v: PackageVersionId) -> None:
         """The two blocking gates, each refused with its number and its unblocking
         step — the console renders the refusal verbatim (`FR-CONSOLE-06`: exactly two
-        screens block)."""
+        screens block) — and beside them the structural check `FR-SETUP-09` owes
+        publication: no judged criterion without its `evidence_type` locks (#232)."""
         stored = self._catalog.proposal(v)
         if stored is None or stored["confirmed_at"] is None:
             raise SetupOrderError(
@@ -3393,4 +3396,30 @@ class SetupService:
                 "publish refused: answer keys missing for the deterministic criteria "
                 f"{', '.join(unkeyed)} — blocking gate 2 of 2 (§4.2.1): "
                 "set_answer_keys first."
+            )
+        # The structural check beside the two blocking gates (`FR-SETUP-09`, #232): a
+        # JUDGED criterion — kind `open`, the kind the judged set is (`aeh.pkg`,
+        # `PackageDraft`: "criteria names the judged criteria as bare ids (kind
+        # `open`...)") — must carry its `evidence_type`, the declaration M-INTEG routes
+        # on (`FR-INTEG-03`). The read back attaches the default when the model
+        # proposes none, so a judged criterion without one entered the package outside
+        # the read back (the degraded path's hand-entry, `needs_manual_entry`) — and a
+        # package cannot lock with an undeclared criterion in it. A criterion that is
+        # NOT judged (kind `mcq`, #53's staged deterministic criteria) is keyed, not
+        # judged, and does not require one: the gate reads judged-ness, not the whole
+        # criterion set (`TC-SETUP-12`). Every offender is named, not just the first.
+        untyped = [
+            row["criterion_id"] for row in self._catalog.criteria(v)
+            if row["kind"] == "open"
+            and not str(row.get("evidence_type") or "").strip()
+        ]
+        if untyped:
+            raise SetupOrderError(
+                "publish refused: evidence_type missing for the judged criteria "
+                f"{', '.join(untyped)} (FR-SETUP-09). A judged criterion must declare "
+                "what kind of textual evidence satisfies it — M-INTEG routes on the "
+                "declaration (FR-INTEG-03), and the read back attaches the default "
+                "when the model proposes none, so a judged criterion without one "
+                "entered the package outside the read back. Deterministic (mcq) "
+                "criteria are keyed, not judged, and do not require one."
             )
