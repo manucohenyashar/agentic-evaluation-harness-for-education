@@ -51,7 +51,7 @@ Cases implemented here, keyed to the plan's steps:
 |---|---|
 | `ScoringWorker()` constructed with **no arguments** | the `test_payload_pseudonymization.py` bet — §3.10 declares `assemble` pure, and the rung-0 cases hold no store. If #78's constructor requires the `(store, provider, judge_ref)` triple, `_construct_worker` falls back to it with the test doubles in the slots — one line at landing either way |
 | `assemble(unit)` | §3.10 Interfaces, verbatim |
-| `assemble(unit, dependency_evidence=[...])` | **assumed here** for TC-JUDGE-05 only — the `test_extraction_isolation.py` precedent for passing the parent spans the caller already resolved, at rung 0, to a pure assembler |
+| `assemble(unit)` — exactly one parameter | §3.10 Interfaces, verbatim; TC-JUDGE-07 pins the signature, so TC-JUDGE-05 supplies the parent spans through the `ScoringRequest(**kwargs)` construction door instead (the fetch half joins at landing — disclosed in the TC-JUDGE-05 docstring) |
 | `ScoringRequest(**kwargs)` construction | the whitelist door — an undeclared kwarg must be REFUSED (a closed dataclass refuses structurally; a validating schema refuses by rule; either is the required behaviour, and a silent strip is the failure) |
 | `prompt_fields(request) -> payload` with ordered `.fields` | **already assumed by the repo** (`"#78 review"`, `test_judge_band_forcing.py`) — the byte-level views render through it |
 
@@ -122,10 +122,9 @@ _PROHIBITED_STEMS = (
     "other",  # another submission's material; no HLD §9.9 field contains it
 )
 
-#: Compound names that legitimately carry a prohibited stem. Only what HLD §9.9's
-#: block already shows or the repo's existing M-JUDGE tests already assume may be
-#: listed here; anything else containing a stem is a finding.
-_BENIGN_COMPOUNDS = ("scoring_model",)
+#: Compound names that legitimately carry a prohibited stem: NONE. If a legitimate
+#: HLD §9.9 field ever trips a stem below, that is a finding — the field is renamed,
+#: never exempted from the scan (an exemption list is a weakening waiting to happen).
 
 #: TC-JUDGE-06's vocabulary: the deterministic criterion's selection and correctness.
 _DETERMINISTIC_STEMS = (
@@ -258,9 +257,7 @@ def _schema_names(request_type: Any, request: Any) -> list[str]:
     """The schema's names: the TYPE's fields when the type declares them, plus every
     name present on the instance (the `test_extraction_isolation.py` walker, via the
     shared vocabulary)."""
-    names = [name for _path, name in
-             (leaf.rsplit(".", 1) if "." in leaf else ("", leaf))
-             for leaf in [p for p, _t in string_leaves(request)]]
+    names = [path.rsplit(".", 1)[-1] for path, _leaf in string_leaves(request)]
     names.extend(field_names(request))
     if dataclasses.is_dataclass(request_type):
         names.extend(f.name for f in dataclasses.fields(request_type))
@@ -271,15 +268,10 @@ def _schema_names(request_type: Any, request: Any) -> list[str]:
 
 
 def _contaminating(names: list[str], stems: tuple[str, ...]) -> list[str]:
-    """The names that carry a prohibited stem, minus the declared benign compounds."""
+    """The names that carry a prohibited stem. No exemptions: a legitimate field
+    that trips a stem is a finding about the field, not a scan false positive."""
     return sorted(
-        {
-            name
-            for name in names
-            if name.lower() not in _BENIGN_COMPOUNDS
-            for stem in stems
-            if stem in name.lower()
-        }
+        {name for name in names for stem in stems if stem in name.lower()}
     )
 
 
@@ -328,6 +320,7 @@ def test_the_contaminating_field_scan_catches_planted_fields():
         "cohort_summary": "the cohort leaned high",
         "student_history": ["this student's last three papers"],
         "total_points": 12,
+        "cumulative_running_total": 41,
         "student_name": "Ada Example-Student",
         "other_submissions": [{"submission_id": "s-other", "text": "..."}],
     }
@@ -336,7 +329,8 @@ def test_the_contaminating_field_scan_catches_planted_fields():
     offenders = _contaminating(names, _PROHIBITED_STEMS)
     expected = {
         "prior_judge_verdicts", "running_score", "cohort_summary",
-        "student_history", "total_points", "student_name", "other_submissions",
+        "student_history", "total_points", "cumulative_running_total",
+        "student_name", "other_submissions",
     }
     assert expected <= set(offenders), (
         f"the contaminating-field scan missed planted field(s) "
@@ -453,7 +447,16 @@ def test_tc_judge_01_escalation_variant_judges_2_and_3():
         )
         for (n1, v1), (n2, v2) in zip(rendered["judge-1"], rendered[judge]):
             if v1 != v2:
-                assert judge in f"{n1}={v2}" or judge in v2 or judge in n1, (
+                # The ONLY permitted difference is the judge substitution itself:
+                # the field IS the judge id, or carries it exactly where judge-1's
+                # id sat. Any other drift — a briefing note, a first-verdict
+                # summary, whatever the field is named — fails here.
+                allowed = (
+                    v2.strip() == judge
+                    or (isinstance(v1, str) and "judge-1" in v1
+                        and v2 == v1.replace("judge-1", judge))
+                )
+                assert allowed, (
                     f"{judge}'s request differs from judge-1's in field {n1!r} "
                     f"({v1!r} vs {v2!r}) beyond judge-identifying material — the "
                     "escalation must see the SAME context, not a briefed one "
@@ -500,15 +503,20 @@ def test_tc_judge_02_undeclared_field_fails_validation_and_is_not_dispatched():
         f"fixture bug: could not read the assembled request's own shape: {clean!r}"
     )
 
-    # Door A — construction with an undeclared field.
-    with pytest.raises(Exception) as excinfo:  # noqa: B017,PT011 — any refusal counts
-        if isinstance(ScoringRequest, type) and not isinstance(clean, ScoringRequest):
-            ScoringRequest(**clean_kwargs, prior_cohort_summary="the cohort leaned high")
-        else:
-            # The assembly seam re-validates when the type itself cannot express the
-            # refusal (a dict-shaped schema validates at assembly).
-            worker.assemble(_unit(), prior_cohort_summary="the cohort leaned high")
-    del excinfo  # the refusal is the assertion; its type is #78's to name (disclosed)
+    # The provider spy is the witness for the whole test: the worker is constructed
+    # with the spy in the provider slot first, every door below runs against it, and
+    # its call log must end the test empty — the plan's "is not dispatched; the
+    # provider spy records zero calls" half.
+    spy = _ProviderSpy()
+    worker = _construct_worker(store=None, provider=spy, judge=None)
+
+    # Door A — construction with an undeclared field. The reach first proves the
+    # door CAN build the legal request (so a signature mismatch errors visibly
+    # instead of counting as the refusal); the undeclared field must then be
+    # REFUSED, not silently stripped.
+    ScoringRequest(**clean_kwargs)  # reach: the door builds the legal request
+    with pytest.raises(Exception):  # noqa: B017,PT011 — any refusal counts
+        ScoringRequest(**clean_kwargs, prior_cohort_summary="the cohort leaned high")
 
     # Door B — an undeclared field written onto a clean instance.
     injected = False
@@ -525,9 +533,7 @@ def test_tc_judge_02_undeclared_field_fails_validation_and_is_not_dispatched():
         with pytest.raises(IsolationViolation):
             assert_isolated(clean)
 
-    # The provider spy: nothing was dispatched, because nothing legal exists to send.
-    spy = _ProviderSpy()
-    worker = _construct_worker(store=None, provider=spy, judge=None)
+    # The spy's log: nothing was dispatched while handling the invalid request.
     assert spy.calls == [], (
         f"the dispatch path recorded {len(spy.calls)} call(s) without a validated "
         "request — a request that failed validation must not be dispatched "
@@ -562,6 +568,9 @@ def test_tc_judge_03_all_four_non_single_id_requests_are_rejected():
         f"{sorted(clean_kwargs)}"
     )
 
+    # Reach: the construction door builds the legal request — so a signature
+    # mismatch below errors visibly instead of counting as the refusal.
+    ScoringRequest(**clean_kwargs)
     attempts = (
         ("two criterion ids", {"criterion_id": ("C-01", "C-02")}),
         ("two submission ids", {"submission_id": ("s-1", "s-2")}),
@@ -571,12 +580,9 @@ def test_tc_judge_03_all_four_non_single_id_requests_are_rejected():
     for label, override in attempts:
         kwargs = dict(clean_kwargs)
         kwargs.update(override)
-        with pytest.raises(Exception) as excinfo:  # noqa: B017,PT011 — any refusal counts
-            if isinstance(ScoringRequest, type) and not isinstance(clean, ScoringRequest):
-                ScoringRequest(**kwargs)
-            else:
-                worker.assemble(**kwargs)
-        del excinfo, label  # the refusal is the assertion; the type is #78's to name
+        with pytest.raises(Exception):  # noqa: B017,PT011 — any refusal counts
+            ScoringRequest(**kwargs)
+        del label  # the refusal is the assertion; the type is #78's to name
 
 
 # --- TC-JUDGE-04 ---------------------------------------------------------------------------
@@ -651,6 +657,8 @@ def test_tc_judge_05_dependency_evidence_is_schema_typed_to_spans():
     structural-absence form, which FR-JUDGE-14 mirrors for the scoring request)."""
     worker = _construct_worker()
     ScoringRequest = require(JUDGE_MODULE, REQUEST_TYPE, issue=ISSUE)
+    assert_isolated = require(JUDGE_MODULE, ISOLATED_CHECK, issue=ISSUE)
+    IsolationViolation = require(JUDGE_MODULE, VIOLATION, issue=ISSUE)
 
     parent_spans = [
         {"start": 0, "end": 40, "text": "The crate does not slide down the ramp."},
@@ -664,15 +672,25 @@ def test_tc_judge_05_dependency_evidence_is_schema_typed_to_spans():
         "self_confidence": 0.88,
         "judge_id": "judge-2",
     }
-    request = worker.assemble(
-        _unit("C-04", submission_id="s-dep"),
-        # The kwarg is the rung-0 seam for the parent spans the orchestrator's
-        # topological order guarantees already exist (CT-ORCH-05); see the module
-        # docstring's interface table.
-        dependency_evidence=[
-            {"criterion_id": "C-02", "spans": parent_spans},
-        ],
+    clean = worker.assemble(_unit("C-04", submission_id="s-dep"))
+    clean_kwargs: dict[str, Any] = {}
+    if dataclasses.is_dataclass(clean) and not isinstance(clean, type):
+        clean_kwargs = {f.name: getattr(clean, f.name) for f in dataclasses.fields(clean)}
+    elif isinstance(clean, dict):
+        clean_kwargs = dict(clean)
+    assert clean_kwargs, (
+        f"fixture bug: could not read the assembled request's own shape: {clean!r}"
     )
+    # The schema door: `dependency_evidence` IS an HLD §9.9 field, so the parent
+    # spans the orchestrator's topological order guarantees already exist
+    # (CT-ORCH-05) are supplied through construction; the fetch half — the assembler
+    # resolving them from the ledger — is structural at rung 0 and joins at landing
+    # (disclosed in the module docstring). `assemble(unit)` keeps the design's
+    # one-argument signature, which TC-JUDGE-07 in this same file pins.
+    request = ScoringRequest(**{**clean_kwargs,
+                                "dependency_evidence": [
+                                    {"criterion_id": "C-02", "spans": parent_spans},
+                                ]})
 
     # The parent's spans are present, keyed to the parent criterion, and nothing else.
     entries = (
@@ -708,7 +726,9 @@ def test_tc_judge_05_dependency_evidence_is_schema_typed_to_spans():
             f"({value!r}) — FR-JUDGE-14: spans, never verdicts"
         )
 
-    # The injection door: a verdict slipped into dependency_evidence must be refused.
+    # The injection door: a verdict slipped into a dependency_evidence entry must be
+    # refused — at construction (schema validation) or by assert_isolated
+    # (IsolationViolation, the machine-checkable form); silence is the failure.
     injected_entry = {
         "criterion_id": "C-02",
         "spans": parent_spans,
@@ -717,11 +737,15 @@ def test_tc_judge_05_dependency_evidence_is_schema_typed_to_spans():
         "points": 3.0,
         "self_confidence": 0.91,
     }
-    with pytest.raises(Exception):  # noqa: B017,PT011 — any refusal counts
-        worker.assemble(
-            _unit("C-04", submission_id="s-dep"),
-            dependency_evidence=[injected_entry],
-        )
+    injected_request: Any = None
+    try:
+        injected_request = ScoringRequest(**{**clean_kwargs,
+                                             "dependency_evidence": [injected_entry]})
+    except Exception:  # noqa: B017,PT011 — refused at construction: the required form
+        injected_request = None
+    if injected_request is not None:
+        with pytest.raises(IsolationViolation):
+            assert_isolated(injected_request)
 
 
 # --- TC-JUDGE-06 ---------------------------------------------------------------------------
@@ -760,17 +784,13 @@ def test_tc_judge_06_mixed_question_request_carries_no_deterministic_material():
     elif isinstance(request, dict):
         clean_kwargs = dict(request)
     if clean_kwargs:
+        # Reach: the door builds the legal request — a signature mismatch errors
+        # visibly instead of counting as the refusal.
+        ScoringRequest(**clean_kwargs)
         kwargs = dict(clean_kwargs)
         kwargs["deterministic_selection"] = {"option_id": "B", "correct": True}
         with pytest.raises(Exception):  # noqa: B017,PT011 — any refusal counts
-            if isinstance(ScoringRequest, type) and not isinstance(
-                request, ScoringRequest
-            ):
-                ScoringRequest(**kwargs)
-            else:
-                worker.assemble(_unit("C-JUDGED-MIXED", submission_id="s-mixed"),
-                                deterministic_selection={"option_id": "B",
-                                                         "correct": True})
+            ScoringRequest(**kwargs)
 
 
 # --- TC-JUDGE-07 ---------------------------------------------------------------------------
@@ -853,7 +873,7 @@ def test_tc_judge_19_assemble_is_pure(network_guard, frozen_clock, store_spy,
     )
 
     # No clock: sixty simulated seconds later, the same unit renders byte-identically.
-    frozen_clock.advance(60_000)
+    frozen_clock.advance(60)
     second = worker.assemble(unit)
     fields_second = "\n".join(
         f"{name}={value}" for name, value in fields_of(
