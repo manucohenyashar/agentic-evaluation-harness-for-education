@@ -280,9 +280,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
     # the evidence row that commits together with it (CT-STORE-03's commit-together;
     # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
-    "aeh.extract:702",
-    "aeh.extract:703",
-    "aeh.extract:705",
+    "aeh.extract:711",
+    "aeh.extract:712",
+    "aeh.extract:714",
     # The ingest sites are #226's line numbers (the live-crop/raster-persistence
     # story and its review fixes shifted the module; every statement verified
     # unchanged against the prior baseline, the tripwire diff being the line
