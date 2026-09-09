@@ -148,12 +148,22 @@ def test_tc_integ_07_repeated_insufficiency_escalates_to_a_human(tmp_data_dir):
 def test_tc_integ_07_unanimous_sufficiency_writes_no_band_from_this_module(tmp_data_dir):
     """`TC-INTEG-07`'s control — a fully sufficient panel: no re-extraction request and
     still no `criterion_score` row, because the module *never* writes one (the score is
-    M-AGG's artifact; FR-INTEG-08's write set has no band in it)."""
+    M-AGG's artifact; FR-INTEG-08's write set has no band in it).
+
+    Follow-up reconciliation (TS-66): this control runs BETWEEN the sweeps — scoring
+    has produced no verdicts — so `sufficiency_flag` reads its conservative default
+    (`True`, the adverse value), not the panel's final permissive value. The former
+    `assert ... is False` here contradicted TC-INTEG-12's own conservative-default
+    case on identical state; CT-INTEG-11 settles it. The control's subject — no
+    routing and no band — is unchanged."""
     store, handle, run_id, gate = _scenario(
         tmp_data_dir, PanelFlags((True, True, True))
     )
     signals = gate.verify(run_id, "SUB-201", "C1")
-    assert signals.sufficiency_flag is False
+    assert signals.sufficiency_flag is True, (
+        "pre-scoring, the flag must read its conservative default (CT-INTEG-11) — a "
+        "permissive value here lets an unscored unit look sufficient"
+    )
     assert not [u for u in _extract_units(store, run_id) if u["status"] == "pending"], (
         "a sufficient panel routed for re-extraction — the routing fired without its "
         "condition"
