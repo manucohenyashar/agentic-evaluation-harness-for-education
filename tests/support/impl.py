@@ -1689,12 +1689,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_byte_exact_rejection.py",
         ),
     ),
-    "#92 gate+signals+aggregate (TS-66 C07 empty evidence routes)": (
+    "#92 gate+signals+aggregate+threshold (TS-66 C07 empty evidence routes)": (
         # The most consequential negative clause: the route sweep runs the gate (#74),
-        # the rung-3 consumer half drives M-AGG's aggregate (#92, the last blocker).
+        # the rung-3 consumer half drives M-AGG's aggregate and reads the auto-accept
+        # threshold (#92, the last blocker).
         "symbols",
         (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate"),
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_empty_evidence_routes.py",
         ),

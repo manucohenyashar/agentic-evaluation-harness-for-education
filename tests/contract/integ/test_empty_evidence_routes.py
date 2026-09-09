@@ -238,7 +238,8 @@ def test_tc_integ_c07_m_agg_never_auto_scores_empty_evidence():
     is never `auto`. The cap is what stops the panel's agreement from outrunning
     the evidence's absence."""
     IntegritySignals = require(INTEG_MODULE, "IntegritySignals", issue="#74")
-    aggregate = require(AGG_MODULE, "aggregate", issue="#92")
+    aggregate, auto_threshold = require(
+        AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92")
     empty = IntegritySignals(
         spans_verified=True, evidence_present=False, sufficiency_flag=False,
         ocr_overlap_risk=False, described_evidence=False,
@@ -251,6 +252,14 @@ def test_tc_integ_c07_m_agg_never_auto_scores_empty_evidence():
         "panel — absent evidence became a verdict through the consumer, the path "
         "CT-INTEG-07 forbids regardless of where it hides"
     )
+    confidence = getattr(outcome, "confidence", None)
+    if confidence is not None:
+        assert confidence < auto_threshold, (
+            f"empty evidence reads confidence {confidence} at or above the "
+            f"auto-accept threshold {auto_threshold} — the cap CT-INTEG-07 rides on "
+            "is not enforced, and the routing prohibition above holds only by the "
+            "outcome's good manners"
+        )
 
 
 # --- limb 4: the rung-4 half, deferred with disclosure --------------------------------------

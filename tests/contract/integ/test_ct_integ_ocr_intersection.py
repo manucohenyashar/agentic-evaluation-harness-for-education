@@ -37,18 +37,28 @@ from __future__ import annotations
 
 import pytest
 
-from tests.contract.integ._doubles import Criterion, OCR_FLOOR, byte_span, make_gate
+from aeh.store import open_store
+from tests.contract.integ._doubles import (
+    Criterion,
+    OCR_FLOOR,
+    byte_span,
+    unanimous_panel,
+)
 from tests.support.impl import AGG_MODULE, INTEG_MODULE, require
 from tests.support.integ_vocabulary import (
     CitedRegion,
     ExtractionView,
     PanelFlags,
+    document_id_for,
+    seed_document,
 )
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.contract
 
 _MARKDOWN = "The student argues the thesis directly, then supports it with evidence.\n"
-_RUN = "run-integ-c09"
+_SUBMISSION = "SUB-C09"
+_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 
 def _region(needle: str, ocr_conf: float, occurrence: int = 0) -> CitedRegion:
@@ -102,11 +112,23 @@ def test_tc_integ_c09_the_intersection_oracle_has_teeth():
 
 
 def _risk_for(tmp_data_dir, spans, regions) -> bool:
+    """One gate over a seeded run (the sibling convention: the gate reads real
+    ledger state, not an empty store), returning the `ocr_overlap_risk` the
+    cited spans produce against `regions`. `spans` carries `Span`s, `regions`
+    carries `CitedRegion`s — the gate's two declared inputs."""
+    store = open_store(tmp_data_dir)
+    orch, run_id, _version = seed_run(store, submissions=(_SUBMISSION,),
+                                      criteria=_CRITERIA)
+    handle = store.cohort(ORCH_COHORT_ID)
+    seed_document(handle, document_id_for(_SUBMISSION), _SUBMISSION, _MARKDOWN,
+                  ORCH_COHORT_ID)
+    orch.enumerate_units(run_id)
     view = ExtractionView(spans=spans, regions=regions,
                           panel=PanelFlags((True, True, True)))
-    gate, store = make_gate(tmp_data_dir, view, ocr_conf_floor=OCR_FLOOR)
+    IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
+    gate = IntegrityGate(handle, store.blobs(), view, ocr_conf_floor=OCR_FLOOR)
     try:
-        return gate.verify(_RUN, "SUB-C09", "C1").ocr_overlap_risk
+        return gate.verify(run_id, _SUBMISSION, _CRITERIA[0]["criterion_id"]).ocr_overlap_risk
     finally:
         store.close()
 
@@ -126,7 +148,7 @@ def test_tc_integ_c09_low_confidence_uncited_does_not_flag_and_cited_does(
 
     # Fixture A: the document carries real low confidence — just not under the span.
     _assert_intersection_semantics(
-        _risk_for(tmp_data_dir / "uncited", (cited,), (cited, uncited_low, high)),
+        _risk_for(tmp_data_dir / "uncited", (cited,), (uncited_low, high)),
         # Fixture B: the same document, but the low-confidence region is the cited one.
         _risk_for(tmp_data_dir / "cited", (cited,), (cited_low, high)),
     )
@@ -156,7 +178,7 @@ def test_tc_integ_c09_the_intersection_is_geometric_in_bytes(
                       start=region_start, end=region_start + 16, ocr_conf=0.40,
                       crop_ref=None, content_state="present")
     assert _risk_for(tmp_data_dir / name.split(":")[0].replace(" ", "-"),
-                     (cited,), (cited, low)) is expect_flag
+                     (cited,), (low,)) is expect_flag
 
 
 @pytest.mark.writtenahead

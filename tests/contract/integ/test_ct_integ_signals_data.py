@@ -80,6 +80,13 @@ def test_tc_integ_c02_signal_fields_are_exactly_six_with_one_tri_state():
         f"{_TRI_STATE!r} may be tri-state; every other signal is a boolean, and a "
         "second tri-state would give consumers a second 'not measured' to collapse"
     )
+    loose = {name: hint for name, hint in hints.items()
+             if name != _TRI_STATE and hint is not bool}
+    assert not loose, (
+        f"non-tri-state signals not annotated exactly bool: {loose} — five booleans "
+        "is the clause's shape, and int | None or similar widens what a consumer "
+        "must handle"
+    )
 
 
 def _admits_none(hint: object) -> bool:

@@ -28,7 +28,7 @@ the gap between them:
 |---|---|
 | `IntegrityGate` / `IntegritySignals` | the #74 keys, reused |
 | write-audit surface | real-SQLite table diff (the databases are never doubled, §4.2); the declared touched-tables allowlist is `{work_unit, run_metrics, review_queue}` — the routing requests (ledger and review queue, the plan's declared route destination for empty evidence) and the per-criterion rate rows #75's interface table records. Disclosed: the allowlist is the reconciliation point if `#74` persists signals elsewhere |
-| static scanners | local to this file (no test-to-test imports in this suite); they overlap the artifact file `tests/artifact/test_integ_write_set.py` (TC-INTEG-03/10's scanners) deliberately and independently — the clause case is release-gating on CT-INTEG-04 and must not break when that file is reorganized |
+| static scanners | local to this file (no test-to-test imports in this suite); they overlap the artifact file `tests/artifact/test_integ_write_set.py` (TC-INTEG-03/10's scanners) deliberately and independently — the clause case is release-gating on CT-INTEG-04 and must not break when that file is reorganized. Scope: the SQL regexes read column-listed `INSERT`/`UPDATE` statements and the AST scan reads attribute stores; a column-list-less `INSERT ... VALUES` or a subscript store is NOT caught statically — the exhaustive half is the dynamic write audit below, which diffs every user table over the exercised paths |
 | INFRA allowlist | `#75`'s `INFRA_WRITE_COLUMNS` vocabulary, restated here so the clause case owns its own allowlist and can be disputed line by line |
 """
 

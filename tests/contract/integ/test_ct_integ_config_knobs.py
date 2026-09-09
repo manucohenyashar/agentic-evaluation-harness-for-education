@@ -32,7 +32,7 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.contract.integ._doubles import CONTRACT_COHORT, byte_span
+from tests.contract.integ._doubles import byte_span
 from tests.support.impl import INTEG_MODULE, require
 from tests.support.integ_vocabulary import (
     CitedRegion,
@@ -47,7 +47,6 @@ pytestmark = pytest.mark.contract
 
 _FLOOR_ENV = "INTEG_OCR_CONF_FLOOR"
 _DESCRIBED_ENV = "INTEG_DESCRIBED_EVIDENCE_ROUTES"
-_RUN = "run-integ-c13"
 _MARKDOWN = "The student argues the thesis directly in the opening paragraph.\n"
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
@@ -110,7 +109,10 @@ def _volume(tmp_data_dir, regions, monkeypatch, env: dict[str, str] | None) -> i
     IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
     gate = IntegrityGate(handle, store.blobs(), view)  # the DEFAULT config path
     gate.verify(run_id, "SUB-C13", "C1")
-    rows = store.cohort(CONTRACT_COHORT).query(
+    # The gate was built on the ORCH cohort's handle — that is the SQLite file
+    # its review_queue writes land in; reading another cohort's file reads a
+    # different database and always counts zero.
+    rows = store.cohort(ORCH_COHORT_ID).query(
         "SELECT COUNT(*) AS n FROM review_queue WHERE submission_id = :s",
         s="SUB-C13",
     )

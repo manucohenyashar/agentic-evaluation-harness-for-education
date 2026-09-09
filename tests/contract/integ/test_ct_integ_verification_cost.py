@@ -76,15 +76,18 @@ def _sentence(i: int) -> str:
 
 
 def _workload(n_sentences: int, n_units: int = 4):
-    """`n_units` documents of `n_sentences` lines each, one cited span per unit —
-    the total span bytes scale with `n_sentences` (span text grows with the
-    sentence), the document text with it too."""
+    """`n_units` documents of `n_sentences` lines each, each unit citing its
+    WHOLE document (the extractor quoted the full response): the total span
+    bytes then scale with the workload exactly as the document bytes do —
+    ~5KB to ~360KB across the fit's sizes — which is the x-axis the clause's
+    O(total span bytes) names. A verifier that searches for the span text
+    anywhere in the document instead of comparing at the span's offsets is
+    quadratic in exactly this axis and fails the fit."""
     docs = []
-    for u in range(n_units):
+    for _u in range(n_units):
         markdown = "".join(_sentence(i) for i in range(n_sentences))
-        needle = f"detail {u % n_sentences}"
-        start = markdown.encode("utf-8").find(needle.encode("utf-8"))
-        docs.append((markdown, (start, start + len(needle), needle)))
+        raw = markdown.encode("utf-8")
+        docs.append((markdown, (0, len(raw), markdown)))
     return docs
 
 
@@ -205,14 +208,18 @@ def test_tc_integ_c12_no_unit_verification_needs_a_model_call(tmp_data_dir,
         criteria=({"criterion_id": "C1", "kind": "open",
                    "scoring_model": "holistic"},))
     handle = store.cohort(_COHORT)
-    for i, (markdown, _) in enumerate(_workload(n_sentences=40, n_units=4)):
+    views = []
+    for i, (markdown, (start, end, text)) in enumerate(
+            _workload(n_sentences=40, n_units=4)):
         submission = f"SUB-{i:03d}"
         seed_document(handle, document_id_for(submission), submission, markdown,
                       _COHORT)
+        # The view carries the unit's real span: a model-assisted verifier with
+        # nothing to verify makes zero calls and the limb would pass vacuously.
+        views.append(ExtractionView(spans=(Span(start, end, text),),
+                                    panel=PanelFlags((True, True, True))))
     for i in range(4):
-        gate = IntegrityGate(handle, store.blobs(),
-                             ExtractionView(panel=PanelFlags((True, True, True))),
-                             ocr_conf_floor=0.70)
+        gate = IntegrityGate(handle, store.blobs(), views[i], ocr_conf_floor=0.70)
         gate.verify(run_id, f"SUB-{i:03d}", "C1")
     store.close()
 

@@ -64,9 +64,12 @@ def test_tc_integ_c01_verify_span_is_pure_with_model_network_and_store_blocked(
     passing slowly. The oracle is the shared byte-exact invariant, and
     determinism is the one behavioural corollary of purity checkable at rung 0:
     the same inputs, evaluated again, return the same verdict."""
-    verify_span = require(INTEG_MODULE, "verify_span", issue="#73")
+    # The blocks arm BEFORE the require: an `aeh.integ` that binds
+    # `from aeh.store import open_store` at import time captures the real
+    # callable during the import, and would escape a block armed afterwards.
     block_module_surfaces(monkeypatch, aeh.prov)
     block_module_surfaces(monkeypatch, aeh.store)
+    verify_span = require(INTEG_MODULE, "verify_span", issue="#73")
 
     doc = _doc()
     span = byte_span(doc.markdown, "数学")
@@ -93,9 +96,12 @@ def test_tc_integ_c01_a_failing_span_verifies_under_blocked_surfaces_too(
     with every surface blocked: a verifier that smuggles its real work behind a
     network or store round-trip would otherwise pass the True case above while
     failing exactly the case RISK-01 needs it to catch."""
-    verify_span = require(INTEG_MODULE, "verify_span", issue="#73")
+    # The blocks arm BEFORE the require: an `aeh.integ` that binds
+    # `from aeh.store import open_store` at import time captures the real
+    # callable during the import, and would escape a block armed afterwards.
     block_module_surfaces(monkeypatch, aeh.prov)
     block_module_surfaces(monkeypatch, aeh.store)
+    verify_span = require(INTEG_MODULE, "verify_span", issue="#73")
 
     doc = _doc()
     start = byte_span(doc.markdown, "café").start
