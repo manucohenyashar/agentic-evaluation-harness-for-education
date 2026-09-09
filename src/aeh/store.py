@@ -296,6 +296,13 @@ class IncompleteMigrationChainError(StoreError):
     tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not import `aeh.det`,
     and Tier P's chain is short by one migration without it).
 
+    Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
+    one it could fix at the root: a tier's chain arriving **out of version order** when an early
+    import appends a late migration first. Sorting each tier's tuple at write time makes the
+    order a contract instead of an accident of collection. What sorting cannot repair is a
+    module that was **never imported** — it contributes no migrations at all, so the chain is
+    short no matter how it is ordered, and this guard is the refusal for that world.
+
     Sibling of `SchemaTooNewError`, not its subclass: the too-new refusal says the *file* is
     ahead of the binary; this one says the *process* is behind its own binary. `CT-STORE-11`'s
     exact-type oracles distinguish them, and a subclass relationship would let one pass for the
@@ -1358,7 +1365,9 @@ def current_schema_version(tier: Tier) -> int:
 #: the columns the missing migrations would have added surface later, far from the open, as
 #: `no such column: parent_version_id` (#46's probe; #94 found the suite's own seeds choosing
 #: between the two worlds). #234 added the pin and the refusal; the chains themselves are
-#: untouched — the guard is an assertion about them, not a change to them.
+#: untouched — the guard is an assertion about them, not a change to them. (#269's
+#: `_VersionOrderedRegistry` fixed the chains' *order* at the write site; a module that was
+#: never imported still contributes nothing to sort, which is the world this pin refuses.)
 #:
 #: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
 #: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and

@@ -118,6 +118,8 @@ not enough (Tier P's chain is short by `aeh.det`'s migration without it). An ope
 truncated chain builds the file at the base schema and the missing columns surface later, far
 from the open, as a distant `no such column: parent_version_id`. The open site refuses a short
 chain — `IncompleteMigrationChainError`, pinned per tier by `COMPLETE_SCHEMA_VERSIONS` in
-`store.py` (`#234`) — so the failure names its cause at the open, never at a distance. A
-migration added to a chain bumps its pin in the same change; the pin's gate test fails until
-it does.
+`store.py` (`#234`) — so the failure names its cause at the open, never at a distance. Chain
+*order* is not the caller's duty: `_VersionOrderedRegistry` (`#269`) sorts each tier's chain at
+write time, so import order cannot produce a reverse version step — only completeness is on
+the caller. A migration added to a chain bumps its pin in the same change; the pin's gate test
+fails until it does.

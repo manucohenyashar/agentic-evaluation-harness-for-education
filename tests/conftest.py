@@ -23,11 +23,12 @@ from tests.support.impl import (
 )
 from tests.support.store_spy import StoreSpy
 
-# TC-STORE-25: the tier migration chains concatenate at import time, so every test runs with
-# the full chain registered *before* any test module is collected — the convention the store
-# enforces at the open site (`IncompleteMigrationChainError`, #234). Without this, a module
-# importing only `aeh.store` would open files at the base schema, and pytest-randomly's
-# import-order shuffle would decide which chain a given open saw (#94's flake).
+# TC-STORE-25: the tier migration chains are concatenated at import time, so every test runs
+# with the full chain registered *before* any test module is collected — the convention the
+# store enforces at the open site (`IncompleteMigrationChainError`, #234). #269's
+# `_VersionOrderedRegistry` already makes each chain's *order* independent of import order;
+# these imports are about *completeness* — without them a module importing only `aeh.store`
+# would open files on a truncated chain, and the open site would refuse.
 import aeh.det  # noqa: E402
 import aeh.ingest  # noqa: E402
 import aeh.orch  # noqa: E402

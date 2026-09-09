@@ -14,6 +14,15 @@ every contributing module is imported, and `_open_tier` refuses an open whose in
 falls short of the pin — **at the open site, naming the cause** — instead of letting the file
 build short and fail at a distance.
 
+**Reconciliation with #269.** Import order had two failure modes. The *ordering* one — an
+early import appending a late migration first, so a tier's chain arrived out of version order
+and TC-STORE-04/06 flaked with #94's seeds — #269 fixed at the root: `_VersionOrderedRegistry`
+sorts each tier's chain at write time, and the pin test below asserts that guarantee. The
+*completeness* one survives #269, because a module that was never imported contributes no
+migrations at all and sorting cannot add what was never registered — on bare main (PR #269
+landed) a fresh interpreter importing only `aeh.store` still opens a Tier P file at the base
+schema and #46's probe still fails at a distance. The refusal below pins that world.
+
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the
 footgun hides from the suite and bites only consumers. Each subprocess below starts a real
@@ -138,15 +147,27 @@ def test_tc_store_25_opening_tier_p_after_the_full_chain_import_opens_complete(
 def test_tc_store_25_pin_tracks_the_full_chain():
     """The pin must track the chain: a migration added without bumping
     `COMPLETE_SCHEMA_VERSIONS` would leave the guard refusing opens in the *full* world —
-    the pin rots into the same phantom bug it guards against, in mirror image."""
+    the pin rots into the same phantom bug it guards against, in mirror image. The same loop
+    pins #269's version-order guarantee: whatever order the contributing modules got imported
+    in (this test module itself is collected after `aeh.det` has been imported first by the
+    conftest block, the ordering #94's seeds used to shuffle), a tier's chain must read in
+    ascending version order — `TC-STORE-06`'s no-reverse-step as a property of the registry
+    (`_VersionOrderedRegistry`), not of anyone's collection order."""
     import aeh.det  # noqa: F401
     import aeh.ingest  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401
 
-    from aeh.store import COMPLETE_SCHEMA_VERSIONS, Tier, current_schema_version
+    from aeh.store import COMPLETE_SCHEMA_VERSIONS, TIER_MIGRATIONS, Tier, current_schema_version
 
     for tier in Tier:
+        versions = [m.version for m in TIER_MIGRATIONS[tier]]
+        assert versions == sorted(versions), (
+            f"TC-STORE-25: {tier.value}'s migration chain reads {versions} — out of version "
+            "order. #269's `_VersionOrderedRegistry` sorts each tier's chain at write time, so "
+            "the order a contributor appends in must never be observable; a sorted() in an "
+            "appender or a registry change broke the contract."
+        )
         assert current_schema_version(tier) == COMPLETE_SCHEMA_VERSIONS[tier], (
             f"TC-STORE-25: {tier.value} implements schema version "
             f"{current_schema_version(tier)} with every contributing module imported, but "
