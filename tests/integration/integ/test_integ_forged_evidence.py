@@ -58,6 +58,7 @@ Interfaces assumed (reconcile at landing; the M-INTEG rows are the table in
 from __future__ import annotations
 
 import pytest
+import re
 
 from aeh.store import open_store
 from tests.support import corpora
@@ -154,12 +155,27 @@ def _near_miss(span: Span, position: int) -> Span:
     return Span(span.start, span.end, text[:i] + swapped + text[i + 1 :])
 
 
-def _first_line(markdown: str) -> str:
-    """The document's first non-empty content line — the paper's own opening."""
+_HEADER_FIELD = re.compile(r"^[a-z_]+: ")
+_PAGE_LABEL = re.compile(r"^Page \d+ of \d+")
+
+
+def _first_content_line(markdown: str) -> str:
+    """The document's first line of actual student prose.
+
+    Skips the fixture's metadata header (`# Submission ...`, the `key: value` lines),
+    the `<!-- page: ... -->` markers, the `Page N of M - pair` labels the corpus
+    deliberately prints in the page bodies, and structural `#` headings — a citation
+    must claim or quote student content, not fixture metadata, or the "forgery" would
+    be an attack on the fixture's own plumbing rather than on the paper.
+    """
     for line in markdown.splitlines():
-        if line.strip():
-            return line
-    raise AssertionError("the document has no content lines")
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("<!-- page:"):
+            continue
+        if _PAGE_LABEL.match(stripped) or _HEADER_FIELD.match(stripped):
+            continue
+        return line
+    raise AssertionError("the document has no student content lines")
 
 
 # --- the rung-2 scenario -------------------------------------------------------------------
@@ -189,9 +205,9 @@ def _scenario(tmp_data_dir, members: list[corpora.CorpusMember]):
         if quote:
             # The manipulated extractor's emission: the planted quote, cited from the
             # paper's own opening (which says nothing of the kind).
-            spans = (_quote_span(markdown, quote, _first_line(markdown)),)
+            spans = (_quote_span(markdown, quote, _first_content_line(markdown)),)
         else:
-            spans = (_honest_span(markdown, _first_line(markdown)),)
+            spans = (_honest_span(markdown, _first_content_line(markdown)),)
         view = ExtractionView(
             spans=spans,
             second_family_spans=spans,  # both families obeyed the forgery alike
@@ -247,7 +263,7 @@ def test_tc_integ_13_every_forged_citation_fails_byte_exact_verification():
             "citation to the standard meant for a fake one"
         )
         raw = injected.text().encode("utf-8")
-        span = _quote_span(injected.text(), quote, _first_line(injected.text()))
+        span = _quote_span(injected.text(), quote, _first_content_line(injected.text()))
         assert 0 <= span.start < span.end <= len(raw), (
             f"{injected.id}: the claimed citation is out of bounds"
         )
@@ -264,7 +280,7 @@ def test_tc_integ_13_every_forged_citation_fails_byte_exact_verification():
         )
 
         # The differential: the twin's honest citation over the same mechanism.
-        honest = _honest_span(benign.text(), _first_line(benign.text()))
+        honest = _honest_span(benign.text(), _first_content_line(benign.text()))
         assert verify_span(Doc(markdown=benign.text()), honest) is True, (
             f"{benign.id}: the honest citation failed verification — a verifier that "
             "rejects everything is not a verifier, and the differential is what makes "
@@ -332,7 +348,7 @@ def test_adv_03_near_miss_quotations_differing_by_one_character_fail_verificatio
     verify_span = require(INTEG_MODULE, "verify_span", issue="#73")
     for benign, _injected in _forged_pairs():
         markdown = benign.text()
-        honest = _honest_span(markdown, _first_line(markdown))
+        honest = _honest_span(markdown, _first_content_line(markdown))
         assert verify_span(Doc(markdown=markdown), honest) is True, (
             f"{benign.id}: the control drift — an exact slice must verify"
         )
