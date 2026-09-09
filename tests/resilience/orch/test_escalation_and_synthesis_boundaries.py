@@ -134,7 +134,22 @@ def test_res_06_escalation_survives_the_kill_and_dispatches_after_resume(
             row["work_id"] for row in before
         }
         assert escalated_ids, "the escalation units are indistinguishable from the base panel"
-        won = restarted.lease("worker-b", "score", 100)
+        # Dispatchability is observed over the dispatch loop's own shape — lease,
+        # judge, complete, again. Since #62 the residency policy (`FR-ORCH-19`) holds
+        # an edge-local score handout to ONE judge's batch (a handout never mixes
+        # models), so the widened panel's units surface across successive cycles as
+        # each judge's batch finishes — a single handout would see only the resident's.
+        # (Reconciled when #62 landed, the `record_run_start` precedent: the oracle is
+        # untouched — the escalation units are handed out — only the probe's shape
+        # moved with the dispatch contract.)
+        won: list = []
+        while True:
+            batch = restarted.lease("worker-b", "score", 100)
+            if not batch:
+                break
+            won.extend(batch)
+            for unit in batch:
+                restarted.complete(unit.work_id)
         assert any(unit.work_id in escalated_ids for unit in won), (
             "the escalation units exist but are not dispatchable — an escalation "
             "that never leases is a verdict that never gets its third judge"
@@ -169,31 +184,49 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
                     orch.complete(unit.work_id)
 
         # One (submission, criterion) trio: two judges deliver, the third fails
-        # permanently. Lease the trio once and disposition it directly — every
-        # leased unit is accounted for, and `fail` wins over a live lease (the
-        # shipped semantics), so the permanently failing judge is reported in
-        # place without re-leasing.
-        won = orch.lease("worker-a", "score", 100)
-        assert won, "the fixture leased no score units"
-        first = won[0]
-        trio = [
-            unit
-            for unit in won
-            if unit.submission_id == first.submission_id
-            and unit.criterion_id == first.criterion_id
-        ]
-        assert len(trio) == 3, "the fixture did not isolate one panel trio"
-        others = [unit for unit in trio if unit.work_id != first.work_id]
-        assert len(others) == 2, "the fixture's trio overlaps the victim"
-        # Land the two verdicts.
-        for unit in others:
-            orch.complete(unit.work_id)
-        # The third judge fails permanently: 3 reports, the ceiling.
-        for _ in range(3):
-            orch.fail(
-                first.work_id,
-                WorkError(message=f"judge call failed permanently on {first.work_id[:12]}"),
-            )
+        # permanently. Since #62 the residency policy (`FR-ORCH-19`) holds an
+        # edge-local score handout to ONE judge's batch — a handout never mixes
+        # models — so no single handout can carry the trio, and the driver walks
+        # the panel judge by judge over lease/complete cycles (the dispatch loop's
+        # shape; reconciled when #62 landed, the `record_run_start` precedent — the
+        # oracle is untouched, only the probe's shape moved with the dispatch
+        # contract). The trio's FIRST unit is the very first the walk hands out:
+        # the permanently failing judge is dispositioned in place (`fail` wins
+        # over a live lease, the shipped semantics, so its three failures land
+        # without re-leasing), and the sibling verdicts are completed as their
+        # judges' batches surface — every leased unit is accounted for.
+        first = None
+        others: list = []
+        while len(others) < 2:
+            batch = orch.lease("worker-a", "score", 100)
+            if not batch:
+                break
+            for unit in batch:
+                if first is None:
+                    first = unit
+                    # The third judge fails permanently: 3 reports, the ceiling,
+                    # reported in place without re-leasing.
+                    for _ in range(3):
+                        orch.fail(
+                            unit.work_id,
+                            WorkError(
+                                message=(
+                                    "judge call failed permanently on "
+                                    f"{unit.work_id[:12]}"
+                                )
+                            ),
+                        )
+                    continue
+                if (
+                    unit.submission_id == first.submission_id
+                    and unit.criterion_id == first.criterion_id
+                ):
+                    others.append(unit)
+                # Everything else — including, as its judge's batch surfaces, the
+                # trio's sibling verdicts — lands its verdict.
+                orch.complete(unit.work_id)
+        assert first is not None, "the fixture leased no score units"
+        assert len(others) == 2, "the fixture did not isolate one panel trio"
 
         # Exact final state, per row: the two verdicts stand done, the third is
         # quarantined at the ceiling with its error — never re-queued into a
