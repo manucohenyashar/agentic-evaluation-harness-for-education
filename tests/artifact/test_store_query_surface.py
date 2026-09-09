@@ -459,8 +459,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
     # which is not a census site (FR-STORE-08). (Line moved once with the reviewer's
-    # isolation check on the payload-less document fallback; same statement.)
-    "aeh.synth:626",
+    # isolation check on the payload-less document fallback, again with #98's
+    # score-claim ladder and pattern list landing above the write, again with the
+    # reviewer's pattern-tightening disclosures expanding the comments above it;
+    # same statement, re-pinned from the walker each time.)
+    "aeh.synth:778",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
