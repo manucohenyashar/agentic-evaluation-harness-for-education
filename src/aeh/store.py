@@ -92,9 +92,11 @@ from typing import Any, Callable, ContextManager, Iterator, Mapping, Protocol, S
 
 __all__ = [
     "BlobStore",
+    "COMPLETE_SCHEMA_VERSIONS",
     "CrossTierTransactionError",
     "DiskFullError",
     "InsecureLocationError",
+    "IncompleteMigrationChainError",
     "Migration",
     "PurgePreconditionError",
     "PurgeReport",
@@ -275,6 +277,30 @@ class StoreError(Exception):
 
 class ConfigurationProblem(StoreError):
     """The data directory or a knob is unusable. Raised before any file is touched."""
+
+
+class IncompleteMigrationChainError(StoreError):
+    """The process opened a tier before every module that contributes its migrations was imported.
+
+    The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
+    the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det` and
+    `aeh.orch`; Tier D: `aeh.det` — so the chain an open sees is only as long as the list of
+    contributing modules the process has imported so far. A file opened on the short chain
+    builds at the base schema, and the columns the missing migrations would have added surface
+    **later, far from the open**, as `sqlite3.OperationalError: no such column:
+    parent_version_id` — #46's probe, disclosed in PR #208 and found suite-wide by #94, whose
+    seeds chose between the two worlds. #234's guard (`COMPLETE_SCHEMA_VERSIONS`, checked by
+    `_open_tier` before the first directory is made and before any connection is opened) turns
+    that distant phantom into a refusal **at the open site, naming the cause**. The fix on the
+    caller's side is one line — `import aeh.det, aeh.ingest, aeh.orch, aeh.pkg` registers every
+    tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not import `aeh.det`,
+    and Tier P's chain is short by one migration without it).
+
+    Sibling of `SchemaTooNewError`, not its subclass: the too-new refusal says the *file* is
+    ahead of the binary; this one says the *process* is behind its own binary. `CT-STORE-11`'s
+    exact-type oracles distinguish them, and a subclass relationship would let one pass for the
+    other exactly when a reader is diagnosing which of the two went wrong.
+    """
 
 
 class SchemaTooNewError(StoreError):
@@ -1308,6 +1334,28 @@ def current_schema_version(tier: Tier) -> int:
     return max((m.version for m in migrations), default=0)
 
 
+#: The schema version each tier must reach once every module that contributes migrations has
+#: been imported. The chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
+#: owning modules (see `IncompleteMigrationChainError`), so `current_schema_version` reports the
+#: *in-process* chain — short of this pin whenever a contributing module has not been imported
+#: yet. `_open_tier` compares the two and refuses an open that falls short, because a file built
+#: from a truncated chain does not fail at the open: it opens, records the short version, and
+#: the columns the missing migrations would have added surface later, far from the open, as
+#: `no such column: parent_version_id` (#46's probe; #94 found the suite's own seeds choosing
+#: between the two worlds). #234 added the pin and the refusal; the chains themselves are
+#: untouched — the guard is an assertion about them, not a change to them.
+#:
+#: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
+#: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
+#: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
+#: same phantom bug in mirror image.
+COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
+    Tier.PACKAGE: 10,
+    Tier.COHORT: 10,
+    Tier.DURABLE: 4,
+}
+
+
 # --- purge (FR-STORE-07, CT-STORE-10) -----------------------------------------------------------
 #
 # `purge_cohort` is irreversible and it is the only operation that deletes student work, so
@@ -1844,7 +1892,30 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
     so `CT-STORE-11`'s *"refuses to open, no partial read"* and `TC-STORE-05`'s *"the file is
     unmodified, asserted by mtime and content hash"* are both properties of the control flow
     rather than of anyone's care.
+
+    The chain-completeness refusal comes **first**, before the existence check and before the
+    too-new check: a process whose migration chain is short cannot be trusted to judge *any*
+    file — its too-new verdict would be an artifact of the missing migrations rather than a
+    property of the file, and an open it allowed would build the file short of the full schema
+    for a failure at a distance. `COMPLETE_SCHEMA_VERSIONS` carries the per-tier pin;
+    `IncompleteMigrationChainError` carries the story (`#234`).
     """
+    implemented = current_schema_version(tier)
+    complete = COMPLETE_SCHEMA_VERSIONS[tier]
+    if implemented < complete:
+        raise IncompleteMigrationChainError(
+            f"{tier.value!r} would open against a migration chain that ends at version "
+            f"{implemented}, but this binary implements {complete} for the tier once every "
+            f"module that contributes migrations has been imported. The chains in "
+            f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
+            f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det and "
+            f"aeh.orch; Tier D: aeh.det), so this process has imported some of them and not "
+            f"the rest. Import the owning modules before the first open — `import aeh.det, "
+            f"aeh.ingest, aeh.orch, aeh.pkg` registers every tier's complete chain — or the "
+            f"file builds short of the full schema and the missing columns surface later, far "
+            f"from this open, as a distant `no such column` (#46's probe: `no such column: "
+            f"parent_version_id`; #234)."
+        )
     if read_only and not path.exists():
         raise ConfigurationProblem(
             f"{path} does not exist, so it cannot be opened read-only. FR-STORE-13 is about "
