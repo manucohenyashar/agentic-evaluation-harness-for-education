@@ -42,6 +42,10 @@ _LEASE_CHUNK = 500
 #: The comparative tolerance, shared with the green half of the case.
 _DEGRADATION_TOLERANCE = 2.0
 
+#: Score units held LEASED through the polls, so the polled ledger is mid-run:
+#: 32 in-flight units the driver never completes.
+_LEASED_RESERVE = 32
+
 _SIZES = (
     (350, 350 * 17 + 350 * 17 * 3 + 350),
     (600, 600 * 17 + 600 * 17 * 3 + 600),
@@ -84,9 +88,10 @@ def _progress_latency(store: object, submissions: tuple, total_units: int) -> fl
             batch = orch.lease("progress-worker", stage, _LEASE_CHUNK)
             if not batch:
                 break
-            if stage == "score" and len(leased_reserve) < _LEASE_CHUNK:
-                leased_reserve.extend(batch[:32])
-                batch = batch[32:]
+            if stage == "score" and len(leased_reserve) < _LEASED_RESERVE:
+                take = _LEASED_RESERVE - len(leased_reserve)
+                leased_reserve.extend(batch[:take])
+                batch = batch[take:]
             for unit in batch:
                 orch.complete(unit.work_id)
 

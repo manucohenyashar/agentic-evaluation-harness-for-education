@@ -16,7 +16,9 @@ What counts as "scheduling" here, stated because it is load-bearing:
 - `enumerate_units` — the pass that computes and inserts the ledger rows;
 - `lease` — the handout pass, which resolves `FR-ORCH-07`'s dispatch order (the
   per-(run, stage) order cache #59 shipped is exactly what NFR-ORCH-01's budget
-  protects: without it, order resolution re-runs per claim).
+  protects: without it, order resolution re-runs per claim). The drain
+  therefore ends in a chunk-1 tail: only a single-unit claim pays the
+  per-claim cost, and a batch handout would hide exactly the cache's loss.
 
 Completing the extract units is the *dependency gate* Sweep 2 needs
 (`FR-ORCH-06`) — a bookkeeping step between scheduling passes, deliberately
@@ -63,6 +65,12 @@ BUDGET_MS_PER_UNIT = 5.0
 #: Handout chunk per lease call. Not the concurrency ceiling — a batch size for the
 #: scheduling pass; the *per-unit* cost is the measured quantity.
 _LEASE_CHUNK = 500
+
+#: The drain's final score units are claimed ONE PER CALL: a chunk-500 handout
+#: amortizes order resolution across the batch, so only a chunk-1 claim pays
+#: the per-claim cost the order cache exists to remove (#59 measured
+#: 5.3 ms/unit without it — over budget exactly here).
+_TAIL_CLAIMS = 50
 
 
 def _drain(orch: object, stage: str, sink: list) -> float:
@@ -128,13 +136,48 @@ def test_tc_orch_30_scheduling_overhead_under_5ms_per_unit_at_23k(tmp_data_dir):
         lease_s += _drain(orch, "deterministic", deterministic)
         assert len(deterministic) == 350
 
-        # Sweep 2: score units, unlocked once every extraction is done.
+        # Sweep 2: score units, unlocked once every extraction is done. All
+        # but the reserved tail go out in batch handouts, timed per call.
         score: list = []
-        lease_s += _drain(orch, "score", score)
-        assert len(score) == 350 * 17 * 3, (
-            f"score handout {len(score)} != 350*17*3 — the panel's base depth "
-            "is 3, so every (submission, criterion) owes three score units"
+        score_total = 350 * 17 * 3
+        chunked_target = score_total - _TAIL_CLAIMS
+        while len(score) < chunked_target:
+            t0 = time.perf_counter()
+            batch = orch.lease(
+                "perf-worker",
+                "score",
+                min(_LEASE_CHUNK, chunked_target - len(score)),
+            )
+            lease_s += time.perf_counter() - t0
+            assert batch, (
+                f"score handout ended at {len(score)} of {chunked_target} — "
+                "the panel's base depth is 3, so every (submission, "
+                "criterion) owes three score units"
+            )
+            score.extend(batch)
+
+        # The tail: the last _TAIL_CLAIMS units, one claim per call — the
+        # per-claim measurement the batch handout cannot provide.
+        tail_s = 0.0
+        tail_units = 0
+        while True:
+            t0 = time.perf_counter()
+            batch = orch.lease("perf-worker", "score", 1)
+            tail_s += time.perf_counter() - t0
+            if not batch:
+                break
+            score.extend(batch)
+            tail_units += 1
+        assert len(score) == score_total, (
+            f"score handout {len(score)} != {score_total} — the panel's base "
+            "depth is 3, so every (submission, criterion) owes three score units"
         )
+        assert tail_units == _TAIL_CLAIMS, (
+            f"the chunk-1 tail claimed {tail_units} of {_TAIL_CLAIMS} units — "
+            "the reserved tail is the per-claim measurement, and a different "
+            "count measures something else"
+        )
+        lease_s += tail_s
 
         scheduled = len(extract) + len(deterministic) + len(score)
         assert scheduled == _TOTAL_UNITS, (
@@ -148,6 +191,17 @@ def test_tc_orch_30_scheduling_overhead_under_5ms_per_unit_at_23k(tmp_data_dir):
             f"(enumerate {enumerate_s:.2f}s + lease {lease_s:.2f}s) exceeds "
             f"NFR-ORCH-01's {BUDGET_MS_PER_UNIT} ms/unit budget — at 23,000 units "
             "the orchestrator, not the model, would be the bottleneck"
+        )
+
+        # The tail's own teeth, same unweakened budget: the per-claim cost a
+        # batch handout amortizes away is exactly what the order cache removes.
+        tail_ms = tail_s / tail_units * 1000.0
+        assert tail_ms < BUDGET_MS_PER_UNIT, (
+            f"a chunk-1 claim costs {tail_ms:.3f} ms against the "
+            f"{BUDGET_MS_PER_UNIT} ms/unit budget (mean over the "
+            f"{_TAIL_CLAIMS}-claim tail) — the per-(run, stage) order cache "
+            "makes order resolution O(1) per claim (#59 measured 5.3 ms/unit "
+            "without it), and a batch-only handout would hide this regression"
         )
     finally:
         store.close()

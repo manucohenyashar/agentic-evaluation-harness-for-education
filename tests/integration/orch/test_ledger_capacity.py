@@ -26,6 +26,9 @@ Oracle, in the plan's words "handled without degradation ... and compared":
   growth a correct implementation should show. The ratio is self-normalizing —
   both sizes run on the same machine in the same test, so load moves both
   sides, not the comparison.
+- **Footprint** (`PERF-09`'s second measure): the 40,000-unit run's on-disk
+  size stays under the 500 MB the plan pins — handling the scale by ballooning
+  is not handling it.
 
 Enumeration wall time is `TC-ORCH-30`'s measured quantity (the per-(run, stage)
 order cache) and is not re-asserted here.
@@ -139,11 +142,33 @@ def test_tc_orch_33_lease_and_complete_at_23k_and_40k_without_degradation(
     (small_lease, small_complete, small_units) = timings[_SIZES[0][1]]
     (large_lease, large_complete, large_units) = timings[_SIZES[1][1]]
 
+    # Capacity: both scales fully served. The small run's count is the
+    # comparison's denominator — a short small run inflates the small
+    # per-unit mean and silently relaxes the 2x tolerance.
+    assert small_units == _SIZES[0][1], (
+        f"{small_units} of {_SIZES[0][1]} units served at the 23,000-unit "
+        "scale — the baseline half of the comparison must be a fully served "
+        "run, or the tolerance compares against a degraded reference"
+    )
     # Capacity: every unit at the 40,000 scale was leased and retired.
     assert large_units == _SIZES[1][1], (
         f"{large_units} of {_SIZES[1][1]} units served at the 40,000-unit scale — "
         "NFR-ORCH-06's floor is 40,000 ledger units per run, and units that "
         "cannot hand out or retire at scale are the failure it forbids"
+    )
+
+    # PERF-09's second measure: footprint stays under 500 MB at the
+    # 40,000-unit scale — a ledger that serves 40k units only by ballooning
+    # on disk fails the clause the plan wrote beside the latency one.
+    large_dir = tmp_data_dir / f"run-{_SIZES[1][0]}"
+    footprint_mb = (
+        sum(path.stat().st_size for path in large_dir.rglob("*") if path.is_file())
+        / (1024 * 1024)
+    )
+    assert footprint_mb < 500, (
+        f"the 41,400-unit run left {footprint_mb:.1f} MB on disk under "
+        f"{large_dir} — PERF-09's footprint ceiling is 500 MB, and a ledger "
+        "that handles the scale only by ballooning does not handle it"
     )
 
     small_ms = small_lease / small_units * 1000.0
