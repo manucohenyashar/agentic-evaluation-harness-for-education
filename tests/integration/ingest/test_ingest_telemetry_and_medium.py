@@ -217,7 +217,7 @@ class ScriptedRasterizer:
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
         self.calls.append(bytes(pdf_bytes))
-        pages = self.plan.get(bytes(pdf_bytes), [(1, b"page-one", 100, 140)])
+        pages = self.plan.get(bytes(pdf_bytes), [(1, b"page-one", 1000, 1400)])
         return [PageImage(page_no=page_no, png=png, width_px=w, height_px=h)
                 for page_no, png, w, h in pages]
 
@@ -919,8 +919,8 @@ def test_tc_ingest_44_the_recorded_run_carries_exact_names_and_hand_computed_gat
     page_one = _student_answer(
         "ref-1", _answer_text("Q1", "the worked answer for the one question"))
     ok_source = fx.put(b"ok-source")
-    fx.rasterizer.plan[b"ok-source"] = [(1, b"a", 100, 140),
-                                        (2, b"b", 100, 140)]
+    fx.rasterizer.plan[b"ok-source"] = [(1, b"a", 1000, 1400),
+                                        (2, b"b", 1000, 1400)]
     fx.rasterizer.layers[(b"ok-source", 1)] = layer_one
     fx.rasterizer.layers[(b"ok-source", 2)] = DEFAULT_PAGE_TEXTS[2]
     fx.script(ok_source, {1: page_one, 2: DEFAULT_PAGE_TEXTS[2]})
@@ -1322,7 +1322,7 @@ def test_tc_ingest_46_the_residency_slot_unloads_at_every_document_boundary_of_a
         ref = f"s-{index}"
         source = fx.put(f"src-{index}".encode())
         fx.rasterizer.plan[f"src-{index}".encode()] = [
-            (1, b"a", 100, 140), (2, b"b", 100, 140)]
+            (1, b"a", 1000, 1400), (2, b"b", 1000, 1400)]
         fx.script(source, {
             1: _student_answer(ref, _answer_text("Q1", f"the answer of {ref}")),
             2: DEFAULT_PAGE_TEXTS[2]})
@@ -1428,7 +1428,7 @@ def test_tc_ingest_47_ingestion_wall_clock_over_the_full_cohort_shape_is_measure
     for ref in refs:
         source = fx.put(f"src-{ref}".encode())
         fx.rasterizer.plan[f"src-{ref}".encode()] = [
-            (page_no, bytes([page_no]), 100, 140) for page_no in (1, 2, 3, 4)]
+            (page_no, bytes([page_no]), 1000, 1400) for page_no in (1, 2, 3, 4)]
         fx.script(source, {
             1: f"Student: {ref}\nthe written first page of the paper of {ref}",
             2: DEFAULT_PAGE_TEXTS[2], 3: DEFAULT_PAGE_TEXTS[3],

@@ -76,7 +76,7 @@ class RecordingRasterizer:
     def __init__(self, plan: dict | None = None,
                  default_pages: list | None = None) -> None:
         self.plan = plan or {}
-        self.default_pages = ([(1, b"page-one", 100, 140)]
+        self.default_pages = ([(1, b"page-one", 1000, 1400)]
                               if default_pages is None else default_pages)
         self.seen: list[bytes] = []
 

@@ -83,7 +83,7 @@ class ScriptedRasterizer(Rasterizer):
         return [
             PageImage(page_no=index + 1,
                       png=f"png-{pdf_bytes.decode('utf-8', errors='replace')}-{index}".encode(),
-                      width_px=100, height_px=140)
+                      width_px=1000, height_px=1400)
             for index in range(count)
         ]
 
@@ -482,7 +482,7 @@ class LayeredRasterizer(ScriptedRasterizer):
         self._layer = layer
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
-        return [PageImage(page_no=1, png=b"page-one", width_px=100, height_px=140)]
+        return [PageImage(page_no=1, png=b"page-one", width_px=1000, height_px=1400)]
 
     def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
         return self._layer
@@ -781,8 +781,8 @@ def test_tc_ingest_10_a_gap_names_the_specific_missing_positions(tmp_data_dir):
 
     class FivePageRasterizer(ScriptedRasterizer):
         def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
-            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
-                              height_px=1) for i in range(5)]
+            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1000,
+                              height_px=1400) for i in range(5)]
 
     transcripts = ["Page 1 of 7", "Page 2 of 7", "Page 4 of 7", "Page 5 of 7",
                    "Page 6 of 7"]
@@ -820,8 +820,8 @@ class MultiPageRasterizer(ScriptedRasterizer):
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
         count = self.plan.get(pdf_bytes, 2)
-        return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
-                          height_px=1) for i in range(count)]
+        return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1000,
+                          height_px=1400) for i in range(count)]
 
     def text_layer(self, pdf_bytes: bytes, page_no: int) -> str:
         return self.layers.get(page_no, "")
@@ -1180,8 +1180,8 @@ def test_tc_ingest_09b_torn_stacks_and_repeated_numbers_are_refused(tmp_data_dir
 
     class ThreePageRasterizer(ScriptedRasterizer):
         def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
-            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1,
-                              height_px=1) for i in range(3)]
+            return [PageImage(page_no=i + 1, png=f"p{i}".encode(), width_px=1000,
+                              height_px=1400) for i in range(3)]
 
     class Repeated(ScriptedProvider):
         def complete(self, prompt, model_ref, params):
@@ -1212,7 +1212,7 @@ def _marked(*regions: str) -> str:
 
 class OnePageRasterizer(ScriptedRasterizer):
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
-        return [PageImage(page_no=1, png=b"page-one", width_px=100, height_px=140)]
+        return [PageImage(page_no=1, png=b"page-one", width_px=1000, height_px=1400)]
 
     def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
         # A PNG header + the box: image bytes, deterministically derived, so the

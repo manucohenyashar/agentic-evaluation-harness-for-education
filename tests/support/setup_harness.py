@@ -123,7 +123,7 @@ class ScriptedRasterizer(Rasterizer):
 
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
         self.calls += 1
-        return [PageImage(page_no=1, png=b"page-raster", width_px=100, height_px=140)]
+        return [PageImage(page_no=1, png=b"page-raster", width_px=1000, height_px=1400)]
 
     def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
         return b"page-raster"

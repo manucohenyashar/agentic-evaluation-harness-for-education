@@ -40,6 +40,15 @@ COHORT = "c-bounds"
 BOMB_DECOMPRESSED = 67108864  # ADV-PDF-09's declared expansion, from the manifest
 
 
+@pytest.fixture(autouse=True)
+def _below_floor_rasters_are_legal(monkeypatch):
+    """These cells isolate the DECLARED-dimension ceilings, so the scripted 20x20
+    post-raster pages stay deliberately tiny — below the resolution floor's
+    default. The floor knob (#227) is pinned low for this module, which is what
+    the seam-3 knob exists for: the subject here is the ceiling, not the floor."""
+    monkeypatch.setenv("HARNESS_INGEST_RESOLUTION_FLOOR", "10")
+
+
 def _model() -> ModelRef:
     return ModelRef(role="transcriber", provider="local",
                     build_id="vlm@sha256:eeee", quantization="q4")

@@ -119,8 +119,8 @@ class OrderingRasterizer:
             self._timeline.append(("rasterize", bytes(pdf_bytes)))
         if self.fault:
             raise RuntimeError("injected: the rasterizer faulted")
-        return [PageImage(page_no=1, png=b"page-one", width_px=100,
-                          height_px=140)]
+        return [PageImage(page_no=1, png=b"page-one", width_px=1000,
+                          height_px=1400)]
 
     def crop(self, pdf_bytes: bytes, page_no: int, box, dpi: int) -> bytes:
         return b"crop"
