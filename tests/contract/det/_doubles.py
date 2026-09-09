@@ -227,18 +227,31 @@ class CollapseDistinctionMutant:
 
     def evaluate(self, *, content_state: str, selection_state: str | None,
                  selection: tuple[str, ...] | None, key: tuple[str, ...],
-                 **_: object) -> DetOutcome:
+                 **kwargs: object) -> DetOutcome:
         from aeh.det import (
             BAND_CORRECT,
             BAND_INCORRECT,
-            REASON_KEY_MATCH,
-            REASON_KEY_MISS,
             ROUTING_AUTO,
             STATE_FINAL,
             DetOutcome,
+            evaluate,
         )
 
-        key_tuple = tuple(key)
+        # The resolved arm is UNTOUCHED — the refactor passes every functional
+        # case, which is exactly why nobody notices it. Delegating to the real
+        # kernel for that arm is the honest construction: the mutant is "the
+        # same module with the unresolved arms rewritten".
+        if content_state == "present" and selection_state == "resolved" \
+                and selection:
+            return evaluate(
+                content_state=content_state,
+                selection_state=selection_state,
+                selection=selection,
+                key=tuple(key),
+                multi_select=bool(kwargs.get("multi_select", False)),
+                partial_credit=kwargs.get("partial_credit"),
+                option_set=kwargs.get("option_set"),
+            )
         if content_state == "absent":
             # "An unanswered question is worth zero anyway."
             return DetOutcome(
@@ -250,23 +263,17 @@ class CollapseDistinctionMutant:
                 band=BAND_INCORRECT, state=STATE_FINAL, routing=ROUTING_AUTO,
                 credit=0.0, reason="blank_legitimate_zero", selection_read=None,
             )
-        if selection_state == "ambiguous":
-            # "Clearly they meant this one" — the darkest mark becomes the
-            # student's answer.
-            chosen = (self._darkest,)
-        elif selection_state == "multiple_marks":
-            chosen = (self._darkest,)
-        elif selection_state == "resolved" and selection:
-            chosen = (selection[0],)
-        else:
-            chosen = (self._darkest,)
+        # "Clearly they meant this one" — the darkest mark becomes the
+        # student's answer, whether the scan said ambiguous or multiple marks.
+        chosen = (self._darkest,)
+        key_tuple = tuple(key)
         matched = chosen[0] == key_tuple[0]
         return DetOutcome(
             band=BAND_CORRECT if matched else BAND_INCORRECT,
             state=STATE_FINAL,
             routing=ROUTING_AUTO,
             credit=1.0 if matched else 0.0,
-            reason=REASON_KEY_MATCH if matched else REASON_KEY_MISS,
+            reason="key_match" if matched else "key_miss",
             selection_read=chosen,
         )
 
