@@ -116,7 +116,14 @@ def test_tc_det_12_unreadable_never_becomes_incorrect(triple):
     generated space, not just the enumerated cells."""
     unreadable = triple["content_state"] == "absent" or (
         triple["content_state"] == "present"
-        and triple["selection_state"] in ("ambiguous", "multiple_marks", None)
+        and (
+            triple["selection_state"] in ("ambiguous", "multiple_marks", None)
+            # A resolved mark with no populated selection is the CT-INGEST-04
+            # contract violated — the kernel cannot score what it did not read,
+            # so it routes (REASON_NO_SELECTION_READ). Part of the invariant:
+            # scoring it would be a mark against the student from nothing.
+            or not triple["selection"]
+        )
     )
     if not unreadable:
         return
@@ -156,6 +163,18 @@ def test_tc_det_12_multi_select_declared_policy_holds(key, partial_credit, selec
     drives to 1.0; and NO multi-select call with an undeclared policy ever returns —
     cell 11 as an invariant, not a cell."""
     outcome = evaluate(
+        content_state="present",
+        selection_state="resolved",
+        selection=selection,
+        key=key,
+        multi_select=True,
+        partial_credit=partial_credit,
+        option_set=option_set,
+    )
+    # Determinism over the multi-select subspace too: the same triple gives the same
+    # outcome (a defective implementation deriving selection_read or credit from set
+    # iteration would drift here and only here).
+    assert outcome == evaluate(
         content_state="present",
         selection_state="resolved",
         selection=selection,
