@@ -330,7 +330,9 @@ def test_tc_extract_05_evidence_row_carries_the_providers_resolved_build(
 
         # The result reports the resolved build (`Completion.resolved_build` is
         # "what actually answered", FR-PROV-04) — never a request-time identity.
-        assert getattr(result, "resolved_build", None) == answered_build
+        # §9.9 names the result field `extractor`; the evidence COLUMN stays
+        # `resolved_build` (the assumptions table's one-line rename).
+        assert getattr(result, "extractor", None) == answered_build
 
         # ...and the PERSISTED row carries the same identity.
         rows = _evidence_rows(store, run_id)
