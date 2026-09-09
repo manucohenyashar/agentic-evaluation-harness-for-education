@@ -474,8 +474,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # in store.py, and again with #97's and #78's contributions named in the refusal's
     # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    "aeh.store:1813",
-    "aeh.store:2595",
+    "aeh.store:1815",
+    "aeh.store:2597",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -485,6 +485,24 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
+    # The #73/#74 integ sites: the routing ladder's ledger writes (the four
+    # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
+    # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
+    # emissions (`upsert_metric` in its six-signal loop, `upsert_alert` above
+    # threshold). All are INTEG_STATEMENTS with keyword parameters — the module writes
+    # only the declared signals-plus-routing surface (CT-INTEG-04's audit); its reads
+    # go through `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
+    "aeh.integ:810",
+    "aeh.integ:819",
+    "aeh.integ:835",
+    "aeh.integ:846",
+    "aeh.integ:892",
+    "aeh.integ:910",
+    "aeh.integ:924",
+    "aeh.integ:941",
+    "aeh.integ:958",
+    "aeh.integ:968",
+    "aeh.integ:978",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

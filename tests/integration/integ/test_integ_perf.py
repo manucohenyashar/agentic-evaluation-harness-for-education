@@ -44,7 +44,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 
-pytestmark = [pytest.mark.slow, pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 _COHORT = "c-2026-7B-integ"
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)

@@ -37,7 +37,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 
-pytestmark = pytest.mark.writtenahead
+
 
 #: TC-INTEG-04's declared boundary value — `INTEG_OCR_CONF_FLOOR` as the case's input
 #: names it. Injected per Q-04, never read from production code as a literal.
@@ -176,7 +176,6 @@ def test_tc_integ_05_wholly_described_evidence_is_described_and_its_crop_reachab
     gate_holder = {}
     store = open_store(tmp_data_dir)
     handle = store.cohort(_COHORT)
-    seed_document(handle, document_id_for("SUB-001"), "SUB-001", doc.markdown, _COHORT)
     crop_ref = store.blobs().put(crop_bytes)
     IntegrityGate, _ = require(INTEG_MODULE, "IntegrityGate", "IntegritySignals", issue="#74")
     view = ExtractionView(
@@ -201,7 +200,8 @@ def test_tc_integ_05_wholly_described_evidence_is_described_and_its_crop_reachab
         "SELECT * FROM work_unit WHERE submission_id = :s AND criterion_id = :c",
         s="SUB-001", c="C1",
     )
-    assert crop_ref in repr(routing_rows), (
+    assert routing_rows, "the described evidence routed nowhere"
+    assert crop_ref in repr([dict(r) for r in routing_rows]), (
         f"the described-evidence routing output does not reference the crop {crop_ref!r} "
         "— 'retained and reachable in one action' (FR-INTEG-05) needs the routing "
         "request to carry the reference, and a test-side round-trip cannot prove that"
@@ -244,7 +244,8 @@ def test_tc_integ_05_evidence_spanning_described_and_transcribed_is_not_describe
 # --- TC-INTEG-06: the three-valued disagreement signal -------------------------------------
 
 def _two_family_gate(tmp_data_dir, spans, second_family):
-    doc = _seed_document(tmp_data_dir)
+    # The caller seeds the document (each test does, to build its spans); seeding
+    # again here would collide on the declared document id.
     view = ExtractionView(spans=spans, second_family_spans=second_family,
                           panel=PanelFlags((True, True, True)))
     return _gate(tmp_data_dir, view)
@@ -331,7 +332,8 @@ class _RaisingView(ExtractionView):
 
 
 def _fault_gate(tmp_data_dir, fault: str, **view_kwargs):
-    doc = _seed_document(tmp_data_dir)
+    # The caller seeds the document; seeding again here would collide on the
+    # declared document id.
     view = _RaisingView(fault, **view_kwargs)
     return _gate(tmp_data_dir, view)
 
@@ -340,6 +342,7 @@ def test_tc_integ_08_span_read_failure_yields_unverified_and_absent(tmp_data_dir
     """`TC-INTEG-08` — the span computation cannot read its input: `spans_verified`
     False ('unverified') and `evidence_present` False ('absent'), never the permissive
     defaults."""
+    _seed_document(tmp_data_dir)  # the document is fine; the SPAN read is the fault
     gate, _ = _fault_gate(tmp_data_dir, "spans")
     signals = gate.verify(_RUN, "SUB-001", "C1")
     assert signals.spans_verified is False

@@ -37,11 +37,18 @@ correctness claim (rather than re-deriving per span) turns every variation red.
 
 **Disclosed stand-ins** (suite register, `_doubles.py`): D1 (each variation's reply
 is `span_completion`'s stand-in carrying the varied spans), D3, D6 (`verify_span`
-under #73, `IntegrityGate` under #74, `assemble` under #78, `synthesize(run_id,
-submission_id=...)` under #97 — no new consumer symbol invented; the render's exact
-shape is #97's, so the render assertion is substring containment of every span's
-text). **Isolation: rung 3** — real store, real ledger, real blob directory, real
-panel enumeration, `RecordedFixtureProvider` at the model boundary.
+under #73, `IntegrityGate` under #74, `assemble` under #78, `synthesize(store,
+provider, model_ref, run_id, *, submission_id)` under #97 — no new consumer symbol
+invented; the render's exact shape is #97's, so the render assertion is substring
+containment of every span's text, read off the report's own sample). The render leg
+drives the landed two-level driver with an echoing provider (the evidence the L1
+prompt carries comes back as the narrative, and the L2 composes from it), over the
+score-leg state the sweep seeds through the disclosed fixtures: the extract leg's
+persisted span payload copied onto the score unit's evidence row, the unit marked
+done, one verdict — exactly `seed_scored_submission`'s disclosed shape, minus the
+parts the run already has. **Isolation: rung 3** — real store, real ledger, real
+blob directory, real panel enumeration, `RecordedFixtureProvider` at the model
+boundary.
 """
 
 from __future__ import annotations
@@ -65,24 +72,26 @@ from tests.support.impl import (
     SYNTH_MODULE,
     require,
 )
-from tests.support.integ_vocabulary import ExtractionView, PanelFlags, Span
+from tests.support.integ_vocabulary import ExtractionView, PanelFlags, Span, seed_verdict
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.synth_vocabulary import narrative_completion, synth_ref
 from tests.contract.extract._doubles import (
     byte_span,
     build_markdown,
     make_world,
-    payload_bytes,
     require_extract_surface,
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _S1 = "The buffer overflowed because the index was never bounds-checked."
 _S2 = "The fix clamps the index before the write."
 _S3 = "The tests now cover the boundary case."
 _MARKDOWN = build_markdown(_S1 + "\n" + _S2 + "\n" + _S3 + "\n")
-_CRITERIA = [{"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"}]
+# `Q1C1` — the naming convention `M-SYNTH` groups questions by (`Q<n>C<k>` -> `Q<n>`):
+# the render leg needs the criterion to resolve to a question for its L1 narrative.
+_CRITERIA = [{"criterion_id": "Q1C1", "kind": "open", "scoring_model": "holistic"}]
 
 
 def _marked(needle: str) -> dict[str, Any]:
@@ -128,6 +137,19 @@ _VARIATIONS = (
 )
 
 
+class _EchoingNarrator:
+    """The render leg's model double: a synthesizer that narrates by echoing the
+    evidence back. The L1 prompt's `evidence` field (or the L2 prompt's `syntheses`,
+    which carry the L1 text) returns as the narrative, so the containment oracle
+    below tests what the DRIVER carried into the prompt — the spans' texts — and
+    not a canned reply's coincidence. Deterministic, no network: the fixture-record
+    transport stays the only other egress point."""
+
+    def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+        fields = dict(prompt.fields)
+        return narrative_completion(fields.get("evidence") or fields.get("syntheses") or "")
+
+
 def _sweep(tmp_data_dir: Any, make_fixture_provider: Any, spans: list[dict[str, Any]]):
     """One run, one extract unit recorded the varied span list, one extraction; then
     the three consumers over the result. Returns what the per-variation assertions
@@ -135,7 +157,6 @@ def _sweep(tmp_data_dir: Any, make_fixture_provider: Any, spans: list[dict[str, 
     VerifySpan = require(INTEG_MODULE, "verify_span", issue="#73")
     IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
     Assemble = require(JUDGE_MODULE, "assemble", issue="#78")
-    Synthesize = require(SYNTH_MODULE, "synthesize", issue="#97")
     require_extract_surface()
 
     world = make_world(tmp_data_dir, make_fixture_provider, markdown=_MARKDOWN,
@@ -151,8 +172,8 @@ def _sweep(tmp_data_dir: Any, make_fixture_provider: Any, spans: list[dict[str, 
         )
         (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
         world.provider.record(
-            PromptFields(AssembleRequest(unit)), model_ref, sampling_params(),
-            span_completion(spans, build_id="ct-c15-build"),
+            PromptFields(AssembleRequest(unit, store=world.store)), model_ref,
+            sampling_params(), span_completion(spans, build_id="ct-c15-build"),
         )
         Worker(world.store, world.provider, model_ref).process(unit)
 
@@ -175,7 +196,7 @@ def _sweep(tmp_data_dir: Any, make_fixture_provider: Any, spans: list[dict[str, 
                 panel=PanelFlags(evidence_sufficient=(True, True, True)),
             ),
         )
-        signals = gate.verify(run_id, "SYN-001", "C1")
+        signals = gate.verify(run_id, "SYN-001", "Q1C1")
         assert signals.sufficiency_flag is True, (
             "TC-EXTRACT-C15: sufficiency was derived from the spans rather than "
             "judged by the panel — a consumer assumed completeness, which the "
@@ -183,19 +204,52 @@ def _sweep(tmp_data_dir: Any, make_fixture_provider: Any, spans: list[dict[str, 
         )
         # M-JUDGE assembles the panel's input from the spans as they came.
         arms = world.store.cohort(ORCH_COHORT_ID).query(
-            "SELECT work_id, judge_id FROM work_unit WHERE run_id = :r "
+            "SELECT work_id, judge_id, run_id, submission_id, criterion_id "
+            "FROM work_unit WHERE run_id = :r "
             "AND stage = 'score' AND submission_id = :s AND criterion_id = :c",
-            r=run_id, s="SYN-001", c="C1",
+            r=run_id, s="SYN-001", c="Q1C1",
         )
-        assembled = payload_bytes(Assemble(arms[0]))
+        assembled = Assemble(arms[0], store=world.store)
+        panel_input = assembled.submission_text + "\n".join(
+            span["text"] if isinstance(span, dict) else span.text
+            for span in assembled.evidence
+        )
         for span in spans:
-            assert span["text"].encode("utf-8") in assembled, (
+            assert span["text"] in panel_input, (
                 "TC-EXTRACT-C15: the panel's assembled input dropped a legally "
                 "emitted span"
             )
-        # M-SYNTH renders without assuming order: every span's text renders.
-        rendered = Synthesize(run_id, submission_id="SYN-001")
-        rendered_text = rendered if isinstance(rendered, str) else str(rendered)
+        # M-SYNTH renders without assuming order: every span's text renders. The
+        # score leg is completed through the disclosed fixture state — the extract's
+        # persisted span payload copied onto the score unit's evidence row, the unit
+        # marked done, one verdict (`seed_scored_submission`'s shape, minus what the
+        # run already has) — and the landed two-level driver runs over it. The gate
+        # read above runs FIRST deliberately: a verdict seeded before `verify()` is
+        # a verdict the reported sufficiency would have to weigh.
+        score_unit = arms[0]["work_id"]
+        (extract_payload,) = world.store.cohort(ORCH_COHORT_ID).query(
+            "SELECT payload FROM evidence WHERE work_id = :w", w=unit.work_id,
+        )
+        handle = world.store.cohort(ORCH_COHORT_ID)
+        with handle.transaction() as tx:
+            tx.execute("UPDATE work_unit SET status = 'done' WHERE work_id = :w",
+                       w=score_unit)
+            tx.execute(
+                "INSERT INTO evidence (evidence_id, work_id, document_id, payload) "
+                "VALUES (:e, :w, :d, :p)",
+                e=f"ev-{score_unit}", w=score_unit, d=world.doc_id,
+                p=extract_payload["payload"],
+            )
+        seed_verdict(handle, f"vd-{score_unit}", score_unit, "judge-a", "B2")
+        Synthesize = require(SYNTH_MODULE, "synthesize", issue="#97")
+        report = Synthesize(world.store, _EchoingNarrator(), synth_ref(), run_id,
+                            submission_id="SYN-001")
+        assert report.failures == 0, (
+            f"TC-EXTRACT-C15: the render leg failed ({report.failures} failures) — "
+            "legally emitted spans must still flow to a narrative, whatever their "
+            "order, overlap or minimality"
+        )
+        rendered_text = "\n".join(report.sample)
         for span in spans:
             assert span["text"] in rendered_text, (
                 "TC-EXTRACT-C15: the render dropped a legally emitted span — a "

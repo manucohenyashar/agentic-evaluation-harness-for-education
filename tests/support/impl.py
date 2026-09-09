@@ -1395,7 +1395,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The "#68 extraction contract suite (TS-65)" entry left when #68 landed
     # `aeh.extract`: the rung-2 contract cases (C01-C09, C11-C13, C08) resolved only
     # the `TS26_EXTRACT_SYMBOLS` conjunction, so their markers came off and they
-    # rejoin TEST_CMD. The rung-3 nodes below stay keyed on their consumers.
+    # rejoin TEST_CMD. The three consumer-keyed entries below left at the #73/#74
+    # landing (`aeh.integ`): their markers came off in the same change, and nothing
+    # rung-3 remains keyed in this section.
     "#68 extraction contract metrics (TS-65)": (
         # C14, the whole file: the suite's names plus #68's own `extraction_metrics`
         # emitter — the one case that reads the metrics, hence its own conjunction, so
@@ -1407,48 +1409,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The "#69 extraction contract second family (TS-65)" entry stood here: its
     # conjunction resolved with the same landing, and C10 lost its marker in the
     # same change.
-    "#73 extraction contract sweep (TS-65)": (
-        # C07's rung-3 node: verification is M-INTEG's — `verify_span` re-derives it
-        # from the document bytes. Keyed on #73 alone because that is the only consumer
-        # symbol the node resolves.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
-        + f",{INTEG_MODULE}:verify_span",
-        (
-            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
-            "::test_tc_extract_c07_m_integ_rederives_verification_rather_than_trusting_a_flag",
-        ),
-    ),
-    "#74 extraction contract sweep (TS-65)": (
-        # The routing differentials that construct M-INTEG's gate and read its
-        # signals: C09's described-graphic routing and C08's M-INTEG-sees-the-blank.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
-        + f",{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/contract/extract/test_ct_extract_c09_described_graphic_marker.py"
-            "::test_tc_extract_c09_m_integ_routes_on_the_marker_alone",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_m_integ_sees_the_blank_never_the_failure_m_orch_holds_it",
-        ),
-    ),
-    # The "#78 extraction contract suite (TS-65)" entry stood here: #78 landed
-    # `aeh.judge` (`ScoringWorker` + `assemble`), so the two distinguishability
-    # differentials it keyed — C03's byte-identical evidence across the panel and
-    # C08's blank-vs-failure at the scorer — lost their markers and rejoined
-    # TEST_CMD. The quarantine file's half 5 (the M-INTEG sweep) stays marked under
-    # the `#74 extraction contract sweep (TS-65)` entry above: `IntegrityGate` is
-    # still its binding blocker, and its marker is function-level.
-    "#73+#74+#78+#97 extraction contract sweep (TS-65)": (
-        # C15, the whole file: every variation sweeps all four consumer stories over
-        # #68's surface — the conjunction is the file's full blocker set.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS) + (
-            f",{INTEG_MODULE}:verify_span,{INTEG_MODULE}:IntegrityGate"
-            f",{JUDGE_MODULE}:assemble,{SYNTH_MODULE}:synthesize"
-        ),
-        ("tests/contract/extract/test_ct_extract_c15_non_promise_consumer_sweep.py",),
-    ),
+    # The "#73 extraction contract sweep (TS-65)", "#74 extraction contract sweep
+    # (TS-65)" and "#73+#74+#78+#97 extraction contract sweep (TS-65)" entries stood
+    # here: #73 landed `aeh.integ:verify_span` and #74 the gate (`IntegrityGate`,
+    # `IntegritySignals`), completing every conjunction the rung-3 nodes resolved —
+    # C07's re-derivation, C09's marker routing, C08's blank routing and the whole
+    # C15 sweep — so their markers came off and they rejoin TEST_CMD in the same
+    # change.
     # --- TS-20 (#54), the M-SETUP Stage A cases that wait on #51/#52/#53 --------------------
     #
     # `aeh.setup` itself landed with #50 (propose, confirm, the two gates, publish), so
@@ -1536,65 +1503,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # M-INTEG is two implementation stories: #73 (`verify_span`, fail-closed) and #74
     # (signals, routing, the restricted write set), and the cases split on that seam.
     #
-    # `verify_span` is keyed on an **invented module-level function**: design §3.9's
-    # Protocol declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and
-    # FUZZ-03 are rung 0 — pure over (document bytes, span), no store, no construction —
-    # and a Protocol-only `IntegrityGate` (which #73 could land first) cannot be
-    # instantiated. The module-level name is the `#65` `aeh.synth:synthesize` precedent:
-    # the minimal entry point the pure cases call, reconciled at #73's landing. Keying on
-    # `IntegrityGate` instead would fire against a Protocol shell and send a reader to
-    # unmark tests that then fail on a TypeError — the exact trap TS-56 measured.
-    "#73 verify_span (TC-INTEG-01/09, FUZZ-03)": (
-        "symbol",
-        f"{INTEG_MODULE}:verify_span",
-        (
-            "tests/unit/integ/test_verify_span.py",
-            "tests/property/test_fuzz_03_verify_span.py",
-        ),
-    ),
-    "#73 IntegrityGate (TC-INTEG-02/11)": (
-        # FR-INTEG-02 (discard, retry, quarantine) is #73's own acceptance criterion —
-        # the retry ladder's state transitions are what that story ships. TC-INTEG-11's
-        # differential rides the same class (NFR-INTEG-01 is #73's non-functional row;
-        # the file only requires IntegrityGate, never the signals — reviewer-aligned
-        # ownership). Keyed on the class the files construct; the known residual
-        # weakness (recorded at TS-08 rather than papered over) applies: a
-        # Protocol-shell `IntegrityGate` would resolve this key while the construction
-        # the tests need is still #74's. The class and the ladder reconcile at #73's
-        # landing.
-        "symbol",
-        f"{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/integration/integ/test_integ_retry_and_quarantine.py",
-            "tests/integration/integ/test_integ_perf.py",
-        ),
-    ),
-    "#74 IntegritySignals (TC-INTEG-03/04/05/06/07/08/10/12)": (
-        # #74 lands the signals, the routing and the restricted write set in one story,
-        # so every file that constructs the gate or asserts the signals resolves at the
-        # same commit — the symbol is the dataclass the tests read, which no Protocol
-        # shell satisfies with an empty shell (a frozen dataclass with six fields is
-        # either there or it is not).
-        "symbol",
-        f"{INTEG_MODULE}:IntegritySignals",
-        (
-            "tests/unit/integ/test_integrity_signals.py",
-            "tests/artifact/test_integ_write_set.py",
-            "tests/integration/integ/test_integ_routing_and_sweeps.py",
-        ),
-    ),
-    "#74 alert constant (TC-INTEG-14)": (
-        # CT-INTEG-14 declares the *alert* but not its spelling; the store's precedent
-        # (ALERT_FREE_DISK, DECLARED_ALERTS) makes the name part of the interface, so
-        # the observability file requires the constant and this key is the exact thing
-        # whose absence holds the case out of the gate — an invented-and-disclosed
-        # name, same reasoning as `aeh.synth:synthesize` above.
-        "symbol",
-        f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES",
-        (
-            "tests/integration/integ/test_integ_observability.py",
-        ),
-    ),
+    # All four entries this section once carried left at the #73/#74 landing:
+    # `verify_span` shipped as the invented module-level function (the `#65`
+    # `aeh.synth:synthesize` precedent — the rung-0 cases need no construction),
+    # `IntegrityGate` landed with the retry ladder, `IntegritySignals` with the
+    # routing and the write set, and `ALERT_SPAN_VERIFICATION_FAILURES` as declared —
+    # so every TS-28 file is unmarked and nothing is keyed here.
     # --- TS-66 (#77), the fifteen CT-INTEG clause cases ------------------------------------
     #
     # One entry per blocker shape, not per case: the clause cases share the #75-reconciled
@@ -1603,14 +1517,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # ATOMIC`), so the conjunctions group by what makes a file runnable. No new M-INTEG
     # name is minted for TS-66 — the two knobs CT-INTEG-13 names (INTEG_OCR_CONF_FLOOR,
     # INTEG_DESCRIBED_EVIDENCE_ROUTES) ride env like the #75 disable switch, and the
-    # disclosure tables in the files carry the details.
-    "#73 verify_span (TS-66 C01 surface/boundaries)": (
-        "symbol",
-        f"{INTEG_MODULE}:verify_span",
-        (
-            "tests/contract/integ/test_ct_integ_verify_span_surface.py",
-        ),
-    ),
+    # disclosure tables in the files carry the details. The #73/#74-only entries
+    # (C01, C04, C05, C06, C10-C14) left when M-INTEG landed; the entries that remain
+    # are exactly the ones whose conjunctions still name the M-AGG surface (#92).
     "#92 IntegritySignals+aggregate+threshold (TS-66 C02 None-is-not-False)": (
         # The type half needs only the signals dataclass (#74); the rung-3 consumer
         # differential drives M-AGG's confidence surface, which lands with #92 — the
@@ -1637,36 +1546,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_fail_closed.py",
         ),
     ),
-    "#74 IntegrityGate+IntegritySignals (TS-66 C04 write surface)": (
-        # The static limbs scan src/aeh/integ.py itself (the module existing is part of
-        # the blocker), the write audit runs the real gate, and the output-surface
-        # equality reads the returned signals object.
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals"),
-        (
-            "tests/contract/integ/test_ct_integ_write_surface.py",
-        ),
-    ),
-    "#74+#68 both module files (TS-66 C05 structural independence)": (
-        # The independence clause is about the PAIR: the import-graph assertion needs
-        # both module files on disk, so the conjunction takes each module's
-        # representative symbol (the #68-review precedent for extract's).
-        "symbols",
-        f"{INTEG_MODULE}:verify_span,{EXTRACT_MODULE}:prompt_fields",
-        (
-            "tests/contract/integ/test_structural_independence.py",
-        ),
-    ),
-    "#74 IntegrityGate (TS-66 C06 byte-exact rejection, nothing scores)": (
-        # The rung-0 rows block on verify_span (#73) but the gate discard/ladder limbs
-        # are the case's body — the gate (with the signals it returns) is the LAST
-        # blocker, and the no-scoring oracle's teeth run unmarked.
-        "symbol",
-        f"{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/contract/integ/test_ct_integ_byte_exact_rejection.py",
-        ),
-    ),
+    # The "#74 ... (TS-66 C04 write surface)", "#74+#68 both module files (TS-66 C05
+    # structural independence)" and "#74 IntegrityGate (TS-66 C06 byte-exact
+    # rejection, nothing scores)" entries stood here: M-INTEG landed the gate and
+    # the signals, so C04-C06's conjunctions resolved and their files rejoined
+    # TEST_CMD in the same change.
     "#92 gate+signals+aggregate+threshold (TS-66 C07 empty evidence routes)": (
         # The most consequential negative clause: the route sweep runs the gate (#74),
         # the rung-3 consumer half drives M-AGG's aggregate and reads the auto-accept
@@ -1701,55 +1585,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_ocr_intersection.py",
         ),
     ),
-    "#74 IntegrityGate (TS-66 C10 described evidence and crop)": (
-        # The routing/marking/crop limbs all run the real gate over the real blob
-        # store; no M-AGG half (the clause declares no separate cap here).
-        "symbol",
-        f"{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/contract/integ/test_ct_integ_described_evidence.py",
-        ),
-    ),
-    "#74 IntegrityGate+IntegritySignals (TS-66 C11 timing of the sufficiency flag)": (
-        # The differential runs the real gate at two ledger instants; the
-        # conservative-default reading is the signals object's.
-        "symbols",
-        f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals",
-        (
-            "tests/contract/integ/test_ct_integ_timing.py",
-        ),
-    ),
-    "#74 IntegrityGate (TS-66 C12 verification cost, linear and total)": (
-        # The perf limbs and the coverage limb all run the real gate; the coverage
-        # oracle's teeth run unmarked. slow-marked limbs follow the conform/console
-        # perf-contract precedent.
-        "symbol",
-        f"{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/contract/integ/test_ct_integ_verification_cost.py",
-        ),
-    ),
-    "#74 IntegrityGate (TS-66 C13 config knobs move routing volume)": (
-        # The differentials run the real gate on its DEFAULT configuration path
-        # (no injected floor), so the env plumbing the clause names is what is
-        # exercised; the teeth run unmarked.
-        "symbol",
-        f"{INTEG_MODULE}:IntegrityGate",
-        (
-            "tests/contract/integ/test_ct_integ_config_knobs.py",
-        ),
-    ),
-    "#74 gate+rate constants (TS-66 C14 rate metrics, per criterion)": (
-        # The artifact limb requires the two constants by name; the dimensionality
-        # and attribution limbs run the real gate. Positional order is the clause's
-        # own enumeration — disclosed in the file.
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:INTEG_RATE_METRICS,"
-         f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES"),
-        (
-            "tests/contract/integ/test_ct_integ_rate_metrics.py",
-        ),
-    ),
+    # The "#74 IntegrityGate (TS-66 C10 described evidence and crop)", "#74
+    # IntegrityGate+IntegritySignals (TS-66 C11 timing)", "#74 IntegrityGate (TS-66
+    # C12 verification cost)", "#74 IntegrityGate (TS-66 C13 config knobs)" and "#74
+    # gate+rate constants (TS-66 C14 rate metrics)" entries stood here: M-INTEG
+    # landed the gate, the signals and the two rate constants, so C10-C14's keys
+    # resolved and their files rejoined TEST_CMD in the same change.
     "#74 gate+signals, #92 aggregate+threshold (TS-66 C15 non-promise)": (
         # The premise limb runs the real gate; the consumer limbs construct the
         # all-clean set (C03's complete shape) and feed it to the pure aggregate
