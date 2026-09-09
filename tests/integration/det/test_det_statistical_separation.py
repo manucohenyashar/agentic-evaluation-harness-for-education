@@ -16,8 +16,10 @@ vocabulary). No provider is reachable: `network_guard` closes each case.
 **Disclosures** (carrying `TS-33`'s disclosed-bypass discipline, issue #88):
 - Label rows are seeded directly in the column shape the `label` table ships — there is
   no `M-REVIEW` labeler writer yet. `det` owns the mode COLUMN, not the row (`CT-DET-06`),
-  so a direct write is the only way to stand up both populations; the CHECK constraint
-  backstops the vocabulary.
+  so a direct write is the only way to stand up both populations. Of the two columns the
+  matrix exercises, only `evaluation_mode` carries a CHECK constraint (det's migration);
+  `label_type` is unconstrained `TEXT` — a typo there is not caught by the schema but by
+  the figure membership assertions below (TC-DET-13 leg 3 would see the population move).
 - The κ / α / grader-quality consumers land with `M-STATS` (`TS-42`). The figure surface
   this case pins is what `NFR-DET-03` requires to exist first: the ONE filter definition
   (`DETERMINISTIC_EXCLUSION`), the canonical agreement-figure query it composes into, the
@@ -31,10 +33,13 @@ vocabulary). No provider is reachable: `network_guard` closes each case.
 
 from __future__ import annotations
 
+import importlib
+import pkgutil
 import re
 
 import pytest
 
+import aeh
 from aeh.det import DETERMINISTIC_EXCLUSION, DET_STATEMENTS, DeterministicEvaluator
 from aeh.store import STATEMENTS
 from tests.support.det_vocabulary import (
@@ -55,7 +60,9 @@ _CRITERIA = [{"criterion_id": "M1", "question_id": "Q1", "key": ("B",)}]
 #: figure is computed over the rows' BAND values, so a label read that does not expose
 #: `band` is not a statistics path — `count_promoted_labels` (`FR-STORE-07`'s purge
 #: bookkeeping) is the one such statement today, and the sweep pins it to that shape.
-_LABEL_READ = re.compile(r"\bFROM\s+label\b|\bJOIN\s+label\b")
+#: Case-insensitive: uppercase SQL is repo convention, not a rule this P0 sweep may
+#: lean on.
+_LABEL_READ = re.compile(r"\bFROM\s+label\b|\bJOIN\s+label\b", re.IGNORECASE)
 
 #: Non-statistics label reads: purge bookkeeping counts, by name.
 _PURGE_COUNT_PREFIX = "count_promoted_"
@@ -85,6 +92,13 @@ def _attacker_module() -> str:
 def _label_read_paths():
     """The registered label-reading statements, split by what they can feed.
 
+    The sweep must see every registry contributor regardless of what this process
+    happened to import: `STATEMENTS` is populated by module-import side effects, so a
+    statement registered in a module no test module imports yet would be invisible to a
+    standalone run of this file — exactly the hole a sweep must not have. Importing
+    every `aeh` submodule first makes the sweep unconditionally global; imports are
+    cached, so the cost is paid once per session.
+
     A figure path is a label read that exposes the rows' band values — the thing an
     agreement, κ, α or grader-quality statistic consumes. A label read that exposes no
     band cannot compute a figure over labels; those are pinned to purge bookkeeping
@@ -93,6 +107,8 @@ def _label_read_paths():
     """
     figure_paths: dict[str, str] = {}
     non_figures: dict[str, str] = {}
+    for mod in pkgutil.walk_packages(aeh.__path__, prefix="aeh."):
+        importlib.import_module(mod.name)
     for name, stmt in STATEMENTS.items():
         sql = str(stmt)
         if _LABEL_READ.search(sql):
