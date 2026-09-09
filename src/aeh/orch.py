@@ -59,10 +59,27 @@ never silently reduced. Every decision is pure policy (`escalation_plan`,
 `validate_escalation_plan`, `admit_escalations`, `criterion_breaker_tripped`,
 `random_arm_selection`) — evaluable with no model call (`NFR-ORCH-04`).
 
-**Not in this slice, and deliberately so.** The control-row run lifecycle (start/pause
-status transitions), the cost ceiling and provider pauses are #61's; dispatch
-isolation, concurrency and `ProgressReport` are #62's. The `run` row is created in
-`status='pending'` and no story before #61 flips it: the lifecycle is #61's.
+**This slice (#61) adds the control-row run lifecycle** (`FR-ORCH-15/16/17/25`,
+`CT-ORCH-12/13`): `start(run_id)` flips `pending → running` and obtains + displays the
+run's estimated cost from the injected provider seam **before** any dispatch;
+`pause(run_id, cause=...)` records the request as a `run_control` row and applies it
+through the control-read pass — immediately on a `running` run, queued on a `pending`
+one (request ≠ effect: the effect lands at the next `start`), so a pause written while
+the orchestrator was down is honoured at the next read rather than lost. The four
+`CT-ORCH-12` pause conditions all land in the same place: `ProviderUnavailableError`
+(`FR-ORCH-16`) and `BuildChangedError` (`FR-ORCH-17`) via `cause=`, the operator's own
+request via `cause=None`, and the cost ceiling sensed in the claim pass itself — the
+frozen ceiling (`FR-CONF-07`) is checked against the provider seam's **measured**
+per-unit figures (`FR-PROV-12/04`, never an estimated optimism), spend accrues in the
+claim transaction, a dispatch that would land **above** the ceiling is refused and the
+run pauses naming its spend and remaining unit count. `resume(run_id)` is the
+`paused → running` edge and re-binds to nothing: lifecycle writes touch status columns
+only, so the frozen backend is the resumed backend by construction — there is no
+substitution code path (`FR-ORCH-16`). The ledger is preserved across every pause: a
+pause is a stop and a reason, never a purge.
+
+**Not in this slice, and deliberately so.** Dispatch isolation, concurrency and
+`ProgressReport` are #62's.
 
 **The four seams** (CLAUDE.md): the orchestrator runs end-to-end from code and returns a
 structured result with per-gate detail (`EnumerationReport`, `EscalationReport` — the
@@ -80,6 +97,7 @@ import os
 import sqlite3
 import uuid
 from collections import deque
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -295,6 +313,15 @@ class RunNotFoundError(WorkLedgerError):
     is a caller mistake worth naming."""
 
 
+class RunStateError(WorkLedgerError):
+    """A control operation named an edge FR-ORCH-25's machine does not declare.
+
+    `run.status` follows `pending → running → (paused ↔ running) → complete | failed`
+    and nothing else: `start` from anything but `pending`, and the terminal states as
+    sources, are refused with this error while the row's state stays exactly where it
+    was — the refusal is named, never absorbed, and never a state change."""
+
+
 class EscalationPlanError(WorkLedgerError):
     """An escalation plan this module refuses to build (`FR-ORCH-10`'s gate).
 
@@ -442,6 +469,44 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     key=lambda m: m.version,
 ))
 
+#: #61's lifecycle columns and the control-row queue. `cost_estimate` carries the
+#: pre-dispatch estimate start() displays (canonical Decimal string; NULL where no
+#: estimator seam was available — a fabricated zero would read as a measured price,
+#: the principle `CT-PROV-03` states for cost figures). `cost_spend` is the accrual the
+#: ceiling is enforced against, written in the same transaction as each claim that
+#: incurred it — the ledger's own figure, never a side-file counter and never an
+#: up-front optimism. `pause_reason` is every pause's alert text: what the operator
+#: surface reads to learn WHY the run stopped. `run_control` is CT-ORCH-13's queue:
+#: pause and resume requests land here and are effected when the orchestrator reads
+#: them — the request is never the effect, which is why a control row written while
+#: nothing is dispatching queues and is honoured at the next read.
+_ORCH_COHORT_011: tuple[Statement, ...] = (
+    Statement("ALTER TABLE run ADD COLUMN cost_estimate TEXT"),
+    Statement("ALTER TABLE run ADD COLUMN cost_spend TEXT NOT NULL DEFAULT '0'"),
+    Statement("ALTER TABLE run ADD COLUMN pause_reason TEXT"),
+    Statement(
+        """
+        CREATE TABLE run_control (
+            control_id   TEXT NOT NULL PRIMARY KEY,
+            run_id       TEXT NOT NULL REFERENCES run(run_id),
+            action       TEXT NOT NULL CHECK (action IN ('pause', 'resume')),
+            reason       TEXT,
+            requested_at TEXT NOT NULL,
+            applied_at   TEXT
+        )
+        """
+    ),
+    Statement(
+        "CREATE INDEX idx_run_control_open ON run_control(run_id, applied_at)"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT]
+    + (Migration(version=11, name="orch_run_lifecycle", statements=_ORCH_COHORT_011),),
+    key=lambda m: m.version,
+))
+
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) -------------------
 
@@ -452,17 +517,22 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "VALUES (:run_id, :cohort_id, :package_version_id, :package_id, :panel_config, "
         ":backend_profile, :provider_config, :prompt_template_v, 'pending')"
     ),
+    # The run-row read carries the lifecycle columns #61 added (`cost_estimate`,
+    # `cost_spend`, `pause_reason`) beside the frozen backend snapshot — the ceiling is
+    # enforced from the row's OWN figures, never from current configuration.
     "select_run": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "
-        "completed_at FROM run WHERE run_id = :run_id"
+        "completed_at, cost_estimate, cost_spend, pause_reason "
+        "FROM run WHERE run_id = :run_id"
     ),
     # The runs resume() may drive: everything not yet finished. Ordered by run_id so two
     # enumerations of the same state walk the same rows in the same order (NFR-ORCH-05).
     "select_open_runs": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "
-        "completed_at FROM run WHERE status IN ('pending', 'running', 'paused') "
+        "completed_at, cost_estimate, cost_spend, pause_reason "
+        "FROM run WHERE status IN ('pending', 'running', 'paused') "
         "ORDER BY run_id"
     ),
     "select_run_work_ids": Statement(
@@ -701,6 +771,84 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_run_breakers": Statement(
         "SELECT criterion_id, kind, tripped_at, detail FROM circuit_breaker "
         "WHERE run_id = :run_id ORDER BY criterion_id ASC, kind ASC"
+    ),
+    # -- the run lifecycle and the cost ceiling (FR-ORCH-15/16/17/25, #61) -----------------------
+    # start()'s edge: pending → running, stamping started_at. The guard makes every
+    # undeclared edge a zero-row write the caller detects via changes() — the machine
+    # never moves along an edge FR-ORCH-25 does not declare.
+    "transition_run_started": Statement(
+        "UPDATE run SET status = 'running', started_at = :started_at, "
+        "pause_reason = NULL, completed_at = NULL "
+        "WHERE run_id = :run_id AND status = 'pending'"
+    ),
+    # The lifecycle's guarded transition, shared by pause/resume/complete: the
+    # from_status guard IS the transition matrix's enforcement — a request from a
+    # state the machine does not declare the edge from writes nothing.
+    "transition_run_status": Statement(
+        "UPDATE run SET status = :to_status, pause_reason = :pause_reason, "
+        "completed_at = :completed_at "
+        "WHERE run_id = :run_id AND status = :from_status"
+    ),
+    # The orchestrator's own sensed pauses (cost ceiling reached mid-dispatch): from
+    # either dispatchable state, never from a terminal one. The reason text is the
+    # alert — the pause names its spend and what remains (FR-ORCH-15).
+    "pause_run_sensed": Statement(
+        "UPDATE run SET status = 'paused', pause_reason = :pause_reason, "
+        "completed_at = NULL "
+        "WHERE run_id = :run_id AND status IN ('running', 'pending')"
+    ),
+    "accrue_run_spend": Statement(
+        "UPDATE run SET cost_spend = :cost_spend WHERE run_id = :run_id"
+    ),
+    "set_run_estimate": Statement(
+        "UPDATE run SET cost_estimate = :cost_estimate WHERE run_id = :run_id"
+    ),
+    "count_run_pending": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND status = 'pending'"
+    ),
+    # The completion probe's read (FR-ORCH-12): a run completes when nothing is
+    # pending and nothing is in flight. Quarantined units hold the run open only
+    # through the scoring they gated (their score units stay pending).
+    "select_run_open_units": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND status IN ('pending', 'leased')"
+    ),
+    # The estimate's units: everything the run may still dispatch, one row per unit
+    # with the seam's keys (the same shape the claim select hands over).
+    "select_run_units_for_estimate": Statement(
+        "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
+        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref "
+        "FROM work_unit w "
+        "JOIN submission s ON s.submission_id = w.submission_id "
+        "WHERE w.run_id = :run_id AND w.status IN ('pending', 'leased') "
+        "ORDER BY w.work_id"
+    ),
+    # -- the control rows (CT-ORCH-13) ------------------------------------------------------------
+    # A control action WRITES a row; the orchestrator EFFECTS it when it reads one —
+    # the request is never the effect. A row written while no orchestrator is reading
+    # queues (applied_at NULL) and is honoured at the next read: start, resume, or a
+    # claim pass of a run that is actively dispatching.
+    "insert_run_control": Statement(
+        "INSERT INTO run_control "
+        "(control_id, run_id, action, reason, requested_at) "
+        "VALUES (:control_id, :run_id, :action, :reason, :requested_at)"
+    ),
+    "select_unapplied_control": Statement(
+        "SELECT control_id, action, reason, requested_at FROM run_control "
+        "WHERE run_id = :run_id AND applied_at IS NULL "
+        "ORDER BY requested_at ASC, control_id ASC"
+    ),
+    "mark_control_applied": Statement(
+        "UPDATE run_control SET applied_at = :applied_at "
+        "WHERE control_id = :control_id AND applied_at IS NULL"
+    ),
+    # A later resume supersedes the pause requests queued before it (latest control
+    # intent wins): superseded pause rows are marked applied so the next start does
+    # not pause a run the operator already resumed.
+    "mark_pauses_applied": Statement(
+        "UPDATE run_control SET applied_at = :applied_at "
+        "WHERE run_id = :run_id AND action = 'pause' AND applied_at IS NULL"
     ),
 }
 
@@ -1462,14 +1610,40 @@ class Orchestrator:
     """The ledger slice of §3.7's Orchestrator: create a run, enumerate its units,
     resume, lease them under the two-sweep plan, and widen panels — escalation
     (`enqueue_escalation`), the random arm, the criterion breakers and the run-wide
-    escalation budget are #60's. The control-row lifecycle (start/pause status
-    transitions) is #61's; dispatch isolation and `ProgressReport` are #62's. `resume`
-    takes no arguments from its first commit.
+    escalation budget are #60's. **#61 lands the run lifecycle** (`FR-ORCH-25`):
+    `start(run_id)` is the `pending → running` edge and displays the run's estimated
+    cost before any dispatch (`FR-ORCH-15`); `pause(run_id, cause=...)` writes the
+    control row and applies it through the read pass the claim loop shares — a
+    `ProviderUnavailableError` (`FR-ORCH-16`), a `BuildChangedError` (`FR-ORCH-17`) or
+    an operator request pause a run without substituting anything; the cost ceiling the
+    run froze is enforced from the provider seam's measured figures inside every claim
+    transaction, and a crossing dispatch pauses the run naming spend and remaining
+    (`CT-ORCH-12`'s four pause conditions — the fourth being the sensed ceiling).
+    Pauses touch lifecycle columns only, so a resume re-binds to the frozen backend
+    structurally: there is no substitution code path to suppress. Control rows written
+    while the orchestrator was not dispatching queue in `run_control` and are honoured
+    at the next read (`CT-ORCH-13`). Dispatch isolation and `ProgressReport` remain
+    #62's. `resume` takes no arguments from its first commit.
+
+    **Recorded interpretations (#61).** The ceiling comparison is strict `>` per
+    dispatch (a dispatch landing exactly at the ceiling proceeds; the run pauses once
+    spend sits at the ceiling) — the breaker's and budget's reading of an "at or above"
+    boundary. The estimate displayed at start is the sum of the units' seam figures.
+    A queued pause on a `pending` run is honoured at `start` (the machine's declared
+    edges have no `pending → paused` from mid-flight); a queued pause on a `running`
+    run applies at the next claim pass; an operator's pause stays sticky across a
+    no-argument `resume` (a stop outranks a scheduler's restart) while an explicit
+    `resume(run_id)` — or a queued `resume` control — is the `paused → running` edge
+    and supersedes pauses still queued behind it. Run-level `complete` is probed after
+    every won lifecycle write and fires only for a `running` run with at least one
+    unit and none open (quarantined units are not open — their record stands).
 
     The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
     or contacts a judge: enumeration is a pure function of the ledger, the package
     catalog and the roster, over an injected store, and every escalation decision is
-    pure policy over ledger state (`NFR-ORCH-04`).
+    pure policy over ledger state (`NFR-ORCH-04`). The provider seam is injected the
+    same way and consulted only for cost figures — no dispatch, retry or pause decision
+    ever asks the provider what to do.
     """
 
     def __init__(
@@ -1479,9 +1653,22 @@ class Orchestrator:
         package_id_for: Any = default_package_id_for,
         cohort_keys_for: Any = None,
         clock: Any = None,
+        provider: Any = None,
     ) -> None:
         self._store = store
         self._package_id_for = package_id_for
+        #: The cost seam (`FR-ORCH-15`): the object the orchestrator consults for a
+        #: unit's cost figure. Declared protocol: `estimate_cost(unit) -> Decimal |
+        #: CostEstimate` — a `Decimal` is the figure; a `CostEstimate`-shaped answer
+        #: contributes its `.cost` (None = not billed, which adds nothing to the
+        #: accrual — replay is not billed and must not consume ceiling). Optional: a
+        #: run whose frozen config carries no ceiling never consults it, and the
+        #: estimate-at-start is simply not displayed when no seam was injected — a
+        #: fabricated zero would read as a measured price (`CT-PROV-03`'s principle).
+        #: A run that DID freeze a ceiling but is dispatched without a seam is refused
+        #: at the claim pass, loudly: a ceiling checked against nothing is the
+        #: estimated-optimism shape the seam exists to prevent.
+        self._provider = provider
         #: Maps the store to its cohort tier keys, for the run discovery `resume()` does
         #: with no arguments. Default: the `cohorts/` directory under the store's data
         #: dir — the ledger's own files are the bookkeeping, which is the whole point of
@@ -1839,6 +2026,122 @@ class Orchestrator:
 
     # -- resume (FR-ORCH-02) --------------------------------------------------------------------
 
+    # -- the run lifecycle: start, pause, resume (FR-ORCH-15/16/17/25, CT-ORCH-12/13) -----------
+
+    def start(self, run_id: str) -> str:
+        """Dispatch a `pending` run: `pending → running` (`FR-ORCH-25`'s declared edge).
+
+        **The estimate precedes dispatch** (`FR-ORCH-15`): before the status flips, the
+        run's estimated cost is obtained from the provider seam — the per-unit figures the
+        run will actually be dispatched against, summed — and written to the run row, so
+        the operator surface can read the figure before a single unit is leased. A run
+        with no seam injected (or nothing enumerated yet) displays no estimate: a
+        fabricated zero would read as a measured price (`CT-PROV-03`'s principle).
+
+        **A queued pause is honoured at start** (`CT-ORCH-13`): a control row written
+        while the orchestrator was not dispatching (a `pause` requested of a `pending`
+        run — request ≠ effect) is applied here instead of starting, so the run pauses
+        rather than races past a stop someone already asked for. The start that loses to
+        a queued pause is not swallowed: the row reads `paused`, with the requester's
+        reason, not `running`.
+
+        From any state but `pending` — including `paused` (an operator resumes, never
+        re-starts, a paused run: `FR-ORCH-25` declares `paused → running` as resume's
+        edge) — this raises `RunStateError` and the row's state stays exactly where it
+        was. Returns the status the run row carries after the call.
+        """
+        cohort, row = self._find_run(run_id)
+        if row["status"] != "pending":
+            raise RunStateError(
+                f"start({run_id[:12]}) refused: the run is '{row['status']}', not "
+                "'pending' — FR-ORCH-25's machine declares pending → running as the "
+                "start edge and nothing else; resume() un-pauses a paused run."
+            )
+        # Control rows first: a queued pause outranks the start that honours it
+        # (`CT-ORCH-13` — the request was already made; the effect lands now).
+        self._apply_control_rows(cohort, run_id, honour_queued_pause=True)
+        row = self._run_row(run_id)
+        if row["status"] == "paused":
+            return "paused"
+        # FR-ORCH-15's displayed estimate, before any dispatch.
+        estimate = self._run_cost_estimate(cohort, run_id)
+        if estimate is not None:
+            cohort.execute(
+                ORCH_STATEMENTS["set_run_estimate"],
+                run_id=run_id,
+                cost_estimate=str(estimate),
+            )
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["transition_run_started"],
+                run_id=run_id,
+                started_at=_now(),
+            )
+            won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
+        if won:
+            self._maybe_complete_run(cohort, run_id)
+        return "running"
+
+    def pause(
+        self, run_id: str, cause: BaseException | str | None = None
+    ) -> str:
+        """Pause a run: write the **control row**, then let the control-read pass apply it.
+
+        The two-step is the point, not overhead: the control row is the durable request
+        (`CT-ORCH-13` — request ≠ effect, the orchestrator reads control rows on its own
+        schedule), and applying through the same pass the claim loop reads means a pause
+        lands identically whether it was requested a second ago or written while the
+        orchestrator was down. On a `running` run the read pass runs immediately and the
+        effect is immediate; on a `pending` run the row stays queued and the effect lands
+        at the next `start` — a run that has not begun dispatching is not torn down for a
+        stop it can simply honour first. An already-`paused` run records the request as
+        satisfied (applied at once): the state the request asks for already holds.
+        Terminal states (`complete`, `failed`) refuse with `RunStateError` — a stop is
+        not a result.
+
+        `cause` is one of `CT-ORCH-12`'s four pause conditions: a `ProviderUnavailableError`
+        (`FR-ORCH-16`), a `BuildChangedError` (`FR-ORCH-17`), the cost ceiling (the claim
+        pass pauses on its own — it writes a sensed pause naming spend and remaining, never
+        calling this), or `None` for an operator request. The rendered reason lands on the
+        run row (`pause_reason`) so the operator surface can say *why* the run stopped,
+        never just that it did.
+
+        The pause touches lifecycle columns only — never `provider_config`/`panel_config`
+        (`FR-ORCH-16`'s resume-same-backend: the backend the run was frozen with is the
+        backend it resumes with, because nothing here can change it). Returns the status
+        the run row carries after the call.
+        """
+        cohort, row = self._find_run(run_id)
+        status = row["status"]
+        if status in ("complete", "failed"):
+            raise RunStateError(
+                f"pause({run_id[:12]}) refused: the run is '{status}' — a terminal "
+                "run keeps its record; a pause is a stop, not a rewrite of history."
+            )
+        reason = self._pause_reason_text(cause)
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["insert_run_control"],
+                control_id=f"control-{uuid.uuid4().hex}",
+                run_id=run_id,
+                action="pause",
+                reason=reason,
+                requested_at=_now(),
+            )
+        if status == "paused":
+            # The requested state already holds: record the request as applied, change
+            # nothing. (An operator double-pausing must not manufacture a state flip.)
+            cohort.execute(
+                ORCH_STATEMENTS["mark_pauses_applied"],
+                applied_at=_now(),
+                run_id=run_id,
+            )
+            return "paused"
+        # Apply through the control-read pass — immediate on a running run, queued on a
+        # pending one (CT-ORCH-13).
+        status_after, _queued = self._apply_control_rows(cohort, run_id)
+        return status_after
+
     def resume(self, run_id: str | None = None) -> None:
         """Resume work with **no arguments** — the requirement, not ergonomics.
 
@@ -1855,15 +2158,329 @@ class Orchestrator:
         to a no-op. Invoked when nothing is wrong, it inserts nothing and changes
         nothing: the safe no-op the acceptance criterion asks for.
 
+        **Control rows are honoured here** (`CT-ORCH-13`): the no-argument form reads
+        each open run's unapplied control rows first — a resume written while the
+        orchestrator was down flips its paused run back to `running` through the same
+        guarded transition an explicit resume uses. **An explicit `run_id` of a paused
+        run is the `paused → running` edge** (`FR-ORCH-25`): it re-binds to nothing and
+        consults no current configuration — the run's frozen `provider_config`/`panel_config`
+        are the backend (`FR-ORCH-16`'s resume-same-backend is structural: the lifecycle
+        transitions write status columns only, so *no code path exists* by which a resume
+        could substitute a backend). An operator's pause stays sticky across a restart:
+        the no-argument form applies control rows and enumerates but does not auto-unpause
+        a run nobody asked to resume — a stop an operator requested outranks a scheduler's
+        restart.
+
         The dispatch half of resume — leasing the pending units to workers — is #58's
         `lease` landing on this same ledger; the ledger half (nothing done is re-run,
         nothing lost, nothing duplicated) is complete here.
         """
         if run_id is not None:
+            cohort, row = self._find_run(run_id)
+            if row["status"] == "paused":
+                won = self._transition_run(
+                    cohort,
+                    run_id,
+                    to_status="running",
+                    pause_reason=None,
+                    completed_at=None,
+                    from_status="paused",
+                )
+                if won:
+                    # The resume supersedes any pause still queued behind it — the
+                    # latest control intent wins, and a pause that would re-fire at a
+                    # later start after an explicit resume is a control the operator
+                    # already overrode.
+                    cohort.execute(
+                        ORCH_STATEMENTS["mark_pauses_applied"],
+                        applied_at=_now(),
+                        run_id=run_id,
+                    )
+                    self._maybe_complete_run(cohort, run_id)
             self.enumerate_units(run_id)
             return
         for open_run in self._open_run_ids():
+            cohort, row = self._find_run(open_run)
+            self._apply_control_rows(cohort, open_run)
             self.enumerate_units(open_run)
+
+    def _apply_control_rows(
+        self, cohort: Any, run_id: str, *, honour_queued_pause: bool = False
+    ) -> tuple[str, str | None]:
+        """Read and apply a run's unapplied control rows, oldest request first.
+
+        Returns `(status, queued_pause_reason)`: the run row's status after application,
+        and the reason of a pause still queued on a `pending` run (queued, not dropped —
+        `CT-ORCH-13`'s request ≠ effect; the claim pass uses a non-None reason to stop
+        dispatching into a run someone has asked to stop, and `start`'s
+        `honour_queued_pause=True` call applies it instead of starting).
+
+        **The arms.** A `pause` on a `running` run transitions it to `paused` carrying the
+        requester's reason; on a `pending` run it stays queued (unless
+        `honour_queued_pause` — `start`'s call — applies it as `pending → paused`); on an
+        already-`paused` run it is marked applied (the requested state holds). A `resume`
+        on a `paused` run transitions it to `running` and supersedes every pause still
+        queued behind it (the latest control intent wins); elsewhere it is vacuous and is
+        marked applied so the ledger does not accumulate forever-unapplied rows. Every
+        transition is the guarded `UPDATE ... WHERE status = :from_status` whose
+        `changes()` decides the win — a concurrent writer's move absorbs the request,
+        exactly the claim guard's discipline.
+        """
+        fresh = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
+        if not fresh:
+            raise RunNotFoundError(
+                f"no run row named {run_id!r} exists in this cohort ledger."
+            )
+        controls = cohort.query(
+            ORCH_STATEMENTS["select_unapplied_control"], run_id=run_id
+        )
+        if not controls:
+            return fresh[0]["status"], None
+        status = fresh[0]["status"]
+        queued_reason: str | None = None
+        for control in controls:
+            action = control["action"]
+            reason = control["reason"]
+            control_id = control["control_id"]
+            if action == "pause":
+                if status == "running":
+                    if self._transition_run(
+                        cohort,
+                        run_id,
+                        to_status="paused",
+                        pause_reason=reason,
+                        completed_at=None,
+                        from_status="running",
+                    ):
+                        status = "paused"
+                    self._mark_control_applied(cohort, control_id)
+                elif status == "pending" and honour_queued_pause:
+                    if self._transition_run(
+                        cohort,
+                        run_id,
+                        to_status="paused",
+                        pause_reason=reason,
+                        completed_at=None,
+                        from_status="pending",
+                    ):
+                        status = "paused"
+                    self._mark_control_applied(cohort, control_id)
+                elif status == "pending":
+                    queued_reason = reason  # stays unapplied: honoured at start
+                else:  # already paused — the request is satisfied
+                    self._mark_control_applied(cohort, control_id)
+            elif action == "resume":
+                if status == "paused":
+                    if self._transition_run(
+                        cohort,
+                        run_id,
+                        to_status="running",
+                        pause_reason=None,
+                        completed_at=None,
+                        from_status="paused",
+                    ):
+                        status = "running"
+                    self._mark_control_applied(cohort, control_id)
+                cohort.execute(
+                    ORCH_STATEMENTS["mark_pauses_applied"],
+                    applied_at=_now(),
+                    run_id=run_id,
+                )
+                queued_reason = None
+        return status, queued_reason
+
+    def _mark_control_applied(self, cohort: Any, control_id: str) -> None:
+        """Mark one control row applied (`applied_at` read-back is the operator's
+        evidence the request was honoured, not just recorded)."""
+        cohort.execute(
+            ORCH_STATEMENTS["mark_control_applied"],
+            control_id=control_id,
+            applied_at=_now(),
+        )
+
+    def _transition_run(
+        self,
+        cohort: Any,
+        run_id: str,
+        *,
+        to_status: str,
+        pause_reason: str | None,
+        completed_at: str | None,
+        from_status: str,
+    ) -> bool:
+        """One guarded run-state transition (`FR-ORCH-25`'s edges, nothing else).
+
+        The `WHERE status = :from_status` guard is the same write-time discipline as the
+        claim's: two writers racing to move the same run resolve by the row's state at
+        write time, and the loser's `changes()` reads zero. Returns whether this caller
+        won.
+        """
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["transition_run_status"],
+                run_id=run_id,
+                to_status=to_status,
+                pause_reason=pause_reason,
+                completed_at=completed_at,
+                from_status=from_status,
+            )
+            return bool(int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]))
+
+    def _maybe_complete_run(self, cohort: Any, run_id: str) -> None:
+        """Flip a `running` run to `complete` when its last open unit closed.
+
+        Deliberately **conservative**: the probe only fires from a `running` run that
+        holds at least one `work_unit` row and zero open ones (`pending` or `leased`).
+        The unit-existence guard keeps a never-enumerated run `running` — a run started
+        but not yet enumerated is not complete, it is unpopulated; quarantined units are
+        not open (their record stands), so a run whose remainder is quarantined completes
+        with that record intact. The probe runs after every won lifecycle write that
+        could close the run (a completion, a quarantine, a resume) and is one indexed
+        count in the common case.
+        """
+        rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
+        if not rows or rows[0]["status"] != "running":
+            return
+        if not cohort.query(
+            ORCH_STATEMENTS["select_any_work_unit"], run_id=run_id
+        ):
+            return
+        if cohort.query(
+            ORCH_STATEMENTS["select_run_open_units"], run_id=run_id
+        )[0]["n"]:
+            return
+        self._transition_run(
+            cohort,
+            run_id,
+            to_status="complete",
+            pause_reason=None,
+            completed_at=_now(),
+            from_status="running",
+        )
+
+    # -- the cost seam (FR-ORCH-15) --------------------------------------------------------------
+
+    def _run_ceiling(self, run_row: Any) -> Decimal | None:
+        """The cost ceiling the run **froze** at creation, or None.
+
+        Read from the run row's frozen `provider_config` — never from the current
+        environment (`FR-CONF-07`'s freeze: a ceiling changed mid-run would let spend
+        outpace the number the operator approved). Malformed JSON or a non-numeric
+        ceiling is a named `WorkLedgerError`, not a guessed absence: a ceiling the
+        orchestrator cannot read must stop scheduling loudly, never silently uncap the
+        run.
+        """
+        raw = run_row["provider_config"]
+        try:
+            cfg = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise WorkLedgerError(
+                f"run {run_row['run_id'][:12]} carries malformed provider_config — "
+                "the frozen ceiling cannot be read, and an unreadable ceiling must "
+                "halt scheduling loudly rather than silently uncap the run."
+            ) from exc
+        value = cfg.get("cost_ceiling") if isinstance(cfg, dict) else None
+        if value is None:
+            return None
+        try:
+            ceiling = Decimal(str(value))
+        except InvalidOperation as exc:
+            raise WorkLedgerError(
+                f"run {run_row['run_id'][:12]} froze a non-numeric cost ceiling "
+                f"{value!r} — refused: the ceiling is the boundary spend may not "
+                "cross, and an unparseable boundary is not a boundary."
+            ) from exc
+        if ceiling < 0:
+            raise WorkLedgerError(
+                f"run {run_row['run_id'][:12]} froze a negative cost ceiling "
+                f"{ceiling} — refused: a negative boundary would pause the run on "
+                "its first measured unit, which is a misconfiguration, not a spend."
+            )
+        return ceiling
+
+    def _normalize_figure(self, answer: Any, run_id: str) -> Decimal | None:
+        """One provider answer → the Decimal the ledger accrues, or None (not billed).
+
+        The seam's declared protocol: `estimate_cost(unit) -> Decimal | CostEstimate`. A
+        bare `Decimal` is the figure; a `CostEstimate`-shaped answer contributes its
+        `.cost`. None means *not billed* (`CT-PROV-03`: a zero would read as a measured
+        price — not-billed adds nothing to the accrual and consumes no ceiling, which is
+        how replayed work passes a ceiling honestly). A negative figure is refused: it
+        would move spend *away* from the ceiling.
+        """
+        figure = getattr(answer, "cost", answer)
+        if figure is None:
+            return None
+        if not isinstance(figure, Decimal):
+            figure = Decimal(str(figure))
+        if figure < 0:
+            raise WorkLedgerError(
+                f"provider estimated a negative cost ({figure}) for a unit of run "
+                f"{run_id[:12]} — refused: a negative figure would make spend move "
+                "away from the ceiling, which is a ceiling that never trips."
+            )
+        return figure
+
+    def _cost_figure(self, cohort: Any, unit_row: Any, ceiling: Decimal) -> Decimal:
+        """The billed figure one unit adds to its run's spend, before it is dispatched.
+
+        Consults the injected provider seam — **the measured protocol**, never an
+        estimated optimism (`FR-PROV-12/04`: the ceiling is enforced from the same
+        figures the run is billed against). A run frozen with a ceiling but dispatched
+        without a seam raises: a ceiling checked against nothing is the exact shape the
+        seam exists to prevent, and halting scheduling honestly is the stated behaviour.
+        """
+        if self._provider is None:
+            raise WorkLedgerError(
+                f"run {unit_row['run_id'][:12]} froze a cost ceiling ({ceiling}) but "
+                "this orchestrator holds no provider seam to measure units against — "
+                "a ceiling checked against nothing is not enforcement. Construct the "
+                "Orchestrator with provider=... (estimate_cost) or clear the ceiling."
+            )
+        figure = self._normalize_figure(
+            self._provider.estimate_cost(self._unit_from_row(unit_row)),
+            unit_row["run_id"],
+        )
+        return Decimal("0") if figure is None else figure
+
+    def _run_cost_estimate(self, cohort: Any, run_id: str) -> Decimal | None:
+        """The run's estimated cost: the sum of its units' seam figures (`FR-ORCH-15`).
+
+        None when there is no seam (no figure is displayed — a fabricated zero would
+        read as a measured price) or nothing is enumerated yet (an empty run's estimate
+        is absent, not zero).
+        """
+        if self._provider is None:
+            return None
+        rows = cohort.query(
+            ORCH_STATEMENTS["select_run_units_for_estimate"], run_id=run_id
+        )
+        if not rows:
+            return None
+        total = Decimal("0")
+        for unit_row in rows:
+            figure = self._normalize_figure(
+                self._provider.estimate_cost(self._unit_from_row(unit_row)),
+                run_id,
+            )
+            if figure is not None:
+                total += figure
+        return total
+
+    @staticmethod
+    def _pause_reason_text(cause: BaseException | str | None) -> str:
+        """The reason text a pause writes on the run row — always say *why*.
+
+        An operator request (`None`) says so plainly rather than rendering an empty
+        string; an exception renders `Type: message` so the operator surface can name
+        the condition (`FR-ORCH-16/17`: pause **and alert** — the alert's content is
+        this reason); a bare string is taken as given.
+        """
+        if cause is None:
+            return "operator request"
+        if isinstance(cause, BaseException):
+            return f"{type(cause).__name__}: {cause}"
+        return str(cause)
 
     # -- the lease (FR-ORCH-04) -----------------------------------------------------------------
 
@@ -2028,6 +2645,26 @@ class Orchestrator:
                     break
                 if run_row["status"] not in ("pending", "running"):
                     continue
+                # **The control-row read** (`CT-ORCH-13`): the claim pass is the
+                # orchestrator's own schedule's heartbeat, so this is where a control
+                # row written while nobody was dispatching is honoured. A pause applied
+                # here (a `running` run flips to `paused`) schedules nothing, exactly
+                # like a pause sensed at the ceiling; a pause still queued on a
+                # `pending` run gates dispatch below — a stop someone asked for is not
+                # raced past, and `start` will honour it.
+                status_now, queued_pause = self._apply_control_rows(
+                    cohort, run_row["run_id"]
+                )
+                if (
+                    status_now not in ("pending", "running")
+                    or queued_pause is not None
+                ):
+                    continue
+                # The **frozen ceiling** (`FR-ORCH-15`, `FR-CONF-07`): parsed once per
+                # run per pass from the run row's `provider_config` — never from the
+                # current environment. None means no ceiling: the seam is never
+                # consulted and spend is never accrued for a run that froze no budget.
+                ceiling = self._run_ceiling(run_row)
                 cache_key = (run_row["run_id"], stage)
                 ordered = self._order_cache.get(cache_key)
                 if ordered is None:
@@ -2075,23 +2712,99 @@ class Orchestrator:
                             # a deferral that never lifts.
                             self._order_cache.pop(cache_key, None)
                             continue
+                    # The **measured figure** (`FR-ORCH-15`, `FR-PROV-12/04`): before
+                    # the claim, this unit's cost comes from the provider seam — the
+                    # same measured protocol the run is billed against, never an
+                    # estimated optimism. Outside the transaction: the seam may be a
+                    # real transport, and no egress belongs inside a ledger write.
+                    figure: Decimal | None = None
+                    if ceiling is not None:
+                        figure = self._cost_figure(cohort, row, ceiling)
                     issued = lease_clock_obj.issue(ttl)
                     expires_at = self._wall_expiry(lease_clock_obj.clock, ttl)
+                    refused = False
+                    at_ceiling = False
+                    won = False
                     with cohort.transaction() as tx:
-                        tx.execute(
-                            ORCH_STATEMENTS["mark_leased"],
-                            work_id=row["work_id"],
-                            owner=worker_id,
-                            expires_ticks=issued.expires_ticks,
-                            expires_at=expires_at,
-                        )
-                        won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
+                        if figure is not None:
+                            spend = Decimal(
+                                tx.execute(
+                                    ORCH_STATEMENTS["select_run"],
+                                    run_id=row["run_id"],
+                                )[0]["cost_spend"]
+                                or "0"
+                            )
+                            if spend + figure > ceiling:
+                                # **The crossing dispatch is refused** (strict `>`,
+                                # the breaker's and budget's reading): the unit stays
+                                # pending — never claimed, never dropped — and the run
+                                # pauses **in this transaction**, naming the spend and
+                                # the remaining unit count (`FR-ORCH-15`'s operator
+                                # surface; `CT-ORCH-12`'s ceiling condition). A pause
+                                # that said only THAT it stopped could not be told
+                                # from a crash.
+                                remaining = tx.execute(
+                                    ORCH_STATEMENTS["count_run_pending"],
+                                    run_id=row["run_id"],
+                                )[0]["n"]
+                                tx.execute(
+                                    ORCH_STATEMENTS["pause_run_sensed"],
+                                    run_id=row["run_id"],
+                                    pause_reason=(
+                                        f"cost ceiling reached: spend "
+                                        f"{spend + figure} of ceiling {ceiling}; "
+                                        f"{remaining} unit(s) remaining"
+                                    ),
+                                )
+                                refused = True
+                        if not refused:
+                            tx.execute(
+                                ORCH_STATEMENTS["mark_leased"],
+                                work_id=row["work_id"],
+                                owner=worker_id,
+                                expires_ticks=issued.expires_ticks,
+                                expires_at=expires_at,
+                            )
+                            won = int(
+                                tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
+                            )
+                            if won and figure is not None:
+                                # The accrual rides the **same transaction** as the
+                                # claim (`FR-ORCH-15`): spend and the unit's lease
+                                # commit together, so no crash between them can
+                                # dispatch work the ceiling never saw, and no accrual
+                                # can outlive a claim that lost its guard.
+                                new_spend = spend + figure
+                                tx.execute(
+                                    ORCH_STATEMENTS["accrue_run_spend"],
+                                    run_id=row["run_id"],
+                                    cost_spend=str(new_spend),
+                                )
+                                if new_spend >= ceiling:
+                                    # Spend now sits **at** the ceiling: the run
+                                    # pauses in the same transaction — the dispatch
+                                    # that landed it there proceeded (strict `>`), and
+                                    # the next one would cross.
+                                    remaining = tx.execute(
+                                        ORCH_STATEMENTS["count_run_pending"],
+                                        run_id=row["run_id"],
+                                    )[0]["n"]
+                                    tx.execute(
+                                        ORCH_STATEMENTS["pause_run_sensed"],
+                                        run_id=row["run_id"],
+                                        pause_reason=(
+                                            f"cost ceiling reached: spend "
+                                            f"{new_spend} of ceiling {ceiling}; "
+                                            f"{remaining} unit(s) remaining"
+                                        ),
+                                    )
+                                    at_ceiling = True
                     if won:
                         claimed.append(row)
-                    else:
-                        # The guarded write lost: another writer holds the unit, so
-                        # this cache's view of pending is stale. Drop it wholesale —
-                        # conservative, and the next pass re-derives from the ledger.
+                    if refused or at_ceiling or not won:
+                        # The run paused mid-order (sensed ceiling) or the guarded
+                        # write lost (stale view): drop the entry wholesale — the next
+                        # pass re-derives from the ledger, which now holds the pause.
                         self._order_cache.pop(cache_key, None)
                         break
                 if not ordered:
@@ -2405,6 +3118,9 @@ class Orchestrator:
                 "write — a failure report quarantined it mid-flight. The ledger's "
                 "record stands; re-read it before reporting again."
             )
+        # The last open unit closed — probe the run (`FR-ORCH-25`'s running → complete;
+        # the probe is self-guarding and a no-op unless this really was the last).
+        self._maybe_complete_run(cohort, row["run_id"])
 
     def fail(self, work_id: str, error: WorkError | str) -> None:
         """Count one failed attempt against a unit; requeue it, or quarantine it at the
@@ -2464,6 +3180,10 @@ class Orchestrator:
         # pass, or a requeue the dispatcher cannot see is a unit lost to the run
         # (`TC-ORCH-18`).
         self._invalidate_order_cache(row["run_id"])
+        # Quarantine can close a run: a unit at its attempt ceiling leaves the open
+        # set (its record stands), and if it was the last open one the run is complete
+        # (`FR-ORCH-25`; the probe is self-guarding).
+        self._maybe_complete_run(cohort, row["run_id"])
 
     # -- escalation, the breakers and the budget (FR-ORCH-09/10/13/14, FR-ORCH-26) --------------
 
@@ -3135,12 +3855,18 @@ class Orchestrator:
         side index would be exactly the bookkeeping FR-ORCH-02 forbids. Cohort counts
         are small; a scan is a handful of indexed queries.
         """
+        return self._find_run(run_id)[1]
+
+    def _find_run(self, run_id: str) -> tuple[Any, Any]:
+        """(cohort handle, run row) for one run — the lifecycle writers need both, and
+        re-walking the cohorts to turn the row back into its handle would be the same
+        scan twice. Same no-side-index rule as `_run_row`, which is this minus the
+        handle."""
         for key in self._cohort_keys():
-            rows = self._store.cohort(key).query(
-                ORCH_STATEMENTS["select_run"], run_id=run_id
-            )
+            cohort = self._store.cohort(key)
+            rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
             if rows:
-                return rows[0]
+                return cohort, rows[0]
         raise RunNotFoundError(
             f"no run row named {run_id!r} exists in any cohort ledger. resume() with "
             "no arguments finds its own runs; an explicit run_id that resolves to "
