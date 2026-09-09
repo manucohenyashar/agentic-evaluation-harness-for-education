@@ -23,7 +23,7 @@ uncontrolled kill leaves behind — and the new process constructs a fresh
 
 | Name | Landed shape |
 |---|---|
-| `Orchestrator.enqueue_escalation(run_id, *, submission_id, criterion_id, judges=None, expected_value=None, tx=None)` | the design §3.7 member, in the module's idiom: the pair by its two ids, `tx=None` self-managing the transaction this test exercises (the caller's-transaction path is `CT-ORCH-08`'s, for `M-AGG`) |
+| `Orchestrator.enqueue_escalation(tx, criterion_score_key, judges=None)` | the design §3.7 member in `CT-ORCH-08`'s declared form: the caller's transaction first, the `(submission_id, criterion_id)` tuple second — `run_id`-agnostic (the key resolves its runs from the ledger) and landing inside the transaction the caller holds (here the test's, standing in for `M-AGG`'s verdict transaction) |
 | escalation units at the enqueue | inserted by the enqueue itself, `origin='escalation'` (`FR-ORCH-09`: units in the same transaction as the result that triggered them). **Alignment disclosed:** the case originally snapshotted the base panel's three score units *after* the enqueue — with the landed, design-conformant semantics the widened units are already there, so the snapshot moved to *before* the enqueue. The oracle is untouched: escalation units exist past the boundary, are not duplicated by the resume, and dispatch |
 | escalation units' ledger shape | score units for the same (submission, criterion) BEYOND the panel's original three, claimable after resume — asserted name-agnostically over counts and claimability; the landed units carry `origin='escalation'` and `judge_id`s the panel never enumerated |
 | the random arm | off under test: the suite-root conftest pins `HARNESS_ORCH_RANDOM_ARM_RATE=0` (`tests/conftest.py`), so the base panel is exactly the three units these counts read |
@@ -44,7 +44,7 @@ import pytest
 from aeh.orch import WorkError
 from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, SYNTH_MODULE, require, require_attr
-from tests.support.orch_run import seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration]
 
@@ -102,7 +102,8 @@ def test_res_06_escalation_survives_the_kill_and_dispatches_after_resume(
     assert len(before) == 3, (
         f"the panel enumerated {len(before)} score units, expected the panel's 3"
     )
-    orch.enqueue_escalation(run_id, submission_id=victim.submission_id, criterion_id=victim.criterion_id)
+    with store.cohort(ORCH_COHORT_ID).transaction() as tx:
+        orch.enqueue_escalation(tx, (victim.submission_id, victim.criterion_id))
 
     # --- the kill: process boundary = close + reopen; a fresh orchestrator ---
     store.close()
