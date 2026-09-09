@@ -1620,6 +1620,167 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/integ/test_integ_observability.py",
         ),
     ),
+    # --- TS-66 (#77), the fifteen CT-INTEG clause cases ------------------------------------
+    #
+    # One entry per blocker shape, not per case: the clause cases share the #75-reconciled
+    # M-INTEG seam (`verify_span`, `IntegrityGate`, `IntegritySignals`, the alert and rate
+    # constants) and the #76-reconciled M-AGG surface (`aggregate`, `AGG_AUTO_THRESHOLD_
+    # ATOMIC`), so the conjunctions group by what makes a file runnable. No new M-INTEG
+    # name is minted for TS-66 — the two knobs CT-INTEG-13 names (INTEG_OCR_CONF_FLOOR,
+    # INTEG_DESCRIBED_EVIDENCE_ROUTES) ride env like the #75 disable switch, and the
+    # disclosure tables in the files carry the details.
+    "#73 verify_span (TS-66 C01 surface/boundaries)": (
+        "symbol",
+        f"{INTEG_MODULE}:verify_span",
+        (
+            "tests/contract/integ/test_ct_integ_verify_span_surface.py",
+        ),
+    ),
+    "#92 IntegritySignals+aggregate (TS-66 C02 None-is-not-False)": (
+        # The type half needs only the signals dataclass (#74); the rung-3 consumer
+        # differential drives M-AGG's declared pure surface, which lands with the
+        # confidence story (#92) — the conjunction is the honest key (the TS-08 lesson:
+        # the case is runnable when its LAST blocker lands, and the differential is the
+        # limb the clause exists for).
+        "symbols",
+        f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate",
+        (
+            "tests/contract/integ/test_ct_integ_signals_data.py",
+        ),
+    ),
+    "#92 IntegrityGate+IntegritySignals+aggregate (TS-66 C03 fail-closed)": (
+        # The safety-property case: the sweep and the step-3 honesty cells run through
+        # the gate (#74), the step-2 dropped-signal differential and its
+        # unknown-therefore-fine cap drive M-AGG's confidence surface (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        (
+            "tests/contract/integ/test_fail_closed.py",
+        ),
+    ),
+    "#74 IntegrityGate+IntegritySignals (TS-66 C04 write surface)": (
+        # The static limbs scan src/aeh/integ.py itself (the module existing is part of
+        # the blocker), the write audit runs the real gate, and the output-surface
+        # equality reads the returned signals object.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals"),
+        (
+            "tests/contract/integ/test_ct_integ_write_surface.py",
+        ),
+    ),
+    "#74+#68 both module files (TS-66 C05 structural independence)": (
+        # The independence clause is about the PAIR: the import-graph assertion needs
+        # both module files on disk, so the conjunction takes each module's
+        # representative symbol (the #68-review precedent for extract's).
+        "symbols",
+        f"{INTEG_MODULE}:verify_span,{EXTRACT_MODULE}:prompt_fields",
+        (
+            "tests/contract/integ/test_structural_independence.py",
+        ),
+    ),
+    "#74 IntegrityGate (TS-66 C06 byte-exact rejection, nothing scores)": (
+        # The rung-0 rows block on verify_span (#73) but the gate discard/ladder limbs
+        # are the case's body — the gate (with the signals it returns) is the LAST
+        # blocker, and the no-scoring oracle's teeth run unmarked.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_byte_exact_rejection.py",
+        ),
+    ),
+    "#92 gate+signals+aggregate+threshold (TS-66 C07 empty evidence routes)": (
+        # The most consequential negative clause: the route sweep runs the gate (#74),
+        # the rung-3 consumer half drives M-AGG's aggregate and reads the auto-accept
+        # threshold (#92, the last blocker).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        (
+            "tests/contract/integ/test_empty_evidence_routes.py",
+        ),
+    ),
+    "#92 gate+signals+aggregate (TS-66 C08 sufficiency is an extraction problem)": (
+        # Same blocker shape as C07: the positional sweep runs the gate, the static
+        # limb scans the module, and the rung-3 prohibition drives aggregate (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate"),
+        (
+            "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
+        ),
+    ),
+    "#92 gate+signals+aggregate (TS-66 C09 OCR intersection and cap)": (
+        # The discriminating fixtures run the real gate over injected regions (#74);
+        # the cap half drives M-AGG's aggregate against unanimity (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate"),
+        (
+            "tests/contract/integ/test_ct_integ_ocr_intersection.py",
+        ),
+    ),
+    "#74 IntegrityGate (TS-66 C10 described evidence and crop)": (
+        # The routing/marking/crop limbs all run the real gate over the real blob
+        # store; no M-AGG half (the clause declares no separate cap here).
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_described_evidence.py",
+        ),
+    ),
+    "#74 IntegrityGate+IntegritySignals (TS-66 C11 timing of the sufficiency flag)": (
+        # The differential runs the real gate at two ledger instants; the
+        # conservative-default reading is the signals object's.
+        "symbols",
+        f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals",
+        (
+            "tests/contract/integ/test_ct_integ_timing.py",
+        ),
+    ),
+    "#74 IntegrityGate (TS-66 C12 verification cost, linear and total)": (
+        # The perf limbs and the coverage limb all run the real gate; the coverage
+        # oracle's teeth run unmarked. slow-marked limbs follow the conform/console
+        # perf-contract precedent.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_verification_cost.py",
+        ),
+    ),
+    "#74 IntegrityGate (TS-66 C13 config knobs move routing volume)": (
+        # The differentials run the real gate on its DEFAULT configuration path
+        # (no injected floor), so the env plumbing the clause names is what is
+        # exercised; the teeth run unmarked.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_config_knobs.py",
+        ),
+    ),
+    "#74 gate+rate constants (TS-66 C14 rate metrics, per criterion)": (
+        # The artifact limb requires the two constants by name; the dimensionality
+        # and attribution limbs run the real gate. Positional order is the clause's
+        # own enumeration — disclosed in the file.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:INTEG_RATE_METRICS,"
+         f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES"),
+        (
+            "tests/contract/integ/test_ct_integ_rate_metrics.py",
+        ),
+    ),
+    "#74 gate+signals, #92 aggregate+threshold (TS-66 C15 non-promise)": (
+        # The premise limb runs the real gate; the consumer limbs construct the
+        # all-clean set (C03's complete shape) and feed it to the pure aggregate
+        # surface. The M-CONSOLE presentation half is deferred to the console
+        # suite (#122) — disclosed in the file.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        (
+            "tests/contract/integ/test_ct_integ_non_promise.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
