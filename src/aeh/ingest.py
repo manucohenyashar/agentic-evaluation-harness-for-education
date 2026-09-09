@@ -175,8 +175,10 @@ INGEST_STATUSES: tuple[str, ...] = (
 BLANK_TOLERANCE_ENV = "HARNESS_INGEST_BLANK_TOLERANCE"
 DEFAULT_BLANK_TOLERANCE = 0.2
 
-#: The V0 resolution floor in DPI (an artifact rasterized below it quarantines;
-#: `HARNESS_INGEST_RESOLUTION_FLOOR`).
+#: The V0 resolution floor (an artifact rasterized below it quarantines;
+#: `HARNESS_INGEST_RESOLUTION_FLOOR`). The design denominates the floor in DPI;
+#: what the module can measure is the raster's linear extent in px, so the value
+#: is enforced as a px floor — `_check_rasters` carries the interpretation.
 RESOLUTION_FLOOR_ENV = "HARNESS_INGEST_RESOLUTION_FLOOR"
 DEFAULT_RESOLUTION_FLOOR = 150
 
@@ -512,6 +514,27 @@ def _configured_dpi() -> int:
     if value < 72:
         raise IngestError(f"{DPI_ENV}={value} is below the 72 DPI floor.")
     return value
+
+
+def _configured_resolution_floor() -> int:
+    """The V0 resolution floor, read at call time (`CLAUDE.md` seam 3): the
+    production default is the profile's 150, the knob exists so a differently
+    calibrated profile can move it. A floor under 1 px would silently disable
+    the gate (every raster clears it), and a fail-silent knob is the one seam
+    defect this rule exists to prevent."""
+    raw = os.environ.get(RESOLUTION_FLOOR_ENV)
+    if not raw:
+        return DEFAULT_RESOLUTION_FLOOR
+    try:
+        floor = int(raw)
+    except ValueError as error:
+        raise IngestError(
+            f"{RESOLUTION_FLOOR_ENV}={raw!r} is not an integer.") from error
+    if floor < 1:
+        raise IngestError(
+            f"{RESOLUTION_FLOOR_ENV}={floor} is below 1 — a floor under 1 px "
+            "would silently disable the resolution gate (FR-INGEST-21).")
+    return floor
 
 
 def _ocr_conf_floor() -> float:
@@ -1807,8 +1830,11 @@ def assemble_canonical_markdown(
     with no tier available the call refuses (`IngestOrderError`, `FR-INGEST-31`) —
     the module never guesses.
 
-    This is the pure seam the regression baseline (`TC-REG-01`) pins; `Ingestor`
-    assembles through it."""
+    This is the pure seam the regression baseline (`TC-REG-01`) pins — the
+    ladder's reference semantics. `Ingestor.ingest_document` implements the same
+    ladder over the blob store (a blob is one file of many pages, the seam's
+    page IS the file); the two move together, ambiguity refusal included
+    (#227)."""
     texts: list[str] = []
     for page in pages:
         if hasattr(page, "read_text"):
@@ -1888,6 +1914,24 @@ def assemble_canonical_markdown(
         names = ([filenames.get(identity) for identity in identities]
                  if filenames is not None else list(identities))
         if all(names):
+            # The ambiguity line (FR-INGEST-31, #227), the same one the gateway's
+            # ladder enforces: the tier resolves iff its natural keys form a
+            # strict total order over the pages; a key collision (identical
+            # names, or digit-variant spellings like page-1 vs page-01) refuses —
+            # never a silent stable sort over the caller's order.
+            keys = [tuple(_natural_key(name)) for name in names]
+            colliding = sorted({
+                names[index] for index, key in enumerate(keys)
+                if keys.count(key) > 1
+            })
+            if colliding:
+                raise IngestOrderError(
+                    f"ambiguous filenames cannot be ordered: "
+                    f"{', '.join(repr(name) for name in colliding)} resolve to "
+                    "the same position, so the filename tier cannot order them. "
+                    "The module never guesses (FR-INGEST-31) — state the order "
+                    "and re-ingest."
+                )
             ordered_indices = sorted(range(len(names)),
                                      key=lambda i: _natural_key(names[i]))
             order_source = "filename"
@@ -2597,6 +2641,36 @@ class Ingestor:
                 elif filenames and all(filenames.get(blob) for blob in blobs):
                     name_of = {record["blob_hash"]: filenames[record["blob_hash"]]
                                for record in page_records}
+                    # The ambiguity line (FR-INGEST-31, #227): the design names
+                    # "ambiguous filenames" a refusal but draws no line between
+                    # ambiguous and resolvable-by-tier, so it is pinned here from
+                    # the ladder's own ordering rule — the filename tier resolves
+                    # iff its natural keys form a strict total order. A key
+                    # collision (identical names, or distinct names whose
+                    # digit-variant spellings reduce to the same key — page-1 vs
+                    # page-01) leaves the tier nothing to order by; distinct keys
+                    # always order (scan-2.md vs scan-10.md is natural-sorted,
+                    # never ambiguous). The tier orders BLOBS — every page of one
+                    # blob shares that blob's name and sorts adjacent to it — so
+                    # the collision check runs over the blobs, not the pages. The
+                    # ladder's precedence is untouched: an operator hint or
+                    # resolvable page numbers resolves above this tier and the
+                    # ambiguity never matters.
+                    keys = [tuple(_natural_key(filenames[blob]))
+                            for blob in blobs]
+                    colliding = sorted({
+                        filenames[blob]
+                        for blob, key in zip(blobs, keys)
+                        if keys.count(key) > 1
+                    })
+                    if colliding:
+                        raise IngestOrderError(
+                            f"ambiguous filenames cannot be ordered: "
+                            f"{', '.join(repr(name) for name in colliding)} "
+                            "resolve to the same position, so the filename tier "
+                            "cannot order them. The module never guesses "
+                            "(FR-INGEST-31) — state the order and re-ingest."
+                        )
                     ordered = sorted(
                         page_records,
                         key=lambda record: _natural_key(
@@ -2932,18 +3006,32 @@ class Ingestor:
         return result
 
     def _check_rasters(self, blob_hash: str, pages: Sequence[PageImage]) -> None:
-        """The pixel ceiling against the ACTUAL rasters. The declared-dimensions
-        check above runs first and is the before-allocation form; this is the
-        belt-and-braces on the same bound — a seam that lied about what it read is
-        caught before transcription spends a model call on it."""
+        """The pixel ceiling and the resolution floor against the ACTUAL rasters.
+        The declared-dimensions check above runs first and is the before-allocation
+        form; this is the belt-and-braces on the same bounds — a seam that lied
+        about what it read is caught before transcription spends a model call on
+        it. The floor (FR-INGEST-21) reads `HARNESS_INGEST_RESOLUTION_FLOOR` at
+        call time and quarantines a page whose raster falls below the profile's
+        resolution on either linear dimension: the design denominates the floor
+        in DPI, and the raster the module can actually measure is the page's
+        linear extent in px, so that extent is the measured resolution the
+        refusal names (the F4 probe: a 50x70 px page refuses; #227)."""
         max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
                                           DEFAULT_MAX_IMAGE_PIXELS)
+        floor = _configured_resolution_floor()
         for page in pages:
             if page.width_px * page.height_px > max_pixels:
                 raise IngestSanitizeError(
                     f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
                     f"to {page.width_px}x{page.height_px}, over the {max_pixels}-"
                     "pixel ceiling (FR-INGEST-34).")
+            if min(page.width_px, page.height_px) < floor:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
+                    f"to {page.width_px}x{page.height_px}px, below the profile's "
+                    f"{floor}px resolution floor ({RESOLUTION_FLOOR_ENV}): an "
+                    "artifact below the floor cannot carry a legible "
+                    "transcription and quarantines as unreadable (FR-INGEST-21).")
 
     def read_document(self, document_id: DocumentId) -> str:
         """The document's canonical Markdown, as stored (`FR-INGEST-01`'s immutable
@@ -3413,8 +3501,8 @@ class Ingestor:
             except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08: refuse, never process
                 quarantine("v0", "unreadable", {
                     "gate": "v0", "blob_hash": blob_hash[:12],
-                    "finding": f"the source was refused before rasterization: "
-                               f"{error}"})
+                    "finding": f"the source was refused by the V0 integrity "
+                               f"gate: {error}"})
                 v0_failed = True
                 continue
             pages_used += len(pages)

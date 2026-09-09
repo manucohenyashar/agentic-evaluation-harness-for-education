@@ -39,11 +39,13 @@ a bug in shipped code has no such target), each with its probe evidence:
 - **F4** (`TC-INGEST-23`'s fifth fixture): a raster below the profile's resolution
   floor ingests — `HARNESS_INGEST_RESOLUTION_FLOOR` (default 150) is declared but
   read by nothing; only the pixel *ceiling* is checked. Probe: a 50x70 px page →
-  `gates[v0] == "pass"`.
+  `gates[v0] == "pass"`. **Closed by #227**: the floor is enforced at the
+  post-raster integrity gate, the fixture below runs live.
 - **F5** (`TC-INGEST-31`'s third input): two files with **identical** filenames are
   silently ordered by the filename tier (a stable sort over the caller's blob
   order) — ambiguity is never detected. The no-numbers/no-markers/no-filenames
-  refusal works and is pinned below.
+  refusal works and is pinned below. **Closed by #227**: the filename tier
+  refuses a natural-key collision over blobs, naming the colliding files.
 
 Rung notes, stated rather than silently substituted: `TC-INGEST-30` and `-32` are
 rung 3 (real neighbouring modules) but `M-CONSOLE` and `M-REVIEW` do not exist yet.
@@ -128,7 +130,7 @@ class ScriptedRasterizer:
     def rasterize(self, pdf_bytes: bytes, dpi: int) -> list[PageImage]:
         self.calls.append(bytes(pdf_bytes))
         pages = self.plan.get(bytes(pdf_bytes),
-                              [(1, b"page-one", 100, 140)])
+                              [(1, b"page-one", 1000, 1400)])
         return [PageImage(page_no=page_no, png=png, width_px=w, height_px=h)
                 for page_no, png, w, h in pages]
 
@@ -246,17 +248,18 @@ def _written_tables() -> set[str]:
 # -- TC-INGEST-23: the V0 file-integrity sweep -----------------------------------------------------
 
 
-@pytest.mark.parametrize("case", ["unopenable", "encrypted", "zero-page", "blank"])
+@pytest.mark.parametrize("case", ["unopenable", "encrypted", "zero-page", "blank",
+                                  "below-floor"])
 def test_tc_ingest_23_v0_sweep_quarantines_unreadable_and_never_proceeds(
         tmp_data_dir, case):
     """`TC-INGEST-23` — each V0 fixture quarantines as `unreadable`, never reaches a
     later gate, and costs **zero VLM calls** (the oracle names the unopenable and
-    encrypted cases; the zero-page and blank refusals also end before the first
-    transcript is requested, which the sweep asserts for all four).
+    encrypted cases; the zero-page, blank and below-floor refusals also end before
+    the first transcript is requested, which the sweep asserts for all five).
 
-    The sweep's fifth fixture — a file below the profile's resolution floor — is not
-    implemented: `HARNESS_INGEST_RESOLUTION_FLOOR` is declared but read by nothing
-    (F4 in the module docstring), so a below-floor raster ingests today."""
+    The sweep's fifth fixture — a file below the profile's resolution floor — went
+    live with #227: `HARNESS_INGEST_RESOLUTION_FLOOR` (default 150) is enforced at
+    the post-raster integrity gate (F4 in the module docstring was the disclosure)."""
     refusal = {
         "unopenable": RefusingSanitizer("the source is not a PDF (no header)"),
         "encrypted": RefusingSanitizer("the source is encrypted; an unreadable "
@@ -264,8 +267,9 @@ def test_tc_ingest_23_v0_sweep_quarantines_unreadable_and_never_proceeds(
     }.get(case)
     plan = {
         "zero-page": {b"source": []},
-        "blank": {b"source": [(1, b" ", 100, 140), (2, b" ", 100, 140),
-                              (3, b"drawn", 100, 140)]},
+        "blank": {b"source": [(1, b" ", 1000, 1400), (2, b" ", 1000, 1400),
+                              (3, b"drawn", 1000, 1400)]},
+        "below-floor": {b"source": [(1, b"page-one", 50, 70)]},
     }.get(case)
     fx = _Fixture(tmp_data_dir, f"v0-{case}", sanitizer=refusal,
                   rasterizer=ScriptedRasterizer(plan) if plan is not None else None)
@@ -293,6 +297,12 @@ def test_tc_ingest_23_v0_sweep_quarantines_unreadable_and_never_proceeds(
         f"V0 ends the ladder before any transcript is requested.")
     assert fx.handle.query("SELECT COUNT(*) AS n FROM document")[0]["n"] == 0, (
         f"TC-INGEST-23 ({case}): an unreadable source must not store a document.")
+    if case == "below-floor":
+        joined = "\n".join(str(f["finding"]) for f in report.detail["findings"])
+        assert "50x70px" in joined and "150" in joined, (
+            "TC-INGEST-23 (below-floor): the refusal must name the measured "
+            "resolution and the profile's floor for the operator, got: "
+            f"{joined!r}.")
     if isinstance(refusal, RefusingSanitizer):
         assert fx.rasterizer.calls == [], (
             f"TC-INGEST-23 ({case}): the refused source was rasterized anyway — "
@@ -312,9 +322,9 @@ def test_tc_ingest_24_v1_quarantines_naming_the_specific_pages(tmp_data_dir):
     # Fewer pages than declared: three rasters printed 'of 5' — the continuation
     # sheets (printed 4 and 5) never arrived.
     source = fx.put(b"stack-of-five")
-    fx.rasterizer.plan[b"stack-of-five"] = [(1, b"a", 100, 140),
-                                            (2, b"b", 100, 140),
-                                            (3, b"c", 100, 140)]
+    fx.rasterizer.plan[b"stack-of-five"] = [(1, b"a", 1000, 1400),
+                                            (2, b"b", 1000, 1400),
+                                            (3, b"c", 1000, 1400)]
     fx.script(source, {1: "Page 1 of 5, the ink is fresh",
                        2: "Page 2 of 5, the margin is clean",
                        3: "Page 3 of 5, the fold is sharp"})
@@ -333,9 +343,9 @@ def test_tc_ingest_24_v1_quarantines_naming_the_specific_pages(tmp_data_dir):
     # A repeated printed page: two sheets printed 'Page 1 of 2' beside the real
     # page 2 — the printed set is complete, so the repeat is what the gate names.
     source = fx.put(b"repeated-page")
-    fx.rasterizer.plan[b"repeated-page"] = [(1, b"a", 100, 140),
-                                            (2, b"b", 100, 140),
-                                            (3, b"c", 100, 140)]
+    fx.rasterizer.plan[b"repeated-page"] = [(1, b"a", 1000, 1400),
+                                            (2, b"b", 1000, 1400),
+                                            (3, b"c", 1000, 1400)]
     fx.script(source, {1: "Page 1 of 2, first pass words",
                        2: "Page 1 of 2, second differing words",
                        3: "Page 2 of 2, closing remarks with other words"})
@@ -351,8 +361,8 @@ def test_tc_ingest_24_v1_quarantines_naming_the_specific_pages(tmp_data_dir):
     # A duplicated sheet with no printed numbers at all: the duplicate detector
     # names the two pages it refuses to concatenate (FR-INGEST-08).
     source = fx.put(b"duplicated-sheet")
-    fx.rasterizer.plan[b"duplicated-sheet"] = [(1, b"a", 100, 140),
-                                               (2, b"b", 100, 140)]
+    fx.rasterizer.plan[b"duplicated-sheet"] = [(1, b"a", 1000, 1400),
+                                               (2, b"b", 1000, 1400)]
     fx.script(source, {1: "the duplicated sheet reads exactly this",
                        2: "the duplicated sheet reads exactly this"})
     report = fx.ingestor.ingest_submission([source], cohort_id="c-ladder",
@@ -369,8 +379,8 @@ def test_tc_ingest_24_v1_quarantines_naming_the_specific_pages(tmp_data_dir):
 
     # The control: a complete, correctly numbered stack passes V1.
     source = fx.put(b"complete-stack")
-    fx.rasterizer.plan[b"complete-stack"] = [(1, b"a", 100, 140),
-                                             (2, b"b", 100, 140)]
+    fx.rasterizer.plan[b"complete-stack"] = [(1, b"a", 1000, 1400),
+                                             (2, b"b", 1000, 1400)]
     fx.add_roster("amara-o")
     fx.script(source, {1: "Student: amara-o\nPage 1 of 2, opening remarks",
                        2: "Page 2 of 2, closing remarks with other words"})
@@ -699,36 +709,60 @@ def test_tc_ingest_30_nine_quarantines_reach_the_operator_surface_alone(
 # -- TC-INGEST-31: the order is requested, never guessed -------------------------------------------
 
 
-def test_tc_ingest_31_the_order_is_requested_never_guessed(tmp_data_dir):
+@pytest.mark.parametrize("case", ["no-order-info", "identical-filenames",
+                                  "digit-variant-filenames"])
+def test_tc_ingest_31_the_order_is_requested_never_guessed(tmp_data_dir, case):
     """`TC-INGEST-31` — two sheets, no printed page numbers, no fiducial markers,
     no operator order: the ladder quarantines and asks the operator, and **no
-    document row is created** — no order is guessed.
+    document row is created** — no order is guessed. The plan's three inputs: no
+    filenames at all; two files sharing an identical name; and two distinct names
+    the natural key cannot separate (`page-1.md` vs `page-01.md` — the
+    order-ambiguous spelling variant). All three refuse identically (#227 closed
+    the F5 disclosure: identical names were silently ordered by a stable sort
+    over the caller's blob order).
 
-    Disclosed in this file's docstring (F5): the plan's third input — *ambiguous
-    filenames* — is not implemented; two files sharing a name are silently ordered
-    by the filename tier today. The refusal below is the no-numbers/no-markers/
-    no-filenames input. (The gate column that records the refusal is `v0` — the
-    order ladder's `IngestOrderError` shares `IngestError`'s handler — which this
-    test does not pin: the design names no column for an order refusal.)"""
-    fx = _Fixture(tmp_data_dir, "v31")
+    The two transcription calls are the ladder's own price (FR-INGEST-02, one
+    call per page): the page-number tier is only decidable from transcripts, so
+    reaching the filename tier costs exactly the per-page baseline and the
+    refusal itself spends none — pinned as the two-call baseline. (The gate
+    column that records the refusal is `v0` — the order ladder's
+    `IngestOrderError` shares `IngestError`'s handler — which this test does not
+    pin: the design names no column for an order refusal.)"""
+    fx = _Fixture(tmp_data_dir, f"v31-{case}")
     first = fx.put(b"sheet-one")
     second = fx.put(b"sheet-two")
     fx.script(first, {1: "alpha sheet, wholly distinct prose"})
     fx.script(second, {1: "beta sheet, entirely other words"})
+    filenames = {
+        "no-order-info": None,
+        "identical-filenames": {first: "scan.md", second: "scan.md"},
+        "digit-variant-filenames": {first: "page-1.md", second: "page-01.md"},
+    }[case]
 
     report = fx.ingestor.ingest_submission([first, second],
                                            cohort_id="c-ladder",
-                                           package_version="v0")
+                                           package_version="v0",
+                                           filenames=filenames)
 
     joined = "\n".join(str(f["finding"]) for f in report.detail["findings"])
     assert report.ingest_status == "unreadable", (
-        "TC-INGEST-31: an indeterminable order quarantines (FR-INGEST-31).")
+        f"TC-INGEST-31 ({case}): an indeterminable order quarantines "
+        "(FR-INGEST-31).")
     assert "state the order and re-ingest" in joined, (
-        "TC-INGEST-31: the quarantine asks the operator for the order, got: "
-        f"{joined!r}.")
+        f"TC-INGEST-31 ({case}): the quarantine asks the operator for the "
+        f"order, got: {joined!r}.")
     assert fx.handle.query("SELECT COUNT(*) AS n FROM document")[0]["n"] == 0, (
-        "TC-INGEST-31: no order is guessed — no document row exists.")
+        f"TC-INGEST-31 ({case}): no order is guessed — no document row exists.")
     assert fx.submission_rows()[0]["quarantined"] == 1
+    assert len(fx.provider.calls) == 2, (
+        f"TC-INGEST-31 ({case}): the refusal spent model calls of its own — the "
+        "two transcription calls are the ladder's one-per-page price "
+        "(FR-INGEST-02); the refusal adds none.")
+    if filenames is not None:
+        for name in filenames.values():
+            assert repr(name) in joined, (
+                f"TC-INGEST-31 ({case}): the refusal must name the colliding "
+                f"filenames, got: {joined!r}.")
     fx.close()
 
 
@@ -756,8 +790,8 @@ def test_tc_ingest_32_setup_failures_surface_to_the_teacher_never_to_quarantine(
     if stage == "v0":
         expected = IngestSanitizeError
     else:
-        fx.rasterizer.plan[b"setup-artifact"] = [(1, b"a", 100, 140),
-                                                 (2, b"b", 100, 140)]
+        fx.rasterizer.plan[b"setup-artifact"] = [(1, b"a", 1000, 1400),
+                                                 (2, b"b", 1000, 1400)]
         fx.script(source, {1: "Page 1 of 3, the printed header page",
                            2: "Page 2 of 3, the printed body page"})
         expected = IngestGapError
