@@ -14,11 +14,12 @@ name-agnostically per concept (the `TC-ORCH-23` precedent: a metric whose
 concept is present but whose exact string is the writer's to land fails neither
 the case nor the truth).
 
-The fixture drives every condition OBS-03 names: quarantines (the shipped
-fail ladder), an escalation (the §3.7 member #60 ships), and a tripped breaker
-(FR-ORCH-13's criterion breaker — the run's own escalation policy; the
-breaker's tripped state is reachable through the escalation surface at
-landing, reconciled there).
+The fixture drives the OBS-03 conditions that have a drivable form today: a
+quarantine (the shipped fail ladder) and an escalation (the §3.7 member #60
+ships). The criterion breaker (FR-ORCH-13) has NO reachable tripped surface
+yet — its alert behavior is TC-ORCH-36's synthetic-breach case — so this file
+claims only what it drives, and the breaker's metric footprint reconciles at
+landing.
 
 **Interface this file assumes** (reconciled deliberately):
 
@@ -114,8 +115,8 @@ class _CountingSeam:
 
 
 def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
-    """`TC-ORCH-35` — a run with a quarantine, an escalation and a tripped
-    breaker persists `run_metrics` in full: every CT-ORCH-20 concept present
+    """`TC-ORCH-35` — a run with a quarantine and an escalation persists
+    `run_metrics` in full: every CT-ORCH-20 concept present
     (by exact name where FR-PROV-12 pins it), and the hand-countable values
     match the fixture's ledger."""
     Orchestrator = require(ORCH_MODULE, "Orchestrator", issue=ISSUE)
@@ -162,19 +163,47 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
                     orch.complete(unit.work_id)
 
         # The escalation leg: one escalated re-check through the §3.7 member
-        # (#60), against a completed unit's (submission, criterion).
+        # (#60), against a completed unit's (submission, criterion). The
+        # escalated-units count stays PRESENCE-only below: whether an enqueue
+        # mints new ledger units or marks existing ones is #60's
+        # reconciliation, so no fixed number is pinned here.
         orch.enqueue_escalation(
             run_id, submission_id="SYN-001", criterion_id="C1"
         )
-        # The breaker leg (FR-ORCH-13): the criterion breaker's tripped state is
-        # the run's own escalation policy; reconciled at landing — the escalation
-        # above is the surface the breaker state rides.
 
         # Drive the dispatch so the metrics persist through the write (#66).
         for _ in range(4):
             orch.progress(run_id)
 
         metrics = _metrics(store, run_id)
+
+        # The ledger's own rows, counted AFTER the escalation and the passes —
+        # the truth the metrics must reconcile to, whatever the escalation did
+        # to the unit count.
+        ledger_rows = store.cohort(ORCH_COHORT_ID).query(
+            "SELECT status, COUNT(*) AS n FROM work_unit WHERE run_id = :r "
+            "GROUP BY status",
+            r=run_id,
+        )
+        ledger = {row["status"]: row["n"] for row in ledger_rows}
+        assert ledger.get("quarantined", 0) == 1, (
+            f"fixture precondition: exactly one quarantined unit expected "
+            f"(SYN-006's three-fail ladder), the ledger holds {ledger}"
+        )
+
+        def _counted(token: str, expected: int) -> bool:
+            """True when some metric whose name carries `token` holds exactly
+            `expected` — values may land as text in the EAV table, so the
+            comparison is numeric through a float parse."""
+            for name, value in metrics.items():
+                if token not in name:
+                    continue
+                try:
+                    if float(value) == expected:
+                        return True
+                except (TypeError, ValueError):
+                    continue
+            return False
         assert metrics, (
             "run_metrics holds no rows for the run — CT-ORCH-20 makes the "
             "write contract and M-STATS reads it; an empty metrics table is "
@@ -199,6 +228,21 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
                 f"run_metrics carries no {label} signal — CT-ORCH-20 lists it "
                 f"in full; present: {sorted(metrics)}"
             )
+        # Reconciled hand counts (OBS-03's "each matches a hand-counted
+        # expectation"): the totals must equal the ledger's own rows, not
+        # merely exist.
+        assert _counted("total", sum(ledger.values())), (
+            f"no total-units metric reconciles to the ledger's "
+            f"{sum(ledger.values())} units — OBS-03: each field matches a "
+            "hand-counted expectation, and a total that drifts misleads "
+            "every consumer built on it"
+        )
+        assert _counted("quarantin", ledger["quarantined"]), (
+            f"no quarantined-units metric reconciles to the ledger's "
+            f"{ledger['quarantined']} quarantined — the quarantine the "
+            "fixture drove must be countable on the metrics surface "
+            "(FR-ORCH-18)"
+        )
         swap_names = [n for n in metrics if "swap" in n]
         assert any("duration" in n for n in swap_names), (
             f"run_metrics records a swap count but no swap duration beside it: "
