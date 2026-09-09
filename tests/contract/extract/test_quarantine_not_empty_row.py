@@ -89,7 +89,7 @@ from tests.contract.extract._doubles import (
     seed_document,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 _MARKDOWN = build_markdown(
     "The buffer overflowed because the index was never bounds-checked.\n"
@@ -407,6 +407,7 @@ def test_tc_extract_c08_the_blank_and_the_failure_are_distinguishable_at_m_judge
         world.close()
 
 
+@pytest.mark.writtenahead  # half 5 still blocks on #74's IntegrityGate (#78 unmarked the file)
 def test_tc_extract_c08_m_integ_sees_the_blank_never_the_failure_m_orch_holds_it(
     tmp_data_dir, make_fixture_provider
 ):

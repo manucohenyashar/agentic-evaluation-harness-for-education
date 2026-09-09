@@ -87,7 +87,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, JUDGE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _EXTRACT_ISSUE = EXTRACT_ISSUE
 _JUDGE_ISSUE = JUDGE_ISSUE
@@ -171,7 +171,7 @@ def _seed_banded_package(store: Any) -> str:
 
 def _declared_band_names(store: Any) -> list[str]:
     catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
-    return [b.band for b in catalog.bands("C1")]
+    return [b["band"] for b in catalog.bands("C1")]
 
 
 def _fields_of(judge_prompt_fields: Any, request: Any) -> list[tuple[str, str]]:

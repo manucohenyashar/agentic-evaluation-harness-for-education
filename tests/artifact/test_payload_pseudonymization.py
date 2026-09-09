@@ -14,9 +14,8 @@ acceptance form."* Design §3.2 is explicit that redaction is **not** the mitiga
 needs the actual submission text — so pseudonymization at assembly is the only thing standing
 between a cohort's names and a remote provider.
 
-**Written ahead of implementation** (issue #78, the `M-JUDGE` story that owns request
-assembly). Expected to fail with `NotImplementedYet` until it lands. Remove the `writtenahead`
-marker — not the test — when #78 closes.
+Written ahead of implementation (issue #78, the `M-JUDGE` story that owns request
+assembly); the markers came off — not the tests — when #78 landed.
 
 Why #78 is the whole blocker, and no orchestrator is needed
 ------------------------------------------------------------
@@ -54,6 +53,7 @@ from __future__ import annotations
 
 import pytest
 
+from aeh.orch import STAGE_SCORE
 from tests.support.impl import JUDGE_MODULE, require
 from tests.support.roster import (
     ROSTER_SIZE,
@@ -83,7 +83,6 @@ def _assemblers():
 # --- the cases ---------------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_21_no_assembled_payload_carries_a_student_name(network_guard):
     """TC-PROV-21 — across a 350-submission run, every payload carries `student_ref` and none
     carries a name.
@@ -128,7 +127,6 @@ def test_tc_prov_21_no_assembled_payload_carries_a_student_name(network_guard):
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_sec_04_a_full_run_discloses_no_name_to_the_provider(network_guard):
     """SEC-04 — the same scan as a trust-boundary probe. §6.5.
 
@@ -210,11 +208,22 @@ def work_unit_fields(student: Student) -> dict[str, str]:
 def _work_unit_for(student: Student):
     """One scoring work unit for `student`, built against #78's `WorkUnit`.
 
-    Kept in one place so the reconciliation with #78's actual signature is a single edit rather
-    than one per case.
+    The reconciliation this file's landing promise pointed at — one edit, here:
+    `WorkUnit` carries the run/stage/judge identity every ledger row carries (`attempt`
+    defaults). The added identity fields are scan-inert: the work id is built from the
+    criterion id and the submission id, both already payload-safe, and the judge id is
+    the panel's — so the scan still measures exactly one thing, what the assembler does
+    with `student_name`.
     """
     work_unit_cls = require(JUDGE_MODULE, "WorkUnit", issue=ISSUE)
-    return work_unit_cls(**work_unit_fields(student))
+    fields = work_unit_fields(student)
+    return work_unit_cls(
+        work_id=f"sha256:{fields['criterion_id']}-{fields['submission_id']}-judge-1",
+        run_id="run-prov-21",
+        stage=STAGE_SCORE,
+        judge="judge-1",
+        **fields,
+    )
 
 
 # --- controls for the scan itself ----------------------------------------------------------------
