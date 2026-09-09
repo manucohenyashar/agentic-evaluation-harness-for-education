@@ -249,7 +249,7 @@ def seed_scored_submission(
     *,
     criteria_by_question: "dict[str, tuple[str, ...]] | None" = None,
     complete_questions: "set[str] | None" = None,
-    judges: tuple[str, ...] = ("judge-a", "judge-b", "judge-c"),
+    judges: "tuple[str, ...] | None" = None,
     band: str = "high",
     markdown: "str | None" = None,
 ) -> "dict[str, list[str]]":
@@ -309,7 +309,12 @@ def seed_scored_submission(
                 status="done" if question in complete else "pending",
             )
             if question in complete:
-                for judge_id in judges:
+                panel = judges or (
+                    f"judge-{question.lower()}-a",
+                    f"judge-{question.lower()}-b",
+                    f"judge-{question.lower()}-c",
+                )
+                for judge_id in panel:
                     seed_verdict(
                         handle,
                         f"vd-{work_id}-{judge_id}",
