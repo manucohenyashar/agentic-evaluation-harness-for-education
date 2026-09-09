@@ -11,10 +11,10 @@ from §6.7:
 3. policy application is order-independent over criteria;
 4. no even panel is ever aggregated.
 
-Invariants 1 and 4 are `M-AGG`'s and are written ahead of **#91**; invariants 2 and 3 are
-`M-GRADE`'s (`FR-GRADE-02`) and are written ahead of **#101** — the halves are separate
-tests with separate registry entries, and the marker is per-test (the `#118`/
-`#138`/`#139` node-ID precedent) so each half unmarks with its own blocker.
+Invariants 1 and 4 are `M-AGG`'s and **landed at #91** (unmarked there); invariants 2
+and 3 are `M-GRADE`'s (`FR-GRADE-02`) and are written ahead of **#101** — the halves
+are separate tests with separate registry entries, and the marker is per-test (the
+`#118`/`#138`/`#139` node-ID precedent) so each half unmarks with its own blocker.
 
 **Fixed seed set**: the suite's hypothesis profiles are `derandomize=True` (conftest,
 §4.6's flake policy), so every CI run replays the same example set — the plan's "fixed
@@ -85,7 +85,6 @@ def _criterion_and_panels(draw, *, odd: bool) -> tuple:
     return crit, points, [verdict(f"B{o}", o) for o in ordinals]
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(_criterion_and_panels(odd=True))
 def test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band(case):
@@ -112,7 +111,6 @@ def test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band(case
     )
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(_criterion_and_panels(odd=False))
 def test_fuzz_05_no_even_panel_is_ever_aggregated(case):

@@ -3,8 +3,8 @@
 Test plan §5.12 (block form), issue #94 (TS-35). Traces to `FR-AGG-01`, `FR-AGG-02`,
 `NFR-AGG-02`; RISK-05 (Critical) — "points are derived per judge and averaged rather than
 the median band being mapped once", detectability **No**, because the wrong number looks
-fine. Written ahead of #91 (test plan §8.2): every case here fails only through
-`NotImplementedYet` naming #91 until the aggregation surface lands.
+fine. Landed at #91 (unmarked there): the cases ran red under `NotImplementedYet` naming
+#91 until `aeh.agg` shipped.
 
 **The fixture is deliberately non-linear.** Bands 0..3 map to points 0, 1, 3, 6: a linear
 mapping makes median-then-map and map-then-average agree on every symmetric panel, so a
@@ -28,8 +28,6 @@ import pytest
 
 from tests.support.agg_vocabulary import AGG_BLOCKER, band, criterion, favourable_signals, panel
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 
 def _four_band_criterion():

@@ -45,6 +45,11 @@ CHILD = textwrap.dedent(
     from pathlib import Path
     sys.path.insert(0, os.environ["AEH_SRC"])
     from aeh.store import Statement, open_store
+    # TC-STORE-25: the migration chains concatenate at import time, so a fresh process
+    # imports every contributing module before the first open (#234) — the open site
+    # refuses the truncated chain otherwise. `aeh.judge` owns Cohort's last migration
+    # (13, #78's `judge_verdict_columns`).
+    import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg  # noqa: E401
 
     store = open_store(sys.argv[1])
     handle = store.cohort("c-kill")

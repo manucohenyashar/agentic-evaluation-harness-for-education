@@ -25,7 +25,6 @@ from typing import Any
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
-    SECOND_FAMILY_MODEL,
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
     WORKER,
@@ -203,27 +202,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-35 (#94), the M-AGG median-band aggregation cases ---------------------------------
     #
-    # The suite's union of blockers is `aggregate`, `EvenPanelError` and `ordinal_alpha` — the
-    # `symbols` kind, because a `symbol` key on `aggregate` alone would read the suite resolved
-    # the moment #91 lands its first member while `test_ordinal_alpha.py` is still red (the
-    # TC-STORE-15 coin-flip). The vocabulary the tests call lives in
-    # `tests/support/agg_vocabulary.py`, which is also where the design gaps are written down:
-    # §3.12 declares the Protocol members but no Interfaces block pins the exception or the
-    # score's degeneracy field, so `EvenPanelError` and `agreement_degenerate` are the tests'
-    # declared pins, reconciling at #91.
-    "#91": (
-        "symbols",
-        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,{AGG_MODULE}:ordinal_alpha",
-        ("tests/unit/agg/test_median_band_mapping.py",
-         "tests/unit/agg/test_median_band_panels.py",
-         "tests/unit/agg/test_ordinal_alpha.py",
-         "tests/unit/agg/test_aggregation_perf.py",
-         "tests/integration/agg/test_even_panel_failed_write.py",
-         "tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band",
-         "tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_no_even_panel_is_ever_aggregated"),
-    ),
+    # `"#91"` is gone because #91 landed: `aeh.agg` ships the median-band aggregate,
+    # the ordinal α and `EvenPanelError` under exactly the vocabulary's declared
+    # names (`tests/support/agg_vocabulary.py`'s table — no rename was needed, and
+    # the module-level-function reading of §3.12's Protocol is the one that landed).
+    # Every TS-35 file runs unmarked. The TS-36 files keep their markers: their
+    # conjunctions name #92's/#93's members and did not resolve here.
+
     # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
     # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
     # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
@@ -239,6 +224,130 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{GRADE_MODULE}:apply_policy",
         ("tests/property/test_fuzz_05_aggregation_and_policy.py"
          "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
+    ),
+    # --- TS-38 (#105), the M-GRADE policy, coverage and no-imputation cases -------------------
+    #
+    # Three keys, split the `#118`/`#91` way: the stories' cases unmark at different
+    # seams, and a single module key would hold every case outside the gate until the
+    # last of them landed (the resolved-early trap the `#101` module entry above already
+    # records for the calib rollup half).
+    #
+    # `apply_policy` is design-declared (§3.14's Interfaces block, CT-GRADE-02) and keys
+    # the rung-0 rule cases. The other three unit seams — `resolve_grade`,
+    # `coverage_for`, `boundary_risk` — are **invented** (the design declares their
+    # behaviour on the service, the rung-0 cases need pure entry points; the
+    # `verify_span`/`synthesize` precedent), and the boundaries/coverage and
+    # no-imputation files use them *together with* `apply_policy`, so the key is the
+    # `symbols` conjunction: a module that landed only `apply_policy` would otherwise
+    # resolve the key and name tests that then fail on `require()` — the trap this
+    # registry exists to avoid. `open_grade` is the invented rung-2 constructor (the
+    # `open_review` precedent) the four integration files resolve the service through;
+    # it appears in no Interfaces block, so none can exist before an implementation
+    # does. All names reconcile at #101's landing; the vocabulary lives in
+    # `tests/support/grade_vocabulary.py`.
+    "#105 apply_policy": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        ("tests/unit/grade/test_policy_rules.py",
+         "tests/property/test_tc_grade_21_apply_policy_invariants.py"),
+    ),
+    "#105 pure seams": (
+        "symbols",
+        (f"{GRADE_MODULE}:apply_policy,{GRADE_MODULE}:resolve_grade,"
+         f"{GRADE_MODULE}:coverage_for,{GRADE_MODULE}:boundary_risk"),
+        ("tests/unit/grade/test_boundaries_and_coverage.py",
+         "tests/unit/grade/test_no_imputation.py"),
+    ),
+    "#105 open_grade": (
+        "symbol",
+        f"{GRADE_MODULE}:open_grade",
+        ("tests/integration/grade/test_grade_delivery.py",
+         "tests/integration/grade/test_finalization.py",
+         "tests/integration/grade/test_recompute_on_correction.py",
+         "tests/integration/grade/test_incomplete_and_routing.py"),
+    ),
+    # --- TS-36 (#95), the M-AGG confidence-inversion, routing and escalation cases -----------
+    #
+    # Thirteen cases across seven files, written ahead of THREE stories — #91 lands the
+    # `aggregate` core, #92 the caps and the stored integrity inputs, #93 the routing,
+    # the escalation policy and the score states — so the entries key per BLOCKER SET
+    # rather than per story, and every conjunction is what the file's `require()` calls
+    # actually resolve. `TC-AGG-16` is deliberately absent: its write-set guard is
+    # structural and green today (the `TC-AGG-03` precedent), so it carries no marker.
+    #
+    # **Keyed on the same proxy #76 chose, for the same recorded reason.** No
+    # §3.12-declared name isolates "the cap table landed" — the caps are
+    # Assumption-numbered, not named — so the confidence entries ride on
+    # `AGG_AUTO_THRESHOLD_ATOMIC`: a bare `#91` `aggregate` without the caps leaves the
+    # conjunction unresolved (right), and a `#92` landing resolves it (right). The
+    # residual weakness is #76's verbatim: a threshold constant landing without the cap
+    # behaviour would unmark tests that then fail with an assertion, not a stated
+    # reason. `ordinal_alpha` joins the conjunction because the TC-AGG-10 property's
+    # no-cap cell pins the design's base figure (§3.12: with no cap binding and no
+    # multiplier applying, the confidence IS the agreement figure) — the property
+    # calls it directly, so it must exist before the marker can drop. The state entry
+    # has the same shape one story over — no declared name isolates "the states
+    # landed", so it keys on `should_escalate` (the proxy #93 ships beside the state
+    # assignment; re-keyed at #91's landing, whose landing alone would otherwise have
+    # resolved `aggregate` + `EvenPanelError` while the states were still #93's).
+    "#95 TS-36 confidence inversion (TC-AGG-06, TC-AGG-10)": (
+        "symbols",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC,"
+         f"{AGG_MODULE}:ordinal_alpha"),
+        (
+            "tests/unit/agg/test_confidence_inversion.py",
+            "tests/property/test_agg_confidence_property.py",
+        ),
+    ),
+    # Routing, escalation and the boundary: `should_escalate` is #93's, so the
+    # conjunction resolves only at the story that owns the routing assignment (its
+    # title is the FR set these cases trace to). TC-AGG-17's thresholds and TC-AGG-07's
+    # ceiling are INJECTED in the tests (Q-04), so no threshold constant belongs in
+    # this conjunction — the tests bake in no tuning numbers to reconcile.
+    "#95 TS-36 routing, escalation and thresholds (TC-AGG-07, 08, 09, 11, 17)": (
+        "symbols",
+        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:should_escalate",
+        ("tests/unit/agg/test_routing_and_escalation.py",),
+    ),
+    # TC-AGG-07's rank limb is a different module entirely: at equal expected value the
+    # ordering is M-REVIEW's to produce (`aeh.review:rank_queue_items`, the name the
+    # `#108 stats` consumer entry already pins). Keyed on that name alone — the test
+    # constructs its two items directly and touches no `aeh.agg` symbol.
+    "#95 TS-36 review-queue rank (TC-AGG-07)": (
+        "symbol",
+        f"{REVIEW_MODULE}:rank_queue_items",
+        ("tests/unit/agg/test_review_queue_rank.py",),
+    ),
+    # The states: see the proxy note above. `should_escalate` is the conjunction's
+    # #93 gate (re-keyed at #91's landing — `aggregate` + `EvenPanelError` alone
+    # resolved the moment #91 shipped its core, which would have told a reader to
+    # unmark these cases while the state assignment was still #93's). The states'
+    # own assignment is #93's, and the policy function ships in the same story.
+    "#95 TS-36 score states (TC-AGG-12, 13, 14)": (
+        "symbols",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,"
+         f"{AGG_MODULE}:should_escalate"),
+        ("tests/unit/agg/test_score_states.py",),
+    ),
+    # The round trip needs the caps (#92), the integrity columns #92's migration adds,
+    # AND the recomputation seam — `recompute_confidence` is the suite's invented name
+    # for NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
+    # `agg_vocabulary.py`; §3.12 names no function).
+    "#95 TS-36 reconstructible confidence (TC-AGG-15)": (
+        "symbols",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:recompute_confidence,"
+         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
+        ("tests/integration/agg/test_confidence_reconstructible.py",),
+    ),
+    # Purity over all three Protocol members at once — the last of the three to land
+    # is what makes the case runnable, so the conjunction is all three (the `#91`
+    # entry's union plus `should_escalate`; a separate entry because that one exists
+    # for TS-35's files, which do not call `should_escalate`).
+    "#95 TS-36 policy purity (TC-AGG-18)": (
+        "symbols",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:should_escalate,"
+         f"{AGG_MODULE}:ordinal_alpha"),
+        ("tests/unit/agg/test_policy_purity.py",),
     ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
@@ -951,14 +1060,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # payload (`weakest_per_population` beside the per-population headline, never an
     # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked. The
     # `m_console` param keeps its marker — #123 has not landed.
-    "#91 stats": (
-        "symbol",
-        f"{AGG_MODULE}:describe_agreement",
-        (
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_agg]",
-        ),
-    ),
+    #
+    # `"#91 stats"` is gone because #91 landed: `aeh.agg:describe_agreement` is the
+    # module's own disclosure of the figure it produces (CT-STATS-21's M-AGG limb),
+    # and the sweep's `m_agg` param runs unmarked while `m_console` stays #123's.
     "#93 stats": (
         "symbol",
         f"{AGG_MODULE}:rank_criteria_for_escalation",
@@ -1240,13 +1345,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TC-EXTRACT-06` (deterministic criteria) and TC-EXTRACT-11's enumeration half,
     # TC-EXTRACT-13's cross-check half run GREEN against shipped M-ORCH and carry no
     # marker; they sit inside the marked files whose other cases wait on #68. The
-    # second-family case is keyed separately below: #69 owns `FR-EXTRACT-07`'s
-    # mechanism (Phase 2) and lands independently of #68.
+    # second-family case was keyed separately below: #69 owns `FR-EXTRACT-07`'s
+    # mechanism (Phase 2) and landed independently of #68.
     # The "#68 extraction suite (TS-26)" entry stood here: its conjunction over
     # `TS26_EXTRACT_SYMBOLS` (built from `tests/support/extract_vocabulary.py`)
     # resolved when #68 landed `aeh.extract`, and the seven suite files it named lost
-    # their markers in the same change. What remains keyed is the one case whose
-    # blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69 second-family case.
+    # their markers in the same change. What remains keyed of this suite is the one
+    # case whose blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69
+    # second-family entry left with #69.
     # TC-EXTRACT-14 (`test_extract_pii_purge.py`) is keyed SEPARATELY from the TS-26
     # suite: #68 made its extraction half runnable (the payload provably carries the
     # student's verbatim work before the purge), but the purge half calls
@@ -1261,15 +1367,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{STATS_MODULE}:promote_cohort",
         ("tests/security/extract/test_extract_pii_purge.py",),
     ),
-    "#69 second family (TS-26)": (
-        # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
-        # `second_family_model` — a conjunction, because the driver alone does not make
-        # the case runnable. Built from the vocabulary, like the #68 entry, so the
-        # registry cannot drift from the tests.
-        "symbols",
-        f"{EXTRACT_MODULE}:{WORKER},{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
-        ("tests/integration/extract/test_extract_second_family.py",),
-    ),
+    # The "#69 second family (TS-26)" entry stood here: its conjunction over the
+    # driver plus `second_family_model` resolved when #69 landed the different-family
+    # model and the `ExtractionWorker` seam, and the file runs in TEST_CMD again.
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
     # Both entries stood here for TS-27. The injection-differential entry
@@ -1304,15 +1404,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS65_EXTRACT_SYMBOLS),
         ("tests/contract/extract/test_ct_extract_c14_extraction_metrics.py",),
     ),
-    "#69 extraction contract second family (TS-65)": (
-        # C10, the whole file: the contract file resolves the full surface AND #69's
-        # `second_family_model` — the TS-26 integration file's two-name key above is
-        # not this file's blocker set.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
-        + f",{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
-        ("tests/contract/extract/test_ct_extract_c10_second_family_unreconciled.py",),
-    ),
+    # The "#69 extraction contract second family (TS-65)" entry stood here: its
+    # conjunction resolved with the same landing, and C10 lost its marker in the
+    # same change.
     "#73 extraction contract sweep (TS-65)": (
         # C07's rung-3 node: verification is M-INTEG's — `verify_span` re-derives it
         # from the document bytes. Keyed on #73 alone because that is the only consumer
@@ -1439,18 +1533,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # so the GREEN cases (TC-ORCH-04/18, RES-04/05/12/15) run unmarked. These four entries
     # key the cases the later stories owe, on the §3.7 Protocol members those stories must
     # add to the concrete class.
-    "#61 TS-24 pause lifecycle (TC-ORCH-16/17/28/29-status, RES-09/10)": (
-        # Every case turns on the pause mechanism #61 ships; start and pause land
-        # together (a pause without a start cannot produce the declared machine), so
-        # the conjunction fires when the story's control surface lands. The `cause=`
-        # keyword the tests pass is disclosed in the test module's docstring.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.pause,"
-            f"{ORCH_MODULE}:Orchestrator.start"
-        ),
-        ("tests/integration/orch/test_pause_lifecycle.py",),
-    ),
     "#62 TS-24 residency and concurrency (TC-ORCH-23, RES-11/13)": (
         # Dispatch-surface cases: residency batching and the dispatch report are
         # #62's `progress`; the run_metrics WRITE half (swap count/duration,
@@ -1568,14 +1650,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_verify_span_surface.py",
         ),
     ),
-    "#92 IntegritySignals+aggregate (TS-66 C02 None-is-not-False)": (
+    "#92 IntegritySignals+aggregate+threshold (TS-66 C02 None-is-not-False)": (
         # The type half needs only the signals dataclass (#74); the rung-3 consumer
-        # differential drives M-AGG's declared pure surface, which lands with the
-        # confidence story (#92) — the conjunction is the honest key (the TS-08 lesson:
-        # the case is runnable when its LAST blocker lands, and the differential is the
-        # limb the clause exists for).
+        # differential drives M-AGG's confidence surface, which lands with #92 — the
+        # conjunction is the honest key (the TS-08 lesson: the case is runnable when
+        # its LAST blocker lands, and the differential is the limb the clause exists
+        # for). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing: `aggregate`
+        # alone resolved there, which would have unmarked the case while the
+        # differential was still #92's.
         "symbols",
-        f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate",
+        (f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate,"
+         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_signals_data.py",
         ),
@@ -1632,22 +1717,25 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_empty_evidence_routes.py",
         ),
     ),
-    "#92 gate+signals+aggregate (TS-66 C08 sufficiency is an extraction problem)": (
+    "#92 gate+signals+aggregate+threshold (TS-66 C08 sufficiency is an extraction problem)": (
         # Same blocker shape as C07: the positional sweep runs the gate, the static
-        # limb scans the module, and the rung-3 prohibition drives aggregate (#92).
+        # limb scans the module, and the rung-3 prohibition drives the confidence
+        # surface (#92). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing —
+        # `aggregate` alone resolved there (the C07 entry's existing key).
         "symbols",
         (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate"),
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
         ),
     ),
-    "#92 gate+signals+aggregate (TS-66 C09 OCR intersection and cap)": (
+    "#92 gate+signals+aggregate+threshold (TS-66 C09 OCR intersection and cap)": (
         # The discriminating fixtures run the real gate over injected regions (#74);
-        # the cap half drives M-AGG's aggregate against unanimity (#92).
+        # the cap half drives the confidence surface against unanimity (#92).
+        # `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing, as C08.
         "symbols",
         (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate"),
+         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
         (
             "tests/contract/integ/test_ct_integ_ocr_intersection.py",
         ),
@@ -1740,26 +1828,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/unit/orch/test_escalation_policy.py::"
             "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
-        ),
-    ),
-    "#61 TS-23 cost ceiling (TC-ORCH-15)": (
-        # The test also requires `Orchestrator(store, provider=...)` — a constructor
-        # kwarg no registry kind can express. The conjunction below is therefore
-        # necessary but not sufficient: if #61 lands start/pause without the provider
-        # seam, this entry resolves, the unmark happens, and the test reds inside
-        # TEST_CMD with the seam-naming assertion (test_cost_ceiling.py) as the message.
-        "symbols",
-        f"{ORCH_MODULE}:Orchestrator.start,{ORCH_MODULE}:Orchestrator.pause",
-        (
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[99pct-runs]",
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[100pct-pauses-at]",
-            "tests/integration/orch/test_cost_ceiling.py::"
-            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
-            "[101pct-refuses-and-pauses]",
         ),
     ),
     # --- TS-29 (#76), the M-INTEG adversarial forgery cases --------------------------------

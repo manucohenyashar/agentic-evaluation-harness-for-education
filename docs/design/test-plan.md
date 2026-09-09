@@ -1013,6 +1013,7 @@ the first DELETE, on a file whose live FK graph contradicts `_COHORT_PURGE_ORDER
 | TC-STORE-22 | FR-STORE-06 | Property / 2 | Generated arbitrary byte strings including empty, one byte and multi-megabyte; plus generated **non-hex** `content_hash` arguments passed directly to `get()` and `path()` — `../`, an absolute path, a hash of the wrong length, mixed case, unicode | `get(put(b))` equals `b` for all b. Because `put()` computes the SHA-256 itself, a traversing hash is unreachable through the normal path — so the assertion is **input validation at the accessor**: `get()` and `path()` reject any argument that is not 64 lowercase hex characters, before touching the filesystem | Round-trip invariant plus input-validation assertion | P1 |
 | TC-STORE-23 | NFR-STORE-05 | Not automatable | Encryption at rest | See §2.3 Q-08 and §7.4. Covered by a deployment checklist item; only "the data directory path is configurable" is asserted | n/a | — |
 | TC-STORE-24 | FR-STORE-01, FR-STORE-03 | Observability / 2 | A saturated run | Write-queue depth, batch commit latency, per-tier file sizes, free disk space and `VACUUM` duration are emitted; the free-disk alert fires against a synthetic breach | Exact signal presence, see `OBS-02` | P1 |
+| TC-STORE-25 | FR-STORE-02 | Contract / 1 | A fresh interpreter opening a Tier P file, with and without the migration-contributing imports first (`#234`; the chains concatenate at import time, so the chain an open sees is only as long as the contributing modules imported so far — the *completeness* half of import order, which survives #269's root fix of the *ordering* half: `_VersionOrderedRegistry` sorts each chain at write time, but a module never imported contributes nothing to sort) | Without them the open is refused **at the open site** naming the cause (`IncompleteMigrationChainError`; the tier file is not created — `open_store`'s empty layout skeleton is made regardless), never a distant `no such column: parent_version_id` (#46's probe, PR #208); with them the open reaches the pinned full schema and the probe runs clean; and the `COMPLETE_SCHEMA_VERSIONS` pin matches the full chain in ascending version order (`#269`'s version-order guarantee), so a migration added without its pin bump — or an appender that breaks the write-time sort — fails the gate | Two subprocess runs, one per world, plus the in-process pin and chain-order check (`tests/regression/store/test_import_order_tier_p.py`) | P1 |
 
 ### 5.4 Module: Assessment Package Catalog (`M-PKG`)
 
@@ -1134,6 +1135,7 @@ record for a *superseded* package version must not answer for the current one.
 | TC-PKG-27 | NFR-PKG-01 | Artifact assertion / 2 | The live Tier P schema | Every constraint named in `FR-PKG-03` and `FR-PKG-06` is realized as a database CHECK or FK, or as a data-layer guard — not as a caller convention. Enumerate and match | Schema assertion | P0 |
 | TC-PKG-28 | FR-PKG-01, FR-PKG-02 | Observability / 2 | Version creation, publication, and a `SchemaLockViolation` | Creation and publication log approver and timestamp; each violation logs at WARN naming the field; export and import log version, provenance and destination | Exact signal presence | P1 |
 | TC-PKG-29 | FR-PKG-01 | Integration / 2 | `is_locked` on a draft, on a published version, and on a revision's child | False, then True, then False — the accessor resolves the version row instead of raising (inline regression, #30: `is_locked` referenced the undefined `_SELECT_VERSION` and raised `NameError` on every call since #26) | Exact value | P1 |
+| TC-PKG-30 | FR-PKG-02 | Integration / 2 | A revision of a parent whose criteria carry `max_points`, `scoring_model`, `construct_tag`, `band_count` and band descriptors, with one explicit edit on the child; and a revision whose parent's declared band set is half written | The child's criteria and bands match the parent's field by field except the one explicitly edited field — before #230 the delta was the whole dropped set, which is mutation by omission and breaks `CT-PKG-02`; a criterion that fails the copy (`FR-PKG-06`'s even-band bar) refuses the revision inside the transaction, leaving no child rows (inline regression, #230: the revision copy dropped the max_points-era columns) | Exact value plus differential field-by-field equality | P0 |
 
 ### 5.5 Module: Ingestion, Transcription & Validation Ladder (`M-INGEST`)
 
@@ -4490,7 +4492,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-PROV-04 | TC-PROV-21, SEC-04 | Art, Security | P0 |
 | NFR-PROV-05 | TC-PROV-05 | Art | P0 |
 | FR-STORE-01 | TC-STORE-01, TC-STORE-24, TC-STORE-C01, TC-SMOKE-03 | Integration, Contract, Smoke | P0 |
-| FR-STORE-02 | TC-STORE-04, TC-STORE-05, TC-SMOKE-03 | Migration, Smoke | P0 |
+| FR-STORE-02 | TC-STORE-04, TC-STORE-05, TC-STORE-25, TC-SMOKE-03 | Migration, Contract, Smoke | P0 |
 | FR-STORE-03 | TC-STORE-03, TC-STORE-24, TC-STORE-C03 | Integration, Contract | P0 |
 | FR-STORE-04 | TC-STORE-08, TC-STORE-21, FUZZ-07 | Integration, Property | P0 |
 | FR-STORE-05 | TC-STORE-07, OBS-02 | Integration, Observability | P1 |
@@ -4510,7 +4512,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-STORE-05 | TC-STORE-23 — **known gap**, see §7.4 (Q-08) | n/a | — |
 | NFR-STORE-06 | TC-STORE-20, PERF-09 | Performance | P2 |
 | FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01 | Integration, Observability, E2E | P0 |
-| FR-PKG-02 | TC-PKG-02, TC-PKG-28 | Integration, Observability | P0 |
+| FR-PKG-02 | TC-PKG-02, TC-PKG-28, TC-PKG-30 | Integration, Observability | P0 |
 | FR-PKG-03 | TC-PKG-03, TC-PKG-09, TC-PKG-27 | Integration, Art | P0 |
 | FR-PKG-04 | TC-PKG-04 | Integration | P1 |
 | FR-PKG-05 | TC-PKG-05, TC-PKG-06, FUZZ-06 | Unit, Property | P0 |

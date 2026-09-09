@@ -43,7 +43,7 @@ guess is a suite that asserts the wrong thing.
 | `result` table | **Not** created here | It is not in §3.3's data model; `FUZZ-07` reads it and is keyed on #11, which is the story that builds the write path |
 | Schema version is per tier | One `schema_version` table per database; the **set** of applied versions is what pending work is measured against | `FR-STORE-02` says "per tier"; Tier P files are handed between schools and version independently of Tier D |
 | Read-only Tier P | `package(id, read_only=True)` over a `file:...?mode=ro` URI | `FR-STORE-13`; a read-only handle never migrates, because migrating is a write |
-| Too-new is checked before anything else | `SchemaTooNewError` raised before the first migration and before any row is read | `CT-STORE-11`: "refuses to open, **no partial read**" |
+| Too-new is checked before anything else reaches the file | The chain-completeness refusal (`IncompleteMigrationChainError`, #234) comes first — a process whose chain is short cannot judge any file — then `SchemaTooNewError`, both before the first migration and before any row is read | `CT-STORE-11`: "refuses to open, **no partial read**" |
 | `SQLITE_BUSY` retry | Internal and **bounded**; exhausting it re-raises SQLite's own error | §3.3 says busy "should not occur" under WAL. No retry loop can promise *never*, and a helper claiming to would be lying about a lock held outside this process |
 | `query` refuses a write | The connection is in autocommit, so it would otherwise be a synchronous write channel | `CT-STORE-02` makes writing asynchronous; #11 owns both write paths |
 | One file, one mode | A read-only and a writable handle on the same file cannot both be open | `FR-STORE-13` inspects a file whose provenance is in question; two live connections make that inspection meaningless |
@@ -92,9 +92,11 @@ from typing import Any, Callable, ContextManager, Iterator, Mapping, Protocol, S
 
 __all__ = [
     "BlobStore",
+    "COMPLETE_SCHEMA_VERSIONS",
     "CrossTierTransactionError",
     "DiskFullError",
     "InsecureLocationError",
+    "IncompleteMigrationChainError",
     "Migration",
     "PurgePreconditionError",
     "PurgeReport",
@@ -275,6 +277,41 @@ class StoreError(Exception):
 
 class ConfigurationProblem(StoreError):
     """The data directory or a knob is unusable. Raised before any file is touched."""
+
+
+class IncompleteMigrationChainError(StoreError):
+    """The process opened a tier before every module that contributes its migrations was imported.
+
+    The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
+    the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det`,
+    `aeh.orch` and `aeh.extract`; Tier D: `aeh.det` — so the chain an open sees is only as long
+    as the list of contributing modules the process has imported so far. A file opened on the
+    short chain
+    builds at the base schema, and the columns the missing migrations would have added surface
+    **later, far from the open**, as `sqlite3.OperationalError: no such column:
+    parent_version_id` — #46's probe, disclosed in PR #208 and found suite-wide by #94, whose
+    seeds chose between the two worlds. #234's guard (`COMPLETE_SCHEMA_VERSIONS`, checked by
+    `_open_tier` before the tier file's parent directory is made and before any connection is
+    opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
+    a refusal **at the open site, naming the cause**. The fix on the
+    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg`
+    registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
+    import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
+    pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
+    11 of its 12 migrations — and `aeh.orch` for the last, #61's `orch_run_lifecycle`).
+
+    Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
+    one it could fix at the root: a tier's chain arriving **out of version order** when an early
+    import appends a late migration first. Sorting each tier's tuple at write time makes the
+    order a contract instead of an accident of collection. What sorting cannot repair is a
+    module that was **never imported** — it contributes no migrations at all, so the chain is
+    short no matter how it is ordered, and this guard is the refusal for that world.
+
+    Sibling of `SchemaTooNewError`, not its subclass: the too-new refusal says the *file* is
+    ahead of the binary; this one says the *process* is behind its own binary. `CT-STORE-11`'s
+    exact-type oracles distinguish them, and a subclass relationship would let one pass for the
+    other exactly when a reader is diagnosing which of the two went wrong.
+    """
 
 
 class SchemaTooNewError(StoreError):
@@ -1323,6 +1360,33 @@ def current_schema_version(tier: Tier) -> int:
     return max((m.version for m in migrations), default=0)
 
 
+#: The schema version each tier must reach once every module that contributes migrations has
+#: been imported. The chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
+#: owning modules (see `IncompleteMigrationChainError`), so `current_schema_version` reports the
+#: *in-process* chain — short of this pin whenever a contributing module has not been imported
+#: yet. `_open_tier` compares the two and refuses an open that falls short, because a file built
+#: from a truncated chain does not fail at the open: it opens, records the short version, and
+#: the columns the missing migrations would have added surface later, far from the open, as
+#: `no such column: parent_version_id` (#46's probe; #94 found the suite's own seeds choosing
+#: between the two worlds). #234 added the pin and the refusal; the chains themselves are
+#: untouched — the guard is an assertion about them, not a change to them. (#269's
+#: `_VersionOrderedRegistry` fixed the chains' *order* at the write site; a module that was
+#: never imported still contributes nothing to sort, which is the world this pin refuses.)
+#:
+#: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
+#: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
+#: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
+#: same phantom bug in mirror image. (The rule has now fired twice since the pin landed:
+#: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12 — both
+#: caught by that gate test, not by a failed open. #78's `judge_verdict_columns`
+#: moved it 12→13 — the same rule, third firing.)
+COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
+    Tier.PACKAGE: 10,
+    Tier.COHORT: 13,
+    Tier.DURABLE: 4,
+}
+
+
 # --- purge (FR-STORE-07, CT-STORE-10) -----------------------------------------------------------
 #
 # `purge_cohort` is irreversible and it is the only operation that deletes student work, so
@@ -1396,7 +1460,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run",
+    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run_control",
+    "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
     "roster", "cohort",
@@ -1415,6 +1480,11 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # would leave the escalation's audit trail behind (FR-STORE-07).
     "escalation_request": Statement("DELETE FROM escalation_request"),
     "circuit_breaker": Statement("DELETE FROM circuit_breaker"),
+    # #61's control-row queue: pause/resume requests name the run they hang from and
+    # are run state — they die with the cohort like the run they address, before the
+    # run row their FK points at (children before parents); a name the registry lacks
+    # would leave the operator's control history behind (FR-STORE-07).
+    "run_control": Statement("DELETE FROM run_control"),
     # #57's ledger tables: the run registry is run state (it names the cohort, the package
     # version and the frozen configuration) and dies with the cohort like every other Tier
     # C/R row — a name the registry lacks would leave a run's provenance behind.
@@ -1474,6 +1544,10 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     # is read by the same walk without an edit here.
     "escalation_request": Statement("SELECT * FROM escalation_request"),
     "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
+    # #61's control-row queue: no blob references (reason strings name conditions,
+    # never student bytes), but the scan registry covers every swept name so a
+    # column a future migration adds is read by the same walk without an edit here.
+    "run_control": Statement("SELECT * FROM run_control"),
     "run": Statement("SELECT * FROM run"),
     "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
@@ -1859,7 +1933,32 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
     so `CT-STORE-11`'s *"refuses to open, no partial read"* and `TC-STORE-05`'s *"the file is
     unmodified, asserted by mtime and content hash"* are both properties of the control flow
     rather than of anyone's care.
+
+    The chain-completeness refusal comes **first**, before the existence check and before the
+    too-new check: a process whose migration chain is short cannot be trusted to judge *any*
+    file — its too-new verdict would be an artifact of the missing migrations rather than a
+    property of the file, and an open it allowed would build the file short of the full schema
+    for a failure at a distance. `COMPLETE_SCHEMA_VERSIONS` carries the per-tier pin;
+    `IncompleteMigrationChainError` carries the story (`#234`).
     """
+    implemented = current_schema_version(tier)
+    complete = COMPLETE_SCHEMA_VERSIONS[tier]
+    if implemented < complete:
+        raise IncompleteMigrationChainError(
+            f"{tier.value!r} would open against a migration chain that ends at version "
+            f"{implemented}, but this binary implements {complete} for the tier once every "
+            f"module that contributes migrations has been imported. The chains in "
+            f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
+            f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
+            f"aeh.orch, aeh.extract and aeh.judge; Tier D: aeh.det), so this process has "
+            f"imported some "
+            f"of them and not the rest. Import the owning modules before the first open — "
+            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg` "
+            f"registers every "
+            f"tier's complete chain — or the file builds short of the full schema and the "
+            f"missing columns surface later, far from this open, as a distant `no such "
+            f"column` (#46's probe: `no such column: parent_version_id`; #234)."
+        )
     if read_only and not path.exists():
         raise ConfigurationProblem(
             f"{path} does not exist, so it cannot be opened read-only. FR-STORE-13 is about "

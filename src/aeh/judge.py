@@ -103,12 +103,14 @@ from aeh.store import Migration, Statement, Tier, TIER_MIGRATIONS, lease_clock
 
 # --- the schema step -----------------------------------------------------------------------------
 
-#: Tier C, migration 12: the two columns a verdict row carries beyond the shipped
+#: Tier C, migration 13: the two columns a verdict row carries beyond the shipped
 #: four (`FR-JUDGE-11`/`FR-JUDGE-13`: the band's position in the DECLARED set, and the
 #: judge's own confidence — persisted, never alone routing). Column-adding, like every
 #: migration here: forward-only, no edit to an earlier step. `verdict_id` stays the
 #: work unit's id, so a re-judged arm is an `INSERT OR IGNORE` that lands nowhere —
-#: at-least-once leasing cannot produce a second verdict.
+#: at-least-once leasing cannot produce a second verdict. (Numbered 13, not 12: the
+#: merge with #61's `orch_run_lifecycle` took 12 first — the number is first-come,
+#: the schema is additive either way.)
 _JUDGE_VERDICT_COLUMNS: tuple[Statement, ...] = (
     Statement("ALTER TABLE verdict ADD COLUMN band_ordinal INTEGER"),
     Statement("ALTER TABLE verdict ADD COLUMN self_confidence REAL"),
@@ -116,7 +118,7 @@ _JUDGE_VERDICT_COLUMNS: tuple[Statement, ...] = (
 
 TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
     Migration(
-        version=12, name="judge_verdict_columns",
+        version=13, name="judge_verdict_columns",
         statements=_JUDGE_VERDICT_COLUMNS,
     ),
 )

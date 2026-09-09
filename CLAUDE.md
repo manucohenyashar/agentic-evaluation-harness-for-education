@@ -108,3 +108,22 @@ they are compatible as long as "same change" is read as "same pair", not "same a
 
 Every environment-sensitive constant discovered mid-implementation becomes a knob in that same
 pass, and every bug found later becomes a permanent case.
+
+### Store opens require the full migration chain
+
+The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
+modules that own the schema they add. Before the first store open in any process, import all
+six contributors: `import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg` —
+`import
+aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it), and
+`aeh.judge` owns Cohort's last migration (#78's `judge_verdict_columns`, 13) while `aeh.orch`
+owns the one before it (#61's `orch_run_lifecycle`, 12) and `aeh.extract`
+owns the one before that (11). An open on a
+truncated chain builds the file at the base schema and the missing columns surface later, far
+from the open, as a distant `no such column: parent_version_id`. The open site refuses a short
+chain — `IncompleteMigrationChainError`, pinned per tier by `COMPLETE_SCHEMA_VERSIONS` in
+`store.py` (`#234`) — so the failure names its cause at the open, never at a distance. Chain
+*order* is not the caller's duty: `_VersionOrderedRegistry` (`#269`) sorts each tier's chain at
+write time, so import order cannot produce a reverse version step — only completeness is on
+the caller. A migration added to a chain bumps its pin in the same change; the pin's gate test
+fails until it does.
