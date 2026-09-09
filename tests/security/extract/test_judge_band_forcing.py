@@ -241,7 +241,9 @@ def _scored_pair(
     for twin, markdown in ((benign, benign_md), (injected, injected_md)):
         spans = [_byte_span(markdown, needle_1), _byte_span(markdown, needle_2)]
         extracted_spans[twin.submission_id] = spans
-        request = AssembleRequest(extract_units[twin.submission_id])
+        request = AssembleRequest(
+            extract_units[twin.submission_id], store=store
+        )
         provider.record(
             require(EXTRACT_MODULE, PROMPT_FIELDS, issue=_EXTRACT_ISSUE)(request),
             model_ref, sampling_params(),
