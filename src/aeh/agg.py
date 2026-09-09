@@ -224,6 +224,13 @@ def ordinal_alpha(verdicts: Sequence[Any], criterion: Any = None) -> float | Non
     own highest ordinal (`K = max(ordinal) + 1`) — the reading a caller can take
     holding nothing but the verdicts. `aggregate` always passes the criterion, so
     every score row's agreement is computed on the full declared scale.
+
+    The convention bounds nothing below: unlike `aggregate`, this function does
+    not refuse an even panel, and a panel spread across the full scale (or using
+    ordinals outside any declared scale) can score below −1. Only the
+    fewer-than-two and one-band cases are `None`; callers needing a figure from
+    a legal panel should route through `aggregate`, whose odd panels stay within
+    the familiar range on a declared scale.
     """
     if len(verdicts) < 2:
         return None
@@ -363,10 +370,18 @@ def describe_agreement(figure: Any, population: str) -> str:
         else figure.degenerate_band_shape
     )
 
-    lines = [
-        f"Agreement for population {population}: Krippendorff's ordinal alpha = "
-        f"{float(alpha):.2f} over {int(band_count)} bands."
-    ]
+    if alpha is None:
+        # A figure this module itself produces (a single-verdict score carries
+        # no alpha) describes as undefined, not as a coerced number.
+        lines = [
+            f"Agreement for population {population}: Krippendorff's ordinal "
+            f"alpha is undefined over {int(band_count)} bands."
+        ]
+    else:
+        lines = [
+            f"Agreement for population {population}: Krippendorff's ordinal alpha = "
+            f"{float(alpha):.2f} over {int(band_count)} bands."
+        ]
     if degenerate or int(band_count) < 3:
         lines.append(
             "Two-band degeneracy: on a two-band criterion the ordinal metric "
