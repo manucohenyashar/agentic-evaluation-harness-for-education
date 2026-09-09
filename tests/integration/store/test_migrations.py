@@ -48,8 +48,14 @@ import aeh.extract  # noqa: F401 -- M-EXTRACT owns cohort 11 (the evidence paylo
 # number is 11); imported after det so the registry walks in owner order and
 # the golden describes the full binary, extract's columns included.
 import aeh.synth  # noqa: F401 -- M-SYNTH owns cohort 13 (#97's synth_narrative_key
-# rebuild onto the ADR-8 primary key); imported last so the registry walks in owner
-# order and the golden describes the full binary, synth's columns included.
+# rebuild onto the ADR-8 primary key); imported after extract so the registry walks
+# in owner order and the golden describes the full binary, synth's columns included.
+import aeh.judge  # noqa: F401 -- M-JUDGE owns cohort 14 (the verdict's band_ordinal and
+# self_confidence columns; #78 — numbered 14, not 12, because #61's lifecycle took 12
+# and #97's narrative key took 13 at the merges), imported after synth for the same
+# owner-order rule — without it the registry this test walks depends on whether an
+# earlier test in the session happened to import aeh.judge, and the golden would be
+# order-dependent.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

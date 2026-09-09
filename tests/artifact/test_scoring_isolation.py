@@ -99,8 +99,6 @@ from tests.support.roster import (
     scan_for_names,
 )
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = JUDGE_ISSUE
 
 #: The contaminating-field vocabulary, from FR-JUDGE-01's own list (another judge's

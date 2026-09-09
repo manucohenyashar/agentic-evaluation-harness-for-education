@@ -51,7 +51,7 @@ from tests.contract.extract._doubles import (
     require_extract_surface,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 _MARKDOWN = build_markdown(
     "The apparatus was levelled before the first measurement.\n"

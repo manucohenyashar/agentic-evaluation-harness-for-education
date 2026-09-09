@@ -1380,10 +1380,11 @@ def current_schema_version(tier: Tier) -> int:
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
 #: same phantom bug in mirror image. (The rule has now fired twice since the pin landed:
 #: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12 — both
-#: caught by that gate test, not by a failed open.)
+#: caught by that gate test, not by a failed open. #78's `judge_verdict_columns`
+#: moved it 12→13 — the same rule, third firing.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 13,
+    Tier.COHORT: 14,
     Tier.DURABLE: 4,
 }
 
@@ -1951,9 +1952,12 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             f"module that contributes migrations has been imported. The chains in "
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
             f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
-            f"aeh.orch, aeh.extract and aeh.synth; Tier D: aeh.det), so this process has imported some "
+            f"aeh.orch, aeh.extract, aeh.synth and aeh.judge; Tier D: aeh.det), so this "
+            f"process has imported some "
             f"of them and not the rest. Import the owning modules before the first open — "
-            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg, aeh.synth` registers every "
+            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, "
+            f"aeh.synth` "
+            f"registers every "
             f"tier's complete chain — or the file builds short of the full schema and the "
             f"missing columns surface later, far from this open, as a distant `no such "
             f"column` (#46's probe: `no such column: parent_version_id`; #234)."

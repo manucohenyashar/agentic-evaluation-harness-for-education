@@ -29,7 +29,7 @@ from tests.support.extract_vocabulary import (
     TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
-from tests.support.judge_vocabulary import TS30_JUDGE_SYMBOLS, TS30_PROMPT_SYMBOLS
+from tests.support.judge_vocabulary import TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -501,26 +501,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # constructor arguments and the `counters` accessor all resolved against the shipped
     # surface without a test edit. #22 (TS-05) owns the fuller retry-taxonomy cases and the
     # live-API retention shapes.
-    # `TC-PROV-21` and `SEC-04` scan assembled payloads for student names. Keyed on `M-JUDGE`
-    # and **not** on `M-ORCH`, although both cases read as though they need a full run: design
-    # 3.10 declares `assemble(unit) -> ScoringRequest` pure ("# pure, testable"), so a test
-    # drives it 350 times with no scheduler, no store and no model call. #78 is the M-JUDGE
-    # story that owns assembly, so it landing is exactly what makes these two runnable.
-    #
-    # Only the two case tests carry the marker; the file's scanner controls run in the gate
-    # today, which is what keeps the cases from going green-by-blindness when #78 lands.
-    "#78": (
-        # The symbol the tests actually resolve, not the module: `aeh.judge` could land with
-        # #79's numeral prohibition while `assemble` is still #78's.
-        "symbol",
-        f"{JUDGE_MODULE}:ScoringWorker",
-        (
-            "tests/artifact/test_payload_pseudonymization.py"
-            "::test_tc_prov_21_no_assembled_payload_carries_a_student_name",
-            "tests/artifact/test_payload_pseudonymization.py"
-            "::test_sec_04_a_full_run_discloses_no_name_to_the_provider",
-        ),
-    ),
+    # The `"#78"` entry stood here: #78 landed `aeh.judge` (`ScoringWorker` and the
+    # whitelist `ScoringRequest`), so the two `TC-PROV-21`/`SEC-04` case tests lost
+    # their markers and rejoined the fast tier — the scanner controls in that file
+    # never carried one. The rung-0 bet held: `worker_cls()` constructed with no
+    # arguments, and both scans ran over the assembled requests unchanged.
     # `TC-CONF-C14` step 3 is a **consumer sweep at rung 3**: with `M-ORCH` *and* `M-CONSOLE`
     # real, assert neither exposes a path that reaches a rebinding. Steps 1 and 2 are rung 0 and
     # run in the gate today; only the sweep is blocked.
@@ -1320,16 +1305,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # CT-REVIEW-14 intersects M-REVIEW's write set with what each scoring consumer assembles
     # into a prompt. #78 (M-JUDGE) and #68 (M-EXTRACT) are independent, so the case is
-    # parametrized and each half is keyed on the story it actually needs -- rather than one
+    # parametrized and each half was keyed on the story it actually needs -- rather than one
     # test keyed on whichever of the two somebody guessed would land last.
-    "#78 review": (
-        "symbol",
-        f"{JUDGE_MODULE}:prompt_fields",
-        (
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
-        ),
-    ),
+    #
+    # The `"#78 review"` entry stood here (`aeh.judge:prompt_fields` for the `[judge]`
+    # param). #78 landed it, but the param's BINDING blocker is #109's `write_fields`
+    # -- the test resolves it before it reads either consumer -- and the writtenahead
+    # marker is function-level, shared with the `[extract]` param. So the `[judge]`
+    # half stays marked with the file and unmarks with #109, below; keying this entry
+    # on a symbol that is no longer what blocks it would have fired the gate and sent
+    # someone to unmark a test that then fails on `write_fields`.
     "#78 rerun review": (
         "symbol",
         f"{JUDGE_MODULE}:assemble_prompt",
@@ -1343,8 +1328,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # now — its first require is #109's `write_fields` (the test resolves it before it
     # reads either consumer), and the marker is function-level, shared with the
     # `[judge]` param — so the file is unmarked by #109's implementer, together with
-    # the `#109 review` entry below. The file remains registered under the `#78
-    # review` and `#109`-family entries meanwhile.
+    # the `#109 review` entry below, which is the file's remaining registration.
     # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
     #
     # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
@@ -1388,30 +1372,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # model and the `ExtractionWorker` seam, and the file runs in TEST_CMD again.
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
-    # Two entries stood here for TS-27. The injection-differential entry
+    # Both entries stood here for TS-27. The injection-differential entry
     # (TC-EXTRACT-10, `test_extract_injection_resistance.py`) left with #68: its
     # conjunction over `TS27_EXTRACT_SYMBOLS` resolved when the extract module landed,
-    # and the file runs in TEST_CMD again. The band-forcing entry below stays: ADV-02's
-    # band differential needs #78's `ScoringWorker` too.
-    # ADV-02's band differential runs the same pairs THROUGH the judge boundary: the
-    # extract leg needs #68's driver, assembly and prompt fields (to put the evidence
-    # rows the verdict rests on into the store), and the band leg needs #78's
-    # `ScoringWorker` and `prompt_fields` — both already assumed by the repo's `"#78"`
-    # and `"#78 review"` entries. Either module absent is a red case, so the key is a
-    # conjunction over BOTH.
-    "#71 TS-27 band-forcing (ADV-02)": (
-        "symbols",
-        ",".join(
-            [
-                f"{JUDGE_MODULE}:ScoringWorker",
-                f"{JUDGE_MODULE}:prompt_fields",
-                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
-                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
-                f"{EXTRACT_MODULE}:{WORKER}",
-            ]
-        ),
-        ("tests/security/extract/test_judge_band_forcing.py",),
-    ),
+    # and the file runs in TEST_CMD again. The band-forcing entry left when #78 landed
+    # `aeh.judge`: the conjunction over the judge symbols (`ScoringWorker`,
+    # `prompt_fields`) and the extract symbols resolved, `test_judge_band_forcing.py`
+    # lost its marker and rejoins the integration tier. Its latent `b.band` band read
+    # (the catalog's bands are dict rows) was reconciled in the same change.
     # --- TS-65 (#72), the M-EXTRACT contract cases, C01-C15 ---------------------------------
     #
     # Written ahead of #68 like the TS-26 suite above, but keyed per BLOCKER rather than
@@ -1464,19 +1432,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_extract_c08_m_integ_sees_the_blank_never_the_failure_m_orch_holds_it",
         ),
     ),
-    "#78 extraction contract suite (TS-65)": (
-        # The distinguishability differentials at M-JUDGE: C03's byte-identical
-        # evidence across the panel and C08's blank-vs-failure at the scorer.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
-        + f",{JUDGE_MODULE}:ScoringWorker,{JUDGE_MODULE}:assemble",
-        (
-            "tests/contract/extract/test_ct_extract_c03_no_judge_dimension.py"
-            "::test_tc_extract_c03_every_judge_on_the_panel_reads_byte_identical_evidence",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_the_blank_and_the_failure_are_distinguishable_at_m_judge",
-        ),
-    ),
+    # The "#78 extraction contract suite (TS-65)" entry stood here: #78 landed
+    # `aeh.judge` (`ScoringWorker` + `assemble`), so the two distinguishability
+    # differentials it keyed — C03's byte-identical evidence across the panel and
+    # C08's blank-vs-failure at the scorer — lost their markers and rejoined
+    # TEST_CMD. The quarantine file's half 5 (the M-INTEG sweep) stays marked under
+    # the `#74 extraction contract sweep (TS-65)` entry above: `IntegrityGate` is
+    # still its binding blocker, and its marker is function-level.
     "#73+#74+#78+#97 extraction contract sweep (TS-65)": (
         # C15, the whole file: every variation sweeps all four consumer stories over
         # #68's surface — the conjunction is the file's full blocker set.
@@ -1964,17 +1926,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
     #
     # Two files, one per owning story of the surface they resolve. The isolation
-    # file is pure rung 0 and waits on #78's worker/request pair; the numeral file
+    # file is pure rung 0 and waited on #78's worker/request pair; the numeral file
     # renders through #78's worker AND #79's version-pinned template, so its key is
     # a conjunction over both stories' symbols (the "#71" precedent: the render
     # alone does not make the case runnable). The symbol tuples live in
     # `tests/support/judge_vocabulary.py` — the single bet the two suites share;
     # that module imports nothing from here, so the key import is acyclic.
-    "#78 scoring isolation (TS-30)": (
-        "symbols",
-        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_JUDGE_SYMBOLS),
-        ("tests/artifact/test_scoring_isolation.py",),
-    ),
+    #
+    # The "#78 scoring isolation (TS-30)" entry stood here: its conjunction over
+    # `TS30_JUDGE_SYMBOLS` resolved when #78 landed `aeh.judge`, and
+    # `test_scoring_isolation.py` lost its marker and rejoined the fast tier. The
+    # vocabulary's `TS30_JUDGE_SYMBOLS` tuple stays in `judge_vocabulary.py` — the
+    # "#79" entry's conjunction below is built from the sibling tuple, and the
+    # shared bet is the two suites'.
     "#79 judge prompt (TS-30)": (
         # The numeral file's world also runs the EXTRACT leg to put evidence rows
         # into the store (the "#71 TS-27" shape: a conjunction over both modules),
