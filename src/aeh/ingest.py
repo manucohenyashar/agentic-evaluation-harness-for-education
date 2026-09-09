@@ -2468,8 +2468,7 @@ class Ingestor:
             # review B1: the crop path was rendering the unsanitized original).
             sanitized_of: dict[str, bytes] = {}
             for blob_hash in blobs:
-                deadline = time.monotonic() + self._configured_seconds(
-                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                deadline = self._file_deadline(blob_hash)
                 pdf_bytes = self._blobs.get(blob_hash)
                 # FR-INGEST-33/34: neutralize and bound BEFORE any page is
                 # rasterized, and rasterize only the sanitized copy. A refusal
@@ -2483,16 +2482,12 @@ class Ingestor:
                     LOGGER.info(
                         "neutralized %s in source blob %s before rasterization",
                         ", ".join(sanitized.neutralized), blob_hash[:12])
-                if time.monotonic() >= deadline:
-                    raise IngestSanitizeError(
-                        f"source blob {blob_hash[:12]} exceeded the wall-clock "
-                        "ceiling before rasterization (FR-INGEST-34).")
+                self._refuse_past_deadline(blob_hash, deadline,
+                                           "before rasterization")
                 pages = self._rasterizer.rasterize(sanitized.pdf_bytes, dpi)
                 self._check_rasters(blob_hash, pages)
-                if time.monotonic() >= deadline:
-                    raise IngestSanitizeError(
-                        f"source blob {blob_hash[:12]} exceeded the wall-clock "
-                        "ceiling during rasterization (FR-INGEST-34).")
+                self._refuse_past_deadline(blob_hash, deadline,
+                                           "during rasterization")
                 if not pages:
                     raise IngestError(
                         f"source blob {blob_hash} rasterized to zero pages — a PDF "
@@ -2949,10 +2944,14 @@ class Ingestor:
         Every failure is a refusal (`NFR-INGEST-08`): a sanitizer exception of any
         kind, unremovable active content, or a crossed bound raises
         `IngestSanitizeError` — quarantine in the submission path, the teacher
-        surfacing in the setup-artifact path (`FR-INGEST-32`). The wall-clock
-        ceiling rides in as `deadline` (per source file, checked at the decode
-        boundaries); the byte and object ceilings are enforced inside the
-        sanitizer's walk, mid-stream."""
+        surfacing in the setup-artifact path (`FR-INGEST-32`). The guard is
+        fail-closed at EVERY bound-check site, the post-sanitize evaluations
+        included: a fault injected there resolves to the declared refusal on
+        both paths, never to a foreign exception or to processing (#231,
+        closing the note-level disclosure PR #209 recorded against SEC-07).
+        The wall-clock ceiling rides in as `deadline` (per source file, checked
+        at the decode boundaries); the byte and object ceilings are enforced
+        inside the sanitizer's walk, mid-stream."""
         strip = self._configured_bool(STRIP_ACTIVE_CONTENT_ENV,
                                       DEFAULT_STRIP_ACTIVE_CONTENT)
         try:
@@ -2972,37 +2971,52 @@ class Ingestor:
             raise IngestSanitizeError(
                 f"source blob {blob_hash[:12]} could not be sanitized: "
                 f"{error!r}") from error
-        if result.unremovable:
+        try:
+            if result.unremovable:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} carries active content that "
+                    f"cannot be removed ({', '.join(result.unremovable)}): "
+                    "quarantined, never transcribed (FR-INGEST-33).")
+            if result.bounds_crossed:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} crossed a resource ceiling "
+                    f"({', '.join(result.bounds_crossed)}): quarantined rather "
+                    "than allocated for (FR-INGEST-34).")
+            max_pages = self._configured_int(MAX_PAGES_ENV, DEFAULT_MAX_PAGES)
+            if result.page_count is not None \
+                    and pages_used + result.page_count > max_pages:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} would take the document to "
+                    f"{pages_used + result.page_count} pages, over the "
+                    f"{max_pages}-page ceiling: quarantined rather than "
+                    "rasterized (FR-INGEST-34).")
+            max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
+                                              DEFAULT_MAX_IMAGE_PIXELS)
+            dpi = _configured_dpi()
+            oversized = [
+                index + 1
+                for index, (width_pt, height_pt) in enumerate(result.page_sizes_pt)
+                if width_pt * dpi / 72.0 * (height_pt * dpi / 72.0) > max_pixels
+            ]
+            if oversized or result.max_declared_image_px > max_pixels:
+                raise IngestSanitizeError(
+                    f"source blob {blob_hash[:12]} carries an image over the "
+                    f"{max_pixels}-pixel ceiling (pages {oversized}, largest "
+                    f"declared image {result.max_declared_image_px}px): "
+                    "quarantined before any render allocates for it "
+                    "(FR-INGEST-34).")
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter:
+            # ANY fault inside a post-sanitize bound evaluation — a fault-
+            # injected one included — fails closed to the declared refusal.
+            # The submission path's V0 loop already caught everything; this is
+            # the same guard for the setup path, where the refusal raises to
+            # the uploading teacher instead of quarantining (#231, closing the
+            # note-level disclosure PR #209 recorded against SEC-07).
             raise IngestSanitizeError(
-                f"source blob {blob_hash[:12]} carries active content that cannot "
-                f"be removed ({', '.join(result.unremovable)}): quarantined, "
-                "never transcribed (FR-INGEST-33).")
-        if result.bounds_crossed:
-            raise IngestSanitizeError(
-                f"source blob {blob_hash[:12]} crossed a resource ceiling "
-                f"({', '.join(result.bounds_crossed)}): quarantined rather than "
-                "allocated for (FR-INGEST-34).")
-        max_pages = self._configured_int(MAX_PAGES_ENV, DEFAULT_MAX_PAGES)
-        if result.page_count is not None \
-                and pages_used + result.page_count > max_pages:
-            raise IngestSanitizeError(
-                f"source blob {blob_hash[:12]} would take the document to "
-                f"{pages_used + result.page_count} pages, over the {max_pages}-page "
-                "ceiling: quarantined rather than rasterized (FR-INGEST-34).")
-        max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
-                                          DEFAULT_MAX_IMAGE_PIXELS)
-        dpi = _configured_dpi()
-        oversized = [
-            index + 1
-            for index, (width_pt, height_pt) in enumerate(result.page_sizes_pt)
-            if width_pt * dpi / 72.0 * (height_pt * dpi / 72.0) > max_pixels
-        ]
-        if oversized or result.max_declared_image_px > max_pixels:
-            raise IngestSanitizeError(
-                f"source blob {blob_hash[:12]} carries an image over the "
-                f"{max_pixels}-pixel ceiling (pages {oversized}, largest declared "
-                f"image {result.max_declared_image_px}px): quarantined before any "
-                "render allocates for it (FR-INGEST-34).")
+                f"source blob {blob_hash[:12]} failed closed in a post-sanitize "
+                f"bound evaluation: {error!r} (NFR-INGEST-08).") from error
         return result
 
     def _check_rasters(self, blob_hash: str, pages: Sequence[PageImage]) -> None:
@@ -3015,23 +3029,70 @@ class Ingestor:
         resolution on either linear dimension: the design denominates the floor
         in DPI, and the raster the module can actually measure is the page's
         linear extent in px, so that extent is the measured resolution the
-        refusal names (the F4 probe: a 50x70 px page refuses; #227)."""
-        max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
-                                          DEFAULT_MAX_IMAGE_PIXELS)
-        floor = _configured_resolution_floor()
-        for page in pages:
-            if page.width_px * page.height_px > max_pixels:
-                raise IngestSanitizeError(
-                    f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
-                    f"to {page.width_px}x{page.height_px}, over the {max_pixels}-"
-                    "pixel ceiling (FR-INGEST-34).")
-            if min(page.width_px, page.height_px) < floor:
-                raise IngestSanitizeError(
-                    f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
-                    f"to {page.width_px}x{page.height_px}px, below the profile's "
-                    f"{floor}px resolution floor ({RESOLUTION_FLOOR_ENV}): an "
-                    "artifact below the floor cannot carry a legible "
-                    "transcription and quarantines as unreadable (FR-INGEST-21).")
+        refusal names (the F4 probe: a 50x70 px page refuses; #227). Fail-closed
+        like every bound evaluation: a fault here resolves to the declared
+        refusal, never to processing and never to a foreign exception
+        (NFR-INGEST-08, #231)."""
+        try:
+            max_pixels = self._configured_int(MAX_IMAGE_PIXELS_ENV,
+                                              DEFAULT_MAX_IMAGE_PIXELS)
+            floor = _configured_resolution_floor()
+            for page in pages:
+                if page.width_px * page.height_px > max_pixels:
+                    raise IngestSanitizeError(
+                        f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
+                        f"to {page.width_px}x{page.height_px}, over the {max_pixels}-"
+                        "pixel ceiling (FR-INGEST-34).")
+                if min(page.width_px, page.height_px) < floor:
+                    raise IngestSanitizeError(
+                        f"source blob {blob_hash[:12]} page {page.page_no} rasterized "
+                        f"to {page.width_px}x{page.height_px}px, below the profile's "
+                        f"{floor}px resolution floor ({RESOLUTION_FLOOR_ENV}): an "
+                        "artifact below the floor cannot carry a legible "
+                        "transcription and quarantines as unreadable (FR-INGEST-21).")
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} failed closed at the raster "
+                f"pixel-bound check: {error!r} (NFR-INGEST-08).") from error
+
+    def _file_deadline(self, blob_hash: str) -> float:
+        """The per-source-file wall-clock deadline (`FR-INGEST-34`): now plus the
+        `MAX_FILE_SECONDS` ceiling. The ceiling's read is itself a bound
+        evaluation, so a fault inside it fails closed to the declared refusal
+        (NFR-INGEST-08, #231); on the setup path that refusal raises to the
+        uploading teacher (FR-INGEST-32). A malformed ceiling value keeps its
+        own declared `IngestError`."""
+        try:
+            return time.monotonic() + self._configured_seconds(
+                MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} failed closed at the wall-clock "
+                f"ceiling read: {error!r} (NFR-INGEST-08).") from error
+
+    def _refuse_past_deadline(self, blob_hash: str, deadline: float,
+                              phase: str) -> None:
+        """The wall-clock ceiling's boundary reads (`FR-INGEST-34`): past the
+        deadline the artifact is refused, and a fault inside the read itself
+        fails closed to the same declared refusal (NFR-INGEST-08, #231). On the
+        setup path this refusal raises to the uploading teacher — a setup
+        artifact has no operator to quarantine to (FR-INGEST-32)."""
+        try:
+            exceeded = time.monotonic() >= deadline
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} failed closed at the wall-clock "
+                f"boundary read: {error!r} (NFR-INGEST-08).") from error
+        if exceeded:
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} exceeded the wall-clock ceiling "
+                f"{phase} (FR-INGEST-34).")
 
     def read_document(self, document_id: DocumentId) -> str:
         """The document's canonical Markdown, as stored (`FR-INGEST-01`'s immutable
@@ -3105,8 +3166,7 @@ class Ingestor:
                     # bound stage applies, per blob (a revised document's total
                     # page count was already bounded when it was first ingested;
                     # the rescans are one-page sources).
-                    deadline = time.monotonic() + self._configured_seconds(
-                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    deadline = self._file_deadline(blob_hash)
                     sanitized = self._sanitize_source(
                         blob_hash, self._blobs.get(blob_hash), pages_used=0,
                         deadline=deadline)
@@ -3116,9 +3176,13 @@ class Ingestor:
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
                     sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "before re-rasterization")
                     raster_cache[blob_hash] = self._rasterizer.rasterize(
                         sanitized.pdf_bytes, dpi)
                     self._check_rasters(blob_hash, raster_cache[blob_hash])
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "during re-rasterization")
                 return raster_cache[blob_hash]
 
             if page_sequence is not None:
@@ -3186,8 +3250,7 @@ class Ingestor:
                 position = 0
                 for blob_hash in source_blobs:
                     pdf_bytes = self._blobs.get(blob_hash)
-                    deadline = time.monotonic() + self._configured_seconds(
-                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    deadline = self._file_deadline(blob_hash)
                     # The legacy-provenance branch rasterizes whole sources the
                     # same way: sanitized copy only (FR-INGEST-33).
                     sanitized = self._sanitize_source(blob_hash, pdf_bytes,
@@ -3199,9 +3262,13 @@ class Ingestor:
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
                     sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "before re-rasterization")
                     legacy_pages = self._rasterizer.rasterize(sanitized.pdf_bytes,
                                                               dpi)
                     self._check_rasters(blob_hash, legacy_pages)
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "during re-rasterization")
                     for page in legacy_pages:
                         position += 1
                         replacement = replacements.pop(page.page_no, None)
@@ -3485,8 +3552,7 @@ class Ingestor:
         for blob_hash in blobs:
             pdf_bytes = self._blobs.get(blob_hash)
             try:
-                deadline = time.monotonic() + self._configured_seconds(
-                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                deadline = self._file_deadline(blob_hash)
                 sanitized = self._sanitize_source(blob_hash, pdf_bytes,
                                                   pages_used=pages_used,
                                                   deadline=deadline)
