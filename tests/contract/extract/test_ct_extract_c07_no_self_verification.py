@@ -2,9 +2,10 @@
 (`TC-EXTRACT-C07`).
 
 Case of test plan §6.11.8; issue #72 (TS-65). Written ahead of #68 (`M-EXTRACT`) and
-#73/#74 (`M-INTEG`, the rung-3 half); registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction contract suite (TS-65)"` (rung-2 tests) and `"#73+#74 extraction
-contract sweeps (TS-65)"` (the rung-3 test, node ID — the file mixes blockers).
+#73 (`M-INTEG`'s `verify_span`, the rung-3 half); registered in
+`WRITTEN_AHEAD_BLOCKERS` under `"#68 extraction contract suite (TS-65)"` (rung-2
+tests) and `"#73 extraction contract sweep (TS-65)"` (the rung-3 test, node ID —
+the file mixes blockers).
 
 The clause: the module generates no work for a `deterministic` criterion (FR-EXTRACT-06)
 and performs no verification of its own output — that is `M-INTEG`, deliberately (R19,

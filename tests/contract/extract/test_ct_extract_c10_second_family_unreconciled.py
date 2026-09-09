@@ -3,8 +3,9 @@ never picks a winner (`TC-EXTRACT-C10`).
 
 Case of test plan §6.11.8; issue #72 (TS-65). Written ahead of #68 (`M-EXTRACT`) and
 #69 (the Phase-2 second-family mechanism); registered in `WRITTEN_AHEAD_BLOCKERS`
-under `"#69 extraction contract second family (TS-65)"` — the full conjunction
-(`ExtractionWorker` and `second_family_model`), as the TS-26 second-family file keys.
+under `"#69 extraction contract second family (TS-65)"` — the suite's full TS-26
+conjunction plus `second_family_model` (this file resolves the whole surface through
+`require_extract_surface`, unlike the TS-26 integration file's two-name key).
 
 The clause: where a second-family extraction runs (high-risk criteria, Phase 2),
 **both** span sets are persisted for comparison rather than reconciled here
