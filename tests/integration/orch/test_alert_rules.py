@@ -127,3 +127,49 @@ def test_tc_orch_36_any_pause_fires_alone():
         f"a paused run fired {fired} — the plan's fifth condition is 'a run "
         "paused for any reason'; it must fire alone"
     )
+
+
+def test_tc_orch_36_just_outside_the_thresholds_fires_nothing():
+    """The negative boundary, where the design pins a number: escalation just
+    UNDER the 0.30 budget and cost just under the 10%-of-ceiling warning band
+    fire nothing. Without it, any threshold in (healthy, breached] passes the
+    single-breach cases — a mis-calibrated threshold that cries wolf at 6% or
+    stays silent until the pause would land identically here."""
+    fired_rate = _fired(**_healthy(escalation_rate=0.29))
+    assert not fired_rate, (
+        f"escalation rate 0.29, just under the pinned 0.30 budget, fired "
+        f"{fired_rate} — the budget is ORCH_ESCALATION_BUDGET and the alert "
+        "fires ABOVE it, not at or under it"
+    )
+    fired_cost = _fired(**_healthy(cost=85.0, cost_ceiling=100.0))
+    assert not fired_cost, (
+        f"cost at 85% of the ceiling fired {fired_cost} — the design's "
+        "warning band is 'within 10% of ceiling'; 15% out is healthy headroom "
+        "and an alert there trains the operator to ignore the channel"
+    )
+
+
+def test_tc_orch_36_the_five_conditions_fire_distinct_alerts():
+    """OBS-05's second clause, enforced: the fired sets across all five
+    breaches are pairwise DISJOINT. Exactly-one-per-breach is satisfiable by
+    one universal alert fired for every condition — the operator then cannot
+    tell WHICH condition fired, and every runbook response is a guess."""
+    breaches = {
+        "escalation_rate": _healthy(escalation_rate=0.31),
+        "breaker": _healthy(breaker_tripped=True),
+        "cost": _healthy(cost=95.0, cost_ceiling=100.0),
+        "cache_hit_rate": _healthy(cache_hit_rate=0.0),
+        "pause": _healthy(paused=True),
+    }
+    fired_sets = {label: set(_fired(**state)) for label, state in breaches.items()}
+    labels = list(fired_sets)
+    for i, first in enumerate(labels):
+        for second in labels[i + 1:]:
+            assert fired_sets[first].isdisjoint(fired_sets[second]), (
+                f"the {first!r} and {second!r} breaches fired overlapping "
+                f"alert(s) {sorted(fired_sets[first] & fired_sets[second])} "
+                f"(all sets: { {k: sorted(v) for k, v in fired_sets.items()} }) "
+                "— each condition's alert must be identifiable as ITS "
+                "condition's (OBS-05: fires on its own condition and not on "
+                "the others)"
+            )
