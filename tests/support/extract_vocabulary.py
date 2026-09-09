@@ -185,3 +185,45 @@ def sampling_params() -> Any:
     from aeh.prov import SamplingParams
 
     return SamplingParams(temperature=0.0)
+
+
+# --- TS-65 (#72), the contract suite -------------------------------------------------------
+#
+# The contract suite (`tests/contract/extract/`) extends this file rather than inventing a
+# second surface. Three additions, each with its status:
+
+#: HLD §9.9's `ExtractionResult`, **verbatim field names**. `CT-EXTRACT-02`'s oracle is set
+#: equality against the declared schema, so the schema must be a constant, not a re-derivation.
+#: Note the deliberate split with TS-26's row bet: the RESULT type carries `extractor` (§9.9's
+#: own name); the **evidence row column** is read as `resolved_build` (the row bet above). If
+#: #68 ships the result field under the row's name, the rename is one line here.
+RESULT_FIELDS = ("work_id", "spans", "extractor", "notes")
+
+#: HLD §9.9's `ExtractionRequest`, verbatim field names, **in declaration order** — the
+#: `submission` field is ALWAYS LAST (§8.4), which is order, not a set. `CT-EXTRACT-04`'s
+#: type-level rejection and `CT-EXTRACT-06`'s ordering half both key on this tuple.
+REQUEST_FIELDS = ("work_id", "criterion", "question", "dependency_evidence", "submission")
+
+#: One span, per design §3.8 ("exactly as HLD §9.9 specifies, with the addition of a
+#: `region_kind` marker per span" — FR-EXTRACT-09). `CT-EXTRACT-01` and `CT-EXTRACT-09`
+#: assert over this tuple.
+SPAN_FIELDS = ("start", "end", "text", "region_kind")
+
+#: `CT-EXTRACT-14`'s observability surface. **Invented here**: the clause names four metrics
+#: ("spans-per-unit distribution, empty-result rate per criterion, second-family disagreement
+#: rate, and extraction latency") and the *reading* on the second, but no channel and no
+#: spelling. The channel is the `aeh.ingest` `run_aggregates` precedent — one module-level
+#: emitter over the store returning the named signals — and the names are the plan's words in
+#: snake case. `empty_result_rate` is keyed **per criterion** (the clause's stated reading is
+#: per-criterion; the aggregate cannot support it).
+METRICS_ACCESSOR = "extraction_metrics"
+EXTRACT_METRIC_NAMES = (
+    "spans_per_unit",
+    "empty_result_rate",
+    "second_family_disagreement_rate",
+    "extraction_latency",
+)
+
+#: The TS-65 conjunction: every `aeh.extract` symbol the contract suite resolves. Built here
+#: so the registry cannot drift from the tests — the same construction as `TS26_EXTRACT_SYMBOLS`.
+TS65_EXTRACT_SYMBOLS = TS26_EXTRACT_SYMBOLS + (METRICS_ACCESSOR,)
