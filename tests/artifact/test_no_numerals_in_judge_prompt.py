@@ -1,8 +1,10 @@
 """`TC-JUDGE-08`, `TC-JUDGE-12`, `TC-JUDGE-13`, `ADV-05` — the numeral prohibition,
 the prefix cache and the template order, at the rendered prompt (`M-JUDGE`).
 Test plan §5.10/§6.6; `FR-JUDGE-03/04/06/07/08`, `NFR-JUDGE-02`; RISK-04 (Critical).
-Issue #82 (TS-30), written ahead of #78 (the worker/request pair) and #79 (the
-version-pinned template the numeral prohibition and the prefix cache live in).
+Issue #82 (TS-30), written ahead of #78 (the worker/request pair), #79 (the
+version-pinned template the numeral prohibition and the prefix cache live in) AND
+#68 (the extract leg this file's world runs to put evidence rows in the store —
+the `"#71 TS-27"` precedent for a conjunction over both modules).
 
 Cases implemented here, keyed to the plan's steps:
 
@@ -48,6 +50,7 @@ Cases implemented here, keyed to the plan's steps:
 | `ScoringWorker(store, provider, judge_ref)` | the `test_judge_band_forcing.py` constructor bet — this file's world is rung 2, so the triple is the bet that makes the provider and store real |
 | `assemble(unit) -> ScoringRequest` reading the criterion's evidence rows from the store | the band-forcing suite's disclosed assumption, reused |
 | `prompt_fields(request) -> payload` (ordered `.fields`) | **already assumed by the repo** (`"#78 review"`); the byte-level views render through it |
+| `dispatch(req, judge) -> ScoringResult` then `persist(unit, res)` | §3.10 Interfaces, verbatim — ADV-05c's outcome cell drives both; the refusal MECHANISM (retry, quarantine, exception type) is #78's, the invariant is not (the band-forcing suite's disclosure) |
 | `JUDGE_PROMPT_TEMPLATE_V` | design-named (§3.10 Configuration); #79's key — `require`d so the file stays red until the template constant lands, not merely the worker |
 | the verdict row's `band_ordinal`/`self_confidence` columns | **assumed beyond migration-001** (the TS-27 disclosure): FR-JUDGE-11/13 put them on the row, so #78 extends the DDL |
 | rendered field names carry their surface (`band`, `criterion`, `exemplar`, `evidence`, submission last) | the classifier bet: HLD §9.9's field list names the surfaces; a renderer that renames them re-classifies with a one-line change here — disclosed |
@@ -92,6 +95,7 @@ from aeh.store import open_store
 from tests.support.conf_builders import EDGE_JUDGE, edge_cfg, edge_panel
 from tests.support.extract_vocabulary import (
     ASSEMBLE,
+    EXTRACT_ISSUE,
     PROMPT_FIELDS as EXTRACT_PROMPT_FIELDS,
     WORKER as EXTRACT_WORKER,
     extractor_ref,
@@ -109,6 +113,7 @@ from tests.support.judge_vocabulary import (
     WORKER,
     fields_of,
     offending_numeral,
+    string_leaves,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
@@ -116,6 +121,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
 _JUDGE_ISSUE = JUDGE_ISSUE
 _PROMPT_ISSUE = PROMPT_ISSUE
+_EXTRACT_ISSUE = EXTRACT_ISSUE
 
 #: The declared set — an EVEN count, ordered by ordinal, `bands[-1]` the highest
 #: (`FR-PKG-06`), points summing to the criterion's `max_points` of 4, and no numeral
@@ -244,10 +250,10 @@ def _world(
     run_id = orchestrator.create_run(ORCH_COHORT_ID, version, _resolved())
 
     AssembleRequest, ExtractWorker = require(
-        EXTRACT_MODULE, ASSEMBLE, EXTRACT_WORKER, issue=_JUDGE_ISSUE
+        EXTRACT_MODULE, ASSEMBLE, EXTRACT_WORKER, issue=_EXTRACT_ISSUE
     )
     extract_prompt_fields = require(
-        EXTRACT_MODULE, EXTRACT_PROMPT_FIELDS, issue=_JUDGE_ISSUE
+        EXTRACT_MODULE, EXTRACT_PROMPT_FIELDS, issue=_EXTRACT_ISSUE
     )
     model_ref = extractor_ref()
     extract_units = {
@@ -361,11 +367,7 @@ def test_tc_judge_08_step1_no_points_or_scale_field_at_any_depth(
                        submissions=("s-scale",), criteria=_WORLD_CRITERIA[:1])
         request = world["requests"][("s-scale", "C-N1")]
 
-        names: list[str] = []
-        for path, _leaf in __import__(
-            "tests.support.judge_vocabulary", fromlist=["string_leaves"]
-        ).string_leaves(request):
-            names.append(path.rsplit(".", 1)[-1] if "." in path else path)
+        names = [path.rsplit(".", 1)[-1] for path, _leaf in string_leaves(request)]
         annotations = getattr(ScoringRequest, "__annotations__", None) or {}
         names.extend(str(name) for name in annotations)
 
@@ -435,12 +437,13 @@ def test_tc_judge_08_step3_bands_are_ordered_pairs_drawn_from_criterion_band(
                               submissions=("s-bands",),
                               criteria=_WORLD_CRITERIA[:1])
         criterion_id = "C-N1"
-        declared = [b.band for b in world["catalog"].bands(criterion_id)]
+        declared = [b["band"] for b in world["catalog"].bands(criterion_id)]
         assert len(declared) == len(_BANDS) and len(declared) % 2 == 0, (
             "fixture bug: the declared set is not the even ordered set the "
             "requirement names"
         )
-        descriptors = {b.band: b.descriptor for b in world["catalog"].bands(criterion_id)}
+        descriptors = {b["band"]: b["descriptor"]
+                       for b in world["catalog"].bands(criterion_id)}
 
         request = world["requests"][("s-bands", criterion_id)]
         fields = fields_of(prompt_fields, request)
@@ -619,7 +622,7 @@ def test_adv_05c_the_numeral_submission_does_not_move_the_band(
             criteria=_WORLD_CRITERIA[:1],
             tails={"s-attack": _ATTACK_PHRASE},
         )
-        declared = [b.band for b in world["catalog"].bands("C-N1")]
+        declared = [b["band"] for b in world["catalog"].bands("C-N1")]
         control_band = "secure"
         control_confidence = 0.62
         assert control_band in declared
