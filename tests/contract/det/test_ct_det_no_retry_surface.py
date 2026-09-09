@@ -218,15 +218,16 @@ def test_tc_det_c10_a_missing_key_cannot_reach_this_module(tmp_data_dir):
             "'M-keyless'")[0]["n"] == 0
 
         # And the published-shaped half of the same package evaluates clean:
-        # the keyed criterion is scorable the moment the impossible row is
-        # out of the way.
+        # with the key restored (the hand-force undone), the whole package
+        # evaluates — the impossible situation was the key's absence, and
+        # nothing else.
         with package_handle.transaction() as tx:
             tx.execute(
-                "DELETE FROM criterion WHERE package_version_id = :v AND "
-                "criterion_id = 'M-keyless'",
+                "UPDATE criterion SET answer_key = '[\"B\"]' WHERE "
+                "package_version_id = :v AND criterion_id = 'M-keyless'",
                 v=version,
             )
         report = DeterministicEvaluator(store).evaluate_cohort(run_id)
-        assert report.criteria == 1 and report.evaluations == 2
+        assert report.criteria == 2 and report.evaluations == 4
     finally:
         store.close()
