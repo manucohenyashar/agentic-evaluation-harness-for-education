@@ -1699,6 +1699,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_empty_evidence_routes.py",
         ),
     ),
+    "#92 gate+signals+aggregate (TS-66 C08 sufficiency is an extraction problem)": (
+        # Same blocker shape as C07: the positional sweep runs the gate, the static
+        # limb scans the module, and the rung-3 prohibition drives aggregate (#92).
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
+         f"{AGG_MODULE}:aggregate"),
+        (
+            "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
