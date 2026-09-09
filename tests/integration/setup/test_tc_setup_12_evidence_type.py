@@ -56,9 +56,10 @@ def _hand_entered_criterion(chain, version, criterion_id: str,
     """One judged criterion entered through M-PKG's surface — the path the degraded
     read back routes the teacher to. Kind `open` (judged), `holistic` (the unclear
     default a hand entry carries; an `atomic` classification would put the criterion
-    in blocking gate 2's unkeyed set instead), and no `evidence_type` —
-    `add_criterion` has no parameter for one, which is exactly the hole the gate
-    closes."""
+    in blocking gate 2's unkeyed set instead), and no `evidence_type` — the kwarg
+    exists (#232) but the hand entry omits it, which is exactly the hole the gate
+    closes: the write is accepted and the declaration stays NULL until the gate
+    demands it."""
     chain.catalog.add_criterion(
         version, criterion_id, question_id=question_id, scoring_model="holistic",
         max_points=4.0, band_count=2)

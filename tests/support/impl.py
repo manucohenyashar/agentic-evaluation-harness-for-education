@@ -1303,6 +1303,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `evaluation_mode` column that does not exist (16), the cross-story skip sweep whose
     # recorded-default storage is unpinned (17), and calibration-paper intake no surface
     # accepts (18). That is the TC-INGEST-38 precedent; disclosed on the #54 PR.
+    # The TC-SETUP-12 deferral left with #232: migration 8 added the column, #51 (PR
+    # #216) shipped the write half, and #232 the publish refusal — the case runs in
+    # `tests/integration/setup/test_tc_setup_12_evidence_type.py`. It was never a
+    # `WRITTEN_AHEAD_BLOCKERS` entry (deferred, not written ahead), so nothing was
+    # unmarked; the case is listed here only because this note is where the deferral
+    # was recorded.
     # "#52 decomposition" and "#52 dependencies" left with #52: the classifier, the cap
     # constant and the proposal surface landed, and #51's read back (PR #216) supplies
     # the criteria half of the dependencies conjunction — both pending files run green,
