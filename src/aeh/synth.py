@@ -31,13 +31,20 @@ is already stored before it calls the model — a retried synthesis absorbs into
 existing rows (no provider call for a stored identity) and a concurrent duplicate hits
 the declared primary key and conflicts rather than duplicating.
 
-**The score-claim prohibition is #98's mechanism, deliberately not here yet.**
-`FR-SYNTH-03`'s reject-and-re-request ladder hangs off `has_score_claim` and
-`SYNTH_SCORE_CLAIM_PATTERNS` — story #98 ships the check and the configured pattern
-list; until then this module's report carries `rejected_score_claims = 0` and the
-rejection rate 0.0 (no check is configured, so nothing is rejected). The `narrative`
-table already carries the `score_claim_flag` column #98's ladder writes, so the
-schema lands once and does not move under #98.
+**The score-claim prohibition** (`FR-SYNTH-03`, story #98): every
+narrative the model returns is scanned against `SYNTH_SCORE_CLAIM_PATTERNS` — the
+configured pattern list, one enumerable place (`CT-SYNTH-11`), holding the four
+classes FR-SYNTH-03 names. A matching output is rejected and re-requested **once**;
+a second matching output is terminal: the text is stored **with the
+`score_claim_flag` set and suppressed** — from display by the flag a consumer reads,
+and from further composition (an L2 narrative is composed only from unflagged L1
+rows), because a prose verdict above a mark is functionally a second competing grade
+(RISK-19) and feeding suppressed prose to the next level is how a caught claim
+propagates. The stored-but-flagged row (never a deletion) is what keeps the
+rejection-rate metric `CT-SYNTH-12` alerts on countable. The check itself is the
+pure module-level predicate `has_score_claim` (`TC-SYNTH-04`'s rung-0 entry); the
+`narrative` table has carried the `score_claim_flag` column since migration 13, so
+the schema does not move under this story.
 
 **The four seams.** Headless: `synthesize()` and the worker return a structured
 `SynthesisReport` — no console anywhere. Transport: the provider arrives by injection
@@ -94,6 +101,7 @@ import os
 import re
 import sqlite3
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from aeh.orch import (
@@ -233,6 +241,99 @@ SCORE_CLAIM_FLAG = "score_claim_flag"
 _QUESTION_CONVENTION = re.compile(r"\A(Q\d+)C")
 
 
+# --- the score-claim prohibition (FR-SYNTH-03, CT-SYNTH-03/11/13) ----------------------------------
+
+#: The configured score-claim patterns — **the one enumerable place** (`CT-SYNTH-11`):
+#: the four classes FR-SYNTH-03 names, as case-insensitive regex strings. Changing this
+#: list changes what gets suppressed, which makes it externally visible and reviewable
+#: as the contract change it is; there is deliberately no env knob for it (it is the
+#: prohibition's content, not an environment-sensitive constant) and deliberately no
+#: second copy anywhere else in the tree.
+#:
+#: Precision is the point, disclosed: `CT-SYNTH-13` declares the check pattern-based
+#: and weaker than the goal — a paraphrased quality claim ("this is among the
+#: strongest answers") carries no numeral and no listed phrase, and is EXPECTED to
+#: pass. Each class is written to catch the claim a grader would read as a second,
+#: competing grade while passing the legitimate numerals a science answer is full of
+#: ("she calculated 12 kg", "the 2019 reference"): a numeral must sit adjacent to a
+#: mark word, "out of" must sit between numerals, a percentage must carry the sign or
+#: the word, and the holistic class names the graded-object phrasings, so "the
+#: strongest evidence for the hypothesis" is content while "one of the strongest
+#: answers in the class" is a verdict. The negative fixtures the design names are
+#: pinned by `TC-SYNTH-04`/`TC-SYNTH-C13`.
+SYNTH_SCORE_CLAIM_PATTERNS: tuple[str, ...] = (
+    # (1) A numeral adjacent to a mark, score or grade word — "earned 17 marks",
+    #     "17 points", "a mark of 17", "a score of 17", "total score: 17", "a grade
+    #     of 7". The numeral-then-word form catches the adjacency; the word-then-
+    #     numeral form covers the nouns the prohibition is NAMED for — "a score of
+    #     17" is exactly the second, competing grade RISK-19 describes, so the word
+    #     "score" cannot be absent from its own net (the reviewer's #98 finding).
+    #     Known costs, accepted on purpose and disclosed: "she plotted 3 points on
+    #     the graph" matches the numeral-first form, and the content reading of
+    #     "a score of 3 on the Mohs scale" / "a z-score of 1.5" matches the
+    #     word-first form; a false positive at temperature 0.0 re-requests into the
+    #     same phrasing and ends suppressed, not corrected — the reviewer-visible
+    #     trade is that the claim forms reach the net, and the content forms that
+    #     collide with them are rarer in feedback prose than the claims are.
+    #     "Mark scheme" alone never matches (no numeral), and "score"/"grade" with
+    #     no separator numeral ("the score was high") do not match either.
+    r"\b\d+(?:\.\d+)?\s*(?:marks?|points)\b",
+    r"\b(?:marks?|scores?|grades?)\s*(?:of|for|=|:)\s*\d+(?:\.\d+)?\b",
+    # (2) "Out of" between numerals — "17 out of 20". Both sides numeric: a bare
+    #     "out of the three trials" is content, not a mark. Deliberately out of the
+    #     net, for the reviewer's #98 record: the fraction form "17/20" (it collides
+    #     with the "3/4" of a maths answer) and "17 out of a possible 20" (the
+    #     numeral must sit directly before "out of", or "2 out of the three trials
+    #     succeeded" — content — matches) are NOT caught; a reviewer tightening the
+    #     net starts here.
+    r"\b\d+(?:\.\d+)?\s+out\s+of\s+\d+(?:\.\d+)?\b",
+    # (3) A percentage — "top 90%", "90 percent", "90 per cent".
+    r"\b\d+(?:\.\d+)?\s*(?:%|percent(?:age)?\b|\bper\s+cent\b)",
+    # (4) A holistic quality phrase — an overall-quality verdict on the work.
+    #     "one of the strongest answers in the class" is ADV-11's named attack;
+    #     "among the strongest" and "a model response" are CT-SYNTH-C13's declared
+    #     pass-throughs, and the graded-object nouns keep science prose
+    #     ("the strongest evidence for the hypothesis") out of the net. The
+    #     "one of the most ..." branch carries the same graded-object constraint
+    #     (the reviewer's #98 finding): "one of the most impressive submissions" is
+    #     a verdict and matches, while "one of the most common misconceptions" —
+    #     ordinary feedback prose a temperature-0.0 re-request could not rephrase —
+    #     passes.
+    r"\bone of the (?:strongest|best|finest|weakest|poorest|"
+    r"most\s+(?:\w+\s+)?(?:answers?|submissions?|responses?|scripts?|"
+    r"pieces\s+of\s+work|attempts?|essays?))\b",
+    r"\b(?:strongest|best|finest|weakest)\s+"
+    r"(?:answers?|submissions?|responses?|scripts?|pieces\s+of\s+work)\s+"
+    r"in\s+the\s+(?:class|cohort)\b",
+    r"\btop of the (?:class|cohort)\b",
+    r"\b(?:an?\s+)?(?:excellent|outstanding|superb|exceptional)\s+"
+    r"(?:answers?|submissions?|responses?|pieces?\s+of\s+work|standard)\b",
+)
+
+
+@lru_cache(maxsize=8)
+def _compiled_score_claim_patterns(
+    patterns: tuple[str, ...],
+) -> tuple["re.Pattern[str]", ...]:
+    """The pattern list compiled, cached by VALUE — a changed list (CT-SYNTH-11's
+    externally visible change) recompiles, the same list never does."""
+    return tuple(re.compile(pattern, re.IGNORECASE) for pattern in patterns)
+
+
+def has_score_claim(text: str) -> bool:
+    """The score-claim predicate (`FR-SYNTH-03`): True when the text matches any
+    configured pattern — a numeral-bearing score claim or an overall-quality verdict.
+
+    Pure and total (`TC-SYNTH-04`): a `bool` for every input, never a raise — the
+    re-request ladder branches on this predicate, so a crash here would be a crash on
+    whatever the model replies next. Case-insensitive over `SYNTH_SCORE_CLAIM_PATTERNS`
+    as compiled at the call; an empty pattern list rejects nothing."""
+    return any(
+        pattern.search(text) is not None
+        for pattern in _compiled_score_claim_patterns(tuple(SYNTH_SCORE_CLAIM_PATTERNS))
+    )
+
+
 def _env_float(name: str, default: float) -> float:
     """A float knob, read at call time: absent means the default, anything unparsable
     is REFUSED — a knob that guesses is a lie the deployment cannot see."""
@@ -321,6 +422,9 @@ class SynthesisReport:
 
     `model_calls` counts the provider calls actually made (retries included);
     `narratives` and `failures` are the failure rate's stored and failed counts;
+    `rejected_score_claims` counts the model outputs the score-claim check rejected
+    (re-requested, and terminal-flagged when the claim repeated), and
+    `score_claim_rejection_rate` reads that count over the outputs actually parsed —
     `sample` is the quality sample drawn for `M-STATS` with `sample_size` attached;
     the two citation rates are `None` exactly when the sample is empty.
     """
@@ -466,6 +570,14 @@ class SynthesisWorker:
         self._model_ref = model_ref
         self._max_output_tokens = max_output_tokens
         self._model_calls = 0
+        # The score-claim ladder's counters (`CT-SYNTH-12`): every model output that
+        # parsed carries a claim check, and every claim it carried is a rejection the
+        # report owes the operator. They are inputs to the report, and the report is
+        # per driver call, so `synthesize_submission` resets them at entry — a worker
+        # reused across submissions reports each submission's rejection rate, not a
+        # lifetime blend (`_model_calls` follows the same per-call scope).
+        self._parsed_outputs = 0
+        self._rejected_score_claims = 0
 
     # -- resolution -------------------------------------------------------------------------
 
@@ -590,11 +702,20 @@ class SynthesisWorker:
 
     # -- the model call and the write -------------------------------------------------------
 
-    def _call(self, payload: PromptPayload) -> tuple[str, tuple[str, ...]]:
+    def _call(self, payload: PromptPayload) -> "tuple[str, tuple[str, ...], bool]":
         """One narrative's call: the strike budget (`HARNESS_SYNTH_MAX_ATTEMPTS`,
         defaulting to the ledger's own ceiling — one knob, one owner) against
-        transport and parse failures alike. Raises the last error when the budget
-        runs out; the caller records the failure and moves on (`CT-SYNTH-08`)."""
+        transport and parse failures alike, and the score-claim ladder
+        (`CT-SYNTH-03`) over every output that parses.
+
+        The ladder is the design's own two-step, not a knob: an output matching
+        `SYNTH_SCORE_CLAIM_PATTERNS` is rejected and re-requested **once**; a second
+        matching output is terminal — returned with its flag set, so the caller stores
+        it suppressed rather than shown (`CT-SYNTH-03`), and the rejection is counted
+        for the rate `CT-SYNTH-12` alerts on. Returns `(text, citations, flagged)`;
+        raises the last error when the transport/parse budget runs out, and the caller
+        records the failure and moves on (`CT-SYNTH-08` — nothing here fails a
+        grade)."""
         params = SamplingParams(
             temperature=0.0,
             max_tokens=(
@@ -605,22 +726,53 @@ class SynthesisWorker:
         )
         budget = _env_int(MAX_ATTEMPTS_SYNTH_ENV, ORCH_MAX_ATTEMPTS)
         last_error: Exception | None = None
+        claims_seen = 0
         for _attempt in range(1, budget + 1):
             try:
                 self._model_calls += 1
                 completion = self._provider.complete(payload, self._model_ref, params)
-                return parse_narrative(completion.text)
+                text, citations = parse_narrative(completion.text)
             except (ProviderError, ValueError) as error:
                 last_error = error
+                continue
+            self._parsed_outputs += 1
+            if not has_score_claim(text):
+                return text, citations, False
+            claims_seen += 1
+            self._rejected_score_claims += 1
+            if claims_seen >= 2:
+                # The re-request also claimed: stored flagged and suppressed, never
+                # shown — and never deleted, which would erase the count above.
+                LOGGER.warning(
+                    "narrative claimed a score twice — stored with %s set and "
+                    "suppressed rather than shown (CT-SYNTH-03)",
+                    SCORE_CLAIM_FLAG,
+                )
+                return text, citations, True
+            # First claim: rejected and re-requested — exactly one more attempt.
+            LOGGER.info("narrative rejected on a score claim — re-requested once")
+        if claims_seen:
+            # The budget ran out while a claim was outstanding — with a very small
+            # knob the model DID answer, it claimed; the error must say that, not
+            # "did not answer".
+            raise ValueError(
+                f"synthesis produced no acceptable narrative after {budget} attempts: "
+                f"the last output claimed a score and no clean replacement arrived "
+                f"(last transport/parse error: {last_error})"
+            )
         raise ValueError(f"synthesis did not answer after {budget} attempts: {last_error}")
 
     def _store_narrative(self, cohort: Any, *, run_id: str, submission_id: str,
                          level: str, question_id: str, text: str,
-                         citations: tuple[str, ...]) -> bool:
+                         citations: tuple[str, ...],
+                         score_claim_flag: int = 0) -> bool:
         """One narrative row, keyed `(run_id, submission_id, level, question_id)`
-        (ADR-8). Returns False when the key already holds a narrative: the declared
-        primary key conflicted the duplicate instead of storing a second row, which
-        is the retried unit's contract — the first narrative stands."""
+        (ADR-8). `score_claim_flag` is the suppression flag CT-SYNTH-03 stores: 0 for
+        a narrative that passed the check, 1 for the twice-claiming text kept for the
+        record but withheld from display. Returns False when the key already holds a
+        narrative: the declared primary key conflicted the duplicate instead of
+        storing a second row, which is the retried unit's contract — the first
+        narrative stands."""
         try:
             with cohort.transaction() as tx:
                 tx.execute(
@@ -634,7 +786,7 @@ class SynthesisWorker:
                     question_id=question_id,
                     text=text,
                     citations=json.dumps(list(citations), sort_keys=True),
-                    score_claim_flag=0,
+                    score_claim_flag=score_claim_flag,
                 )
             return True
         except sqlite3.IntegrityError:
@@ -714,7 +866,7 @@ class SynthesisWorker:
             ),
             evidence=self._evidence(cohort, units, criterion_ids, submission_id),
         )
-        text, citations = self._call(prompt_for(request))
+        text, citations, flagged = self._call(prompt_for(request))
         self._store_narrative(
             cohort,
             run_id=run_id,
@@ -723,6 +875,7 @@ class SynthesisWorker:
             question_id=question_id,
             text=text,
             citations=citations,
+            score_claim_flag=1 if flagged else 0,
         )
         return SynthesisResult(
             work_id=narrative_work_id(run_id, submission_id, LEVEL_L1, question_id),
@@ -737,6 +890,16 @@ class SynthesisWorker:
         cohort, run_row = self._resolve_run(run_id)
         catalog = self._catalog(run_row)
         questions = self._questions(catalog, run_row["package_version_id"])
+
+        # The report is per driver call, so the counters reset here: the rejection
+        # rate's denominator is THIS call's parsed outputs, the same scope as the
+        # failure rate computed on the same report (the reviewer's #98 finding on
+        # mixed scopes for a reused worker). A standalone `synthesize_question`
+        # call's counts fall outside every report window — only the driver produces
+        # a report; the headless entry point constructs a fresh worker per call.
+        self._model_calls = 0
+        self._parsed_outputs = 0
+        self._rejected_score_claims = 0
 
         failures = 0
         for question_id, criterion_ids in questions.items():
@@ -759,11 +922,15 @@ class SynthesisWorker:
                 failures += 1
 
         # L2 reads the STORED L1 narratives and nothing else — the type cannot carry a
-        # verdict, and the driver never even assembles one at this level.
+        # verdict, and the driver never even assembles one at this level. A narrative
+        # the score-claim check flagged is suppressed here too (`CT-SYNTH-03`): a
+        # caught claim must not reach the student through the level that re-states the
+        # per-question prose, so the flagged row is withheld from composition exactly
+        # as it is withheld from display.
         stored = self._stored(cohort, run_id, submission_id)
         l1_rows = [
             row for (level, _question_id), row in sorted(stored.items())
-            if level == LEVEL_L1
+            if level == LEVEL_L1 and not row["score_claim_flag"]
         ]
         if l1_rows and (LEVEL_L2, TEST_SENTINEL) not in stored:
             try:
@@ -772,7 +939,7 @@ class SynthesisWorker:
                     submission_id=submission_id,
                     syntheses=tuple(row["text"] for row in l1_rows),
                 )
-                text, citations = self._call(prompt_for(request))
+                text, citations, flagged = self._call(prompt_for(request))
                 self._store_narrative(
                     cohort,
                     run_id=run_id,
@@ -781,6 +948,7 @@ class SynthesisWorker:
                     question_id=TEST_SENTINEL,
                     text=text,
                     citations=citations,
+                    score_claim_flag=1 if flagged else 0,
                 )
             except (ProviderError, ValueError):
                 failures += 1
@@ -792,8 +960,11 @@ class SynthesisWorker:
     def _report(self, cohort: Any, catalog: Any, run_row: Any, submission_id: str,
                 failures: int) -> SynthesisReport:
         """The report, computed from the STORED narratives — the mean and the sample
-        describe the rows a student will actually read, not a counter that could
-        drift from the table."""
+        describe what synthesis PRODUCED, not a counter that could drift from the
+        table. Disclosed (#98): a twice-claiming narrative is stored flagged and
+        suppressed from display, but it is still a stored row, so it sits in this
+        mean and can enter the M-STATS sample — the measurement is of the generated
+        text, claim-bearing rows included, not of the subset a student is shown."""
         run_id = run_row["run_id"]
         rows = sorted(
             self._stored(cohort, run_id, submission_id).values(),
@@ -801,9 +972,17 @@ class SynthesisWorker:
         )
         narratives = len(rows)
         total = narratives + failures
-        criterion_ids = {
-            row["criterion_id"] for row in catalog.criteria(run_row["package_version_id"])
-        }
+        criteria_rows = catalog.criteria(run_row["package_version_id"])
+        criterion_ids = {row["criterion_id"] for row in criteria_rows}
+        # The per-question anchoring map (`FR-SYNTH-04`, #98's stricter form): the
+        # criteria each question's L1 narrative must anchor to — the same mapping the
+        # request assembly used, so a narrative is measured against the criteria whose
+        # evidence that student's own work fed it.
+        criteria_by_question: "dict[str, set[str]]" = {}
+        for row in criteria_rows:
+            question_id = _question_of_criterion(row["question_id"] or "", row["criterion_id"])
+            if question_id:
+                criteria_by_question.setdefault(question_id, set()).add(row["criterion_id"])
 
         word_counts = [len(row["text"].split()) for row in rows]
         mean_length = sum(word_counts) / narratives if narratives else 0.0
@@ -814,14 +993,17 @@ class SynthesisWorker:
         sample = tuple(row["text"] for row in sample_rows)
 
         if sample_rows:
-            # Citation semantics, disclosed: a narrative is citation-VALID when every
-            # citation it names is a criterion of this run's package, and it counts as
-            # HALLUCINATING when any named citation is not. An EMPTY citation list is
-            # valid under this reading — no claim reaches outside the package, and the
-            # L2 row legitimately carries none — so an unanchored L1 narrative is a
-            # validity the rate does not flag; a stricter per-claim anchoring metric is
-            # #98's evidence-anchoring work, and the rates here stay measured, never
-            # gated (§2.3 Q-06).
+            # Citation semantics, disclosed (#98's per-claim form, replacing the
+            # package-level reading #97 shipped while the check was absent): a claim is
+            # anchored when the criterion it names is one the narrative's OWN question
+            # resolves to — that is the criterion whose evidence came from this
+            # student's own work — so an L1 narrative citing another question's criteria
+            # counts as HALLUCINATING, and an L1 narrative citing nothing is not
+            # citation-valid either (a claim that names no criterion is anchored to
+            # nothing). An L2 row is measured at the package level and an EMPTY citation
+            # list is valid for it: it composes from syntheses, legitimately carries no
+            # criterion citation, and no claim of its own reaches outside the package.
+            # The rates stay measured, never gated (§2.3 Q-06).
             valid_narratives = 0
             hallucinated_narratives = 0
             for row in sample_rows:
@@ -829,10 +1011,16 @@ class SynthesisWorker:
                     citations = tuple(json.loads(row["citations"] or "[]"))
                 except ValueError:
                     citations = ()
-                unknown = [c for c in citations if c not in criterion_ids]
-                if unknown:
+                if row["level"] == LEVEL_L1:
+                    anchored_to = criteria_by_question.get(row["question_id"], set())
+                else:
+                    anchored_to = criterion_ids
+                unanchored = [c for c in citations if c not in anchored_to]
+                if unanchored:
                     hallucinated_narratives += 1
-                elif all(c in criterion_ids for c in citations):
+                elif citations and all(c in anchored_to for c in citations):
+                    valid_narratives += 1
+                elif row["level"] == LEVEL_L2:
                     valid_narratives += 1
             cited = len(sample_rows)
             citation_validity_rate = valid_narratives / cited
@@ -845,11 +1033,16 @@ class SynthesisWorker:
             model_calls=self._model_calls,
             narratives=narratives,
             failures=failures,
-            # The score-claim check is #98's mechanism: until it lands nothing is
-            # configured to reject, so the count and the rate honestly read zero.
-            rejected_score_claims=0,
+            # The score-claim ladder's counters, live now the check is configured:
+            # every parsed output the model returned was scanned, and each claim it
+            # carried is a rejection the rate reports (`CT-SYNTH-12`).
+            rejected_score_claims=self._rejected_score_claims,
             synthesis_failure_rate=failures / total if total else 0.0,
-            score_claim_rejection_rate=0.0,
+            score_claim_rejection_rate=(
+                self._rejected_score_claims / self._parsed_outputs
+                if self._parsed_outputs
+                else 0.0
+            ),
             mean_narrative_length=mean_length,
             sample=sample,
             sample_size=len(sample),
@@ -881,6 +1074,7 @@ __all__ = [
     "SYNTH_MAX_OUTPUT_TOKENS",
     "SYNTH_PROMPT_TEMPLATE_V",
     "SYNTH_SAMPLE_RATE",
+    "SYNTH_SCORE_CLAIM_PATTERNS",
     "SYNTH_STATEMENTS",
     "L1Request",
     "L2Request",
@@ -888,6 +1082,7 @@ __all__ = [
     "SynthesisResult",
     "SynthesisReport",
     "SynthesisWorker",
+    "has_score_claim",
     "narrative_work_id",
     "parse_narrative",
     "prompt_for",

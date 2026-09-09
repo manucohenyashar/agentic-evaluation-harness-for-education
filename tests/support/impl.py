@@ -1958,48 +1958,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
     #
     # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
-    # Interfaces block returns nothing), so every key is an
+    # Interfaces block returns nothing), so every key was an
     # invented-and-disclosed name — settled in `tests/support/synth_vocabulary.py`
     # (the extract_vocabulary precedent), one rename there per reconciled symbol.
-    # Ownership follows the stories' acceptance criteria: #97 ships the two-level
+    # Ownership followed the stories' acceptance criteria: #97 shipped the two-level
     # boundary, the request types, the completeness gate, the narrative schema and
-    # the report; #98 ships the score-claim prohibition (the check and the
-    # configured pattern list) and the evidence anchoring. The #97-keyed entries
-    # were DROPPED at #97's landing (the five cases they keyed unmarked, green on
-    # the landed surface); the #98-keyed entries REMAIN — #97 deliberately ships
-    # no `has_score_claim` and no `SYNTH_SCORE_CLAIM_PATTERNS`, so these three
-    # files stay red-via-NotImplementedYet until #98's mechanism lands.
-    "#98 score-claim check (TC-SYNTH-04)": (
-        # The rung-0 predicate, the verify_span precedent for a module-level
-        # pure entry the pattern-scan cases call.
-        "symbol",
-        f"{SYNTH_MODULE}:has_score_claim",
-        ("tests/unit/synth/test_score_claim_patterns.py",),
-    ),
-    "#97+#98 stored narratives (TC-SYNTH-05/06)": (
-        # The scan and the suppression ladder both need the module AND the check:
-        # runnable when the LAST lands, whichever story that is. The worker half
-        # landed at #97; the check is #98's — the conjunction stays red on it.
-        "symbols",
-        (
-            f"{SYNTH_MODULE}:has_score_claim,"
-            f"{SYNTH_MODULE}:SynthesisWorker"
-        ),
-        ("tests/integration/synth/test_score_claim_suppression.py",),
-    ),
-    "#98 ADV-11 attack (ADV-11)": (
-        # The attack drives the worker against the check: both symbols so the
-        # case stays RED-via-NotImplementedYet until BOTH land — at #97 alone
-        # it would already run and fail behaviorally (no check -> the verbatim
-        # claim stores), which is a red the writtenahead gate cannot
-        # distinguish from an implemented failure.
-        "symbols",
-        (
-            f"{SYNTH_MODULE}:has_score_claim,"
-            f"{SYNTH_MODULE}:SynthesisWorker"
-        ),
-        ("tests/security/synth/test_adv_11_score_claim_paraphrase.py",),
-    ),
+    # the report; #98 shipped the score-claim prohibition (the check and the
+    # configured pattern list) and the evidence anchoring. The "#97" entries were
+    # DROPPED at #97's landing; the "#98 score-claim check (TC-SYNTH-04)",
+    # "#97+#98 stored narratives (TC-SYNTH-05/06)" and "#98 ADV-11 attack (ADV-11)"
+    # entries stood here until #98 landed `has_score_claim` and
+    # `SYNTH_SCORE_CLAIM_PATTERNS` — their three files unmarked and rejoined the
+    # gate green on the landed surface (the TC-SYNTH-11 purge case never carried a
+    # marker: its worker-half resolved at #97).
 }
 
 

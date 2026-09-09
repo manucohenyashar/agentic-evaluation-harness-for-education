@@ -26,6 +26,14 @@ the provider's replies ARE what the verdicts elicit, so the feed carries the att
 texts a verdict set of this shape produces, and the module's check is what stands
 between them and the store.
 
+**Reconciled at #98's landing**: the marker is off. The verbatim attack is caught by
+the configured `SYNTH_SCORE_CLAIM_PATTERNS` (the holistic class), and the measured
+catch rate as landed is 1 of the 4 claim-bearing replies fed (0.25) — the three
+paraphrases pass the pattern check, exactly the boundary `CT-SYNTH-13` declares.
+That number is a snapshot of the list as landed: tightening the patterns moves it
+(this file's assertions do not gate on it, only that the verbatim attack alone is
+counted and the rate stays a bounded proportion).
+
 Interface assumed of `#97`/`#98` (disclosed in `tests/support/synth_vocabulary.py`,
 reconcile at landing): `SynthesisWorker(store, provider, model_ref)` with
 `.synthesize_submission(...) -> SynthesisReport`; `narrative` rows carrying `text` and
@@ -50,7 +58,7 @@ from tests.support.synth_vocabulary import (
     synth_ref,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSION = "SYN-001"
 _QUESTIONS = tuple(f"Q{q}" for q in range(1, 6))
