@@ -9,6 +9,13 @@ the unit's `work_id` one row per `judge_id`. A unit failing after two of its thr
 verdicts landed leaves a criterion holding two completed verdicts with the third still
 to come — the state `FR-ORCH-26` legislates.
 
+**The shipped sweep-2 gate is part of the scenario** (`FR-ORCH-06`, #59's two-sweep
+plan): a score unit is ready only once its criterion's extraction is `done`. So the
+criterion's extraction completes before its panel scoring is dispatched, and the run's
+second criterion is left undispatched — which is what makes "the run continues" a
+ledger fact rather than a status read: after the quarantine, the sibling criterion's
+scoring unit is exactly what the run claims next.
+
 `FR-ORCH-26`'s oracle is "exact value plus API assertion", and this file holds both
 halves that live at the M-ORCH surface:
 
@@ -20,7 +27,7 @@ halves that live at the M-ORCH surface:
   Orchestrator exposes **no** name containing "adjudic" — there is no entry point a
   caller could invoke to adjudicate a two-verdict criterion (R48: a tie broken by rule
   is a coin flip presented as a judgement), and the ledger confirms it: `criterion_score`
-  holds no row for the criterion, while both completed verdicts stand.
+  holds no row, while both completed verdicts stand.
 
 **Disclosed: the fallback's write half is not this file's.** "On failure the second
 verdict is discarded and the base single-judge band is recorded as provisional" is
@@ -58,13 +65,16 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 pytestmark = pytest.mark.integration
 
 _SUBMISSIONS = ("SYN-001",)
-_CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
+_CRITERIA = (
+    {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},
+    {"criterion_id": "C2", "kind": "open", "scoring_model": "atomic"},
+)
 
 
 def _score_units(cohort, run_id: str) -> list[dict]:
     return cohort.query(
-        "SELECT work_id, judge_id, status, attempts, last_error FROM work_unit "
-        "WHERE run_id = :r AND stage = 'score' ORDER BY work_id",
+        "SELECT work_id, criterion_id, judge_id, status, attempts, last_error "
+        "FROM work_unit WHERE run_id = :r AND stage = 'score' ORDER BY work_id",
         r=run_id,
     )
 
@@ -86,19 +96,49 @@ def test_tc_orch_21_a_two_verdict_criterion_retries_first_and_never_adjudicates(
         cohort = store.cohort(ORCH_COHORT_ID)
 
         units = _score_units(cohort, run_id)
-        assert len(units) == 1, (
-            f"the panel enumerated {len(units)} score units for one "
-            "(submission, criterion) — the shipped model is one unit per pair with the "
-            "panel behind it, and a different shape voids the scenario's premise"
+        assert len(units) == 2 and {u["criterion_id"] for u in units} == {"C1", "C2"}, (
+            f"the panel enumerated {len(units)} score units for two criteria — the "
+            "shipped model is one unit per (submission, criterion) with the panel "
+            "behind it, and a different shape voids the scenario's premise"
         )
-        unit = units[0]
-        work_id = unit["work_id"]
 
-        # Dispatch the unit, then its in-flight execution lands two of the panel's
-        # three verdicts before the malformed third response arrives (disclosed bypass:
-        # M-JUDGE does not exist yet; the rows are the shipped verdict DDL's shape).
+        # Sweep 2 is gated on extraction (`FR-ORCH-06`): the panel scoring of a criterion
+        # runs only once its extraction is done. Both criteria extract, both extractions
+        # complete — and the gate is a premise, so it is verified, not assumed: had a
+        # completion silently no-oped, the score claim below would starve and the ladder
+        # would never start.
+        extracts = orch.lease("worker-a", "extract", 10)
+        assert len(extracts) == 2, (
+            f"extraction leased {len(extracts)} of the run's 2 extract units — the "
+            "scenario's scoring unit waits behind its criterion's extraction, and a "
+            "short lease is a missing premise"
+        )
+        for extract_unit in extracts:
+            orch.complete(extract_unit.work_id)
+        done = cohort.query(
+            "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r "
+            "AND stage = 'extract' AND status = 'done'",
+            r=run_id,
+        )[0]["n"]
+        assert done == 2, (
+            f"{done} of 2 extractions are done — the sweep-2 gate admits a score unit "
+            "only over a done extraction, so an incomplete extraction would starve the "
+            "ladder this case exists to walk"
+        )
+
+        # The panel scoring runs: the claim hands out the sweep order's head — one score
+        # unit, its sibling still queued. Its in-flight execution lands two of the
+        # panel's three verdicts before the malformed third response arrives.
         leased = orch.lease("worker-a", "score", 1)
-        assert [u.work_id for u in leased] == [work_id]
+        assert len(leased) == 1, (
+            f"the score claim handed out {len(leased)} units — the sweep order's head "
+            "is one unit, and a different shape voids the retry-first oracle below"
+        )
+        victim = leased[0]
+        work_id = victim.work_id
+        criterion_id = victim.criterion_id
+        sibling = [u for u in units if u["criterion_id"] != criterion_id][0]
+
         with cohort.transaction() as tx:
             for judge_id, verdict_id, band in (
                 ("judge-base", "v-base", "A"),
@@ -117,10 +157,13 @@ def test_tc_orch_21_a_two_verdict_criterion_retries_first_and_never_adjudicates(
 
         # Retry-first: the failing unit is requeued with its attempt count carried, and
         # it is the scoring work the run claims again — the third verdict is retried
-        # before anything else happens to the criterion.
+        # before anything else happens to the criterion, ahead of even the sibling
+        # criterion's ready scoring unit.
         for expected_attempts in (1, 2):
             orch.fail(work_id, error)
-            row = _score_units(cohort, run_id)[0]
+            row = cohort.query(
+                "SELECT status, attempts FROM work_unit WHERE work_id = :w", w=work_id
+            )[0]
             assert row["status"] == "pending", (
                 f"after failure {expected_attempts} the unit is '{row['status']}', not "
                 "'pending' — below the ceiling the third verdict is retried, not "
@@ -130,17 +173,21 @@ def test_tc_orch_21_a_two_verdict_criterion_retries_first_and_never_adjudicates(
                 f"attempt count is {row['attempts']}, expected {expected_attempts} — "
                 "the attempt history is what makes the ladder exact"
             )
-            reclaimed = orch.lease("worker-a", "score", 10)
+            reclaimed = orch.lease("worker-a", "score", 1)
             assert [u.work_id for u in reclaimed] == [work_id], (
                 f"after failure {expected_attempts} the run claimed "
                 f"{[u.work_id for u in reclaimed]!r} — the retry comes FIRST: the "
-                "requeued third verdict is the only scoring work the run may take "
-                "before the criterion resolves"
+                "requeued third verdict is the claim's head, ahead of the sibling "
+                "criterion's ready scoring unit, or the orchestrator went around the "
+                "criterion instead of back to it"
             )
 
         # The retry fails a third time: quarantined, last error retained, attempts exact.
         orch.fail(work_id, error)
-        row = _score_units(cohort, run_id)[0]
+        row = cohort.query(
+            "SELECT status, attempts, last_error FROM work_unit WHERE work_id = :w",
+            w=work_id,
+        )[0]
         assert row["status"] == "quarantined", (
             f"a unit at the attempt ceiling is '{row['status']}', not 'quarantined' — "
             "the ladder's third rung is quarantine, not another requeue"
@@ -177,21 +224,21 @@ def test_tc_orch_21_a_two_verdict_criterion_retries_first_and_never_adjudicates(
             "between two ever occurs' is asserted at the API surface, and a callable "
             "named for it is that path"
         )
-        # ...and in the ledger: the criterion's adjudicated row does not exist.
-        scores = cohort.query(
-            "SELECT * FROM criterion_score WHERE submission_id = :s AND criterion_id = :c",
-            s="SYN-001", c="C1",
-        )
-        assert not scores, (
-            f"criterion_score holds {scores!r} for a criterion whose unit quarantined "
-            "with two verdicts standing — an adjudication between two is a coin flip "
-            "presented as a judgement (R48)"
+        # ...and in the ledger: no criterion of this run has an adjudicated row.
+        assert not cohort.query("SELECT 1 FROM criterion_score LIMIT 1"), (
+            "criterion_score holds a row for a run whose only scored criterion "
+            "quarantined with two verdicts standing — an adjudication between two is a "
+            "coin flip presented as a judgement (R48)"
         )
 
-        # The run continues: extraction work is still claimable after the quarantine.
-        assert orch.lease("worker-a", "extract", 10), (
-            "the run stopped claiming work after a scoring unit quarantined — the "
-            "failure is the unit's, never the run's"
+        # The run continues: the sibling criterion's scoring unit is exactly what the
+        # run claims next — the failure was the unit's, never the run's.
+        still_open = orch.lease("worker-a", "score", 10)
+        assert [u.work_id for u in still_open] == [sibling["work_id"]], (
+            f"after the quarantine the run claimed "
+            f"{[u.work_id for u in still_open]!r}, expected the sibling criterion's "
+            "scoring unit — a scoring failure parks its own unit, never the run "
+            "(FR-ORCH-26: the run continues)"
         )
     finally:
         store.close()
