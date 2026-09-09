@@ -1620,6 +1620,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/integ/test_integ_observability.py",
         ),
     ),
+    # --- TS-66 (#77), the fifteen CT-INTEG clause cases ------------------------------------
+    #
+    # One entry per blocker shape, not per case: the clause cases share the #75-reconciled
+    # M-INTEG seam (`verify_span`, `IntegrityGate`, `IntegritySignals`, the alert and rate
+    # constants) and the #76-reconciled M-AGG surface (`aggregate`, `AGG_AUTO_THRESHOLD_
+    # ATOMIC`), so the conjunctions group by what makes a file runnable. No new M-INTEG
+    # name is minted for TS-66 — the two knobs CT-INTEG-13 names (INTEG_OCR_CONF_FLOOR,
+    # INTEG_DESCRIBED_EVIDENCE_ROUTES) ride env like the #75 disable switch, and the
+    # disclosure tables in the files carry the details.
+    "#73 verify_span (TS-66 C01 surface/boundaries)": (
+        "symbol",
+        f"{INTEG_MODULE}:verify_span",
+        (
+            "tests/contract/integ/test_ct_integ_verify_span_surface.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
