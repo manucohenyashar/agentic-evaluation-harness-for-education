@@ -19,6 +19,9 @@ Oracles — **exact value**:
 **Written ahead of #69** (`FR-EXTRACT-07`'s Phase 2). Registered in
 `WRITTEN_AHEAD_BLOCKERS` under `"#69 second family (TS-26)"` (symbols conjunction —
 `ExtractionWorker` and `second_family_model`; until BOTH resolve, the case is red).
+That conjunction resolved when #69 landed `aeh.extract:second_family_model` (the
+different-family default, the constructor seam and the one-payload persistence
+below), the entry left the registry, and the file runs in TEST_CMD again.
 
 **Interface this case assumes of #68/#69**, listed so it is reconciled deliberately:
 
@@ -61,8 +64,9 @@ from tests.support.extract_vocabulary import (
     span_completion,
 )
 from tests.support.impl import EXTRACT_MODULE, require
+from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = SECOND_FAMILY_ISSUE
 
@@ -80,8 +84,20 @@ _MARKDOWN = (
     + UNTRUSTED_CLOSE
 )
 
-_PRIMARY_SPANS = [{"start": 0, "end": 10, "text": "The crate"}]
-_SECOND_SPANS = [{"start": 31, "end": 35, "text": "2 m/s"}]
+
+def _byte_span(needle: str) -> dict[str, Any]:
+    """A canned span over `needle`, located by BYTE offset in `_MARKDOWN` — the
+    offsets must address the needle's real bytes, because the worker's parse
+    re-derives the text from what the offsets address (a reply's own text is never
+    trusted over its offsets)."""
+    md_bytes = _MARKDOWN.encode("utf-8")
+    start = md_bytes.find(needle.encode("utf-8"))
+    assert start >= 0, f"fixture bug: {needle!r} not in the document"
+    return {"start": start, "end": start + len(needle.encode("utf-8")), "text": needle}
+
+
+_PRIMARY_SPANS = [_byte_span("The crate")]
+_SECOND_SPANS = [_byte_span("2 m/s")]
 
 
 class _TwoModelProvider:

@@ -25,7 +25,6 @@ from typing import Any
 from tests.support.extract_vocabulary import (
     ASSEMBLE as _EXTRACT_ASSEMBLE,
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
-    SECOND_FAMILY_MODEL,
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
     WORKER,
@@ -1377,13 +1376,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TC-EXTRACT-06` (deterministic criteria) and TC-EXTRACT-11's enumeration half,
     # TC-EXTRACT-13's cross-check half run GREEN against shipped M-ORCH and carry no
     # marker; they sit inside the marked files whose other cases wait on #68. The
-    # second-family case is keyed separately below: #69 owns `FR-EXTRACT-07`'s
-    # mechanism (Phase 2) and lands independently of #68.
+    # second-family case was keyed separately below: #69 owns `FR-EXTRACT-07`'s
+    # mechanism (Phase 2) and landed independently of #68.
     # The "#68 extraction suite (TS-26)" entry stood here: its conjunction over
     # `TS26_EXTRACT_SYMBOLS` (built from `tests/support/extract_vocabulary.py`)
     # resolved when #68 landed `aeh.extract`, and the seven suite files it named lost
-    # their markers in the same change. What remains keyed is the one case whose
-    # blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69 second-family case.
+    # their markers in the same change. What remains keyed of this suite is the one
+    # case whose blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69
+    # second-family entry left with #69.
     # TC-EXTRACT-14 (`test_extract_pii_purge.py`) is keyed SEPARATELY from the TS-26
     # suite: #68 made its extraction half runnable (the payload provably carries the
     # student's verbatim work before the purge), but the purge half calls
@@ -1398,15 +1398,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{STATS_MODULE}:promote_cohort",
         ("tests/security/extract/test_extract_pii_purge.py",),
     ),
-    "#69 second family (TS-26)": (
-        # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
-        # `second_family_model` — a conjunction, because the driver alone does not make
-        # the case runnable. Built from the vocabulary, like the #68 entry, so the
-        # registry cannot drift from the tests.
-        "symbols",
-        f"{EXTRACT_MODULE}:{WORKER},{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
-        ("tests/integration/extract/test_extract_second_family.py",),
-    ),
+    # The "#69 second family (TS-26)" entry stood here: its conjunction over the
+    # driver plus `second_family_model` resolved when #69 landed the different-family
+    # model and the `ExtractionWorker` seam, and the file runs in TEST_CMD again.
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
     # Two entries stood here for TS-27. The injection-differential entry
@@ -1457,15 +1451,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS65_EXTRACT_SYMBOLS),
         ("tests/contract/extract/test_ct_extract_c14_extraction_metrics.py",),
     ),
-    "#69 extraction contract second family (TS-65)": (
-        # C10, the whole file: the contract file resolves the full surface AND #69's
-        # `second_family_model` — the TS-26 integration file's two-name key above is
-        # not this file's blocker set.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS)
-        + f",{EXTRACT_MODULE}:{SECOND_FAMILY_MODEL}",
-        ("tests/contract/extract/test_ct_extract_c10_second_family_unreconciled.py",),
-    ),
+    # The "#69 extraction contract second family (TS-65)" entry stood here: its
+    # conjunction resolved with the same landing, and C10 lost its marker in the
+    # same change.
     "#73 extraction contract sweep (TS-65)": (
         # C07's rung-3 node: verification is M-INTEG's — `verify_span` re-derives it
         # from the document bytes. Keyed on #73 alone because that is the only consumer

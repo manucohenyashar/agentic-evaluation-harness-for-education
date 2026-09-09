@@ -300,13 +300,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.det:1653",
     "aeh.det:1661",
     "aeh.det:1667",
-    # The extract sites are #68's line numbers: the one write transaction in
+    # The extract sites are #68's line numbers (shifted by #69's second-family pass
+    # above the transaction): the one write transaction in
     # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
     # the evidence row that commits together with it (CT-STORE-03's commit-together;
     # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
-    "aeh.extract:737",
-    "aeh.extract:742",
-    "aeh.extract:744",
+    "aeh.extract:885",
+    "aeh.extract:890",
+    "aeh.extract:892",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
