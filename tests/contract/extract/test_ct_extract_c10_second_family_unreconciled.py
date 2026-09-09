@@ -5,7 +5,10 @@ Case of test plan §6.11.8; issue #72 (TS-65). Written ahead of #68 (`M-EXTRACT`
 #69 (the Phase-2 second-family mechanism); registered in `WRITTEN_AHEAD_BLOCKERS`
 under `"#69 extraction contract second family (TS-65)"` — the suite's full TS-26
 conjunction plus `second_family_model` (this file resolves the whole surface through
-`require_extract_surface`, unlike the TS-26 integration file's two-name key).
+`require_extract_surface`, unlike the TS-26 integration file's two-name key). That
+conjunction resolved when #69 landed `second_family_model` and the persistence below
+(both span sets in the ONE payload, apart), the entry left the registry, and the
+file runs in TEST_CMD again.
 
 The clause: where a second-family extraction runs (high-risk criteria, Phase 2),
 **both** span sets are persisted for comparison rather than reconciled here
@@ -72,7 +75,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 _MARKDOWN = build_markdown("The crate accelerates at 2 m/s^2.\n")
 _PRIMARY_TEXT = "The crate accelerates"
@@ -90,11 +93,14 @@ _RECONCILIATION_WORD = re.compile(
 
 
 def _primary_span() -> dict[str, Any]:
-    return byte_span(_MARKDOWN, _PRIMARY_TEXT, "transcribed_text")
+    # `byte_span` is two-arg (`_doubles.py`); the region kind was a stray third
+    # argument from the C09 pattern — and a no-op besides: `parse_spans` derives the
+    # kind from the document's own region headers, and `_MARKDOWN` carries none.
+    return byte_span(_MARKDOWN, _PRIMARY_TEXT)
 
 
 def _second_span() -> dict[str, Any]:
-    return byte_span(_MARKDOWN, _SECOND_TEXT, "transcribed_text")
+    return byte_span(_MARKDOWN, _SECOND_TEXT)
 
 
 class _TwoModelProvider:
