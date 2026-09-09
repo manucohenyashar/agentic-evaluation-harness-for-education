@@ -19,6 +19,7 @@ import json
 import pytest
 
 from aeh.pkg import (
+    BandSetError,
     PackageCatalog,
     PackageDraft,
     PublishedVersionImmutableError,
@@ -29,6 +30,7 @@ from tests.support.store_api import statement
 pytestmark = pytest.mark.integration
 
 ISSUE = "#26"
+ISSUE_230 = "#230"  # TC-PKG-30's raw reads attribute their statements to their story
 
 
 def _seed_published(catalog: PackageCatalog, handle, package_id: str = "pkg-26") -> str:
@@ -187,4 +189,97 @@ def test_tc_pkg_04_clarification_edits_succeed_only_as_a_new_version(tmp_data_di
         with pytest.raises(sqlite_error()):
             with handle.transaction() as tx:
                 tx.execute(statement(sql, issue=ISSUE), v=v1)
+    store.close()
+
+
+def test_tc_pkg_30_a_revision_child_carries_its_parents_criteria_and_bands_verbatim(
+    tmp_data_dir,
+):
+    """`TC-PKG-30` — *'given a parent version whose criteria carry `max_points`,
+    `scoring_model`, `construct_tag`, `band_count` and band descriptors, a revision
+    mints a child whose criteria carry all of those fields verbatim; with one explicit
+    change, the child differs from the parent in exactly that field'* (#230, FR-PKG-02).
+
+    Oracle: the **differential form** — parent and child rows compared field by field,
+    the delta asserted to be exactly the one explicit edit. Before #230 the delta was
+    the whole dropped set: a child that differs from its parent in fields nobody
+    changed is mutation by omission, and `CT-PKG-02`'s 'a `PackageVersionId`
+    identifies content permanently' fails with it."""
+    store = open_store(tmp_data_dir)
+    handle = store.package("pkg-26")
+    _seed_package_row(handle)
+    catalog = PackageCatalog(handle, package_id="pkg-26")
+    v1 = catalog.create_version(None, PackageDraft(title="rubric"))
+    catalog.add_criterion(
+        v1, "CRIT-1", question_id="Q-1", kind="open", max_points=12.5,
+        scoring_model="holistic", construct_tag="inference", band_count=2,
+        evidence_type="quoted_text",
+    )
+    catalog.add_band(v1, "CRIT-1", 0, "weak", 0.0, descriptor="no evidence cited")
+    catalog.add_band(v1, "CRIT-1", 1, "strong", 12.5, descriptor="cites the text")
+    catalog.publish(v1, "approver")
+
+    v2 = catalog.create_version(v1, PackageDraft(title="clarify: max_points"))
+    catalog.update_criterion_field(v2, "CRIT-1", "max_points", 10.0)  # the one edit
+
+    def rows(table: str, v: str) -> list[dict]:
+        return [dict(r) for r in handle.query(statement(
+            f"SELECT * FROM {table} WHERE package_version_id = :v ORDER BY rowid",
+            issue=ISSUE_230), v=v)]
+
+    parent, child = rows("criterion", v1)[0], rows("criterion", v2)[0]
+    assert parent.keys() == child.keys()
+    del parent["package_version_id"], child["package_version_id"]  # the new identity
+    delta = {key for key in parent if parent[key] != child[key]}
+    assert delta == {"max_points"}, (
+        f"TC-PKG-30: the revision differs from its parent in fields nobody changed "
+        f"({sorted(delta - {'max_points'})}). The copy is verbatim (#230) — a child "
+        "that drops criterion fields is mutation by omission, and a PackageVersionId "
+        "stops identifying content permanently (CT-PKG-02)."
+    )
+    assert parent["max_points"] == 12.5 and child["max_points"] == 10.0, (
+        "TC-PKG-30: the explicit edit is the one delta — the parent keeps its own "
+        "value and the child carries the change."
+    )
+    def band_rows(version: str) -> list[dict]:
+        return [{k: v for k, v in r.items() if k != "package_version_id"}
+                for r in rows("band", version)]
+
+    assert band_rows(v1) == band_rows(v2), (
+        "TC-PKG-30: the copied band set lost fields (the descriptor first of all). "
+        "The bands are copied verbatim — FR-PKG-06's mapping must not drift between "
+        "a version and its revision."
+    )
+    store.close()
+
+
+def test_tc_pkg_30_a_criterion_that_fails_the_copy_refuses_the_revision(tmp_data_dir):
+    """`TC-PKG-30`'s edge — a criterion whose copied band set fails `FR-PKG-06`'s
+    count half (a declared `band_count` the copied bands never fully populate —
+    M-SETUP's even-band bar) refuses the revision rather than shipping a half-copied
+    child. The refusal runs inside the revision's transaction, so it is a no-op
+    (`CT-PKG-11`): no child row, no copied rows, nothing to clean up."""
+    store = open_store(tmp_data_dir)
+    handle = store.package("pkg-26")
+    _seed_package_row(handle)
+    catalog = PackageCatalog(handle, package_id="pkg-26")
+    v1 = catalog.create_version(None, PackageDraft(title="unfinished rubric"))
+    catalog.add_criterion(v1, "CRIT-1", question_id="Q-1", kind="open",
+                          max_points=4.0, scoring_model="atomic",
+                          construct_tag="accuracy", band_count=2)
+    catalog.add_band(v1, "CRIT-1", 0, "weak", 0.0, descriptor="off track")
+    # The declared 2-band set is half written: the parent is a draft nobody can
+    # publish, and a revision would mint the half set as a child's inheritance.
+
+    with pytest.raises(BandSetError):
+        catalog.create_version(v1, PackageDraft(title="revise the unfinished"))
+
+    state = handle.query(statement(
+        "SELECT (SELECT COUNT(*) FROM package_version) AS versions, "
+        "(SELECT COUNT(*) FROM criterion) AS criteria, "
+        "(SELECT COUNT(*) FROM band) AS bands", issue=ISSUE_230))[0]
+    assert (state["versions"], state["criteria"], state["bands"]) == (1, 1, 1), (
+        "TC-PKG-30: the refused revision left rows behind — a half-copied child or a "
+        "child version row at all. The refusal is a no-op on disk (CT-PKG-11)."
+    )
     store.close()

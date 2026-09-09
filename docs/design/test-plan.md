@@ -1135,6 +1135,7 @@ record for a *superseded* package version must not answer for the current one.
 | TC-PKG-27 | NFR-PKG-01 | Artifact assertion / 2 | The live Tier P schema | Every constraint named in `FR-PKG-03` and `FR-PKG-06` is realized as a database CHECK or FK, or as a data-layer guard — not as a caller convention. Enumerate and match | Schema assertion | P0 |
 | TC-PKG-28 | FR-PKG-01, FR-PKG-02 | Observability / 2 | Version creation, publication, and a `SchemaLockViolation` | Creation and publication log approver and timestamp; each violation logs at WARN naming the field; export and import log version, provenance and destination | Exact signal presence | P1 |
 | TC-PKG-29 | FR-PKG-01 | Integration / 2 | `is_locked` on a draft, on a published version, and on a revision's child | False, then True, then False — the accessor resolves the version row instead of raising (inline regression, #30: `is_locked` referenced the undefined `_SELECT_VERSION` and raised `NameError` on every call since #26) | Exact value | P1 |
+| TC-PKG-30 | FR-PKG-02 | Integration / 2 | A revision of a parent whose criteria carry `max_points`, `scoring_model`, `construct_tag`, `band_count` and band descriptors, with one explicit edit on the child; and a revision whose parent's declared band set is half written | The child's criteria and bands match the parent's field by field except the one explicitly edited field — before #230 the delta was the whole dropped set, which is mutation by omission and breaks `CT-PKG-02`; a criterion that fails the copy (`FR-PKG-06`'s even-band bar) refuses the revision inside the transaction, leaving no child rows (inline regression, #230: the revision copy dropped the max_points-era columns) | Exact value plus differential field-by-field equality | P0 |
 
 ### 5.5 Module: Ingestion, Transcription & Validation Ladder (`M-INGEST`)
 
@@ -4511,7 +4512,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-STORE-05 | TC-STORE-23 — **known gap**, see §7.4 (Q-08) | n/a | — |
 | NFR-STORE-06 | TC-STORE-20, PERF-09 | Performance | P2 |
 | FR-PKG-01 | TC-PKG-01, TC-PKG-28, TC-PKG-29, TC-E2E-01 | Integration, Observability, E2E | P0 |
-| FR-PKG-02 | TC-PKG-02, TC-PKG-28 | Integration, Observability | P0 |
+| FR-PKG-02 | TC-PKG-02, TC-PKG-28, TC-PKG-30 | Integration, Observability | P0 |
 | FR-PKG-03 | TC-PKG-03, TC-PKG-09, TC-PKG-27 | Integration, Art | P0 |
 | FR-PKG-04 | TC-PKG-04 | Integration | P1 |
 | FR-PKG-05 | TC-PKG-05, TC-PKG-06, FUZZ-06 | Unit, Property | P0 |
