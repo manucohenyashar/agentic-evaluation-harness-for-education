@@ -43,12 +43,14 @@ rung 2 for `TC-GRADE-10`/`TC-GRADE-11`.
 from __future__ import annotations
 
 import inspect
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from aeh.pkg import GradePolicy, PackageCatalog
 from aeh.store import open_store
 from tests.support.grade_vocabulary import (
+    GRADE_BLOCKER,
     backdate_grades,
     grade_rows,
     write_criterion_scores,
@@ -58,7 +60,18 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
+
+
+def _lapsed_computed_at() -> str:
+    """A `computed_at` 25 hours in the past, derived at call time — the lapse cases
+    measure the shipped 24-hour window against it, so a fixed date would red the case
+    for the wrong reason on any machine whose clock has not reached it."""
+    return (
+        (datetime.now(timezone.utc) - timedelta(hours=25))
+        .replace(microsecond=0)
+        .isoformat()
+    )
 
 _PACKAGE = "pkg-orch"
 
@@ -238,7 +251,7 @@ def test_tc_grade_10_a_lapsed_window_finalizes_without_a_teacher(tmp_data_dir):
         # The lapse: computed_at moves 25 hours back — past the 24-hour window — by
         # the disclosed stand-in (`grade_vocabulary.py` header). The run stays
         # incomplete: the lapse path, not the completion path, must fire.
-        backdate_grades(cohort, "2026-09-07T00:00:00+00:00")
+        backdate_grades(cohort, _lapsed_computed_at())
         svc.compute_all(run_id)  # the service's own pass, not a teacher action
 
         assert set(_states(grade_rows(cohort)).values()) == {"final"}, (
@@ -294,7 +307,7 @@ def test_tc_grade_10_no_configuration_waits_indefinitely_for_a_teacher(
 
         # Arm both automatic paths: the run completes and the window lapses.
         _complete_run(cohort, run_id)
-        backdate_grades(cohort, "2026-09-07T00:00:00+00:00")
+        backdate_grades(cohort, _lapsed_computed_at())
         svc.compute_all(run_id)  # the service's own pass, not a teacher action
 
         assert set(_states(grade_rows(cohort)).values()) == {"final"}, (

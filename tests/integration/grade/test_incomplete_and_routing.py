@@ -18,6 +18,13 @@ this file pins the **persisted** consequences on a real store:
    scored, none missing — is **never** `incomplete`. `incomplete` is caused exclusively
    by ingestion failure, never by judgment uncertainty.
 
+**Fixture disclosure.** The block form's precondition is a 15-criterion submission
+(11 auto / 2 reviewed / 1 provisional / 1 missing); this file runs it as a
+three-criterion miniature (2 present, 1 missing) because the state, naming and routing
+limbs it owns do not scale with the criterion count. The 15-criterion coverage fixture
+the block form fixes is pinned at its full shape in `test_no_imputation.py` (steps 1-2
+and step 6 over exactly 15 / 11 / 2 / 1 / 1), which is where the reduction is paid back.
+
 **Written ahead of #101** (`M-GRADE`), reached through `open_grade(store)`
 (`grade_vocabulary.py`). Assumed of the grade row: `.state` carrying `incomplete`, and
 the missing-input names on the record (which column names them is #101's to land — the
@@ -38,13 +45,13 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.support.grade_vocabulary import grade_rows, write_criterion_scores
+from tests.support.grade_vocabulary import GRADE_BLOCKER, grade_rows, write_criterion_scores
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 _CRITERIA = (
     {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},

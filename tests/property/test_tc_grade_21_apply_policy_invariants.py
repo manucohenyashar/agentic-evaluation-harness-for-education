@@ -37,13 +37,13 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from aeh.pkg import GateRule, GradePolicy, ScaleRule
-from tests.support.grade_vocabulary import score
+from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.span_strategies import FUZZ_EXAMPLES
 
 pytestmark = pytest.mark.writtenahead
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 _CRITERION_IDS = ("C0", "C1", "C2", "C3", "C4", "C5")
 

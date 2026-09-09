@@ -28,7 +28,7 @@ members (`compute_all`, `export`).
 | `svc.compute_all(run_id)` | **declared** (§3.14 Protocol); its return is not pinned and not asserted — the oracle is the ledger's own rows |
 | `svc.export(run_id, revision, "csv")` | **declared** member, **assumed call shape** — a run-wide export at a revision; the exact signature reconciles at #101. TC-GRADE-17's golden-file oracle is its own case (not this issue's); here the assertion is only that export succeeds for a provisional grade |
 | `submission_grade.policy_version` | **assumed column** (HLD §9.6, not in this repository) — non-null and identical across one batch |
-| `criterion_score(submission_id, criterion_id, band, points, state)` | **assumed post-#91 shape** — #101's chain runs through #91, so the columns exist when `open_grade` does |
+| `criterion_score(submission_id, criterion_id, band, points, routing, state)` | **assumed post-#91 shape** — the two-column split is the design's (CT-AGG-06/07: `routing` ∈ {auto, queued, reviewed, provisional, triage} carries the coverage class; `state` ∈ {final, provisional_unreviewed, …} is the aggregation state); the vocabulary derives `state` from `routing` by its disclosed mapping. #101's chain runs through #91, so the columns exist when `open_grade` does |
 
 **Disclosed stand-ins.** `write_criterion_scores` writes the `criterion_score` rows the
 production writer (`M-AGG`) alone may write (`CT-AGG`'s Requires row); this is test
@@ -47,6 +47,7 @@ import pytest
 
 from aeh.store import open_store
 from tests.support.grade_vocabulary import (
+    GRADE_BLOCKER,
     grade_rows,
     write_criterion_scores,
 )
@@ -55,7 +56,7 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 #: The plan's sizing class: 350 submissions, the cohort the grade service must deliver
 #: in one call (TC-GRADE-01, and PERF-07's same figure at NFR-GRADE-03).
@@ -66,10 +67,10 @@ _CRITERIA = (
 )
 
 
-def _full_cohort_rows(submissions, *, state="auto"):
+def _full_cohort_rows(submissions, *, routing="auto"):
     """Two fully-scored criteria per submission — no missing input anywhere."""
     return [
-        (sid, cid, "B2" if cid == "C1" else "B1", 7.0 if cid == "C1" else 6.0, state)
+        (sid, cid, "B2" if cid == "C1" else "B1", 7.0 if cid == "C1" else 6.0, routing)
         for sid in submissions
         for cid in ("C1", "C2")
     ]

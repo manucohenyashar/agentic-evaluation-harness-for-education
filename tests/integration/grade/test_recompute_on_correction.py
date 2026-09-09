@@ -40,6 +40,7 @@ import pytest
 from aeh.pkg import GradePolicy, PackageCatalog
 from aeh.store import open_store
 from tests.support.grade_vocabulary import (
+    GRADE_BLOCKER,
     grade_rows,
     write_criterion_scores,
 )
@@ -48,7 +49,7 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 _PACKAGE = "pkg-orch"
 _SUBMISSIONS = ("S-K1", "S-K2")   # S-K1 is affected by the correction; S-K2 is not

@@ -34,12 +34,12 @@ import tokenize
 import pytest
 
 from aeh.pkg import GradePolicy
-from tests.support.grade_vocabulary import score
+from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 
 pytestmark = pytest.mark.writtenahead
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 #: The plan's fixture: 15 criteria, 11 auto / 2 reviewed / 1 provisional / 1 missing.
 _ALL_CRITERIA = tuple(f"C{i}" for i in range(1, 16))
@@ -87,7 +87,7 @@ def test_tc_grade_07_coverage_record_is_exact_for_the_fifteen_criterion_fixture(
     four populated classes sum to the total."""
     coverage_for = require(GRADE_MODULE, "coverage_for", issue=ISSUE)
 
-    scores = [score(cid, pts, state=state) for cid, pts, state in _PRESENT_ROWS]
+    scores = [score(cid, pts, routing=routing) for cid, pts, routing in _PRESENT_ROWS]
 
     coverage = coverage_for(scores, list(_ALL_CRITERIA))
 
@@ -115,7 +115,7 @@ def test_tc_grade_07_the_computation_uses_the_present_criteria_and_only_them():
     apply_policy = require(GRADE_MODULE, "apply_policy", issue=ISSUE)
 
     policy = GradePolicy(combination="weighted_sum")
-    scores = [score(cid, pts, state=state) for cid, pts, state in _PRESENT_ROWS]
+    scores = [score(cid, pts, routing=routing) for cid, pts, routing in _PRESENT_ROWS]
 
     total = apply_policy(scores, policy).total
 
@@ -164,9 +164,48 @@ def test_tc_grade_07_no_substitution_identifier_exists_anywhere_in_the_module():
 # --- step 6 and the variants: coverage tracks every shape of absence -------------------------
 
 
+def test_tc_grade_07_the_provisional_criterion_also_missing_drains_into_missing():
+    """`TC-GRADE-07` step 6 — recompute with the provisional criterion also missing:
+    its row is gone, coverage drains it from provisional into missing, and the total
+    drops by exactly its points — the recomputation followed the absence, it did not
+    substitute for it."""
+    coverage_for = require(GRADE_MODULE, "coverage_for", issue=ISSUE)
+    apply_policy = require(GRADE_MODULE, "apply_policy", issue=ISSUE)
+
+    rows_without_c14 = [row for row in _PRESENT_ROWS if row[0] != "C14"]
+    scores = [
+        score(cid, pts, routing=routing) for cid, pts, routing in rows_without_c14
+    ]
+
+    coverage = coverage_for(scores, list(_ALL_CRITERIA))
+    total = apply_policy(scores, GradePolicy(combination="weighted_sum")).total
+
+    actual = (
+        coverage.criteria_total,
+        coverage.criteria_auto,
+        coverage.criteria_reviewed,
+        coverage.criteria_provisional,
+        coverage.criteria_missing,
+    )
+    assert actual == (15, 11, 2, 0, 2), (
+        f"coverage {actual} with the provisional criterion also missing — the "
+        "provisional class must drain into criteria_missing, never into a smaller "
+        "total or a substituted value (TC-GRADE-07 step 6, FR-GRADE-07)"
+    )
+    assert total == pytest.approx(_HAND_TOTAL - 5.0, abs=1e-9), (
+        f"the recomputed total is {total!r}, expected {_HAND_TOTAL - 5.0!r} — C14's "
+        "points must leave the sum exactly, with nothing standing in for them "
+        "(FR-GRADE-08: no imputation on recompute)"
+    )
+
+
 def test_tc_grade_07_all_fifteen_missing_counts_fifteen_missing():
-    """`TC-GRADE-07` step 6, variant 1 — with every criterion's extraction
-    quarantined, the coverage reads 15 total, 15 missing, nothing else."""
+    """`TC-GRADE-07`'s variants line, its extreme — with every criterion's extraction
+    quarantined, the coverage reads 15 total, 15 missing, nothing else.
+
+    (Step 6 proper — the provisional criterion also missing, coverage draining
+    `provisional` into `missing` — is the case above; this is the variants line's
+    "all 15 criteria missing" taken whole.)"""
     coverage_for = require(GRADE_MODULE, "coverage_for", issue=ISSUE)
 
     coverage = coverage_for([], list(_ALL_CRITERIA))
@@ -200,7 +239,7 @@ def test_tc_grade_07_zero_missing_three_provisional_is_a_deliverable_computation
 
     rows = [("C1", 4.0, "provisional"), ("C2", 3.5, "provisional"),
             ("C3", 4.5, "provisional")]
-    scores = [score(cid, pts, state=state) for cid, pts, state in rows]
+    scores = [score(cid, pts, routing=routing) for cid, pts, routing in rows]
 
     coverage = coverage_for(scores, ["C1", "C2", "C3"])
     total = apply_policy(scores, GradePolicy(combination="weighted_sum")).total

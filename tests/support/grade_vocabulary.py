@@ -29,12 +29,26 @@ rename one edit.
 `test_completion_predicate.py`): #101's chain is `Depends on: #93 -> #92 -> #91`, so when
 `open_grade` exists, `criterion_score` carries the aggregation migration's columns. The
 rows written by `write_criterion_scores` name the post-#91 column set
-`(submission_id, criterion_id, band, points, state)`; today's table is
+`(submission_id, criterion_id, band, points, routing, state)`; today's table is
 `(submission_id, criterion_id, band)` and the extension is #91's, disclosed rather than
-hidden. The `state` literals `auto` / `reviewed` / `provisional` are pinned from the
-coverage field names (`criteria_auto` …), the vocabulary TC-GRADE-07's fixture uses
-("auto-accepted, reviewed, provisional, missing"); a missing criterion has **no** row, so
-`missing` is never a row state. `submission_grade`'s full column set (per HLD §9.6, which
+hidden. The **two-column split is the design's, not a bet**: CT-AGG-06 / FR-AGG-07 pin
+`routing` ∈ {`auto`, `queued`, `reviewed`, `provisional`, `triage`} — the coverage class
+the grade record counts (`criteria_auto` …, the vocabulary TC-GRADE-07's fixture uses:
+"auto-accepted, reviewed, provisional, missing") — and CT-AGG-07 / FR-AGG-11 pin
+`criterion_score.state` ∈ {`final`, `provisional_unreviewed`, `ungradeable_by_panel`,
+`unresolved_selection`}, the aggregation state, which M-GRADE's Requires row names
+together with routing as what "distinguish[es] provisional from missing". What **is**
+the stand-in's bet is the pairing: the fixtures only ever seed settled rows, so
+`write_criterion_scores` derives `state` from `routing` (`auto`/`reviewed` → `final`,
+`provisional` → `provisional_unreviewed`; `queued`/`triage` are M-REVIEW's queue
+population and are refused here). #91's writer decides the real pairs; until it lands a
+row carrying `provisional` routing and `final` state would be a fixture bug, not a
+design. A missing criterion has **no** row, so `missing` is never a row value. The
+writer is an **upsert** (`INSERT OR REPLACE`): today's shipped PK is
+`(submission_id, criterion_id)` (aeh/store.py migration 5), so a rewritten row — the
+key-correction leg's re-point, TC-GRADE-12 — must replace the prior row, and a plain
+INSERT would fail at fixture time on exactly the rewrite the case exists to exercise.
+`submission_grade`'s full column set (per HLD §9.6, which
 is not in this repository) is assumed to carry at least `submission_id`, `revision`,
 `run_id` and `is_current` (ADR-9's `(run_id, submission_id, revision)` key and
 current-flag are design-declared — §3.14's data-structures note), `state`, `grade`,
@@ -63,35 +77,50 @@ from typing import Any, Sequence
 #: The one story whose landing unmarks every M-GRADE case in this suite (test plan §8.2).
 GRADE_BLOCKER = "#101"
 
-#: The state literals a criterion-score row carries, pinned from the coverage field names.
-SCORE_STATES = ("auto", "reviewed", "provisional")
+#: The routing literals a criterion-score row's coverage class is drawn from, per
+#: CT-AGG-06 / FR-AGG-07. `queued` and `triage` are M-REVIEW's queue population — rows
+#: awaiting the teacher or the operator — and this vocabulary never seeds them: grading
+#: reads settled rows. A missing criterion is the row's **absence**, never a routing.
+ROUTINGS = ("auto", "reviewed", "provisional")
+
+#: The disclosed routing → aggregation-state pairing the stand-in writes, per the
+#: schema paragraph in the module docstring (CT-AGG-07's literal set; #91's writer
+#: decides the real pairs).
+ROUTING_TO_STATE = {
+    "auto": "final",
+    "reviewed": "final",
+    "provisional": "provisional_unreviewed",
+}
 
 
 def score(
     criterion_id: str,
     points: float,
     *,
-    state: str = "auto",
+    routing: str = "auto",
     band: str = "B1",
     ordinal: int = 1,
 ) -> SimpleNamespace:
     """One criterion score in the shape `apply_policy` and `coverage_for` consume.
 
-    `points` is the aggregated figure `M-AGG` derives from the band (FR-AGG-02); `state`
-    is the coverage class the row contributes to. A missing criterion is represented by
-    the row's **absence**, never by a state — that is the no-imputation rule's input side.
+    `points` is the aggregated figure `M-AGG` derives from the band (FR-AGG-02);
+    `routing` is the coverage class the row contributes to (CT-AGG-06's column). A
+    missing criterion is represented by the row's **absence**, never by a routing —
+    that is the no-imputation rule's input side. `state` (CT-AGG-07's aggregation
+    column) is derived by the disclosed `ROUTING_TO_STATE` mapping.
     """
-    if state not in SCORE_STATES:
+    if routing not in ROUTINGS:
         raise ValueError(
-            f"state {state!r} is not one of {SCORE_STATES}; a missing criterion is "
-            "represented by the row's absence, not by a state."
+            f"routing {routing!r} is not one of {ROUTINGS}; a missing criterion is "
+            "represented by the row's absence, not by a routing."
         )
     return SimpleNamespace(
         criterion_id=criterion_id,
         band=band,
         ordinal=ordinal,
         points=points,
-        state=state,
+        routing=routing,
+        state=ROUTING_TO_STATE[routing],
     )
 
 
@@ -101,23 +130,33 @@ def boundary(grade: str, scaled_floor: float) -> tuple[str, float]:
 
 
 def write_criterion_scores(handle: Any, rows: Sequence[tuple]) -> None:
-    """Write `(submission_id, criterion_id, band, points, state)` rows into Tier R.
+    """Write `(submission_id, criterion_id, band, points, routing)` rows into Tier R.
 
     The disclosed M-AGG stand-in: see the module docstring. The column set is the
     post-#91 shape the aggregation migration lands, which precedes #101 in #101's own
-    dependency chain.
+    dependency chain; the `state` column is derived from `routing` by the disclosed
+    mapping, and the write is an upsert — a rewritten row (the key-correction leg's
+    re-point) replaces the prior one, which today's `(submission_id, criterion_id)` PK
+    requires of any rewrite.
     """
     with handle.transaction() as tx:
-        for submission_id, criterion_id, band_name, points, state in rows:
+        for submission_id, criterion_id, band_name, points, routing in rows:
+            if routing not in ROUTING_TO_STATE:
+                raise ValueError(
+                    f"routing {routing!r} is not one the stand-in seeds "
+                    f"({sorted(ROUTING_TO_STATE)}); queued/triage rows are M-REVIEW's "
+                    "population, and a missing criterion is the row's absence."
+                )
             tx.execute(
-                "INSERT INTO criterion_score "
-                "(submission_id, criterion_id, band, points, state) "
-                "VALUES (:s, :c, :b, :p, :st)",
+                "INSERT OR REPLACE INTO criterion_score "
+                "(submission_id, criterion_id, band, points, routing, state) "
+                "VALUES (:s, :c, :b, :p, :r, :st)",
                 s=submission_id,
                 c=criterion_id,
                 b=band_name,
                 p=points,
-                st=state,
+                r=routing,
+                st=ROUTING_TO_STATE[routing],
             )
 
 
@@ -143,7 +182,8 @@ def backdate_grades(handle: Any, computed_at: str) -> None:
 
 __all__ = [
     "GRADE_BLOCKER",
-    "SCORE_STATES",
+    "ROUTINGS",
+    "ROUTING_TO_STATE",
     "backdate_grades",
     "boundary",
     "grade_rows",

@@ -34,12 +34,12 @@ from __future__ import annotations
 import pytest
 
 from aeh.pkg import GradePolicy
-from tests.support.grade_vocabulary import boundary, score
+from tests.support.grade_vocabulary import GRADE_BLOCKER, boundary, score
 from tests.support.impl import GRADE_MODULE, require
 
 pytestmark = pytest.mark.writtenahead
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 
 # --- TC-GRADE-04: the band comes from the table, or it does not exist ------------------------
@@ -130,7 +130,7 @@ def test_tc_grade_05_coverage_record_matches_the_hand_count(criterion_ids, rows,
     list, never from the rows alone."""
     coverage_for = require(GRADE_MODULE, "coverage_for", issue=ISSUE)
 
-    scores = [score(cid, pts, state=state) for cid, pts, state in rows]
+    scores = [score(cid, pts, routing=routing) for cid, pts, routing in rows]
 
     coverage = coverage_for(scores, list(criterion_ids))
 
@@ -234,9 +234,9 @@ def test_tc_grade_06_the_total_is_always_inside_the_reported_range():
     # includes the provisional criterion's current points.
     policy = GradePolicy(combination="weighted_sum")
     scores = [
-        score("C1", 30.0, state="auto"),
-        score("C2", 22.0, state="auto"),
-        score("C3", 4.0, state="provisional"),
+        score("C1", 30.0, routing="auto"),
+        score("C2", 22.0, routing="auto"),
+        score("C3", 4.0, routing="provisional"),
     ]
     total = apply_policy(scores, policy).total
 

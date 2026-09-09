@@ -38,12 +38,12 @@ from __future__ import annotations
 import pytest
 
 from aeh.pkg import GateRule, GradePolicy, ScaleRule
-from tests.support.grade_vocabulary import score
+from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 
 pytestmark = pytest.mark.writtenahead
 
-ISSUE = "#101"
+ISSUE = GRADE_BLOCKER
 
 
 # --- TC-GRADE-02: every closed-vocabulary rule, hand-computed -------------------------------
@@ -98,9 +98,10 @@ ISSUE = "#101"
             {"C1": 10.0, "C2": 8.0, "C3": 7.0},
             50.0,
         ),
-        # Rounding, each mode at decimals=0, on values no mode can confuse:
+        # Rounding, each mode at decimals=0, on raw totals no half-rule can confuse:
         # nearest rounds 2.4 down; up rounds 2.1 up to the integer; down rounds 2.9
-        # down. 2.4/2.1/2.9 sit at least .4 from the .5 the next case owns.
+        # down. None of 2.4 / 2.1 / 2.9 is a .5 value, so the exactly-.5 rule the next
+        # case owns cannot interfere with any of these three.
         (
             GradePolicy(combination="weighted_sum", rounding="nearest", decimals=0),
             {"C1": 1.4, "C2": 1.0},
@@ -187,8 +188,9 @@ def test_tc_grade_03_rounding_at_exactly_point_five_is_half_up(
     assert total == pytest.approx(expected, abs=1e-9), (
         f"nearest at exactly .5 returned {total!r}, expected {expected!r} — half-up is "
         "the pinned reading (test plan TC-GRADE-03: rounding at exactly .5 must not "
-        "stay implicit); half-even would return "
-        f"{expected - 1.0 if expected == 3.0 else expected - 1.0!r} for the first limb"
+        "stay implicit); half-even agrees with half-up on the above limb (4.0 is even) "
+        "and would return 2.0 for the below limb (2.5 → 2.0), so the below limb is "
+        "the discriminator between the two conventions"
     )
 
 
