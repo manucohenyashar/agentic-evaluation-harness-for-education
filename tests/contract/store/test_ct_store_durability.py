@@ -53,6 +53,10 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         from pathlib import Path
         sys.path.insert(0, os.environ["AEH_SRC"])
         from aeh.store import Statement, open_store
+        # TC-STORE-25: the migration chains concatenate at import time, so a fresh process
+        # imports every contributing module before the first open (#234) — the open site
+        # refuses the truncated chain otherwise.
+        import aeh.det, aeh.ingest, aeh.orch, aeh.pkg  # noqa: E401
 
         store = open_store(sys.argv[1])
         handle = store.cohort("c-c05")

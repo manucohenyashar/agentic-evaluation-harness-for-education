@@ -14,11 +14,11 @@ every contributing module is imported, and `_open_tier` refuses an open whose in
 falls short of the pin — **at the open site, naming the cause** — instead of letting the file
 build short and fail at a distance.
 
-**Why fresh interpreters.** Inside this suite the conftest import of `tests.support.impl`
-registers the full chain before any test module runs, so an in-process case could never see
-the truncated world — the very reason the footgun hides from the suite and bites only
-consumers. Each subprocess below starts a real interpreter, importing exactly what the world
-it demonstrates imports (`PYTHONPATH` points at this checkout's `src`).
+**Why fresh interpreters.** Inside this suite the conftest imports every contributing module
+up front, so an in-process case could never see the truncated world — the very reason the
+footgun hides from the suite and bites only consumers. Each subprocess below starts a real
+interpreter, importing exactly what the world it demonstrates imports (`PYTHONPATH` points at
+this checkout's `src`).
 """
 
 from __future__ import annotations
