@@ -1824,28 +1824,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Two of the eight cases run GREEN against shipped code and carry no marker:
     # TC-ORCH-30 (tests/integration/orch/test_perf_scheduling_overhead.py — the
     # scheduling path #59 shipped holds the budget) and TC-ORCH-33's lease/
-    # complete half (tests/integration/orch/test_ledger_capacity.py). The four
-    # entries dropped when #62 landed (TC-ORCH-26/24/35 and TC-ORCH-33's
-    # progress half): `Orchestrator.progress`, `ProgressReport` and
-    # `record_run_metrics` shipped as declared. The two remaining entries key
-    # the cases that still wait on the request assembler (M-JUDGE, #80/#81)
-    # and on the alert-rules surface `evaluate_alerts`.
-    # `record_run_metrics` is #65's invented-and-reserved name, claimed by
-    # TS-25's own file; the #65 entry above keeps its conjunction for ITS file
-    # untouched.
-    "#66 TS-25 one-submission isolation (TC-ORCH-19, ADV-04)": (
-        # The corpus half captures every assembled request over a complete run —
-        # it needs the dispatch driver (#62) AND the assembler/validator
-        # (M-JUDGE); the API half sweeps the same two surfaces. Conjunction:
-        # the case becomes runnable when the LAST of them lands.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.progress,"
-            f"{JUDGE_MODULE}:ScoringWorker.assemble,"
-            f"{JUDGE_MODULE}:assert_isolated"
-        ),
-        ("tests/artifact/test_one_submission_per_request.py",),
-    ),
+    # complete half (tests/integration/orch/test_ledger_capacity.py). Five
+    # entries have dropped as their surfaces landed: TC-ORCH-26/24/35 and
+    # TC-ORCH-33's progress half at #62 (`Orchestrator.progress`,
+    # `ProgressReport` and `record_run_metrics` shipped as declared), and
+    # TC-ORCH-19/ADV-04 below. `record_run_metrics` is #65's
+    # invented-and-reserved name, claimed by TS-25's own file; the #65 entry
+    # above keeps its conjunction for ITS file untouched.
+    #
+    # The "#66 TS-25 one-submission isolation (TC-ORCH-19, ADV-04)" entry stood
+    # here: its conjunction over `Orchestrator.progress` + the M-JUDGE
+    # assembler/validator resolved when #62 landed the dispatch's
+    # assembled-request seam (`FR-ORCH-20` — what crosses the call seam is the
+    # stage's closed request, never the ledger row, so the corpus half captures
+    # `ScoringRequest`/`ExtractionRequest`) and #80/#81 landed
+    # `ScoringWorker.assemble` and `assert_isolated`;
+    # `test_one_submission_per_request.py` lost its marker and rejoined the
+    # integration tier.
     "#66 TS-25 alert rules (TC-ORCH-36)": (
         # The five OBS-05 conditions are design text with no pinned surface;
         # `evaluate_alerts` is invented-and-disclosed (the `aeh.synth:-

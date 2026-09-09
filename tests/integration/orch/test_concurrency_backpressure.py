@@ -59,6 +59,7 @@ from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import (
     ORCH_COHORT_ID,
     seed_cohort,
+    seed_documents,
     seed_package,
     seed_run,
 )
@@ -214,6 +215,11 @@ def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recover
             cfg=_ceiling_32_config(),
             transport=spy,
         )
+        # Since #62's assembled-request reconciliation the dispatch assembles the
+        # stage's closed request and the assembler resolves the words from the
+        # store's document path — the fixture seeds one document per submission
+        # (the `test_judge_band_forcing.py` precedent, via the shared helper).
+        seed_documents(store, _SUBMISSIONS)
         orch.enumerate_units(run_id)
 
         # Leg 1 — ceiling respected under load.
@@ -241,6 +247,7 @@ def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recover
         bp_cohort = seed_cohort(
             store, _BP_SUBMISSIONS, cohort_id=f"{ORCH_COHORT_ID}-bp"
         )
+        seed_documents(store, _BP_SUBMISSIONS, cohort_id=bp_cohort)
         bp_version = seed_package(store, _CRITERIA, package_id="pkg-orch-bp")
         bp_run = orch.create_run(
             bp_cohort, bp_version, _ceiling_32_config(bp_cohort)

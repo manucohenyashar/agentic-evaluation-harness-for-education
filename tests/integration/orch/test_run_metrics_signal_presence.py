@@ -45,7 +45,7 @@ from aeh.orch import WorkError
 from aeh.prov import Completion
 from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, require, require_attr
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import ORCH_COHORT_ID, seed_documents, seed_run
 
 pytestmark = [pytest.mark.integration]
 
@@ -136,6 +136,11 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
             panel=None,  # orch_cfg's default: the three-judge edge panel
             transport=seam,
         )
+        # Since #62's assembled-request reconciliation the dispatch assembles the
+        # stage's closed request and the assembler resolves the words from the
+        # store's document path — the fixture seeds one document per submission
+        # (the `test_judge_band_forcing.py` precedent, via the shared helper).
+        seed_documents(store, _SUBMISSIONS)
         orch.enumerate_units(run_id)
 
         # Extract and deterministic units: complete them all (unlock Sweep 2).
