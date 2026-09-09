@@ -617,22 +617,97 @@ def test_issue_231_the_wall_clock_ceiling_cuts_the_setup_path(
         tmp_data_dir, monkeypatch):
     """`#231` — the wall-clock ceiling on the SETUP path: with the injected
     clock jumping past the deadline at the sanitizer's next boundary read, the
-    setup artifact is refused and the error names `wall_clock`. No test sleeps;
-    the clock is the seam §4.6 prescribes."""
+    setup artifact is refused, the error names `wall_clock`, nothing reaches
+    the model and no document row exists. No test sleeps; the clock is the
+    seam §4.6 prescribes."""
     import aeh.ingest as ingest_module
 
     monkeypatch.setenv("HARNESS_INGEST_MAX_FILE_SECONDS", "5")
     fx = _Bounds(tmp_data_dir, "setup-clock")
     source = fx.blobs.put(_pdf_with_pages(1))  # nothing else refuses this
     monkeypatch.setattr(ingest_module, "time", _AdvancingClock(jump_on=2))
+    _setup_refused(fx, source, "assessment", "wall_clock")
+    fx.close()
+
+
+def test_issue_231_the_wall_clock_cuts_a_revision_past_its_walk(
+        tmp_data_dir, monkeypatch):
+    """`#231` — the revision half of the wall clock: a revision whose sanitize
+    walk completes INSIDE the ceiling but whose rasterization overruns it is
+    refused by the post-walk boundary reads `pages_of` shares with
+    `ingest_document`. The clock jumps only while the rasterizer is running,
+    which is the deterministic way to place the overrun after the walk — a
+    revision source was processed and ingested past its ceiling before the
+    guard landed (reviewer finding on #231)."""
+    import aeh.ingest as ingest_module
+
+    class JumpsAfterFirstRevisionRaster:
+        """A fake clock that reads the overrun time only once the revision's
+        OWN rasterize has run — the rasterizer's `seen` list already holds the
+        original ingest's one raster, so `len(seen) >= 2` is exactly "the
+        revision's first rasterization happened". Every earlier read (the
+        deadline, the sanitizer's walk, the pre-raster boundary) sees the
+        pre-jump time, so the walk completes inside the ceiling and only the
+        post-walk reads can refuse."""
+
+        def __init__(self, rasterizer: ScriptedRasterizer) -> None:
+            self._rasterizer = rasterizer
+            self._now = 1000.0
+
+        def monotonic(self) -> float:
+            if len(self._rasterizer.seen) >= 2:
+                self._now = 5000.0
+            return self._now
+
+    monkeypatch.setenv("HARNESS_INGEST_MAX_FILE_SECONDS", "60")
+    fx = _Bounds(tmp_data_dir, "setup-revise-clock")
+    source = fx.blobs.put(_pdf_with_pages(1))
+    original = fx.ingestor.ingest_document([source], kind="assessment",
+                                           filenames={source: "scan.pdf"})
+    rescan = fx.blobs.put(_pdf_with_pages(1))
+    monkeypatch.setattr(ingest_module, "time",
+                        JumpsAfterFirstRevisionRaster(fx.rasterizer))
+    with pytest.raises(IngestSanitizeError) as excinfo:
+        fx.ingestor.revise_document(
+            original, [PageReplacement(blob_hash=rescan, page_no=1)])
+    message = str(excinfo.value)
+    assert "wall-clock" in message and "re-rasterization" in message, (
+        f"ISSUE {ISSUE_231}: the post-walk cut must name the ceiling and its "
+        f"phase, got: {message[:200]!r}.")
+    rows = fx.handle.query("SELECT document_id FROM document")
+    assert [row["document_id"] for row in rows] == [original], (
+        f"ISSUE {ISSUE_231}: the overrun revision was ingested.")
+    fx.close()
+
+
+def test_issue_231_a_fault_at_the_wall_clock_read_fails_closed(
+        tmp_data_dir, monkeypatch):
+    """`SEC-07` — the ceiling's own read is a bound evaluation: a clock whose
+    `monotonic` explodes at the deadline computation fails closed to the
+    declared refusal, never to a foreign exception (the last unguarded fault
+    site the reviewer probe found on the setup path)."""
+    import aeh.ingest as ingest_module
+
+    class ExplodingClock:
+        @staticmethod
+        def monotonic() -> float:
+            raise RuntimeError("injected: the clock read exploded")
+
+    fx = _Bounds(tmp_data_dir, "setup-fault-clock")
+    source = fx.blobs.put(_pdf_with_pages(1))  # benign: only the fault refuses
+    monkeypatch.setattr(ingest_module, "time", ExplodingClock())
     with pytest.raises(IngestSanitizeError) as excinfo:
         fx.ingestor.ingest_document([source], kind="assessment",
-                                    filenames={source: "setup.pdf"})
-    assert "wall_clock" in str(excinfo.value), (
-        f"ISSUE {ISSUE_231}: the cut must name the wall clock, got: "
-        f"{str(excinfo.value)[:200]!r}.")
-    assert fx.provider.calls == 0, (
-        f"ISSUE {ISSUE_231}: the cut setup artifact reached the model.")
+                                    filenames={source: "scan.pdf"})
+    message = str(excinfo.value)
+    assert "failed closed" in message and "NFR-INGEST-08" in message, (
+        f"ISSUE {ISSUE_231}: the clock fault must fail closed to the declared "
+        f"refusal, got: {message[:200]!r}.")
+    assert isinstance(excinfo.value.__cause__, RuntimeError), (
+        f"ISSUE {ISSUE_231}: the injected fault is not preserved as the "
+        f"cause, got: {excinfo.value.__cause__!r}.")
+    assert fx.provider.calls == 0 and fx.rasterizer.seen == [], (
+        f"ISSUE {ISSUE_231}: the faulted ingest processed the artifact.")
     fx.close()
 
 

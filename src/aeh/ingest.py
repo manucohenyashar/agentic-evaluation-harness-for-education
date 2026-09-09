@@ -2468,8 +2468,7 @@ class Ingestor:
             # review B1: the crop path was rendering the unsanitized original).
             sanitized_of: dict[str, bytes] = {}
             for blob_hash in blobs:
-                deadline = time.monotonic() + self._configured_seconds(
-                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                deadline = self._file_deadline(blob_hash)
                 pdf_bytes = self._blobs.get(blob_hash)
                 # FR-INGEST-33/34: neutralize and bound BEFORE any page is
                 # rasterized, and rasterize only the sanitized copy. A refusal
@@ -3058,6 +3057,23 @@ class Ingestor:
                 f"source blob {blob_hash[:12]} failed closed at the raster "
                 f"pixel-bound check: {error!r} (NFR-INGEST-08).") from error
 
+    def _file_deadline(self, blob_hash: str) -> float:
+        """The per-source-file wall-clock deadline (`FR-INGEST-34`): now plus the
+        `MAX_FILE_SECONDS` ceiling. The ceiling's read is itself a bound
+        evaluation, so a fault inside it fails closed to the declared refusal
+        (NFR-INGEST-08, #231); on the setup path that refusal raises to the
+        uploading teacher (FR-INGEST-32). A malformed ceiling value keeps its
+        own declared `IngestError`."""
+        try:
+            return time.monotonic() + self._configured_seconds(
+                MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+        except IngestError:
+            raise  # a declared refusal carries its own reason and type
+        except Exception as error:  # noqa: BLE001 -- NFR-INGEST-08's letter
+            raise IngestSanitizeError(
+                f"source blob {blob_hash[:12]} failed closed at the wall-clock "
+                f"ceiling read: {error!r} (NFR-INGEST-08).") from error
+
     def _refuse_past_deadline(self, blob_hash: str, deadline: float,
                               phase: str) -> None:
         """The wall-clock ceiling's boundary reads (`FR-INGEST-34`): past the
@@ -3150,8 +3166,7 @@ class Ingestor:
                     # bound stage applies, per blob (a revised document's total
                     # page count was already bounded when it was first ingested;
                     # the rescans are one-page sources).
-                    deadline = time.monotonic() + self._configured_seconds(
-                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    deadline = self._file_deadline(blob_hash)
                     sanitized = self._sanitize_source(
                         blob_hash, self._blobs.get(blob_hash), pages_used=0,
                         deadline=deadline)
@@ -3161,9 +3176,13 @@ class Ingestor:
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
                     sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "before re-rasterization")
                     raster_cache[blob_hash] = self._rasterizer.rasterize(
                         sanitized.pdf_bytes, dpi)
                     self._check_rasters(blob_hash, raster_cache[blob_hash])
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "during re-rasterization")
                 return raster_cache[blob_hash]
 
             if page_sequence is not None:
@@ -3231,8 +3250,7 @@ class Ingestor:
                 position = 0
                 for blob_hash in source_blobs:
                     pdf_bytes = self._blobs.get(blob_hash)
-                    deadline = time.monotonic() + self._configured_seconds(
-                        MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                    deadline = self._file_deadline(blob_hash)
                     # The legacy-provenance branch rasterizes whole sources the
                     # same way: sanitized copy only (FR-INGEST-33).
                     sanitized = self._sanitize_source(blob_hash, pdf_bytes,
@@ -3244,9 +3262,13 @@ class Ingestor:
                             "re-rasterization",
                             ", ".join(sanitized.neutralized), blob_hash[:12])
                     sanitized_cache[blob_hash] = sanitized.pdf_bytes
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "before re-rasterization")
                     legacy_pages = self._rasterizer.rasterize(sanitized.pdf_bytes,
                                                               dpi)
                     self._check_rasters(blob_hash, legacy_pages)
+                    self._refuse_past_deadline(blob_hash, deadline,
+                                               "during re-rasterization")
                     for page in legacy_pages:
                         position += 1
                         replacement = replacements.pop(page.page_no, None)
@@ -3530,8 +3552,7 @@ class Ingestor:
         for blob_hash in blobs:
             pdf_bytes = self._blobs.get(blob_hash)
             try:
-                deadline = time.monotonic() + self._configured_seconds(
-                    MAX_FILE_SECONDS_ENV, DEFAULT_MAX_FILE_SECONDS)
+                deadline = self._file_deadline(blob_hash)
                 sanitized = self._sanitize_source(blob_hash, pdf_bytes,
                                                   pages_used=pages_used,
                                                   deadline=deadline)
