@@ -252,37 +252,37 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # request arm and the explicit resume's supersede write; the control-read pass's
     # applied marker; the shared guarded run transition with its changes() read. Lines
     # moved with #61's lifecycle block; the #57/#58 statements are the same as ever.
-    "aeh.orch:2069",
-    "aeh.orch:2075",
-    "aeh.orch:2080",
-    "aeh.orch:2123",
-    "aeh.orch:2134",
-    "aeh.orch:2194",
-    "aeh.orch:2284",
-    "aeh.orch:2295",
-    "aeh.orch:2319",
-    "aeh.orch:2327",
+    "aeh.orch:2070",
+    "aeh.orch:2076",
+    "aeh.orch:2081",
+    "aeh.orch:2124",
+    "aeh.orch:2136",
+    "aeh.orch:2197",
+    "aeh.orch:2288",
+    "aeh.orch:2300",
+    "aeh.orch:2324",
+    "aeh.orch:2332",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:2731",
-    "aeh.orch:2746",
-    "aeh.orch:2750",
-    "aeh.orch:2761",
-    "aeh.orch:2769",
-    "aeh.orch:2778",
-    "aeh.orch:2788",
-    "aeh.orch:2792",
-    "aeh.orch:2996",
-    "aeh.orch:3003",
-    "aeh.orch:3054",
-    "aeh.orch:3058",
-    "aeh.orch:3108",
+    "aeh.orch:2736",
+    "aeh.orch:2751",
+    "aeh.orch:2755",
+    "aeh.orch:2766",
+    "aeh.orch:2774",
+    "aeh.orch:2783",
+    "aeh.orch:2793",
+    "aeh.orch:2797",
+    "aeh.orch:3001",
+    "aeh.orch:3008",
+    "aeh.orch:3059",
+    "aeh.orch:3063",
     "aeh.orch:3113",
-    "aeh.orch:3164",
-    "aeh.orch:3170",
+    "aeh.orch:3118",
+    "aeh.orch:3169",
+    "aeh.orch:3175",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -294,22 +294,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # queue-depth read. The restructure moved the queue's drain into the claim
     # pass's dispatch gate, so the drain's reads are gone and the key's run
     # resolution arrived.
-    "aeh.orch:3276",
-    "aeh.orch:3334",
-    "aeh.orch:3350",
-    "aeh.orch:3370",
-    "aeh.orch:3384",
-    "aeh.orch:3390",
-    "aeh.orch:3408",
-    "aeh.orch:3445",
-    "aeh.orch:3461",
-    "aeh.orch:3483",
+    "aeh.orch:3281",
+    "aeh.orch:3339",
+    "aeh.orch:3355",
+    "aeh.orch:3375",
+    "aeh.orch:3389",
+    "aeh.orch:3395",
+    "aeh.orch:3413",
+    "aeh.orch:3450",
+    "aeh.orch:3466",
+    "aeh.orch:3488",
     # The lines moved again with #61's lifecycle and ceiling blocks (the #60
     # statements are the same as ever).
-    "aeh.orch:3530",
-    "aeh.orch:3534",
-    "aeh.orch:3613",
-    "aeh.orch:3965",
+    "aeh.orch:3535",
+    "aeh.orch:3539",
+    "aeh.orch:3618",
+    "aeh.orch:3970",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only

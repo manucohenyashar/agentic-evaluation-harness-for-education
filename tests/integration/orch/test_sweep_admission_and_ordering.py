@@ -406,6 +406,21 @@ def test_tc_orch_07_sweep2_gates_on_dependency_extraction_then_orders_by_key_onl
 # ------------------------------------------------------------------------------------------
 
 
+class _NotBilled:
+    """The cost seam's honest no-figure answer (`CT-PROV-03`): None means **not
+    billed**, so the accrual adds nothing and no ceiling boundary moves.
+
+    #61's ceiling is enforced from the provider seam's measured figures, and a
+    `dev-ci`/`cloud-hosted` run freezes a ceiling at creation — a hosted run
+    dispatched without ANY seam would be a ceiling checked against nothing, which
+    #61 refuses loudly rather than silently uncapping. This suite's scope is the
+    Sweep 2 key, not cost; the injected seam satisfies the enforcement contract
+    without touching what the suite measures."""
+
+    def estimate_cost(self, unit: object) -> None:
+        return None
+
+
 def test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable(
     tmp_data_dir,
 ):
@@ -444,7 +459,7 @@ def test_tc_orch_08_sweep2_order_is_the_key_on_both_profiles_and_comparable(
         traces: dict[str, list[tuple[int, str, str]]] = {}
         for profile, package_id, panel, cfg in profiles:
             version = seed_package(store, criteria, package_id=package_id)
-            orchestrator = Orchestrator(store)
+            orchestrator = Orchestrator(store, provider=_NotBilled())
             run_id = orchestrator.create_run(ORCH_COHORT_ID, version, cfg)
             orchestrator.enumerate_units(run_id)
 

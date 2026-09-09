@@ -2066,11 +2066,12 @@ class Orchestrator:
         # FR-ORCH-15's displayed estimate, before any dispatch.
         estimate = self._run_cost_estimate(cohort, run_id)
         if estimate is not None:
-            cohort.execute(
-                ORCH_STATEMENTS["set_run_estimate"],
-                run_id=run_id,
-                cost_estimate=str(estimate),
-            )
+            with cohort.transaction() as tx:
+                tx.execute(
+                    ORCH_STATEMENTS["set_run_estimate"],
+                    run_id=run_id,
+                    cost_estimate=str(estimate),
+                )
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["transition_run_started"],
@@ -2131,11 +2132,12 @@ class Orchestrator:
         if status == "paused":
             # The requested state already holds: record the request as applied, change
             # nothing. (An operator double-pausing must not manufacture a state flip.)
-            cohort.execute(
-                ORCH_STATEMENTS["mark_pauses_applied"],
-                applied_at=_now(),
-                run_id=run_id,
-            )
+            with cohort.transaction() as tx:
+                tx.execute(
+                    ORCH_STATEMENTS["mark_pauses_applied"],
+                    applied_at=_now(),
+                    run_id=run_id,
+                )
             return "paused"
         # Apply through the control-read pass — immediate on a running run, queued on a
         # pending one (CT-ORCH-13).
@@ -2191,11 +2193,12 @@ class Orchestrator:
                     # latest control intent wins, and a pause that would re-fire at a
                     # later start after an explicit resume is a control the operator
                     # already overrode.
-                    cohort.execute(
-                        ORCH_STATEMENTS["mark_pauses_applied"],
-                        applied_at=_now(),
-                        run_id=run_id,
-                    )
+                    with cohort.transaction() as tx:
+                        tx.execute(
+                            ORCH_STATEMENTS["mark_pauses_applied"],
+                            applied_at=_now(),
+                            run_id=run_id,
+                        )
                     self._maybe_complete_run(cohort, run_id)
             self.enumerate_units(run_id)
             return
@@ -2281,22 +2284,24 @@ class Orchestrator:
                     ):
                         status = "running"
                     self._mark_control_applied(cohort, control_id)
-                cohort.execute(
-                    ORCH_STATEMENTS["mark_pauses_applied"],
-                    applied_at=_now(),
-                    run_id=run_id,
-                )
+                with cohort.transaction() as tx:
+                    tx.execute(
+                        ORCH_STATEMENTS["mark_pauses_applied"],
+                        applied_at=_now(),
+                        run_id=run_id,
+                    )
                 queued_reason = None
         return status, queued_reason
 
     def _mark_control_applied(self, cohort: Any, control_id: str) -> None:
         """Mark one control row applied (`applied_at` read-back is the operator's
         evidence the request was honoured, not just recorded)."""
-        cohort.execute(
-            ORCH_STATEMENTS["mark_control_applied"],
-            control_id=control_id,
-            applied_at=_now(),
-        )
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["mark_control_applied"],
+                control_id=control_id,
+                applied_at=_now(),
+            )
 
     def _transition_run(
         self,

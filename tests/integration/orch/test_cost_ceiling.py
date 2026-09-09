@@ -1,5 +1,6 @@
-"""`TC-ORCH-15` — the cost ceiling on a `cloud-hosted` run, **written ahead of #61**
-(the pause machine and the ceiling wiring; the pause-lifecycle file's sibling).
+"""`TC-ORCH-15` — the cost ceiling on a `cloud-hosted` run, **landed by #61**
+(the pause machine and the ceiling wiring; the pause-lifecycle file's sibling —
+this file too was written ahead of the story and unmarked at the landing).
 
 FR-ORCH-15: a cost estimate is obtained before dispatch and displayed; at and above the
 ceiling the run pauses, the ledger is preserved, and the pause names the spend and the
@@ -51,7 +52,7 @@ from tests.support.conf_builders import hosted_cfg
 from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#61"
 
@@ -85,7 +86,7 @@ def _run_row(store, run_id: str) -> dict:
         "SELECT * FROM run WHERE run_id = :r", r=run_id
     )
     assert rows, f"run {run_id} vanished"
-    return rows[0]
+    return dict(rows[0])
 
 
 #: The frozen backend snapshot's columns. They are EXCLUDED from every display scan:
@@ -167,9 +168,18 @@ def test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_di
         dispatched = 0
         for stage in ("extract", "score"):
             while _run_row(store, run_id)["status"] != "paused":
-                if not orch.lease("worker-a", stage, 1):
+                units = orch.lease("worker-a", stage, 1)
+                if not units:
                     break
                 dispatched += 1
+                if stage == "extract":
+                    # The Sweep 2 gate (`FR-ORCH-06`): a score unit is ready only when
+                    # its own criterion's extraction is `done` — the dispatcher closes
+                    # each extraction as it goes so the scoring it feeds becomes
+                    # claimable in the same run. Completion is a work_unit transition
+                    # recorded by the orchestrator; the no-verdicts assertion below
+                    # stays pointed at the PAUSE, which fabricates no result at all.
+                    orch.complete(units[0].work_id)
 
         row = _run_row(store, run_id)
         assert dispatched == expected_dispatched, (
