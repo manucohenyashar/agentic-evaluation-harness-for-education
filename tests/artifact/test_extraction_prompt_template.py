@@ -116,7 +116,6 @@ def _fields_of(request: Any) -> list[tuple[str, str]]:
     return [(str(name), str(value)) for name, value in fields]
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_04_template_lint_submission_last_fixed_order_fenced():
     """`TC-EXTRACT-04` — the lint: fixed field order across sampled requests; the
     transcript only in the last field, fenced exactly once between the shipped
@@ -194,7 +193,6 @@ def test_tc_extract_04_template_lint_submission_last_fixed_order_fenced():
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_13_template_version_is_pinned_and_echoed_in_the_request():
     """`TC-EXTRACT-13` — the module pins the template version as a non-empty string
     constant, and the assembled request echoes the unit's `work_id`: the orchestrator's

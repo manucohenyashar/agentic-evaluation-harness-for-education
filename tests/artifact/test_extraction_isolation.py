@@ -72,8 +72,6 @@ from tests.support.extract_vocabulary import (
 )
 from tests.support.impl import EXTRACT_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = EXTRACT_ISSUE
 
 #: The prohibition's vocabulary. A field whose NAME carries one of these stems is

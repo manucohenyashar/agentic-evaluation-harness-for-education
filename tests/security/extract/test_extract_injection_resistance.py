@@ -85,7 +85,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = EXTRACT_ISSUE
 
@@ -239,7 +239,9 @@ def test_tc_extract_10_injected_twin_selection_indistinguishable_from_benign(
             (benign, spans_benign),
             (injected, spans_injected),
         ):
-            request = AssembleRequest(by_submission[twin.submission_id])
+            request = AssembleRequest(
+                by_submission[twin.submission_id], store=store
+            )
             provider.record(
                 require(EXTRACT_MODULE, PROMPT_FIELDS, issue=ISSUE)(request),
                 model_ref, sampling_params(),

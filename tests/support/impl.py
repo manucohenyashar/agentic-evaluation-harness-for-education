@@ -27,7 +27,6 @@ from tests.support.extract_vocabulary import (
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
     SECOND_FAMILY_MODEL,
     TS26_EXTRACT_SYMBOLS,
-    TS27_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
@@ -1233,14 +1232,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit",
         ),
     ),
-    "#68 review": (
-        "symbol",
-        f"{EXTRACT_MODULE}:prompt_fields",
-        (
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
-        ),
-    ),
+    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
+    # so its blocker no longer holds. The `[extract]` param it named stays marked for
+    # now — its first require is #109's `write_fields` (the test resolves it before it
+    # reads either consumer), and the marker is function-level, shared with the
+    # `[judge]` param — so the file is unmarked by #109's implementer, together with
+    # the `#109 review` entry below. The file remains registered under the `#78
+    # review` and `#109`-family entries meanwhile.
     # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
     #
     # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
@@ -1259,19 +1257,24 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # marker; they sit inside the marked files whose other cases wait on #68. The
     # second-family case is keyed separately below: #69 owns `FR-EXTRACT-07`'s
     # mechanism (Phase 2) and lands independently of #68.
-    "#68 extraction suite (TS-26)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
-        (
-            "tests/artifact/test_extraction_isolation.py",
-            "tests/artifact/test_extraction_prompt_template.py",
-            "tests/integration/extract/test_extract_spans_and_rows.py",
-            "tests/integration/extract/test_extract_failure_and_graphics.py",
-            "tests/integration/extract/test_extract_scale_calls.py",
-            "tests/integration/extract/test_extract_document_invalidation.py",
-            "tests/security/extract/test_extract_pii_purge.py",
-            "tests/property/test_extract_span_bounds.py",
-        ),
+    # The "#68 extraction suite (TS-26)" entry stood here: its conjunction over
+    # `TS26_EXTRACT_SYMBOLS` (built from `tests/support/extract_vocabulary.py`)
+    # resolved when #68 landed `aeh.extract`, and the seven suite files it named lost
+    # their markers in the same change. What remains keyed is the one case whose
+    # blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69 second-family case.
+    # TC-EXTRACT-14 (`test_extract_pii_purge.py`) is keyed SEPARATELY from the TS-26
+    # suite: #68 made its extraction half runnable (the payload provably carries the
+    # student's verbatim work before the purge), but the purge half calls
+    # `store.purge_cohort`, whose Tier D promotion precondition — `audit_record`,
+    # `label` and `criterion_stats` scoped by `cohort_id`, and `promote` itself — is
+    # M-STATS/M-REVIEW's to land (the shipped gate names them). Keyed on the promote
+    # surface (the vocabulary bet: the store's own error names the operation); the
+    # implementer who lands promotion unmarks the file and reconciles the case's
+    # seeding with the promote API.
+    "#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)": (
+        "symbol",
+        f"{STATS_MODULE}:promote_cohort",
+        ("tests/security/extract/test_extract_pii_purge.py",),
     ),
     "#69 second family (TS-26)": (
         # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
@@ -1284,21 +1287,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
-    # Two entries, keyed separately from the TS-26 suite because each resolves a DIFFERENT
-    # symbol set than the fourteen TS-26 files (the `#69` precedent: an entry whose key
-    # overstates what its file resolves would fire while a needed name is still absent).
-    # Both are built from `tests/support/extract_vocabulary.py`, so the registry cannot
-    # name a symbol the tests stopped using. The disclosure PR #252 left behind —
-    # "TC-EXTRACT-10 adversarial directives — not this PR — assigned to #71" — lands here.
-    #
-    # TC-EXTRACT-10 runs the real F-ADV-INJ twin pairs through the extraction boundary:
-    # the differential needs the driver, the request assembly, the rendered prompt
-    # fields, the parsed result and the pinned template version, and nothing else.
-    "#71 TS-27 injection differential (TC-EXTRACT-10)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS27_EXTRACT_SYMBOLS),
-        ("tests/security/extract/test_extract_injection_resistance.py",),
-    ),
+    # Two entries stood here for TS-27. The injection-differential entry
+    # (TC-EXTRACT-10, `test_extract_injection_resistance.py`) left with #68: its
+    # conjunction over `TS27_EXTRACT_SYMBOLS` resolved when the extract module landed,
+    # and the file runs in TEST_CMD again. The band-forcing entry below stays: ADV-02's
+    # band differential needs #78's `ScoringWorker` too.
     # ADV-02's band differential runs the same pairs THROUGH the judge boundary: the
     # extract leg needs #68's driver, assembly and prompt fields (to put the evidence
     # rows the verdict rests on into the store), and the band leg needs #78's
