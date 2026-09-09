@@ -1737,6 +1737,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_timing.py",
         ),
     ),
+    "#74 IntegrityGate (TS-66 C12 verification cost, linear and total)": (
+        # The perf limbs and the coverage limb all run the real gate; the coverage
+        # oracle's teeth run unmarked. slow-marked limbs follow the conform/console
+        # perf-contract precedent.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_verification_cost.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
