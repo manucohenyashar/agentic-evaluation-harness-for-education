@@ -300,10 +300,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.det:1653",
     "aeh.det:1661",
     "aeh.det:1667",
-    # The ingest sites are #226's line numbers (the live-crop/raster-persistence
-    # story and its review fixes shifted the module; every statement verified
-    # unchanged against the prior baseline, the tripwire diff being the line
-    # move alone).
+    # The ingest sites are #231's line numbers (the setup-path fail-closed
+    # guards shifted the module; every statement verified unchanged against
+    # the prior baseline, the tripwire diff being the line move alone).
     "aeh.ingest:2771",
     "aeh.ingest:2782",
     "aeh.ingest:2804",
