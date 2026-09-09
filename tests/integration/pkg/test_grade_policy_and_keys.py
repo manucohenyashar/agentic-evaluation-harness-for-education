@@ -399,16 +399,24 @@ def test_tc_pkg_20_appends_succeed_before_and_after_publication(tmp_data_dir):
 
 def test_tc_pkg_29_is_locked_answers_the_versions_publication_state(tmp_data_dir):
     """`TC-PKG-29` (added to test-plan §5.4 with #30) — `is_locked` answers False on a
-    draft and True on a published version.
+    draft, True on a published version, and False on a revision's child, resolving the
+    version row on every call instead of raising — and an unknown version id raises
+    rather than answering.
 
     Regression: `is_locked` referenced `_SELECT_VERSION`, a name the module never
     defined — every call raised `NameError` from the moment #26 landed. No existing
     `TC-*` case exercised the accessor, so the regression is written inline per the
-    defect-fix rule and the case joins the plan in the same PR."""
+    defect-fix rule and the case joins the plan in the same PR. #239 completes the
+    oracle with the unknown-id negative half."""
     store, handle, catalog, v = _catalog(tmp_data_dir, with_mcq=False)
     assert catalog.is_locked(v) is False
     catalog.publish(v, "teacher")
     assert catalog.is_locked(v) is True
     child = catalog.create_version(v)
     assert catalog.is_locked(child) is False
+    # The negative half: an unknown but well-formed version id must raise, never
+    # answer — the row lookup finds nothing, and the accessor refuses to guess a
+    # publication state for a version that does not exist (#239).
+    with pytest.raises(IndexError):
+        catalog.is_locked("pkg-30@000000000000")
     store.close()
