@@ -27,10 +27,10 @@ from tests.support.extract_vocabulary import (
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
     SECOND_FAMILY_MODEL,
     TS26_EXTRACT_SYMBOLS,
-    TS27_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
     WORKER,
 )
+from tests.support.judge_vocabulary import TS30_JUDGE_SYMBOLS, TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -1233,14 +1233,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit",
         ),
     ),
-    "#68 review": (
-        "symbol",
-        f"{EXTRACT_MODULE}:prompt_fields",
-        (
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
-        ),
-    ),
+    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
+    # so its blocker no longer holds. The `[extract]` param it named stays marked for
+    # now — its first require is #109's `write_fields` (the test resolves it before it
+    # reads either consumer), and the marker is function-level, shared with the
+    # `[judge]` param — so the file is unmarked by #109's implementer, together with
+    # the `#109 review` entry below. The file remains registered under the `#78
+    # review` and `#109`-family entries meanwhile.
     # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
     #
     # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
@@ -1259,19 +1258,24 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # marker; they sit inside the marked files whose other cases wait on #68. The
     # second-family case is keyed separately below: #69 owns `FR-EXTRACT-07`'s
     # mechanism (Phase 2) and lands independently of #68.
-    "#68 extraction suite (TS-26)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
-        (
-            "tests/artifact/test_extraction_isolation.py",
-            "tests/artifact/test_extraction_prompt_template.py",
-            "tests/integration/extract/test_extract_spans_and_rows.py",
-            "tests/integration/extract/test_extract_failure_and_graphics.py",
-            "tests/integration/extract/test_extract_scale_calls.py",
-            "tests/integration/extract/test_extract_document_invalidation.py",
-            "tests/security/extract/test_extract_pii_purge.py",
-            "tests/property/test_extract_span_bounds.py",
-        ),
+    # The "#68 extraction suite (TS-26)" entry stood here: its conjunction over
+    # `TS26_EXTRACT_SYMBOLS` (built from `tests/support/extract_vocabulary.py`)
+    # resolved when #68 landed `aeh.extract`, and the seven suite files it named lost
+    # their markers in the same change. What remains keyed is the one case whose
+    # blocker #68 did NOT land — TC-EXTRACT-14 below — and the #69 second-family case.
+    # TC-EXTRACT-14 (`test_extract_pii_purge.py`) is keyed SEPARATELY from the TS-26
+    # suite: #68 made its extraction half runnable (the payload provably carries the
+    # student's verbatim work before the purge), but the purge half calls
+    # `store.purge_cohort`, whose Tier D promotion precondition — `audit_record`,
+    # `label` and `criterion_stats` scoped by `cohort_id`, and `promote` itself — is
+    # M-STATS/M-REVIEW's to land (the shipped gate names them). Keyed on the promote
+    # surface (the vocabulary bet: the store's own error names the operation); the
+    # implementer who lands promotion unmarks the file and reconciles the case's
+    # seeding with the promote API.
+    "#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)": (
+        "symbol",
+        f"{STATS_MODULE}:promote_cohort",
+        ("tests/security/extract/test_extract_pii_purge.py",),
     ),
     "#69 second family (TS-26)": (
         # TC-EXTRACT-07 resolves the driver (#68's `ExtractionWorker`) AND #69's
@@ -1284,21 +1288,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-27 (#71), the M-EXTRACT injection-resistance cases ------------------------------
     #
-    # Two entries, keyed separately from the TS-26 suite because each resolves a DIFFERENT
-    # symbol set than the fourteen TS-26 files (the `#69` precedent: an entry whose key
-    # overstates what its file resolves would fire while a needed name is still absent).
-    # Both are built from `tests/support/extract_vocabulary.py`, so the registry cannot
-    # name a symbol the tests stopped using. The disclosure PR #252 left behind —
-    # "TC-EXTRACT-10 adversarial directives — not this PR — assigned to #71" — lands here.
-    #
-    # TC-EXTRACT-10 runs the real F-ADV-INJ twin pairs through the extraction boundary:
-    # the differential needs the driver, the request assembly, the rendered prompt
-    # fields, the parsed result and the pinned template version, and nothing else.
-    "#71 TS-27 injection differential (TC-EXTRACT-10)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS27_EXTRACT_SYMBOLS),
-        ("tests/security/extract/test_extract_injection_resistance.py",),
-    ),
+    # Two entries stood here for TS-27. The injection-differential entry
+    # (TC-EXTRACT-10, `test_extract_injection_resistance.py`) left with #68: its
+    # conjunction over `TS27_EXTRACT_SYMBOLS` resolved when the extract module landed,
+    # and the file runs in TEST_CMD again. The band-forcing entry below stays: ADV-02's
+    # band differential needs #78's `ScoringWorker` too.
     # ADV-02's band differential runs the same pairs THROUGH the judge boundary: the
     # extract leg needs #68's driver, assembly and prompt fields (to put the evidence
     # rows the verdict rests on into the store), and the band leg needs #78's
@@ -1330,34 +1324,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TS26_EXTRACT_SYMBOLS` conjunction), so every conjunction below is that base plus
     # the consumer symbols — built from the vocabulary and the module constants, like
     # the entries above, so the registry cannot name a symbol the tests stopped using.
-    "#68 extraction contract suite (TS-65)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
-        (
-            "tests/contract/extract/test_ct_extract_c01_span_offsets.py",
-            "tests/contract/extract/test_ct_extract_c02_no_judgment_in_schema.py",
-            "tests/contract/extract/test_ct_extract_c04_dependency_request.py",
-            "tests/contract/extract/test_ct_extract_c05_resolved_build_identity.py",
-            "tests/contract/extract/test_ct_extract_c06_submission_last_prompt_order.py",
-            "tests/contract/extract/test_ct_extract_c11_call_count_invariant.py",
-            "tests/contract/extract/test_ct_extract_c12_versions_in_work_id.py",
-            "tests/contract/extract/test_ct_extract_c13_tier_r_purge_and_twin_differential.py",
-            "tests/contract/extract/test_ct_extract_c03_no_judge_dimension.py"
-            "::test_tc_extract_c03_one_row_for_the_triple_no_judge_dimension_in_the_schema",
-            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
-            "::test_tc_extract_c07_no_extract_unit_exists_for_a_deterministic_criterion",
-            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
-            "::test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_three_failures_quarantine_and_never_write_an_evidence_row",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_exactly_two_failures_retry_rather_than_quarantine",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_the_2am_empty_row_write_is_silent_but_turns_this_case_red",
-            "tests/contract/extract/test_ct_extract_c09_described_graphic_marker.py"
-            "::test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_row_keeps_it",
-        ),
-    ),
+    # The "#68 extraction contract suite (TS-65)" entry left when #68 landed
+    # `aeh.extract`: the rung-2 contract cases (C01-C09, C11-C13, C08) resolved only
+    # the `TS26_EXTRACT_SYMBOLS` conjunction, so their markers came off and they
+    # rejoin TEST_CMD. The rung-3 nodes below stay keyed on their consumers.
     "#68 extraction contract metrics (TS-65)": (
         # C14, the whole file: the suite's names plus #68's own `extraction_metrics`
         # emitter — the one case that reads the metrics, hence its own conjunction, so
@@ -1901,6 +1871,122 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbol",
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/integration/orch/test_ledger_capacity_progress.py",),
+    ),
+    # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
+    #
+    # Two files, one per owning story of the surface they resolve. The isolation
+    # file is pure rung 0 and waits on #78's worker/request pair; the numeral file
+    # renders through #78's worker AND #79's version-pinned template, so its key is
+    # a conjunction over both stories' symbols (the "#71" precedent: the render
+    # alone does not make the case runnable). The symbol tuples live in
+    # `tests/support/judge_vocabulary.py` — the single bet the two suites share;
+    # that module imports nothing from here, so the key import is acyclic.
+    "#78 scoring isolation (TS-30)": (
+        "symbols",
+        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_JUDGE_SYMBOLS),
+        ("tests/artifact/test_scoring_isolation.py",),
+    ),
+    "#79 judge prompt (TS-30)": (
+        # The numeral file's world also runs the EXTRACT leg to put evidence rows
+        # into the store (the "#71 TS-27" shape: a conjunction over both modules),
+        # so the extract symbols ride this entry — the file stays red until #68's
+        # leg resolves too, not merely the judge surface.
+        "symbols",
+        ",".join(
+            [f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS]
+            + [
+                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
+                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
+                f"{EXTRACT_MODULE}:{WORKER}",
+            ]
+        ),
+        ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
+    ),
+    # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
+    #
+    # The design declares no M-SYNTH Protocol (the `#97 TS-24 synthesis boundary
+    # (RES-07)` entry above records the grep), so every key is an
+    # invented-and-disclosed name — settled in `tests/support/synth_vocabulary.py`
+    # (the extract_vocabulary precedent), one rename there per reconciled symbol.
+    # Ownership follows the stories' acceptance criteria: #97 ships the two-level
+    # boundary, the request types, the completeness gate, the narrative schema and
+    # the report; #98 ships the score-claim prohibition (the check and the
+    # configured pattern list) and the evidence anchoring.
+    "#97 two-level boundary (TC-SYNTH-01)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_two_level_boundary.py",),
+    ),
+    "#97 request and result types (TC-SYNTH-02/03/07)": (
+        # All three types in one conjunction: the artifact file's three cases
+        # resolve together, and a Protocol shell satisfies none of them (each is
+        # introspected field by field, which is the assertion itself).
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:L1Request,"
+            f"{SYNTH_MODULE}:L2Request,"
+            f"{SYNTH_MODULE}:SynthesisResult"
+        ),
+        ("tests/artifact/test_synth_score_free_schema.py",),
+    ),
+    "#98 score-claim check (TC-SYNTH-04)": (
+        # The rung-0 predicate, the verify_span precedent for a module-level
+        # pure entry the pattern-scan cases call.
+        "symbol",
+        f"{SYNTH_MODULE}:has_score_claim",
+        ("tests/unit/synth/test_score_claim_patterns.py",),
+    ),
+    "#97+#98 stored narratives (TC-SYNTH-05/06)": (
+        # The scan and the suppression ladder both need the module AND the check:
+        # runnable when the LAST lands, whichever story that is.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/integration/synth/test_score_claim_suppression.py",),
+    ),
+    "#97 completeness gate and sentinel (TC-SYNTH-09/10)": (
+        # Both cases drive the worker; TC-SYNTH-10's schema half bites the moment
+        # the module lands — if #97 ships the worker but forgets the narrative
+        # migration, the unmarked test fails visibly in the gate, which is where
+        # it should fail.
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/integration/synth/test_completeness_and_sentinel.py",),
+    ),
+    "#97 synthesis report (TC-SYNTH-08/12)": (
+        # The observability cases read the report the worker returns; the
+        # conjunction is the worker plus the report type it is assumed to
+        # construct (disclosed in the vocabulary). The issue's Req column
+        # traces TC-SYNTH-08 to FR-SYNTH-04 (anchoring, #98); the sample/
+        # rate fields themselves are bet on #97's report surface here — if
+        # they ship with #98 instead, drop THIS entry at #97's landing and
+        # re-key the file on #98's check.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:SynthesisWorker,"
+            f"{SYNTH_MODULE}:SynthesisReport"
+        ),
+        ("tests/integration/synth/test_synthesis_observability.py",),
+    ),
+    "#97 Tier R residency (TC-SYNTH-11)": (
+        "symbol",
+        f"{SYNTH_MODULE}:SynthesisWorker",
+        ("tests/security/synth/test_narrative_tier_r_purge.py",),
+    ),
+    "#98 ADV-11 attack (ADV-11)": (
+        # The attack drives the worker against the check: both symbols so the
+        # case stays RED-via-NotImplementedYet until BOTH land — at #97 alone
+        # it would already run and fail behaviorally (no check -> the verbatim
+        # claim stores), which is a red the writtenahead gate cannot
+        # distinguish from an implemented failure.
+        "symbols",
+        (
+            f"{SYNTH_MODULE}:has_score_claim,"
+            f"{SYNTH_MODULE}:SynthesisWorker"
+        ),
+        ("tests/security/synth/test_adv_11_score_claim_paraphrase.py",),
     ),
 }
 

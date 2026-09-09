@@ -469,7 +469,10 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     key=lambda m: m.version,
 ))
 
-#: #61's lifecycle columns and the control-row queue. `cost_estimate` carries the
+#: #61's lifecycle columns and the control-row queue. The cohort registry stood at
+#: version 11 (`M-EXTRACT`'s `extract_evidence_columns`, #68 — this branch originally
+#: took 11 too, and the merge renumbered to the next free number rather than rewrite
+#: a landed migration's number). `cost_estimate` carries the
 #: pre-dispatch estimate start() displays (canonical Decimal string; NULL where no
 #: estimator seam was available — a fabricated zero would read as a measured price,
 #: the principle `CT-PROV-03` states for cost figures). `cost_spend` is the accrual the
@@ -480,7 +483,7 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 #: pause and resume requests land here and are effected when the orchestrator reads
 #: them — the request is never the effect, which is why a control row written while
 #: nothing is dispatching queues and is honoured at the next read.
-_ORCH_COHORT_011: tuple[Statement, ...] = (
+_ORCH_COHORT_012: tuple[Statement, ...] = (
     Statement("ALTER TABLE run ADD COLUMN cost_estimate TEXT"),
     Statement("ALTER TABLE run ADD COLUMN cost_spend TEXT NOT NULL DEFAULT '0'"),
     Statement("ALTER TABLE run ADD COLUMN pause_reason TEXT"),
@@ -503,7 +506,7 @@ _ORCH_COHORT_011: tuple[Statement, ...] = (
 
 TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     TIER_MIGRATIONS[Tier.COHORT]
-    + (Migration(version=11, name="orch_run_lifecycle", statements=_ORCH_COHORT_011),),
+    + (Migration(version=12, name="orch_run_lifecycle", statements=_ORCH_COHORT_012),),
     key=lambda m: m.version,
 ))
 

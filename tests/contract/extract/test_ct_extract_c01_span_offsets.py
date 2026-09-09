@@ -49,7 +49,7 @@ from tests.contract.extract._doubles import (
     make_world,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _LADDER_BODY = (
     "The rate is 12 kg per hour.\n"

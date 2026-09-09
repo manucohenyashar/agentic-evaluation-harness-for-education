@@ -15,8 +15,10 @@ Oracle — **post-purge absence**, against real bytes:
   `TC-STORE-11`/`SEC-13` reclaim-by-evidence idiom, read against extraction's bytes.
 
 **Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+`"#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)"`: #68 made the
+extraction half runnable, but the purge half needs the Tier D promotion the shipped
+`purge_cohort` gate names (`audit_record`/`label`/`criterion_stats` scoped by
+`cohort_id`, and `promote` itself — M-STATS/M-REVIEW's to land).
 
 **Interface this case assumes of #68**: `ExtractionWorker(store, provider,
 model_ref).process(unit)` and `assemble_request`/`prompt_fields` — as everywhere in
@@ -111,12 +113,23 @@ def _extract(store: Any, provider: Any, version: str) -> str:
     orchestrator = Orchestrator(store)
     run_id = orchestrator.create_run(ORCH_COHORT_ID, version, resolved)
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
-    request = AssembleRequest(unit)
+    request = AssembleRequest(unit, store=store)
     model_ref = extractor_ref()
+    # Calibration (disclosed in the PR): the span addresses the sentence by BYTE
+    # offset in the canonical artifact, like every other file's `_byte_span` — the
+    # sentence does not start at offset 0 (the fence tag is there first), and the
+    # parse derives `text` from the bytes the offsets address, so a canned span whose
+    # offsets cannot round-trip is refused, not persisted.
+    sentence_start = _MARKDOWN.encode("utf-8").find(_SENTENCE.encode("utf-8"))
+    assert sentence_start > 0, "fixture bug: the sentence is not in the document"
     provider.record(
         PromptFields(request), model_ref, sampling_params(),
         span_completion(
-            [{"start": 0, "end": len(_SENTENCE), "text": _SENTENCE}],
+            [{
+                "start": sentence_start,
+                "end": sentence_start + len(_SENTENCE.encode("utf-8")),
+                "text": _SENTENCE,
+            }],
             build_id="extractor-build-pii",
         ),
     )
