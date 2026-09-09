@@ -437,8 +437,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4142",
     "aeh.pkg:4148",
     "aeh.pkg:4156",
-    "aeh.store:1745",
-    "aeh.store:2501",
+    # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
+    # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
+    # #269's _VersionOrderedRegistry, and again with #61's run-lifecycle statements landing
+    # in store.py; the sites are the same statements as before.
+    "aeh.store:1808",
+    "aeh.store:2587",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
