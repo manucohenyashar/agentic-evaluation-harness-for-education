@@ -201,6 +201,45 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
          "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too",),
     ),
+    # --- TS-35 (#94), the M-AGG median-band aggregation cases ---------------------------------
+    #
+    # The suite's union of blockers is `aggregate`, `EvenPanelError` and `ordinal_alpha` — the
+    # `symbols` kind, because a `symbol` key on `aggregate` alone would read the suite resolved
+    # the moment #91 lands its first member while `test_ordinal_alpha.py` is still red (the
+    # TC-STORE-15 coin-flip). The vocabulary the tests call lives in
+    # `tests/support/agg_vocabulary.py`, which is also where the design gaps are written down:
+    # §3.12 declares the Protocol members but no Interfaces block pins the exception or the
+    # score's degeneracy field, so `EvenPanelError` and `agreement_degenerate` are the tests'
+    # declared pins, reconciling at #91.
+    "#91": (
+        "symbols",
+        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,{AGG_MODULE}:ordinal_alpha",
+        ("tests/unit/agg/test_median_band_mapping.py",
+         "tests/unit/agg/test_median_band_panels.py",
+         "tests/unit/agg/test_ordinal_alpha.py",
+         "tests/unit/agg/test_aggregation_perf.py",
+         "tests/integration/agg/test_even_panel_failed_write.py",
+         "tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_aggregated_points_equal_points_for_band_of_the_median_band",
+         "tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_no_even_panel_is_ever_aggregated"),
+    ),
+    # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
+    # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
+    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
+    # declared name; only `GradeComputation`'s field set is unpinned and assumed (`.total`,
+    # declared in the test's docstring). Split from the `#101` module entry above, which
+    # resolves against `aeh.grade`'s **first** commit and so names a test the module's
+    # existence does not make runnable — the `#118` split precedent. The fuzz file's
+    # marker is per-test with node-ID paths (the `#118`/`#138`/`#139` form): a
+    # module-level marker on a two-blocker file would let an early unmark move the
+    # still-red half inside `TEST_CMD`.
+    "#101 apply_policy": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        ("tests/property/test_fuzz_05_aggregation_and_policy.py"
+         "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
+    ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
     # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens
