@@ -2,25 +2,31 @@
 
 Test plan §5.12 (row form: Artifact assertion / rung 0), issue #95 (TS-36). Traces to
 `NFR-AGG-01`; the assertion form of CT-AGG-01 ("no store access, no model call, no
-clock, no configuration read beyond the values passed in"). Written ahead of #91
-(`aggregate`, `ordinal_alpha`) and #93 (`should_escalate`) — keyed on the conjunction,
-since the case as a whole is runnable only when all three exist.
+clock, no configuration read beyond the values passed in"). **Landed at #93** (the
+last of the three symbols — `aggregate` and `ordinal_alpha` are #91's,
+`should_escalate` #93's).
 
 `TC-ORCH-32` (#64) pins `should_escalate`'s purity from the orchestrator side; this
 file is the module-side assertion over all three members, and the corollary
 TC-ORCH-32 declared as a landing assumption is asserted here for every member: the
-same inputs evaluated again return an equal result.
+same inputs evaluated again return an equal result — for `should_escalate` this
+holds structurally, the landed decision type being a frozen dataclass compared by
+value.
 
 **The guards, and their one declared blind spot:**
 
 - the TS-00 socket guard (autouse) — a model call fails mid-connect;
 - a refusing store spy handed to every store-shaped parameter (TC-ORCH-32's oracle);
 - the clock, `datetime`, `random` and `os` **surfaces are poisoned**: the stdlib
-  attributes (`time.time`, `time.monotonic`, `time.perf_counter`, `datetime.now`,
-  `datetime.utcnow`, `date.today`, `random.random`, `random.choices`,
-  `random.sample`, `os.environ`, `os.getenv`) raise, naming the I/O the contract
-  forbids — and the module under test's own bindings of those modules are replaced
-  with the same poison, so a module-qualified access fails too;
+  attributes (`time.time`, `time.monotonic`, `time.perf_counter`, `time.process_time`,
+  `time.thread_time`, `random.random`, `random.choices`, `random.sample`, `os.getenv`)
+  raise, naming the I/O the contract forbids, and the `datetime.datetime` /
+  `datetime.date` class attributes are replaced with the same poison — the methods
+  themselves sit on immutable C types and cannot be patched, so the class is what
+  gets poisoned (any `datetime.*` use fails on the attribute access). `os.environ`
+  is deliberately left alone — the harness process reads it mid-run — so the os limb
+  is `os.getenv`. The module under test's own bindings of those modules are replaced
+  too, so a module-qualified access fails as well;
 - **blind spot, recorded rather than papered over**: a `from time import time`
   binding captures the function object at import and is invisible to both poisons.
   The AST-level alternative (banning the import shape) is `TC-PROV-05`'s walker's
@@ -47,8 +53,6 @@ from tests.support.agg_vocabulary import (
     expected_distribution,
 )
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 _FOUR_BAND = criterion([band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.0),
                         band("B3", 3, 6.0)])
@@ -98,12 +102,24 @@ def _poison_the_world(monkeypatch: pytest.MonkeyPatch, agg_module) -> None:
 
     for target in (
         "time.time", "time.monotonic", "time.perf_counter", "time.process_time",
-        "time.thread_time", "datetime.datetime.now", "datetime.datetime.utcnow",
-        "datetime.date.today", "random.random", "random.choices", "random.sample",
+        "time.thread_time", "random.random", "random.choices", "random.sample",
         "os.getenv",
     ):
         monkeypatch.setattr(target, boom(target), raising=False)
-    monkeypatch.setattr("os.environ", _Poison("os.environ"), raising=False)
+    # The datetime surfaces: `datetime.datetime.now`/`.utcnow` and
+    # `datetime.date.today` are attributes of IMMUTABLE C types — patching the
+    # methods themselves raises `TypeError: cannot set ... of immutable type`
+    # (the declared blind spot's sibling, found the first time this fixture
+    # ran). The rebindable surface is the module's own class attribute, so the
+    # poison replaces the class: any use of `datetime.datetime.<anything>` or
+    # `datetime.date.<anything>` under it fails on the attribute access.
+    monkeypatch.setattr("datetime.datetime", _Poison("datetime.datetime"), raising=False)
+    monkeypatch.setattr("datetime.date", _Poison("datetime.date"), raising=False)
+    # `os.environ` itself is NOT replaced: the harness process reads it mid-run
+    # (pytest's terminal writer asks shutil.get_terminal_size, which reads
+    # os.environ['COLUMNS']), so a wholesale replacement poisons pytest, not the
+    # module. The os limb is `os.getenv` — the read path a pure module would
+    # take — plus the module-binding poison below.
 
     for name in ("time", "datetime", "random", "os"):
         if hasattr(agg_module, name):

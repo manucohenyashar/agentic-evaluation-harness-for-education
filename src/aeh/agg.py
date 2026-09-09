@@ -84,19 +84,30 @@ det.py precedent):
 
 Scope: #91 landed the aggregation core above plus `describe_agreement`, the
 module's own honest description of an agreement figure (`CT-STATS-21`'s M-AGG
-consumer limb). #92 lands the confidence surface on that core: the integrity
+consumer limb). #92 landed the confidence surface on that core: the integrity
 inversion (`FR-AGG-05`, ADR-10 — a cap is a `min`, never a penalty term, so
 unanimity cannot outrun bad evidence), the four integrity inputs recorded on
 the score row (`FR-AGG-13`), the from-the-row-alone re-derivation
 (`recompute_confidence`, `NFR-AGG-04`), and the cohort migration that carries
-the columns. The escalation policy, the remaining routing values and the score
-states are #93's: `aggregate` returns the panel path's own `state` (`final`)
-and routes `auto`/`queued` only.
+the columns. #93 completes the module: the closed routing set with the
+`triage`/`queued` split (`FR-AGG-07` — an ingestion-caused state is the
+operator's rescan, never a teacher's marking decision), the four score states
+assigned per cause with the breaker's `ungradeable_by_panel` (`FR-AGG-11`),
+the two-verdict discard composed with `EvenPanelError` (`FR-AGG-12` — the
+module never adjudicates between two), the deterministic pass-through
+(`FR-AGG-10`), and the escalation policy `should_escalate` (`FR-AGG-08/09`):
+observable signals only, model self-confidence one weighted input and never
+the sole trigger (R22's failure mode), one judge to three and never to two.
+The decision is returned to `M-ORCH`, which enqueues (`FR-ORCH-09`) — this
+module imports no orchestrator and offers no enqueue; the dependency stays
+one-way. The write set is unchanged and stays empty of SQL (`CT-AGG-11`):
+every value here is returned for the caller's transaction, so `M-AGG` has no
+write path to `narrative` and none to anything else.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Sequence
 
@@ -112,16 +123,26 @@ __all__ = [
     "AGG_AUTO_THRESHOLD_ATOMIC",
     "AGG_AUTO_THRESHOLD_HOLISTIC",
     "AGG_CAP_TABLE",
+    "AGG_ESCALATION_ANOMALY_SIGMA",
+    "AGG_ESCALATION_OVERRIDE_RATE",
+    "AGG_ESCALATION_NO_DATA_WEIGHT",
+    "AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT",
+    "AGG_ESCALATION_SIGNAL_WEIGHT",
+    "AGG_ESCALATION_THRESHOLD",
     "AGG_HOLISTIC_MULTIPLIER",
     "AGG_UNCITED_MULTIPLIER",
     "AggregateError",
+    "CriterionEscalationRank",
     "CriterionScore",
     "EmptyVerdictsError",
+    "EscalationDecision",
     "EvenPanelError",
     "aggregate",
     "describe_agreement",
     "ordinal_alpha",
+    "rank_criteria_for_escalation",
     "recompute_confidence",
+    "should_escalate",
 ]
 
 
@@ -223,6 +244,61 @@ _RECORDED_SIGNAL_FIELDS: tuple[str, ...] = (
 )
 
 
+# --- #93: the escalation policy's declared constants (§3.12, §3.8) ----------------------------------
+#
+# The design pins the SHAPE of the escalation decision — observable signals,
+# self-confidence weighted but never authoritative — and records the weights
+# themselves as a `TBD`: "whether the escalation policy weights over observable
+# signals are fixed constants at Phase 1 or fitted against the accumulated label
+# store from Phase 2 ... Phase 1 ships fixed weights" (§3.8). These are those
+# fixed Phase-1 weights: production defaults declared here and injected at the
+# call (`should_escalate(..., config=...)`), the same shape as the confidence
+# surface's — the policy reads no configuration beyond the values passed in
+# (`CT-AGG-01`), never the environment. The numbers are Assumption-class, the
+# same standing §3.12's cap table has, and R22's whole point lives in their
+# RATIOS, not their absolute scale: every observable signal weighs a full
+# `AGG_ESCALATION_SIGNAL_WEIGHT`, the decision fires at
+# `AGG_ESCALATION_THRESHOLD`, and self-confidence's largest possible
+# contribution — its weight times the full sweep of its range — stays strictly
+# below that threshold. That inequality is the "never the sole trigger"
+# requirement made structural rather than accidental: no value a model reports
+# about itself can cross the line alone, under any tuning that keeps the
+# inequality.
+
+#: The concern level at which `should_escalate` decides to escalate. Each
+#: observable signal carries `AGG_ESCALATION_SIGNAL_WEIGHT` when it fires, so
+#: any one of them alone reaches the threshold; self-confidence cannot.
+AGG_ESCALATION_THRESHOLD: float = 1.0
+#: The weight of one fired observable signal (§3.12/§7.1's enumeration:
+#: interior band position, adverse integrity signals, uncited verdict,
+#: transcription overlap, criterion override history, distributional anomaly).
+AGG_ESCALATION_SIGNAL_WEIGHT: float = 1.0
+#: The weight an unmeasured override history contributes (CT-STATS-09: a
+#: criterion nobody has reviewed is not a criterion nobody disagrees with —
+#: "no data" is not a zero). Deliberately below the threshold: a fresh
+#: criterion with no history draws attention in the ranking
+#: (`rank_criteria_for_escalation`) but does not escalate on absence alone.
+AGG_ESCALATION_NO_DATA_WEIGHT: float = 0.5
+#: The weight of model self-confidence — ONE weighted input (FR-AGG-08). It
+#: enters as `weight × (1 − self_confidence)`, clamped to the weight's own
+#: ceiling: at the most self-doubting report possible it adds the full weight,
+#: and `weight < AGG_ESCALATION_THRESHOLD` is what makes it structurally
+#: incapable of triggering alone (R22: a model's own certainty is the least
+#: reliable signal available).
+AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT: float = 0.25
+#: How many standard deviations from the package's expected band position
+#: counts as a distributional anomaly (§3.12's "distributional anomaly against
+#: the package baseline"; the design names no k — declared here, the
+#: α-convention precedent).
+AGG_ESCALATION_ANOMALY_SIGMA: float = 2.0
+#: The override rate above which the criterion's own history counts as an
+#: escalation signal — "more than half of its reviewed scores were overridden",
+#: the same strict reading the criterion breaker takes (CT-ORCH-16). The design
+#: names no rate; declared here so the knob is injectable with the rest
+#: (`should_escalate(..., config=...)`), never hard-coded at the call.
+AGG_ESCALATION_OVERRIDE_RATE: float = 0.5
+
+
 # --- the score -------------------------------------------------------------------------------------
 
 
@@ -243,7 +319,10 @@ class CriterionScore:
     criterion_id: str
     band: str
     ordinal: int
-    points: float
+    #: The mapped value. `None` only on a deterministic pass-through row whose
+    #: unresolved selection never mapped one (FR-DET-03) — the panel path always
+    #: maps exactly once (FR-AGG-02).
+    points: float | None
     modal_band: str
     band_spread: int
     judge_count: int
@@ -267,12 +346,28 @@ class CriterionScore:
     #: top band. Recorded on the row (cohort migration v16) so the confidence
     #: is re-derivable from stored data alone.
     confidence_base: float | None = None
-    #: `auto` iff `confidence >= auto_threshold_for(scoring_model)`, else
-    #: `queued` (§3.12; the remaining routing values are #93's).
+    #: The closed routing set (`FR-AGG-07`, `CT-AGG-06`): `auto` — the
+    #: confidence met the scoring model's threshold; `queued` — the TEACHER's
+    #: review queue, panel disagreement below the threshold; `provisional` — a
+    #: single-judge band (or a score under a tripped criterion breaker), never
+    #: auto-accepted; `reviewed` — a reviewer has acted, M-REVIEW's to write;
+    #: `triage` — the OPERATOR's queue, for unresolved-selection and
+    #: ingestion-caused states only. `reviewed` is the one value this module
+    #: never assigns: it names a review that has happened.
     routing: str = "queued"
-    #: The panel path's own state. The other states — fallback, breaker,
-    #: deterministic — are #93's assignment.
+    #: The score's state, naming the cause (`FR-AGG-11`, `CT-AGG-07`):
+    #: `final` — a full panel's settled aggregation; `provisional_unreviewed` —
+    #: a single-judge band awaiting its panel; `ungradeable_by_panel` — the
+    #: criterion's `M-ORCH` circuit breaker tripped (consumers surface it, never
+    #: treat it as an ordinary provisional); `unresolved_selection` — M-DET's
+    #: unresolved selection, arriving routed `triage`.
     state: str = "final"
+    #: #93 (seam 4): what this module did to produce the score, in order — the
+    #: cause markers for the two-verdict discard, the single-judge provisional,
+    #: the breaker mark and the deterministic pass-through. Clauses carry the
+    #: FR id that required them, so a consumer reading the row alone can tell a
+    #: discarded second verdict from a never-run one.
+    notes: tuple[str, ...] = ()
     #: The four recorded integrity inputs (`FR-AGG-13`), passed through exactly
     #: as received — including `None` ("not measured"), which is adverse
     #: fail-closed wherever the figure is consumed. Recorded so the confidence
@@ -488,9 +583,13 @@ def aggregate(
     signals: Any,
     *,
     config: Any = None,
+    fallback: bool = False,
+    breaker_tripped: bool = False,
+    deterministic_score: Any = None,
 ) -> CriterionScore:
     """Aggregate a panel's verdicts into one criterion score (`FR-AGG-01/02/03/04`)
-    with its confidence (`FR-AGG-05`, `FR-AGG-13`, `NFR-AGG-04`).
+    with its confidence (`FR-AGG-05`, `FR-AGG-13`, `NFR-AGG-04`), its routing
+    and its state (`FR-AGG-07/10/11/12`).
 
     Pure (`CT-AGG-01`): the verdicts, the criterion's declared band set, the
     integrity signals and the configuration are values; nothing here reads a
@@ -524,26 +623,95 @@ def aggregate(
        requires evidence — read fail-closed when the criterion does not
        declare the flag.
 
-    Routing is `auto` iff `confidence >= auto_threshold_for(scoring_model)`
-    (§3.12), else `queued`; the state is the panel path's own `final` (the
-    remaining states are #93's). The four integrity inputs `FR-AGG-13` records
-    are carried on the score exactly as received, beside the pre-cap base —
-    the fields that make the figure reconstructible from the stored row alone
-    (`recompute_confidence`).
+    Routing and state (`#93`) are assigned **per cause**, in precedence order —
+    breaker, then panel size, then the threshold:
 
-    An empty panel raises `EmptyVerdictsError` (a programming error, `CT-AGG-12`);
-    an even panel raises `EvenPanelError` before any median is taken
-    (`FR-AGG-03`).
+    * `breaker_tripped=True` — the criterion's `M-ORCH` circuit breaker tripped
+      (`CT-ORCH-16`): the score is routed `provisional` and its state is
+      `ungradeable_by_panel`. It is surfaced, never treated as an ordinary
+      provisional, and never auto-accepted — no confidence can lift it.
+    * a single-judge panel — routed `provisional`, state
+      `provisional_unreviewed`: one judge's word awaits its panel
+      (`FR-ORCH-13`'s "scored single-judge provisional"), never auto-accepted.
+    * otherwise — `auto` iff `confidence >= auto_threshold_for(scoring_model)`
+      (§3.12), else `queued`; state `final`.
+
+    The four integrity inputs `FR-AGG-13` records are carried on the score
+    exactly as received, beside the pre-cap base — the fields that make the
+    figure reconstructible from the stored row alone (`recompute_confidence`).
+    `notes` records what this call did, one clause per cause (`FR-AGG-12`'s
+    discard, the single-judge mark, the breaker mark, the pass-through).
+
+    The two marked alternative entries (`#93`):
+
+    * `deterministic_score=` (`FR-AGG-10`) — an M-DET row judged without a
+      panel (`judge_count` 0). It is its own entry and is checked first,
+      because an empty panel is exactly how such a row arrives. The row is
+      **echoed, never re-aggregated**: band, points, ordinal, judge_count,
+      agreement and the recorded signals are carried as received, and
+      `routing`/`state` are taken off the row (`unresolved_selection` arrives
+      routed `triage`), with `auto`/`final` as the fallbacks when a row omits
+      them. A non-empty panel alongside a row is a contradictory call and
+      raises `ValueError`.
+    * `fallback=True` (`FR-AGG-12`) — the one even case with a declared
+      fallback: a panel **left at exactly two** by an unrecoverable judge
+      failure. The second verdict is discarded — never adjudicated between,
+      since a tie broken by rule is a coin flip presented as a judgement
+      (R48) — and the base single-judge band is kept, provisional. Any other
+      even size still raises `EvenPanelError`; an odd panel aggregates
+      normally regardless of the mark.
+
+    An empty panel with no deterministic row raises `EmptyVerdictsError` (a
+    programming error, `CT-AGG-12`); any other even panel raises
+    `EvenPanelError` before any median is taken (`FR-AGG-03`).
     """
+    # The deterministic pass-through (FR-AGG-10) is its own entry and is checked
+    # first: an empty panel is exactly how a row judged without a panel arrives,
+    # so this entry must come before the empty-panel refusal it is the marked
+    # alternative to. A non-empty panel alongside a row is a contradictory call.
+    if deterministic_score is not None:
+        if len(verdicts) != 0:
+            raise ValueError(
+                "aggregate received both a verdict panel and a deterministic score — "
+                "FR-AGG-10's entry is for rows judged without a panel; the two are "
+                "never combined."
+            )
+        return _passthrough_score(deterministic_score, criterion)
     if len(verdicts) == 0:
         raise EmptyVerdictsError(
             "aggregate over an empty verdict set is a programming error (CT-AGG-12): "
             "it is never a zero, a lowest band, or a null score."
         )
     if len(verdicts) % 2 == 0:
+        if fallback and len(verdicts) == 2:
+            # The two-verdict discard (FR-AGG-12), composed with the even-panel
+            # refusal: the ONE even case with a declared fallback — a panel left
+            # at exactly two by an unrecoverable judge failure. The second
+            # verdict is discarded, never adjudicated between: two judges whose
+            # verdicts disagree is a coin flip a rule would present as a
+            # judgement (R48). The base single-judge band is kept and the score
+            # is provisional — never a rounded verdict, never a settled panel.
+            single = aggregate(
+                verdicts[:1],
+                criterion,
+                signals,
+                config=config,
+                breaker_tripped=breaker_tripped,
+            )
+            return replace(
+                single,
+                notes=single.notes
+                + (
+                    "second verdict discarded: panel left at two by an unrecoverable "
+                    "failure — the base single-judge band is kept, never adjudicated "
+                    "between the two (FR-AGG-12)",
+                ),
+            )
         raise EvenPanelError(
             f"a panel of {len(verdicts)} judges is even — an even panel is a failed "
-            "write, not a rounded verdict (FR-AGG-03): escalate 1 → 3, never to 2."
+            "write, not a rounded verdict (FR-AGG-03): escalate 1 → 3, never to 2. "
+            "(A panel left at exactly two by an unrecoverable failure is the one "
+            "fallback: mark it with fallback=True, FR-AGG-12.)"
         )
 
     ordinals = sorted(_verdict_ordinal(v) for v in verdicts)
@@ -631,6 +799,30 @@ def aggregate(
         if cap is not None:
             confidence = min(confidence, float(cap))
 
+    # --- #93: routing and state, assigned per cause (FR-AGG-07, FR-AGG-11) -------------------
+    # Precedence is the cause's, not the confidence's: the breaker mark and the
+    # single-judge construction both force `provisional` regardless of the
+    # confidence figure — a capped-high number is still one judge's word or a
+    # criterion the panel could not grade (CT-ORCH-16: consumers surface it,
+    # never treat it as an ordinary provisional).
+    notes: tuple[str, ...] = ()
+    if breaker_tripped:
+        routing = "provisional"
+        state = "ungradeable_by_panel"
+        notes += (
+            "criterion breaker tripped: ungradeable_by_panel (FR-AGG-11, CT-ORCH-16)",
+        )
+    elif len(verdicts) == 1:
+        # A single-judge band is provisional by construction (§3.12): it awaits
+        # its panel — FR-AGG-09's escalation to three is M-ORCH's to enqueue —
+        # and one judge's word alone is never sufficient to auto-accept.
+        routing = "provisional"
+        state = "provisional_unreviewed"
+        notes += ("single-judge band: provisional by construction (FR-AGG-07, FR-AGG-11)",)
+    else:
+        routing = "auto" if confidence >= threshold else "queued"
+        state = "final"
+
     return CriterionScore(
         criterion_id=criterion.criterion_id,
         band=band,
@@ -644,8 +836,9 @@ def aggregate(
         histogram=histogram,
         confidence=confidence,
         confidence_base=confidence_base,
-        routing="auto" if confidence >= threshold else "queued",
-        state="final",
+        routing=routing,
+        state=state,
+        notes=notes,
         spans_verified=getattr(signals, "spans_verified", None),
         evidence_present=getattr(signals, "evidence_present", None),
         sufficiency_flag=getattr(signals, "sufficiency_flag", None),
@@ -672,6 +865,60 @@ def _row_value(row: Any, field: str) -> Any:
         except (IndexError, KeyError):
             return None
     return getattr(row, field, None)
+
+
+def _passthrough_score(row: Any, criterion: Any) -> CriterionScore:
+    """Echo a deterministic M-DET row through as a score (`FR-AGG-10`).
+
+    The row judged without a panel arrives **already scored** — M-DET mapped the
+    band and its mapped value, or left it `NULL` for an unresolved choice — so
+    this is an echo, never a re-aggregation: the module invents no band, maps no
+    points, and derives no confidence. `routing`/`state` come from the row (an
+    unresolved choice arrives routed `triage` — the OPERATOR queue, the same
+    boundary `FR-INGEST-30`/`FR-CONSOLE-11` draw); `auto`/`final` are the
+    fallbacks when a row omits them, not overrides. The one clause in `notes`
+    marks the entry, so a consumer reading the row alone can tell a
+    pass-through from a panel score.
+    """
+    band_name = _row_value(row, "band")
+    if band_name is None:
+        # A det row always names its band; an absent one is echoed as the empty
+        # name rather than invented from the criterion.
+        band_name = ""
+    ordinal = _row_value(row, "ordinal")
+    if ordinal is None and band_name:
+        # No ordinal on the row: a lookup through the criterion's declared bands
+        # by name — the same single source the panel path maps through.
+        for declared in getattr(criterion, "bands", ()) or ():
+            if _band_row(declared, "band") == band_name:
+                ordinal = _band_row(declared, "ordinal")
+                break
+    points = _row_value(row, "points")
+    judge_count = _row_value(row, "judge_count")
+    agreement = _row_value(row, "agreement")
+    band_spread = _row_value(row, "band_spread")
+    histogram = _row_value(row, "histogram")
+    return CriterionScore(
+        criterion_id=_row_value(row, "criterion_id") or criterion.criterion_id,
+        band=band_name,
+        ordinal=int(ordinal) if ordinal is not None else 0,
+        points=None if points is None else float(points),
+        modal_band=_row_value(row, "modal_band") or band_name or "",
+        band_spread=int(band_spread) if band_spread is not None else 0,
+        judge_count=int(judge_count) if judge_count is not None else 0,
+        agreement=None if agreement is None else float(agreement),
+        agreement_degenerate=int(getattr(criterion, "band_count", 0)) < 3,
+        histogram=histogram if isinstance(histogram, tuple) else (),
+        confidence=_row_value(row, "confidence"),
+        confidence_base=_row_value(row, "confidence_base"),
+        routing=_row_value(row, "routing") or "auto",
+        state=_row_value(row, "state") or "final",
+        notes=("deterministic score passed through unchanged (FR-AGG-10)",),
+        spans_verified=_row_value(row, "spans_verified"),
+        evidence_present=_row_value(row, "evidence_present"),
+        sufficiency_flag=_row_value(row, "sufficiency_flag"),
+        ocr_overlap_risk=_row_value(row, "ocr_overlap_risk"),
+    )
 
 
 def recompute_confidence(row: Any, criterion: Any, *, config: Any = None) -> float | None:
@@ -795,7 +1042,313 @@ def describe_agreement(figure: Any, population: str) -> str:
     return "\n".join(lines)
 
 
-# --- the cohort migration: the confidence surface's stored columns (`FR-AGG-13`) -------------------
+# --- #93: the escalation policy (`FR-AGG-08/09`, §3.8) ----------------------------------------------
+#
+# The decision M-AGG returns to M-ORCH: whether a criterion score warrants a
+# bigger panel, decided from OBSERVABLE signals — the row's interior band
+# position, its recorded integrity inputs, the uncited mark, the criterion's
+# override history, the distributional position against the package baseline —
+# with model self-confidence one weighted input and structurally incapable of
+# triggering alone (R22). The ENQUEUE the decision feeds is M-ORCH's
+# (`FR-ORCH-09`): this module imports no orchestrator and offers no enqueue —
+# the dependency stays one-way (`FR-AGG-14`).
+
+#: A sentinel distinguishing "the row does not carry this field" from "the row
+#: carries it as `None`". The escalation policy reads them differently — an
+#: absent signal is no claim at all and its limb is skipped; a recorded `None`
+#: is "measured, and inconclusive", which is adverse fail-closed wherever a
+#: value is consumed (the `_signal_adverse` reading). The confidence surface
+#: does not need the distinction (a row's recorded fields are always present,
+#: `None`-valued or not); the escalation policy does, because it reads rows
+#: both this module produced (all fields present) and stand-ins that name only
+#: the fields their story varies.
+_AGG_ABSENT = object()
+
+
+def _row_field(row: Any, field: str) -> Any:
+    """A tolerant read that distinguishes absent from `None` (see `_AGG_ABSENT`).
+
+    The same accessor forms `_row_value` accepts — a mapping, a `sqlite3.Row`,
+    an object — returning the `_AGG_ABSENT` sentinel where `_row_value` would
+    return `None`, so a caller can tell "the row says nothing about it" from
+    "the row recorded that it was not measured".
+    """
+    if isinstance(row, dict):
+        return row[field] if field in row else _AGG_ABSENT
+    if hasattr(row, "keys"):
+        try:
+            return row[field] if field in row.keys() else _AGG_ABSENT
+        except (IndexError, KeyError):
+            return _AGG_ABSENT
+    return getattr(row, field, _AGG_ABSENT)
+
+
+@dataclass(frozen=True)
+class EscalationDecision:
+    """The escalation decision M-AGG returns to M-ORCH (`FR-AGG-08/09`, §3.8).
+
+    `escalate` is the bool; `target_judge_count` carries FR-AGG-09's one-to-
+    three-and-never-two (an even target is impossible by construction: the
+    target is the next odd at least two above the current panel). `reasons`
+    names each fired observable signal, in the policy's enumeration order —
+    the observability seam: the enqueue this decision feeds is M-ORCH's
+    (`FR-ORCH-09`), and this module returns the decision, never enqueues.
+
+    Value equality is the point (`NFR-ORCH-04`'s purity corollary): the same
+    inputs must decide the same way, and self-confidence is deliberately
+    ABSENT from `reasons` — it shapes the concern and can never be the reason
+    a decision escalated (R22). A caller diffing two decisions therefore
+    diffs only the observables that actually fired.
+    """
+
+    escalate: bool
+    target_judge_count: int
+    reasons: tuple[str, ...] = ()
+
+
+def _escalation_knob(config: Any, name: str, default: float) -> float:
+    """One escalation knob, injected at the call (`CT-AGG-01`: never the
+    environment). `config=None` or an absent attribute means the constant."""
+    value = getattr(config, name, None) if config is not None else None
+    return default if value is None else float(value)
+
+
+def should_escalate(
+    score: Any,
+    criterion: Any,
+    history: Any,
+    baseline: Any,
+    *,
+    config: Any = None,
+) -> EscalationDecision:
+    """The escalation policy (`FR-AGG-08`, §3.8's `Aggregator.should_escalate`
+    Protocol member as the module-level pure function, the same reading
+    `aggregate` and `ordinal_alpha` take): decide whether a criterion score
+    warrants a bigger panel, from observable signals only.
+
+    Pure (`NFR-ORCH-04`, `CT-AGG-01`): the score row, the criterion, the
+    criterion's override history and the package baseline are values; no
+    store, no clock, no model call, no network, and no configuration beyond
+    the arguments — `config` may carry any of `escalation_threshold`,
+    `escalation_signal_weight`, `escalation_no_data_weight`,
+    `escalation_self_confidence_weight`, `escalation_anomaly_sigma` and
+    `escalation_override_rate` (each defaulting to its module constant).
+
+    The decision is a concern level against the threshold. Each observable
+    signal contributes `AGG_ESCALATION_SIGNAL_WEIGHT` when it fires (§7.1's
+    enumeration, in order):
+
+    1. **Interior band position** — the score sits in a declared band that is
+       neither the top nor the bottom of the criterion's scale: the panel did
+       not reach a scale edge, where bands are best discriminated. Read off
+       the row's `ordinal` against `band_count` (the row's, else the
+       criterion's); a row carrying neither is not making the claim, and the
+       limb is skipped.
+    2. **Adverse integrity signals** — each of the six M-INTEG fields read
+       off the row: adverse (the opposite polarity, or a recorded `None` =
+       not measured, fail-closed) fires; an absent field is no claim and
+       skips its limb.
+    3. **Uncited verdict** — the row's `uncited` mark.
+    4. **Criterion override history** — `history.override_rate` above
+       `AGG_ESCALATION_OVERRIDE_RATE` (more than half of the criterion's
+       reviewed scores were overridden, the breaker's strict "more than
+       half"), or the criterion already escalated before
+       (`history.escalations`). A recorded no-data rate contributes
+       `AGG_ESCALATION_NO_DATA_WEIGHT` — not a zero (CT-STATS-09), but not a
+       trigger either.
+    5. **Distributional anomaly** — the score's ordinal sits
+       `AGG_ESCALATION_ANOMALY_SIGMA` standard deviations or further from the
+       package baseline's expected band position. A baseline without a usable
+       `std` is unmeasurable, not anomalous.
+
+    Model self-confidence (`score.self_confidence`) enters once, weighted:
+    `AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT × (1 − self_confidence)`. It is
+    never appended to `reasons` — a decision escalated on self-confidence
+    alone is structurally impossible (its full-sweep contribution stays below
+    the threshold, R22), so every reason is an observable a reviewer can go
+    and look at. Absent, it contributes nothing: absence is no claim.
+
+    Returns the `EscalationDecision`: `escalate`, the target panel depth (the
+    next odd at least two above the current panel — 1 → 3, never 2,
+    `FR-AGG-09`; `validate_escalation_plan` in `aeh.orch` is the consumer's
+    odd-plan check) and `reasons`. Under the production constants a decision
+    not to escalate carries the current panel depth unchanged and no reasons
+    (every weight is sub-threshold alone, so nothing fires without escalating);
+    an injected sub-threshold signal weight can fire a reason without reaching
+    the threshold — the fired observables are recorded either way.
+    """
+    threshold = _escalation_knob(config, "escalation_threshold", AGG_ESCALATION_THRESHOLD)
+    signal_weight = _escalation_knob(
+        config, "escalation_signal_weight", AGG_ESCALATION_SIGNAL_WEIGHT
+    )
+    no_data_weight = _escalation_knob(
+        config, "escalation_no_data_weight", AGG_ESCALATION_NO_DATA_WEIGHT
+    )
+    self_confidence_weight = _escalation_knob(
+        config, "escalation_self_confidence_weight", AGG_ESCALATION_SELF_CONFIDENCE_WEIGHT
+    )
+    anomaly_sigma = _escalation_knob(
+        config, "escalation_anomaly_sigma", AGG_ESCALATION_ANOMALY_SIGMA
+    )
+    override_rate_threshold = _escalation_knob(
+        config, "escalation_override_rate", AGG_ESCALATION_OVERRIDE_RATE
+    )
+
+    concern = 0.0
+    reasons: list[str] = []
+
+    # 1. Interior band position — the panel did not reach a scale edge. A
+    # recorded `None` on either figure is a recorded inconclusive, not a claim
+    # (the same absent-vs-None reading as the signals below): the limb is
+    # skipped, never crashed through.
+    ordinal = _row_field(score, "ordinal")
+    band_count = _row_field(score, "band_count")
+    if band_count is _AGG_ABSENT:
+        declared = getattr(criterion, "band_count", None)
+        if declared is None:
+            declared = len(getattr(criterion, "bands", ()) or ())
+        band_count = declared if declared else _AGG_ABSENT
+    if (
+        ordinal is not _AGG_ABSENT
+        and ordinal is not None
+        and band_count is not _AGG_ABSENT
+        and band_count is not None
+    ):
+        if 0 < int(ordinal) < int(band_count) - 1:
+            concern += signal_weight
+            reasons.append("interior band position")
+
+    # 2. Adverse integrity signals — recorded `None` is adverse (fail-closed);
+    # an absent field is no claim and skips its limb.
+    for field_name, favourable in _AGG_FAVOURABLE.items():
+        value = _row_field(score, field_name)
+        if value is _AGG_ABSENT:
+            continue
+        if _signal_adverse(value, favourable):
+            concern += signal_weight
+            reasons.append(f"adverse integrity signal: {field_name}")
+
+    # 3. The uncited mark — M-JUDGE marks it; absent, no claim.
+    uncited = _row_field(score, "uncited")
+    if uncited is not _AGG_ABSENT and uncited is not None and bool(uncited):
+        concern += signal_weight
+        reasons.append("uncited verdict")
+
+    # 4. The criterion's override history — contested, escalated before, or
+    # unmeasured (weighted low, never read as a zero — CT-STATS-09).
+    override_rate = _row_field(history, "override_rate")
+    if override_rate is not _AGG_ABSENT:
+        if override_rate is None:
+            concern += no_data_weight
+            reasons.append("criterion override history: no data")
+        elif float(override_rate) > override_rate_threshold:
+            concern += signal_weight
+            reasons.append(
+                f"criterion override history (override_rate={float(override_rate):.2f})"
+            )
+    escalations = _row_field(history, "escalations")
+    if escalations is not _AGG_ABSENT and escalations is not None and int(escalations) > 0:
+        concern += signal_weight
+        reasons.append("criterion previously escalated")
+
+    # 5. The distributional anomaly against the package baseline.
+    baseline_mean = _row_field(baseline, "mean")
+    baseline_std = _row_field(baseline, "std")
+    if (
+        ordinal is not _AGG_ABSENT
+        and ordinal is not None
+        and baseline_mean is not _AGG_ABSENT
+        and baseline_mean is not None
+        and baseline_std is not _AGG_ABSENT
+        and baseline_std is not None
+        and float(baseline_std) > 0.0
+    ):
+        z = (float(ordinal) - float(baseline_mean)) / float(baseline_std)
+        if abs(z) >= anomaly_sigma:
+            concern += signal_weight
+            reasons.append(
+                f"distributional anomaly vs package baseline (z={z:.2f})"
+            )
+
+    # Self-confidence: one weighted input (FR-AGG-08), never a reason (R22).
+    self_confidence = _row_field(score, "self_confidence")
+    if self_confidence is not _AGG_ABSENT and self_confidence is not None:
+        clamped = min(1.0, max(0.0, float(self_confidence)))
+        concern += self_confidence_weight * (1.0 - clamped)
+
+    escalate = concern >= threshold
+    judge_count = _row_field(score, "judge_count")
+    if judge_count is _AGG_ABSENT or judge_count is None:
+        judge_count = 1
+    judge_count = int(judge_count)
+    if escalate:
+        # FR-AGG-09: the next odd panel at least two above the current one —
+        # 1 → 3, never 2 (`aeh.orch:validate_escalation_plan` enforces the odd
+        # plan; this module's target never produces an even one).
+        target = judge_count + 2
+        if target % 2 == 0:
+            target += 1
+    else:
+        target = judge_count
+    return EscalationDecision(
+        escalate=bool(escalate), target_judge_count=int(target), reasons=tuple(reasons)
+    )
+
+
+@dataclass(frozen=True)
+class CriterionEscalationRank:
+    """One criterion's row in the escalation ranking (`CT-STATS-09`'s consumer
+    differential, `FR-AGG-08`): its id, its override rate as measured, and
+    whether the row is **no data** — never reviewed, or a recorded no-data
+    rate. `override_rate` is `None` exactly when the history had no figure to
+    give; a genuine zero keeps its zero and its `no_data=False`."""
+
+    criterion_id: str
+    override_rate: float | None
+    no_data: bool
+
+
+def rank_criteria_for_escalation(criteria: Any) -> tuple:
+    """Rank criteria for escalation, most urgent first (`FR-AGG-08`, CT-STATS-09).
+
+    `criteria` maps criterion ids to their override-history payloads — mappings
+    or objects carrying `override_rate` and `reviewed`. A criterion with **no
+    data** (never reviewed, or a recorded no-data rate) ranks FIRST: the
+    criterion nobody has looked at is not the safest, it is the one whose risk
+    is unmeasured (CT-STATS-09's named failure — reading no data as a zero is
+    what makes it the queue's "safest"). Data-bearing criteria then rank by
+    override rate, most overridden first, so a criterion overridden on half its
+    reviews outranks one overridden on none. Ties keep the caller's order
+    (a stable sort over the mapping's own order — the ranking invents no
+    order of its own).
+
+    The distinction is observable in the output (`tests/contract`'s c09
+    differential): a no-data criterion changes position when its payload changes
+    from no history to a measured zero, because the two rank differently — that
+    is the whole point of M-STATS's `NoValidationData` distinct value.
+    """
+    ranks: list[tuple[tuple[int, float], CriterionEscalationRank]] = []
+    for criterion_id, payload in dict(criteria).items():
+        if isinstance(payload, dict):
+            override_rate = payload.get("override_rate")
+            reviewed = payload.get("reviewed")
+        else:
+            override_rate = getattr(payload, "override_rate", None)
+            reviewed = getattr(payload, "reviewed", None)
+        no_data = override_rate is None or reviewed is False
+        key = (0, 0.0) if no_data else (1, -float(override_rate))
+        ranks.append(
+            (
+                key,
+                CriterionEscalationRank(
+                    criterion_id=str(criterion_id),
+                    override_rate=None if override_rate is None else float(override_rate),
+                    no_data=no_data,
+                ),
+            )
+        )
+    ranks.sort(key=lambda entry: entry[0])
+    return tuple(rank for _, rank in ranks)
 #
 # M-AGG owns this migration because it owns the columns' meaning: the four
 # integrity inputs ride the score row so the figure is reconstructible from
@@ -808,8 +1361,10 @@ def describe_agreement(figure: Any, population: str) -> str:
 # themselves: `NULL` is neither favourable nor zero) — a real 0/1 with `NULL`
 # allowed, not a fake third value.
 #
-# `state` and `routing` already exist (det migration v9's CHECK admits both
-# `final` and `queued`, the two values this module's panel path writes);
+# `state` and `routing` already exist (det migration v9's CHECK admits every
+# value this module's paths write — `final`, `queued` and, since #93,
+# `provisional` on routing and `provisional_unreviewed`/`ungradeable_by_panel`
+# on state);
 # only the six columns #92 introduces are added here.
 
 _AGG_CONFIDENCE_COLUMNS = Migration(

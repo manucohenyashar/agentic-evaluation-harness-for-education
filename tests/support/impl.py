@@ -277,55 +277,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # §3.12-declared name isolates "the cap table landed" — the caps are
     # Assumption-numbered, not named — so the confidence entries rode on
     # `AGG_AUTO_THRESHOLD_ATOMIC` (unmarked at #92's landing: the inversion, the
-    # recorded inputs and the recompute seam all landed there). The state entry
-    # has the same shape one story over — no declared name isolates "the states
-    # landed", so it keys on `should_escalate` (the proxy #93 ships beside the state
-    # assignment; re-keyed at #91's landing, whose landing alone would otherwise have
-    # resolved `aggregate` + `EvenPanelError` while the states were still #93's).
-    # Routing, escalation and the boundary: `should_escalate` is #93's, so the
-    # conjunction resolves only at the story that owns the routing assignment (its
-    # title is the FR set these cases trace to). TC-AGG-17's thresholds and TC-AGG-07's
-    # ceiling are INJECTED in the tests (Q-04), so no threshold constant belongs in
-    # this conjunction — the tests bake in no tuning numbers to reconcile.
-    "#95 TS-36 routing, escalation and thresholds (TC-AGG-07, 08, 09, 11, 17)": (
-        "symbols",
-        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:should_escalate",
-        ("tests/unit/agg/test_routing_and_escalation.py",),
-    ),
-    # TC-AGG-07's rank limb is a different module entirely: at equal expected value the
-    # ordering is M-REVIEW's to produce (`aeh.review:rank_queue_items`, the name the
-    # `#108 stats` consumer entry already pins). Keyed on that name alone — the test
-    # constructs its two items directly and touches no `aeh.agg` symbol.
+    # recorded inputs and the recompute seam all landed there).
+    #
+    # **The three entries the #93 landing dropped** (unmarked 2026-09, that story):
+    # "routing, escalation and thresholds" (`should_escalate` conjunction),
+    # "score states" (`should_escalate` re-keyed at #91's landing as the states' gate)
+    # and "policy purity" (the three-member conjunction) — all resolved when #93
+    # shipped `should_escalate` beside the routing/state assignment. The round-trip
+    # entry (TC-AGG-15) went at #92's. Remaining: the review-queue rank limb, whose
+    # blocker is M-REVIEW's, not M-AGG's.
     "#95 TS-36 review-queue rank (TC-AGG-07)": (
         "symbol",
         f"{REVIEW_MODULE}:rank_queue_items",
         ("tests/unit/agg/test_review_queue_rank.py",),
-    ),
-    # The states: see the proxy note above. `should_escalate` is the conjunction's
-    # #93 gate (re-keyed at #91's landing — `aggregate` + `EvenPanelError` alone
-    # resolved the moment #91 shipped its core, which would have told a reader to
-    # unmark these cases while the state assignment was still #93's). The states'
-    # own assignment is #93's, and the policy function ships in the same story.
-    "#95 TS-36 score states (TC-AGG-12, 13, 14)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:EvenPanelError,"
-         f"{AGG_MODULE}:should_escalate"),
-        ("tests/unit/agg/test_score_states.py",),
-    ),
-    # The round trip's entry (TC-AGG-15, keyed on aggregate + recompute_confidence +
-    # AGG_AUTO_THRESHOLD_ATOMIC) was unmarked at #92's landing with the rest of the
-    # confidence set — `recompute_confidence` is the suite's invented name for
-    # NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
-    # `agg_vocabulary.py`; §3.12 names no function).
-    # Purity over all three Protocol members at once — the last of the three to land
-    # is what makes the case runnable, so the conjunction is all three (the `#91`
-    # entry's union plus `should_escalate`; a separate entry because that one exists
-    # for TS-35's files, which do not call `should_escalate`).
-    "#95 TS-36 policy purity (TC-AGG-18)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:should_escalate,"
-         f"{AGG_MODULE}:ordinal_alpha"),
-        ("tests/unit/agg/test_policy_purity.py",),
     ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
@@ -1042,14 +1006,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `"#91 stats"` is gone because #91 landed: `aeh.agg:describe_agreement` is the
     # module's own disclosure of the figure it produces (CT-STATS-21's M-AGG limb),
     # and the sweep's `m_agg` param runs unmarked while `m_console` stays #123's.
-    "#93 stats": (
-        "symbol",
-        f"{AGG_MODULE}:rank_criteria_for_escalation",
-        (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero[m_agg]",
-        ),
-    ),
+    #
+    # `"#93 stats"` is gone because #93 landed: `aeh.agg:rank_criteria_for_escalation`
+    # ranks no-data first and a measured zero by its rate (CT-STATS-09's consumer
+    # differential, c09), and the sweep's `m_agg` param runs unmarked while `m_review`
+    # stays #108's (its own per-param marker — the TC-AGG-20 precedent).
     "#108 stats": (
         "symbol",
         f"{REVIEW_MODULE}:rank_queue_items",
@@ -1757,18 +1718,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # reconciling story — the `record_run_metrics` precedent: the design pins the
     # semantics and the constants but no function names, so the tests invent and use
     # them together. The #62 entry (TC-ORCH-27) was dropped when #62 landed:
-    # `estimated_completion_seconds` shipped as declared.
-    "#95 TS-23 escalation policy purity (TC-ORCH-32)": (
-        # The policy FUNCTION is M-AGG's: design §3.8 declares `should_escalate` on the
-        # Aggregator Protocol and CT-AGG-01 names it the pure escalation policy that
-        # NFR-ORCH-04 requires — so the key is the member, not the module.
-        "symbol",
-        f"{AGG_MODULE}:should_escalate",
-        (
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
-        ),
-    ),
+    # `estimated_completion_seconds` shipped as declared. The policy-purity entry
+    # (TC-ORCH-32, keyed on `aeh.agg:should_escalate` — the member, not the module)
+    # was dropped when #93 landed the function.
     # --- TS-29 (#76), the M-INTEG adversarial forgery cases --------------------------------
     #
     # TC-INTEG-13 plus the two adversarial rows the issue traces (ADV-01, ADV-03), one

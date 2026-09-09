@@ -106,11 +106,12 @@ def favourable_signals() -> SimpleNamespace:
 
 # --- TS-36 (#95): the confidence, routing and escalation extension ------------------------
 #
-# The cases of issue #95 (TC-AGG-06..18) are written ahead of #91 (the aggregate core —
-# landed), #92 (the confidence caps and the stored integrity inputs) and #93 (routing,
-# escalation policy, score states). The stand-ins below extend this vocabulary the same
-# additive way the TS-35 section did; every name a design gap forced is listed in the
-# table so the owning story reconciles it deliberately rather than discovering it.
+# The cases of issue #95 (TC-AGG-06..18) were written ahead of #91 (the aggregate core),
+# #92 (the confidence caps and the stored integrity inputs) and #93 (routing, the
+# escalation policy, the score states) — all three have landed, and every name a design
+# gap forced shipped as declared (the table records each landing). The stand-ins below
+# stay: they are the vocabulary the cases read, and the table is what keeps a rename
+# one edit.
 #
 # | Name | Status |
 # |---|---|
@@ -119,10 +120,10 @@ def favourable_signals() -> SimpleNamespace:
 # | `escalation_score(...)` | a `criterion_score` in the shape `should_escalate` reads: the observable signals live on the row (FR-AGG-13's four recorded fields, §7.1's list). Field names follow TC-ORCH-32's stand-ins (`.band` `.confidence` `.judge_count`) — one vocabulary, one reconciliation. |
 # | `criterion_history(...)` | `.override_rate` `.escalations` — TC-ORCH-32's stand-in shape (CT-STATS-09: an explicit no-data value rather than a zero is M-STATS's concern, not the stand-in's). |
 # | `expected_distribution(...)` | `.mean` `.std` — the package baseline (§3.12's `ExpectedDistribution`). |
-# | `EscalationDecision.escalate` / `.target_judge_count` | **invented**: the design returns a decision to M-ORCH but pins no fields. `escalate` is the bool; `target_judge_count` carries FR-AGG-09's 1 → 3 (never 2). |
-# | `aggregate(..., fallback=)` | **invented keyword**: TC-AGG-04 (#94) pins that a raw even panel raises `EvenPanelError`; TC-AGG-12 requires that a panel *left at two by an unrecoverable failure* discards the second verdict and records the base single-judge band as provisional. The two compose only if the caller can mark the fallback case — `fallback=True` is that mark, reconciles at #93. |
-# | `aggregate(..., breaker_tripped=)` | **invented keyword**: FR-AGG-11 sets `ungradeable_by_panel` for criteria the M-ORCH breaker tripped; the state must be an input, because the tripping is the orchestrator's (shipped `criterion_breaker_tripped`, #60). |
-# | `aggregate(..., deterministic_score=)` | **invented keyword**: FR-AGG-10's pass-through. An empty verdict list is a programming error (CT-AGG-12), so the deterministic row cannot arrive through the panel path; this is the marked alternative entry, reconciles at #93. |
+# | `EscalationDecision.escalate` / `.target_judge_count` | **landed at #93 with these field names** (frozen dataclass, compared by value — the purity corollary's declared assumption, shipped as assumed): `escalate` is the bool; `target_judge_count` carries FR-AGG-09's 1 → 3 (never 2 — the target is the next odd at least two above the panel); `.reasons` adds the fired observables, self-confidence never among them (R22). |
+# | `aggregate(..., fallback=)` | **landed at #93 with this keyword**: TC-AGG-04 (#94) pins that a raw even panel raises `EvenPanelError`; TC-AGG-12 requires that a panel *left at two by an unrecoverable failure* discards the second verdict and records the base single-judge band as provisional. The two compose only if the caller can mark the fallback case — `fallback=True` is that mark, shipped as declared. |
+# | `aggregate(..., breaker_tripped=)` | **landed at #93 with this keyword**: FR-AGG-11 sets `ungradeable_by_panel` (routed `provisional`, never auto) for criteria the M-ORCH breaker tripped; the state must be an input, because the tripping is the orchestrator's (shipped `criterion_breaker_tripped`, #60). |
+# | `aggregate(..., deterministic_score=)` | **landed at #93 with this keyword**: FR-AGG-10's pass-through. An empty verdict list is a programming error (CT-AGG-12), so the deterministic row cannot arrive through the panel path; this is the marked alternative entry, shipped as declared — the row is echoed (`judge_count = 0`, agreement `None`, the row's own `state`/`routing`), never re-aggregated. |
 # | `aeh.agg:recompute_confidence(row, criterion)` | **invented, landed at #92 with this shape**: NFR-AGG-04's from-the-row-alone derivation; §3.12 names no function. `row` is the stored `criterion_score` mapping (dict / `sqlite3.Row` / object); `criterion` the package's static band definition; optional `config=` carries an injected cap table as `aggregate`'s does. Returns the re-derived figure, `None` when the row cannot support one (no panel, even panel, no base). |
 # | `aeh.agg:AGG_CAP_TABLE` | **landed at #92 with this name**: §3.12's Assumption-numbered cap table as the module constant (the `AGG_AUTO_THRESHOLD_*` constants are design-declared; the caps are not). |
 # | score `.confidence` `.routing` `.state` | **landed at #92**: `.confidence` and the four recorded signal fields ride `CriterionScore` and cohort migration v16; `.routing`/`.state` are det v9 columns the panel path now writes (`auto` iff confidence ≥ threshold, else `queued`; state `final`). |
