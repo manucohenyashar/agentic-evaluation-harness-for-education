@@ -243,46 +243,50 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the failure record with its changes() read. Lines moved with #59's sweep-plan
     # additions, #60's random-arm block in enumerate_units and #60's escalation
     # restructure; the sites are the same statements as #57/#58's.
-    "aeh.orch:1761",
-    "aeh.orch:1982",
-    "aeh.orch:1991",
+    "aeh.orch:1775",
+    "aeh.orch:1996",
+    "aeh.orch:2005",
     # #61's lifecycle sites (every one from ORCH_STATEMENTS, keyword-parameterized):
     # start's displayed-estimate write and its guarded pending→running transition with
-    # its changes() read; pause's control-row insert, its already-paused satisfied-
-    # request arm and the explicit resume's supersede write; the control-read pass's
-    # applied marker; the shared guarded run transition with its changes() read. Lines
-    # moved with #61's lifecycle block; the #57/#58 statements are the same as ever.
-    "aeh.orch:2073",
-    "aeh.orch:2079",
-    "aeh.orch:2084",
-    "aeh.orch:2127",
-    "aeh.orch:2139",
-    "aeh.orch:2200",
-    "aeh.orch:2291",
-    "aeh.orch:2303",
-    "aeh.orch:2327",
-    "aeh.orch:2335",
+    # its changes() read; pause's control-row insert and its already-paused satisfied-
+    # request arm; the explicit resume's own control-row insert (the reviewer's F4 —
+    # the explicit form writes the row too, retiring its old direct supersede write);
+    # the control-read pass's bounded supersede (`mark_pauses_applied_before`, the
+    # reviewer's F2) and applied marker; the shared guarded run transition with its
+    # changes() read. Lines moved with #61's lifecycle block and the reviewer fixes
+    # swapped the two resume sites noted above; the #57/#58 statements are the same
+    # as ever.
+    "aeh.orch:2087",
+    "aeh.orch:2093",
+    "aeh.orch:2098",
+    "aeh.orch:2141",
+    "aeh.orch:2153",
+    "aeh.orch:2213",
+    "aeh.orch:2315",
+    "aeh.orch:2333",
+    "aeh.orch:2357",
+    "aeh.orch:2365",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:2739",
-    "aeh.orch:2754",
-    "aeh.orch:2758",
     "aeh.orch:2769",
-    "aeh.orch:2777",
-    "aeh.orch:2786",
-    "aeh.orch:2796",
+    "aeh.orch:2784",
+    "aeh.orch:2788",
     "aeh.orch:2800",
-    "aeh.orch:3004",
-    "aeh.orch:3011",
-    "aeh.orch:3062",
-    "aeh.orch:3066",
-    "aeh.orch:3116",
-    "aeh.orch:3121",
-    "aeh.orch:3172",
-    "aeh.orch:3178",
+    "aeh.orch:2808",
+    "aeh.orch:2817",
+    "aeh.orch:2836",
+    "aeh.orch:2840",
+    "aeh.orch:3044",
+    "aeh.orch:3051",
+    "aeh.orch:3102",
+    "aeh.orch:3106",
+    "aeh.orch:3156",
+    "aeh.orch:3161",
+    "aeh.orch:3212",
+    "aeh.orch:3218",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -294,22 +298,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # queue-depth read. The restructure moved the queue's drain into the claim
     # pass's dispatch gate, so the drain's reads are gone and the key's run
     # resolution arrived.
-    "aeh.orch:3284",
-    "aeh.orch:3342",
-    "aeh.orch:3358",
-    "aeh.orch:3378",
-    "aeh.orch:3392",
+    "aeh.orch:3324",
+    "aeh.orch:3382",
     "aeh.orch:3398",
-    "aeh.orch:3416",
-    "aeh.orch:3453",
-    "aeh.orch:3469",
-    "aeh.orch:3491",
+    "aeh.orch:3418",
+    "aeh.orch:3432",
+    "aeh.orch:3438",
+    "aeh.orch:3456",
+    "aeh.orch:3493",
+    "aeh.orch:3509",
+    "aeh.orch:3531",
     # The lines moved again with #61's lifecycle and ceiling blocks (the #60
     # statements are the same as ever).
-    "aeh.orch:3538",
-    "aeh.orch:3542",
-    "aeh.orch:3621",
-    "aeh.orch:3973",
+    "aeh.orch:3578",
+    "aeh.orch:3582",
+    "aeh.orch:3661",
+    "aeh.orch:4013",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
