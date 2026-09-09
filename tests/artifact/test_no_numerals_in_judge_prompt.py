@@ -117,7 +117,7 @@ from tests.support.judge_vocabulary import (
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _JUDGE_ISSUE = JUDGE_ISSUE
 _PROMPT_ISSUE = PROMPT_ISSUE
@@ -256,23 +256,34 @@ def _world(
         EXTRACT_MODULE, EXTRACT_PROMPT_FIELDS, issue=_EXTRACT_ISSUE
     )
     model_ref = extractor_ref()
-    extract_units = {
-        unit.submission_id: unit
-        for unit in orchestrator.lease("w-ext-num", STAGE_EXTRACT, len(submissions))
+    # The extract leg is per (submission, criterion) — the run's Sweep-1 enumeration
+    # writes one evidence row per pair, and the score stage's gate (FR-ORCH-06) reads
+    # each criterion's own extraction for its submission. The needle span is shared:
+    # it sits at the same byte offsets in every document (the tails come after it).
+    spans: dict[str, list[dict[str, Any]]] = {
+        submission_id: [_byte_span(documents[submission_id], _NEEDLE)]
+        for submission_id in submissions
     }
-    assert set(extract_units) == set(submissions), (
+    extract_units = {
+        (unit.submission_id, unit.criterion_id): unit
+        for unit in orchestrator.lease(
+            "w-ext-num", STAGE_EXTRACT, len(submissions) * len(criteria)
+        )
+    }
+    assert set(extract_units) == {
+        (submission_id, spec["criterion_id"])
+        for submission_id in submissions
+        for spec in criteria
+    }, (
         f"precondition: leased extract units {sorted(extract_units)} do not cover "
-        f"the cohort {sorted(submissions)}"
+        f"the cohort x criteria pairs "
+        f"{sorted((s, c['criterion_id']) for s in submissions for c in criteria)}"
     )
-    spans: dict[str, list[dict[str, Any]]] = {}
-    for submission_id in submissions:
-        unit = extract_units[submission_id]
-        submission_spans = [_byte_span(documents[submission_id], _NEEDLE)]
-        spans[submission_id] = submission_spans
-        request = AssembleRequest(unit)
+    for (submission_id, _criterion_id), unit in extract_units.items():
+        request = AssembleRequest(unit, store=store)
         provider.record(
             extract_prompt_fields(request), model_ref, sampling_params(),
-            span_completion(submission_spans, build_id="extractor-build-num"),
+            span_completion(spans[submission_id], build_id="extractor-build-num"),
         )
         ExtractWorker(store, provider, model_ref).process(unit)
 

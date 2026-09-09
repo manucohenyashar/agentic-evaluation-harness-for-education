@@ -27,9 +27,7 @@ from tests.support.extract_vocabulary import (
     PROMPT_FIELDS as _EXTRACT_PROMPT_FIELDS,
     TS26_EXTRACT_SYMBOLS,
     TS65_EXTRACT_SYMBOLS,
-    WORKER,
 )
-from tests.support.judge_vocabulary import TS30_PROMPT_SYMBOLS
 
 # --- the implementation under test -------------------------------------------------------
 # The design and the test plan fix the *test* layout (`tests/unit/...`) and the tooling
@@ -277,28 +275,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # **Keyed on the same proxy #76 chose, for the same recorded reason.** No
     # §3.12-declared name isolates "the cap table landed" — the caps are
-    # Assumption-numbered, not named — so the confidence entries ride on
-    # `AGG_AUTO_THRESHOLD_ATOMIC`: a bare `#91` `aggregate` without the caps leaves the
-    # conjunction unresolved (right), and a `#92` landing resolves it (right). The
-    # residual weakness is #76's verbatim: a threshold constant landing without the cap
-    # behaviour would unmark tests that then fail with an assertion, not a stated
-    # reason. `ordinal_alpha` joins the conjunction because the TC-AGG-10 property's
-    # no-cap cell pins the design's base figure (§3.12: with no cap binding and no
-    # multiplier applying, the confidence IS the agreement figure) — the property
-    # calls it directly, so it must exist before the marker can drop. The state entry
+    # Assumption-numbered, not named — so the confidence entries rode on
+    # `AGG_AUTO_THRESHOLD_ATOMIC` (unmarked at #92's landing: the inversion, the
+    # recorded inputs and the recompute seam all landed there). The state entry
     # has the same shape one story over — no declared name isolates "the states
     # landed", so it keys on `should_escalate` (the proxy #93 ships beside the state
     # assignment; re-keyed at #91's landing, whose landing alone would otherwise have
     # resolved `aggregate` + `EvenPanelError` while the states were still #93's).
-    "#95 TS-36 confidence inversion (TC-AGG-06, TC-AGG-10)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC,"
-         f"{AGG_MODULE}:ordinal_alpha"),
-        (
-            "tests/unit/agg/test_confidence_inversion.py",
-            "tests/property/test_agg_confidence_property.py",
-        ),
-    ),
     # Routing, escalation and the boundary: `should_escalate` is #93's, so the
     # conjunction resolves only at the story that owns the routing assignment (its
     # title is the FR set these cases trace to). TC-AGG-17's thresholds and TC-AGG-07's
@@ -329,16 +312,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          f"{AGG_MODULE}:should_escalate"),
         ("tests/unit/agg/test_score_states.py",),
     ),
-    # The round trip needs the caps (#92), the integrity columns #92's migration adds,
-    # AND the recomputation seam — `recompute_confidence` is the suite's invented name
-    # for NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
+    # The round trip's entry (TC-AGG-15, keyed on aggregate + recompute_confidence +
+    # AGG_AUTO_THRESHOLD_ATOMIC) was unmarked at #92's landing with the rest of the
+    # confidence set — `recompute_confidence` is the suite's invented name for
+    # NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
     # `agg_vocabulary.py`; §3.12 names no function).
-    "#95 TS-36 reconstructible confidence (TC-AGG-15)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:recompute_confidence,"
-         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        ("tests/integration/agg/test_confidence_reconstructible.py",),
-    ),
     # Purity over all three Protocol members at once — the last of the three to land
     # is what makes the case runnable, so the conjunction is all three (the `#91`
     # entry's union plus `should_escalate`; a separate entry because that one exists
@@ -1315,14 +1293,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # half stays marked with the file and unmarks with #109, below; keying this entry
     # on a symbol that is no longer what blocks it would have fired the gate and sent
     # someone to unmark a test that then fails on `write_fields`.
-    "#78 rerun review": (
-        "symbol",
-        f"{JUDGE_MODULE}:assemble_prompt",
-        (
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit",
-        ),
-    ),
+    #
+    # The `"#78 rerun review"` entry stood here too (`aeh.judge:assemble_prompt` for
+    # the c14 rerun case): #79 landed the id-keyed door, but the test's BINDING
+    # blocker was always #108's `build_review` -- its first require resolves it before
+    # `assemble_prompt` is read -- and the marker is function-level, shared with the
+    # file's other cases. So the c14 case stays marked with the file and unmarks with
+    # the #108/#109 landings, which still register this file; keying the entry on a
+    # symbol that is no longer what blocks it would have fired the gate for the same
+    # reason the `"#78 review"` entry could not stay.
+    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
+    # so its blocker no longer holds. The `[extract]` param it named stays marked for
+    # now — its first require is #109's `write_fields` (the test resolves it before it
+    # reads either consumer), and the marker is function-level, shared with the
+    # `[judge]` param — so the file is unmarked by #109's implementer, together with
+    # the `#109 review` entry below, which is the file's remaining registration.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
     # so its blocker no longer holds. The `[extract]` param it named stays marked for
     # now — its first require is #109's `write_fields` (the test resolves it before it
@@ -1520,89 +1505,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # disclosure tables in the files carry the details. The #73/#74-only entries
     # (C01, C04, C05, C06, C10-C14) left when M-INTEG landed; the entries that remain
     # are exactly the ones whose conjunctions still name the M-AGG surface (#92).
-    "#92 IntegritySignals+aggregate+threshold (TS-66 C02 None-is-not-False)": (
-        # The type half needs only the signals dataclass (#74); the rung-3 consumer
-        # differential drives M-AGG's confidence surface, which lands with #92 — the
-        # conjunction is the honest key (the TS-08 lesson: the case is runnable when
-        # its LAST blocker lands, and the differential is the limb the clause exists
-        # for). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing: `aggregate`
-        # alone resolved there, which would have unmarked the case while the
-        # differential was still #92's.
-        "symbols",
-        (f"{INTEG_MODULE}:IntegritySignals,{AGG_MODULE}:aggregate,"
-         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_ct_integ_signals_data.py",
-        ),
-    ),
-    "#92 IntegrityGate+IntegritySignals+aggregate (TS-66 C03 fail-closed)": (
-        # The safety-property case: the sweep and the step-3 honesty cells run through
-        # the gate (#74), the step-2 dropped-signal differential and its
-        # unknown-therefore-fine cap drive M-AGG's confidence surface (#92).
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_fail_closed.py",
-        ),
-    ),
-    # The "#74 ... (TS-66 C04 write surface)", "#74+#68 both module files (TS-66 C05
-    # structural independence)" and "#74 IntegrityGate (TS-66 C06 byte-exact
-    # rejection, nothing scores)" entries stood here: M-INTEG landed the gate and
-    # the signals, so C04-C06's conjunctions resolved and their files rejoined
-    # TEST_CMD in the same change.
-    "#92 gate+signals+aggregate+threshold (TS-66 C07 empty evidence routes)": (
-        # The most consequential negative clause: the route sweep runs the gate (#74),
-        # the rung-3 consumer half drives M-AGG's aggregate and reads the auto-accept
-        # threshold (#92, the last blocker).
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_empty_evidence_routes.py",
-        ),
-    ),
-    "#92 gate+signals+aggregate+threshold (TS-66 C08 sufficiency is an extraction problem)": (
-        # Same blocker shape as C07: the positional sweep runs the gate, the static
-        # limb scans the module, and the rung-3 prohibition drives the confidence
-        # surface (#92). `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing —
-        # `aggregate` alone resolved there (the C07 entry's existing key).
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_ct_integ_sufficiency_is_extraction_problem.py",
-        ),
-    ),
-    "#92 gate+signals+aggregate+threshold (TS-66 C09 OCR intersection and cap)": (
-        # The discriminating fixtures run the real gate over injected regions (#74);
-        # the cap half drives the confidence surface against unanimity (#92).
-        # `AGG_AUTO_THRESHOLD_ATOMIC` re-keyed at #91's landing, as C08.
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_ct_integ_ocr_intersection.py",
-        ),
-    ),
-    # The "#74 IntegrityGate (TS-66 C10 described evidence and crop)", "#74
-    # IntegrityGate+IntegritySignals (TS-66 C11 timing)", "#74 IntegrityGate (TS-66
-    # C12 verification cost)", "#74 IntegrityGate (TS-66 C13 config knobs)" and "#74
-    # gate+rate constants (TS-66 C14 rate metrics)" entries stood here: M-INTEG
-    # landed the gate, the signals and the two rate constants, so C10-C14's keys
+    # The "#92 IntegritySignals+aggregate+threshold (TS-66 C02 None-is-not-False)",
+    # "#92 IntegrityGate+IntegritySignals+aggregate (TS-66 C03 fail-closed)", "#74
+    # ... (TS-66 C04 write surface)", "#74+#68 both module files (TS-66 C05
+    # structural independence)", "#74 IntegrityGate (TS-66 C06 byte-exact
+    # rejection, nothing scores)", "#92 gate+signals+aggregate+threshold (TS-66 C07
+    # empty evidence routes)", "(TS-66 C08 sufficiency is an extraction problem)"
+    # and "(TS-66 C09 OCR intersection and cap)" entries stood here: M-INTEG landed
+    # the gate and the signals, #92's landing (merged alongside) supplied
+    # `aeh.agg:aggregate` and `AGG_AUTO_THRESHOLD_ATOMIC`, so C02-C09's conjunctions
     # resolved and their files rejoined TEST_CMD in the same change.
-    "#74 gate+signals, #92 aggregate+threshold (TS-66 C15 non-promise)": (
-        # The premise limb runs the real gate; the consumer limbs construct the
-        # all-clean set (C03's complete shape) and feed it to the pure aggregate
-        # surface. The M-CONSOLE presentation half is deferred to the console
-        # suite (#122) — disclosed in the file.
-        "symbols",
-        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals,"
-         f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        (
-            "tests/contract/integ/test_ct_integ_non_promise.py",
-        ),
-    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
@@ -1627,39 +1539,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-29 (#76), the M-INTEG adversarial forgery cases --------------------------------
     #
-    # TC-INTEG-13 plus the two adversarial rows the issue traces (ADV-01, ADV-03), one
-    # file. A `symbols` conjunction over the file's full blocker set (the TC-SETUP
-    # file-granularity lesson): the byte-exact half calls `verify_span` (#73), the
-    # rung-2 routing half constructs `IntegrityGate` and reads `IntegritySignals`
-    # (#74) — the three names #75 disclosed and TS-28's files already resolve — and
-    # the ADV-01 cap half drives M-AGG's declared pure surface.
-    #
-    # **The two M-AGG names are design-declared, not invented**: `aggregate` is §3.12's
-    # Protocol member and `AGG_AUTO_THRESHOLD_ATOMIC` is §3.12's Configuration constant
-    # (CT-AGG-14), and both appear in no Interfaces block that any earlier story ships —
-    # `aeh.agg` does not exist at all today. The cap lands with the confidence story
-    # (#92, FR-AGG-05); the test's `require(..., issue="#92")` names it.
-    #
-    # Residual weakness, recorded rather than papered over (the TS-08 pattern): a
-    # Protocol-shell `Aggregator` or a `#91`-only `aggregate` (median band and ordinal α
-    # without the cap table) would resolve this key while the caps were still #92's —
-    # and the test would then fail with an assertion, not a stated reason. No
-    # §3.12-declared name isolates "the cap landed": the cap table's members are
-    # Assumption-numbered, not named. `AGG_AUTO_THRESHOLD_ATOMIC` is the narrowest
-    # available proxy because the test genuinely reads it (the oracle is "capped below
-    # the auto-accept threshold"), and a threshold without a confidence computation is
-    # not a thing #91's acceptance criteria ask for.
-    "#76 forged evidence (TC-INTEG-13, ADV-01, ADV-03)": (
-        "symbols",
-        (
-            f"{INTEG_MODULE}:verify_span,{INTEG_MODULE}:IntegrityGate,"
-            f"{INTEG_MODULE}:IntegritySignals,"
-            f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"
-        ),
-        (
-            "tests/integration/integ/test_integ_forged_evidence.py",
-        ),
-    ),
+    # The "#76 forged evidence (TC-INTEG-13, ADV-01, ADV-03)" entry stood here: a
+    # `symbols` conjunction over the file's full blocker set — `verify_span`,
+    # `IntegrityGate`, `IntegritySignals` (all M-INTEG's), plus M-AGG's `aggregate`
+    # and `AGG_AUTO_THRESHOLD_ATOMIC` (#92). M-INTEG landed the first three, #92's
+    # landing (merged alongside) supplied the last two, the conjunction resolved, and
+    # the file rejoined TEST_CMD in the same change — its consumer doubles reconciled
+    # to the landed M-AGG shape (a verdict carries `.ordinal`, a criterion carries
+    # band rows, and the score rows read from the cohort tier where
+    # `criterion_score` ships).
     # --- TS-25 (issue #66), dispatch isolation, progress granularity, run metrics ---
     #
     # Two of the eight cases run GREEN against shipped code and carry no marker:
@@ -1706,24 +1594,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TS30_JUDGE_SYMBOLS` resolved when #78 landed `aeh.judge`, and
     # `test_scoring_isolation.py` lost its marker and rejoined the fast tier. The
     # vocabulary's `TS30_JUDGE_SYMBOLS` tuple stays in `judge_vocabulary.py` — the
-    # "#79" entry's conjunction below is built from the sibling tuple, and the
+    # "#79" entry's conjunction below was built from the sibling tuple, and the
     # shared bet is the two suites'.
-    "#79 judge prompt (TS-30)": (
-        # The numeral file's world also runs the EXTRACT leg to put evidence rows
-        # into the store (the "#71 TS-27" shape: a conjunction over both modules),
-        # so the extract symbols ride this entry — the file stays red until #68's
-        # leg resolves too, not merely the judge surface.
-        "symbols",
-        ",".join(
-            [f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS]
-            + [
-                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
-                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
-                f"{EXTRACT_MODULE}:{WORKER}",
-            ]
-        ),
-        ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
-    ),
+    #
+    # The "#79 judge prompt (TS-30)" entry stood here: its conjunction over
+    # `TS30_PROMPT_SYMBOLS` (plus the extract leg the numeral file's world runs)
+    # resolved when #79 landed `JUDGE_PROMPT_TEMPLATE_V` and the template it pins,
+    # and `test_no_numerals_in_judge_prompt.py` lost its marker and rejoined the
+    # fast tier. The vocabulary's `TS30_PROMPT_SYMBOLS` tuple stays in
+    # `judge_vocabulary.py` — the settled bet is the suites' record of what they
+    # resolve, even with no registry entry left to build from it.
     # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
     #
     # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an

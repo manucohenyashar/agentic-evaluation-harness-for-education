@@ -33,8 +33,6 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-import pytest
-
 from tests.support.agg_vocabulary import (
     DESIGN_CAPS,
     FAVOURABLE as _FAVOURABLE,
@@ -45,8 +43,6 @@ from tests.support.agg_vocabulary import (
     agg_config,
 )
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 #: The fixture criterion — the plan's 4-band shape; the property varies the panel, not
 #: the band definition.
@@ -66,7 +62,8 @@ def _verdicts(panel_bands):
 
 
 def _aggregate(panel_bands, sig):
-    aggregate = require(
+    # `require` returns a tuple for a multi-name probe — unpack it, then call.
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     return aggregate(_verdicts(panel_bands), _FOUR_BAND, sig, config=agg_config())
@@ -130,7 +127,7 @@ def test_tc_agg_10_confidence_never_exceeds_the_minimum_applicable_cap(panel, co
         ceiling = alpha
     else:
         ceiling = 1.0
-    assert score.confidence <= pytest.approx(ceiling), (
+    assert score.confidence <= ceiling, (
         f"panel={panel} signals={combo}: confidence {score.confidence!r} exceeds the "
         f"minimum applicable cap {ceiling!r} — a cap is a min, not a penalty term "
         "(FR-AGG-05, ADR-10)"

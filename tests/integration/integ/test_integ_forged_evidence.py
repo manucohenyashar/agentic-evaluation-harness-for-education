@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import pytest
 import re
+from types import SimpleNamespace
 
 from aeh.store import open_store
 from tests.support import corpora
@@ -74,7 +75,7 @@ from tests.support.integ_vocabulary import (
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
 _PANEL_SIZE = 3
@@ -233,9 +234,12 @@ def _extract_retries(store, run_id: str, submission_id: str) -> list[dict]:
 def _score_rows(store, run_id: str) -> list[dict]:
     # Unfiltered on purpose: each scenario owns its store (tmp_data_dir), so the table's
     # whole contents are this run's — and the assertion must not depend on a run_id
-    # column the schema may not carry.
+    # column the schema may not carry. `criterion_score` ships in `_COHORT_001` (the
+    # cohort tier M-AGG writes through), not the durable tier the written-ahead draft
+    # assumed — reconciled at the unmark (the wrong-tier read is a distant
+    # `no such table`, the exact phantom the #234 guard's cousin warns about).
     del run_id
-    return store.durable().query("SELECT * FROM criterion_score")
+    return store.cohort(ORCH_COHORT_ID).query("SELECT * FROM criterion_score")
 
 
 # --- TC-INTEG-13: every forged citation fails byte-exact verification -----------------------
@@ -403,25 +407,47 @@ def test_adv_03_near_miss_quotations_differing_by_one_character_fail_verificatio
 
 
 class _Verdict:
-    """A consumer-constructed verdict record (HLD §9.9's shape; see module docstring)."""
+    """A consumer-constructed verdict record (HLD §9.9's shape; see module docstring).
+
+    Reconciled at M-AGG's landing (`#91`/`#92`): a verdict names a declared band
+    **with an ordinal** (§3.12's Requires table), so `ordinal` is derived from the
+    declared `B<n>` name — `aggregate` reads `verdict.ordinal` and maps the median
+    band to points through M-PKG's `points_for_band`.
+    """
 
     def __init__(self, judge_id: str, band: str, cited_spans: tuple[Span, ...],
                  self_confidence: float) -> None:
         self.judge_id = judge_id
         self.band = band
+        suffix = band[1:] if band[:1] == "B" else ""
+        if not suffix.isdigit():
+            raise ValueError(f"_Verdict band {band!r} carries no declared ordinal")
+        self.ordinal = int(suffix)
         self.cited_spans = cited_spans
         self.self_confidence = self_confidence
         self.evidence_sufficient = True
 
 
 class _Criterion:
-    """The criterion record `aggregate` reads (HLD §9.9's criterion block)."""
+    """The criterion record `aggregate` reads (HLD §9.9's criterion block).
+
+    Reconciled at M-AGG's landing: `.bands` is the ordered band **row set**
+    CT-PKG-04 declares (rows of name/ordinal/points, points non-decreasing in
+    ordinal); the constructor keeps band names, built on the `#92` suite's
+    canonical 4-band schedule (0.0, 1.0, 3.0, 6.0).
+    """
 
     def __init__(self, criterion_id: str, bands: tuple[str, ...],
                  scoring_model: str) -> None:
         self.criterion_id = criterion_id
-        self.bands = bands
         self.scoring_model = scoring_model
+        schedule = (0.0, 1.0, 3.0, 6.0, 10.0, 15.0)
+        self.bands = tuple(
+            SimpleNamespace(band=name, ordinal=ordinal, points=schedule[ordinal])
+            for ordinal, name in enumerate(bands)
+        )
+        self.band_count = len(self.bands)
+        self.evidence_required = True
 
 
 _CRITERION = _Criterion("C1", ("B0", "B1", "B2", "B3"), "atomic")

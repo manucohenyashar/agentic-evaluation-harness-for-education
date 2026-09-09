@@ -176,7 +176,6 @@ def _view(cited_sentence: str) -> ExtractionView:
     return ExtractionView(spans=(span,), panel=PanelFlags((True, True, True)))
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c15_the_signal_set_is_relevance_blind(tmp_data_dir):
     """`TC-INTEG-C15` — the premise, through the real gate: the document
     contains both sentences, the extraction cites the irrelevant one, and every
@@ -217,7 +216,6 @@ def _panel(bands, span) -> tuple[ConsumerVerdict, ...]:
                  for i, band in enumerate(bands))
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c15_perfect_signals_cannot_supply_missing_agreement():
     """`TC-INTEG-C15` — the consumer half: the all-clean signal set over
     verified-but-irrelevant evidence, fed to `aggregate` with two panels that

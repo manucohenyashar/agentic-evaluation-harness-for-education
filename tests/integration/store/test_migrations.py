@@ -58,6 +58,10 @@ import aeh.judge  # noqa: F401 -- M-JUDGE owns cohort 14 (the verdict's band_ord
 # owner-order rule — without it the registry this test walks depends on whether an
 # earlier test in the session happened to import aeh.judge, and the golden would be
 # order-dependent.
+import aeh.agg  # noqa: F401 -- M-AGG owns cohort 16 (#92's agg_confidence_columns, the
+# confidence/reconstructibility columns on criterion_score), imported after judge by the
+# same owner-order rule — the golden describes the full binary, the confidence columns
+# included.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

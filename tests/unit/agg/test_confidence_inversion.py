@@ -47,8 +47,6 @@ from tests.support.agg_vocabulary import (
 )
 from tests.support.impl import AGG_MODULE, require
 
-pytestmark = [pytest.mark.writtenahead]
-
 #: The case's fixture: three verdicts, all top band of a 4-band criterion, all cited,
 #: all with high `self_confidence` — the maximally agreeing panel the inversion must
 #: not be able to outrun.
@@ -64,16 +62,18 @@ _SPLIT = panel(("B0", 0), ("B1", 1), ("B1", 1), ("B1", 1), ("B2", 2))
 
 def _aggregate(sig):
     """The one seam every case enters through; the blocker is named once, here."""
-    return require(
+    # `require` returns a tuple for a multi-name probe — unpack it, then call.
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
-    )(_UNANIMOUS_TOP, _TOP_BAND, sig, config=agg_config())
+    )
+    return aggregate(_UNANIMOUS_TOP, _TOP_BAND, sig, config=agg_config())
 
 
 def test_tc_agg_06_fully_favourable_unanimous_panel_is_high_confidence_and_auto_acceptable():
     """`TC-AGG-06` step 1 (`FR-AGG-05`, unit / rung 0, P0) — with all signals
     favourable, the unanimous top-band panel is high-confidence and may auto-accept:
     the baseline every adverse case is measured against."""
-    aggregate = require(
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     score = aggregate(_UNANIMOUS_TOP, _TOP_BAND, signals(), config=agg_config())
@@ -100,7 +100,7 @@ def test_tc_agg_06_one_adverse_signal_caps_the_unanimous_panel_and_routes(field)
     score = _aggregate(signals(**{field: not FAVOURABLE[field]}))
 
     cap = DESIGN_CAPS[field]
-    assert score.confidence <= pytest.approx(cap), (
+    assert score.confidence <= cap, (
         f"{field} adverse on an otherwise unanimous cited panel scored "
         f"{score.confidence!r} against its injected cap {cap!r} — the inversion is a "
         "hard cap, so the panel's unanimity cannot lift the confidence past it "
@@ -119,7 +119,7 @@ def test_tc_agg_06_all_sixty_four_signal_combinations_stay_at_or_below_their_min
     all-favourable baseline. A weighted-sum implementation can pass every
     single-signal case above and still fail here; this cell is the one that catches it.
     """
-    aggregate = require(
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     baseline = aggregate(_UNANIMOUS_TOP, _TOP_BAND, signals(), config=agg_config())
@@ -135,7 +135,7 @@ def test_tc_agg_06_all_sixty_four_signal_combinations_stay_at_or_below_their_min
             if value != FAVOURABLE[name]
         ]
         ceiling = min(applicable) if applicable else 1.0
-        assert score.confidence <= pytest.approx(ceiling), (
+        assert score.confidence <= ceiling, (
             f"{combo}: confidence {score.confidence!r} exceeds the minimum applicable "
             f"cap {ceiling!r} — a cap is a min, not a penalty term, so no combination "
             "of panel agreement and favourable signals may outrun the worst adverse "
@@ -160,7 +160,7 @@ def test_tc_agg_06_the_named_variant_three_unanimous_verdicts_on_unverified_evid
     makes R19 testable."""
     score = _aggregate(signals(spans_verified=False))
 
-    assert score.confidence <= pytest.approx(DESIGN_CAPS["spans_verified"]), (
+    assert score.confidence <= DESIGN_CAPS["spans_verified"], (
         f"three unanimous top-band verdicts on unverified evidence scored "
         f"{score.confidence!r} — this is RISK-01: a confident, agreeing panel on "
         "hallucinated evidence must come out LOW, not high (FR-AGG-05)"
@@ -178,7 +178,7 @@ def test_tc_agg_06_a_missing_signal_is_treated_as_adverse_fail_closed():
     the signal had been measured adverse."""
     for field, cap in DESIGN_CAPS.items():
         score = _aggregate(signals(**{field: None}))
-        assert score.confidence <= pytest.approx(cap), (
+        assert score.confidence <= cap, (
             f"{field} missing (None) scored {score.confidence!r} against the cap "
             f"{cap!r} a measured-adverse value would get — a missing signal is adverse, "
             "not favourable and not absent (fail-closed, NFR-INTEG-03)"
@@ -210,7 +210,7 @@ def test_tc_agg_06_unanimity_cannot_outrun_a_cap_the_injected_table_is_honoured_
     honoured per signal, not approximated by a penalty term. An implementation that
     hardcodes the design numbers and ignores `config.caps` fails five of the six
     cells (Q-04: these are injected tuning parameters, not literals)."""
-    aggregate = require(
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     config = agg_config(
@@ -237,7 +237,7 @@ def test_tc_agg_06_above_a_binding_cap_agreement_buys_nothing():
     ABOVE the 0.313 injected cap, the confidence is the cap exactly: above a binding
     cap, agreement changes nothing, so the unanimous and the split panel land on the
     same value (the distinction a penalty term cannot satisfy)."""
-    aggregate = require(
+    aggregate, _auto_threshold = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     config = agg_config(

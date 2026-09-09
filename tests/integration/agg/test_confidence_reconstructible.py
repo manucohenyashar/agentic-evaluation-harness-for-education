@@ -42,8 +42,6 @@ from tests.support.agg_vocabulary import (
 )
 from tests.support.impl import AGG_MODULE, require
 
-pytestmark = [pytest.mark.writtenahead]
-
 _COHORT = "c-agg-15"
 _SUBMISSION = "s-agg-15"
 _CRITERION_ID = "C-AGG-15"
@@ -78,7 +76,8 @@ def test_tc_agg_15_the_confidence_is_recomputable_from_the_stored_row_alone(tmp_
     """`TC-AGG-15` (`FR-AGG-13`, `NFR-AGG-04`, integration / rung 2, round-trip
     recomputation, P0) — aggregate, store, reopen, recompute: the recomputed figure
     equals the stored one, and the four integrity inputs are on the row."""
-    aggregate, recompute_confidence = require(
+    # `require` returns one symbol per probed name — three names, three bindings.
+    aggregate, recompute_confidence, _auto_threshold = require(
         AGG_MODULE, "aggregate", "recompute_confidence",
         "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92",
     )
@@ -92,14 +91,15 @@ def test_tc_agg_15_the_confidence_is_recomputable_from_the_stored_row_alone(tmp_
     with cohort.transaction() as tx:
         tx.execute(
             "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
-            "judge_count, agreement, state, routing, confidence, spans_verified, "
-            "evidence_present, sufficiency_flag, ocr_overlap_risk) VALUES (:sid, "
-            ":cid, :band, :points, :judge_count, :agreement, :state, :routing, "
-            ":confidence, :spans_verified, :evidence_present, :sufficiency_flag, "
-            ":ocr_overlap_risk)",
+            "judge_count, agreement, state, routing, confidence, confidence_base, "
+            "spans_verified, evidence_present, sufficiency_flag, ocr_overlap_risk) "
+            "VALUES (:sid, :cid, :band, :points, :judge_count, :agreement, :state, "
+            ":routing, :confidence, :confidence_base, :spans_verified, "
+            ":evidence_present, :sufficiency_flag, :ocr_overlap_risk)",
             sid=_SUBMISSION, cid=_CRITERION_ID, band=score.band, points=score.points,
             judge_count=score.judge_count, agreement=score.agreement,
             state=score.state, routing=score.routing, confidence=score.confidence,
+            confidence_base=score.confidence_base,
             spans_verified=score.spans_verified,
             evidence_present=score.evidence_present,
             sufficiency_flag=score.sufficiency_flag,

@@ -2,8 +2,8 @@
 
 **The footgun.** The chains in `TIER_MIGRATIONS` are *concatenated at import time* by the
 modules that own the schema they add — `aeh.pkg` and `aeh.det` for Tier P, `aeh.ingest`,
-`aeh.det`, `aeh.orch`, `aeh.extract` and `aeh.judge` for Cohort, `aeh.det` and `aeh.integ`
-for Tier D — so the
+`aeh.det`, `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth` and `aeh.agg` for Cohort,
+`aeh.det` and `aeh.integ` for Tier D — so the
 chain an
 open sees is only as long as the list of contributing modules the process has imported so
 far. A process that opens a Tier P file before those imports builds the file at the base
@@ -33,8 +33,9 @@ owning Cohort's last migration and `aeh.extract` the tail before it. Each time
 tree, which is the pin-rot gate working as documented. #78's `judge_verdict_columns` is
 the third and fourth rotations — numbered 13 when it first landed, renumbered 12→13→14
 as #61's lifecycle and then #97's `synth_narrative_key` took the numbers first at the
-merges (`aeh.judge` owns Cohort's last migration; `aeh.synth` joined the import lists
-below in the same change).)
+merges (`aeh.judge` owned Cohort's last migration; `aeh.synth` joined the import lists
+below in the same change). #92's `agg_confidence_columns` is the fifth — Cohort 15→16,
+`aeh.agg` joining the lists and owning the tail.)
 
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the
@@ -76,6 +77,7 @@ _FULL_CHAIN_CHILD = """
 import sqlite3
 import sys
 
+import aeh.agg  # noqa: F401
 import aeh.det  # noqa: F401
 import aeh.extract  # noqa: F401
 import aeh.ingest  # noqa: F401
@@ -170,6 +172,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     conftest block, the ordering #94's seeds used to shuffle), a tier's chain must read in
     ascending version order — `TC-STORE-06`'s no-reverse-step as a property of the registry
     (`_VersionOrderedRegistry`), not of anyone's collection order."""
+    import aeh.agg  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.ingest  # noqa: F401
