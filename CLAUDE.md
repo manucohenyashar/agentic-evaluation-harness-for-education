@@ -113,10 +113,10 @@ pass, and every bug found later becomes a permanent case.
 
 The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
 modules that own the schema they add. Before the first store open in any process, import all
-five contributors: `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg` — `import
-aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it), and
-`aeh.orch` owns Cohort's last migration (#61's `orch_run_lifecycle`, 12) while `aeh.extract`
-owns the one before it (11). An open on a
+six contributors: `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg, aeh.synth` — `import
+aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it),
+`aeh.orch` owns Cohort's migration 12 (#61's `orch_run_lifecycle`), `aeh.extract` the one
+before it (11), and `aeh.synth` the last one (#97's `synth_narrative_key`, 13). An open on a
 truncated chain builds the file at the base schema and the missing columns surface later, far
 from the open, as a distant `no such column: parent_version_id`. The open site refuses a short
 chain — `IncompleteMigrationChainError`, pinned per tier by `COMPLETE_SCHEMA_VERSIONS` in

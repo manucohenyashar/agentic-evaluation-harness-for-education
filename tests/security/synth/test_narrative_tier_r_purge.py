@@ -42,7 +42,7 @@ from tests.support.synth_vocabulary import (
     synth_ref,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSION = "SYN-001"
 _QUESTIONS = tuple(f"Q{q}" for q in range(1, 6))

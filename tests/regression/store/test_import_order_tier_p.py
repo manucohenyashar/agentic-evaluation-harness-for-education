@@ -75,6 +75,7 @@ import aeh.extract  # noqa: F401
 import aeh.ingest  # noqa: F401
 import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
+import aeh.synth  # noqa: F401
 
 from aeh.store import open_store
 
@@ -166,6 +167,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     import aeh.ingest  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401
+    import aeh.synth  # noqa: F401
 
     from aeh.store import COMPLETE_SCHEMA_VERSIONS, TIER_MIGRATIONS, Tier, current_schema_version
 

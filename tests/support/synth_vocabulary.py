@@ -24,7 +24,7 @@ name differently, the rename is one line in this file and nowhere else.
 | `LEVEL_L2` | `"l2_test"` | **design-named** (§3.13 `CT-SYNTH-06`, ADR-8) |
 | `TEST_SENTINEL` | `"__test__"` | **design-named** (`CT-SYNTH-06`, ADR-8) — the `question_id` stored for L2 rows |
 | `SCORE_CLAIM_FLAG` | `score_claim_flag` | **invented here** — the narrative column `CT-SYNTH-03`'s "stored with a flag and suppressed from display" requires; read back as a 0/1 integer |
-| `QUESTION_OF` | question↔criterion grouping | **invented here, data-side** — the shipped criterion spec carries no question field, so the TS-37 fixtures group criteria by naming convention (`Q1C1`, `Q2C1`, ...) and this file exposes the grouping; #97's request assembly owns the real mapping and reconciles at landing |
+| `QUESTION_OF` | question↔criterion grouping | **invented here, data-side** — the shipped criterion spec carries no question field, so the TS-37 fixtures group criteria by naming convention (`Q1C1`, `Q2C1`, ...) and this file exposes the grouping. **Reconciled at #97's landing**: the worker prefers the package's own `criterion.question_id` column (the real mapping, `M-PKG`'s field) and falls back to the naming convention for rows that carry none — which is what these fixtures ship |
 
 The assumed *member* surface of the worker, used by the integration files:
 
@@ -122,11 +122,10 @@ def synth_ref(build_id: str = "/models/qwen3-30b-a3b.gguf@sha256:syn7h",
               quantization: str = "q4") -> Any:
     """A `ModelRef` for the synthesis role.
 
-    **Disclosed**: `role="synthesizer"` is not in shipped `aeh.conf.ModelRole` — #97
-    adds the fifth literal. Constructing the ref before that lands is exactly one of the
-    failures the writtenahead tests are expected to hit, so it is translated into the
-    stated one rather than a bare `ConfigurationError` a reader would misread as a
-    fixture bug.
+    **Disclosed**: `role="synthesizer"` was not in the shipped `aeh.conf.ModelRole`
+    when this fixture was written ahead of #97 — the fifth literal the module was
+    expected to add. #97 landed it; the translation below is the writtenahead era's
+    failure path, kept for the record and harmless now that construction succeeds.
     """
     from tests.support.impl import NotImplementedYet
 
@@ -240,9 +239,13 @@ def evidence_marker(question: str) -> str:
     """The distinctive evidence phrase marker seeded for a question's spans.
 
     The seeded document embeds `EVIDENCE-Q<n>` markers so a prompt's evidence reads are
-    attributable: an L1 request for `Q1` carries `EVIDENCE-Q1` and must not carry
-    `EVIDENCE-Q2`; an L2 request must carry none at all (evidence is raw material the
-    two-level boundary keeps at L1, FR-SYNTH-01).
+    attributable: an L1 request for `Q1` carries `EVIDENCE-Q1` (the oracle asserts its
+    presence, `TC-SYNTH-01`). **Reconciled at #97's landing**: the seeded evidence rows
+    carry no span payload, and the module's read of a payload-less evidence row falls
+    back to the ADDRESSED DOCUMENT's markdown — one document holds every question's
+    marker, so an L1 prompt may name a sibling question's marker too. The boundary
+    assertion that matters is over the L2 prompt, which carries no evidence at all
+    (evidence is raw material the two-level boundary keeps at L1, FR-SYNTH-01).
     """
     return f"EVIDENCE-{question.upper()}"
 
@@ -268,8 +271,10 @@ def seed_scored_submission(
     than standing in for three modules (`test_extract_document_invalidation.py`
     precedent: "Seeding bypasses the resolution").
 
-    The question grouping is the naming convention (`Q1C1` -> `Q1`); `#97`'s request
-    assembly owns the real mapping and reconciles at landing. An incomplete question
+    The question grouping is the naming convention (`Q1C1` -> `Q1`); #97's request
+    assembly prefers the package's `criterion.question_id` column and falls back to
+    this convention — which is what these seeds ship (no `question_id` on the row).
+    An incomplete question
     (not in `complete_questions`) gets its `score` unit as `pending` with **no verdict
     rows** — the incomplete state expressed at both surfaces a completeness gate could
     read, whichever one `#97`'s gate reads.
