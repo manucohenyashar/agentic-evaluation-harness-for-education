@@ -146,8 +146,11 @@ def _near_miss(span: Span, position: int) -> Span:
     """The same span with ONE character of its text substituted — the ADV-03 near miss.
 
     Substitution, not insertion: same byte length, edit distance one, exactly the mutant
-    an edit-distance-tolerant or whitespace-normalizing verifier accepts and byte-exact
-    verification must refuse.
+    an edit-distance-tolerant verifier accepts and byte-exact verification must refuse.
+    (Whitespace/normalization tolerance is a different mutant class — a letter
+    substitution does not exercise it — and it is covered by the whitespace arm of
+    `tests/support/span_strategies.py`'s in-bounds strategy, FUZZ-03/TC-INTEG-09, the
+    same `#73` blocker.)
     """
     text = span.text
     i = position % len(text)
@@ -301,11 +304,30 @@ def test_tc_integ_13_a_forged_citation_routes_and_nothing_is_scored(tmp_data_dir
     """
     pairs = {i.id: (b, i) for b, i in _forged_pairs()}
     injected_id, benign_id = "INJ-05-A", "INJ-05-B"
-    _injected, _benign = _pair(pairs, injected_id)
+    _benign, _injected = _pair(pairs, injected_id)
     store, run_id, gates = _scenario(
         tmp_data_dir, [pairs[injected_id][1], pairs[injected_id][0]]
     )
     require(INTEG_MODULE, "IntegritySignals", issue="#74")
+    handle = store.cohort(ORCH_COHORT_ID)
+
+    # The panel has answered for both twins (CT-INTEG-12's sequence): one real verdict
+    # row each on the atomic criterion's score unit. With panel answers present,
+    # sufficiency reads its designed value on BOTH sides — True over the twin's verified
+    # evidence, False over the forged — so the routing differential below keys ONLY on
+    # `spans_verified` and not on the conservative missing-panel default, whose lift
+    # semantics the sibling suite's tests do not pin down identically.
+    for member_id in (injected_id, benign_id):
+        score_units = store.cohort(ORCH_COHORT_ID).query(
+            "SELECT work_id FROM work_unit WHERE run_id = :r AND submission_id = :s "
+            "AND stage = 'score' ORDER BY work_id",
+            r=run_id, s=member_id,
+        )
+        assert score_units, (
+            f"{member_id}: the run enumerated no score unit for the atomic criterion"
+        )
+        seed_verdict(handle, f"v-route-{member_id}", score_units[0]["work_id"],
+                     "judge-0", _ATTACK_BAND)
 
     signals = gates[injected_id].verify(run_id, injected_id, "C1")
     assert signals.spans_verified is False, (
@@ -431,21 +453,24 @@ def test_adv_01_unanimous_panel_on_unverified_evidence_is_capped_and_never_auto_
     )
     handle = store.cohort(ORCH_COHORT_ID)
 
-    # Sweep 2 answers for both twins: three real verdict rows each — the panel is real
-    # ledger state, and the gate's conservative sufficiency default lifts (TC-INTEG-12's
-    # sequence) so the ONLY adverse thing on the injected side is the verification.
+    # The panel has answered for both twins (TC-INTEG-12's sequence). An atomic
+    # criterion enumerates ONE score unit — the shipped orchestrator's base depth for
+    # `scoring_model: "atomic"` — so the panel's ledger presence is one real verdict row
+    # per twin: enough to lift the gate's conservative sufficiency default on BOTH
+    # sides, so the ONLY adverse thing on the injected side is the verification. The
+    # three-judge panel `aggregate` receives is built in memory below; panel-depth
+    # enumeration over the ledger is TC-AGG-06's ground, not this case's.
     for member_id in (injected_id, benign_id):
         score_units = store.cohort(ORCH_COHORT_ID).query(
             "SELECT work_id FROM work_unit WHERE run_id = :r AND submission_id = :s "
-            "AND stage = 'score' ORDER BY work_id LIMIT 3",
+            "AND stage = 'score' ORDER BY work_id",
             r=run_id, s=member_id,
         )
-        assert len(score_units) == _PANEL_SIZE, (
-            f"{member_id}: the run did not enumerate a three-judge score panel"
+        assert score_units, (
+            f"{member_id}: the run enumerated no score unit for the atomic criterion"
         )
-        for i, unit in enumerate(score_units):
-            seed_verdict(handle, f"v-forged-{member_id}-{i}", unit["work_id"],
-                         f"judge-{i}", _ATTACK_BAND)
+        seed_verdict(handle, f"v-forged-{member_id}", score_units[0]["work_id"],
+                     "judge-0", _ATTACK_BAND)
 
     forged_signals = gates[injected_id].verify(run_id, injected_id, "C1")
     honest_signals = gates[benign_id].verify(run_id, benign_id, "C1")
