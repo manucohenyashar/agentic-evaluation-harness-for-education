@@ -348,10 +348,14 @@ def test_tc_extract_03_variant_chain_c2_c4_c7_carries_c4s_spans_and_nothing_from
     require(EXTRACT_MODULE, ASSEMBLE, REQUEST_TYPE, issue=ISSUE)
 
     c4_spans = [{"start": 0, "end": 42, "text": "The net force points down the slope."}]
+    # Calibration (disclosed in the PR): the scalars are scanned VERBATIM against the
+    # request's string leaves, so they must not collide with this file's own fixture
+    # ids ("s231" contains "3"; "sha256" contains "2"/"5"/"6"; "c4" contains "4").
+    # 8 and 0.88 collide with nothing.
     c4_verdict = {
         "band": "secure",
-        "band_ordinal": 3,
-        "points": 3.0,
+        "band_ordinal": 8,
+        "points": 8.0,
         "confidence": 0.88,
         "judge_id": "judge-1",
     }
