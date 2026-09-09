@@ -18,9 +18,9 @@ Oracles — **invariant**:
   work-ID scheme), while the old row remains exactly as it was. Nothing is mutated,
   nothing is deleted, nothing is reconciled by hand.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, built from
+`tests/support/extract_vocabulary.py`) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 
@@ -66,7 +66,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = EXTRACT_ISSUE
 
@@ -123,7 +123,7 @@ def _extract(store: Any, provider: Any, version: str, *, spans: list[dict[str, A
     orchestrator = Orchestrator(store)
     run_id = orchestrator.create_run(ORCH_COHORT_ID, version, _resolved())
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
-    request = AssembleRequest(unit)
+    request = AssembleRequest(unit, store=store)
     model_ref = extractor_ref()
     provider.record(
         PromptFields(request), model_ref, sampling_params(),
