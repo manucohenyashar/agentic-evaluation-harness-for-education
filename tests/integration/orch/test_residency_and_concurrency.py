@@ -1,6 +1,7 @@
 """`TS-24`'s residency and concurrency cases — `TC-ORCH-23`, `RES-11`, `RES-13` —
-**written ahead of #62** (dispatch isolation, residency batching, concurrency,
-progress granularity) and #66 (run-metrics persistence).
+**landed with #62** (dispatch isolation, residency batching, concurrency,
+progress granularity) and #66 (run-metrics persistence); this file shipped
+red-by-design ahead of them and unmarked when they landed.
 
 The three cases share one seam: the dispatch loop #62 ships. `TC-ORCH-23` is
 residency — an `edge-local` profile that permits one resident model must finish a
@@ -13,16 +14,16 @@ concurrency, retry, then drop to a smaller panel and record it in `panel_config`
 (§9.11), oracle **the reduced panel is recorded, so a later validation record cannot
 claim the full panel**.
 
-**Interface this file assumes of #62/#66**, listed so it is reconciled deliberately
-rather than discovered:
+**Interface this file assumes of #62/#66** — shipped exactly as assumed (the
+`test_sweep_admission_and_ordering.py` precedent; the design reasoning stays):
 
 | Name | Status |
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; drives one dispatch pass and returns the report (AC4: counts by `(stage, criterion, judge)` plus totals — the four-seams rule's stage-level detail) |
-| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the observable "dispatch respects concurrency / reduces" needs (four-seams rule #4); assumed a mapping, reconciled at landing |
-| the dispatch's model-call seam is injectable at the Orchestrator | the four-seams rule requires a deterministic transport for every external dependency the moment it is added, so #62's dispatch must bind one injectably; assumed as `Orchestrator(store, transport=<call seam>)`, kwarg name reconciled at landing |
+| `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the observable "dispatch respects concurrency / reduces" needs (four-seams rule #4); shipped as a mapping, exactly as assumed |
+| the dispatch's model-call seam is injectable at the Orchestrator | the four-seams rule requires a deterministic transport for every external dependency the moment it is added, so #62's dispatch binds one injectably; shipped as `Orchestrator(store, transport=<call seam>)`, kwarg name exactly as assumed |
 | the call seam's shape | `call(unit) -> Completion` for a successful model call, or a raise of the REAL taxonomy error (`RateLimitedError`, `MemoryError`) — `Completion` is shipped (#19), so the double returns the real type and only the *seam* is assumed |
-| `Orchestrator.record_run_metrics` | **invented name** — the design's Protocol has no metrics member; the KEY is the write `CT-ORCH-20` makes contract (M-ORCH is sole `run_metrics` writer, `CT-PROV-11` has it persisting the provider's counters) and the owning story is #66; the name reconciles at landing |
+| `Orchestrator.record_run_metrics` | the **invented name** shipped as-is — the design's Protocol has no metrics member; the KEY is the write `CT-ORCH-20` makes contract (M-ORCH is sole `run_metrics` writer, `CT-PROV-11` has it persisting the provider's counters) and the owning story is #66 |
 | run_metrics reads | shipped: the EAV table `(run_id, metric, value)` (store.py `_DURABLE_001`), read through `store.durable().query(...)` |
 | judges stand in for models | each panel judge names its own model, so model identity is the unit's `judge`; the panel used here has three distinct models |
 
@@ -50,7 +51,7 @@ from tests.support.orch_run import (
     seed_package,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
 _CRITERIA = (

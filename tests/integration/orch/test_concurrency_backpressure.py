@@ -1,7 +1,7 @@
 """`TC-ORCH-24` (`FR-ORCH-21`; integration / rung 2, P1) — the concurrency
 ceiling and the backpressure response: in-flight requests never exceed the
 ceiling; dispatch reduces when `M-STORE` signals write backpressure and
-recovers when it clears (**written ahead of #62's dispatch loop**).
+recovers when it clears (**landed with #62**).
 
 `FR-ORCH-21`: "cap in-flight requests at the configured concurrency ceiling and
 reduce dispatch when M-STORE signals write backpressure." `CT-STORE-06` is the
@@ -14,15 +14,17 @@ The backpressure half drives the REAL shipped signal: the store's write queue
 (`HARNESS_WRITE_QUEUE_DEPTH`, `CT-STORE-06`/`TC-STORE-C06`) with its drain held
 by the same `_next_batch` technique the store's own C06 case uses, so
 `backpressure_active` turns on as a level, and clears when the drain releases.
-What the dispatch does under that signal is #62's to ship.
+What the dispatch does under that signal — reduce, and recover after — is
+what the three legs below assert.
 
-**Interface this file assumes of #62** (the `test_residency_and_concurrency.py`
-precedent — the dispatch loop is the unshipped seam; everything else is real):
+**Interface this file assumes of #62** — landed with #62 per the unmarking
+procedure, and the names shipped exactly as assumed (the
+`test_sweep_admission_and_ordering.py` precedent; the design reasoning stays):
 
 | Name | Status |
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; drives the dispatch passes |
-| the model-call seam is injectable at the Orchestrator | `Orchestrator(store, transport=<seam>)`, kwarg reconciled at landing |
+| the model-call seam is injectable at the Orchestrator | `Orchestrator(store, transport=<seam>)`, shipped exactly as assumed |
 | the seam call is observed in-flight | the seam double counts concurrent entries — the concurrency spy the plan names, and the instrument all three legs assert over |
 | `report["concurrency"]` | the dispatch report carries the dispatch's current concurrency — the same field `RES-11` (429 back-off) already assumes; corroborating only, since the implementation under test also writes it |
 
@@ -36,7 +38,8 @@ under the signal (reports collected, the report field corroborates) and a
 dispatch that throttles itself to stillness (the spy carries the leg). A
 dispatch that instead parks on completions mid-window is released with
 everything else and judged by the peak it reached before the release. The
-exact park-vs-reduce mechanics reconcile at landing.
+park-vs-reduce mechanics #62 shipped reduce the cap once per pass and
+re-clamp it at report time, so both shapes stay tolerated here.
 | the ceiling is configurable to 32 | `RunConfig.concurrency_ceiling` derives from the hardware profile (`FR-CONF-06`); the fixture supplies a profile whose ceiling is 32 — the shipped `HardwarePolicy` path, so the plan's "ceiling of 32" input is real, not monkey-patched |
 
 Isolation: rung 2 — real store (its write queue driven to saturation), real
@@ -61,7 +64,7 @@ from tests.support.orch_run import (
 )
 from tests.support.store_api import statement
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 
@@ -98,7 +101,6 @@ def _ceiling_32_config(cohort_id: str = ORCH_COHORT_ID) -> object:
         edge_cfg(
             HARNESS_HARDWARE_PROFILE="capacity-test",
             hardware_profiles={"capacity-test": profile},
-            panel=None,
         ),
         CohortRef(cohort_id=cohort_id, consent_class="synthetic"),
     )
@@ -210,6 +212,7 @@ def test_tc_orch_24_in_flight_never_exceeds_the_ceiling_and_backpressure_recover
             submissions=_SUBMISSIONS,
             criteria=_CRITERIA,
             cfg=_ceiling_32_config(),
+            transport=spy,
         )
         orch.enumerate_units(run_id)
 

@@ -15,23 +15,33 @@ extract unit, the shipped enumerator's own shape):
 …24,150 units — at or above the plan's figure with every one of the three stages
 present, which the "spread across stages" premise needs.
 
-**The 300 injected failures, exactly.** 210 units fail once (90 extract, 90 score,
-30 deterministic) and then complete on retry; 30 units (10 per stage) fail
-persistently and quarantine at the ceiling — 90 further reports — for **exactly 300
-failure reports**. The driver's own count is asserted, so the fixture cannot drift.
+**The 300 injected failures, exactly.** 210 units fail once (100 extract, 80 score,
+30 deterministic) and then complete on retry; 30 units (20 score, 10 deterministic)
+fail persistently and quarantine at the ceiling — 90 further reports — for **exactly
+300 failure reports**. The driver's own count is asserted, so the fixture cannot
+drift.
+
+**Why no persistent failure lands on extract** (reconciled when #62 landed, the
+`record_run_start` precedent): #59's shipped Sweep 2 gate never scores over nothing —
+a quarantined extraction is not `done`, so the three score units it feeds stay gated
+**forever** (until an operator re-queues the extraction), and a run carrying one can
+never complete. A quarantined score or deterministic unit is a leaf: nothing gates on
+it, the run delivers. The fail-once extract failures still exercise the
+requeue-below-ceiling path on the gated stage — the unit returns to pending with its
+attempt kept and completes on retry, and the extraction lands `done`.
 
 **The invariant half.** `sum(attempts)` over the whole ledger equals 300 exactly:
 no failure was absorbed without an attempt (the ledger's count is the operator
 surface's source), and no phantom attempt appeared (at-least-once duplicates would
 break the reconciliation). `mark_done` does not touch `last_error` and
 `record_failure` sets it in both arms (the shipped statements, #58), so a failure
-that later completed stays visible on its row: 23,070 done units include 210 whose
+that later completed stays visible on its row: 24,120 done units include 210 whose
 `last_error` still names what happened to them on the way.
 
 **The visibility half.** The operator surface is `progress`'s report (#62's AC4:
 counts by `(stage, criterion, judge)` plus done / in-flight / pending / quarantined
 totals): its quarantined total equals the ledger's 30, its totals reconcile to the
-ledger's 23,100, it reports the run **complete** (quarantined units are not pending —
+ledger's 24,150, it reports the run **complete** (quarantined units are not pending —
 NFR-ORCH-03's "fail the unit, never the run" is what lets the run deliver), and —
 the non-promise half of AC4 — **no per-student completion figure exists anywhere in
 it** (FR-CONSOLE-08: the data must not exist to render).
@@ -40,8 +50,8 @@ The grade-reporting half of "delivers" (the artifacts the run feeds) is the grad
 stories' to carry (`TC-GRADE-*`); this file's delivery claim is the ledger's: every
 non-quarantined unit done, nothing left in flight.
 
-**Interface this file assumes of #62** (reconciled deliberately, the
-`test_leasing.py` precedent):
+**Interface this file assumes of #62** — landed with #62, and the names shipped
+exactly as assumed (the `test_leasing.py` precedent; the design reasoning stays):
 
 | Name | Status |
 |---|---|
@@ -64,7 +74,7 @@ from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 
@@ -81,8 +91,11 @@ _STAGES = ("extract", "score", "deterministic")
 
 #: Per stage: (units failed once, units failed persistently). The persistent units
 #: fail 3 times each (the shipped ceiling), so the total is
-#: sum(fail_once + 3 * persistent) = (90 + 30) + (90 + 30) + (30 + 30) = 300.
-_FAILURE_PLAN = {"extract": (90, 10), "score": (90, 10), "deterministic": (30, 10)}
+#: sum(fail_once + 3 * persistent) = (100 + 0) + (80 + 60) + (30 + 30) = 300.
+#: The persistent quota avoids extract — see the docstring's reconciliation note:
+#: a quarantined extraction permanently gates its score units (#59's gate), and the
+#: run could never complete.
+_FAILURE_PLAN = {"extract": (100, 0), "score": (80, 20), "deterministic": (30, 10)}
 
 _TOTAL_UNITS = 350 * 17 + 350 * 17 * 3 + 350 * 1
 _PERSISTENT_TOTAL = sum(plan[1] for plan in _FAILURE_PLAN.values())
@@ -113,7 +126,9 @@ def test_tc_orch_31_twenty_three_thousand_units_three_hundred_failures_all_visib
 
     store = open_store(tmp_data_dir)
     try:
-        orch, run_id = seed_run(store, submissions=_SUBMISSIONS, criteria=_CRITERIA)
+        orch, run_id, _version = seed_run(
+            store, submissions=_SUBMISSIONS, criteria=_CRITERIA
+        )
         orch.enumerate_units(run_id)
 
         # --- designate the failures, spread across stages -----------------------

@@ -1571,43 +1571,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # are keyed on the *symbols* the later stories owe, not on the module.
     # The #59 entries (TC-ORCH-25, TC-ORCH-06/07/08) were dropped when #59 landed:
     # `SWEEP1_ADMITTED_INGEST_STATUSES` and the two-sweep dispatch order are in.
-    "#62 completion predicate (TC-ORCH-22)": (
-        # TC-ORCH-22 reads FR-ORCH-12's predicate off #62's run-state report;
-        # `Orchestrator.progress` is a §3.7 Interfaces member no earlier story's
-        # acceptance criteria ship. The report's completion-flag field name is assumed
-        # (`.complete`) and declared in the test module's docstring.
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.progress",
-        ("tests/integration/orch/test_completion_predicate.py",),
-    ),
+    # The three #62 entries (TC-ORCH-22, TC-ORCH-23/RES-11/13, TC-ORCH-31) were
+    # dropped when #62 landed: `Orchestrator.progress` and `record_run_metrics`
+    # shipped as declared.
     # --- TS-24 (issue #65), the resume/lease-expiry/taxonomy cases written ahead -------
     #
     # #57 (argument-free resume) and #58 (lease, sweeper, fail/complete taxonomy) shipped,
     # so the GREEN cases (TC-ORCH-04/18, RES-04/05/12/15) run unmarked. These four entries
     # key the cases the later stories owe, on the §3.7 Protocol members those stories must
     # add to the concrete class.
-    "#62 TS-24 residency and concurrency (TC-ORCH-23, RES-11/13)": (
-        # Dispatch-surface cases: residency batching and the dispatch report are
-        # #62's `progress`; the run_metrics WRITE half (swap count/duration,
-        # rate_limited_calls — CT-ORCH-20/CT-PROV-11 make the write contract) is
-        # TS-25's (#66). `record_run_metrics` is an invented-and-disclosed name
-        # (the design's Protocol has no metrics member); if #66 ships the writer
-        # under another name, the rename here and in the test module is one line.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.progress,"
-            f"{ORCH_MODULE}:Orchestrator.record_run_metrics"
-        ),
-        ("tests/integration/orch/test_residency_and_concurrency.py",),
-    ),
-    "#62 TS-24 failure visibility (TC-ORCH-31)": (
-        # TC-ORCH-31's operator surface IS #62's progress report (AC4: totals by
-        # status and by (stage, criterion, judge)); the completion predicate rides
-        # the same symbol as the TC-ORCH-22 entry above.
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.progress",
-        ("tests/resilience/orch/test_failure_visibility.py",),
-    ),
     "#97 TS-24 synthesis boundary (RES-07)": (
         # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
         # Interfaces block returns nothing), so the key is an invented-and-used-together
@@ -1857,15 +1829,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # remaining invented name is declared in its test module's docstring with its
     # reconciling story — the `record_run_metrics` precedent: the design pins the
     # semantics and the constants but no function names, so the tests invent and use
-    # them together.
-    "#62 TS-23 estimated completion (TC-ORCH-27)": (
-        "symbol",
-        f"{ORCH_MODULE}:estimated_completion_seconds",
-        (
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_27_estimated_completion_adjusts_for_the_observed_escalation_rate",
-        ),
-    ),
+    # them together. The #62 entry (TC-ORCH-27) was dropped when #62 landed:
+    # `estimated_completion_seconds` shipped as declared.
     "#95 TS-23 escalation policy purity (TC-ORCH-32)": (
         # The policy FUNCTION is M-AGG's: design §3.8 declares `should_escalate` on the
         # Aggregator Protocol and CT-AGG-01 names it the pure escalation policy that
@@ -1917,12 +1882,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Two of the eight cases run GREEN against shipped code and carry no marker:
     # TC-ORCH-30 (tests/integration/orch/test_perf_scheduling_overhead.py — the
     # scheduling path #59 shipped holds the budget) and TC-ORCH-33's lease/
-    # complete half (tests/integration/orch/test_ledger_capacity.py). The six
-    # entries here key the cases that wait on the dispatch loop (#62), the
-    # request assembler (M-JUDGE, #80/#81), the escalation enqueue (#60) and
-    # the run-metrics write (#66). `record_run_metrics` is #65's
-    # invented-and-reserved name, claimed by TS-25's own file; the #65 entry
-    # above keeps its conjunction for ITS file untouched.
+    # complete half (tests/integration/orch/test_ledger_capacity.py). The four
+    # entries dropped when #62 landed (TC-ORCH-26/24/35 and TC-ORCH-33's
+    # progress half): `Orchestrator.progress`, `ProgressReport` and
+    # `record_run_metrics` shipped as declared. The two remaining entries key
+    # the cases that still wait on the request assembler (M-JUDGE, #80/#81)
+    # and on the alert-rules surface `evaluate_alerts`.
+    # `record_run_metrics` is #65's invented-and-reserved name, claimed by
+    # TS-25's own file; the #65 entry above keeps its conjunction for ITS file
+    # untouched.
     "#66 TS-25 one-submission isolation (TC-ORCH-19, ADV-04)": (
         # The corpus half captures every assembled request over a complete run —
         # it needs the dispatch driver (#62) AND the assembler/validator
@@ -1936,34 +1904,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ),
         ("tests/artifact/test_one_submission_per_request.py",),
     ),
-    "#66 TS-25 progress granularity (TC-ORCH-26)": (
-        # Field enumeration runs over the §3.7 ProgressReport dataclass; the
-        # live query reads the report shape TC-ORCH-31's file already assumed.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.progress,"
-            f"{ORCH_MODULE}:ProgressReport"
-        ),
-        ("tests/integration/orch/test_progress_report.py",),
-    ),
-    "#66 TS-25 concurrency and backpressure (TC-ORCH-24)": (
-        # The in-flight spy rides the dispatch loop; the backpressure signal is
-        # the SHIPPED store level (CT-STORE-06), driven the TC-STORE-C06 way.
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.progress",
-        ("tests/integration/orch/test_concurrency_backpressure.py",),
-    ),
-    "#66 TS-25 run metrics signal presence (TC-ORCH-35)": (
-        # The write is TS-25's (CT-ORCH-20 makes the names contract); the
-        # fixture's escalation leg drives #60's member, so the conjunction is
-        # the honest encoding: runnable when the write lands.
-        "symbols",
-        (
-            f"{ORCH_MODULE}:Orchestrator.record_run_metrics,"
-            f"{ORCH_MODULE}:Orchestrator.enqueue_escalation"
-        ),
-        ("tests/integration/orch/test_run_metrics_signal_presence.py",),
-    ),
     "#66 TS-25 alert rules (TC-ORCH-36)": (
         # The five OBS-05 conditions are design text with no pinned surface;
         # `evaluate_alerts` is invented-and-disclosed (the `aeh.synth:-
@@ -1973,13 +1913,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "symbol",
         f"{ORCH_MODULE}:evaluate_alerts",
         ("tests/integration/orch/test_alert_rules.py",),
-    ),
-    "#66 TS-25 capacity progress half (TC-ORCH-33)": (
-        # The lease/complete half runs green in test_ledger_capacity.py; this
-        # half waits on #62's report, the same symbol as TC-ORCH-22/31's keys.
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.progress",
-        ("tests/integration/orch/test_ledger_capacity_progress.py",),
     ),
     # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
     #

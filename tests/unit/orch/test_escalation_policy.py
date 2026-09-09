@@ -206,7 +206,6 @@ def test_tc_orch_20_even_escalation_plans_are_rejected(judge_count):
 # --- TC-ORCH-27 ---------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_orch_27_estimated_completion_adjusts_for_the_observed_escalation_rate():
     """`TC-ORCH-27` (`FR-ORCH-24`, unit / rung 0, P1) — estimated completion from observed
     throughput against remaining units **adjusted for the escalation rate observed so

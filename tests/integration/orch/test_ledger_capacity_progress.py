@@ -1,8 +1,9 @@
-"""`TC-ORCH-33` — the progress half (**written ahead of #62**): progress
+"""`TC-ORCH-33` — the progress half (**landed with #62**): progress
 latency measured at both the ~23,000-unit and the 40,000-unit scale and
 compared, the third operation of the case whose lease and complete halves run
 green in `test_ledger_capacity.py` (the `TC-ORCH-29` two-file precedent for an
-oracle spanning a shipped and an unshipped surface).
+oracle spanning a shipped and an unshipped surface — this half shipped red
+ahead of #62 and unmarked when it landed).
 
 `NFR-ORCH-06`: at least 40,000 ledger units per run **without degradation**.
 The plan's oracle: "latency measured at both 23,000 and 40,000 and compared".
@@ -32,7 +33,7 @@ from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 

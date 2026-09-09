@@ -1376,12 +1376,13 @@ def current_schema_version(tier: Tier) -> int:
 #: **Maintenance rule**: a change that adds a migration bumps this pin **in the same change**.
 #: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
-#: same phantom bug in mirror image. (The rule has now fired twice since the pin landed:
-#: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12 — both
-#: caught by that gate test, not by a failed open.)
+#: same phantom bug in mirror image. (The rule has now fired three times since the pin landed:
+#: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it 11→12, and
+#: #62's `orch_report_indexes` moved it 12→13 — the first two caught by that gate test, not
+#: by a failed open.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 12,
+    Tier.COHORT: 13,
     Tier.DURABLE: 4,
 }
 

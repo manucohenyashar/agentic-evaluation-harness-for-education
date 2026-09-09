@@ -5,10 +5,11 @@ operations.
 
 **Which operations live in this file.** The case names three — lease, complete
 and progress. Lease and complete are shipped (#58) and are measured here, green.
-The progress half needs `Orchestrator.progress` (#62, unshipped) and lives in
-`test_ledger_capacity_progress.py` (writtenahead, same fixture, same tolerance),
-the `TC-ORCH-29` two-file precedent for a case whose oracle spans a shipped and
-an unshipped surface. When #62 lands, the two files together carry the case.
+The progress half needs `Orchestrator.progress` (#62) and lives in
+`test_ledger_capacity_progress.py` (same fixture, same tolerance), the
+`TC-ORCH-29` two-file precedent for a case whose oracle spans a shipped and an
+unshipped surface; that half shipped writtenahead and unmarked when #62 landed,
+so the two files together now carry the case.
 
 Fixture: the uniform-panel run at two sizes — 350 submissions (24,150 units,
 the `TC-ORCH-30`/`TC-ORCH-31` shape) and 600 submissions (41,400 units, at and

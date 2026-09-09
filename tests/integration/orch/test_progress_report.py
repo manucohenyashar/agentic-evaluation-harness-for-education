@@ -2,7 +2,7 @@
 P0) — the `ProgressReport` type and a live progress query: counts by
 `(stage, criterion, judge)` plus done / in-flight / pending / quarantined
 totals, and **no per-student completion figure exists on the type**, asserted by
-field enumeration (**written ahead of #62**).
+field enumeration (**landed with #62**).
 
 `FR-ORCH-23` exposes progress and simultaneously forbids exposing per-student
 completion (`R63` pairs it with `FR-CONSOLE-08`: the data must not exist to
@@ -19,16 +19,16 @@ render). The two oracles, exactly as the plan states them:
   counts the WHOLE ledger, not a sample (`CT-ORCH-09`: the ledger grows during
   a run, so a consumer computing progress from the initial count is wrong).
 
-**Interface this file assumes of #62** (reconciled deliberately; the same
-shape `test_failure_visibility.py` — `TC-ORCH-31` — already assumes, so #62
-reconciles both files together):
+**Interface this file assumes of #62** — shipped exactly as assumed (the same
+shape `test_failure_visibility.py` — `TC-ORCH-31` — assumes; the design
+reasoning stays):
 
 | Name | Status |
 |---|---|
 | `Orchestrator.progress(run_id)` | design §3.7 Protocol member #62 ships; called on the instance |
 | `report["done"] / ["pending"] / ["in_flight"] / ["quarantined"]` | the four totals, flat on the report |
 | `report["by_unit"]` | the counts by `(stage, criterion, judge)` — keyed by that triple |
-| `aeh.orch:ProgressReport` | the §3.7 dataclass the field enumeration runs over; lands with #62 |
+| `aeh.orch:ProgressReport` | the §3.7 dataclass the field enumeration runs over; shipped with #62 |
 
 **How the two halves' shapes coexist (disclosed deliberately).** The type half
 enumerates `dataclasses.fields(ProgressReport)`; the query half reads mapping
@@ -57,7 +57,7 @@ from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#62"
 
