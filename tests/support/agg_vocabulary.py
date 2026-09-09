@@ -147,6 +147,21 @@ DESIGN_CAPS = {
     "extractor_disagreement": 0.40,
 }
 
+#: The favourable polarity of each signal — the value meaning "nothing wrong" (§3.12's
+#: reading: `spans_verified`/`evidence_present` are favourable when True; the other four
+#: are favourable when False, e.g. `ocr_overlap_risk = False` = no overlap risk). Any
+#: other value — the opposite boolean, or `None` = not measured — is adverse
+#: (fail-closed). Shared by the TC-AGG-06 sweep, the TC-AGG-10 properties and the
+#: exact-cap cells, so the adverse-reading of a cap is computed from ONE map.
+FAVOURABLE = {
+    "spans_verified": True,
+    "evidence_present": True,
+    "sufficiency_flag": False,
+    "ocr_overlap_risk": False,
+    "described_evidence": False,
+    "extractor_disagreement": False,
+}
+
 
 def signals(**overrides) -> SimpleNamespace:
     """The six M-INTEG signals, favourable by default, per-field overridden.

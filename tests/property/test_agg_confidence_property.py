@@ -34,6 +34,7 @@ import pytest
 
 from tests.support.agg_vocabulary import (
     DESIGN_CAPS,
+    FAVOURABLE as _FAVOURABLE,
     band,
     criterion,
     signals,
@@ -50,16 +51,6 @@ _FOUR_BAND = criterion([band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.
                         band("B3", 3, 6.0)])
 _BAND_NAMES = [b.band for b in _FOUR_BAND.bands]
 _ORDINALS = {b.band: b.ordinal for b in _FOUR_BAND.bands}
-
-#: Favourable polarity per signal; anything else (adverse or None) is fail-closed.
-_FAVOURABLE = {
-    "spans_verified": True,
-    "evidence_present": True,
-    "sufficiency_flag": False,
-    "ocr_overlap_risk": False,
-    "described_evidence": False,
-    "extractor_disagreement": False,
-}
 
 _signal_combo = st.fixed_dictionaries({name: st.booleans() for name in DESIGN_CAPS})
 _panel = st.lists(

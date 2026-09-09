@@ -16,10 +16,11 @@ consequences the cases below pin separately:
 
 - the 64-cell sweep (step 4) asserts the invariant against the **injected** cap table
   (Q-04: injected as configuration, never test literals);
-- the unanimity-vs-cap case asserts a *distinctive injected cap* (0.313 — a number no
-  tuning table would choose) comes back **exactly**, for a unanimous panel and a split
-  panel alike. A penalty-term implementation fails the second limb: subtracting the
-  same penalty from different base confidences lands on different values.
+- the unanimity-vs-cap cases assert *distinctive injected caps* (0.313/0.414/… —
+  numbers no tuning table would choose) come back **exactly** — one per signal — and,
+  for the 0.313 limb, for a unanimous panel and a split panel alike. A penalty-term
+  implementation fails the second limb: subtracting the same penalty from different
+  base confidences lands on different values.
 
 Isolation: rung 0 — pure function, no doubles beyond the value objects of
 `tests/support/agg_vocabulary.py`. Interface assumed of #91/#92: module-level
@@ -38,6 +39,7 @@ import pytest
 from tests.support.agg_vocabulary import (
     AGG_BLOCKER,
     DESIGN_CAPS,
+    FAVOURABLE,
     band,
     criterion,
     panel,
@@ -137,8 +139,8 @@ def test_tc_agg_06_all_sixty_four_signal_combinations_stay_at_or_below_their_min
         )
         applicable = [
             DESIGN_CAPS[name]
-            for name, favourable in combo.items()
-            if not favourable
+            for name, value in combo.items()
+            if value != FAVOURABLE[name]
         ]
         ceiling = min(applicable) if applicable else 1.0
         assert score.confidence <= pytest.approx(ceiling), (
@@ -195,20 +197,61 @@ def test_tc_agg_06_a_missing_signal_is_treated_as_adverse_fail_closed():
         )
 
 
-def test_tc_agg_06_unanimity_cannot_outrun_a_cap_the_injected_table_is_honoured_exactly():
-    """`TC-AGG-06` Oracle (`FR-AGG-05`, `NFR-AGG-04`, unit / rung 0, P0) — with a
-    *distinctive* injected cap (0.313, a number no tuning table would choose) the
-    confidence comes back exactly that value for a unanimous panel AND for a split
-    panel whose α sits above the cap: the cap table is honoured, not approximated by a
-    penalty term, and agreement buys nothing once a cap binds."""
+@pytest.mark.parametrize(
+    ("field", "injected"),
+    [
+        ("spans_verified", 0.313),
+        ("evidence_present", 0.414),
+        ("sufficiency_flag", 0.515),
+        ("ocr_overlap_risk", 0.616),
+        ("described_evidence", 0.717),
+        ("extractor_disagreement", 0.818),
+    ],
+)
+def test_tc_agg_06_unanimity_cannot_outrun_a_cap_the_injected_table_is_honoured_exactly(
+    field, injected
+):
+    """`TC-AGG-06` Oracle (`FR-AGG-05`, `NFR-AGG-04`, unit / rung 0, exact value per
+    cell, P0) — with a *distinctive* injected cap for `field` (0.313/0.414/… — numbers
+    no tuning table would choose; every other cap held non-binding at 0.99) the
+    confidence comes back exactly that value for a unanimous panel: the cap table is
+    honoured per signal, not approximated by a penalty term. An implementation that
+    hardcodes the design numbers and ignores `config.caps` fails five of the six
+    cells (Q-04: these are injected tuning parameters, not literals)."""
     aggregate = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
     config = agg_config(
         auto_threshold_atomic=0.90,
-        caps={"spans_verified": 0.313, "evidence_present": 0.99,
-              "sufficiency_flag": 0.99, "ocr_overlap_risk": 0.99,
-              "described_evidence": 0.99, "extractor_disagreement": 0.99},
+        caps={name: injected if name == field else 0.99 for name in DESIGN_CAPS},
+    )
+
+    unanimous = aggregate(
+        _UNANIMOUS_TOP, _TOP_BAND, signals(**{field: not FAVOURABLE[field]}),
+        config=config,
+    )
+
+    assert unanimous.confidence == pytest.approx(injected), (
+        f"the unanimous panel under the {injected!r} injected cap for {field} scored "
+        f"{unanimous.confidence!r} — the cap must come back exactly: a min, not a "
+        "penalty term, so unanimity cannot lift the value past it and a penalty term "
+        "lands somewhere else entirely (ADR-10; Q-04's injected cap table)"
+    )
+
+
+def test_tc_agg_06_above_a_binding_cap_agreement_buys_nothing():
+    """`TC-AGG-06` Oracle, second limb (`FR-AGG-05`, unit / rung 0, exact value, P0) —
+    for a split panel whose α (0.52 by the TC-AGG-05 hand-computed convention) sits
+    ABOVE the 0.313 injected cap, the confidence is the cap exactly: above a binding
+    cap, agreement changes nothing, so the unanimous and the split panel land on the
+    same value (the distinction a penalty term cannot satisfy)."""
+    aggregate = require(
+        AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
+    )
+    config = agg_config(
+        auto_threshold_atomic=0.90,
+        caps={name: 0.313 if name == "spans_verified" else 0.99
+              for name in DESIGN_CAPS},
     )
 
     unanimous = aggregate(
@@ -220,9 +263,7 @@ def test_tc_agg_06_unanimity_cannot_outrun_a_cap_the_injected_table_is_honoured_
 
     assert unanimous.confidence == pytest.approx(0.313), (
         f"the unanimous panel under the 0.313 injected cap scored "
-        f"{unanimous.confidence!r} — the cap must come back exactly: a min, not a "
-        "penalty term, so unanimity cannot lift the value past it and a penalty term "
-        "lands somewhere else entirely (ADR-10)"
+        f"{unanimous.confidence!r} — the cap comes back exactly (ADR-10)"
     )
     assert split.confidence == pytest.approx(0.313), (
         f"the split panel (α = 0.52, above the cap) scored {split.confidence!r} — "

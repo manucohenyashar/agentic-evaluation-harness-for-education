@@ -17,7 +17,9 @@ never sleeps.
   <table>` / `INSERT OR ... INTO <table>` / `UPDATE <table>` / `DELETE FROM <table>`.
   SQL lives in statement literals (the `TC-AGG-03` per-literal convention); DDL
   (`CREATE TABLE`) is not a write and is not scanned — `aeh.store` owns the schema for
-  every tier.
+  every tier. The scan is recursive (`rglob`), and the sanctioned sets are matched
+  against the path relative to `src/aeh`, so a write hiding in a future subpackage
+  (`aeh/synth/helpers.py`) is caught too — subpackage modules inherit nothing.
 - *Sanctioned writers* of `criterion_score` today: `store.py` (DDL and the audit
   purge statements) and `det.py` (the deterministic upsert — TC-AGG-13's
   pass-through input). `agg.py` joins this set at #93 (CT-AGG-11 makes it the
@@ -67,7 +69,8 @@ def test_tc_agg_16_the_m_agg_and_m_synth_write_sets_are_disjoint(repo_root):
     and in particular `M-AGG` has no path to `narrative` while `M-SYNTH` has none to
     `criterion_score`."""
     sources = {
-        path.name: path for path in sorted((repo_root / "src" / "aeh").glob("*.py"))
+        str(path.relative_to(repo_root / "src" / "aeh")): path
+        for path in sorted((repo_root / "src" / "aeh").rglob("*.py"))
     }
 
     narrative_writers = {

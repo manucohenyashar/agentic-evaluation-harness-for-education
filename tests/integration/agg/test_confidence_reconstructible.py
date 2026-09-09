@@ -116,13 +116,26 @@ def test_tc_agg_15_the_confidence_is_recomputable_from_the_stored_row_alone(tmp_
         s=_SUBMISSION, c=_CRITERION_ID,
     )[0]
 
-    assert row["spans_verified"] is False, (
-        "spans_verified was not on the stored row — FR-AGG-13's recorded inputs are "
-        "what make the confidence answerable years later"
+    # The store returns raw sqlite3 rows (no detect_types), so boolean columns read
+    # back as 0/1 whatever the migration declares — the assertion accepts either
+    # representation (the boolean-column precedent of the saw-system-output contract).
+    assert row["spans_verified"] in (0, False), (
+        f"spans_verified read back {row['spans_verified']!r} — it must be the False "
+        "the aggregation recorded: FR-AGG-13's recorded inputs are what make the "
+        "confidence answerable years later"
     )
-    assert row["evidence_present"] is True, "evidence_present was not on the stored row (FR-AGG-13)"
-    assert row["sufficiency_flag"] is False, "sufficiency_flag was not on the stored row (FR-AGG-13)"
-    assert row["ocr_overlap_risk"] is False, "ocr_overlap_risk was not on the stored row (FR-AGG-13)"
+    assert row["evidence_present"] in (1, True), (
+        f"evidence_present read back {row['evidence_present']!r} — it must be the "
+        "True the aggregation recorded (FR-AGG-13)"
+    )
+    assert row["sufficiency_flag"] in (0, False), (
+        f"sufficiency_flag read back {row['sufficiency_flag']!r} — it must be the "
+        "False the aggregation recorded (FR-AGG-13)"
+    )
+    assert row["ocr_overlap_risk"] in (0, False), (
+        f"ocr_overlap_risk read back {row['ocr_overlap_risk']!r} — it must be the "
+        "False the aggregation recorded (FR-AGG-13)"
+    )
 
     recomputed = recompute_confidence(row, _FOUR_BAND)
     assert recomputed == pytest.approx(row["confidence"]), (
