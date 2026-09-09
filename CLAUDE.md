@@ -113,10 +113,11 @@ pass, and every bug found later becomes a permanent case.
 
 The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
 modules that own the schema they add. Before the first store open in any process, import all
-seven contributors: `import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, aeh.synth` —
+eight contributors: `import aeh.det, aeh.extract, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth` —
 `import
 aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it),
-`aeh.judge` owns Cohort's last migration (#78's `judge_verdict_columns`, 14), `aeh.synth` the
+`aeh.integ` owns Durable's last migration (#73's `integ_rate_dimensions`, 5), `aeh.judge`
+owns Cohort's last migration (#78's `judge_verdict_columns`, 14), `aeh.synth` the
 one before it (#97's `synth_narrative_key`, 13), `aeh.orch` the one before that (#61's
 `orch_run_lifecycle`, 12), and `aeh.extract` the one before that (11). An open on a
 truncated chain builds the file at the base schema and the missing columns surface later, far
