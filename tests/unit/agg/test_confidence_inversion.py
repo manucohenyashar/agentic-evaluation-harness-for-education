@@ -37,7 +37,6 @@ import itertools
 import pytest
 
 from tests.support.agg_vocabulary import (
-    AGG_BLOCKER,
     DESIGN_CAPS,
     FAVOURABLE,
     band,
@@ -90,22 +89,15 @@ def test_tc_agg_06_fully_favourable_unanimous_panel_is_high_confidence_and_auto_
     )
 
 
-@pytest.mark.parametrize(
-    ("field", "adverse"),
-    [
-        ("spans_verified", True),
-        ("evidence_present", False),
-        ("sufficiency_flag", True),
-        ("ocr_overlap_risk", True),
-        ("described_evidence", True),
-        ("extractor_disagreement", True),
-    ],
-)
-def test_tc_agg_06_one_adverse_signal_caps_the_unanimous_panel_and_routes(field, adverse):
+@pytest.mark.parametrize("field", list(DESIGN_CAPS))
+def test_tc_agg_06_one_adverse_signal_caps_the_unanimous_panel_and_routes(field):
     """`TC-AGG-06` steps 2–3 (`FR-AGG-05`, unit / rung 0, decision table, P0) — each
     integrity signal varied alone from the favourable baseline: the confidence is
-    capped to that signal's injected cap and the result does not route to `auto`."""
-    score = _aggregate(signals(**{field: adverse}))
+    capped to that signal's injected cap and the result does not route to `auto`. The
+    adverse value is read from the vocabulary's shared polarity map (`FAVOURABLE`),
+    so the cell can never drift into testing the favourable reading by accident
+    (the step-2 input is `spans_verified = false`, not `true`)."""
+    score = _aggregate(signals(**{field: not FAVOURABLE[field]}))
 
     cap = DESIGN_CAPS[field]
     assert score.confidence <= pytest.approx(cap), (

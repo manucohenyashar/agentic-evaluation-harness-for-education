@@ -34,7 +34,6 @@ from aeh.store import open_store
 import aeh.det  # noqa: F401 — registers the score-state migration carrying criterion_score
 
 from tests.support.agg_vocabulary import (
-    AGG_BLOCKER,
     band,
     criterion,
     panel,

@@ -17,8 +17,11 @@ against literals:
   implementation fails this the moment a second adverse signal is added on top of a
   first whose penalty already saturated.
 - **never exceeds the minimum applicable cap**: `conf <= min(caps of the adverse
-  signals)`, for every generated input, including the no-adverse-signal case where the
-  ceiling is the agreement figure itself.
+  signals)`, for every generated input — and in the no-adverse-signal case the ceiling
+  is the design's base figure itself: `ordinal_alpha` for a panel of three or more
+  (§3.12's structure: `base = ordinal_alpha(verdicts)`, and no multiplier applies to
+  the generated all-cited atomic panels), the domain bound 1.0 for the single-judge
+  shape, whose base is the band-position prior.
 
 Isolation: rung 0 — pure function. Interface assumed of #91/#92: module-level
 `aggregate(verdicts, criterion, signals, *, config=None)`; the same assumed surface
@@ -58,12 +61,15 @@ _panel = st.lists(
 ).filter(lambda bands: len(bands) % 2 == 1)  # odd — even panels refuse (FR-AGG-03)
 
 
+def _verdicts(panel_bands):
+    return [verdict(name, _ORDINALS[name]) for name in panel_bands]
+
+
 def _aggregate(panel_bands, sig):
     aggregate = require(
         AGG_MODULE, "aggregate", "AGG_AUTO_THRESHOLD_ATOMIC", issue="#92"
     )
-    verdicts = [verdict(name, _ORDINALS[name]) for name in panel_bands]
-    return aggregate(verdicts, _FOUR_BAND, sig, config=agg_config())
+    return aggregate(_verdicts(panel_bands), _FOUR_BAND, sig, config=agg_config())
 
 
 def _worsen(combo: dict, decisions: dict) -> dict:
@@ -99,8 +105,11 @@ def test_tc_agg_10_confidence_is_monotone_non_increasing_as_signals_worsen(
 @given(panel=_panel, combo=_signal_combo)
 def test_tc_agg_10_confidence_never_exceeds_the_minimum_applicable_cap(panel, combo):
     """`TC-AGG-10` (`FR-AGG-05`, property / rung 0, P0) — for every generated input,
-    the confidence never exceeds the minimum applicable cap of the injected table
-    (1.0 — the agreement figure itself — when no cap binds)."""
+    the confidence never exceeds the minimum applicable cap of the injected table.
+    When no cap binds, the ceiling is the design's base figure: the agreement itself
+    (`ordinal_alpha`) for a panel of three or more — no multiplier applies to the
+    generated all-cited atomic panels — and the domain bound 1.0 for the
+    single-judge shape, whose base is the band-position prior, a different figure."""
     score = _aggregate(panel, signals(**combo))
 
     applicable = [
@@ -108,7 +117,19 @@ def test_tc_agg_10_confidence_never_exceeds_the_minimum_applicable_cap(panel, co
         for name, value in combo.items()
         if value != _FAVOURABLE[name]
     ]
-    ceiling = min(applicable) if applicable else 1.0
+    if applicable:
+        ceiling = min(applicable)
+    elif len(panel) >= 3:
+        ordinal_alpha = require(AGG_MODULE, "ordinal_alpha", issue="#91")
+        alpha = ordinal_alpha(_verdicts(panel))
+        assert alpha is not None, (
+            f"ordinal_alpha returned None for a {len(panel)}-judge panel on a 4-band "
+            "criterion — the design defines α wherever there are pairable units "
+            "(CT-AGG-04), and three or more verdicts on four bands are pairable"
+        )
+        ceiling = alpha
+    else:
+        ceiling = 1.0
     assert score.confidence <= pytest.approx(ceiling), (
         f"panel={panel} signals={combo}: confidence {score.confidence!r} exceeds the "
         f"minimum applicable cap {ceiling!r} — a cap is a min, not a penalty term "

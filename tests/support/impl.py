@@ -242,7 +242,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-36 (#95), the M-AGG confidence-inversion, routing and escalation cases -----------
     #
-    # Thirteen cases across six files, written ahead of THREE stories — #91 lands the
+    # Thirteen cases across seven files, written ahead of THREE stories — #91 lands the
     # `aggregate` core, #92 the caps and the stored integrity inputs, #93 the routing,
     # the escalation policy and the score states — so the entries key per BLOCKER SET
     # rather than per story, and every conjunction is what the file's `require()` calls
@@ -256,13 +256,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # conjunction unresolved (right), and a `#92` landing resolves it (right). The
     # residual weakness is #76's verbatim: a threshold constant landing without the cap
     # behaviour would unmark tests that then fail with an assertion, not a stated
-    # reason. The state entry has the same shape one story over — no declared name
-    # isolates "the states landed", so it keys on `aggregate` + `EvenPanelError` (the
-    # composition limb genuinely requires both) and will unmark at #91 while the
-    # states are still #93's; the failure then names FR-AGG-11 in its message.
+    # reason. `ordinal_alpha` joins the conjunction because the TC-AGG-10 property's
+    # no-cap cell pins the design's base figure (§3.12: with no cap binding and no
+    # multiplier applying, the confidence IS the agreement figure) — the property
+    # calls it directly, so it must exist before the marker can drop. The state entry
+    # has the same shape one story over — no declared name isolates "the states
+    # landed", so it keys on `aggregate` + `EvenPanelError` (the composition limb
+    # genuinely requires both) and will unmark at #91 while the states are still
+    # #93's; the failure then names FR-AGG-11 in its message.
     "#95 TS-36 confidence inversion (TC-AGG-06, TC-AGG-10)": (
         "symbols",
-        f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC",
+        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC,"
+         f"{AGG_MODULE}:ordinal_alpha"),
         (
             "tests/unit/agg/test_confidence_inversion.py",
             "tests/property/test_agg_confidence_property.py",
