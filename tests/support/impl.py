@@ -1728,6 +1728,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_described_evidence.py",
         ),
     ),
+    "#74 IntegrityGate+IntegritySignals (TS-66 C11 timing of the sufficiency flag)": (
+        # The differential runs the real gate at two ledger instants; the
+        # conservative-default reading is the signals object's.
+        "symbols",
+        f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals",
+        (
+            "tests/contract/integ/test_ct_integ_timing.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
