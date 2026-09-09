@@ -37,13 +37,15 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.support.impl import SYNTH_ISSUE, SYNTH_MODULE, WORKER, require
+from tests.support.impl import SYNTH_MODULE, require
 from tests.support.orch_run import seed_run
 from tests.support.synth_vocabulary import (
     COHORT_ID,
     FIVE_QUESTION_CRITERIA,
     LEVEL_L2,
+    SYNTH_ISSUE,
     TEST_SENTINEL,
+    WORKER,
     CaptureProvider,
     narrative_completion,
     seed_scored_submission,
