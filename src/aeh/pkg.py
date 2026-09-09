@@ -1420,21 +1420,25 @@ PKG_STATEMENTS.update({
         "SELECT COUNT(*) AS n FROM package WHERE package_id = :p"
     ),
     "pkg_revision_copy_criterion": Statement(
-        # The columns migration 8 added (evidence_type, band_justification) join the
-        # copy from their first commit: a revision copies the read-back payload row
-        # too, and a copied payload that asserts an evidence_type beside criterion
-        # rows whose evidence_type is NULL would contradict itself. (The max_points-
-        # era columns this statement already dropped are a pre-existing gap, not
-        # #51's to close silently.)
+        # The copy is VERBATIM — every column the M-PKG module defines on the table
+        # (#230): a revision that drops criterion fields is mutation by omission, and
+        # CT-PKG-02's invariant (a PackageVersionId identifies content permanently)
+        # fails with it. The #51-era note stands: a revision copies the read-back
+        # payload row too, so a payload asserting an evidence_type cannot sit beside
+        # criterion rows whose evidence_type the copy silently NULLed.
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
-        "answer_key, evidence_type, band_justification) "
-        "SELECT :new, criterion_id, question_id, kind, answer_key, evidence_type, "
-        "band_justification FROM criterion WHERE package_version_id = :old"
+        "max_points, scoring_model, construct_tag, band_count, answer_key, "
+        "evidence_type, band_justification) "
+        "SELECT :new, criterion_id, question_id, kind, max_points, scoring_model, "
+        "construct_tag, band_count, answer_key, evidence_type, band_justification "
+        "FROM criterion WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
-        "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points) "
-        "SELECT :new, criterion_id, ordinal, band, points FROM band "
-        "WHERE package_version_id = :old"
+        # The descriptor rides with the set (#230): a band without its descriptor is
+        # the judge-facing mapping half-erased.
+        "INSERT INTO band (package_version_id, criterion_id, ordinal, band, points, "
+        "descriptor) SELECT :new, criterion_id, ordinal, band, points, descriptor "
+        "FROM band WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_dependency": Statement(
         "INSERT INTO criterion_dependency (package_version_id, criterion_id, depends_on) "
@@ -1785,6 +1789,37 @@ PKG_STATEMENTS.update({
         "INSERT INTO setup_step_record (package_version_id, step_id, status, payload, "
         "recorded_at) SELECT :new, step_id, status, payload, recorded_at "
         "FROM setup_step_record WHERE package_version_id = :old"
+    ),
+    "pkg_revision_copied_counts": Statement(
+        # #230's observability half: the revision result names what was copied, with
+        # per-table row counts — one read over the child's copies rather than one per
+        # table. The surface list mirrors `_REVISION_COPY_KEYS`; extend both together.
+        "SELECT 'criterion' AS surface, COUNT(*) AS n FROM criterion "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'band', COUNT(*) FROM band "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'question', COUNT(*) FROM question "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'question_option', COUNT(*) FROM question_option "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'criterion_dependency', COUNT(*) FROM criterion_dependency "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'exemplar', COUNT(*) FROM exemplar "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'mcq_option', COUNT(*) FROM mcq_option "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'grade_policy', COUNT(*) FROM grade_policy "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'grade_boundary', COUNT(*) FROM grade_boundary "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'setup_proposal', COUNT(*) FROM setup_proposal "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'setup_readback', COUNT(*) FROM setup_readback "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'setup_classification', COUNT(*) FROM setup_classification "
+        "WHERE package_version_id = :v "
+        "UNION ALL SELECT 'setup_step_record', COUNT(*) FROM setup_step_record "
+        "WHERE package_version_id = :v"
     ),
     # Per-field UPDATE statements: the SET column cannot be a bound parameter, so each
     # lockable field carries its own literal — the registry stays the one place a
@@ -2444,6 +2479,32 @@ class PackageCatalog:
                 "even count removes the safe middle band a hesitant judge retreats to."
             )
 
+    def _validate_band_sets(self, rows_of, *, boundary: str) -> None:
+        """`FR-PKG-06`'s count half over ONE version's rows: every declared
+        `band_count` fully populated and even/2..6. `rows_of` resolves a statement name
+        to that version's rows — through the handle at the publish boundary, through
+        the open transaction at the revision copy (#230) — so what is validated is
+        exactly that version's own rows, never another revision's copied ids.
+
+        At the copy the failure refuses the revision: a parent whose declared band set
+        was never completed would otherwise ship the half set as the child's
+        inheritance — a half-copied child is mutation by omission (`CT-PKG-02`)."""
+        populated: dict[str, int] = {}
+        for row in rows_of("select_bands"):
+            populated[row["criterion_id"]] = populated.get(row["criterion_id"], 0) + 1
+        for row in rows_of("select_criteria"):
+            declared = row["band_count"]
+            if declared is not None:
+                count = populated.get(row["criterion_id"], 0)
+                if count != declared:
+                    raise BandSetError(
+                        f"criterion {row['criterion_id']!r} declares a band_count of "
+                        f"{declared} but carries {count} band(s) (FR-PKG-06): a "
+                        f"partially populated band set must not be {boundary} — the "
+                        "judge would see fewer bands than the declared mapping."
+                    )
+                self._validate_band_count(count)
+
     def update_criterion_field(
         self, v: PackageVersionId, criterion_id: str, field: str, value: Any
     ) -> None:
@@ -3047,13 +3108,33 @@ class PackageCatalog:
                            parent=parent)
                 for key in _REVISION_COPY_KEYS:
                     tx.execute(PKG_STATEMENTS[key], new=version_id, old=parent)
+                # The copy's completeness gate (#230): a criterion that fails the copy —
+                # a declared band_count the copied bands do not satisfy (FR-PKG-06's
+                # even-band bar) — refuses the revision HERE, inside the transaction,
+                # rather than shipping a half-copied child (CT-PKG-02). The refusal is
+                # a no-op on disk: the child row and every copy roll back together.
+                self._validate_band_sets(
+                    lambda name: tx.execute(PKG_STATEMENTS[name], v=version_id),
+                    boundary="shipped as a revision",
+                )
         for criterion_id in (draft.criteria if draft is not None else ()):
             tx.execute(PKG_STATEMENTS["insert_criterion"], v=version_id,
                        criterion_id=criterion_id, question_id=criterion_id,
                        kind="open", max_points=0.0, scoring_model="atomic",
                        construct_tag="", band_count=None, evidence_type=None)
-        LOGGER.info("created package version %s (package %s, parent %s)",
-                    version_id, self._package_id, parent)
+        if parent is not None:
+            copied = ", ".join(
+                f"{row['surface']}={row['n']}" for row in self._handle.query(
+                    PKG_STATEMENTS["pkg_revision_copied_counts"], v=version_id))
+            LOGGER.info(
+                "created package version %s (package %s, parent %s): revision %d -> "
+                "%d, copied verbatim %s — the copy changed no field; explicit edits "
+                "land on the unlocked child through the guarded write surface",
+                version_id, self._package_id, parent, parent_row["revision"],
+                revision, copied)
+        else:
+            LOGGER.info("created package version %s (package %s, parent %s)",
+                        version_id, self._package_id, parent)
         return version_id
 
     def publish(self, v: PackageVersionId, approved_by: str) -> None:
@@ -3069,21 +3150,10 @@ class PackageCatalog:
         # per-run cache (which holds whatever version was read last), and not a
         # criterion-id lookup (which would count every revision's copied bands of the
         # same criterion id; the parent's rows are not this version's).
-        populated: dict[str, int] = {}
-        for row in self._handle.query(PKG_STATEMENTS["select_bands"], v=v):
-            populated[row["criterion_id"]] = populated.get(row["criterion_id"], 0) + 1
-        for row in self._handle.query(PKG_STATEMENTS["select_criteria"], v=v):
-            declared = row["band_count"]
-            if declared is not None:
-                count = populated.get(row["criterion_id"], 0)
-                if count != declared:
-                    raise BandSetError(
-                        f"criterion {row['criterion_id']!r} declares a band_count of "
-                        f"{declared} but carries {count} band(s) (FR-PKG-06): a "
-                        "partially populated band set must not be publishable — the "
-                        "judge would see fewer bands than the declared mapping."
-                    )
-                self._validate_band_count(count)
+        self._validate_band_sets(
+            lambda name: self._handle.query(PKG_STATEMENTS[name], v=v),
+            boundary="publishable",
+        )
         with self._handle.transaction() as tx:
             tx.execute(PKG_STATEMENTS["publish"], by=approved_by, v=v)
             LOGGER.info("published package version %s by %s at %s",
