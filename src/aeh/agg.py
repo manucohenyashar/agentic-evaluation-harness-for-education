@@ -35,10 +35,13 @@ caller owns the transaction; this module returns a value.
 2. *Deterministic transport* — the module takes on **no external dependency**:
    no network, no store, no clock. There is nothing to fake, which is the point
    of keeping M-AGG pure.
-3. *Env-gated knobs* — the module declares **no environment-sensitive constant**:
-   every threshold, cap and multiplier the design names (`AGG_AUTO_THRESHOLD_*`,
-   the cap table) is #92's confidence surface and arrives injected as
-   configuration, never read from the environment here. Nothing to knob.
+3. *Env-gated knobs* — nothing here reads the environment (`CT-AGG-01`): the
+   thresholds, caps and multipliers the design names (`AGG_AUTO_THRESHOLD_*`,
+   `AGG_CAP_TABLE`, the multipliers) are **module constants as production
+   defaults**, and every one of them arrives injected at the call —
+   `aggregate(..., config=...)` — so a different environment or a test tunes by
+   passing values, never by reaching for `os.environ` (Q-04: injected as
+   configuration, never test literals).
 4. *Stage-level observability* — `CriterionScore` carries every stage's output as
    a named field next to the result: the panel's size (`judge_count`), the chosen
    band (`band`/`ordinal`), the mapped value (`points`), the modal band
@@ -79,22 +82,38 @@ det.py precedent):
   (`det` migration v9) is the second half of that refusal, and this module never
   hands it an even row.
 
-Scope (#91): the aggregation core above plus `describe_agreement`, the module's
-own honest description of an agreement figure (`CT-STATS-21`'s M-AGG consumer
-limb). The confidence caps and the stored integrity inputs are #92's; the
-escalation policy, routing and score states are #93's — `signals` is accepted
-here as the declared surface's third argument and consumed by #92, not by this
-story.
+Scope: #91 landed the aggregation core above plus `describe_agreement`, the
+module's own honest description of an agreement figure (`CT-STATS-21`'s M-AGG
+consumer limb). #92 lands the confidence surface on that core: the integrity
+inversion (`FR-AGG-05`, ADR-10 — a cap is a `min`, never a penalty term, so
+unanimity cannot outrun bad evidence), the four integrity inputs recorded on
+the score row (`FR-AGG-13`), the from-the-row-alone re-derivation
+(`recompute_confidence`, `NFR-AGG-04`), and the cohort migration that carries
+the columns. The escalation policy, the remaining routing values and the score
+states are #93's: `aggregate` returns the panel path's own `state` (`final`)
+and routes `auto`/`queued` only.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any, Sequence
 
 from aeh.pkg import PackageError, points_for_band
+from aeh.store import (
+    Migration,
+    Statement,
+    Tier,
+    TIER_MIGRATIONS,
+)
 
 __all__ = [
+    "AGG_AUTO_THRESHOLD_ATOMIC",
+    "AGG_AUTO_THRESHOLD_HOLISTIC",
+    "AGG_CAP_TABLE",
+    "AGG_HOLISTIC_MULTIPLIER",
+    "AGG_UNCITED_MULTIPLIER",
     "AggregateError",
     "CriterionScore",
     "EmptyVerdictsError",
@@ -102,6 +121,7 @@ __all__ = [
     "aggregate",
     "describe_agreement",
     "ordinal_alpha",
+    "recompute_confidence",
 ]
 
 
@@ -135,6 +155,74 @@ class EvenPanelError(AggregateError, ValueError):
     """
 
 
+# --- #92: the confidence surface's declared constants (§3.12) ---------------------------------------
+#
+# Production defaults, declared here and injected at the call (`config=`): the
+# policy reads no configuration beyond the values passed in (`CT-AGG-01`), so
+# these constants are what a `config=None` call uses — never a second reading
+# path. The numbers are §3.12's Assumption-numbered cap table and thresholds:
+# fixture data in the tests (Q-04), production defaults here.
+
+#: Auto-accept threshold for an atomic criterion (§3.12: auto-accept iff
+#: `confidence >= auto_threshold_for(scoring_model)`).
+AGG_AUTO_THRESHOLD_ATOMIC: float = 0.80
+#: Auto-accept threshold for a holistic criterion — a holistic panel is held to
+#: the higher bar §3.12 names.
+AGG_AUTO_THRESHOLD_HOLISTIC: float = 0.90
+#: §3.12's multiplier applied to the base when any verdict is uncited.
+AGG_UNCITED_MULTIPLIER: float = 0.80
+#: §3.12's multiplier applied to the base for a holistic criterion.
+AGG_HOLISTIC_MULTIPLIER: float = 0.85
+#: §3.12's Assumption cap table: the hard ceiling each adverse integrity signal
+#: puts on the confidence. ADR-10's whole point lives in how these are applied:
+#: a cap is a `min`, never a penalty term, so no amount of panel agreement can
+#: lift the figure past the worst adverse signal (R19). A signal reading
+#: `None` — "not measured" — is adverse, fail-closed, and binds the same cap.
+AGG_CAP_TABLE = MappingProxyType({
+    "spans_verified": 0.25,
+    "evidence_present": 0.25,
+    "sufficiency_flag": 0.25,
+    "ocr_overlap_risk": 0.30,
+    "described_evidence": 0.50,
+    "extractor_disagreement": 0.40,
+})
+
+#: The favourable polarity of each signal — the value meaning "nothing wrong"
+#: (§3.12): `spans_verified` and `evidence_present` are favourable when True;
+#: the other four are favourable when False (e.g. `ocr_overlap_risk = False` is
+#: no overlap risk). Any other value — the opposite boolean, or `None` = "not
+#: measured" — is adverse, fail-closed. One map, so the adverse reading is
+#: computed from ONE definition everywhere (the test vocabulary's `FAVOURABLE`
+#: precedent, mirrored here as production data).
+#:
+#: §3.12's cap table declares one cap conditional — `evidence_present` binds
+#: only where "evidence is required". The criterion expresses that through
+#: `evidence_required` (M-PKG's citation-requiring reading); a criterion that
+#: does not declare the flag is read as requiring evidence — fail-closed: the
+#: cap can bind, never be skipped by an omission.
+_AGG_FAVOURABLE = MappingProxyType({
+    "spans_verified": True,
+    "evidence_present": True,
+    "sufficiency_flag": False,
+    "ocr_overlap_risk": False,
+    "described_evidence": False,
+    "extractor_disagreement": False,
+})
+
+#: The four integrity inputs `FR-AGG-13` records on the score row — the inputs
+#: `recompute_confidence` can re-apply from stored data. `described_evidence`
+#: and `extractor_disagreement` are read at aggregation time but are NOT among
+#: FR-AGG-13's recorded fields, so a confidence they capped is not fully
+#: re-derivable from the row (the design's own four-field list; the residual is
+#: disclosed on `recompute_confidence`).
+_RECORDED_SIGNAL_FIELDS: tuple[str, ...] = (
+    "spans_verified",
+    "evidence_present",
+    "sufficiency_flag",
+    "ocr_overlap_risk",
+)
+
+
 # --- the score -------------------------------------------------------------------------------------
 
 
@@ -144,10 +232,12 @@ class CriterionScore:
 
     The shipped `criterion_score` columns (det migration v9: band, points,
     judge_count, agreement, state, routing) plus `FR-AGG-01`'s recorded modal band
-    and spread, the degeneracy marker `CT-AGG-17`/`TC-AGG-19` require, and the
-    aggregation stage's histogram. `state`/`routing` are #93's assignment and are
-    deliberately absent here: this story returns the aggregation's figures and
-    invents no state vocabulary ahead of the story that owns the states.
+    and spread, the degeneracy marker `CT-AGG-17`/`TC-AGG-19` require, the
+    aggregation stage's histogram, and #92's confidence surface: the figure, the
+    pre-cap base it was computed from, its routing, and the four integrity inputs
+    `FR-AGG-13` records so the figure is reconstructible from the stored row
+    alone (`NFR-AGG-04`). The defaults exist only for constructions that predate
+    a field; `aggregate` always fills every field.
     """
 
     criterion_id: str
@@ -163,6 +253,34 @@ class CriterionScore:
     #: aggregation stage's observability (`CT-AGG-15`'s per-criterion band
     #: histogram, surfaced on the result rather than folded into a status).
     histogram: tuple[tuple[str, int], ...] = field(default_factory=tuple)
+    #: #92 (`FR-AGG-05`, ADR-10): the confidence figure — the base (the panel's
+    #: own α for three or more judges, the band-position prior for one) with the
+    #: design's multipliers applied and each adverse integrity signal's hard cap
+    #: taken as a `min`. `None` is never produced by `aggregate`; the default
+    #: exists for constructions that predate the field.
+    confidence: float | None = None
+    #: What the caps consumed: the post-multiplier, pre-cap base. Recorded
+    #: beside `agreement` because the two are different figures — `agreement`
+    #: is α on the criterion's declared scale (#91's convention), the base is
+    #: α on the panel's own inferred scale (§3.12's `base = ordinal_alpha(verdicts)`),
+    #: and the two diverge exactly when the panel never reached the declared
+    #: top band. Recorded on the row (cohort migration v16) so the confidence
+    #: is re-derivable from stored data alone.
+    confidence_base: float | None = None
+    #: `auto` iff `confidence >= auto_threshold_for(scoring_model)`, else
+    #: `queued` (§3.12; the remaining routing values are #93's).
+    routing: str = "queued"
+    #: The panel path's own state. The other states — fallback, breaker,
+    #: deterministic — are #93's assignment.
+    state: str = "final"
+    #: The four recorded integrity inputs (`FR-AGG-13`), passed through exactly
+    #: as received — including `None` ("not measured"), which is adverse
+    #: fail-closed wherever the figure is consumed. Recorded so the confidence
+    #: is answerable from stored data alone.
+    spans_verified: Any = None
+    evidence_present: Any = None
+    sufficiency_flag: Any = None
+    ocr_overlap_risk: Any = None
 
 
 # --- the aggregation -------------------------------------------------------------------------------
@@ -214,11 +332,14 @@ def ordinal_alpha(verdicts: Sequence[Any], criterion: Any = None) -> float | Non
 
     Returns `None` where α is **undefined** rather than a substitute number
     (`CT-AGG-04`): fewer than two verdicts (no pairs), or a scale with fewer than
-    two declared bands (`D_e` would be zero). A unanimous panel is *defined*, not
-    degenerate-by-absence: D_o = 0 gives α = 1 exactly — including the two-band
-    case, where the design's `TBD` pins α = 1 **by construction** (`TC-AGG-19`)
-    and the score carries `agreement_degenerate` so no consumer renders that 1 as
-    if it were information (`CT-AGG-17`).
+    two declared bands carrying actual disagreement (`D_e` would be zero). A
+    unanimous panel is *defined*, not degenerate-by-absence: D_o = 0 gives α = 1
+    exactly — including the two-band case, where the design's `TBD` pins α = 1
+    **by construction** (`TC-AGG-19`) and the score carries
+    `agreement_degenerate` so no consumer renders that 1 as if it were
+    information (`CT-AGG-17`) — and including the criterion-free call on a panel
+    whose valuations all sit at one ordinal, where the inferred scale is one
+    band and unanimity is still defined.
 
     When `criterion` is omitted the declared scale is inferred from the panel's
     own highest ordinal (`K = max(ordinal) + 1`) — the reading a caller can take
@@ -234,15 +355,28 @@ def ordinal_alpha(verdicts: Sequence[Any], criterion: Any = None) -> float | Non
     """
     if len(verdicts) < 2:
         return None
+    ordinals = [_verdict_ordinal(v) for v in verdicts]
+
+    # A unanimous panel is *defined*, not degenerate-by-absence: D_o = 0 gives
+    # α = 1 exactly — under any scale, including a criterion-free call whose
+    # inferred scale holds a single distinct value (every verdict at ordinal 0,
+    # where `D_e` would be undefined but is never needed: 1 − 0/D_e = 1 for any
+    # positive D_e). Checked BEFORE the scale test below, which is the order the
+    # docstring already promises ("a unanimous panel is defined, not
+    # degenerate-by-absence: D_o = 0 gives α = 1 exactly") and the order the
+    # TC-AGG-10 property's no-cap cell relies on when it calls this function
+    # criterion-free and asserts α is defined for any pairable panel (#92).
+    if len(set(ordinals)) == 1:
+        return 1.0
+
     if criterion is not None:
         band_count = int(criterion.band_count)
     else:
-        band_count = max(_verdict_ordinal(v) for v in verdicts) + 1
+        band_count = max(ordinals) + 1
     if band_count < 2:
         return None  # D_e is undefined on a one-band scale; refuse a substitute.
 
     scale = band_count - 1
-    ordinals = [_verdict_ordinal(v) for v in verdicts]
 
     # D_o: the mean pairwise distance among the panel's valuations. Equal-valued
     # pairs contribute 0 and still count in the mean — a panel of three judges is
@@ -271,21 +405,135 @@ def _verdict_ordinal(verdict: Any) -> int:
     return int(verdict.ordinal)
 
 
-def aggregate(verdicts: Sequence[Any], criterion: Any, signals: Any) -> CriterionScore:
-    """Aggregate a panel's verdicts into one criterion score (`FR-AGG-01/02/03/04`).
+def _verdict_cited(verdict: Any) -> bool:
+    """Whether one judge's verdict cites its evidence (§3.12: "uncited verdicts
+    arrive marked" — M-JUDGE marks them, so the absence of a mark is not
+    evidence of absence: an unmarked verdict is read as cited).
 
-    Pure (`CT-AGG-01`): the verdicts, the criterion's declared band set and the
-    integrity signals are values; nothing here reads a store, a clock, or any
-    configuration beyond its arguments. The result is the **median band ordinal**,
-    mapped to points exactly once through M-PKG's canonical `points_for_band`
-    (`CT-PKG-05`, `NFR-AGG-02`) — never a mean of bands, never a mean of points,
-    and never a per-judge average (RISK-05).
+    `cited` is the declared field (the test vocabulary's shape); `cited_spans`
+    is the consumer-constructed shape the `#76` file reconciled (an uncited
+    verdict carries no spans). Absent both, the verdict is read as cited — the
+    mark is the signal, and this module does not invent one.
+    """
+    cited = getattr(verdict, "cited", None)
+    if cited is not None:
+        return bool(cited)
+    spans = getattr(verdict, "cited_spans", None)
+    if spans is not None:
+        return bool(spans)
+    return True
+
+
+def _signal_adverse(value: Any, favourable: bool) -> bool:
+    """Whether one integrity signal's value is adverse (fail-closed, §3.12).
+
+    `None` means "not measured" — no second extraction ran, the span check did
+    not fire — and is adverse, never favourable and never absent (CT-INTEG-02's
+    reading: a consumer that collapses `None` into `False` reads "not measured"
+    as "measured, and agreed", the equivalence the clause names wrong by name).
+    Otherwise the value is adverse exactly when it is not the signal's
+    favourable polarity (`_AGG_FAVOURABLE`).
+    """
+    if value is None:
+        return True
+    return bool(value) != favourable
+
+
+def _band_position_prior(ordinal: int, band_count: int) -> float:
+    """§3.12's single-judge base — `prior_for_band_position(band, criterion)` —
+    under the design's one declared property: "extreme bands score higher".
+
+    The design names the shape and no numbers; this implementation declares them
+    (the α-convention precedent, recorded for review): the prior rises linearly
+    with how far the named band sits from the scale's centre, from 0.50 at the
+    centre to 0.75 at an extreme. A single judge who named an extreme band has
+    placed the work at the scale's edge with no panel to contradict them; the
+    figure tops out below the atomic auto-accept threshold (0.75 < 0.80), which
+    is the property the shape wants: one judge's word alone, however placed, is
+    never sufficient to auto-accept. The figure never exceeds 1.0 — the
+    single-judge domain bound TC-AGG-10's no-cap cell pins.
+    """
+    bands = int(band_count)
+    if bands <= 1:
+        # One declared band: the panel is unanimous on it by construction
+        # (unreachable per CT-PKG-04's band_count >= 2, kept for honesty).
+        return 1.0
+    center = (bands - 1) / 2
+    extremity = 2.0 * abs(int(ordinal) - center) / (bands - 1)
+    return 0.50 + 0.25 * extremity
+
+
+def _confidence_base(verdicts: Sequence[Any], criterion: Any) -> float:
+    """§3.12's base figure: `base = ordinal_alpha(verdicts)` for a panel of
+    three or more judges; the band-position prior for a single judge.
+
+    The α term is computed **without** the criterion — §3.12's literal form —
+    so the base is a property of the panel's own scale. For a panel whose
+    valuations never reach the declared top band, the inferred scale is smaller
+    than the declared one and the inferred α is the SMALLER figure
+    (α = 1 − 3·D̄/(K+1) grows with K), which is exactly the reading TC-AGG-10's
+    no-cap cell pins as its ceiling: the confidence never exceeds the panel's
+    own α. The score's `agreement` field stays α on the DECLARED scale (#91's
+    convention), so the base is recorded beside it (`confidence_base`) rather
+    than conflated with it.
+    """
+    if len(verdicts) >= 3:
+        return ordinal_alpha(verdicts)
+    return _band_position_prior(_verdict_ordinal(verdicts[0]), criterion.band_count)
+
+
+def aggregate(
+    verdicts: Sequence[Any],
+    criterion: Any,
+    signals: Any,
+    *,
+    config: Any = None,
+) -> CriterionScore:
+    """Aggregate a panel's verdicts into one criterion score (`FR-AGG-01/02/03/04`)
+    with its confidence (`FR-AGG-05`, `FR-AGG-13`, `NFR-AGG-04`).
+
+    Pure (`CT-AGG-01`): the verdicts, the criterion's declared band set, the
+    integrity signals and the configuration are values; nothing here reads a
+    store, a clock, or any configuration beyond its arguments — `config` is
+    `None` (the module constants above are the production defaults) or a value
+    carrying any of `auto_threshold_atomic`, `auto_threshold_holistic`,
+    `uncited_multiplier`, `holistic_multiplier` and `caps` (a mapping from each
+    of the six signal names to its hard cap; absent it entirely, `AGG_CAP_TABLE`
+    applies).
+
+    The aggregation is the **median band ordinal**, mapped to points exactly
+    once through M-PKG's canonical `points_for_band` (`CT-PKG-05`,
+    `NFR-AGG-02`) — never a mean of bands, never a mean of points, and never a
+    per-judge average (RISK-05).
+
+    The confidence (`FR-AGG-05`, ADR-10) is §3.12's computation in three steps:
+
+    1. **Base** — the panel's own agreement figure (`ordinal_alpha(verdicts)`,
+       criterion-free) for a panel of three or more; the band-position prior
+       for a single judge ("extreme bands score higher").
+    2. **Multipliers** — `× uncited_multiplier` when any verdict is uncited,
+       `× holistic_multiplier` for a holistic criterion. Multipliers shape the
+       base; they never touch a cap.
+    3. **Caps** — each adverse integrity signal's cap is a hard `min` (ADR-10:
+       a cap is a `min`, never a penalty term, so no amount of panel agreement
+       can lift the figure past the worst adverse signal — R19). Fail-closed:
+       `None` ("not measured") is adverse, never favourable, never absent, and
+       binds the same cap as a measured-adverse value (`NFR-INTEG-03`); a
+       signal with no entry in the injected table binds nothing. One cap is
+       conditional (§3.12): `evidence_present` binds only where the criterion
+       requires evidence — read fail-closed when the criterion does not
+       declare the flag.
+
+    Routing is `auto` iff `confidence >= auto_threshold_for(scoring_model)`
+    (§3.12), else `queued`; the state is the panel path's own `final` (the
+    remaining states are #93's). The four integrity inputs `FR-AGG-13` records
+    are carried on the score exactly as received, beside the pre-cap base —
+    the fields that make the figure reconstructible from the stored row alone
+    (`recompute_confidence`).
 
     An empty panel raises `EmptyVerdictsError` (a programming error, `CT-AGG-12`);
     an even panel raises `EvenPanelError` before any median is taken
-    (`FR-AGG-03`). The integrity `signals` are the declared third argument of the
-    surface (§3.12's Protocol) and are consumed by #92's confidence computation,
-    not by this story's core.
+    (`FR-AGG-03`).
     """
     if len(verdicts) == 0:
         raise EmptyVerdictsError(
@@ -329,6 +577,60 @@ def aggregate(verdicts: Sequence[Any], criterion: Any, signals: Any) -> Criterio
         for ordinal in sorted(counts)
     )
 
+    # --- the confidence surface (#92) ------------------------------------------------------------
+    # Configuration: `config=None` means the module constants; a `config` value
+    # supplies any subset of the knobs, each defaulting to its constant. The
+    # values are read through getattr with the constant as default, never from
+    # the environment (`CT-AGG-01`).
+    if config is not None:
+        caps = getattr(config, "caps", None)
+        atomic_threshold = getattr(config, "auto_threshold_atomic", AGG_AUTO_THRESHOLD_ATOMIC)
+        holistic_threshold = getattr(
+            config, "auto_threshold_holistic", AGG_AUTO_THRESHOLD_HOLISTIC
+        )
+        uncited_multiplier = getattr(config, "uncited_multiplier", AGG_UNCITED_MULTIPLIER)
+        holistic_multiplier = getattr(config, "holistic_multiplier", AGG_HOLISTIC_MULTIPLIER)
+    else:
+        caps = None
+        atomic_threshold = AGG_AUTO_THRESHOLD_ATOMIC
+        holistic_threshold = AGG_AUTO_THRESHOLD_HOLISTIC
+        uncited_multiplier = AGG_UNCITED_MULTIPLIER
+        holistic_multiplier = AGG_HOLISTIC_MULTIPLIER
+    cap_table = dict(AGG_CAP_TABLE) if caps is None else dict(caps)
+
+    scoring_model = getattr(criterion, "scoring_model", "atomic")
+    threshold = holistic_threshold if scoring_model == "holistic" else atomic_threshold
+
+    # Step 1 — the base. Step 2 — the multipliers. A `None` base is impossible
+    # here: a panel of three or more always pair (unanimity is defined; see
+    # `ordinal_alpha`), and a single judge always has a prior.
+    base = _confidence_base(verdicts, criterion)
+    multiplier = 1.0
+    if any(not _verdict_cited(v) for v in verdicts):
+        multiplier *= uncited_multiplier
+    if scoring_model == "holistic":
+        multiplier *= holistic_multiplier
+    confidence_base = base * multiplier
+
+    # Step 3 — the caps. A cap is a `min`, never a penalty term (ADR-10): each
+    # adverse signal's cap is a hard ceiling on the figure, taken in any order,
+    # and unanimity cannot buy any of it back.
+    confidence = confidence_base
+    for signal_name, favourable in _AGG_FAVOURABLE.items():
+        if not _signal_adverse(getattr(signals, signal_name, None), favourable):
+            continue
+        # §3.12's one conditional cap: `evidence_present` binds only where
+        # evidence is required. A criterion that does not declare the flag is
+        # read as requiring it — fail-closed (the cap can bind, never be
+        # skipped by an omission).
+        if signal_name == "evidence_present" and not getattr(
+            criterion, "evidence_required", True
+        ):
+            continue
+        cap = cap_table.get(signal_name)
+        if cap is not None:
+            confidence = min(confidence, float(cap))
+
     return CriterionScore(
         criterion_id=criterion.criterion_id,
         band=band,
@@ -340,7 +642,108 @@ def aggregate(verdicts: Sequence[Any], criterion: Any, signals: Any) -> Criterio
         agreement=ordinal_alpha(verdicts, criterion),
         agreement_degenerate=int(criterion.band_count) < 3,
         histogram=histogram,
+        confidence=confidence,
+        confidence_base=confidence_base,
+        routing="auto" if confidence >= threshold else "queued",
+        state="final",
+        spans_verified=getattr(signals, "spans_verified", None),
+        evidence_present=getattr(signals, "evidence_present", None),
+        sufficiency_flag=getattr(signals, "sufficiency_flag", None),
+        ocr_overlap_risk=getattr(signals, "ocr_overlap_risk", None),
     )
+
+
+# --- the re-derivation: confidence from the stored row alone (`NFR-AGG-04`) ------------------------
+
+
+def _row_value(row: Any, field: str) -> Any:
+    """A tolerant read of one field off a stored score row.
+
+    `row` is the stored `criterion_score` mapping — a `sqlite3.Row`, a `dict`,
+    or a dataclass; the accessor is whichever the row answers to. A missing
+    field reads as `None` ("not recorded"), which is exactly how the migration
+    leaves every pre-existing row.
+    """
+    if isinstance(row, dict):
+        return row.get(field)
+    if hasattr(row, "keys"):
+        try:
+            return row[field] if field in row.keys() else None
+        except (IndexError, KeyError):
+            return None
+    return getattr(row, field, None)
+
+
+def recompute_confidence(row: Any, criterion: Any, *, config: Any = None) -> float | None:
+    """Re-derive a stored row's confidence from the stored row alone (`NFR-AGG-04`).
+
+    The reconstruction contract: what `FR-AGG-13` records is enough. The four
+    integrity inputs ride the row itself (`spans_verified`, `evidence_present`,
+    `sufficiency_flag`, `ocr_overlap_risk` — each as received, `NULL` = not
+    measured = adverse), and the pre-cap base rides `confidence_base`. So the
+    figure is re-derived by replaying the same computation the aggregator ran,
+    from fields a reader of the database can see:
+
+    1. **Base** — `confidence_base` (the post-multiplier, pre-cap figure the
+       aggregator consumed) when the row carries it; else `agreement` for a
+       panel of three or more, exact whenever the panel touched the declared
+       top band (where the criterion-free and criterion-declared alpha readings
+       coincide); else the band-position prior for a single-judge row, from the
+       row's own `ordinal`.
+    2. **Caps** — the recorded signals' caps, fail-closed, as hard `min`s
+       (ADR-10), exactly as `aggregate` applied them.
+
+    `None` is returned, never zero, when the row cannot support a re-derivation:
+    no panel (a deterministic row's `judge_count` is 0), an even panel (a failed
+    write), or no base derivable at all. The four recorded signals cap the
+    figure exactly as before; the two signals that are *not* recorded
+    (`described_evidence`, `extractor_disagreement`) and the multipliers' inputs
+    (the uncited mark) are the disclosed residual — a row whose stored
+    confidence they capped or shaped re-derives higher than it was stored.
+    `config` carries an injected cap table the same way `aggregate`'s does.
+    """
+    caps = getattr(config, "caps", None) if config is not None else None
+    cap_table = dict(AGG_CAP_TABLE) if caps is None else dict(caps)
+
+    judge_count = _row_value(row, "judge_count")
+    if judge_count is None:
+        return None
+    judge_count = int(judge_count)
+    # The HLD §9.6 constraint is also the re-derivation's: 0 or odd. A
+    # deterministic row (judge_count 0) has no confidence to re-derive; an even
+    # panel is a failed write, not a figure.
+    if judge_count <= 0 or judge_count % 2 == 0:
+        return None
+
+    base = _row_value(row, "confidence_base")
+    if base is None and judge_count >= 3:
+        # Legacy rows predate the base column: the stored agreement is the
+        # criterion-declared alpha reading, exact wherever the panel reached
+        # the declared top band (the two readings coincide there — and for any
+        # panel whose spread never leaves the declared scale's top band).
+        base = _row_value(row, "agreement")
+    if base is None and judge_count == 1:
+        ordinal = _row_value(row, "ordinal")
+        if ordinal is not None:
+            base = _band_position_prior(int(ordinal), int(criterion.band_count))
+    if base is None:
+        return None
+
+    confidence = float(base)
+    for field in _RECORDED_SIGNAL_FIELDS:
+        if not _signal_adverse(_row_value(row, field), _AGG_FAVOURABLE[field]):
+            continue
+        # The same conditional cap the aggregator applied (§3.12): the row's
+        # `evidence_present` caps only where the criterion requires evidence,
+        # read fail-closed when the criterion does not declare the flag.
+        if field == "evidence_present" and not getattr(
+            criterion, "evidence_required", True
+        ):
+            continue
+        cap = cap_table.get(field)
+        if cap is not None:
+            confidence = min(confidence, float(cap))
+    return confidence
 
 
 # --- the agreement figure's own description --------------------------------------------------------
@@ -390,3 +793,50 @@ def describe_agreement(figure: Any, population: str) -> str:
             "scores 1.0 by construction."
         )
     return "\n".join(lines)
+
+
+# --- the cohort migration: the confidence surface's stored columns (`FR-AGG-13`) -------------------
+#
+# M-AGG owns this migration because it owns the columns' meaning: the four
+# integrity inputs ride the score row so the figure is reconstructible from
+# stored data alone (`NFR-AGG-04`), and `confidence_base` carries what the caps
+# consumed (the post-multiplier, pre-cap base) so the replay is exact rather
+# than approximate. Every column is nullable: `NULL` = not recorded, which is
+# how the migration leaves every pre-existing row, and the re-derivation reads
+# `NULL` fail-closed — the same polarity the live signals carry. The stored
+# booleans are constrained to 0/1-or-NULL (three-valued, like the signals
+# themselves: `NULL` is neither favourable nor zero) — a real 0/1 with `NULL`
+# allowed, not a fake third value.
+#
+# `state` and `routing` already exist (det migration v9's CHECK admits both
+# `final` and `queued`, the two values this module's panel path writes);
+# only the six columns #92 introduces are added here.
+
+_AGG_CONFIDENCE_COLUMNS = Migration(
+    version=16,
+    name="agg_confidence_columns",
+    statements=(
+        Statement("ALTER TABLE criterion_score ADD COLUMN confidence REAL"),
+        Statement("ALTER TABLE criterion_score ADD COLUMN confidence_base REAL"),
+        Statement(
+            "ALTER TABLE criterion_score ADD COLUMN spans_verified "
+            "INTEGER CHECK (spans_verified IN (0, 1))"
+        ),
+        Statement(
+            "ALTER TABLE criterion_score ADD COLUMN evidence_present "
+            "INTEGER CHECK (evidence_present IN (0, 1))"
+        ),
+        Statement(
+            "ALTER TABLE criterion_score ADD COLUMN sufficiency_flag "
+            "INTEGER CHECK (sufficiency_flag IN (0, 1))"
+        ),
+        Statement(
+            "ALTER TABLE criterion_score ADD COLUMN ocr_overlap_risk "
+            "INTEGER CHECK (ocr_overlap_risk IN (0, 1))"
+        ),
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_AGG_CONFIDENCE_COLUMNS,), key=lambda m: m.version
+))
