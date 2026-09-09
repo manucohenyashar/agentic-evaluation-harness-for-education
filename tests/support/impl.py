@@ -1679,6 +1679,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_structural_independence.py",
         ),
     ),
+    "#74 IntegrityGate (TS-66 C06 byte-exact rejection, nothing scores)": (
+        # The rung-0 rows block on verify_span (#73) but the gate discard/ladder limbs
+        # are the case's body — the gate (with the signals it returns) is the LAST
+        # blocker, and the no-scoring oracle's teeth run unmarked.
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_byte_exact_rejection.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
