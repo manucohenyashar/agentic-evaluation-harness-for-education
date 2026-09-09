@@ -176,8 +176,9 @@ _DIRECTIVE = (
 #: The provider is deliberately the deterministic transport and not a real backend's
 #: name: which backend answers is `M-PROV`'s to know (`TC-PROV-05`'s seam — a module
 #: outside it and `M-CONF` may not carry a backend constant), so a deployment that
-#: runs flagged criteria names ITS second family through `HARNESS_EXTRACT_SECOND_
-#: FAMILY_MODEL` or the `second_family_model=` constructor keyword. An unconfigured
+#: runs flagged criteria names ITS second family through
+#: `HARNESS_EXTRACT_SECOND_FAMILY_MODEL` or the `second_family_model=` constructor
+#: keyword. An unconfigured
 #: deployment's second pass misses loudly (the transport's own contract — an
 #: unrecorded request never answers), and the miss is recorded as that family's
 #: error in the payload, never silently passed off as a second opinion. The register
