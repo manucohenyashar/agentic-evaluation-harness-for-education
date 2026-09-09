@@ -190,3 +190,75 @@ def test_tc_integ_14_alert_fires_above_threshold_and_not_below(tmp_data_dir):
         "that cries wolf on the happy path is RISK-01's detector switched off"
     )
     clean_store.close()
+
+
+def test_tc_store_03_the_dimensioned_run_metrics_key_dedupes_every_writer(
+        tmp_data_dir):
+    """Review regression behind migration 5 (Durable v5, `#73`/`#74`) — the rebuilt
+    `run_metrics` primary key dedupes BOTH writers.
+
+    M-ORCH's declared rate flush names three columns; the gate's upserts name five.
+    With `NULL`-able dimensions the two NULLs in M-ORCH's row are DISTINCT in a
+    non-INTEGER primary key, so `INSERT OR REPLACE` never conflicts with itself and
+    every `progress()` flush would stack a fresh row per metric — unbounded
+    duplication on the table CT-STORE-03 gives M-ORCH sole writership of. The
+    migration's dimension columns are therefore `NOT NULL DEFAULT ''`: the
+    three-column flush lands on the `('', '')` aggregate cell and replaces in place,
+    the gate's full-cell emissions carry real dimensions and replace their own cell,
+    and neither writer's re-flush can stack a second row.
+    """
+    store = open_store(tmp_data_dir)
+    durable = store.durable()
+    # M-ORCH's declared statement shape (orch.py's `insert_run_metric`): three
+    # columns, the dimensions omitted. Two identical flushes — one row.
+    with durable.transaction() as tx:
+        for value in (0.5, 1.5):
+            tx.execute(
+                "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) "
+                "VALUES (:run_id, :metric, :value)",
+                run_id="run-dedup", metric="sweep_units", value=value,
+            )
+    rows = durable.query(
+        "SELECT value FROM run_metrics WHERE run_id = :r AND metric = :n",
+        r="run-dedup", n="sweep_units",
+    )
+    assert len(rows) == 1 and rows[0]["value"] == 1.5, (
+        f"M-ORCH's three-column flush stacked {len(rows)} rows — the dimensioned "
+        "primary key does not dedupe a writer that omits the dimensions, and every "
+        "progress() pass would append (CT-STORE-03: one REPLACE per metric)"
+    )
+
+    # The gate's full-cell emission over a real run: two verifies emit the same
+    # cell twice — one dimensioned row, distinct from the `('', '')` cell above.
+    orch, run_id, _version = seed_run(
+        store, submissions=("SUB-900",), criteria=_CRITERIA
+    )
+    handle = store.cohort(ORCH_COHORT_ID)
+    IntegrityGate = require(INTEG_MODULE, "IntegrityGate", issue="#74")
+    doc = Doc(markdown=_MARKDOWN)
+    seed_document(handle, document_id_for("SUB-900"), "SUB-900", doc.markdown,
+                  ORCH_COHORT_ID)
+    start = doc.markdown.index("causes")
+    gate = IntegrityGate(
+        handle, store.blobs(),
+        ExtractionView(spans=(Span(start, start + len("causes"), "causes"),),
+                       panel=PanelFlags((True, True, True))),
+        ocr_conf_floor=0.70,
+    )
+    rate_metrics = require(INTEG_MODULE, "INTEG_RATE_METRICS", issue="#74")
+    for _ in range(2):
+        gate.verify(run_id, "SUB-900", "C1")
+    emitted = durable.query(
+        "SELECT submission_id, criterion_id, value FROM run_metrics "
+        "WHERE run_id = :r AND metric = :n",
+        r=run_id, n=rate_metrics[0],
+    )
+    assert len(emitted) == 1, (
+        f"two gate emissions stacked {len(emitted)} rows for one cell — the "
+        "dimensioned primary key must REPLACE the cell's earlier value (CT-INTEG-14)"
+    )
+    assert emitted[0]["submission_id"] == "SUB-900", (
+        "the gate's full-cell rate lost its dimensions — the aggregate '' cell the "
+        "M-ORCH flush writes and the gate's dimensioned cell are distinct rows"
+    )
+    store.close()

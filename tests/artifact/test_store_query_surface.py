@@ -492,17 +492,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # threshold). All are INTEG_STATEMENTS with keyword parameters — the module writes
     # only the declared signals-plus-routing surface (CT-INTEG-04's audit); its reads
     # go through `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
-    "aeh.integ:810",
-    "aeh.integ:819",
-    "aeh.integ:835",
-    "aeh.integ:846",
-    "aeh.integ:892",
-    "aeh.integ:910",
-    "aeh.integ:924",
-    "aeh.integ:941",
-    "aeh.integ:958",
-    "aeh.integ:968",
-    "aeh.integ:978",
+    "aeh.integ:831",
+    "aeh.integ:840",
+    "aeh.integ:856",
+    "aeh.integ:867",
+    "aeh.integ:913",
+    "aeh.integ:931",
+    "aeh.integ:945",
+    "aeh.integ:962",
+    "aeh.integ:979",
+    "aeh.integ:989",
+    "aeh.integ:999",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

@@ -113,18 +113,18 @@ from aeh.store import Migration, Statement, Tier, TIER_MIGRATIONS, open_store
 #: used. The three legacy columns lead **in their original order** on purpose:
 #: the migration golden seeds fixture rows positionally by the table's leading
 #: columns at every schema version, and one row shape that fits both the old
-#: and the new table is what keeps that fixture honest across the rebuild. The
-#: dimension columns are nullable because a legacy aggregate row (the golden's)
-#: carries no cell; the gate always emits a full cell, so its own rows never
-#: rely on the NULL. The declared primary key is what makes a re-emitted rate
-#: REPLACE the cell's earlier value instead of stacking a second row.
-#:
-#: Known limitation, disclosed: the copy carries a legacy row's NULL dimensions
-#: forward verbatim, and SQLite treats NULLs as distinct in a non-INTEGER
-#: primary key — so two legacy aggregate rows for the same `(run_id, metric)`
-#: both survive. No shipped ledger carries such a pair (the table had a
-#: two-column key and one writer); if one ever does, the remediation is a
-#: documented pre-dedup step in the same change, not a quiet drop.
+#: and the new table is what keeps that fixture honest across the rebuild.
+#: The dimension columns are `NOT NULL DEFAULT ''` so a writer that omits them
+#: (M-ORCH's three-column rate flush, the table's pre-#73 shape) still lands on
+#: the declared primary key — with nullable dimensions, SQLite treats NULLs as
+#: distinct in a non-INTEGER key, and M-ORCH's `INSERT OR REPLACE` would never
+#: conflict with itself: every `progress()` flush would stack a fresh row per
+#: metric instead of replacing it. The empty-string cell is the aggregate
+#: dimension: the legacy row the golden seeds and every M-ORCH flush live
+#: there, deduped by the key; the gate's full-cell upserts carry real
+#: dimensions and REPLACE their own cell. The declared primary key is what
+#: makes a re-emitted rate REPLACE the cell's earlier value instead of
+#: stacking a second row.
 _INTEG_DURABLE_005: tuple[Statement, ...] = (
     Statement(
         """
@@ -132,8 +132,8 @@ _INTEG_DURABLE_005: tuple[Statement, ...] = (
             run_id        TEXT NOT NULL,
             metric        TEXT NOT NULL,
             value         REAL NOT NULL,
-            submission_id TEXT,
-            criterion_id  TEXT,
+            submission_id TEXT NOT NULL DEFAULT '',
+            criterion_id  TEXT NOT NULL DEFAULT '',
             PRIMARY KEY (run_id, metric, submission_id, criterion_id)
         )
         """
@@ -285,10 +285,19 @@ def _described_routes_enabled() -> bool:
 
 
 def _verification_disabled() -> bool:
-    """Whether the span-verification switch is set to anything but an explicit
-    off value — the differential-timing seam the plan's own oracle names."""
+    """Whether the span-verification switch is explicitly set to a truthy value —
+    the differential-timing seam the plan's own oracle names.
+
+    A truthy spelling (`1`, `true`, `yes`, `on`) disables; everything else —
+    unset, empty, `0`, `false`, `off`, `no`, garbage — leaves verification ON.
+    The sibling knob (`_described_routes_enabled`) reads off-spellings as off;
+    this is the same convention pointed the other way, so an operator's
+    explicit `=false` cannot silently disable verification and route every
+    cell to re-extraction."""
     raw = os.environ.get(_DISABLED_ENV)
-    return raw is not None and raw not in ("", "0")
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 def _retry_limit() -> int:
@@ -719,7 +728,7 @@ class IntegrityGate:
         """The REPORTED sufficiency flag: conservative while the cell is
         unjudged, computed once verdicts exist.
 
-        Until the cell carries work units AND verdict rows, a panel read
+        Until the cell carries BOTH work units and verdict rows, a panel read
         cannot be believed either way — the flags describe judges who have not
         answered — so the flag reports True (the adverse value the consumer
         must act on). A faulted panel read is True outright. Once verdicts
@@ -744,7 +753,7 @@ class IntegrityGate:
             return True
         units = int(unit_rows[0]["n"]) if unit_rows else 0
         verdicts = int(verdict_rows[0]["n"]) if verdict_rows else 0
-        if units > 0 and verdicts == 0:
+        if units == 0 or verdicts == 0:
             return True
         return any(not flag for flag in panel_flags)
 
@@ -757,7 +766,19 @@ class IntegrityGate:
         file this handle's own connection has open names the data directory two
         parents up — the same directory `open_store` was given. Opened on the
         first emission and cached: the metrics path must not cost the timed
-        verifier a store open per call (the differential's shared base)."""
+        verifier a store open per call (the differential's shared base).
+
+        Deliberate reading, disclosed: a fault on this surface (no main
+        database file reachable from the handle, a refused durable open, a
+        failing metrics transaction) RAISES out of `verify()` after the
+        routing writes have committed — the caller gets an exception, not six
+        signals. That is fail-closed by exception rather than by value: nothing
+        downstream can read the missing rates as a clean bill of health, and
+        the review's alternative — swallowing the fault to return signals —
+        would emit nothing while reporting success, the silent-failure shape
+        the four seams exist to prevent. TC-INTEG-08's fault model covers the
+        six SIGNAL reads; the metrics write surface failing is an environment
+        fault the run's error path owns."""
         if self._durable is None:
             rows = self._handle.query(INTEG_STATEMENTS["database_list"])
             main_file = ""
@@ -951,7 +972,7 @@ class IntegrityGate:
         elif ocr_risk:
             self._enqueue_review(submission_id, criterion_id, "ocr-overlap-risk")
         elif described and _described_routes_enabled():
-            review_id = f"integ-review-{submission_id}-{criterion_id}"
+            review_id = f"integ-review-{run_id}-{submission_id}-{criterion_id}"
             if crop_ref:
                 review_id = f"{review_id}-{crop_ref}"
             with self._handle.transaction() as tx:

@@ -154,12 +154,62 @@ def test_tc_integ_04_flagged_criterion_cannot_auto_accept_by_construction(tmp_da
     signals = gate.verify(_RUN, "SUB-001", "C1")
     assert isinstance(signals, IntegritySignals)
     assert signals.ocr_overlap_risk is True
+    # sufficiency_flag is True here for TWO reasons: the flagged fixture's panel is
+    # unanimous-sufficient but the cell carries no verdict rows, so the conservative
+    # default holds (`CT-INTEG-11` — judges who have not answered are never read as
+    # sufficient); and the module's whole output is six fields with nothing in them
+    # a verdict — the cap lives downstream (CT-INTEG-04).
     assert signals == IntegritySignals(
-        spans_verified=True, evidence_present=True, sufficiency_flag=False,
+        spans_verified=True, evidence_present=True, sufficiency_flag=True,
         ocr_overlap_risk=True, described_evidence=False, extractor_disagreement=None,
     ), "unanimous agreement on a flagged criterion: the signals say what happened and "
     "nothing in them is a verdict — the cap lives downstream, and the module's whole "
     "output here is six fields (CT-INTEG-04)"
+
+
+def test_tc_integ_11_unitless_cell_cannot_look_sufficient(tmp_data_dir):
+    """`CT-INTEG-11`'s corner (review regression) — a cell with NO work units and
+    NO verdicts whose view carries a unanimous-sufficient panel read reports
+    `sufficiency_flag=True`: the conservative default, never the panel's permissive
+    reading. An implementation that computed the flag off the panel in this corner
+    would let an unscored unit look sufficient — the exact outcome the clause's
+    wording names."""
+    doc = _seed_document(tmp_data_dir)
+    spans = _criterion_spans(doc)
+    gate, _ = _gate(
+        tmp_data_dir, ExtractionView(spans=spans,
+                                     panel=PanelFlags((True, True, True)))
+    )
+    signals = gate.verify(_RUN, "SUB-001", "C1")
+    assert signals.sufficiency_flag is True, (
+        f"sufficiency_flag={signals.sufficiency_flag!r} on a cell with no work units "
+        "and no verdicts — the panel's flags describe judges who have not answered, "
+        "and the conservative default is the adverse value (CT-INTEG-11)"
+    )
+
+
+def test_tc_integ_11_the_disable_knob_reads_off_spellings_as_off(monkeypatch):
+    """Review regression — the disable switch parses like its sibling knob: only a
+    truthy spelling disables; an explicit `false` (or `0`, `off`, `no`, empty,
+    garbage) leaves verification ON. A knob that disabled on `=false` routes every
+    cell to re-extraction while the operator believes they disabled the disable."""
+    from aeh import integ
+
+    for off in (None, "", "0", "false", "False", "off", "no", "nonsense"):
+        if off is None:
+            monkeypatch.delenv(integ._DISABLED_ENV, raising=False)
+        else:
+            monkeypatch.setenv(integ._DISABLED_ENV, off)
+        assert integ._verification_disabled() is False, (
+            f"INTEG_SPAN_VERIFICATION_DISABLED={off!r} disabled verification — only a "
+            "truthy spelling may (the sibling knob's convention)"
+        )
+    for on in ("1", "true", "TRUE", "yes", "on"):
+        monkeypatch.setenv(integ._DISABLED_ENV, on)
+        assert integ._verification_disabled() is True, (
+            f"INTEG_SPAN_VERIFICATION_DISABLED={on!r} left verification enabled — "
+            "the differential's disable arm needs the switch to work"
+        )
 
 
 # --- TC-INTEG-05: described evidence routes on that basis alone ----------------------------
