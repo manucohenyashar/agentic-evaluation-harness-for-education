@@ -51,10 +51,15 @@ next to the status, never one boolean):
 - `narratives` (int), `failures` (int) — the failure-rate numerator and denominator.
 - `rejected_score_claims` (int) — outputs rejected by the score-claim check and
   re-requested (`CT-SYNTH-03`).
+- `synthesis_failure_rate`, `score_claim_rejection_rate` (floats) — the per-run rates
+  §3.13's Observability paragraph emits, read off the report rather than a log.
 - `mean_narrative_length` (float) — mean stored-narrative length in words.
 - `sample` (tuple of narrative texts, may be empty) — the quality sample drawn for
   `M-STATS` (`FR-SYNTH-04`, `NFR-SYNTH-01`; the measurement itself is `TC-STATS-19`'s).
-- `citation_validity_rate` (float or None when unsampled) — measured on the sample.
+- `sample_size` (int) — the sample size attached to the sample (TC-SYNTH-08's "with
+  the sample size attached").
+- `citation_validity_rate` / `hallucinated_claim_rate` (float or None when unsampled) —
+  measured on the sample and reported, not gated (§2.3 Q-06).
 
 The assumed *response* format the synthesis completion carries is fixed here too
 (`narrative_completion`), because the recorded-fixture tests must construct one: a JSON
