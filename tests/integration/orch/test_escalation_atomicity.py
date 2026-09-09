@@ -1,5 +1,5 @@
 """`TC-ORCH-11` — the escalation enqueue is **part of the caller's transaction**
-(`CT-ORCH-08`), written ahead of #60.
+(`CT-ORCH-08`); **landed at #60** (unmarked there).
 
 The design's form (detailed-design §3.7, CT-ORCH-08) is `enqueue_escalation(tx,
 criterion_score_key, judges)`: the orchestrator writes its escalation into a transaction
@@ -17,7 +17,7 @@ shape but not the column semantics):
 
 | Name | Status |
 |---|---|
-| `Orchestrator.enqueue_escalation(tx, criterion_score_key, judges)` | design CT-ORCH-08's declared signature: the caller's transaction object first, the key second, the **added** judges third. `criterion_score_key` names the escalation's target the way the `criterion_score` table does — `(submission_id, criterion_id)`. `judges` are the judges being **added** (the plan's 1→3 escalation adds two, never re-writes the seated one — TC-ORCH-20's odd-panel rule). |
+| `Orchestrator.enqueue_escalation(tx, criterion_score_key, judges)` | **landed at #60 in this shape** — design CT-ORCH-08's declared signature: the caller's transaction object first, the key second, the judges third (the **added** judges, or None to derive them from the panel). `criterion_score_key` names the escalation's target the way the `criterion_score` table does — `(submission_id, criterion_id)`. `judges` are the judges being **added** (the plan's 1→3 escalation adds two, never re-writes the seated one — TC-ORCH-20's odd-panel rule). |
 | escalation units are `work_unit` rows, `stage = 'score'`, one per added judge, `status = 'pending'` | the shipped enumeration's own shape for a panel-judged criterion (TC-ORCH-10 asserts it for the deterministic case); an escalation is the same kind of unit arriving late, so it carries the same shape. |
 | escalation adds panel **members**, not a `criterion_score` row | `criterion_score` is the adjudicated result (aggregation's write, TC-ORCH-21's boundary); an enqueue is a plan, not a verdict. |
 
@@ -43,10 +43,10 @@ import pytest
 
 from aeh.store import open_store
 from tests.support.conf_builders import EDGE_JUDGE_2, EDGE_JUDGE_3
-from tests.support.impl import ORCH_MODULE, require
+from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = ("SYN-001",)
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
@@ -97,7 +97,8 @@ def test_tc_orch_11_enqueue_escalation_commits_and_rolls_back_with_the_callers_t
        the caller's transaction dies with it, and does not outlive the sibling write
        it was enqueued alongside.
     """
-    require(ORCH_MODULE, "Orchestrator.enqueue_escalation", issue="#60")
+    Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#58")
+    require_attr(Orchestrator, "enqueue_escalation", issue="#60")
 
     # --- limb 1: commit — verdict in, panel widened, in one transaction -------------------
     store, orch, cohort, run_id = _seed_limb(tmp_data_dir, "commit")

@@ -124,11 +124,14 @@ def seed_run(
     panel: Any = None,
     package_id: str = "pkg-orch",
     cfg: Any = None,
+    run_id: str | None = None,
 ) -> tuple[Any, str, str]:
     """The whole fixture chain: store state in, `(orchestrator, run_id, version)` out.
 
     The orchestrator is returned already holding the store; `run_id` names a created run
     whose row is born `pending`. Callers enumerate with `orchestrator.enumerate_units`.
+    A caller-pinned `run_id` makes run-seeded draws (the random arm's per-run seed)
+    deterministic across processes — the knob the arm-enumeration cases pin.
     """
     from aeh.orch import Orchestrator
 
@@ -136,7 +139,7 @@ def seed_run(
     version = seed_package(store, criteria, package_id=package_id)
     resolved = cfg if cfg is not None else orch_cfg(profile, panel=panel)
     orchestrator = Orchestrator(store)
-    run_id = orchestrator.create_run(cohort_id, version, resolved)
+    run_id = orchestrator.create_run(cohort_id, version, resolved, run_id=run_id)
     return orchestrator, run_id, version
 
 

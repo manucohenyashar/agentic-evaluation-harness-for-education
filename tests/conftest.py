@@ -76,6 +76,24 @@ def network_guard(request: pytest.FixtureRequest):
 
 
 # --- the injected seams -------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def random_arm_deterministic(monkeypatch: pytest.MonkeyPatch):
+    """Pin the escalation random arm's draw rate to 0 for every test (#60, `FR-ORCH-11`).
+
+    The arm's draw is already deterministic — a hash over `(run_id, submission_id,
+    criterion_id)` — but the run IDs most suites exercise are `uuid4`-minted per test, so
+    at the default rate (0.07) roughly one judged pair in fourteen draws the widened
+    panel and any test asserting an exact ledger shape ("5 submissions x 3 base units")
+    flakes by construction. §4.6 puts randomness injection here at the suite root, and
+    this is randomness: the default-rate arm stays OFF under test unless a test asks for
+    it. A test exercising the arm itself overrides the pin — `monkeypatch.setenv
+    ("HARNESS_ORCH_RANDOM_ARM_RATE", "0.07")` in the test body wins, because both this
+    fixture and the test's write the same `monkeypatch` instance (the test's write lands
+    second). Knob read at call time, so the pin holds without reimporting `aeh.orch`.
+    """
+    monkeypatch.setenv("HARNESS_ORCH_RANDOM_ARM_RATE", "0")
+
+
 @pytest.fixture
 def frozen_clock() -> FrozenClock:
     """A clock that moves only when the test moves it (§4.6: no `sleep`)."""

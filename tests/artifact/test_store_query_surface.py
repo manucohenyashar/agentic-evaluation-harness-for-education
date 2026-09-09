@@ -232,32 +232,55 @@ def test_sec_15_the_walker_reports_nothing_against_a_declared_statement(form, tm
 #: annoying and it is the point: the constant exists to be re-read, and a site that moved is a
 #: site somebody should look at again.
 KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
-    # aeh.orch's sites: #57's four (the run-row insert at 871, the ledger's batched
-    # unit insert at 1048 with the `SELECT changes()` read at 1057 in that same
+    # aeh.orch's sites: #57's four (the run-row insert, the ledger's batched
+    # unit insert with the `SELECT changes()` read in that same
     # transaction — the insert is `OR IGNORE`, so the ledger's own count of what the
-    # write did is the only honest one — and the audit-record insert at 1901), plus
+    # write did is the only honest one — and the audit-record insert), plus
     # #58's leasing and failure taxonomy (every one from ORCH_STATEMENTS,
-    # keyword-parameterized): the guarded lease claim at 1297 with its changes() read
-    # at 1304, the heartbeat's lease extension at 1499 with its changes() read at
-    # 1506, the sweeper's guarded requeue at 1557 with its changes() read at 1561,
-    # the completion at 1611 with its changes() read at 1612, and the failure record
-    # at 1660 with its changes() read at 1666. Lines moved with #59's sweep-plan
-    # additions, its reviewer fixes' order cache, and that cache's requeue
-    # invalidation above them; the sites are the same statements as #57/#58's.
-    "aeh.orch:872",
-    "aeh.orch:1049",
-    "aeh.orch:1058",
-    "aeh.orch:1298",
-    "aeh.orch:1305",
-    "aeh.orch:1500",
-    "aeh.orch:1507",
-    "aeh.orch:1558",
-    "aeh.orch:1562",
-    "aeh.orch:1612",
-    "aeh.orch:1613",
-    "aeh.orch:1661",
-    "aeh.orch:1667",
-    "aeh.orch:1902",
+    # keyword-parameterized): the guarded lease claim with its changes() read,
+    # the heartbeat's lease extension with its changes() read, the sweeper's guarded
+    # requeue with its changes() read, the completion with its changes() read, and
+    # the failure record with its changes() read. Lines moved with #59's sweep-plan
+    # additions, #60's random-arm block in enumerate_units and #60's escalation
+    # restructure; the sites are the same statements as #57/#58's.
+    "aeh.orch:1571",
+    "aeh.orch:1792",
+    "aeh.orch:1801",
+    "aeh.orch:2081",
+    "aeh.orch:2088",
+    "aeh.orch:2283",
+    "aeh.orch:2290",
+    "aeh.orch:2341",
+    "aeh.orch:2345",
+    "aeh.orch:2395",
+    "aeh.orch:2400",
+    "aeh.orch:2448",
+    "aeh.orch:2454",
+    "aeh.orch:3239",
+    # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
+    # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
+    # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
+    # panel read, the idempotence probe, the breaker's latch and window and
+    # escalated-set reads, the breaker's latch write, the request row's insert and
+    # its admit flip, the queue-depth read behind the enqueue's gate, the unit
+    # insertion helper's per-judge inserts with their changes() reads (the same
+    # honest count the enumerate pass gives), and the report assembler's
+    # queue-depth read. The restructure moved the queue's drain into the claim
+    # pass's dispatch gate, so the drain's reads are gone and the key's run
+    # resolution arrived.
+    "aeh.orch:2556",
+    "aeh.orch:2614",
+    "aeh.orch:2630",
+    "aeh.orch:2650",
+    "aeh.orch:2664",
+    "aeh.orch:2670",
+    "aeh.orch:2688",
+    "aeh.orch:2725",
+    "aeh.orch:2741",
+    "aeh.orch:2763",
+    "aeh.orch:2810",
+    "aeh.orch:2814",
+    "aeh.orch:2893",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -267,15 +290,16 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # FR-DET-10 column set is written in exactly one place. The four Tier D
     # stat writes rewrite `mcq_item_stats`/`mcq_item_summary` per criterion
     # (delete + insert pairs, so a redelivery is idempotent — CT-DET-08).
-    # Every one from DET_STATEMENTS, keyword-parameterized.
-    "aeh.det:964",
-    "aeh.det:1080",
-    "aeh.det:1265",
-    "aeh.det:1408",
-    "aeh.det:1639",
-    "aeh.det:1647",
-    "aeh.det:1655",
+    # Every one from DET_STATEMENTS, keyword-parameterized. Lines moved with #60's
+    # sorted-merge comment on the cohort registry append; same statements.
+    "aeh.det:970",
+    "aeh.det:1086",
+    "aeh.det:1271",
+    "aeh.det:1414",
+    "aeh.det:1645",
+    "aeh.det:1653",
     "aeh.det:1661",
+    "aeh.det:1667",
     # The ingest sites are #226's line numbers (the live-crop/raster-persistence
     # story and its review fixes shifted the module; every statement verified
     # unchanged against the prior baseline, the tripwire diff being the line
@@ -368,8 +392,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4072",
     "aeh.pkg:4069",
     "aeh.pkg:4086",
-    "aeh.store:1707",
-    "aeh.store:2463",
+    "aeh.store:1720",
+    "aeh.store:2476",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

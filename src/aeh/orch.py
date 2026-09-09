@@ -38,18 +38,38 @@ fixed key — no dependency ordering in Sweep 2, per the design's technical note
 `deterministic` criterion generates exactly one `stage='deterministic'` unit with a null
 `judge_id` and no extraction and no scoring unit (`FR-ORCH-08`).
 
-**Not in this slice, and deliberately so.** Escalation, the random arm and the circuit
-breakers are #60's; the control-row run lifecycle (start/pause status transitions), the
-cost ceiling and provider pauses are #61's; dispatch isolation, concurrency and
-`ProgressReport` are #62's. The `run` row is created in `status='pending'` and no story
-before #61 flips it: the lifecycle is #61's.
+**This slice (#60) adds the escalation machinery** (`FR-ORCH-09/10/11/13/14/26`):
+`enqueue_escalation(tx, criterion_score_key, judges)` — the design's `CT-ORCH-08`
+form, the caller's transaction first — widens a pair's panel one judge to three,
+never to two; an even plan raises `EvenEscalationPlanError` (`FR-ORCH-10`), and the
+widened units carry `origin='escalation'` in the transaction the caller commits with
+the verdict that triggered them (`FR-ORCH-09`). The **random arm** samples judged
+pairs at `ORCH_RANDOM_ARM_RATE` during enumeration (`origin='random_arm'`,
+independent of confidence, never suppressed by the budget or a breaker —
+`CT-ORCH-15`); the seeded draw is `random_arm_selection`. The **criterion breaker**
+(`FR-ORCH-13`) latches when a criterion escalates for more than half of the first
+`ORCH_CRITERION_BREAKER_MIN_N` submissions processed — escalation halts for that
+criterion, the remainder single-judge provisional. The **run-wide budget**
+(`FR-ORCH-14`) rations dispatch: `enqueue_escalation` writes the plan the verdict
+needs (the atomicity clause leaves it no choice), and the claim pass admits pending
+escalation units through `admit_escalations` only while the observed rate is at or
+under `ORCH_ESCALATION_BUDGET` — above it the remainder stays pending, marked
+provisional in expected-value order, until growth returns headroom. Scrutiny is
+never silently reduced. Every decision is pure policy (`escalation_plan`,
+`validate_escalation_plan`, `admit_escalations`, `criterion_breaker_tripped`,
+`random_arm_selection`) — evaluable with no model call (`NFR-ORCH-04`).
+
+**Not in this slice, and deliberately so.** The control-row run lifecycle (start/pause
+status transitions), the cost ceiling and provider pauses are #61's; dispatch
+isolation, concurrency and `ProgressReport` are #62's. The `run` row is created in
+`status='pending'` and no story before #61 flips it: the lifecycle is #61's.
 
 **The four seams** (CLAUDE.md): the orchestrator runs end-to-end from code and returns a
-structured result with per-gate detail (`EnumerationReport`, the `IngestReport.gates`
-precedent); it has no external dependency to transport — the store arrives by injection
-and no judge is ever contacted here, so the run needs no network; the one
-environment-sensitive constant (enumeration commit batch) is env-gated and read at call
-time; and every report carries stage-level detail rather than a bare status.
+structured result with per-gate detail (`EnumerationReport`, `EscalationReport` — the
+`IngestReport.gates` precedent); it has no external dependency to transport — the store
+arrives by injection and no judge is ever contacted here, so the run needs no network;
+every budget, threshold, rate and window constant is env-gated and read at call time;
+and every report carries stage-level detail rather than a bare status.
 """
 
 from __future__ import annotations
@@ -64,7 +84,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, NamedTuple, Protocol, Sequence
 
 from aeh.store import (
     TIER_MIGRATIONS,
@@ -275,6 +295,28 @@ class RunNotFoundError(WorkLedgerError):
     is a caller mistake worth naming."""
 
 
+class EscalationPlanError(WorkLedgerError):
+    """An escalation plan this module refuses to build (`FR-ORCH-10`'s gate).
+
+    The plan builder is a pure function and its refusals are part of its contract
+    (`TC-ORCH-20` asserts the exact exception): a plan that does not widen the panel
+    (an escalation to the same count, or a reduction) is not an escalation — enqueuing
+    it would look like work while adding nothing, which is the silent-no-op shape.
+    Even panels raise the subclass, `EvenEscalationPlanError`.
+    """
+
+
+class EvenEscalationPlanError(EscalationPlanError):
+    """An escalation plan producing an **even** `judge_count` (`FR-ORCH-10`, R48).
+
+    A two-way tie broken by rule is a coin flip presented as a judgement — the fairness
+    rule the odd-panel requirement exists for (`CT-AGG-03`: `judge_count` is 0 or odd,
+    enforced by CHECK at the write). This is the exact exception `TC-ORCH-20` asserts
+    for plans producing 2 or 4 judges; the ledger-side CHECK (`det_score_state_columns`)
+    is the backstop, this refusal is the front one.
+    """
+
+
 # --- the ledger's schema (a numbered migration, per §3.3's discipline) --------------------------
 #
 # Tier C's registry stood at version 6 (`M-INGEST`'s five). The owning module adds its
@@ -333,6 +375,72 @@ TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
     Migration(version=7, name="orch_run_ledger", statements=_ORCH_COHORT_007),
     Migration(version=8, name="orch_leasing", statements=_ORCH_COHORT_008),
 )
+
+#: #60's ledger growth: the escalation queue, the circuit-breaker latch, and the
+#: completion ticks the criterion breaker's window reads. The cohort registry stood at
+#: version 9 (`M-DET`'s `det_score_state_columns`) — this takes the next free number.
+#:
+#: - **`escalation_request`** is the escalation budget's memory (`FR-ORCH-14`): when the
+#:   run-wide rate is over budget, a request that expected-value order cannot admit *now*
+#:   is persisted here (`admitted = 0`) instead of being refused into silence — a queue
+#:   held only in the process would lose the remainder to a crash, and a lost remainder is
+#:   scrutiny reduced by an accident, exactly the shape `CT-ORCH-16` forbids. `request_id`
+#:   is **content-derived** (run, submission, criterion, the prior judge count the plan
+#:   widened from), so a retried enqueue after a crash is `INSERT OR IGNORE`'d onto the
+#:   request it already made — at-least-once callers cannot queue a rung twice.
+#: - **`circuit_breaker`** is the criterion breaker's latch (`FR-ORCH-13`): tripping is a
+#:   one-way event the operator surface alerts on, so it is a row, not a derived predicate.
+#:   `breaker_id` is content-derived (run, criterion, kind) for the same idempotence.
+#: - **`work_unit.done_ticks`** is the `M-STORE` monotonic counter reading at completion —
+#:   the "first 20–30 submissions **processed**" of `FR-ORCH-13` needs a completion ORDER,
+#:   and the lease counter is the only monotonic order the ledger already has (`FR-STORE-11`).
+#:   Written by `complete()`, read by the breaker's window; a row completed without ticks
+#:   (test scaffolding's direct writes) is order-unknown and sits outside the window.
+_ORCH_COHORT_010: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE escalation_request (
+            request_id     TEXT NOT NULL PRIMARY KEY,
+            run_id         TEXT NOT NULL REFERENCES run(run_id),
+            submission_id  TEXT NOT NULL,
+            criterion_id   TEXT NOT NULL,
+            expected_value REAL,
+            admitted       INTEGER NOT NULL CHECK (admitted IN (0, 1)),
+            requested_at   TEXT NOT NULL,
+            admitted_at    TEXT,
+            detail         TEXT
+        )
+        """
+    ),
+    Statement(
+        """
+        CREATE TABLE circuit_breaker (
+            breaker_id   TEXT NOT NULL PRIMARY KEY,
+            run_id       TEXT NOT NULL REFERENCES run(run_id),
+            criterion_id TEXT NOT NULL,
+            kind         TEXT NOT NULL CHECK (kind IN ('criterion_escalation')),
+            tripped_at   TEXT NOT NULL,
+            detail       TEXT NOT NULL,
+            UNIQUE (run_id, criterion_id, kind)
+        )
+        """
+    ),
+    Statement("ALTER TABLE work_unit ADD COLUMN done_ticks REAL"),
+    Statement(
+        "CREATE INDEX idx_wu_escalation ON "
+        "work_unit(run_id, origin, criterion_id, submission_id)"
+    ),
+    Statement(
+        "CREATE INDEX idx_esc_queue ON "
+        "escalation_request(run_id, admitted, expected_value)"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT]
+    + (Migration(version=10, name="orch_escalation_ledger", statements=_ORCH_COHORT_010),),
+    key=lambda m: m.version,
+))
 
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) -------------------
@@ -398,7 +506,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # re-sorting the whole pending set.
     "select_run_claimable": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
-        "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref "
+        "w.judge_id, w.origin, w.attempts AS attempt, s.student_ref AS student_ref "
         "FROM work_unit w "
         "JOIN submission s ON s.submission_id = w.submission_id "
         "WHERE w.run_id = :run_id AND w.status = 'pending' AND w.stage = :stage "
@@ -456,7 +564,8 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     ),
     "mark_done": Statement(
         "UPDATE work_unit SET status = 'done', lease_owner = NULL, "
-        "lease_expires_ticks = NULL, lease_expires_at = NULL "
+        "lease_expires_ticks = NULL, lease_expires_at = NULL, "
+        "done_ticks = :done_ticks "
         "WHERE work_id = :work_id AND status IN ('leased', 'pending')"
     ),
     # The failure taxonomy: requeue with the attempt counted, or quarantine at the
@@ -473,6 +582,125 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "last_error = :last_error, lease_owner = NULL, "
         "lease_expires_ticks = NULL, lease_expires_at = NULL "
         "WHERE work_id = :work_id AND status IN ('leased', 'pending')"
+    ),
+    # -- escalation, the random arm and the breakers (FR-ORCH-09/10/11/13/14) ------------------
+    # The criterion's judges for one (submission, criterion): every score unit's judge,
+    # whatever its origin — the base panel, the random arm's widening and a prior
+    # escalation rung are all the panel the criterion now has. Ordered by work_id so the
+    # prior-judge list is deterministic (the plan's derivation reads it).
+    "select_pair_score_judges": Statement(
+        "SELECT judge_id FROM work_unit "
+        "WHERE run_id = :run_id AND submission_id = :submission_id "
+        "AND criterion_id = :criterion_id AND stage = 'score' ORDER BY work_id"
+    ),
+    # The criterion breaker's window (`FR-ORCH-13`): the submissions whose judged
+    # scoring for one criterion completed EARLIEST, by the monotonic completion ticks.
+    # Rows without ticks are order-unknown and excluded — the window is the first N
+    # the ledger can honestly order. MIN(), not bare completion, because a submission's
+    # panel completes unit by unit; its processing moment is its FIRST verdict.
+    "select_criterion_window": Statement(
+        "SELECT submission_id, MIN(done_ticks) AS first_done FROM work_unit "
+        "WHERE run_id = :run_id AND criterion_id = :criterion_id "
+        "AND stage = 'score' AND judge_id IS NOT NULL AND status = 'done' "
+        "AND done_ticks IS NOT NULL "
+        "GROUP BY submission_id ORDER BY first_done ASC, submission_id ASC LIMIT :n"
+    ),
+    # The escalation pairs of one criterion: distinct submissions with at least one
+    # escalation-origin unit. The breaker intersects this with its window.
+    "select_criterion_escalated": Statement(
+        "SELECT DISTINCT submission_id FROM work_unit "
+        "WHERE run_id = :run_id AND criterion_id = :criterion_id "
+        "AND origin = 'escalation'"
+    ),
+    # One pair's escalation count — the idempotence probe: an enqueue for a pair that
+    # already carries escalation-origin units is a no-op, whatever path widened it.
+    "select_pair_escalated": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit "
+        "WHERE run_id = :run_id AND submission_id = :submission_id "
+        "AND criterion_id = :criterion_id AND origin = 'escalation'"
+    ),
+    # The run-wide budget's OBSERVED rate (`FR-ORCH-14`): distinct (submission,
+    # criterion) pairs whose judged scoring has completed, and pairs whose escalation
+    # has completed. Both sides are done-based because the rate is an observation —
+    # an escalation whose panel is still running has produced no outcome to count,
+    # and counting plans instead of outcomes would defer the very units the budget
+    # exists to carry (a run's first escalated pair would read as a 100% rate). Both
+    # are indexed aggregates over the run's score units, never a side-file counter
+    # (the ledger is the only bookkeeping, FR-ORCH-02).
+    "select_processed_results": Statement(
+        "SELECT COUNT(*) AS n FROM (SELECT DISTINCT submission_id, criterion_id "
+        "FROM work_unit WHERE run_id = :run_id AND stage = 'score' "
+        "AND judge_id IS NOT NULL AND status = 'done')"
+    ),
+    "select_escalated_results": Statement(
+        "SELECT COUNT(*) AS n FROM (SELECT DISTINCT submission_id, criterion_id "
+        "FROM work_unit WHERE run_id = :run_id AND origin = 'escalation' "
+        "AND status = 'done')"
+    ),
+    # The escalation record (`FR-ORCH-14`). A request is content-addressed (see the
+    # migration note) and INSERT OR IGNORE'd, so a retried enqueue cannot record a
+    # rung twice; the row carries the caller's expected value, which is the ranking
+    # key the dispatch-time admission consumes. The enqueue flips `admitted` once its
+    # units are written — the flag records "this request's units are in the ledger",
+    # not a budget decision: the budget rations DISPATCH (`admit_escalations` at the
+    # claim pass), because the atomicity clause (`CT-ORCH-08`) has the enqueue write
+    # the plan into the verdict's transaction whatever the budget is doing.
+    "insert_escalation_request": Statement(
+        "INSERT OR IGNORE INTO escalation_request "
+        "(request_id, run_id, submission_id, criterion_id, expected_value, "
+        "admitted, requested_at, detail) "
+        "VALUES (:request_id, :run_id, :submission_id, :criterion_id, "
+        ":expected_value, 0, :requested_at, :detail)"
+    ),
+    "select_queue_depth": Statement(
+        "SELECT COUNT(*) AS n FROM escalation_request "
+        "WHERE run_id = :run_id AND admitted = 0"
+    ),
+    # The dispatch gate's read (`FR-ORCH-14`): the run's pending escalation pairs with
+    # their request's expected value (0.0 when the request row is absent — the arm
+    # never writes one and a lost row must not rank above a valued one). This is the
+    # candidate list `admit_escalations` evaluates at claim time; the provisional
+    # half is the remainder `FR-ORCH-14` marks.
+    "select_pending_escalation_pairs": Statement(
+        "SELECT w.submission_id, w.criterion_id, "
+        "COALESCE(q.expected_value, 0.0) AS expected_value "
+        "FROM work_unit w "
+        "LEFT JOIN escalation_request q "
+        "ON q.run_id = w.run_id AND q.submission_id = w.submission_id "
+        "AND q.criterion_id = w.criterion_id "
+        "WHERE w.run_id = :run_id AND w.origin = 'escalation' "
+        "AND w.status = 'pending' "
+        "GROUP BY w.submission_id, w.criterion_id, q.expected_value"
+    ),
+    # The runs whose ledger holds the pair's panel — the enqueue's target set. The
+    # criterion score key is run-agnostic (`CT-ORCH-08`: it names the pair the way
+    # `criterion_score` does), so the enqueue resolves the runs that hold the panel
+    # from the ledger itself and widens each one.
+    "select_pair_runs": Statement(
+        "SELECT DISTINCT run_id FROM work_unit "
+        "WHERE submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND stage = 'score' ORDER BY run_id"
+    ),
+    "admit_request": Statement(
+        "UPDATE escalation_request SET admitted = 1, admitted_at = :admitted_at, "
+        "detail = :detail WHERE request_id = :request_id AND admitted = 0"
+    ),
+    # The breaker latch (`FR-ORCH-13`): content-addressed, INSERT OR IGNORE — a
+    # criterion trips once; a second trip evaluation cannot rewrite the first event.
+    "insert_breaker": Statement(
+        "INSERT OR IGNORE INTO circuit_breaker "
+        "(breaker_id, run_id, criterion_id, kind, tripped_at, detail) "
+        "VALUES (:breaker_id, :run_id, :criterion_id, 'criterion_escalation', "
+        ":tripped_at, :detail)"
+    ),
+    "select_breaker": Statement(
+        "SELECT breaker_id, criterion_id, kind, tripped_at, detail "
+        "FROM circuit_breaker WHERE run_id = :run_id AND criterion_id = :criterion_id "
+        "AND kind = 'criterion_escalation'"
+    ),
+    "select_run_breakers": Statement(
+        "SELECT criterion_id, kind, tripped_at, detail FROM circuit_breaker "
+        "WHERE run_id = :run_id ORDER BY criterion_id ASC, kind ASC"
     ),
 }
 
@@ -543,6 +771,42 @@ LEASE_SECONDS_ENV = "HARNESS_ORCH_LEASE_SECONDS"
 ORCH_MAX_ATTEMPTS = 3
 MAX_ATTEMPTS_ENV = "HARNESS_ORCH_MAX_ATTEMPTS"
 
+#: The random-arm sample rate (`FR-ORCH-11`, design §3.7 Configuration: `ORCH_RANDOM_ARM_RATE`,
+#: 0.07 — the HLD's 5–10% band's stated Assumption). The arm measures the routing policy
+#: itself (`FR-STATS-08`), so it draws independently of confidence and is **never**
+#: suppressed by the escalation budget or a breaker (`CT-ORCH-15`) — its knob tunes the
+#: sample size, nothing gates it. Production default; `HARNESS_ORCH_RANDOM_ARM_RATE`
+#: adjusts it at **call** time. A rate of 0 disables the arm honestly (a test or a
+#: deployment that does not want the compute spends none); a rate above 1 is refused.
+ORCH_RANDOM_ARM_RATE = 0.07
+RANDOM_ARM_RATE_ENV = "HARNESS_ORCH_RANDOM_ARM_RATE"
+
+#: The run-wide escalation budget (`FR-ORCH-14`, design §3.7 Configuration:
+#: `ORCH_ESCALATION_BUDGET`, 0.30): the share of processed results that may escalate
+#: before further requests are admitted only in expected-value order, the remainder
+#: queued and marked provisional. Production default; `HARNESS_ORCH_ESCALATION_BUDGET`
+#: adjusts it at **call** time. The rate is never silently reduced by this knob: over
+#: budget means rationed in the open (`CT-ORCH-16`), never refused quietly.
+ORCH_ESCALATION_BUDGET = 0.30
+ESCALATION_BUDGET_ENV = "HARNESS_ORCH_ESCALATION_BUDGET"
+
+#: The criterion circuit breaker's rate (`FR-ORCH-13`, design §3.7 Configuration:
+#: `ORCH_CRITERION_BREAKER_RATE`, 0.50): a criterion escalating for **more than** this
+#: share of the first `ORCH_CRITERION_BREAKER_MIN_N` submissions processed trips the
+#: breaker — escalation halts for it, it is marked un-gradeable by panel, and the
+#: remainder scores single-judge provisional. Production default;
+#: `HARNESS_ORCH_CRITERION_BREAKER_RATE` adjusts it at **call** time.
+ORCH_CRITERION_BREAKER_RATE = 0.50
+CRITERION_BREAKER_RATE_ENV = "HARNESS_ORCH_CRITERION_BREAKER_RATE"
+
+#: The criterion breaker's window (`FR-ORCH-13`, design §3.7 Configuration:
+#: `ORCH_CRITERION_BREAKER_MIN_N`, 20 — the HLD's "first 20–30" band's floor, the stated
+#: Assumption): the breaker evaluates only once at least this many submissions have been
+#: processed for the criterion. Production default;
+#: `HARNESS_ORCH_CRITERION_BREAKER_MIN_N` adjusts it at **call** time.
+ORCH_CRITERION_BREAKER_MIN_N = 20
+CRITERION_BREAKER_MIN_N_ENV = "HARNESS_ORCH_CRITERION_BREAKER_MIN_N"
+
 
 def _env_int(name: str, default: int) -> int:
     """One integer environment knob, read at call time (`store._int_env`'s shape).
@@ -560,6 +824,30 @@ def _env_int(name: str, default: int) -> int:
         raise WorkLedgerError(f"{name}={raw!r} is not an integer") from exc
     if value <= 0:
         raise WorkLedgerError(f"{name}={value} must be positive")
+    return value
+
+
+def _env_float(name: str, default: float, *, low: float, high: float) -> float:
+    """One float environment knob, read at call time — the rate knobs' seam.
+
+    The same refusal posture as `_env_int`: a typo'd override silently taking the
+    production value is the phantom-bug shape the seam exists to prevent, so an
+    unparseable value raises. Rates are bounded — a share outside ``[low, high]`` is
+    not a stricter policy, it is a misconfiguration, and it refuses rather than clamps
+    (a clamped 7% becomes a silent 100% escalation rate; the clamp would BE the bug).
+    Zero is a legal low bound: the random arm may honestly be disabled by rate 0.
+    """
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise WorkLedgerError(f"{name}={raw!r} is not a number") from exc
+    if not low <= value <= high:
+        raise WorkLedgerError(
+            f"{name}={value} is outside its allowed range [{low}, {high}]"
+        )
     return value
 
 
@@ -622,6 +910,312 @@ def _dependency_closure(
             if indegree[dependent] == 0:
                 ready.append(dependent)
     return closure
+
+
+# --- the escalation policy, as pure functions (NFR-ORCH-04) -------------------------------------
+#
+# The *decision to escalate* is `M-AGG`'s (`FR-AGG-08`, `CT-AGG-08` — this module must not
+# import that policy, and imports nothing from it). What IS this module's is the plan the
+# decision becomes and the gates the plan passes through: the odd-panel ladder, the
+# random-arm draw, the breaker arithmetic. All three are pure functions of observable
+# signals and configuration — no model call, no store, no clock — which is what
+# `TC-ORCH-32`'s purity assertion evaluates.
+
+
+#: The namespace of derived escalation judges. A run's panel carries the ladder's first
+#: arms (`panel_config_json`); when a widening outruns it — a `holistic` criterion's base
+#: panel is already the whole panel — the ladder continues on derived judge identities
+#: named by ladder position. The ledger does not resolve builds (`M-CONF`/`M-JUDGE` do,
+#: downstream), and a deployment that owns real fifth judges passes them explicitly
+#: (`enqueue_escalation`'s `judges`), which is the design's own `judges` parameter.
+ESCALATION_ARM_PREFIX = "escalation-arm"
+
+
+def _extension_arms(
+    panel_arms: Sequence[str], prior_judges: Sequence[str], count: int = 2
+) -> tuple[str, ...]:
+    """The judges a widening adds when the caller names none, in ladder order.
+
+    The run panel's arms the pair does not already carry come first — panel order is the
+    escalation ladder's first arms (`panel_config_json`) — and past them the ladder
+    continues on derived identities: ``escalation-arm-<k>`` numbered from the panel's end.
+    A derived name a prior rung already put on the panel is skipped, so rung over rung
+    (1 → 3 → 5 → …) never re-adds a judge. Deterministic: the same panel and prior produce
+    the same additions, which is what makes a retried enqueue content-address the same units.
+    """
+    additions: list[str] = [arm for arm in panel_arms if arm not in prior_judges]
+    position = len(tuple(panel_arms))
+    while len(additions) < count:
+        position += 1
+        name = f"{ESCALATION_ARM_PREFIX}-{position}"
+        if name not in prior_judges:
+            additions.append(name)
+    return tuple(additions[:count])
+
+
+def _judge_id_of(judge: Any) -> str:
+    """The judge's ledger identity, from whatever the caller named it with: a string
+    is the build id itself; anything else must be a model ref carrying one
+    (`FR-CONF-03` — a judge is a build identity, never a friendly name) — the same
+    string `panel_config_json` records and a unit's `judge_id` hash input carries, so
+    an escalated panel's additions are the same ids the seated panel's arms read as.
+    """
+    if isinstance(judge, str):
+        return judge
+    build_id = getattr(judge, "build_id", None)
+    if isinstance(build_id, str) and build_id:
+        return build_id
+    raise EscalationPlanError(
+        f"an escalation's judges are named by build id — a string, or a model ref "
+        f"carrying one; got {judge!r}, which names no build identity (FR-CONF-03)."
+    )
+
+
+def escalation_plan(
+    prior_judges: Sequence[str],
+    *,
+    add_judges: Sequence[str] | None = None,
+    panel_arms: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Build one escalation rung: the widened panel, or the named refusal (`FR-ORCH-10`).
+
+    Pure — `TC-ORCH-20` and `TC-ORCH-32` evaluate it with no store and no model. The
+    result is the FULL widened panel in order: the criterion's prior judges followed by
+    the additions, so the plan's ``judge_count`` is ``len(result)`` and the odd-panel rule
+    reads directly off the return value.
+
+    **The rules, each from the design's own sentence:**
+
+    - The criterion escalates **from one judge to three, never to two** — the canonical
+      rung widens by two. With no caller-named judges the plan widens by exactly two,
+      taken from the run panel's unused arms first, then derived extension arms
+      (`_extension_arms`). An odd panel widened by an even addition stays odd, so the
+      default ladder never leaves the odd numbers: 1 → 3 → 5 → …
+    - **A plan producing an even ``judge_count`` is rejected** — `EvenEscalationPlanError`,
+      the exact exception `TC-ORCH-20` asserts for counts 2 and 4. A two-way tie broken by
+      rule is a coin flip presented as a judgement; the ledger's CHECK (`CT-AGG-03`) is
+      the backstop, this refusal is the front.
+    - A plan that does not widen (equal or smaller than the panel it starts from) is
+      refused with `EscalationPlanError`: an escalation that adds nothing looks like work
+      while being the silent no-op shape.
+    - A criterion with **no judges yet** (prior count 0) has no band to widen — refusing
+      rather than treating first enumeration as escalation keeps "escalate" meaning
+      *widen a panel that exists*.
+    - A caller-named judge already on the panel is refused (`EscalationPlanError`), and so
+      is a plan naming the **same judge twice among the additions** (`EscalationPlanError`):
+      one judge, one seat — a doubled seat would let one verdict outweigh another, and a
+      doubled seat can also hide an even distinct-judge panel behind an odd `len`.
+
+    An even PRIOR panel is refused with `EvenEscalationPlanError` as well: the ledger
+    should never hold one (the CHECK refuses the write), and a plan built on top of a
+    corrupted panel would launder it rather than surface it.
+    """
+    prior = tuple(prior_judges)
+    if len(prior) == 0:
+        raise EscalationPlanError(
+            "no judges to escalate from: a criterion with judge_count 0 has no panel "
+            "to widen. Enumeration gives every judged criterion its base panel; an "
+            "escalation before that is a caller error."
+        )
+    if len(prior) % 2 == 0:
+        raise EvenEscalationPlanError(
+            f"the criterion's current panel {prior!r} carries an even judge_count "
+            f"({len(prior)}); an even panel is the state the odd-panel rule exists to "
+            "prevent (CT-AGG-03) and no escalation plan may be built on top of it — "
+            "the panel is corrupt, and widening it would launder the corruption."
+        )
+    additions = (
+        _extension_arms(panel_arms, prior)
+        if add_judges is None
+        else tuple(add_judges)
+    )
+    if not additions:
+        raise EscalationPlanError(
+            "the escalation plan adds no judges: a plan that does not widen the panel "
+            "is not an escalation (FR-ORCH-10), and enqueuing it would look like work "
+            "while adding nothing."
+        )
+    if len(set(additions)) != len(additions):
+        raise EscalationPlanError(
+            f"the escalation plan names the same judge more than once among its "
+            f"additions: {additions!r}. One judge, one seat — a doubled seat would let "
+            "one verdict outweigh another in the widened panel's aggregation, and an "
+            "odd length built on a repeated name hides an even panel of distinct "
+            "judges behind it."
+        )
+    overlap = [judge for judge in additions if judge in prior]
+    if overlap:
+        raise EscalationPlanError(
+            f"the escalation plan re-adds judge(s) already on the panel: {overlap!r}. "
+            "One judge, one seat — a doubled seat would let one verdict outweigh "
+            "another in the widened panel's aggregation."
+        )
+    total = len(prior) + len(additions)
+    if total % 2 == 0:
+        raise EvenEscalationPlanError(
+            f"the escalation plan produces an even judge_count ({total}: {len(prior)} "
+            f"prior + {len(additions)} added). Escalation goes one judge to three, "
+            "never to two (FR-ORCH-10, R48) — an even panel is a tie broken by rule, "
+            "which is a coin flip presented as a judgement."
+        )
+    if total <= len(prior):
+        raise EscalationPlanError(
+            f"the escalation plan produces a judge_count of {total}, not wider than "
+            f"the panel it starts from ({len(prior)})."
+        )
+    return prior + additions
+
+
+def _random_arm_key_bytes(key: Any) -> bytes:
+    """The draw's canonical bytes for one candidate key: a string is itself; anything
+    else (the (submission_id, criterion_id) tuple the enumeration path passes) is its
+    parts, ``\\x1f``-joined. Deterministic and collision-free for the key shapes the
+    module uses, and total over the opaque strings the statistical cases draw with."""
+    if isinstance(key, str):
+        return key.encode("utf-8")
+    if isinstance(key, (tuple, list)):
+        return b"\x1f".join(str(part).encode("utf-8") for part in key)
+    return repr(key).encode("utf-8")
+
+
+def random_arm_selection(key: Any, seed: int, rate: float | None = None) -> bool:
+    """Whether one candidate draws into the random arm (`FR-ORCH-11`, `TC-ORCH-12`).
+
+    Pure and **seeded**: the draw is sha256 over the candidate's key and the caller's
+    seed read as a uniform integer against the rate, so the same (key, seed) draws the
+    same way on every enumeration — `CT-ORCH-02`'s byte-identical enumeration and
+    `NFR-ORCH-05`'s determinism survive the arm being in the pass — while across keys
+    the draws are uniform, which is what makes the arm's share converge on the rate
+    (the 10,000-draw sweep of `TC-ORCH-12`). ``rate`` defaults to the module constant
+    `ORCH_RANDOM_ARM_RATE` — the pure function never reads the environment; the
+    production path reads the knob at call time and passes the rate explicitly (the
+    env seam, `§4.6`). No confidence input, no store, no clock: the arm is independent
+    of confidence **by construction** (`R22` — that independence is the point of the
+    arm, `FR-STATS-08`), and a rate of 0 disables it honestly.
+    """
+    if rate is None:
+        rate = ORCH_RANDOM_ARM_RATE
+    if rate <= 0:
+        return False
+    digest = hashlib.sha256(
+        b"aeh.orch\x1frandom_arm\x1f"
+        + _random_arm_key_bytes(key)
+        + b"\x1f"
+        + str(int(seed)).encode("utf-8")
+    ).digest()
+    return int.from_bytes(digest[:8], "big") / float(2**64) < rate
+
+
+def run_random_arm_seed(run_id: str) -> int:
+    """The run's seeded draw for the random arm, derived from the run id.
+
+    A run's arm membership must be a property of the RUN (the same cohort re-enumerated
+    into a new run re-draws — new run, new sample), and it must be deterministic within
+    the run (`CT-ORCH-02`). The run id is the seed's whole input: sha256 under the
+    module prefix, read as an integer in the statistical cases' own draw range
+    (``rng.randrange(2**31)``).
+    """
+    digest = hashlib.sha256(b"aeh.orch\x1frun_arm_seed\x1f" + run_id.encode("utf-8"))
+    return int.from_bytes(digest.digest()[:8], "big") % (2**31)
+
+
+def criterion_breaker_tripped(
+    escalated: int,
+    processed: int,
+    *,
+    rate: float | None = None,
+    min_n: int | None = None,
+) -> bool:
+    """Whether the criterion escalation breaker trips (`FR-ORCH-13`, `TC-ORCH-13`).
+
+    Pure, the design's own sentence twice over: the breaker evaluates only **at or
+    after the window minimum** (`processed >= min_n` — a criterion that escalates 11 of
+    its first 10 processed has not met the window yet, and the minimum gates before the
+    rate does), and it trips when the criterion escalated for **more than** ``rate`` of
+    what it has processed — half of twenty is ten, and ten of twenty does not trip;
+    eleven does. Defaults are the module constants; the production path reads the env
+    knobs at call time and passes them explicitly (the env seam, `§4.6`).
+
+    The caller chooses what window `escalated`/`processed` count over — the enqueue
+    path feeds the criterion's first `min_n` submissions by completion tick, so the
+    comparison is "more than half of the first twenty", exactly the design's window.
+    """
+    if rate is None:
+        rate = ORCH_CRITERION_BREAKER_RATE
+    if min_n is None:
+        min_n = ORCH_CRITERION_BREAKER_MIN_N
+    if processed < min_n:
+        return False
+    return escalated / processed > rate
+
+
+def validate_escalation_plan(judge_count: int) -> int:
+    """Normalize one escalation's target panel depth (`FR-ORCH-10`, `TC-ORCH-20`).
+
+    The declared pure surface of the odd-panel rule: an odd depth is legal and stands
+    (3 judges stay 3, 5 stay 5), a **one-judge criterion escalates to three — never to
+    two**, and any even count raises `EvenEscalationPlanError` (a two-way tie broken by
+    rule is a coin flip presented as a judgement, R48). `escalation_plan` composes this
+    rule with the widening arithmetic; this function is the rule alone.
+    """
+    if judge_count % 2 == 0:
+        raise EvenEscalationPlanError(
+            f"an escalation plan for judge_count {judge_count} produces an even "
+            "panel — an even panel is a tie broken by rule, a coin flip presented "
+            "as a judgement (FR-ORCH-10, R48). One judge escalates to three, never "
+            "to two."
+        )
+    return 3 if judge_count == 1 else judge_count
+
+
+class AdmissionPlan(NamedTuple):
+    """One batch's escalation admission decision (`FR-ORCH-14`, `TC-ORCH-14`).
+
+    `admitted` and `provisional` are tuples of the candidates' keys; the provisional
+    half is ordered by expected value, highest first — the order admission resumes in
+    when the rate allows — so the remainder is **marked, not dropped**: scrutiny is
+    degraded visibly, never silently reduced (R26, `CT-ORCH-16`).
+    """
+
+    admitted: tuple
+    provisional: tuple
+
+
+def admit_escalations(
+    candidates: Sequence[tuple[Any, float]],
+    *,
+    escalated: int,
+    processed: int,
+    budget: float | None = None,
+) -> AdmissionPlan:
+    """One batch's admission against the run-wide escalation budget (`FR-ORCH-14`).
+
+    Pure: the caller reads the ledger's observed counts (the escalations and the
+    processed results it names) and hands the batch's ``(key, expected_value)``
+    candidates; this says which are admitted and which are marked provisional. The
+    declared reading, strict like the breaker's "more than half": the budget is
+    exceeded when ``escalated / processed`` is **strictly above** it — at-budget
+    behaves like below-budget (rationing must not start early; that is the "silently
+    reducing scrutiny" failure R26 names) — and above it **nothing further is
+    admitted**: every further escalation past a rate already above the budget deepens
+    the overrun FR-ORCH-14 forbids. The deferred remainder is the full pending set in
+    expected-value order, so admission resumes with the highest-value criteria when
+    the rate allows. Full accounting is the invariant: no candidate is dropped, none
+    duplicated, none appears on both sides. A window with nothing processed yet has no
+    observed rate to exceed — the batch is admitted.
+    """
+    if budget is None:
+        budget = ORCH_ESCALATION_BUDGET
+    ordered = tuple(
+        key
+        for key, _ in sorted(
+            candidates,
+            key=lambda pair: (-float(pair[1]), str(pair[0])),
+        )
+    )
+    if processed > 0 and escalated / processed > budget:
+        return AdmissionPlan((), ordered)
+    return AdmissionPlan(ordered, ())
 
 
 # --- the worker-facing report types -------------------------------------------------------------
@@ -730,6 +1324,109 @@ class SweeperReport:
     gates: dict[str, str] = field(default_factory=dict)
 
 
+# --- the escalation reports (CLAUDE.md seam 4) ---------------------------------------------------
+
+
+#: What `enqueue_escalation` decided. Both outcomes are named, never absorbed: the
+#: breaker's halt is the visible degradation `CT-ORCH-16` demands — a caller that
+#: receives `halted_by_breaker` knows scrutiny was reduced and why (the mark on the
+#: result is M-AGG's to write). The budget does not decide here: the enqueue writes
+#: the plan the verdict's transaction needs (`CT-ORCH-08`/`FR-ORCH-09`), and the
+#: budget rations DISPATCH — the claim pass defers pending escalation units through
+#: `admit_escalations`, the remainder provisional (`FR-ORCH-14`).
+DECISION_ADMITTED = "admitted"
+DECISION_HALTED_BY_BREAKER = "halted_by_breaker"
+
+#: The content-address space of escalation bookkeeping: request and breaker rows are
+#: keyed on a sha256 over what they are ABOUT — never on the wall clock or a uuid — so a
+#: retried enqueue or a second trip evaluation addresses the SAME row (`INSERT OR
+#: IGNORE` then makes the retry a no-op, `FR-ORCH-03`'s idempotence carried into the
+#: escalation path). `kind` namespaces the two id spaces; the module name prefixes the
+#: digest so these cannot collide with anything else keyed by bare sha256.
+_CONTENT_ID_KIND_REQUEST = "escalation_request"
+_CONTENT_ID_KIND_BREAKER = "criterion_breaker"
+
+
+def _content_id(kind: str, *parts: str) -> str:
+    """A content-addressed id for escalation bookkeeping: sha256 over the kind and the
+    row's identity parts, `\\x1f`-joined under the module prefix. Pure and total — the
+    same facts always address the same row."""
+    digest = hashlib.sha256()
+    digest.update(b"aeh.orch\x1f")
+    digest.update(kind.encode())
+    for part in parts:
+        digest.update(b"\x1f")
+        digest.update(part.encode())
+    return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class EscalationReport:
+    """What one escalation enqueue did (`FR-ORCH-09/10/13/14`, seam 4).
+
+    `decision` is the enqueue's outcome — `admitted` (units inserted), `queued` (over
+    budget, held in the persisted queue in expected-value order; the caller marks its
+    result provisional), or `halted_by_breaker` (the criterion breaker has tripped;
+    escalation halts for the criterion). The numbers beside the decision — the rate, the
+    budget, the queue depth, the judge counts — are what make the decision auditable:
+    a bare `status=refused` on top of an empty report is the silent-failure shape the
+    `IngestReport.gates` precedent exists to prevent.
+    """
+
+    run_id: str
+    submission_id: str
+    criterion_id: str
+    decision: str
+    prior_judges: tuple[str, ...]
+    added_judges: tuple[str, ...]
+    judge_count: int
+    units_inserted: int
+    expected_value: float | None
+    escalation_rate: float
+    escalation_budget: float
+    queue_depth: int
+    breaker_tripped: bool
+    gates: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BreakerTrip:
+    """One criterion-breaker trip, as the operator surface reads it (`FR-ORCH-13`).
+
+    The alert the design names ("any criterion tripping the circuit breaker") reads
+    these rows: which criterion, when, and the window arithmetic that tripped it —
+    `detail` carries the numbers so the alert answers "why", not just "what".
+    """
+
+    run_id: str
+    criterion_id: str
+    kind: str
+    tripped_at: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class EscalationBudgetState:
+    """The run-wide escalation ledger's state, as the operator reads it (`FR-ORCH-14`).
+
+    The rate-above-budget alert's source (`CT-ORCH-16`: both breakers degrade visibly):
+    the processed/escalated pair the rate is computed from, the budget it is compared
+    against, the queued remainder, and the criteria whose breakers have tripped. Read
+    from the ledger every time — no side-file counters (`FR-ORCH-02`).
+    """
+
+    run_id: str
+    processed_results: int
+    escalated_results: int
+    escalation_rate: float
+    budget: float
+    over_budget: bool
+    queued_requests: int
+    tripped_criteria: tuple[str, ...]
+    provisional_pairs: tuple[str, ...] = ()
+    gates: dict[str, str] = field(default_factory=dict)
+
+
 # --- the orchestrator ---------------------------------------------------------------------------
 
 
@@ -763,14 +1460,16 @@ class PackageCatalogProtocol(Protocol):
 
 class Orchestrator:
     """The ledger slice of §3.7's Orchestrator: create a run, enumerate its units,
-    resume, lease them under the two-sweep plan. Escalation and the circuit breakers
-    are #60's; the control-row lifecycle (start/pause status transitions) is #61's;
-    dispatch isolation and `ProgressReport` are #62's. `resume` takes no arguments from
-    its first commit.
+    resume, lease them under the two-sweep plan, and widen panels — escalation
+    (`enqueue_escalation`), the random arm, the criterion breakers and the run-wide
+    escalation budget are #60's. The control-row lifecycle (start/pause status
+    transitions) is #61's; dispatch isolation and `ProgressReport` are #62's. `resume`
+    takes no arguments from its first commit.
 
     The store is injected (`CLAUDE.md` seam 2). Nothing here opens a network connection
     or contacts a judge: enumeration is a pure function of the ledger, the package
-    catalog and the roster, over an injected store.
+    catalog and the roster, over an injected store, and every escalation decision is
+    pure policy over ledger state (`NFR-ORCH-04`).
     """
 
     def __init__(
@@ -931,8 +1630,22 @@ class Orchestrator:
         the deterministic mode names, so `kind='mcq'` IS `evaluation_mode='deterministic'`
         for this module and no `evaluation_mode` column is added. Extract and score units
         are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
-        deterministic unit is enumerated for every submission. Escalations and the random
-        arm remain later stories' (#60).
+        deterministic unit is enumerated for every submission.
+
+        **The random arm** (`FR-ORCH-11`, this story): after a judged pair's base score
+        units, the pair draws at `HARNESS_ORCH_RANDOM_ARM_RATE` (default 0.07) — the
+        seeded draw `random_arm_selection` runs over the pair's key with the run's own
+        seed (`run_random_arm_seed`, derived from the run id), so the byte-identical
+        enumeration guarantee (NFR-ORCH-05) survives: the same inputs draw the same
+        pairs every pass, and `INSERT OR IGNORE` keeps a drawn pair's units from
+        duplicating. A drawn pair gets the widened panel an escalation would build
+        (1→3, 3→5), marked `origin='random_arm'` — the origin is why the work exists,
+        deliberately NOT a `work_id` input, so a base panel and a random-arm panel for
+        the same (submission, criterion, judge) share rows rather than
+        double-scoring. The draw consults neither confidence, nor the escalation
+        budget, nor a breaker (`CT-ORCH-15`: suppression would make the routing
+        policy unfalsifiable). Explicit escalations stay with `enqueue_escalation`
+        below — enumeration does not create them.
 
         Commit batches of `HARNESS_ORCH_ENUM_COMMIT_BATCH` inserts keep one pass from
         holding a write lock across 23,000 inserts; the knob exists so a slower box can
@@ -1000,8 +1713,14 @@ class Orchestrator:
         )
 
         batch = _env_int(ENUM_COMMIT_BATCH_ENV, ENUM_COMMIT_BATCH_DEFAULT)
+        random_arm_rate = _env_float(
+            RANDOM_ARM_RATE_ENV, ORCH_RANDOM_ARM_RATE, low=0.0, high=1.0
+        )
+        run_seed = run_random_arm_seed(run_id)
 
         computed: list[tuple[str, dict[str, Any]]] = []
+        random_arm_pairs = 0
+        random_arm_units = 0
         for submission in submissions:
             for criterion in criteria:
                 kind = criterion["kind"]
@@ -1023,6 +1742,30 @@ class Orchestrator:
                     computed.append(self._unit(
                         row, STAGE_SCORE, submission, criterion, arm,
                     ))
+                # The random arm (`FR-ORCH-11`, `CT-ORCH-15`): the pair draws at the
+                # configured rate, independent of confidence — the draw takes the
+                # pair's identities and the rate and nothing else — and a drawn pair
+                # gets the widened panel an escalation would build, marked
+                # `origin = 'random_arm'` so the sample stays statistically separable
+                # (`M-STATS`/`M-REVIEW` read the mark). **Nothing suppresses it**: the
+                # draw runs before any escalation exists to gate and consults neither
+                # the budget nor a breaker — the arm measures the routing policy
+                # itself (`FR-STATS-08`), and a budget that could silence it would
+                # make the policy unfalsifiable. It spends compute, never teacher
+                # minutes, and produces no review item (`FR-REVIEW-07`).
+                if random_arm_selection(
+                    (submission["submission_id"], criterion["criterion_id"]),
+                    run_seed,
+                    random_arm_rate,
+                ):
+                    widened = escalation_plan(arms[:depth], panel_arms=arms)
+                    for judge in widened[depth:]:
+                        computed.append(self._unit(
+                            row, STAGE_SCORE, submission, criterion, judge,
+                            origin="random_arm",
+                        ))
+                    random_arm_pairs += 1
+                    random_arm_units += len(widened) - depth
 
         work_ids = sorted(work_id for work_id, _ in computed)
         existing = {
@@ -1072,6 +1815,15 @@ class Orchestrator:
         gates["ledger_counts"] = ", ".join(
             f"{status}={by_status[status]}" for status in sorted(by_status)
         ) or "ledger empty for this run"
+        # `CT-ORCH-15`'s observability: the arm's sample size is visible next to the
+        # enumeration's status, and the gate names its independence — a reader of the
+        # report can tell drawn units from suppressed ones without re-deriving the
+        # draw.
+        gates["random_arm"] = (
+            f"{random_arm_pairs} pair(s) drawn at rate {random_arm_rate} "
+            f"({random_arm_units} unit(s), origin='random_arm'); independent of "
+            "confidence — never suppressed by the escalation budget or a breaker"
+        )
 
         return EnumerationReport(
             run_id=run_id,
@@ -1246,6 +1998,12 @@ class Orchestrator:
           returns a unit this cache has already popped to `pending`; the run's entries
           are dropped so the next pass re-reads — a requeue the cached order cannot
           see is a unit lost to the run (`TC-ORCH-18`).
+        - **A budget deferral** (`FR-ORCH-14`) — an escalation unit the dispatch gate
+          deferred was skipped mid-pass; the entry is dropped so the next pass
+          re-derives with the current observed rate. Unlike the Sweep 2 gate, this
+          gate's answer can move both ways (completions raise the rate, growth lowers
+          it), so a deferral the cached order could not revisit would be a deferral
+          that never lifts — the provisional remainder must stay recoverable.
         - **Re-enumeration** — `enumerate_units` drops the run's entries, because it
           may add rows this cache has never seen.
 
@@ -1290,8 +2048,33 @@ class Orchestrator:
                         # pass — caching it would starve the newly ready.
                         continue
                     self._order_cache[cache_key] = ordered
+                # The budget's dispatch gate (`FR-ORCH-14`): read once per run per
+                # pass — the observed rate moves only on completions, which happen
+                # outside claim passes, so one admission decision covers the pass.
+                escalation_admission: frozenset | None = None
                 while ordered and len(claimed) < n:
                     row = ordered.popleft()
+                    if (
+                        stage == STAGE_SCORE
+                        and row["origin"] == "escalation"
+                    ):
+                        if escalation_admission is None:
+                            escalation_admission = (
+                                self._escalation_dispatch_admission(
+                                    cohort, run_row["run_id"]
+                                )
+                            )
+                        if (row["submission_id"], row["criterion_id"]) not in (
+                            escalation_admission
+                        ):
+                            # Above budget, this pair's escalation is part of the
+                            # provisional remainder: the unit stays pending — never
+                            # claimed, never dropped — and the cache entry goes so
+                            # the NEXT pass re-derives with the current rate. A
+                            # deferral the cached order could not revisit would be
+                            # a deferral that never lifts.
+                            self._order_cache.pop(cache_key, None)
+                            continue
                     issued = lease_clock_obj.issue(ttl)
                     expires_at = self._wall_expiry(lease_clock_obj.clock, ttl)
                     with cohort.transaction() as tx:
@@ -1609,7 +2392,11 @@ class Orchestrator:
                 "operator re-queues it; a result does not arrive underneath it."
             )
         with cohort.transaction() as tx:
-            tx.execute(ORCH_STATEMENTS["mark_done"], work_id=work_id)
+            tx.execute(
+                ORCH_STATEMENTS["mark_done"],
+                work_id=work_id,
+                done_ticks=self._lease_clock().ticks(),
+            )
             won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
         if not won:
             raise WorkLedgerError(
@@ -1678,6 +2465,546 @@ class Orchestrator:
         # (`TC-ORCH-18`).
         self._invalidate_order_cache(row["run_id"])
 
+    # -- escalation, the breakers and the budget (FR-ORCH-09/10/13/14, FR-ORCH-26) --------------
+
+    def enqueue_escalation(
+        self,
+        tx: Any,
+        criterion_score_key: Sequence[str],
+        judges: Sequence[str] | None = None,
+        *,
+        expected_value: float | None = None,
+    ) -> tuple[EscalationReport, ...]:
+        """Widen one (submission, criterion) panel — the escalation path M-AGG walks
+        when a verdict lands outside its band (`FR-ORCH-09/10`, §7.1), in the design's
+        own form (`CT-ORCH-08`): **the caller's transaction first**, the criterion
+        score key second — the ``(submission_id, criterion_id)`` pair, the way
+        `criterion_score` names its rows — and the judges to ADD third. The shape is
+        the requirement, not a convenience: a run's score result for a criterion and
+        the escalation that widens that criterion's panel are one logical step, *both
+        present or both absent after any crash* is `CT-STORE-03`'s atomicity clause
+        read across the boundary — so the widened units are written into the
+        transaction the CALLER opened and commits (or aborts) with its verdict. This
+        method never commits and never rolls back the transaction it is handed, and it
+        never opens one of its own: a caller with no transaction of its own wraps the
+        call in `cohort.transaction()` — the same discipline every other ledger writer
+        follows.
+
+        **The key is run-agnostic** (`CT-ORCH-08` pins the shape, not the run): the
+        runs whose ledger holds the pair's score units are resolved from the ledger
+        itself (`select_pair_runs`) and each one's panel widens — one report per run.
+        A key no run holds a panel for raises `EscalationPlanError` before anything is
+        written.
+
+        **The decision, in order** (each stage reported in `gates` — seam 4):
+
+        1. *Plan.* The pair's prior judges are the score units the ledger enumerates
+           for it — any origin, any status: the panel IS the enumerated units, not the
+           verdicts landed so far. `escalation_plan` widens 1→3, 3→5 (never to two,
+           `FR-ORCH-10`; `validate_escalation_plan` is the rule's pure surface) —
+           with caller-named judges exactly, or the ladder's next two arms when
+           `judges` is None. A plan that is not a widening, produces an even
+           `judge_count`, or names a judge twice raises before anything is written
+           (`EvenEscalationPlanError` is the subclass `TC-ORCH-20` asserts).
+        2. *Idempotence.* A pair already carrying escalation-origin units is a no-op
+           (`admitted`, zero units): the widened panel exists, whatever path built it
+           — including a random-arm draw, whose units are the SAME rows this path
+           would insert (origin is not a `work_id` input, `CT-ORCH-15`), so a retried
+           enqueue inserts nothing and reports honestly.
+        3. *Criterion breaker* (`FR-ORCH-13`). A latched breaker for the criterion
+           halts immediately (`halted_by_breaker`); otherwise the first
+           `ORCH_CRITERION_BREAKER_MIN_N` submissions processed for the criterion —
+           by completion tick, the ledger's honest ordering — are checked with
+           `criterion_breaker_tripped`, and a trip latches a content-addressed
+           breaker row (INSERT OR IGNORE: one trip, one event) whose detail names the
+           mark the design requires — `un-gradeable_by_panel`, remainder single-judge
+           provisional. The mark on the criterion's RESULT is `M-AGG`'s artifact to
+           write; the ledger's breaker row and this report's decision are what tell
+           it to. Random-arm units are never counted here (origin='escalation'
+           only) — the breaker gates the routing policy, not its control sample.
+        4. *The units.* The escalation's units are inserted **unconditionally** — the
+           budget rations dispatch, not the plan write. The atomicity clause leaves
+           no choice: a budget that refused the insert would put the escalation
+           OUTSIDE the verdict's transaction, and a crash between the two would leave
+           exactly the partial write `CT-STORE-03` forbids — a verdict recorded, its
+           panel never widened. The caller's `expected_value` is recorded on the
+           request row (content-addressed, INSERT OR IGNORE) as the ranking key the
+           dispatch-time admission consumes.
+        5. *The budget, at dispatch* (`FR-ORCH-14`). The claim pass admits pending
+           escalation units through `admit_escalations` only while the run's observed
+           escalation rate is at or under `ORCH_ESCALATION_BUDGET`; above it the
+           units stay pending — the remainder `FR-ORCH-14` marks provisional — and
+           dispatch resumes in expected-value order when growth returns headroom.
+           `escalation_budget_state` is the operator surface that shows the split;
+           nothing here reads the budget, because the decision is dispatch's, not the
+           plan write's.
+
+        The inserted units invalidate this run's dispatch-order cache (the claim pass
+        must see them). Pure policy — `escalation_plan`, `validate_escalation_plan`,
+        `criterion_breaker_tripped`, `admit_escalations` — does every decision here;
+        the method only reads the ledger and writes rows, and never contacts a judge
+        (`NFR-ORCH-04`: the escalation policy is evaluable with no model call).
+        """
+        if len(tuple(criterion_score_key)) != 2:
+            raise EscalationPlanError(
+                f"criterion_score_key must be the (submission_id, criterion_id) pair, "
+                f"got {tuple(criterion_score_key)!r} — the key names the escalation's "
+                "target the way the criterion_score table does (CT-ORCH-08)."
+            )
+        submission_id, criterion_id = (str(part) for part in criterion_score_key)
+        pair_runs = [
+            r["run_id"] for r in tx.execute(
+                ORCH_STATEMENTS["select_pair_runs"],
+                submission_id=submission_id,
+                criterion_id=criterion_id,
+            )
+        ]
+        if not pair_runs:
+            raise EscalationPlanError(
+                f"no run's ledger holds a score panel for "
+                f"({submission_id!r}, {criterion_id!r}): an escalation widens a panel "
+                "that exists — enumerate the run first (a criterion with no units has "
+                "no band to widen)."
+            )
+        return tuple(
+            self._enqueue_escalation_locked(
+                tx,
+                self._run_row(run_id),
+                submission_id=submission_id,
+                criterion_id=criterion_id,
+                judges=judges,
+                expected_value=expected_value,
+            )
+            for run_id in pair_runs
+        )
+
+    def _enqueue_escalation_locked(
+        self,
+        tx: Any,
+        row: Any,
+        *,
+        submission_id: str,
+        criterion_id: str,
+        judges: Sequence[str] | None,
+        expected_value: float | None,
+    ) -> EscalationReport:
+        """The enqueue's decision, run inside a transaction the caller sees.
+
+        Every read and write goes through `tx` — the caller's (`CT-ORCH-08`) or this
+        method's own — so the decision is one consistent step against the ledger: the
+        budget's counts, the breaker's window and the request row see the same state,
+        and `FR-ORCH-09`'s same-transaction guarantee is a parameter, not a promise.
+        """
+        run_id = row["run_id"]
+        arms = self._panel_arms(row["panel_config"])
+        budget = _env_float(
+            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        )
+        breaker_rate = _env_float(
+            CRITERION_BREAKER_RATE_ENV, ORCH_CRITERION_BREAKER_RATE, low=0.0, high=1.0
+        )
+        breaker_min_n = _env_int(CRITERION_BREAKER_MIN_N_ENV, ORCH_CRITERION_BREAKER_MIN_N)
+        gates: dict[str, str] = {}
+
+        # 1. The pair's prior panel — the score units the ledger enumerates for it,
+        #    any origin, any status. The plan is validated BEFORE anything else: a
+        #    caller asking for a non-widening or even-count escalation has broken the
+        #    contract, and the refusal must be loud whatever the routing state is.
+        prior = tuple(
+            r["judge_id"] for r in tx.execute(
+                ORCH_STATEMENTS["select_pair_score_judges"],
+                run_id=run_id,
+                submission_id=submission_id,
+                criterion_id=criterion_id,
+            )
+        )
+        named = None if judges is None else tuple(_judge_id_of(j) for j in judges)
+        target = escalation_plan(prior, add_judges=named, panel_arms=arms)
+        additions = target[len(prior):]
+        gates["plan"] = (
+            f"{len(prior)} -> {len(target)} judges (+{', '.join(additions)})"
+        )
+
+        # 2. Idempotence: the pair is already escalated — a no-op that reports the
+        #    panel it finds. The widened panel exists; that is what `admitted` means.
+        if int(tx.execute(
+            ORCH_STATEMENTS["select_pair_escalated"],
+            run_id=run_id,
+            submission_id=submission_id,
+            criterion_id=criterion_id,
+        )[0]["n"]):
+            gates["idempotence"] = (
+                "pair already carries escalation-origin units; widened panel stands"
+            )
+            processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+            return self._escalation_report(
+                tx, row, submission_id, criterion_id, DECISION_ADMITTED,
+                prior_judges=prior, added_judges=(), judge_count=len(prior),
+                units_inserted=0, expected_value=expected_value,
+                escalation_rate=rate, processed_results=processed,
+                escalated_results=escalated, budget=budget,
+                breaker_tripped=False, gates=gates,
+            )
+
+        # 3. The criterion breaker (`FR-ORCH-13`): latch first, then the window.
+        latch = tx.execute(
+            ORCH_STATEMENTS["select_breaker"], run_id=run_id, criterion_id=criterion_id
+        )
+        if latch:
+            gates["breaker"] = f"latched {latch[0]['tripped_at']}: {latch[0]['detail']}"
+            processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+            return self._escalation_report(
+                tx, row, submission_id, criterion_id, DECISION_HALTED_BY_BREAKER,
+                prior_judges=prior, added_judges=(), judge_count=len(prior),
+                units_inserted=0, expected_value=expected_value,
+                escalation_rate=rate, processed_results=processed,
+                escalated_results=escalated, budget=budget,
+                breaker_tripped=True, gates=gates,
+            )
+        window = tx.execute(
+            ORCH_STATEMENTS["select_criterion_window"],
+            run_id=run_id, criterion_id=criterion_id, n=breaker_min_n,
+        )
+        window_ids = {r["submission_id"] for r in window}
+        escalated_ids = {
+            r["submission_id"] for r in tx.execute(
+                ORCH_STATEMENTS["select_criterion_escalated"],
+                run_id=run_id, criterion_id=criterion_id,
+            )
+        }
+        escalated_in_window = len(window_ids & escalated_ids)
+        if criterion_breaker_tripped(
+            escalated_in_window,
+            len(window_ids),
+            rate=breaker_rate,
+            min_n=breaker_min_n,
+        ):
+            detail = (
+                f"{escalated_in_window}/{len(window_ids)} of the first "
+                f"{breaker_min_n} submissions processed escalated, above "
+                f"{breaker_rate:.0%}: escalation halts for {criterion_id} — "
+                "un-gradeable_by_panel, remainder single-judge provisional"
+            )
+            tx.execute(
+                ORCH_STATEMENTS["insert_breaker"],
+                breaker_id=_content_id(
+                    _CONTENT_ID_KIND_BREAKER, run_id, criterion_id
+                ),
+                run_id=run_id,
+                criterion_id=criterion_id,
+                tripped_at=_now(),
+                detail=detail,
+            )
+            gates["breaker"] = f"TRIPPED and latched: {detail}"
+            processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+            return self._escalation_report(
+                tx, row, submission_id, criterion_id, DECISION_HALTED_BY_BREAKER,
+                prior_judges=prior, added_judges=(), judge_count=len(prior),
+                units_inserted=0, expected_value=expected_value,
+                escalation_rate=rate, processed_results=processed,
+                escalated_results=escalated, budget=budget,
+                breaker_tripped=True, gates=gates,
+            )
+        gates["breaker"] = (
+            f"not tripped ({escalated_in_window}/{len(window_ids)} in the window "
+            f"of {breaker_min_n})"
+        )
+
+        # 4. The request row (the record the dispatch-time admission reads its EV
+        #    from) and the units — written UNCONDITIONALLY: the budget rations
+        #    dispatch, not the plan write (`FR-ORCH-14` at the claim pass, not here;
+        #    see the method docstring's step 4). Content-addressed: a retried
+        #    enqueue lands on the same rows and changes nothing.
+        request_id = _content_id(
+            _CONTENT_ID_KIND_REQUEST, run_id, submission_id, criterion_id
+        )
+        detail = json.dumps(
+            {"judges": list(named) if named is not None else None},
+            sort_keys=True,
+        )
+        tx.execute(
+            ORCH_STATEMENTS["insert_escalation_request"],
+            request_id=request_id,
+            run_id=run_id,
+            submission_id=submission_id,
+            criterion_id=criterion_id,
+            expected_value=expected_value,
+            requested_at=_now(),
+            detail=detail,
+        )
+        gates["request_row"] = (
+            f"{request_id[:12]}… recorded at {expected_value!r} expected value"
+        )
+        inserted = self._insert_escalation_units(
+            tx, row, submission_id, criterion_id, additions
+        )
+        tx.execute(
+            ORCH_STATEMENTS["admit_request"],
+            request_id=request_id,
+            admitted_at=_now(),
+            detail=detail,
+        )
+        gates["admission"] = (
+            f"units written: {len(prior)} -> {len(target)} judges, {inserted} "
+            "unit(s) inserted into the caller's transaction; dispatch admits them "
+            "while the observed rate is at or under the budget"
+        )
+        if inserted:
+            self._invalidate_order_cache(run_id)
+
+        # 5. The observed rate, reported (the budget's numbers beside the decision —
+        #    the decision itself is the claim pass's, through `admit_escalations`).
+        processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+        gates["budget"] = (
+            f"observed rate {rate:.4f} ({escalated}/{processed} processed pairs "
+            f"escalated) vs budget {budget}: dispatch admits pending escalation "
+            "units while at or under, defers the remainder provisional above"
+        )
+        queue_depth = int(tx.execute(
+            ORCH_STATEMENTS["select_queue_depth"], run_id=run_id
+        )[0]["n"])
+        gates["queue"] = f"{queue_depth} request(s) without written units"
+        return self._escalation_report(
+            tx, row, submission_id, criterion_id,
+            DECISION_ADMITTED,
+            prior_judges=prior,
+            added_judges=additions,
+            judge_count=len(target),
+            units_inserted=inserted,
+            expected_value=expected_value,
+            escalation_rate=rate,
+            processed_results=processed,
+            escalated_results=escalated,
+            budget=budget,
+            breaker_tripped=False,
+            gates=gates,
+        )
+
+    def _insert_escalation_units(
+        self,
+        tx: Any,
+        row: Any,
+        submission_id: str,
+        criterion_id: str,
+        additions: Sequence[str],
+    ) -> int:
+        """One pair's widening, inserted `origin='escalation'` (`FR-ORCH-09`).
+
+        The additions are the plan's — derived by the caller from the pair's CURRENT
+        panel in this same transaction, with the caller's named judges when it named
+        any, so what was validated and reported is exactly what lands. Units are
+        `INSERT OR IGNORE`d on the content address enumeration computes, so a pair
+        widened by another path — the random arm draws the same (run, submission,
+        criterion) — inserts nothing rather than scoring one judge twice.
+        """
+        inserted = 0
+        for judge in additions:
+            _, params = self._unit(
+                row,
+                STAGE_SCORE,
+                {"submission_id": submission_id},
+                {"criterion_id": criterion_id},
+                judge,
+                origin="escalation",
+            )
+            tx.execute(ORCH_STATEMENTS["insert_work_unit"], **params)
+            # `OR IGNORE` cannot report what it did (the enumerate pass's note): the
+            # count comes from the ledger, read in the same transaction.
+            inserted += int(
+                tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"]
+            )
+        return inserted
+
+    def _escalation_dispatch_admission(self, cohort: Any, run_id: str) -> frozenset:
+        """The pairs whose pending escalation units may dispatch this pass
+        (`FR-ORCH-14`).
+
+        `admit_escalations` IS the decision — the claim pass is the production caller
+        the pure policy owes its honesty to: the candidates are the run's pending
+        escalation pairs with their recorded expected values (`FR-ORCH-14` admits in
+        expected-value order), the counts are the ledger's observed (done-based) pair
+        aggregates, the budget the env knob read at call time. The result is stable
+        within a claim pass — completions happen outside it — so the pass reads it
+        once per run and the gate itself is a set lookup per candidate. An
+        over-budget pass defers every pending escalation pair (the provisional
+        remainder `FR-ORCH-14` marks, EV-ordered in `escalation_budget_state`'s
+        surface); the deferral lifts when growth returns headroom, and the cache drop
+        at the defer site is what makes the next pass re-derive rather than serve a
+        stale order.
+        """
+        budget = _env_float(
+            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        )
+        processed, escalated, _rate = self._escalation_rate(cohort.query, run_id)
+        candidates = [
+            ((r["submission_id"], r["criterion_id"]), r["expected_value"])
+            for r in cohort.query(
+                ORCH_STATEMENTS["select_pending_escalation_pairs"], run_id=run_id
+            )
+        ]
+        plan = admit_escalations(
+            candidates, escalated=escalated, processed=processed, budget=budget
+        )
+        return frozenset(plan.admitted)
+
+    def _escalation_rate(
+        self, read: Callable[..., Sequence[Any]], run_id: str
+    ) -> tuple[int, int, float]:
+        """(processed pairs, escalated pairs, rate) for one run — the budget's
+        numerator and denominator are always the ledger's own aggregates
+        (`FR-ORCH-14`, `FR-ORCH-02`).
+
+        `read` is a bound reader — a transaction's `execute` (reads are legal inside a
+        transaction; the read-modify-write every ledger transition is) or a cohort
+        handle's `query` for the read-only surfaces. One helper, both doors, so the
+        rate an enqueue decides on and the rate the operator surface shows are computed
+        by the same lines.
+        """
+        processed = int(read(
+            ORCH_STATEMENTS["select_processed_results"], run_id=run_id
+        )[0]["n"])
+        escalated = int(read(
+            ORCH_STATEMENTS["select_escalated_results"], run_id=run_id
+        )[0]["n"])
+        rate = (escalated / processed) if processed else 0.0
+        return processed, escalated, rate
+
+    def _escalation_report(
+        self,
+        tx: Any,
+        row: Any,
+        submission_id: str,
+        criterion_id: str,
+        decision: str,
+        *,
+        prior_judges: tuple[str, ...],
+        added_judges: tuple[str, ...],
+        judge_count: int,
+        units_inserted: int,
+        expected_value: float | None,
+        escalation_rate: float,
+        processed_results: int,
+        escalated_results: int,
+        budget: float,
+        breaker_tripped: bool,
+        gates: dict[str, str],
+    ) -> EscalationReport:
+        """Assemble the report with the queue depth read in the same transaction."""
+        queue_depth = int(tx.execute(
+            ORCH_STATEMENTS["select_queue_depth"], run_id=row["run_id"]
+        )[0]["n"])
+        return EscalationReport(
+            run_id=row["run_id"],
+            submission_id=submission_id,
+            criterion_id=criterion_id,
+            decision=decision,
+            prior_judges=prior_judges,
+            added_judges=added_judges,
+            judge_count=judge_count,
+            units_inserted=units_inserted,
+            expected_value=expected_value,
+            escalation_rate=escalation_rate,
+            escalation_budget=budget,
+            queue_depth=queue_depth,
+            breaker_tripped=breaker_tripped,
+            gates=gates,
+        )
+
+    def escalation_budget_state(self, run_id: str) -> EscalationBudgetState:
+        """The run-wide escalation ledger's state — the operator surface the
+        rate-above-budget alert reads (`FR-ORCH-14`, `CT-ORCH-16`).
+
+        Every number is read from the ledger at call time: the rate is recomputed, the
+        queue depth counted, the tripped criteria listed — no cached counters, because
+        `FR-ORCH-02` allows no bookkeeping beyond the ledger and an alert computed from
+        stale counters is a silent degradation, the exact shape `CT-ORCH-16` forbids.
+        """
+        row = self._run_row(run_id)
+        cohort = self._store.cohort(row["cohort_id"])
+        budget = _env_float(
+            ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+        )
+        processed, escalated, rate = self._escalation_rate(cohort.query, run_id)
+        queue_depth = int(cohort.query(
+            ORCH_STATEMENTS["select_queue_depth"], run_id=run_id
+        )[0]["n"])
+        tripped = tuple(
+            r["criterion_id"] for r in cohort.query(
+                ORCH_STATEMENTS["select_run_breakers"], run_id=run_id
+            )
+        )
+        over = rate > budget
+        # The admission split, computed by the SAME lines the claim pass decides with
+        # (`admit_escalations` — one policy, both doors): the pending escalation
+        # pairs with their recorded expected values, so the provisional remainder is
+        # marked here exactly as the gate defers it there.
+        pending_pairs = cohort.query(
+            ORCH_STATEMENTS["select_pending_escalation_pairs"], run_id=run_id
+        )
+        plan = admit_escalations(
+            [
+                ((r["submission_id"], r["criterion_id"]), r["expected_value"])
+                for r in pending_pairs
+            ],
+            escalated=escalated,
+            processed=processed,
+            budget=budget,
+        )
+        provisional = tuple(
+            f"{pair[0]}/{pair[1]}" for pair in plan.provisional
+        )
+        return EscalationBudgetState(
+            run_id=run_id,
+            processed_results=processed,
+            escalated_results=escalated,
+            escalation_rate=rate,
+            budget=budget,
+            over_budget=over,
+            queued_requests=queue_depth,
+            tripped_criteria=tripped,
+            provisional_pairs=provisional,
+            gates={
+                "rate": (
+                    f"{escalated}/{processed} processed pairs escalated "
+                    f"({rate:.4f}) vs budget {budget} — "
+                    + ("OVER: dispatch defers pending escalation pairs, remainder "
+                       "provisional until growth returns headroom"
+                       if over else "within budget")
+                ),
+                "provisional": (
+                    f"{len(provisional)} pending escalation pair(s) marked "
+                    f"provisional (EV order): {', '.join(provisional)}"
+                    if provisional
+                    else "no pending escalation pairs deferred"
+                ),
+                "queue": f"{queue_depth} request(s) without written units",
+                "breakers": (
+                    f"{len(tripped)} criterion breaker(s) latched: "
+                    f"{', '.join(tripped)}" if tripped else "none latched"
+                ),
+            },
+        )
+
+    def tripped_breakers(self, run_id: str) -> tuple[BreakerTrip, ...]:
+        """The run's latched circuit breakers, criterion-ordered (`FR-ORCH-13`) — the
+        alert surface ("any criterion tripping the circuit breaker") reads these rows;
+        each carries the window arithmetic that tripped it, so the alert answers
+        'why', not just 'what'."""
+        row = self._run_row(run_id)
+        cohort = self._store.cohort(row["cohort_id"])
+        return tuple(
+            BreakerTrip(
+                run_id=run_id,
+                criterion_id=r["criterion_id"],
+                kind=r["kind"],
+                tripped_at=r["tripped_at"],
+                detail=r["detail"],
+            )
+            for r in cohort.query(
+                ORCH_STATEMENTS["select_run_breakers"], run_id=run_id
+            )
+        )
+
     # -- internals ------------------------------------------------------------------------------
 
     def _unit(
@@ -1687,12 +3014,22 @@ class Orchestrator:
         submission: Any,
         criterion: Any,
         judge_id: str | None,
+        origin: str = "base",
     ) -> tuple[str, dict[str, Any]]:
         """One computed unit: its `work_id` and its insert parameters.
 
         Kept beside `compute_work_id`'s call so the nine inputs' provenance is one
         glance: run and package from the run row, prompt template version from the
         frozen config, extractor version from the module constant, judge from the arm.
+
+        `origin` names the unit's provenance — `'base'`, `'escalation'` or
+        `'random_arm'` (`FR-ORCH-09/11`). It is deliberately **not** a `work_id` input:
+        the id addresses the work (run, stage, submission, criterion, judge, versions,
+        panel), and the origin says why that work exists. A base unit and a random-arm
+        unit for the same (submission, criterion, judge) are the SAME work — one row,
+        one lease, one verdict — and the origin column keeps the base row's provenance
+        while the arm's extra judges carry the arm's mark. Consumers requiring the
+        separation (`CT-ORCH-15`) read the arm's own units, never re-derive them.
         """
         work_id = compute_work_id(
             run_id=row["run_id"],
@@ -1712,7 +3049,7 @@ class Orchestrator:
             "run_id": row["run_id"],
             "criterion_id": criterion["criterion_id"],
             "judge_id": judge_id,
-            "origin": "base",
+            "origin": origin,
         }
         return work_id, params
 

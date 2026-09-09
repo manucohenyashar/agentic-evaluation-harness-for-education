@@ -301,6 +301,13 @@ def test_res_12_persistent_failures_quarantine_and_write_no_band(tmp_data_dir):
             "status",        # 'quarantined' vs 'done' — both final, both named
             "attempts",      # 3 vs 0
             "last_error",    # retained vs never set
+            # #60's completion-order tick: the healthy sibling completed (its row
+            # carries the lease-clock tick `mark_done` wrote); the quarantined unit
+            # never completed, so its tick is NULL. The difference is the two units'
+            # different HISTORIES — completion vs quarantine — not a value quarantine
+            # wrote; quarantine's write set is unchanged (status, attempts,
+            # last_error, lease columns).
+            "done_ticks",    # completion tick vs never completed
         }
         unexpected = [
             column

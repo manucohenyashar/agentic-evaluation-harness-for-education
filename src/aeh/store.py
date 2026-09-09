@@ -1381,7 +1381,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
-    "evidence", "work_unit", "run", "assessment_match_proposal", "v4_cohort_breaker",
+    "evidence", "work_unit", "escalation_request", "circuit_breaker", "run",
+    "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
     "roster", "cohort",
 )
@@ -1393,6 +1394,12 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "verdict": Statement("DELETE FROM verdict"),
     "evidence": Statement("DELETE FROM evidence"),
     "work_unit": Statement("DELETE FROM work_unit"),
+    # #60's escalation bookkeeping: the queue's request rows and the breaker latch
+    # reference the run (and name submissions and criteria) and are run state — they
+    # die with the cohort like the run they hang from; a name the registry lacks
+    # would leave the escalation's audit trail behind (FR-STORE-07).
+    "escalation_request": Statement("DELETE FROM escalation_request"),
+    "circuit_breaker": Statement("DELETE FROM circuit_breaker"),
     # #57's ledger tables: the run registry is run state (it names the cohort, the package
     # version and the frozen configuration) and dies with the cohort like every other Tier
     # C/R row — a name the registry lacks would leave a run's provenance behind.
@@ -1446,6 +1453,12 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     "verdict": Statement("SELECT * FROM verdict"),
     "evidence": Statement("SELECT * FROM evidence"),
     "work_unit": Statement("SELECT * FROM work_unit"),
+    # #60's escalation bookkeeping: neither table carries blob references (request
+    # and breaker rows name ids, values and policy detail, never student bytes), but
+    # the scan registry covers every swept name so a column a future migration adds
+    # is read by the same walk without an edit here.
+    "escalation_request": Statement("SELECT * FROM escalation_request"),
+    "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
     "run": Statement("SELECT * FROM run"),
     "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
