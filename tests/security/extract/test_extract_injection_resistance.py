@@ -67,7 +67,7 @@ import pytest
 
 import aeh.extract  # noqa: F401 -- this file seeds the cohort ledger BEFORE its first
 # require() resolves an extract symbol; importing the owning module first puts the
-# ledger at cohort schema v10 (with the evidence payload columns) no matter which
+# ledger at cohort schema v11 (with the evidence payload columns) no matter which
 # test file pytest collected before this one.
 from aeh.conf import CohortRef, resolve_run_config
 from aeh.ingest import UNTRUSTED_CLOSE, UNTRUSTED_OPEN

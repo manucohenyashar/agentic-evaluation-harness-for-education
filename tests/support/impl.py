@@ -1323,34 +1323,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `TS26_EXTRACT_SYMBOLS` conjunction), so every conjunction below is that base plus
     # the consumer symbols — built from the vocabulary and the module constants, like
     # the entries above, so the registry cannot name a symbol the tests stopped using.
-    "#68 extraction contract suite (TS-65)": (
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS26_EXTRACT_SYMBOLS),
-        (
-            "tests/contract/extract/test_ct_extract_c01_span_offsets.py",
-            "tests/contract/extract/test_ct_extract_c02_no_judgment_in_schema.py",
-            "tests/contract/extract/test_ct_extract_c04_dependency_request.py",
-            "tests/contract/extract/test_ct_extract_c05_resolved_build_identity.py",
-            "tests/contract/extract/test_ct_extract_c06_submission_last_prompt_order.py",
-            "tests/contract/extract/test_ct_extract_c11_call_count_invariant.py",
-            "tests/contract/extract/test_ct_extract_c12_versions_in_work_id.py",
-            "tests/contract/extract/test_ct_extract_c13_tier_r_purge_and_twin_differential.py",
-            "tests/contract/extract/test_ct_extract_c03_no_judge_dimension.py"
-            "::test_tc_extract_c03_one_row_for_the_triple_no_judge_dimension_in_the_schema",
-            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
-            "::test_tc_extract_c07_no_extract_unit_exists_for_a_deterministic_criterion",
-            "tests/contract/extract/test_ct_extract_c07_no_self_verification.py"
-            "::test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_three_failures_quarantine_and_never_write_an_evidence_row",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_exactly_two_failures_retry_rather_than_quarantine",
-            "tests/contract/extract/test_quarantine_not_empty_row.py"
-            "::test_tc_extract_c08_the_2am_empty_row_write_is_silent_but_turns_this_case_red",
-            "tests/contract/extract/test_ct_extract_c09_described_graphic_marker.py"
-            "::test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_row_keeps_it",
-        ),
-    ),
+    # The "#68 extraction contract suite (TS-65)" entry left when #68 landed
+    # `aeh.extract`: the rung-2 contract cases (C01-C09, C11-C13, C08) resolved only
+    # the `TS26_EXTRACT_SYMBOLS` conjunction, so their markers came off and they
+    # rejoin TEST_CMD. The rung-3 nodes below stay keyed on their consumers.
     "#68 extraction contract metrics (TS-65)": (
         # C14, the whole file: the suite's names plus #68's own `extraction_metrics`
         # emitter — the one case that reads the metrics, hence its own conjunction, so

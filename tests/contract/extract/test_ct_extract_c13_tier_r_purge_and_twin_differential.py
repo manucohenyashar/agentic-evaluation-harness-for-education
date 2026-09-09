@@ -75,6 +75,7 @@ from tests.contract.extract._doubles import (
     CountingProvider,
     World,
     build_markdown,
+    byte_span,
     evidence_rows,
     make_world,
     payload_bytes,
@@ -83,26 +84,31 @@ from tests.contract.extract._doubles import (
     seed_document,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _SENTINEL = "the buffer was bounded after the fix"
-_MARKDOWN = build_markdown(_SENTINEL.capitalize() + ".\n")
+_MARKDOWN = build_markdown(_SENTINEL + ".\n")
+# The span is located by BYTE offset over the canonical artifact (the `byte_span`
+# helper), not a hard-coded start — the parse derives `text` from what the offsets
+# address, so a stale offset would persist mid-sentence bytes.
 _SPANS = [
     {
-        "start": 41,
-        "end": 41 + len(_SENTINEL) + 1,
-        "text": _SENTINEL.capitalize() + ".",
+        **byte_span(_MARKDOWN, _SENTINEL + "."),
         "region_kind": "transcribed_text",
     }
 ]
 _CRITERIA = [{"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"}]
 
 #: The shared evidence sentence both twins carry BEFORE the payload line — the
-#: selection the fixture records for each twin.
-_TWIN_SENTENCE = (
-    "The crate has weight down, the normal force out of the ramp, and friction "
-    "up the slope."
-)
+#: selection the fixture records for each twin. One pair per payload kind, and the
+#: landed corpus's pairs are NOT one shared text: the sentence is per-pair, the
+#: first non-empty line the benign twin carries that its injected twin carries too.
+def _shared_sentence(benign: Any, injected: Any) -> str:
+    for line in benign.text().splitlines():
+        candidate = line.strip()
+        if candidate and candidate in injected.text():
+            return candidate
+    raise AssertionError("fixture bug: the twins share no sentence")
 
 
 def _promote_all(store: Any) -> None:
@@ -156,7 +162,8 @@ def test_tc_extract_c13_evidence_is_tier_r_and_purged_with_it(
         Worker = require(EXTRACT_MODULE, WORKER, issue="#68")
         model_ref = extractor_ref()
         world.provider.record(
-            PromptFields(AssembleRequest(unit)), model_ref, sampling_params(),
+            PromptFields(AssembleRequest(unit, store=world.store)),
+            model_ref, sampling_params(),
             span_completion(_SPANS, build_id="ct-c13-build"),
         )
         Worker(world.store, world.provider, model_ref).process(unit)
@@ -171,6 +178,12 @@ def test_tc_extract_c13_evidence_is_tier_r_and_purged_with_it(
         # Tier R: the PII really sits in the cohort's Tier R file before the purge.
         path = world.store.cohort_path(ORCH_COHORT_ID)
         sentinel_bytes = _SENTINEL.encode("utf-8")
+        # The byte oracle reads raw file bytes; SQLite holds committed rows in the
+        # `-wal` until a checkpoint, so force the truncate checkpoint the store's own
+        # purge path runs — otherwise the precondition reads a file the row has not
+        # reached yet.
+        with sqlite3.connect(path) as raw:
+            raw.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         assert sentinel_bytes in path.read_bytes(), (
             "TC-EXTRACT-C13: precondition — the evidence PII is not in the cohort "
             "file at all, so the purge oracle would be vacuous"
@@ -244,6 +257,7 @@ def test_tc_extract_c13_an_injection_changes_span_selection_no_more_than_its_twi
         store_dir = tmp_data_dir / f"pair-{injected.id}"
         world = _build_pair_world(store_dir, make_fixture_provider, benign, injected)
         try:
+            sentence = _shared_sentence(benign, injected)
             orchestrator = Orchestrator(world.store)
             run_id = orchestrator.create_run(
                 ORCH_COHORT_ID, world.version, resolved_config(edge_panel(1))
@@ -254,9 +268,10 @@ def test_tc_extract_c13_an_injection_changes_span_selection_no_more_than_its_twi
             for member in (benign, injected):
                 markdown = build_markdown(member.text())
                 world.provider.record(
-                    PromptFields(AssembleRequest(by_submission[member.id])),
+                    PromptFields(AssembleRequest(by_submission[member.id],
+                                                 store=world.store)),
                     model_ref, sampling_params(),
-                    span_completion([_span_over(markdown, _TWIN_SENTENCE)],
+                    span_completion([_span_over(markdown, sentence)],
                                     build_id="ct-c13-build"),
                 )
                 Worker(world.store, counter, model_ref).process(by_submission[member.id])
@@ -278,7 +293,7 @@ def test_tc_extract_c13_an_injection_changes_span_selection_no_more_than_its_twi
                 # The module contributed NO selection change: one span, the shared
                 # sentence, for BOTH twins.
                 assert len(stored["spans"]) == 1 and (
-                    stored["spans"][0].get("text") == _TWIN_SENTENCE
+                    stored["spans"][0].get("text") == sentence
                 ), (
                     f"TC-EXTRACT-C13 ({kind}): the {member.attributes['variant']} "
                     f"twin persisted {stored['spans']!r} — the module changed the "
@@ -290,7 +305,8 @@ def test_tc_extract_c13_an_injection_changes_span_selection_no_more_than_its_twi
                 submission_value = dict(
                     (name, value)
                     for name, value in PromptFields(
-                        AssembleRequest(by_submission[member.id])
+                        AssembleRequest(by_submission[member.id],
+                                        store=world.store)
                     ).fields
                 ).get("submission", "")
                 assert submission_value.count(UNTRUSTED_OPEN) == 1, (
@@ -317,7 +333,8 @@ def test_tc_extract_c13_an_injection_changes_span_selection_no_more_than_its_twi
             submission_injected = dict(
                 (name, value)
                 for name, value in PromptFields(
-                    AssembleRequest(by_submission[injected.id])
+                    AssembleRequest(by_submission[injected.id],
+                                    store=world.store)
                 ).fields
             ).get("submission", "")
             assert any(line in submission_injected for line in payload_lines), (

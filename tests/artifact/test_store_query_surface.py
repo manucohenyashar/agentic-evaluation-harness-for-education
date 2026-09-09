@@ -304,9 +304,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
     # the evidence row that commits together with it (CT-STORE-03's commit-together;
     # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
-    "aeh.extract:711",
-    "aeh.extract:712",
-    "aeh.extract:714",
+    "aeh.extract:737",
+    "aeh.extract:742",
+    "aeh.extract:744",
     # The ingest sites are #231's line numbers (the setup-path fail-closed
     # guards shifted the module; every statement verified unchanged against
     # the prior baseline, the tripwire diff being the line move alone).
@@ -398,8 +398,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4072",
     "aeh.pkg:4069",
     "aeh.pkg:4086",
-    "aeh.store:1720",
-    "aeh.store:2476",
+    "aeh.store:1735",
+    "aeh.store:2491",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
