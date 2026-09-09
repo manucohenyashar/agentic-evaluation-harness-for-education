@@ -1483,6 +1483,147 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/integ/test_integ_observability.py",
         ),
     ),
+    # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
+    #
+    # The pure policy functions are #60's, the estimator is #62's, the policy function
+    # itself is M-AGG's (#95), and the cost-ceiling pause is #61's. Every invented name is
+    # declared in the test module's docstring with its reconciling story — the
+    # `record_run_metrics` precedent: the design pins the semantics and the constants but
+    # no function names, so the tests invent and use them together.
+    "#60 TS-23 criterion breaker (TC-ORCH-13)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:criterion_breaker_tripped,"
+            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_RATE,"
+            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_MIN_N"
+        ),
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[9-20-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[10-20-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[11-20-True]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[10-19-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[11-19-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[12-24-False]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
+            "[13-24-True]",
+        ),
+    ),
+    "#60 TS-23 escalation budget (TC-ORCH-14)": (
+        "symbols",
+        f"{ORCH_MODULE}:admit_escalations,{ORCH_MODULE}:ORCH_ESCALATION_BUDGET",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_14_budget_rations_above_it_and_marks_the_remainder_provisional",
+        ),
+    ),
+    "#60 TS-23 escalation plan (TC-ORCH-20)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:validate_escalation_plan,"
+            f"{ORCH_MODULE}:EvenEscalationPlanError"
+        ),
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[1-3]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[3-3]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
+            "[5-5]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_even_escalation_plans_are_rejected[2]",
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_20_even_escalation_plans_are_rejected[4]",
+        ),
+    ),
+    "#62 TS-23 estimated completion (TC-ORCH-27)": (
+        "symbol",
+        f"{ORCH_MODULE}:estimated_completion_seconds",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_27_estimated_completion_adjusts_for_the_observed_escalation_rate",
+        ),
+    ),
+    "#95 TS-23 escalation policy purity (TC-ORCH-32)": (
+        # The policy FUNCTION is M-AGG's: design §3.8 declares `should_escalate` on the
+        # Aggregator Protocol and CT-AGG-01 names it the pure escalation policy that
+        # NFR-ORCH-04 requires — so the key is the member, not the module.
+        "symbol",
+        f"{AGG_MODULE}:should_escalate",
+        (
+            "tests/unit/orch/test_escalation_policy.py::"
+            "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
+        ),
+    ),
+    "#60 TS-23 random arm sampler (TC-ORCH-12 statistical + ADV-12)": (
+        "symbols",
+        f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,{ORCH_MODULE}:random_arm_selection",
+        (
+            "tests/unit/orch/test_random_arm.py::"
+            "test_tc_orch_12_random_arm_share_converges_on_the_configured_rate",
+            "tests/unit/orch/test_random_arm.py::"
+            "test_tc_orch_12_random_arm_selection_is_independent_of_confidence",
+            "tests/unit/orch/test_random_arm.py::"
+            "test_adv_12_confidently_wrong_population_is_still_sampled_by_the_random_arm",
+        ),
+    ),
+    "#60 TS-23 escalation atomicity (TC-ORCH-11)": (
+        "symbol",
+        f"{ORCH_MODULE}:Orchestrator.enqueue_escalation",
+        (
+            "tests/integration/orch/test_escalation_atomicity.py::"
+            "test_tc_orch_11_enqueue_escalation_commits_and_rolls_back_with_the_callers_transaction",
+        ),
+    ),
+    "#60 TS-23 random arm enumeration (TC-ORCH-12 mechanism)": (
+        "symbols",
+        (
+            f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,"
+            f"{ORCH_MODULE}:ORCH_ESCALATION_BUDGET,"
+            f"{ORCH_MODULE}:Orchestrator.enqueue_escalation"
+        ),
+        (
+            "tests/integration/orch/test_random_arm_enumeration.py::"
+            "test_tc_orch_12_the_arm_is_enumerated_up_front_before_any_confidence_exists",
+            "tests/integration/orch/test_random_arm_enumeration.py::"
+            "test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm",
+        ),
+    ),
+    "#61 TS-23 cost ceiling (TC-ORCH-15)": (
+        # The test also requires `Orchestrator(store, provider=...)` — a constructor
+        # kwarg no registry kind can express. The conjunction below is therefore
+        # necessary but not sufficient: if #61 lands start/pause without the provider
+        # seam, this entry resolves, the unmark happens, and the test reds inside
+        # TEST_CMD with the seam-naming assertion (test_cost_ceiling.py) as the message.
+        "symbols",
+        f"{ORCH_MODULE}:Orchestrator.start,{ORCH_MODULE}:Orchestrator.pause",
+        (
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[99pct-runs]",
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[100pct-pauses-at]",
+            "tests/integration/orch/test_cost_ceiling.py::"
+            "test_tc_orch_15_the_ceiling_pauses_at_and_above_and_the_estimate_precedes_dispatch"
+            "[101pct-refuses-and-pauses]",
+        ),
+    ),
 }
 
 
