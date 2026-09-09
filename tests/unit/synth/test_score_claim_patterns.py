@@ -11,27 +11,24 @@ is legitimate content ("she calculated 12 kg") must pass, or the check is a nume
 ban, not a score-claim ban — and a check that cannot discriminate silences every
 science answer in the cohort.
 
-Written ahead of `#98` (test plan §8.2): fails only through `NotImplementedYet` naming
-`#98`, or — once the check lands — through the assertion itself.
+Written ahead of `#98` (test plan §8.2); **reconciled at #98's landing** — the marker
+is off, the predicate is `aeh.synth.has_score_claim` and the configured list is
+`aeh.synth.SYNTH_SCORE_CLAIM_PATTERNS`, both as this file assumed.
 
-Interface assumed of `#98` (reconcile at landing, one line in
-`tests/support/synth_vocabulary.py`): `aeh.synth.has_score_claim(text) -> bool`, a pure
-module-level predicate — True means a claim matched — in the `verify_span` precedent for
-a rung-0 entry point. The specific rejected strings are the plan's own two examples
-("one of the strongest answers in the class" is ADV-11's named attack; "she calculated
-12 kg" is the plan's own discrimination case) plus one obvious instance per remaining
-pattern class; tightening the pattern list to catch more paraphrases is #98's
-configuration freedom, and this file only asserts the classes FR-SYNTH-03 names.
+Interface (reconciled, one line in `tests/support/synth_vocabulary.py`):
+`aeh.synth.has_score_claim(text) -> bool`, a pure module-level predicate — True means a
+claim matched — in the `verify_span` precedent for a rung-0 entry point. The specific
+rejected strings are the plan's own two examples ("one of the strongest answers in the
+class" is ADV-11's named attack; "she calculated 12 kg" is the plan's own
+discrimination case) plus one obvious instance per remaining pattern class; tightening
+the pattern list to catch more paraphrases is #98's configuration freedom, and this
+file only asserts the classes FR-SYNTH-03 names.
 """
 
 from __future__ import annotations
 
-import pytest
-
 from tests.support.impl import SYNTH_MODULE, require
 from tests.support.synth_vocabulary import SCORE_CLAIM_CHECK, SCORE_CLAIM_ISSUE
-
-pytestmark = pytest.mark.writtenahead
 
 #: One narrative per pattern class FR-SYNTH-03 names, each with the claim a grader
 #: would actually read as a second, competing grade.

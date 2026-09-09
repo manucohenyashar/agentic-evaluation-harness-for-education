@@ -18,8 +18,10 @@
   may rely on displayed narrative being score-free; it must honour the suppression
   flag" — the console's rendering of that flag is TC-CONSOLE's case, not this one).
 
-Written ahead of `#98` (with `#97`'s module; test plan §8.2): fails only through
-`NotImplementedYet` naming the owning issue, or — once landed — through the assertion.
+Written ahead of `#98` (with `#97`'s module; test plan §8.2); **reconciled at #98's
+landing** — the marker is off, and the landed ladder is exactly the assumed one:
+reject, re-request once, then store the twice-claiming text with `score_claim_flag`
+set and withheld from display and from L2 composition.
 
 Isolation: TC-SYNTH-06's plan row says rung 1; this file runs it at **rung 2** (real
 SQLite, capture provider at the model boundary) — the same harness as its siblings,
@@ -59,7 +61,7 @@ from tests.support.synth_vocabulary import (
     synth_ref,
 )
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = ("SYN-001", "SYN-002")
 _QUESTIONS = tuple(f"Q{q}" for q in range(1, 6))

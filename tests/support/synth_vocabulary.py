@@ -18,8 +18,8 @@ name differently, the rename is one line in this file and nowhere else.
 | `REPORT` | `SynthesisReport` | **invented here** — the per-call report the fourth seam (stage-level observability) requires; `CT-SYNTH-08`'s signals are read off it |
 | `L1_REQUEST` / `L2_REQUEST` | `L1Request` / `L2Request` | **invented here** — the two request types `CT-SYNTH-02`'s type-level boundary lives on; design names no request type. `L2Request` must be a type on which no field can carry a raw verdict — that is NFR-SYNTH-03's "enforced by the request type, not by prompt instruction" |
 | `RESULT_TYPE` | `SynthesisResult` | **design-named** (§3.13 `CT-SYNTH-01`) — the type name, not any member |
-| `SCORE_CLAIM_CHECK` | `has_score_claim` | **invented here** — the pure text predicate TC-SYNTH-04 drives at rung 0; the `verify_span` precedent for a module-level pure entry the rung-0 cases call. True means a claim matched |
-| `PATTERNS` | `SYNTH_SCORE_CLAIM_PATTERNS` | **design-named** (§3.13 Configuration, `CT-SYNTH-11`) — assumed exported from `aeh.synth`; if #98 hangs it off `aeh.conf`, the rename is one line |
+| `SCORE_CLAIM_CHECK` | `has_score_claim` | **Reconciled at #98's landing** — the pure text predicate TC-SYNTH-04 drives at rung 0; the `verify_span` precedent for a module-level pure entry the rung-0 cases call. True means a claim matched |
+| `PATTERNS` | `SYNTH_SCORE_CLAIM_PATTERNS` | **design-named** (§3.13 Configuration, `CT-SYNTH-11`) — **reconciled at #98's landing**: exported from `aeh.synth` as a tuple of case-insensitive regex strings, exactly where this file assumed |
 | `LEVEL_L1` | `"l1_question"` | **invented here** — the L1 level literal; only the L2 literal is design-named |
 | `LEVEL_L2` | `"l2_test"` | **design-named** (§3.13 `CT-SYNTH-06`, ADR-8) |
 | `TEST_SENTINEL` | `"__test__"` | **design-named** (`CT-SYNTH-06`, ADR-8) — the `question_id` stored for L2 rows |
@@ -49,8 +49,9 @@ next to the status, never one boolean):
 - `model_calls` (int) — L1 plus L2 calls actually made (`NFR-SYNTH-02`'s ~2,100 for 350
   students is 6 per submission: 5 L1 + 1 L2).
 - `narratives` (int), `failures` (int) — the failure-rate numerator and denominator.
-- `rejected_score_claims` (int) — outputs rejected by the score-claim check and
-  re-requested (`CT-SYNTH-03`).
+- `rejected_score_claims` (int) — outputs the score-claim check rejected
+  (`CT-SYNTH-03`: the first claim is re-requested, a second is stored flagged —
+  both count here; reconciled to the landed semantics at #98).
 - `synthesis_failure_rate`, `score_claim_rejection_rate` (floats) — the per-run rates
   §3.13's Observability paragraph emits, read off the report rather than a log.
 - `mean_narrative_length` (float) — mean stored-narrative length in words.
