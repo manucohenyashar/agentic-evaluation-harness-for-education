@@ -1659,6 +1659,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_fail_closed.py",
         ),
     ),
+    "#74 IntegrityGate+IntegritySignals (TS-66 C04 write surface)": (
+        # The static limbs scan src/aeh/integ.py itself (the module existing is part of
+        # the blocker), the write audit runs the real gate, and the output-surface
+        # equality reads the returned signals object.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:IntegritySignals"),
+        (
+            "tests/contract/integ/test_ct_integ_write_surface.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
