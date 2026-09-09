@@ -167,8 +167,12 @@ def seed_answer_region(
     `element_kind` carries the question id (ingest.py:3255's convention for
     question-keyed regions — the key det's head query groups by). `selection` is the
     single option id M-INGEST writes for a resolved mark (`FR-INGEST-17`: populated only
-    when resolved); a retraction string strikes the region (R47's discipline).
+    when resolved — so a spec with a selection and no explicit state defaults to
+    `resolved`, the only state under which ingest populates it); a retraction string
+    strikes the region (R47's discipline).
     """
+    if selection is not None and selection_state is None:
+        selection_state = "resolved"
     region_id = region_id or f"reg-{document_id}-{question_id}-{position}"
     handle = store.cohort(cohort_id)
     with handle.transaction() as tx:
