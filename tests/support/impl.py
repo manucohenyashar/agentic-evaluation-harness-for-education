@@ -1719,6 +1719,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_ocr_intersection.py",
         ),
     ),
+    "#74 IntegrityGate (TS-66 C10 described evidence and crop)": (
+        # The routing/marking/crop limbs all run the real gate over the real blob
+        # store; no M-AGG half (the clause declares no separate cap here).
+        "symbol",
+        f"{INTEG_MODULE}:IntegrityGate",
+        (
+            "tests/contract/integ/test_ct_integ_described_evidence.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
