@@ -172,7 +172,8 @@ def make_world(
     )
 
 
-def _resolved(panel: tuple) -> Any:
+def resolved_config(panel: tuple) -> Any:
+    """A resolved `RunConfig` over `ORCH_COHORT_ID` with the given judge panel."""
     return resolve_run_config(
         edge_cfg(panel=panel),
         CohortRef(cohort_id=ORCH_COHORT_ID, consent_class="synthetic"),
@@ -204,7 +205,7 @@ def extract_once(
         panel = edge_panel(3)
 
     orchestrator = Orchestrator(world.store)
-    run_id = orchestrator.create_run(ORCH_COHORT_ID, world.version, _resolved(panel))
+    run_id = orchestrator.create_run(ORCH_COHORT_ID, world.version, resolved_config(panel))
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
 
     request = AssembleRequest(unit, **(assemble_kwargs or {}))
