@@ -294,11 +294,13 @@ class IncompleteMigrationChainError(StoreError):
     `_open_tier` before the tier file's parent directory is made and before any connection is
     opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
     a refusal **at the open site, naming the cause**. The fix on the
-    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg`
+    caller's side is one line — `import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg,
+    aeh.synth`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
     pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
-    11 of its 12 migrations — and `aeh.orch` for the last, #61's `orch_run_lifecycle`).
+    11 of its 13 migrations — and `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
+    the last, #97's `synth_narrative_key`).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1381,7 +1383,7 @@ def current_schema_version(tier: Tier) -> int:
 #: caught by that gate test, not by a failed open.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 12,
+    Tier.COHORT: 13,
     Tier.DURABLE: 4,
 }
 
@@ -1949,9 +1951,9 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             f"module that contributes migrations has been imported. The chains in "
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
             f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
-            f"aeh.orch and aeh.extract; Tier D: aeh.det), so this process has imported some "
+            f"aeh.orch, aeh.extract and aeh.synth; Tier D: aeh.det), so this process has imported some "
             f"of them and not the rest. Import the owning modules before the first open — "
-            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg` registers every "
+            f"`import aeh.det, aeh.extract, aeh.ingest, aeh.orch, aeh.pkg, aeh.synth` registers every "
             f"tier's complete chain — or the file builds short of the full schema and the "
             f"missing columns surface later, far from this open, as a distant `no such "
             f"column` (#46's probe: `no such column: parent_version_id`; #234)."
