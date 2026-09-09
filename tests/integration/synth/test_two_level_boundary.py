@@ -41,10 +41,12 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.support.impl import SYNTH_ISSUE, SYNTH_MODULE, WORKER, require
+from tests.support.impl import SYNTH_MODULE, require
 from tests.support.orch_run import seed_run
 from tests.support.synth_vocabulary import (
     FIVE_QUESTION_CRITERIA,
+    SYNTH_ISSUE,
+    WORKER,
     CaptureProvider,
     evidence_marker,
     narrative_completion,
