@@ -1757,6 +1757,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/contract/integ/test_ct_integ_config_knobs.py",
         ),
     ),
+    "#74 gate+rate constants (TS-66 C14 rate metrics, per criterion)": (
+        # The artifact limb requires the two constants by name; the dimensionality
+        # and attribution limbs run the real gate. Positional order is the clause's
+        # own enumeration — disclosed in the file.
+        "symbols",
+        (f"{INTEG_MODULE}:IntegrityGate,{INTEG_MODULE}:INTEG_RATE_METRICS,"
+         f"{INTEG_MODULE}:ALERT_SPAN_VERIFICATION_FAILURES"),
+        (
+            "tests/contract/integ/test_ct_integ_rate_metrics.py",
+        ),
+    ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
     # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
