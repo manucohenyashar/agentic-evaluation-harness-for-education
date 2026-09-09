@@ -2,20 +2,21 @@
 observable signals.
 
 Test plan §5.12 (row forms), issue #95 (TS-36). Traces to `FR-AGG-06` (ceiling half),
-`FR-AGG-07`, `FR-AGG-08`, `FR-AGG-09`. Written ahead of #93 (routing assignment and
-the escalation policy; the `aggregate` core beneath the routing cells is #91's).
-TC-AGG-07's review-queue rank limb lives in `test_review_queue_rank.py` — a separate
-blocker (`aeh.review:rank_queue_items`, #108), separately registered.
+`FR-AGG-07`, `FR-AGG-08`, `FR-AGG-09`. **Landed at #93** (routing assignment and the
+escalation policy; the `aggregate` core beneath the routing cells is #91's, the
+confidence surface #92's). TC-AGG-07's review-queue rank limb lives in
+`test_review_queue_rank.py` — a separate blocker (`aeh.review:rank_queue_items`,
+#108), separately registered.
 
-**Assumed interface of #93, declared so it is reconciled deliberately** (the
-TC-ORCH-32 stand-in shapes — one vocabulary, one reconciliation):
+**Interface of #93, as declared and as landed** (the TC-ORCH-32 stand-in shapes —
+one vocabulary, one reconciliation):
 
 | Name | Status |
 |---|---|
-| `aeh.agg:aggregate(verdicts, criterion, signals, *, config=None, deterministic_score=None)` | the panel path plus FR-AGG-10's pass-through. The deterministic row arrives **complete** (`judge_count = 0`, its own `state`/`routing`) and passes through unchanged — an empty verdict list is a programming error (CT-AGG-12), so the pass-through cannot ride the panel path. |
-| `aeh.agg:should_escalate(score, criterion, history, baseline)` | §3.12's Protocol member as a module-level pure function (TC-ORCH-32 pins the keyword call). Returns a decision carrying `.escalate` (bool) and `.target_judge_count` (int) — **invented field names**, the design returns "a decision" and pins no fields. |
+| `aeh.agg:aggregate(verdicts, criterion, signals, *, config=None, deterministic_score=None, fallback=False, breaker_tripped=False)` | **landed at #93 with these keywords**: the panel path plus FR-AGG-10's pass-through. The deterministic row arrives **complete** (`judge_count = 0`, its own `state`/`routing`) and passes through unchanged — an empty verdict list is a programming error (CT-AGG-12), so the pass-through cannot ride the panel path. |
+| `aeh.agg:should_escalate(score, criterion, history, baseline)` | **landed at #93** (TC-ORCH-32's keyword call) with the `config=` knob. Returns `aeh.agg:EscalationDecision` carrying `.escalate` (bool) and `.target_judge_count` (int) — the invented field names declared below are what shipped, plus `.reasons` (the fired observables, self-confidence never among them). |
 | score `.confidence` `.ordinal` `.band_count` `.judge_count` `.uncited` `.self_confidence` + the four FR-AGG-13 integrity fields | the observable signals live on the row (§7.1's list; FR-AGG-13 records four of them). `escalation_score()` in the vocabulary is the stand-in. |
-| routing values | the shipped migration v9 CHECK: `{'auto', 'queued', 'reviewed', 'provisional', 'triage'}` — the declared set is enforced by the schema today; the assignment is what #93 lands. |
+| routing values | the shipped migration v9 CHECK: `{'auto', 'queued', 'reviewed', 'provisional', 'triage'}` — the declared set, enforced by the schema; the assignment landed at #93 (breaker and single-judge → `provisional`, threshold → `auto`/`queued`). |
 | `nextafter`-built injected thresholds | TC-AGG-17 says "thresholds injected as configuration": every boundary value in this file is built from the implementation's **own** computed confidence (`nextafter` neighbours), so no tuning number is baked into the tests (Q-04). |
 
 Isolation: rung 0 — pure functions and doubles only; the socket guard is autouse.
@@ -39,8 +40,6 @@ from tests.support.agg_vocabulary import (
     expected_distribution,
 )
 from tests.support.impl import AGG_MODULE, ORCH_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 _FOUR_BAND = criterion([band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.0),
                         band("B3", 3, 6.0)])

@@ -1,24 +1,23 @@
-"""`TS-23`'s escalation-policy unit cases — `TC-ORCH-13`, `TC-ORCH-14`, `TC-ORCH-20`
-**landed at #60** (unmarked there); `TC-ORCH-27` (`#62`, the estimator) and `TC-ORCH-32`
-(`#95`, `should_escalate`) remain written ahead of their stories.
+"""`TS-23`'s escalation-policy unit cases — all landed: `TC-ORCH-13`, `TC-ORCH-14`,
+`TC-ORCH-20` at #60; `TC-ORCH-27` at #62; `TC-ORCH-32` at #93 (`should_escalate`).
 
 `NFR-ORCH-04` requires the escalation policy to be a pure function of observable signals
 and configuration, evaluable without a model call — which is what makes all five cases
 rung 0. Each case enters at the symbol its story owes; nothing here touches a store.
 
-**Interface of #60 / #62 / #95**, listed so it is reconciled deliberately rather than
-discovered (the `test_leasing.py` and `test_pause_lifecycle.py` precedents — their
-assumed names resolved, or failed visibly, at landing):
+**Interface of #60 / #62 / #95, as declared and as landed**, listed so the reconciliations
+stay deliberate rather than discovered (the `test_leasing.py` and `test_pause_lifecycle.py`
+precedents — their assumed names resolved, or failed visibly, at landing):
 
 | Name | Status |
 |---|---|
 | `aeh.orch:criterion_breaker_tripped(escalated, processed, *, rate=None, min_n=None) -> bool` | **landed at #60** (the design pins the semantics and the two constants but no function name — this file's invented name is what shipped): tripped iff `processed >= min_n` **and** `escalated / processed > rate` — "more than half", strict, of the first `ORCH_CRITERION_BREAKER_MIN_N` submissions (FR-ORCH-13, CT-ORCH-16). Defaults are the module constants. |
 | `aeh.orch:admit_escalations(candidates, *, escalated, processed, budget=None) -> AdmissionPlan` | **landed at #60** with the declared shape: candidates are `(key, expected_value)` pairs; the returned plan exposes `.admitted` and `.provisional` as tuples of keys (a NamedTuple). |
 | `aeh.orch:validate_escalation_plan(judge_count) -> int` | **landed at #60**: returns the normalized escalated panel depth; raises `EvenEscalationPlanError` on any even count (FR-ORCH-10, CT-ORCH-08) — the invented name is the "exact exception" oracle's pin and is what shipped. |
-| `aeh.orch:estimated_completion_seconds(*, completed, remaining, elapsed_seconds, escalation_rate_so_far) -> float` | **invented**: the pure core behind `ProgressReport.estimated_completion` (§3.7); reconciles at #62's landing. |
+| `aeh.orch:estimated_completion_seconds(*, completed, remaining, elapsed_seconds, escalation_rate_so_far) -> float` | **landed at #62** with this shape: the pure core behind `ProgressReport.estimated_completion` (§3.7). |
 | above-budget admission = defer **all** pending, in EV-desc order | **the landed reading**: a hard rate cap admits nothing while the rate exceeds it; FR-ORCH-14's "continue admitting in expected-value order" is honored as the EV order in which deferral is recorded and later admission resumes as `processed` grows. The 31% limb passes against the shipped `admit_escalations`. |
 | at-budget is **not** above-budget | "exceeds the configured budget" is read strict, matching the breaker's "more than half": 30% behaves like 29%, and 31% is the first rationed state. Landed. |
-| `should_escalate(score, criterion, history, baseline)` | design §3.8 Protocol member; the stand-ins carry the design's field names and reconcile at #95's landing. |
+| `should_escalate(score, criterion, history, baseline)` | **landed at #93** as `aeh.agg:should_escalate` — §3.8's Protocol member as the module-level pure function, returning a frozen `EscalationDecision` compared by value (the declared landing assumption, shipped as assumed). The stand-ins below carried the design's field names; the policy reads the same names off the real row. |
 
 Statistical parameters are stated (the oracle is "statistical with stated n and tolerance"):
 the convergence limb draws n=10,000 at p=0.07 (σ ≈ 0.00255) with a ±0.008 tolerance (≈3.1σ);
@@ -271,16 +270,17 @@ class _RefusingStoreSpy:
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store(network_guard):
     """`TC-ORCH-32` (`NFR-ORCH-04`, artifact assertion / rung 0, P0) — the escalation
     policy function is evaluable with **no model call and no store access**: called under
-    the TS-00 socket guard with a store spy that fails on any access."""
+    the TS-00 socket guard with a store spy that fails on any access. **Landed at #93**;
+    the stand-ins below carried the design's field names and the landed policy reads
+    them as declared."""
     should_escalate = require(AGG_MODULE, "should_escalate", issue="#95")
 
     # Stand-ins carrying the design's field names (§3.8): the score, the criterion, the
-    # criterion's history, and the package's expected distribution. They reconcile at
-    # #95's landing; the purity oracle below does not depend on their contents.
+    # criterion's history, and the package's expected distribution. They landed as
+    # declared at #93; the purity oracle below does not depend on their contents.
     score = SimpleNamespace(band="B", confidence=0.62, judge_count=3)
     criterion = SimpleNamespace(
         criterion_id="C1", scoring_model="atomic", bands=("A", "B", "C", "D")
@@ -304,10 +304,9 @@ def test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store(network_guard)
 
     # Any shape of decision is fine — the oracle is the absence of I/O, not the value.
     # Determinism is the one behavioural corollary of purity that is checkable here:
-    # the same inputs, evaluated again, must return an equal decision. Declared landing
-    # assumption: the decision type compares by value (the enum / dataclass /
-    # NamedTuple / bool shape §3.8's Protocol implies); a decision type with identity
-    # equality cannot express this corollary and reconciles at #95's landing.
+    # the same inputs, evaluated again, must return an equal decision. The declared
+    # landing assumption held: the decision type compares by value — #93 shipped it
+    # as a frozen dataclass (`aeh.agg:EscalationDecision`).
     again = should_escalate(
         score=score, criterion=criterion, history=history, baseline=baseline, **spy_kwargs
     )

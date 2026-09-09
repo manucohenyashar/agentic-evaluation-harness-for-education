@@ -326,14 +326,22 @@ def test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
+        # m_agg landed at #93 (`aeh.agg:rank_criteria_for_escalation`); m_review's
+        # queue ranking is still #108's — the per-param marker keeps it red without
+        # holding the landed half out of the gate (the TC-AGG-20 precedent).
+        pytest.param(
+            "M-REVIEW",
+            REVIEW_MODULE,
+            "rank_queue_items",
+            "#108",
+            marks=pytest.mark.writtenahead,
+        ),
         ("M-AGG", AGG_MODULE, "rank_criteria_for_escalation", "#93"),
-        ("M-REVIEW", REVIEW_MODULE, "rank_queue_items", "#108"),
     ],
-    ids=["m_agg", "m_review"],
+    ids=["m_review", "m_agg"],
 )
 def test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero(
     consumer, module, entry, issue

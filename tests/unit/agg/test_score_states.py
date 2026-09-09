@@ -2,28 +2,28 @@
 pass-through, and the state-per-cause enum.
 
 Test plan §5.12 (row forms), issue #95 (TS-36). Traces to `FR-AGG-12`, `FR-AGG-10`,
-`FR-AGG-11`; RISK-18's module half. Written ahead of #93 (the state assignment; the
-`aggregate` core is #91's — the residual weakness is the `#76 forged evidence`
-entry's: a #91-only `aggregate` resolves the key while the states are still #93's).
+`FR-AGG-11`; RISK-18's module half. **Landed at #93** (the state assignment; the
+`aggregate` core is #91's, the confidence surface #92's).
 
 **The composition with TC-AGG-04 is the point of TC-AGG-12.** #94 pinned that a raw
 even panel raises `EvenPanelError` — a failed write, never a rounded verdict. #95's
 case covers the OTHER branch of the same clause (CT-AGG-03): a panel *left at two by
 an unrecoverable failure* discards the second verdict and records the base
 single-judge band as provisional, rather than adjudicating between two. The two
-compose only if the caller can mark the fallback case, so the assumed surface carries
-an explicit `fallback=True` keyword — **invented**, reconciles at #93. The test
-asserts the composition directly: the same panel refuses without the mark and
-discards with it.
+compose only if the caller can mark the fallback case, so the surface carries an
+explicit `fallback=True` keyword — **landed at #93 as declared**. The test asserts
+the composition directly: the same panel refuses without the mark and discards
+with it.
 
-**Assumed interface of #93** (continuing `test_routing_and_escalation.py`'s table):
+**Interface of #93, as declared and as landed** (continuing
+`test_routing_and_escalation.py`'s table):
 
 | Name | Status |
 |---|---|
-| `aggregate(..., fallback=False)` | the TC-AGG-12 mark: two verdicts left by an unrecoverable failure → discard the second, record the base single-judge band provisional. |
-| `aggregate(..., breaker_tripped=False)` | FR-AGG-11: the state for criteria the `M-ORCH` breaker tripped. The tripping itself is shipped (`aeh.orch:criterion_breaker_tripped`, #60) — the state assignment is M-AGG's. |
-| `aggregate(..., deterministic_score=row)` | FR-AGG-10's pass-through; the row is the det-shaped dict of `test_routing_and_escalation.py`. |
-| score `.state` | the shipped migration v9 CHECK set: `{'final', 'provisional_unreviewed', 'ungradeable_by_panel', 'unresolved_selection'}` — enforced by the schema today, assigned by #93. |
+| `aggregate(..., fallback=False)` | **landed at #93 with this keyword**: two verdicts left by an unrecoverable failure → discard the second, record the base single-judge band provisional (`provisional_unreviewed`). |
+| `aggregate(..., breaker_tripped=False)` | **landed at #93 with this keyword**: FR-AGG-11's state for criteria the `M-ORCH` breaker tripped (`ungradeable_by_panel`, routed `provisional`). The tripping itself is shipped (`aeh.orch:criterion_breaker_tripped`, #60). |
+| `aggregate(..., deterministic_score=row)` | **landed at #93 with this keyword**: FR-AGG-10's pass-through, echoing the row (`judge_count = 0`, agreement `None`, the row's own `state`/`routing`). |
+| score `.state` | **landed at #93, assigned per cause** — the shipped migration v9 CHECK set: `{'final', 'provisional_unreviewed', 'ungradeable_by_panel', 'unresolved_selection'}`, enforced by the schema. |
 
 Isolation: rung 0 — pure function; the socket guard is autouse.
 """
@@ -40,8 +40,6 @@ from tests.support.agg_vocabulary import (
     agg_config,
 )
 from tests.support.impl import AGG_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 _FOUR_BAND = criterion([band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.0),
                         band("B3", 3, 6.0)])
