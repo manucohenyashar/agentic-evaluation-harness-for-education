@@ -30,8 +30,10 @@ same gate has now caught two rotations the original draft of this file could not
 owning Cohort's last migration and `aeh.extract` the tail before it. Each time
 `COMPLETE_SCHEMA_VERSIONS[Cohort]` failed this file the moment the suites ran on the merged
 tree, which is the pin-rot gate working as documented. #78's `judge_verdict_columns` is
-the third rotation — the pin moved 12→13 at the #61 merge (`aeh.judge` now owns Cohort's
-last migration), and the two import lists below gained `aeh.judge` in the same change.)
+the third and fourth rotations — numbered 13 when it first landed, renumbered 12→13→14
+as #61's lifecycle and then #97's `synth_narrative_key` took the numbers first at the
+merges (`aeh.judge` owns Cohort's last migration; `aeh.synth` joined the import lists
+below in the same change).)
 
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the
@@ -79,6 +81,7 @@ import aeh.ingest  # noqa: F401
 import aeh.judge  # noqa: F401
 import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
+import aeh.synth  # noqa: F401
 
 from aeh.store import open_store
 
@@ -171,6 +174,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     import aeh.judge  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401
+    import aeh.synth  # noqa: F401
 
     from aeh.store import COMPLETE_SCHEMA_VERSIONS, TIER_MIGRATIONS, Tier, current_schema_version
 

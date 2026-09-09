@@ -2222,9 +2222,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -2489,9 +2495,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -2756,9 +2768,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -3023,9 +3041,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -3290,9 +3314,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -3557,9 +3587,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -3824,9 +3860,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -4091,9 +4133,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -4358,9 +4406,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -4625,9 +4679,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -4892,9 +4952,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -5159,9 +5225,15 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "805f199cfcf29bd28a129017d69fbf2c96680cf5674918747d9d947ec02553a9"
     },
     "review_queue": {
       "rows": 1,
@@ -5426,9 +5498,288 @@
       "columns": [
         "narrative_id",
         "submission_id",
-        "criterion_id"
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
       ],
-      "checksum": "e1d4c2da5f16711df20d3093fa643cb3f95cff944b39175b310c07d1742f5d7a"
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason"
+      ],
+      "checksum": "93b39e25df2787f86d613da71e999838d549da467e81945ffb8ff25ecca6b1d8"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision"
+      ],
+      "checksum": "e8913276c4952f64b4947ccdf304043c077c7502815888785e28002e7714e097"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence"
+      ],
+      "checksum": "5ff7b980a7a8673eacfbe590df711104708b010d57acb704f4bfb0849070f5ee"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v14": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing"
+      ],
+      "checksum": "5f60bfd49ef9d9bab2dea1949c3e1ed4e5b561858f72b86e52f25858eacb1f0f"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content"
+      ],
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build"
+      ],
+      "checksum": "9e91b1bd965587eda063e037dea58066d92628ae7ac77d55317e12b22ca4998b"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
     },
     "review_queue": {
       "rows": 1,

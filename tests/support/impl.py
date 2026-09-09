@@ -1555,21 +1555,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/resilience/orch/test_failure_visibility.py",),
     ),
-    "#97 TS-24 synthesis boundary (RES-07)": (
-        # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
-        # Interfaces block returns nothing), so the key is an invented-and-used-together
-        # name — the console-suite precedent. The KEY is RES-07's property (a retried
-        # synthesis conflicts rather than duplicating, ADR-8; the plan's oracle names
-        # the narrative table); `aeh.synth:synthesize` is the minimal entry point that
-        # property lives on. If #97 ships another name, the rename here and in the
-        # test module is one visible line.
-        "symbol",
-        f"{SYNTH_MODULE}:synthesize",
-        (
-            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
-            "test_res_07_retried_synthesis_conflicts_rather_than_duplicating",
-        ),
-    ),
+    # `#97 TS-24 synthesis boundary (RES-07)` — DROPPED at #97's landing: the invented
+    # `aeh.synth:synthesize` entry point landed as `synthesize(store, provider,
+    # model_ref, run_id, *, submission_id)` and the case is unmarked (the reconciliation
+    # is disclosed in the test module's docstring).
     # --- TS-28 (#75), the M-INTEG span-verification and integrity-signal cases ------------
     #
     # M-INTEG is two implementation stories: #73 (`verify_span`, fail-closed) and #74
@@ -1968,31 +1957,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-37 (issue #99), the M-SYNTH two-level synthesis and score-claim cases -----
     #
-    # The design declares no M-SYNTH Protocol (the `#97 TS-24 synthesis boundary
-    # (RES-07)` entry above records the grep), so every key is an
+    # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
+    # Interfaces block returns nothing), so every key is an
     # invented-and-disclosed name — settled in `tests/support/synth_vocabulary.py`
     # (the extract_vocabulary precedent), one rename there per reconciled symbol.
     # Ownership follows the stories' acceptance criteria: #97 ships the two-level
     # boundary, the request types, the completeness gate, the narrative schema and
     # the report; #98 ships the score-claim prohibition (the check and the
-    # configured pattern list) and the evidence anchoring.
-    "#97 two-level boundary (TC-SYNTH-01)": (
-        "symbol",
-        f"{SYNTH_MODULE}:SynthesisWorker",
-        ("tests/integration/synth/test_two_level_boundary.py",),
-    ),
-    "#97 request and result types (TC-SYNTH-02/03/07)": (
-        # All three types in one conjunction: the artifact file's three cases
-        # resolve together, and a Protocol shell satisfies none of them (each is
-        # introspected field by field, which is the assertion itself).
-        "symbols",
-        (
-            f"{SYNTH_MODULE}:L1Request,"
-            f"{SYNTH_MODULE}:L2Request,"
-            f"{SYNTH_MODULE}:SynthesisResult"
-        ),
-        ("tests/artifact/test_synth_score_free_schema.py",),
-    ),
+    # configured pattern list) and the evidence anchoring. The #97-keyed entries
+    # were DROPPED at #97's landing (the five cases they keyed unmarked, green on
+    # the landed surface); the #98-keyed entries REMAIN — #97 deliberately ships
+    # no `has_score_claim` and no `SYNTH_SCORE_CLAIM_PATTERNS`, so these three
+    # files stay red-via-NotImplementedYet until #98's mechanism lands.
     "#98 score-claim check (TC-SYNTH-04)": (
         # The rung-0 predicate, the verify_span precedent for a module-level
         # pure entry the pattern-scan cases call.
@@ -2002,42 +1978,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     "#97+#98 stored narratives (TC-SYNTH-05/06)": (
         # The scan and the suppression ladder both need the module AND the check:
-        # runnable when the LAST lands, whichever story that is.
+        # runnable when the LAST lands, whichever story that is. The worker half
+        # landed at #97; the check is #98's — the conjunction stays red on it.
         "symbols",
         (
             f"{SYNTH_MODULE}:has_score_claim,"
             f"{SYNTH_MODULE}:SynthesisWorker"
         ),
         ("tests/integration/synth/test_score_claim_suppression.py",),
-    ),
-    "#97 completeness gate and sentinel (TC-SYNTH-09/10)": (
-        # Both cases drive the worker; TC-SYNTH-10's schema half bites the moment
-        # the module lands — if #97 ships the worker but forgets the narrative
-        # migration, the unmarked test fails visibly in the gate, which is where
-        # it should fail.
-        "symbol",
-        f"{SYNTH_MODULE}:SynthesisWorker",
-        ("tests/integration/synth/test_completeness_and_sentinel.py",),
-    ),
-    "#97 synthesis report (TC-SYNTH-08/12)": (
-        # The observability cases read the report the worker returns; the
-        # conjunction is the worker plus the report type it is assumed to
-        # construct (disclosed in the vocabulary). The issue's Req column
-        # traces TC-SYNTH-08 to FR-SYNTH-04 (anchoring, #98); the sample/
-        # rate fields themselves are bet on #97's report surface here — if
-        # they ship with #98 instead, drop THIS entry at #97's landing and
-        # re-key the file on #98's check.
-        "symbols",
-        (
-            f"{SYNTH_MODULE}:SynthesisWorker,"
-            f"{SYNTH_MODULE}:SynthesisReport"
-        ),
-        ("tests/integration/synth/test_synthesis_observability.py",),
-    ),
-    "#97 Tier R residency (TC-SYNTH-11)": (
-        "symbol",
-        f"{SYNTH_MODULE}:SynthesisWorker",
-        ("tests/security/synth/test_narrative_tier_r_purge.py",),
     ),
     "#98 ADV-11 attack (ADV-11)": (
         # The attack drives the worker against the check: both symbols so the

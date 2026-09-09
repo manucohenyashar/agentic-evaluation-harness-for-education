@@ -450,12 +450,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4164",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
-    # #269's _VersionOrderedRegistry, and again with #61's run-lifecycle statements landing
-    # in store.py; the sites are the same statements as before. The merge of #78's judge
-    # migration bumped the pin's comment and the refusal message above the sites (+1 line
-    # each), moving them once more.
-    "aeh.store:1809",
-    "aeh.store:2590",
+    # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
+    # in store.py, and again with #97's and #78's contributions named in the refusal's
+    # text; the sites are the same statements as before.
+    "aeh.store:1811",
+    "aeh.store:2593",
+    # The synth site is #97's line number: the single narrative INSERT, declared in
+    # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
+    # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
+    # which is not a census site (FR-STORE-08). (Line moved once with the reviewer's
+    # isolation check on the payload-less document fallback; same statement.)
+    "aeh.synth:626",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
