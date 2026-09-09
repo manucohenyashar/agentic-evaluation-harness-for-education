@@ -20,9 +20,9 @@ Oracles:
   span addresses the canonical bytes exactly like any other span. The persisted
   evidence payload carries the same marking — the row is what `M-JUDGE` reads.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, built from
+`tests/support/extract_vocabulary.py`) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 
@@ -75,7 +75,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = EXTRACT_ISSUE
 
@@ -178,7 +178,7 @@ def test_tc_extract_08_three_failures_quarantine_and_write_no_evidence_row(
     """`TC-EXTRACT-08` — three malformed replies: exactly three strikes, the unit
     quarantines, and NO evidence row is written (an empty row would be
     indistinguishable from a student who wrote nothing)."""
-    require(EXTRACT_MODULE, WORKER, RESULT_TYPE, issue=ISSUE)
+    Worker, _Result = require(EXTRACT_MODULE, WORKER, RESULT_TYPE, issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
         version = _seed_world(store, _DIAGRAM_MARKDOWN)
@@ -239,7 +239,7 @@ def test_tc_extract_09_described_graphic_spans_are_citable_and_marked(
         run_id = orchestrator.create_run(ORCH_COHORT_ID, version, _resolved())
         (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
 
-        request = AssembleRequest(unit)
+        request = AssembleRequest(unit, store=store)
         model_ref = extractor_ref()
         provider = make_fixture_provider()
         provider.record(

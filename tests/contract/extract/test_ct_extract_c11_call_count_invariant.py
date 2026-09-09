@@ -59,7 +59,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _MARKDOWN = build_markdown(
     "The rate is 12 kg per hour.\n"
@@ -98,7 +98,8 @@ def _extract_count(world: Any, panel: tuple) -> int:
         if unit.criterion_id == "C0":
             continue  # no extract unit exists for an mcq criterion (C07); guard only
         world.provider.record(
-            PromptFields(AssembleRequest(unit)), model_ref, sampling_params(),
+            PromptFields(AssembleRequest(unit, store=world.store)),
+            model_ref, sampling_params(),
             span_completion(_SPANS, build_id="ct-c11-build"),
         )
         Worker(world.store, counter, model_ref).process(unit)

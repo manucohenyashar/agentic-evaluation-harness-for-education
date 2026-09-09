@@ -239,7 +239,7 @@ def test_tc_extract_c08_exactly_two_failures_retry_rather_than_quarantine(
         PromptFields = require(EXTRACT_MODULE, "prompt_fields", issue="#68")
         Worker = require(EXTRACT_MODULE, WORKER, issue="#68")
         model_ref = extractor_ref()
-        request = AssembleRequest(unit)
+        request = AssembleRequest(unit, store=world.store)
         world.provider.record(
             PromptFields(request), model_ref, sampling_params(),
             span_completion(_SPANS, build_id="ct-c08-build"),
@@ -353,7 +353,8 @@ def test_tc_extract_c08_the_blank_and_the_failure_are_distinguishable_at_m_judge
         model_ref = extractor_ref()
         # The genuine blank: extraction SUCCEEDS with an empty span list.
         world.provider.record(
-            PromptFields(AssembleRequest(blank_unit)), model_ref, sampling_params(),
+            PromptFields(AssembleRequest(blank_unit, store=world.store)),
+            model_ref, sampling_params(),
             span_completion([], build_id="ct-c08-build"),
         )
         Worker(world.store, world.provider, model_ref).process(blank_unit)
@@ -429,7 +430,8 @@ def test_tc_extract_c08_m_integ_sees_the_blank_never_the_failure_m_orch_holds_it
         Worker = require(EXTRACT_MODULE, WORKER, issue="#68")
         model_ref = extractor_ref()
         world.provider.record(
-            PromptFields(AssembleRequest(blank_unit)), model_ref, sampling_params(),
+            PromptFields(AssembleRequest(blank_unit, store=world.store)),
+            model_ref, sampling_params(),
             span_completion([], build_id="ct-c08-build"),
         )
         Worker(world.store, world.provider, model_ref).process(blank_unit)
