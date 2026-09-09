@@ -474,8 +474,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # in store.py, and again with #97's and #78's contributions named in the refusal's
     # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    "aeh.store:1813",
-    "aeh.store:2595",
+    # (#92's re-pin: the 15→16 pin bump and the refusal text's eighth contributor added
+    # three lines above each site — re-read from the walker, never hand-unioned.)
+    "aeh.store:1816",
+    "aeh.store:2598",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,

@@ -277,28 +277,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # **Keyed on the same proxy #76 chose, for the same recorded reason.** No
     # §3.12-declared name isolates "the cap table landed" — the caps are
-    # Assumption-numbered, not named — so the confidence entries ride on
-    # `AGG_AUTO_THRESHOLD_ATOMIC`: a bare `#91` `aggregate` without the caps leaves the
-    # conjunction unresolved (right), and a `#92` landing resolves it (right). The
-    # residual weakness is #76's verbatim: a threshold constant landing without the cap
-    # behaviour would unmark tests that then fail with an assertion, not a stated
-    # reason. `ordinal_alpha` joins the conjunction because the TC-AGG-10 property's
-    # no-cap cell pins the design's base figure (§3.12: with no cap binding and no
-    # multiplier applying, the confidence IS the agreement figure) — the property
-    # calls it directly, so it must exist before the marker can drop. The state entry
+    # Assumption-numbered, not named — so the confidence entries rode on
+    # `AGG_AUTO_THRESHOLD_ATOMIC` (unmarked at #92's landing: the inversion, the
+    # recorded inputs and the recompute seam all landed there). The state entry
     # has the same shape one story over — no declared name isolates "the states
     # landed", so it keys on `should_escalate` (the proxy #93 ships beside the state
     # assignment; re-keyed at #91's landing, whose landing alone would otherwise have
     # resolved `aggregate` + `EvenPanelError` while the states were still #93's).
-    "#95 TS-36 confidence inversion (TC-AGG-06, TC-AGG-10)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC,"
-         f"{AGG_MODULE}:ordinal_alpha"),
-        (
-            "tests/unit/agg/test_confidence_inversion.py",
-            "tests/property/test_agg_confidence_property.py",
-        ),
-    ),
     # Routing, escalation and the boundary: `should_escalate` is #93's, so the
     # conjunction resolves only at the story that owns the routing assignment (its
     # title is the FR set these cases trace to). TC-AGG-17's thresholds and TC-AGG-07's
@@ -329,16 +314,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
          f"{AGG_MODULE}:should_escalate"),
         ("tests/unit/agg/test_score_states.py",),
     ),
-    # The round trip needs the caps (#92), the integrity columns #92's migration adds,
-    # AND the recomputation seam — `recompute_confidence` is the suite's invented name
-    # for NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
+    # The round trip's entry (TC-AGG-15, keyed on aggregate + recompute_confidence +
+    # AGG_AUTO_THRESHOLD_ATOMIC) was unmarked at #92's landing with the rest of the
+    # confidence set — `recompute_confidence` is the suite's invented name for
+    # NFR-AGG-04's from-the-row-alone derivation (declared in the test file and in
     # `agg_vocabulary.py`; §3.12 names no function).
-    "#95 TS-36 reconstructible confidence (TC-AGG-15)": (
-        "symbols",
-        (f"{AGG_MODULE}:aggregate,{AGG_MODULE}:recompute_confidence,"
-         f"{AGG_MODULE}:AGG_AUTO_THRESHOLD_ATOMIC"),
-        ("tests/integration/agg/test_confidence_reconstructible.py",),
-    ),
     # Purity over all three Protocol members at once — the last of the three to land
     # is what makes the case runnable, so the conjunction is all three (the `#91`
     # entry's union plus `should_escalate`; a separate entry because that one exists
