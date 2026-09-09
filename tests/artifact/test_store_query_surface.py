@@ -390,8 +390,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.pkg:4072",
     "aeh.pkg:4069",
     "aeh.pkg:4086",
-    "aeh.store:1707",
-    "aeh.store:2463",
+    "aeh.store:1720",
+    "aeh.store:2476",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

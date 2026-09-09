@@ -1,6 +1,6 @@
 """`TS-24`'s escalation and synthesis boundary cases — `RES-06`, `RES-08` (issue #60:
-escalations, panels and breakers) and `RES-07` (issue #97, `M-SYNTH`) — **written
-ahead of both stories**.
+escalations, panels and breakers, **landed** — unmarked at that landing) and `RES-07`
+(issue #97, `M-SYNTH`, still written ahead).
 
 - `RES-06` (`FR-ORCH-09`, resilience, P0): `SIGKILL` after a verdict is written but
   before its escalation units are leased — the escalation was written in the same
@@ -19,14 +19,15 @@ boundary is a store close + reopen over the same data directory — the exact st
 uncontrolled kill leaves behind — and the new process constructs a fresh
 `Orchestrator` over the reopened store.
 
-**Interface this file assumes of #60 / #97**, listed so it is reconciled
-deliberately rather than discovered:
+**Interface #60 landed** (reconciled deliberately, with one alignment disclosed):
 
-| Name | Status |
+| Name | Landed shape |
 |---|---|
-| `Orchestrator.enqueue_escalation(run_id, submission_id, criterion_id)` | design §3.7 Protocol member #60 ships; assumed to enqueue the escalated units for that (submission, criterion) — the signature reconciles at landing |
+| `Orchestrator.enqueue_escalation(run_id, *, submission_id, criterion_id, judges=None, expected_value=None, tx=None)` | the design §3.7 member, in the module's idiom: the pair by its two ids, `tx=None` self-managing the transaction this test exercises (the caller's-transaction path is `CT-ORCH-08`'s, for `M-AGG`) |
+| escalation units at the enqueue | inserted by the enqueue itself, `origin='escalation'` (`FR-ORCH-09`: units in the same transaction as the result that triggered them). **Alignment disclosed:** the case originally snapshotted the base panel's three score units *after* the enqueue — with the landed, design-conformant semantics the widened units are already there, so the snapshot moved to *before* the enqueue. The oracle is untouched: escalation units exist past the boundary, are not duplicated by the resume, and dispatch |
+| escalation units' ledger shape | score units for the same (submission, criterion) BEYOND the panel's original three, claimable after resume — asserted name-agnostically over counts and claimability; the landed units carry `origin='escalation'` and `judge_id`s the panel never enumerated |
+| the random arm | off under test: the suite-root conftest pins `HARNESS_ORCH_RANDOM_ARM_RATE=0` (`tests/conftest.py`), so the base panel is exactly the three units these counts read |
 | the verdict itself | `M-AGG`'s artifact, not shipped — the test enters at `enqueue_escalation`, the seam §9.10 requires to share the verdict's transaction; the aggregation half of `RES-08` (single-judge provisional fallback) is `TC-AGG-12`'s case and is not re-asserted here |
-| escalation units' ledger shape | score units for the same (submission, criterion) BEYOND the panel's original three, claimable after resume — asserted name-agnostically over counts and claimability, not over an `origin` string |
 | `aeh.synth` with a `synthesize` entry point | **invented**: the design declares no `M-SYNTH` Protocol (grep of detailed-design.md for a Protocol block returns nothing — the console-suite precedent for an invented-and-disclosed key); the KEY is `RES-07`'s property, the name reconciles at #97's landing |
 | `narrative` rows | the plan's own oracle names the table ("No duplicate `narrative` rows"); read through the store handle `M-SYNTH` registers, assumed the cohort handle |
 | synthesis idempotence | ADR-8's conflict-on-duplicate: a retried synthesis for the same identity absorbs into the existing row rather than writing a second |
@@ -45,15 +46,17 @@ from aeh.store import open_store
 from tests.support.impl import ORCH_MODULE, SYNTH_MODULE, require, require_attr
 from tests.support.orch_run import seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 _SUBMISSIONS = tuple(f"SYN-{i:03d}" for i in range(1, 6))
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 
 def _score_rows(store, run_id: str, submission_id: str, criterion_id: str) -> list[dict]:
+    # `last_error` rides along for RES-08's exact-final-state read (the quarantine's
+    # retained error) — the helper predated that case's first actual run.
     return store.cohort("c-2026-7B-orch").query(
-        "SELECT work_id, status, attempts FROM work_unit "
+        "SELECT work_id, status, attempts, last_error FROM work_unit "
         "WHERE run_id = :r AND submission_id = :s AND criterion_id = :c AND stage = 'score'",
         r=run_id,
         s=submission_id,
@@ -89,11 +92,17 @@ def test_res_06_escalation_survives_the_kill_and_dispatches_after_resume(
                 orch.complete(unit.work_id)
     victim = orch.lease("worker-a", "score", 1)[0]
     orch.complete(victim.work_id)
-    orch.enqueue_escalation(run_id, submission_id=victim.submission_id, criterion_id=victim.criterion_id)
+    # The base panel, snapshotted BEFORE the enqueue — the landed semantics insert
+    # the escalation units in the enqueue's own transaction (FR-ORCH-09), so after
+    # the call the pair's score units number five, not three. (The original
+    # written-ahead draft snapshotted after the call; see the module docstring's
+    # disclosed alignment.) The random arm is pinned off by the suite-root conftest,
+    # so exactly the panel's three units are here.
     before = _score_rows(store, run_id, victim.submission_id, victim.criterion_id)
     assert len(before) == 3, (
         f"the panel enumerated {len(before)} score units, expected the panel's 3"
     )
+    orch.enqueue_escalation(run_id, submission_id=victim.submission_id, criterion_id=victim.criterion_id)
 
     # --- the kill: process boundary = close + reopen; a fresh orchestrator ---
     store.close()
@@ -224,6 +233,7 @@ def test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked(tmp_data_
         store.close()
 
 
+@pytest.mark.writtenahead
 def test_res_07_retried_synthesis_conflicts_rather_than_duplicating(tmp_data_dir):
     """`RES-07` (`FR-ORCH-02`, resilience, P0) — `SIGKILL` during synthesis: resume;
     the retried synthesis unit conflicts rather than duplicating (ADR-8); oracle **no

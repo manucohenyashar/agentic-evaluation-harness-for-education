@@ -1396,20 +1396,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{ORCH_MODULE}:Orchestrator.progress",
         ("tests/resilience/orch/test_failure_visibility.py",),
     ),
-    "#60 TS-24 escalation boundaries (RES-06, RES-08)": (
-        # Both cases enter at the escalation enqueue (#60's §3.7 member): RES-06
-        # kills after it, RES-08 holds the exact ledger state a permanent judge
-        # failure leaves beside it. The aggregation-side fallback half of RES-08 is
-        # TC-AGG-12's (M-AGG) and is not re-asserted here.
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.enqueue_escalation",
-        (
-            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
-            "test_res_06_escalation_survives_the_kill_and_dispatches_after_resume",
-            "tests/resilience/orch/test_escalation_and_synthesis_boundaries.py::"
-            "test_res_08_two_verdicts_never_adjudicate_the_third_is_never_faked",
-        ),
-    ),
     "#97 TS-24 synthesis boundary (RES-07)": (
         # The design declares no M-SYNTH Protocol (grep of detailed-design.md for an
         # Interfaces block returns nothing), so the key is an invented-and-used-together
