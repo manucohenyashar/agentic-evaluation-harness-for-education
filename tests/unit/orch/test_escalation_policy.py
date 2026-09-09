@@ -1,23 +1,23 @@
-"""`TS-23`'s escalation-policy unit cases — `TC-ORCH-13`, `TC-ORCH-14`, `TC-ORCH-20`,
-`TC-ORCH-27`, `TC-ORCH-32` — **written ahead of their stories** (`#60` owns the breaker,
-the budget and the plan; `#62` owns the estimator; `#95` owns `should_escalate`).
+"""`TS-23`'s escalation-policy unit cases — `TC-ORCH-13`, `TC-ORCH-14`, `TC-ORCH-20`
+**landed at #60** (unmarked there); `TC-ORCH-27` (`#62`, the estimator) and `TC-ORCH-32`
+(`#95`, `should_escalate`) remain written ahead of their stories.
 
 `NFR-ORCH-04` requires the escalation policy to be a pure function of observable signals
 and configuration, evaluable without a model call — which is what makes all five cases
 rung 0. Each case enters at the symbol its story owes; nothing here touches a store.
 
-**Interface this file assumes of #60 / #62 / #95**, listed so it is reconciled
-deliberately rather than discovered (the `test_leasing.py` and `test_pause_lifecycle.py`
-precedents — their assumed names resolved, or failed visibly, at landing):
+**Interface of #60 / #62 / #95**, listed so it is reconciled deliberately rather than
+discovered (the `test_leasing.py` and `test_pause_lifecycle.py` precedents — their
+assumed names resolved, or failed visibly, at landing):
 
 | Name | Status |
 |---|---|
-| `aeh.orch:criterion_breaker_tripped(escalated, processed, *, rate=None, min_n=None) -> bool` | **invented** (the design pins the semantics and the two constants but no function name): tripped iff `processed >= min_n` **and** `escalated / processed > rate` — "more than half", strict, of the first `ORCH_CRITERION_BREAKER_MIN_N` submissions (FR-ORCH-13, CT-ORCH-16). Defaults are the module constants. |
-| `aeh.orch:admit_escalations(candidates, *, escalated, processed, budget=None) -> AdmissionPlan` | **invented**: candidates are `(key, expected_value)` pairs; the returned plan exposes `.admitted` and `.provisional` as tuples of keys (a NamedTuple or similar — the test reads those two attribute names only). |
-| `aeh.orch:validate_escalation_plan(judge_count) -> int` | **invented**: returns the normalized escalated panel depth; raises `EvenEscalationPlanError` on any even count (FR-ORCH-10, CT-ORCH-08). The design names no exception; the invented name is the "exact exception" oracle's pin and reconciles at #60's landing. |
-| `aeh.orch:estimated_completion_seconds(*, completed, remaining, elapsed_seconds, escalation_rate_so_far) -> float` | **invented**: the pure core behind `ProgressReport.estimated_completion` (§3.7). |
-| above-budget admission = defer **all** pending, in EV-desc order | declared reading: a hard rate cap admits nothing while the rate exceeds it; FR-ORCH-14's "continue admitting in expected-value order" is honored as the EV order in which deferral is recorded and later admission resumes as `processed` grows. #60 may instead ship an allowance-based partial admission — if so, the 31% limb fails visibly and is reconciled then, not papered over here. |
-| at-budget is **not** above-budget | "exceeds the configured budget" is read strict, matching the breaker's "more than half": 30% behaves like 29%, and 31% is the first rationed state. |
+| `aeh.orch:criterion_breaker_tripped(escalated, processed, *, rate=None, min_n=None) -> bool` | **landed at #60** (the design pins the semantics and the two constants but no function name — this file's invented name is what shipped): tripped iff `processed >= min_n` **and** `escalated / processed > rate` — "more than half", strict, of the first `ORCH_CRITERION_BREAKER_MIN_N` submissions (FR-ORCH-13, CT-ORCH-16). Defaults are the module constants. |
+| `aeh.orch:admit_escalations(candidates, *, escalated, processed, budget=None) -> AdmissionPlan` | **landed at #60** with the declared shape: candidates are `(key, expected_value)` pairs; the returned plan exposes `.admitted` and `.provisional` as tuples of keys (a NamedTuple). |
+| `aeh.orch:validate_escalation_plan(judge_count) -> int` | **landed at #60**: returns the normalized escalated panel depth; raises `EvenEscalationPlanError` on any even count (FR-ORCH-10, CT-ORCH-08) — the invented name is the "exact exception" oracle's pin and is what shipped. |
+| `aeh.orch:estimated_completion_seconds(*, completed, remaining, elapsed_seconds, escalation_rate_so_far) -> float` | **invented**: the pure core behind `ProgressReport.estimated_completion` (§3.7); reconciles at #62's landing. |
+| above-budget admission = defer **all** pending, in EV-desc order | **the landed reading**: a hard rate cap admits nothing while the rate exceeds it; FR-ORCH-14's "continue admitting in expected-value order" is honored as the EV order in which deferral is recorded and later admission resumes as `processed` grows. The 31% limb passes against the shipped `admit_escalations`. |
+| at-budget is **not** above-budget | "exceeds the configured budget" is read strict, matching the breaker's "more than half": 30% behaves like 29%, and 31% is the first rationed state. Landed. |
 | `should_escalate(score, criterion, history, baseline)` | design §3.8 Protocol member; the stand-ins carry the design's field names and reconcile at #95's landing. |
 
 Statistical parameters are stated (the oracle is "statistical with stated n and tolerance"):
@@ -37,8 +37,6 @@ from types import SimpleNamespace
 import pytest
 
 from tests.support.impl import AGG_MODULE, ORCH_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 
 # --- TC-ORCH-13 ---------------------------------------------------------------------------
@@ -208,6 +206,7 @@ def test_tc_orch_20_even_escalation_plans_are_rejected(judge_count):
 # --- TC-ORCH-27 ---------------------------------------------------------------------------
 
 
+@pytest.mark.writtenahead
 def test_tc_orch_27_estimated_completion_adjusts_for_the_observed_escalation_rate():
     """`TC-ORCH-27` (`FR-ORCH-24`, unit / rung 0, P1) — estimated completion from observed
     throughput against remaining units **adjusted for the escalation rate observed so
@@ -273,6 +272,7 @@ class _RefusingStoreSpy:
         )
 
 
+@pytest.mark.writtenahead
 def test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store(network_guard):
     """`TC-ORCH-32` (`NFR-ORCH-04`, artifact assertion / rung 0, P0) — the escalation
     policy function is evaluable with **no model call and no store access**: called under

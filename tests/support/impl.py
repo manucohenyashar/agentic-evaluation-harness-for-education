@@ -1477,72 +1477,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-23 (issue #64), the escalation / breaker / random-arm / cost-ceiling cases -----
     #
-    # The pure policy functions are #60's, the estimator is #62's, the policy function
-    # itself is M-AGG's (#95), and the cost-ceiling pause is #61's. Every invented name is
-    # declared in the test module's docstring with its reconciling story — the
-    # `record_run_metrics` precedent: the design pins the semantics and the constants but
-    # no function names, so the tests invent and use them together.
-    "#60 TS-23 criterion breaker (TC-ORCH-13)": (
-        "symbols",
-        (
-            f"{ORCH_MODULE}:criterion_breaker_tripped,"
-            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_RATE,"
-            f"{ORCH_MODULE}:ORCH_CRITERION_BREAKER_MIN_N"
-        ),
-        (
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[9-20-False]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[10-20-False]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[11-20-True]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[10-19-False]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[11-19-False]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[12-24-False]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_13_breaker_trips_only_above_half_at_or_after_the_twenty_minimum"
-            "[13-24-True]",
-        ),
-    ),
-    "#60 TS-23 escalation budget (TC-ORCH-14)": (
-        "symbols",
-        f"{ORCH_MODULE}:admit_escalations,{ORCH_MODULE}:ORCH_ESCALATION_BUDGET",
-        (
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_14_budget_rations_above_it_and_marks_the_remainder_provisional",
-        ),
-    ),
-    "#60 TS-23 escalation plan (TC-ORCH-20)": (
-        "symbols",
-        (
-            f"{ORCH_MODULE}:validate_escalation_plan,"
-            f"{ORCH_MODULE}:EvenEscalationPlanError"
-        ),
-        (
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
-            "[1-3]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
-            "[3-3]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_odd_escalation_plans_are_accepted_with_one_escalating_to_three"
-            "[5-5]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_even_escalation_plans_are_rejected[2]",
-            "tests/unit/orch/test_escalation_policy.py::"
-            "test_tc_orch_20_even_escalation_plans_are_rejected[4]",
-        ),
-    ),
+    # #60's six entries (the breaker, the budget, the plan, the sampler, the enqueue's
+    # atomicity and the arm's enumeration mechanism) resolved at that landing — the
+    # declared interface names shipped as declared. The estimator is #62's, the policy
+    # function itself is M-AGG's (#95), and the cost-ceiling pause is #61's. Every
+    # remaining invented name is declared in its test module's docstring with its
+    # reconciling story — the `record_run_metrics` precedent: the design pins the
+    # semantics and the constants but no function names, so the tests invent and use
+    # them together.
     "#62 TS-23 estimated completion (TC-ORCH-27)": (
         "symbol",
         f"{ORCH_MODULE}:estimated_completion_seconds",
@@ -1560,40 +1502,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/unit/orch/test_escalation_policy.py::"
             "test_tc_orch_32_escalation_policy_is_pure_no_sockets_no_store",
-        ),
-    ),
-    "#60 TS-23 random arm sampler (TC-ORCH-12 statistical + ADV-12)": (
-        "symbols",
-        f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,{ORCH_MODULE}:random_arm_selection",
-        (
-            "tests/unit/orch/test_random_arm.py::"
-            "test_tc_orch_12_random_arm_share_converges_on_the_configured_rate",
-            "tests/unit/orch/test_random_arm.py::"
-            "test_tc_orch_12_random_arm_selection_is_independent_of_confidence",
-            "tests/unit/orch/test_random_arm.py::"
-            "test_adv_12_confidently_wrong_population_is_still_sampled_by_the_random_arm",
-        ),
-    ),
-    "#60 TS-23 escalation atomicity (TC-ORCH-11)": (
-        "symbol",
-        f"{ORCH_MODULE}:Orchestrator.enqueue_escalation",
-        (
-            "tests/integration/orch/test_escalation_atomicity.py::"
-            "test_tc_orch_11_enqueue_escalation_commits_and_rolls_back_with_the_callers_transaction",
-        ),
-    ),
-    "#60 TS-23 random arm enumeration (TC-ORCH-12 mechanism)": (
-        "symbols",
-        (
-            f"{ORCH_MODULE}:ORCH_RANDOM_ARM_RATE,"
-            f"{ORCH_MODULE}:ORCH_ESCALATION_BUDGET,"
-            f"{ORCH_MODULE}:Orchestrator.enqueue_escalation"
-        ),
-        (
-            "tests/integration/orch/test_random_arm_enumeration.py::"
-            "test_tc_orch_12_the_arm_is_enumerated_up_front_before_any_confidence_exists",
-            "tests/integration/orch/test_random_arm_enumeration.py::"
-            "test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm",
         ),
     ),
     "#61 TS-23 cost ceiling (TC-ORCH-15)": (

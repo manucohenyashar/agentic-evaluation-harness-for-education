@@ -1,5 +1,5 @@
 """`TS-23`'s random-arm statistical cases — `TC-ORCH-12` (the statistical core) and
-`ADV-12` (the routing-policy attack) — **written ahead of #60**.
+`ADV-12` (the routing-policy attack) — **landed at #60** (unmarked there).
 
 FR-ORCH-11: the random arm is enumerated at `ORCH_RANDOM_ARM_RATE` (0.07), independent
 of confidence, and never suppressed by the escalation ceiling. CT-ORCH-15: `origin` keeps
@@ -7,13 +7,13 @@ it statistically separable. The plan's oracle for `TC-ORCH-12` is *"Statistical 
 stated n and tolerance"*, and §4.6's randomness row names this case directly: *"TC-ORCH-12
 asserts the distribution over 10k seeded draws."*
 
-**Interface this file assumes of #60** (declared for reconciliation — the design pins the
+**Interface of #60** (declared for reconciliation — the design pins the
 rate and the semantics but no function name; the `record_run_metrics` precedent):
 
 | Name | Status |
 |---|---|
-| `aeh.orch:ORCH_RANDOM_ARM_RATE` | design §3.7 Configuration: 0.07 (the HLD's 5–10% band's declared assumption) |
-| `aeh.orch:random_arm_selection(key, seed, rate=None) -> bool` | **invented**: the pure, seeded decision the enumeration path consults per candidate unit. `key` is the unit's identity (the work-id inputs), `seed` the run's seeded draw, `rate` defaulting to the module constant. If #60 ships the decision under another name or inside `enumerate_units`, the rename here and in the registry entry is one visible line. |
+| `aeh.orch:ORCH_RANDOM_ARM_RATE` | design §3.7 Configuration: 0.07 (the HLD's 5–10% band's declared assumption) — landed |
+| `aeh.orch:random_arm_selection(key, seed, rate=None) -> bool` | **landed at #60 with this name**: the pure, seeded decision the enumeration path consults per candidate unit. `key` is the unit's identity (the work-id inputs), `seed` the run's seeded draw, `rate` defaulting to the module constant. |
 | mechanism half (origin string, up-front enumeration, non-suppression above budget) | asserted at the enumeration surface in `tests/integration/orch/test_random_arm_enumeration.py` — a unit/rung-0 file cannot observe a ledger row; this file holds the statistical oracle the plan names. |
 
 **Statistical parameters, stated** (the oracle is "statistical with stated n and
@@ -32,8 +32,6 @@ from __future__ import annotations
 import pytest
 
 from tests.support.impl import ORCH_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 #: The convergence limb's n — the plan's own "10,000 seeded enumerations".
 N_DRAWS = 10_000

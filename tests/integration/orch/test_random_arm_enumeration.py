@@ -1,7 +1,8 @@
-"""`TC-ORCH-12`'s mechanism half — the random arm at the enumeration surface, written
-ahead of #60. The statistical core (10k-draw convergence, strata independence, ADV-12's
-engineered population) lives in `tests/unit/orch/test_random_arm.py`; this file holds the
-two mechanism clauses the plan states with it and a rung-0 file cannot observe:
+"""`TC-ORCH-12`'s mechanism half — the random arm at the enumeration surface; **landed
+at #60** (unmarked there). The statistical core (10k-draw convergence, strata
+independence, ADV-12's engineered population) lives in `tests/unit/orch/test_random_arm.py`;
+this file holds the two mechanism clauses the plan states with it and a rung-0 file
+cannot observe:
 
 1. **The arm is enumerated up front** (`FR-ORCH-11`, `CT-ORCH-15`): `origin =
    'random_arm'` units exist immediately after `enumerate_units`, before any scoring has
@@ -19,15 +20,18 @@ two mechanism clauses the plan states with it and a rung-0 file cannot observe:
 | Thing | Status |
 |---|---|
 | `work_unit.origin`, `CHECK (origin IN ('base','escalation','random_arm'))` | **shipped** — orch's own cohort migration (`_ORCH_COHORT_007`); CT-ORCH-15's separability carrier needs no assumption, only the value. |
-| the arm's selection inside `enumerate_units` | #60's: enumeration reads `ORCH_RANDOM_ARM_RATE` and samples; its pure core is the unit file's `random_arm_selection`. This file asserts the ledger outcome, not the sampler's internals. |
-| `Orchestrator.enqueue_escalation(tx, criterion_score_key, judges)` | assumed per CT-ORCH-08 — the same declared form `test_escalation_atomicity.py` uses (the caller's transaction, the key `(submission_id, criterion_id)`, the **added** judges). |
-| the escalation rate's denominator | declared reading: escalations against the run's score units at the time — here 35 escalations over 100 single-judge base units = 35%, above the 0.30 budget. If #60 ships a different denominator, the overrun premise below is the line that reconciles. |
+| the arm's selection inside `enumerate_units` | **landed at #60**: enumeration reads `HARNESS_ORCH_RANDOM_ARM_RATE` (default `ORCH_RANDOM_ARM_RATE`) at call time and samples; its pure core is the unit file's `random_arm_selection`. Both cases here override the suite-root conftest's rate-0 pin back to the default 0.07 — the arm is what is under test. This file asserts the ledger outcome, not the sampler's internals. |
+| `Orchestrator.enqueue_escalation(tx, criterion_score_key, judges)` | **landed in the CT-ORCH-08 form** — the caller's transaction, the key `(submission_id, criterion_id)`, the judges (here the **added** two; None derives from the panel). |
+| the escalation rate's denominator | **landed, disclosed**: the observed rate the budget reads is done-based on BOTH sides — pairs whose judged scoring completed over pairs whose escalation completed — so in this fixture (nothing completed yet) dispatch admits freely; the "above budget" premise is the test's own arithmetic (35/100 = 35% > 0.30), which pins the ledger state the ceiling must not let suppress the arm. |
 | the growth batch's `INSERT INTO submission` rows | the `orch_run.py` bypass, disclosed: `M-INGEST` is not under test, the ledger is, and the rows are the shipped writer's exact shape. |
 
 ≥1 assertions are made against the suite's fixed world, not against luck: the expected
-arm share of a 100-submission batch is ~7 units (p=0.07), so a working sampler under any
-sane seed leaves many; an outcome of 0 from #60's shipped seed is a visible
-reconciliation, not a flake, because nothing here is re-randomized between runs.
+arm share of a 100-submission batch is ~7 units (p=0.07), so a working sampler leaves
+many. The draw is deterministic for a given run id — a hash over the unit's identity and
+the run's seeded draw — but a `uuid4` run id would re-randomize it per process, so both
+cases pin `run_id="run-arm-mech-16"` (base batch: 5 arm units; growth batch: 16; none in
+the first 35 base pairs, whose escalation the arm must not pre-empt — see `_RUN_ID`), and
+an outcome of 0 is no longer reachable by seed luck.
 
 Isolation: rung 2 — real store, real Tier P package, real cohort ledger, no doubles.
 """
@@ -38,10 +42,18 @@ import pytest
 
 from aeh.store import open_store
 from tests.support.conf_builders import EDGE_JUDGE_2, EDGE_JUDGE_3
-from tests.support.impl import ORCH_MODULE, require
+from tests.support.impl import ORCH_MODULE, require, require_attr
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
+
+#: The pinned run id both cases enumerate under — its seeded draw leaves 5 arm units in
+#: the base batch and 16 in the growth batch at the default rate, NONE of them in the
+#: first 35 base pairs the ceiling case escalates (an arm-drawn pair already seats the
+#: 1→3 widening's judges, and the escalation plan refuses to re-add a seated judge —
+#: one judge, one seat), so the ≥1 oracles are facts of the fixed world, not per-process
+#: luck.
+_RUN_ID = "run-arm-mech-16"
 
 _BASE = tuple(f"SYN-{i:03d}" for i in range(1, 101))  # 100 base submissions
 _GROWTH = tuple(f"SYN-{i:03d}" for i in range(101, 201))  # 100 more, added mid-run
@@ -74,17 +86,22 @@ def _add_growth_submissions(store) -> None:
 
 
 def test_tc_orch_12_the_arm_is_enumerated_up_front_before_any_confidence_exists(
-    tmp_data_dir,
+    tmp_data_dir, monkeypatch
 ):
     """`TC-ORCH-12` mechanism half 1 (`FR-ORCH-11`, `CT-ORCH-15`, integration / rung 2,
     P0) — `origin = 'random_arm'` units exist immediately after enumeration, with no
     verdict or score row anywhere in the store: selection is structurally independent of
     confidence, because at enumeration time there is none to read."""
     require(ORCH_MODULE, "ORCH_RANDOM_ARM_RATE", issue="#60")
+    # The arm is what is under test: lift the suite-root conftest's rate-0 pin back to
+    # the default 0.07 (the test's setenv lands after the autouse fixture's).
+    monkeypatch.setenv("HARNESS_ORCH_RANDOM_ARM_RATE", "0.07")
 
     store = open_store(tmp_data_dir)
     try:
-        orch, run_id, _ = seed_run(store, submissions=_BASE, criteria=_CRITERIA)
+        orch, run_id, _ = seed_run(
+            store, submissions=_BASE, criteria=_CRITERIA, run_id=_RUN_ID
+        )
         orch.enumerate_units(run_id)
         cohort = store.cohort(ORCH_COHORT_ID)
 
@@ -143,18 +160,24 @@ def test_tc_orch_12_the_arm_is_enumerated_up_front_before_any_confidence_exists(
         store.close()
 
 
-def test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm(tmp_data_dir):
+def test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm(
+    tmp_data_dir, monkeypatch
+):
     """`TC-ORCH-12` mechanism half 2 (`FR-ORCH-11`, integration / rung 2, P0) — with 35
     of the 100 base criteria escalated (35%, above the 0.30 budget), a growth batch of
     100 new submissions re-enumerated via `resume()` still samples the arm: the ceiling
     rations escalations, never the arm."""
-    rate, budget, _enqueue = require(
+    rate, budget = require(
         ORCH_MODULE,
         "ORCH_RANDOM_ARM_RATE",
         "ORCH_ESCALATION_BUDGET",
-        "Orchestrator.enqueue_escalation",
         issue="#60",
     )
+    Orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#58")
+    require_attr(Orchestrator, "enqueue_escalation", issue="#60")
+    # The arm is what is under test: lift the suite-root conftest's rate-0 pin back to
+    # the default 0.07 (the test's setenv lands after the autouse fixture's).
+    monkeypatch.setenv("HARNESS_ORCH_RANDOM_ARM_RATE", "0.07")
 
     # The overrun premise, checked against the shipped constants: if the budget is
     # ever retuned past 35%, the fixture must grow with it — and this line is where
@@ -167,7 +190,9 @@ def test_tc_orch_12_the_escalation_ceiling_does_not_suppress_the_arm(tmp_data_di
 
     store = open_store(tmp_data_dir)
     try:
-        orch, run_id, _ = seed_run(store, submissions=_BASE, criteria=_CRITERIA)
+        orch, run_id, _ = seed_run(
+            store, submissions=_BASE, criteria=_CRITERIA, run_id=_RUN_ID
+        )
         orch.enumerate_units(run_id)
         cohort = store.cohort(ORCH_COHORT_ID)
 
