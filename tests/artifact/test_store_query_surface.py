@@ -241,45 +241,46 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the heartbeat's lease extension with its changes() read, the sweeper's guarded
     # requeue with its changes() read, the completion with its changes() read, and
     # the failure record with its changes() read. Lines moved with #59's sweep-plan
-    # additions and #60's random-arm block in enumerate_units; the sites are the
-    # same statements as #57/#58's.
-    "aeh.orch:1407",
-    "aeh.orch:1627",
-    "aeh.orch:1636",
-    "aeh.orch:1885",
-    "aeh.orch:1892",
-    "aeh.orch:2087",
-    "aeh.orch:2094",
-    "aeh.orch:2145",
-    "aeh.orch:2149",
-    "aeh.orch:2199",
-    "aeh.orch:2204",
-    "aeh.orch:2252",
-    "aeh.orch:2258",
-    "aeh.orch:3012",
+    # additions, #60's random-arm block in enumerate_units and #60's escalation
+    # restructure; the sites are the same statements as #57/#58's.
+    "aeh.orch:1571",
+    "aeh.orch:1792",
+    "aeh.orch:1801",
+    "aeh.orch:2081",
+    "aeh.orch:2088",
+    "aeh.orch:2283",
+    "aeh.orch:2290",
+    "aeh.orch:2341",
+    "aeh.orch:2345",
+    "aeh.orch:2395",
+    "aeh.orch:2400",
+    "aeh.orch:2448",
+    "aeh.orch:2454",
+    "aeh.orch:3239",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
-    # or the method's own): the enqueue's reads (the pair's prior panel, the
-    # idempotence probe, the breaker's latch and window and escalated set), the
-    # breaker's latch write, the request row's insert, the drain's queue read and
-    # admit write, and the final queue-depth read; then the drain's unit insertion
-    # helper re-deriving the pair's panel, inserting the widened units (INSERT OR
-    # IGNORE with its own changes() read — the same honest count the enumerate pass
-    # gives) and the report assembler's queue-depth read.
-    "aeh.orch:2401",
-    "aeh.orch:2416",
-    "aeh.orch:2436",
-    "aeh.orch:2450",
-    "aeh.orch:2456",
-    "aeh.orch:2474",
-    "aeh.orch:2511",
-    "aeh.orch:2542",
-    "aeh.orch:2555",
-    "aeh.orch:2583",
-    "aeh.orch:2624",
-    "aeh.orch:2642",
-    "aeh.orch:2646",
-    "aeh.orch:2693",
+    # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
+    # panel read, the idempotence probe, the breaker's latch and window and
+    # escalated-set reads, the breaker's latch write, the request row's insert and
+    # its admit flip, the queue-depth read behind the enqueue's gate, the unit
+    # insertion helper's per-judge inserts with their changes() reads (the same
+    # honest count the enumerate pass gives), and the report assembler's
+    # queue-depth read. The restructure moved the queue's drain into the claim
+    # pass's dispatch gate, so the drain's reads are gone and the key's run
+    # resolution arrived.
+    "aeh.orch:2556",
+    "aeh.orch:2614",
+    "aeh.orch:2630",
+    "aeh.orch:2650",
+    "aeh.orch:2664",
+    "aeh.orch:2670",
+    "aeh.orch:2688",
+    "aeh.orch:2725",
+    "aeh.orch:2741",
+    "aeh.orch:2763",
+    "aeh.orch:2810",
+    "aeh.orch:2814",
+    "aeh.orch:2893",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
@@ -298,6 +299,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.det:1645",
     "aeh.det:1653",
     "aeh.det:1661",
+    "aeh.det:1667",
     # The ingest sites are #226's line numbers (the live-crop/raster-persistence
     # story and its review fixes shifted the module; every statement verified
     # unchanged against the prior baseline, the tripwire diff being the line
