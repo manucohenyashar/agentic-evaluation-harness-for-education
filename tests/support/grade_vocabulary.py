@@ -23,6 +23,7 @@ rename one edit.
 | `aeh.grade:coverage_for(scores, criterion_ids)` | **invented** — FR-GRADE-04's coverage record as a pure seam. `criterion_ids` is the package's full criterion list, so a criterion with **no** row (its extraction quarantined) is counted `criteria_missing` rather than silently absent. Returns the five design-named counters. |
 | `aeh.grade:boundary_risk(total, provisional_intervals, boundaries)` | **invented** — FR-GRADE-05's `boundary_at_risk` as a pure seam. `total` is the computed total **including** the provisional criteria's current points; `provisional_intervals` is the **injected interval source** the case requires (test plan §5.14 TC-GRADE-06; the full-band-range assumption is design `TBD` §7.4, CT-GRADE-19): one `(low, high)` offset pair per provisional criterion — where that criterion's eventual points may yet move relative to its current ones, the full declared band range under the conservative assumption. Because each criterion's current points sit inside its own range, `total` always lies inside the achievable span, so `score_low = total + sum(lows)` and `score_high = total + sum(highs)` bracket every achievable outcome; `at_risk` is set when any boundary floor lies inside `[score_low, score_high]` inclusive both ends — landing exactly on a floor resolves to that floor's band (the shipped DDL's floors are INCLUSIVE), which is the case's third scenario, and containment is exactly "the range spans a band edge". Returns `.at_risk`, `.score_low`, `.score_high` (the latter two `None` when not at risk, per CT-GRADE-05). |
 | `aeh.grade:open_grade(store)` | **invented** — the rung-2 constructor (the `open_review` precedent). Design §3.14 declares the service Protocol but no constructor; the service resolves the run's package version from the run row and reads policy/boundaries through `M-PKG`. |
+| `CoverageSummary.grades_by_state`; `FinalizationRecord.finalized`, `.coverage` | **invented field names** on design-declared return types (§3.14's Interfaces block: `coverage(run_id) -> CoverageSummary`, `finalize_batch(run_id, actor) -> FinalizationRecord`). `grades_by_state` maps the three state literals (`final` / `provisional` / `incomplete`) to counts; the record echoes the coverage it named and reports how many grades it finalized. The **automatic** finalization path (FR-GRADE-10) has no Protocol member of its own — it is probed through the service's own declared pass, a `compute_all` re-invocation once the lapse/completion state has changed; if #101 lands the sweep on another surface the rename is one line. |
 
 **Assumed of the shipped-and-landing schema** (the `run_id`-column precedent in
 `test_completion_predicate.py`): #101's chain is `Depends on: #93 -> #92 -> #91`, so when
@@ -35,9 +36,12 @@ coverage field names (`criteria_auto` …), the vocabulary TC-GRADE-07's fixture
 ("auto-accepted, reviewed, provisional, missing"); a missing criterion has **no** row, so
 `missing` is never a row state. `submission_grade`'s full column set (per HLD §9.6, which
 is not in this repository) is assumed to carry at least `submission_id`, `revision`,
-`state`, `grade`, `total`, `policy_version`, `key_version`, `computed_at`, the five
-coverage counters, `boundary_at_risk`, `score_low`, `score_high` and the missing-input
-names — reconciled at #101's migration.
+`run_id` and `is_current` (ADR-9's `(run_id, submission_id, revision)` key and
+current-flag are design-declared — §3.14's data-structures note), `state`, `grade`,
+`total`, `policy_version`, `answer_key_ref` (the shipped `M-PKG` name for the key a
+grade pins — `PackageCatalog.answer_key`'s docstring: the grade "pins by
+`answer_key_ref`"), `computed_at`, the five coverage counters, `boundary_at_risk`,
+`score_low`, `score_high` and the missing-input names — reconciled at #101's migration.
 
 **Disclosed stand-ins.** Writing `criterion_score` rows directly is the
 `test_completion_predicate.py` pattern: the production writer is `M-AGG`'s
@@ -45,8 +49,10 @@ names — reconciled at #101's migration.
 module may bypass it; this support file is test scaffolding standing in for that writer,
 writing exactly the rows it will write. The same applies to `backdate_grades` (the
 review-window cases need a determinizable "computed_at", and a wall-clock seam on the
-service is not a design-declared surface) and to the run-row re-baseline UPDATE in
-`test_recompute_on_correction.py`.
+service is not a design-declared surface), to the run-completion UPDATE in
+`test_finalization.py` (the `UPDATE run SET status = 'complete'` pattern
+`test_resume_and_rerun.py` already uses — the run row is `M-ORCH`'s alone to write) and
+to the run-row re-baseline UPDATE in `test_recompute_on_correction.py`.
 """
 
 from __future__ import annotations
