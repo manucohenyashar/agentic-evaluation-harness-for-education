@@ -1950,8 +1950,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         ("tests/artifact/test_scoring_isolation.py",),
     ),
     "#79 judge prompt (TS-30)": (
+        # The numeral file's world also runs the EXTRACT leg to put evidence rows
+        # into the store (the "#71 TS-27" shape: a conjunction over both modules),
+        # so the extract symbols ride this entry — the file stays red until #68's
+        # leg resolves too, not merely the judge surface.
         "symbols",
-        ",".join(f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS),
+        ",".join(
+            [f"{JUDGE_MODULE}:{name}" for name in TS30_PROMPT_SYMBOLS]
+            + [
+                f"{EXTRACT_MODULE}:{_EXTRACT_ASSEMBLE}",
+                f"{EXTRACT_MODULE}:{_EXTRACT_PROMPT_FIELDS}",
+                f"{EXTRACT_MODULE}:{WORKER}",
+            ]
+        ),
         ("tests/artifact/test_no_numerals_in_judge_prompt.py",),
     ),
 }
