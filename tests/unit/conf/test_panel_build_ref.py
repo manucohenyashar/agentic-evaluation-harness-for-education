@@ -17,6 +17,8 @@ silently change: every stored `package_validation` primary key depends on them.
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from aeh.conf import (
@@ -166,16 +168,67 @@ def test_tc_conf_19_a_ref_carrying_an_encoding_separator_is_refused(field, value
 
 
 def test_tc_conf_19_no_single_ref_panel_can_forge_a_three_judge_panels_key():
-    """The property the refusal protects, asserted over the crafted collision itself.
+    """The crafted collision's illegal member is refused at construction.
 
-    Without the guard this passed identical values: `compute_panel_build_ref` over a one-member
-    panel returned `REFERENCE_PANEL_BUILD_REF`, the key of a completely different three-judge
-    panel. Asserting the exception alone would not show that, which is why the collision is
-    constructed here rather than described.
+    The forged `provider` spells out J1's and J2's full records and J3's build and
+    quantization complete the third — a one-member panel encoding three. `ModelRef` refuses it
+    before it can reach `compute_panel_build_ref`; the differential below proves the forgery
+    was real, so this refusal is not a formality.
     """
-    with pytest.raises(ConfigurationError):
-        forged = ModelRef("judge", _forged_provider_spelling_out(J1, J2), J3.build_id, J3.quantization)
-        assert compute_panel_build_ref((forged,)) != REFERENCE_PANEL_BUILD_REF, (
-            "a one-judge panel forged the three-judge panel's key: panel_build_ref is not "
-            "injective over legal panels (CT-CONF-07)"
-        )
+    with pytest.raises(ConfigurationError) as caught:
+        ModelRef("judge", _forged_provider_spelling_out(J1, J2), J3.build_id, J3.quantization)
+    assert type(caught.value) is ConfigurationError
+
+
+def test_tc_conf_19_the_forged_solo_panel_serializes_to_the_three_judge_panels_exact_body():
+    """The collision pair itself, asserted over the encoding the refusal protects.
+
+    `ModelRef` refuses the forged ref, so the collision cannot be computed through the public
+    API — the guard is in the way, which is the point. What can be asserted is the canonical
+    encoding, frozen because every stored `package_validation` key depends on it: joined with
+    the documented separators, the forged one-member panel reproduces the three-judge panel's
+    serialization byte for byte and hashes to its committed reference. Were the separator check
+    removed, `compute_panel_build_ref` over that one-member panel would return exactly
+    `REFERENCE_PANEL_BUILD_REF` — the two refusal tests above are what go red.
+
+    The second assertion is what binds this to reality rather than to the reconstruction: the
+    committed literal was produced by the real implementation out of process, so a typo in the
+    body built here fails it even though the two locally-built strings would still agree.
+    """
+    forged_solo_body = _FIELD_SEPARATOR.join(
+        (_forged_provider_spelling_out(J1, J2), J3.build_id, J3.quantization or "")
+    )
+    three_judge_body = _RECORD_SEPARATOR.join(
+        f"{r.provider}{_FIELD_SEPARATOR}{r.build_id}{_FIELD_SEPARATOR}{r.quantization or ''}"
+        for r in (J1, J2, J3)
+    )
+
+    assert forged_solo_body == three_judge_body
+    assert (
+        "pbr:" + hashlib.sha256(forged_solo_body.encode("utf-8")).hexdigest()[:32]
+        == REFERENCE_PANEL_BUILD_REF
+    )
+
+
+def test_tc_conf_19_no_two_distinct_legal_panels_share_a_panel_build_ref():
+    """The oracle stated as TC-CONF-19 states it — pairwise injectivity over legal panels,
+    not each panel against one baseline.
+
+    The family is every ordered subset of the three judges — a solo panel is the collision
+    story's legal endpoint, and it must not merge with the trio — plus the two field-variant
+    trios. `test_tc_conf_05`'s permutation check covers orderings of the full trio only; this
+    extends pairwise distinctness across sizes, so no canonicalization or truncation shortcut
+    can merge a shorter panel with a longer one.
+    """
+    from itertools import permutations
+
+    judges = (J1, J2, J3)
+    panels = [order for size in (1, 2, 3) for order in permutations(judges, size)]
+    panels += [(J1, J2_OTHER_QUANTIZATION, J3), (J1, J2_OTHER_PROVIDER, J3)]
+
+    refs = [compute_panel_build_ref(panel) for panel in panels]
+
+    assert len(set(refs)) == len(panels), (
+        "two distinct legal panels share one panel_build_ref: the key CT-CONF-07 lets "
+        "consumers treat as a package_validation primary-key component is not injective"
+    )
