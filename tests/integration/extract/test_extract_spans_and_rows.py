@@ -25,11 +25,11 @@ Oracles:
   `resolved_build` the provider reported on the completion (`FR-PROV-04`: the build that
   actually answered, never the one requested).
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"`, a `symbols` conjunction over the module names this
-suite resolves (see `tests/support/extract_vocabulary.py` — design §3.8 pins no Python
-names, so every one is an invented-and-used-together name, the `record_run_start`
-precedent).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, a conjunction over the module names this
+suite resolves, built from `tests/support/extract_vocabulary.py` — design §3.8 pins
+no Python names, so every one is an invented-and-used-together name, the
+`record_run_start` precedent) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 
@@ -81,7 +81,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = EXTRACT_ISSUE
 
@@ -166,7 +166,7 @@ def _extract_once(
     run_id = orchestrator.create_run(ORCH_COHORT_ID, version, _resolved(panel))
     (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
 
-    request = AssembleRequest(unit)
+    request = AssembleRequest(unit, store=store)
     model_ref = extractor_ref()
     provider.record(
         PromptFields(request), model_ref, sampling_params(),
@@ -330,7 +330,9 @@ def test_tc_extract_05_evidence_row_carries_the_providers_resolved_build(
 
         # The result reports the resolved build (`Completion.resolved_build` is
         # "what actually answered", FR-PROV-04) — never a request-time identity.
-        assert getattr(result, "resolved_build", None) == answered_build
+        # §9.9 names the result field `extractor`; the evidence COLUMN stays
+        # `resolved_build` (the assumptions table's one-line rename).
+        assert getattr(result, "extractor", None) == answered_build
 
         # ...and the PERSISTED row carries the same identity.
         rows = _evidence_rows(store, run_id)

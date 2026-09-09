@@ -47,7 +47,7 @@ from tests.support.extract_vocabulary import (
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.contract.extract._doubles import judgment_fields, require_extract_surface
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 
 def test_tc_extract_c02_result_schema_is_exactly_the_declared_fields():
