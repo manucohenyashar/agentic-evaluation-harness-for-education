@@ -9,11 +9,12 @@ before the property bodies run and a degenerate corpus would make the invariant 
 vacuously the day someone removes the marker. The boundary check itself is calibrated
 both ways — a reference implementation AND a deliberately reversed one.
 
-Split by blocker:
-- `test_..._emitted_spans_always_satisfy_the_span_invariant` (writtenahead, `#68`) —
+Split by blocker (the first two carried `writtenahead` markers until #68 landed
+`aeh.extract`; the markers are gone, the tests stay):
+- `test_..._emitted_spans_always_satisfy_the_span_invariant` —
   the property: the module's reply→spans conversion emits only valid spans over
   generated documents;
-- `test_..._a_violating_span_is_impossible_to_persist` (writtenahead, `#68`) — a reply
+- `test_..._a_violating_span_is_impossible_to_persist` — a reply
   carrying a span that breaks the invariant is REFUSED, not clamped: a clamp would
   rewrite the address (silently lying about offsets), a silent drop would let the
   caller believe the set held — the TC-EXTRACT-03 step-3 doctrine. Refusal at the

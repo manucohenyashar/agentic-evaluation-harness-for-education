@@ -20,10 +20,10 @@ canned reply for every request; the request-level contract is TC-EXTRACT-01's an
 CT-PROV-05's, not this case's subject).
 
 **Written ahead of #68** (`M-EXTRACT`) — the call-count half only: the enumeration
-half runs GREEN against shipped `M-ORCH` (it requires nothing of `aeh.extract`), so it
-carries no marker and guards the gate; the file is still registered in
-`WRITTEN_AHEAD_BLOCKERS` under `"#68 extraction suite (TS-26)"` because it carries the
-marker (symbols conjunction; see `tests/support/extract_vocabulary.py`).
+half ran GREEN against shipped `M-ORCH` (it requires nothing of `aeh.extract`), so it
+carried no marker and guarded the gate. The marker on the call-count half and the
+file's `WRITTEN_AHEAD_BLOCKERS` entry (`"#68 extraction suite (TS-26)"`; see
+`tests/support/extract_vocabulary.py`) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**: `ExtractionWorker(store, provider,
 model_ref).process(unit)` — one `complete` call per unit is the one-call-per-unit

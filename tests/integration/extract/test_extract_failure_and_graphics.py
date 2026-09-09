@@ -20,9 +20,9 @@ Oracles:
   span addresses the canonical bytes exactly like any other span. The persisted
   evidence payload carries the same marking — the row is what `M-JUDGE` reads.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#68 extraction suite (TS-26)"`, built from
+`tests/support/extract_vocabulary.py`) left when #68 landed `aeh.extract`.
 
 **Interface this case assumes of #68**, listed so it is reconciled deliberately:
 

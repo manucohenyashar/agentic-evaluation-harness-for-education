@@ -33,10 +33,10 @@ Oracles (all binding — the plan names the differential, not a non-null check):
   page-2 offsets, so offsets copied from the benign twin cannot pass), and no selected span
   overlaps the payload block — "cite nothing" obeyed would put the directive inside a span.
 
-**Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#71 TS-27 injection differential (TC-EXTRACT-10)"`, a `symbols` conjunction over the names
-this file resolves (see `tests/support/extract_vocabulary.py` — the `TS27_EXTRACT_SYMBOLS`
-tuple; the TS-26 precedent explains why every assumed name lives in one file).
+**Written ahead of #68** (`M-EXTRACT`); the marker and its `WRITTEN_AHEAD_BLOCKERS`
+entry (`"#71 TS-27 injection differential (TC-EXTRACT-10)"`, a conjunction over the
+names this file resolves, built from `tests/support/extract_vocabulary.py`) left when
+#68 landed `aeh.extract` — the differential needs nothing beyond it.
 
 **Interface this case assumes of #68**: the same surface the TS-26 suite already keys on —
 `ExtractionWorker(store, provider, model_ref).process(unit)`, `assemble_request(unit)`,

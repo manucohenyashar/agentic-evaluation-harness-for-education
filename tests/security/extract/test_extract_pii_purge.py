@@ -15,8 +15,10 @@ Oracle — **post-purge absence**, against real bytes:
   `TC-STORE-11`/`SEC-13` reclaim-by-evidence idiom, read against extraction's bytes.
 
 **Written ahead of #68** (`M-EXTRACT`). Registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#68 extraction suite (TS-26)"` (symbols conjunction; see
-`tests/support/extract_vocabulary.py`).
+`"#68 TC-EXTRACT-14 purge (waits on M-STATS/M-REVIEW promotion)"`: #68 made the
+extraction half runnable, but the purge half needs the Tier D promotion the shipped
+`purge_cohort` gate names (`audit_record`/`label`/`criterion_stats` scoped by
+`cohort_id`, and `promote` itself — M-STATS/M-REVIEW's to land).
 
 **Interface this case assumes of #68**: `ExtractionWorker(store, provider,
 model_ref).process(unit)` and `assemble_request`/`prompt_fields` — as everywhere in
