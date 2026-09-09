@@ -42,7 +42,7 @@ from tests.support.extract_vocabulary import REQUEST_FIELDS, REQUEST_TYPE
 from tests.support.impl import EXTRACT_MODULE, require
 from tests.contract.extract._doubles import judgment_fields, require_extract_surface
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _PARENT_SPANS = [
     {"start": 41, "end": 91, "text": "The parent's cited material.", "region_kind":
@@ -60,7 +60,14 @@ def _dependent_unit() -> WorkUnit:
         student_name=None,
         submission_id="SYN-001",
         criterion_id="C1",
-        submission_text=None,
+        # The case's subject is the dependency channel, not transcript resolution;
+        # the assembler requires the words (from the unit or the store), so the
+        # fabricated unit carries a minimal canonical artifact.
+        submission_text=(
+            "<untrusted_student_content>\n"
+            "The mechanism keeps the pressure constant while the piston moves.\n"
+            "</untrusted_student_content>"
+        ),
         judge=None,
     )
 

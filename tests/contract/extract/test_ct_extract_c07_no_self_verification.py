@@ -57,7 +57,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _MARKDOWN = build_markdown("The derivation holds for the open criterion.\n")
 # The design's "deterministic criterion" is the shipped catalog's `kind: "mcq"` (the
@@ -96,10 +96,14 @@ def test_tc_extract_c07_no_extract_unit_exists_for_a_deterministic_criterion(
         run_id = orchestrator.create_run(
             ORCH_COHORT_ID, world.version, resolved_config(edge_panel(1))
         )
+        # The shipped ledger enumerates lazily (at `lease`/`resume`); this case reads
+        # the enumerated units directly, so it performs the enumeration itself.
+        orchestrator.enumerate_units(run_id)
         rows = world.store.cohort(ORCH_COHORT_ID).query(
             "SELECT stage, status, criterion_id FROM work_unit WHERE run_id = :r",
             r=run_id,
         )
+        assert rows, "fixture bug: enumeration produced no work units at all"
         deterministic_extract_units = [
             r for r in rows
             if r["stage"] == STAGE_EXTRACT and r["criterion_id"] == "C0"
@@ -140,6 +144,7 @@ def test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source(
     )
 
 
+@pytest.mark.writtenahead  # rung 3: `verify_span` is M-INTEG's (#73), not yet landed
 def test_tc_extract_c07_m_integ_rederives_verification_rather_than_trusting_a_flag(
     tmp_data_dir, make_fixture_provider
 ):

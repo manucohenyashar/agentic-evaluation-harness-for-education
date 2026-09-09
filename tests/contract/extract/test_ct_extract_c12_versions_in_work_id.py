@@ -62,7 +62,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _MARKDOWN = build_markdown("The buffer was bounded after the fix.\n")
 _CRITERIA = [{"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"}]
@@ -137,6 +137,9 @@ def test_tc_extract_c12_the_pinned_constant_flows_enumeration_and_invalidation(
                 panel=edge_panel(1), prompt_template_v=template_version,
             )),
         )
+        # The shipped ledger enumerates lazily (at `lease`/`resume`); this case reads
+        # the enumerated units directly, so it performs the enumeration itself.
+        orchestrator.enumerate_units(run_id)
         handle = world.store.cohort(ORCH_COHORT_ID)
         (run_row,) = handle.query(
             "SELECT package_version_id, panel_config, prompt_template_v "

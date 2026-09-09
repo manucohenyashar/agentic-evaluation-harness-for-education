@@ -42,6 +42,10 @@ import aeh.det  # noqa: F401 -- M-DET owns package 10 and durable 3+4; its cohor
 # contribution included. (TC-PKG-C12's writership scan imports every aeh module
 # mid-suite, so a
 # det-free registry here was an ordering accident, not a smaller world.)
+import aeh.extract  # noqa: F401 -- M-EXTRACT owns cohort 11 (the evidence payload and
+# resolved-build columns; #60's orch_escalation_ledger took 10 first, so the next free
+# number is 11); imported after det so the registry walks in owner order and
+# the golden describes the full binary, extract's columns included.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

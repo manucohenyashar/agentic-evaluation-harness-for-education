@@ -1297,14 +1297,29 @@ _DURABLE_002: tuple[Statement, ...] = (
     ),
 )
 
-TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = {
-    Tier.PACKAGE: (Migration(1, "package_tier_initial", _PACKAGE_001),),
-    Tier.COHORT: (Migration(1, "cohort_tier_initial", _COHORT_001),),
-    Tier.DURABLE: (
-        Migration(1, "durable_tier_initial", _DURABLE_001),
-        Migration(2, "durable_lease_clock", _DURABLE_002),
-    ),
-}
+class _VersionOrderedRegistry(dict):
+    """Tier chains stay in ascending version order whatever order their owners get
+    imported in. Owners append by rebinding a tier's tuple
+    (`TIER_MIGRATIONS[tier] = TIER_MIGRATIONS[tier] + (m,)`) at module level, and
+    module import order is not controllable once several modules append — an
+    early-collected test that imports `aeh.det` before `aeh.ingest` used to land
+    cohort 9 ahead of cohort 2-6. Sorting at the write keeps the registry's order a
+    contract (TC-STORE-06's no-reverse-step) instead of an accident of collection."""
+
+    def __setitem__(self, key: Tier, value: tuple[Migration, ...]) -> None:
+        super().__setitem__(key, tuple(sorted(value, key=lambda m: m.version)))
+
+
+TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = _VersionOrderedRegistry(
+    {
+        Tier.PACKAGE: (Migration(1, "package_tier_initial", _PACKAGE_001),),
+        Tier.COHORT: (Migration(1, "cohort_tier_initial", _COHORT_001),),
+        Tier.DURABLE: (
+            Migration(1, "durable_tier_initial", _DURABLE_001),
+            Migration(2, "durable_lease_clock", _DURABLE_002),
+        ),
+    }
+)
 
 #: The two statements the lease counter is read and written with. Module-level literals, never
 #: assembled — `SEC-15`, and the same discipline every other statement in this file follows.

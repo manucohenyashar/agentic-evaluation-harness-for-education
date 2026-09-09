@@ -55,7 +55,7 @@ from tests.contract.extract._doubles import (
     require_extract_surface,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 _SUBMISSION = "The buffer overflowed because the index was never bounds-checked.\n"
 _ADVERSARIAL_BODY = (

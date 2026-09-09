@@ -68,7 +68,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = pytest.mark.contract
 
 #: The canonical artifact of a submission whose answer is a labelled diagram: the
 #: student's words in a transcribed region, the transcriber's account of the picture
@@ -130,7 +130,8 @@ def test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_r
         (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
         model_ref = extractor_ref()
         world.provider.record(
-            PromptFields(AssembleRequest(unit)), model_ref, sampling_params(),
+            PromptFields(AssembleRequest(unit, store=world.store)),
+            model_ref, sampling_params(),
             span_completion([transcribed, graphic], build_id="ct-c09-build"),
         )
         result = Worker(world.store, world.provider, model_ref).process(unit)
@@ -168,6 +169,7 @@ def test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_r
         world.close()
 
 
+@pytest.mark.writtenahead  # rung 3: the routing signal is M-INTEG's (#74), not yet landed
 def test_tc_extract_c09_m_integ_routes_on_the_marker_alone(
     tmp_data_dir, make_fixture_provider
 ):
