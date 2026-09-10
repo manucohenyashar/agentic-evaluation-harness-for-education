@@ -81,6 +81,7 @@ __all__ = [
     "field_names",
     "string_leaves",
     "offending_numeral",
+    "JUDGE_SIGNAL_FIELDS",
 ]
 
 #: The implementing story that owns the prompt templates (FR-JUDGE-03/04/06/07: the
@@ -300,3 +301,29 @@ def offending_numeral(text: str, *, rubric: bool) -> str | None:
         if _MARK_CONTEXT.search(window):
             return match.group()
     return None
+
+
+#: --- TS-67 (#85), `TC-JUDGE-C16`: the judge signals' declared surface -----------------------
+#
+# `CT-JUDGE-16` (observe): *"Emits, per criterion and judge: uncited-verdict rate,
+# `evidence_sufficient = false` rate, band histogram, contract-violation rate, latency,
+# prefix cache hit rate. Contract violations concentrated on one judge mean that judge's
+# prompt or build is wrong; that reading is contract because it is what makes the metric
+# actionable."*
+#
+# The emitting symbol does not exist yet (`aeh.stats:judge_signals`, keyed `#148` —
+# the observability suite, TS-55, which the Requires tables point at through
+# `M-STATS`) in `WRITTEN_AHEAD_BLOCKERS`, and no Interfaces block declares these
+# names — so, like
+# `run_adversarial_tier` and `console_vocabulary`'s surface, they are **invented, and
+# invented here once**: named for the clause's own words, snake-cased, and used
+# together by the one suite that drives them (`test_ct_judge_c16_signal_dimensionality.py`).
+# Centralising the names is what keeps six cases from guessing six spellings.
+JUDGE_SIGNAL_FIELDS = (
+    "uncited_verdict_rate",
+    "evidence_sufficient_false_rate",
+    "band_histogram",
+    "contract_violation_rate",
+    "latency",
+    "prefix_cache_hit_rate",
+)
