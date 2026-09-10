@@ -242,6 +242,89 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{REVIEW_MODULE}:rank_queue_items",
         ("tests/unit/agg/test_review_queue_rank.py",),
     ),
+    # --- TS-69 (#96), the M-AGG contract suite -------------------------------------------------
+    #
+    # Nine rows, keyed per owning story because the consumers land at different
+    # moments (#101 M-GRADE, #108 M-REVIEW, #123 M-CONSOLE) and a single #96 key
+    # would hold every writtenahead limb outside the gate until the last of them
+    # shipped. Each names the symbol the OWNING story introduces — the same rule
+    # the TS-73 entries below record — never a constructor: `build_review` and
+    # `rank_queue_items` are #108's, `apply_policy` #101's, and the two console
+    # renderers #123's. The executable core of every case (rungs 0-3, unmarked)
+    # is in the same files; only the limbs whose consumer does not exist yet sit
+    # behind these rows.
+    "#96 c05 the inversion's rung-4 consequence (M-REVIEW)": (
+        "symbol",
+        f"{REVIEW_MODULE}:build_review",
+        (
+            "tests/contract/agg/test_ct_agg_c05_confidence_inversion.py"
+            "::test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_review_queue",
+        ),
+    ),
+    "#96 c07 M-GRADE presents ungradeable_by_panel": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        (
+            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
+            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_grade]",
+        ),
+    ),
+    "#96 c07 M-REVIEW presents ungradeable_by_panel": (
+        "symbol",
+        f"{REVIEW_MODULE}:build_review",
+        (
+            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
+            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_review]",
+        ),
+    ),
+    "#96 c07 M-CONSOLE presents ungradeable_by_panel": (
+        "symbol",
+        f"{CONSOLE_MODULE}:build_console",
+        (
+            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
+            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_console]",
+        ),
+    ),
+    "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
+        "symbol",
+        f"{REVIEW_MODULE}:build_review",
+        (
+            "tests/contract/agg/test_ct_agg_c09_no_runtime_special_casing.py"
+            "::test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue",
+        ),
+    ),
+    "#96 c14 the knobs' honesty text (M-CONSOLE)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_setup_step",
+        (
+            "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
+            "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
+        ),
+    ),
+    "#96 c16 M-GRADE renders no probability": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        (
+            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
+            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_grade]",
+        ),
+    ),
+    "#96 c16 M-REVIEW renders no probability": (
+        "symbol",
+        f"{REVIEW_MODULE}:rank_queue_items",
+        (
+            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
+            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_review]",
+        ),
+    ),
+    "#96 c16 M-CONSOLE renders no probability": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_review_queue",
+        (
+            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
+            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_console]",
+        ),
+    ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
     # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens

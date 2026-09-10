@@ -5,7 +5,7 @@ imported BEFORE the store opens (see `CLAUDE.md`'s "Store opens require the full
 chain" — `IncompleteMigrationChainError` refuses a short chain at the open), and an
 explicit import block is that requirement stated where it is met:
 
-    import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
+import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
 
 Not test scaffolding beyond the harness: the child runs the shipped `Orchestrator` against
 the shipped store — the same call a second dispatcher process would make. Its only job is
