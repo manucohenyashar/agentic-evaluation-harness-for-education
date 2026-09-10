@@ -652,6 +652,44 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{CONFORM_MODULE}:run_adversarial_tier",
         ("tests/integration/conform/test_tc_conform_09_adversarial_tier.py",),
     ),
+    # --- #85's `TC-JUDGE-C17`, the `M-CONFORM` limb ------------------------------------------
+    #
+    # Keyed on the symbol the limb's first `require()` resolves —
+    # `build_conformance_suite` — not on `detect_build_substitution` (the `#134`
+    # entry's key): `require()` reports whichever blocker it resolves first, and the
+    # reasoning the `#134 adversarial` entry records applies verbatim. Like
+    # `run_adversarial_tier`, the name is invented-and-used-together (no Interfaces
+    # block declares it — the corpus test's docstring records the same reasoning), so
+    # the key cannot resolve against a Protocol-only module.
+    "#85 conform": (
+        "symbol",
+        f"{CONFORM_MODULE}:build_conformance_suite",
+        ("tests/contract/judge/test_nonpromise_reproducibility.py"
+         "::test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility",),
+    ),
+    # --- #148's OBS-07, the judge signals' emitter (`#85`'s `TC-JUDGE-C16`) -------------------
+    #
+    # `CT-JUDGE-16`'s six observability signals are not emitted by anything yet, and
+    # no Interfaces block names the emitting operation — `judge_signals` is the
+    # disclosure (`TC-JUDGE-C16`'s docstring records the same
+    # invented-and-used-together reasoning the `#134 adversarial` entry does, with the
+    # six field names centralised in `tests/support/judge_vocabulary.py` so a future
+    # emitter cannot guess a different spelling). Keyed `symbol` on the emitter so the
+    # marker comes off exactly when the name lands, whichever story carries it.
+    #
+    # Keyed `#148`, not `#85`: the Requires tables (design's `CT-JUDGE-16` row, the
+    # plan's `TS-67` row) name `M-STATS` as the emitter's owner, and the
+    # per-(criterion, judge) signals plus the concentrated-violation alert are
+    # `OBS-07`'s acceptance — TS-55, issue #148. #85 is a TEST issue that closes with
+    # its own PR; keying the marker on it would strand a red test naming a closed
+    # issue — the `#85 conform` → `#134` reconciliation's rule. The stats module is
+    # the Requires tables' own word; a symbol key releases on the name's landing
+    # regardless of which story carries it.
+    "#148 judge_signals": (
+        "symbol",
+        f"{STATS_MODULE}:judge_signals",
+        ("tests/contract/judge/test_ct_judge_c16_signal_dimensionality.py",),
+    ),
     # `"#29"` is gone because #31 landed: `aeh.pkg:record_validation` now exists as the
     # write side the design never named (catalog-backed for the in-memory catalog,
     # registry-backed for the export summary), so the `M-PKG` half of `TC-CONFORM-C14`'s
@@ -1001,6 +1039,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[prompt_template_version]",
             "tests/contract/stats/test_ct_stats_mvvp.py"
             "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[quantization]",
+            # `TC-JUDGE-C17`'s `M-STATS` limb (#85): the consumer sweep that holds
+            # "self-agreement is measured, not assumed". Its first `require()`
+            # resolves `run_mvvp` — this entry's target — so its nodeid rides here
+            # rather than in a duplicate entry (the `#134 adversarial` note's rule).
+            "tests/contract/judge/test_nonpromise_reproducibility.py"
+            "::test_tc_judge_c17_m_stats_measures_self_agreement_as_a_finding_not_a_failure",
         ),
     ),
     "#117": (
