@@ -1389,11 +1389,13 @@ def current_schema_version(tier: Tier) -> int:
 #: `grade_submission_grade_key` moved it 17→18, and `aeh.grade` joined the contributor
 #: import lists the same way — the tail returning to `aeh.grade`. #110's
 #: `review_label_store_columns` moved Durable 5→6, and `aeh.review` joined the
-#: contributor import lists — Durable's tail is now `aeh.review`'s.)
+#: contributor import lists — Durable's tail is now `aeh.review`'s. #103's
+#: `grade_superseded_at_and_append_only` moved Cohort 18→19 and its
+#: `grade_audit_record_append_only` moved Durable 6→7 — `aeh.grade` holds both tails.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 18,
-    Tier.DURABLE: 6,
+    Tier.COHORT: 19,
+    Tier.DURABLE: 7,
 }
 
 
@@ -1418,8 +1420,43 @@ _SCHEMA_VERSION_TABLE_NAME = "schema_version"
 
 _SELECT_COHORT_TABLES = Statement("SELECT name FROM sqlite_master WHERE type = 'table'")
 _SELECT_COHORT_TRIGGERS_VIEWS = Statement(
-    "SELECT name, type FROM sqlite_master WHERE type IN ('trigger', 'view')"
+    "SELECT name, type, sql FROM sqlite_master WHERE type IN ('trigger', 'view')"
 )
+
+#: The one trigger shape a purge can coexist with: a `BEFORE UPDATE` trigger whose whole
+#: body is a single `SELECT RAISE(ABORT|FAIL, ...)` (a `WHEN` clause allowed in front).
+#: Its event is UPDATE, so it never fires on the sweep's own DELETEs, and a RAISE-only
+#: body cannot write a row — it can only refuse one. Everything else (any AFTER/DELETE/
+#: INSERT trigger, any trigger with a write in its body, anything unparseable) fails
+#: closed: the purge cannot verify a shape it does not recognize. #103's append-only
+#: enforcement is a cohort-tier trigger of exactly this shape (`submission_grade`'s
+#: content lock); the audit trio in Tier D never meets this guard — the purge sweeps
+#: Tier C, not Tier D.
+def _is_pure_refusal_trigger(sql: str | None) -> bool:
+    if not sql:
+        return False
+    flat = re.sub(r"\s+", " ", sql).strip().lower()
+    header = re.match(
+        r"create trigger (?:if not exists )?\S+ "
+        r"(before|after|instead of) (update(?: of .+?)?|insert|delete) on ",
+        flat,
+    )
+    if header is None or header.group(1) != "before":
+        return False
+    if not header.group(2).startswith("update"):
+        return False
+    body = flat[header.end():]
+    begin = body.find("begin")
+    end = body.rfind("end")
+    if begin == -1 or end == -1 or end < begin:
+        return False
+    body = body[begin + len("begin"):end]
+    # Strip the quoted message literals before scanning for write verbs — a refusal
+    # message may name the words it refuses.
+    body = re.sub(r"'(?:[^']|'')*'", "''", body)
+    if re.fullmatch(r" ?select raise\((abort|fail),.*; ?", body, flags=re.S) is None:
+        return False
+    return re.search(r"\b(insert|update|delete|replace|drop|create|attach)\b", body) is None
 _PRAGMA_DEFER_FOREIGN_KEYS = Statement("PRAGMA defer_foreign_keys = ON")
 #: Table-valued pragma form (#225): the FK-graph introspection purge does runs with the
 #: table name as a **bound parameter**, so no identifier is ever interpolated into SQL.
@@ -3606,20 +3643,32 @@ class SqliteStore:
                     # would fire on this very sweep's DELETEs and repopulate tables the
                     # report is about to claim cleared — student text surviving a
                     # "successful" purge. Views are refused for the same fail-closed
-                    # reason. (Indexes stay: they are SQLite-managed structure, emptied
-                    # with their tables, and a legitimate performance object.)
+                    # reason. The one carve-out is the pure refusal trigger (see
+                    # `_is_pure_refusal_trigger`): a BEFORE UPDATE trigger whose body is
+                    # a single RAISE never fires on the sweep's DELETEs and cannot write
+                    # a row, so it cannot repopulate anything — #103's append-only
+                    # content lock rides exactly this shape. (Indexes stay: they are
+                    # SQLite-managed structure, emptied with their tables, and a
+                    # legitimate performance object.)
                     objects = _run(
                         connection, _SELECT_COHORT_TRIGGERS_VIEWS, retries=self._retries
                     ).fetchall()
-                    if objects:
+                    refused_objects = sorted(
+                        (str(name), str(kind))
+                        for name, kind, _sql in objects
+                        if kind == "view" or not _is_pure_refusal_trigger(_sql)
+                    )
+                    if refused_objects:
                         raise ConfigurationProblem(
                             f"{path} declares trigger(s) or view(s) this purge refuses: "
-                            f"{sorted((str(row[0]), str(row[1])) for row in objects)}. A "
-                            "trigger fires on the sweep's own DELETEs and can repopulate "
-                            "tables the report would claim cleared — student text "
-                            "surviving a purge. Schema belongs to migrations "
-                            "(NFR-STORE-04); nothing here should declare triggers. "
-                            "Nothing was removed."
+                            f"{sorted(refused_objects)}. A trigger that fires on the "
+                            "sweep's own DELETEs — or carries a write in its body — can "
+                            "repopulate tables the report would claim cleared — student "
+                            "text surviving a purge. Schema belongs to migrations "
+                            "(NFR-STORE-04); the only coexisting shape is a BEFORE "
+                            "UPDATE trigger whose body is a single RAISE refusal "
+                            "(`_is_pure_refusal_trigger`), the shape #103's append-only "
+                            "enforcement rides. Nothing was removed."
                         )
                     unknown = sorted(
                         table for table in found

@@ -8,26 +8,15 @@ delivered grade is the threat the clause answers) and the security census's own 
 M-GRADE is `audit_record`'s writer per `CT-GRADE-14`); Integration / 2, negative; exact
 exception; P0.
 
-**Written ahead of implementation** (test plan §8.2). The refusal has no shipped
-mechanism: today's store admits a raw `UPDATE submission_grade` through the cohort
-handle — settlement's in-place state write is the ONLY legal mutation (provisional→
-final), and nothing at the database refuses an edit of a delivered revision's content,
-or an `UPDATE`/`DELETE` against `audit_record`. `#103` — the finalization/amendment
-story whose acceptance criterion is *"the delivered revision is not mutated"* and whose
-design owns the append-only discipline (detailed-design.md line *"append-only
-discipline on `audit_record` enforced by the owning module"*) — lands the enforcement
-(the `aeh.pkg` migration-`pkg_version_lineage` precedent: `BEFORE UPDATE`/`BEFORE
-DELETE` triggers that `RAISE(ABORT)`), so this file carries `@pytest.mark.writtenahead`
-and its registry entry names the symbol below.
-
-**The invented-and-disclosed key** (the `evaluate_alerts` / `export_grade_artifacts`
-precedent — a name no design document declares, that the test calls and #103's landing
-reconciles): `aeh.grade:enforce_ledger_append_only`. M-GRADE owns both surfaces the
-case pins (`CT-GRADE-14`: sole writer of `submission_grade`, writer of the append-only
-`audit_record`), so the enforcement seam is grade-owned; the name is absent from both
-design documents (checked: zero occurrences). If #103 ships the discipline as bare
-triggers with no function, the require is a one-line rename to whatever surface the
-triggers ride — the refusals asserted below do not move.
+Written ahead of implementation (test plan §8.2), **landed by #103**: the refusal
+ships as `aeh.grade:enforce_ledger_append_only` — the single home of the trigger
+statements migration 19 (Cohort) and Durable 7 install: a `BEFORE UPDATE` trigger on
+`submission_grade` refusing every content-column change (the lifecycle writes — the
+current flag, the state, the settlement and supersession stamps — stay open), and the
+blanket `BEFORE UPDATE`/`BEFORE DELETE` pair on `audit_record` (the `aeh.pkg`
+migration-`pkg_version_lineage` precedent: `RAISE(ABORT)` carrying the message the
+oracle reads). The marker is gone; the case runs inside the gate on the landed
+surface.
 
 Oracle: exact exception — the `aeh/pkg.py` immutability-trigger precedent
 (`test_grade_policy_and_keys.py`): the refusal is the trigger's `RAISE(ABORT)` read
@@ -55,10 +44,10 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [
     pytest.mark.integration,
-    # Red by design until #103 lands the append-only enforcement this case pins
-    # (WRITTEN_AHEAD_BLOCKERS: "#103 append-only enforcement" ->
-    # `aeh.grade:enforce_ledger_append_only`).
-    pytest.mark.writtenahead,
+    # #103 landed the append-only enforcement this case pins — the cohort
+    # content trigger plus the audit_record pair (migration 19 / Durable 7,
+    # `enforce_ledger_append_only` their single home) — so the case runs inside
+    # the gate.
 ]
 
 ISSUE = "#103"

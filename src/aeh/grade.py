@@ -122,6 +122,12 @@ interpretation, disclosed in `test_incomplete_and_routing.py`'s docstring).
    boundary-risk triple and the missing-criteria names next to its status, so a grade
    that says `incomplete` also says *what* it is missing and *where the operator goes*;
    `GradeReport` restates the batch's per-state counts next to its computed count.
+   #103 adds the durable half: `record_grade_signals(run_id)` flushes the CT-GRADE-18
+   signal set (grades by state, the `boundary_at_risk` count, the coverage
+   distribution, the finalization paths, the amendment count) into the `run_metrics`
+   EAV rows every other stage rides, and `evaluate_grade_alerts(run_id)` evaluates the
+   outstanding-`incomplete` alert (`FR-GRADE-07`'s operator routing, actionable) plus
+   the stale-provisional one over the same ledger.
 
 **`class_rollup` and `cohort_with_mixed_revisions`** are the module-level seams
 `CT-CALIB-09`'s consumer half calls: the rollup segments a cohort's current grades by
@@ -168,6 +174,29 @@ reproducible from the shipped code alone. The per-student PDF is written by a mi
 deterministic PDF emitter — no timestamps, no producer string, nothing volatile — so
 the per-student documents are byte-reproducible and the baseline's normalization has
 nothing to strip.
+
+**The append-only ledger and the amendment audit** (#103, `FR-GRADE-12`, `FR-DET-10`,
+`TC-GRADE-23`): a delivered revision is never mutated in place — correction paths mint
+revision n+1, and the schema enforces what the code promises. Migration 19 (Cohort)
+adds ADR-9's `superseded_at` (the stamp a demotion leaves on the revision that lost the
+current flag) and installs a `BEFORE UPDATE` trigger refusing every CONTENT-column
+change on `submission_grade`; the lifecycle columns (`is_current`, `state`,
+`finalized_at`, `computed_at`, `superseded_at`) stay writable because settlement and
+supersession are the ledger's own bookkeeping, not edits of a delivered grade. Durable
+migration 7 gives `audit_record` the blanket append-only pair (`aeh.pkg`'s
+elicitation-history precedent) — rows are inserted, never updated or deleted.
+`enforce_ledger_append_only()` is the enforcement's single home and inspectable form:
+the migrations slice the same statement objects the function returns, so they cannot
+drift apart. Every `amend()` call — minting or not — also appends one `audit_record`
+row to Tier D after the cohort revision commits (separate tier files, so two
+transactions; `decided_by` the actor, `evaluation_mode='judged'`, the criterion-level
+detail in `profile_summary`), while the `amendments` JSON on the grade row stays the
+revision-local record the recomputation replays. And the no-op rule: an amendment
+whose application reproduces the current revision's content exactly mints nothing —
+the same `_content_of`/`_stored_content` comparison the compute passes honor, so
+NFR-GRADE-05's idempotence sentence holds for the manual path too; the review is still
+real (a fully-scored no-op settles the current revision `final` in place) and the
+audit row still records the call.
 
 **Carried forward** (design-declared, unpinned by the shipped cases, and so left
 minimal rather than invented): `criterion_stats` — §3.14 names this module the sole
@@ -791,13 +820,44 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         ":criteria_provisional, :criteria_missing, :boundary_at_risk, :score_low, "
         ":score_high, :missing_criteria, :amendments)"
     ),
+    # The demotion stamps `superseded_at` (ADR-9's column, migration 19): the moment a
+    # revision lost the current flag. The in-place UPDATE is the lifecycle's own — the
+    # migration-19 trigger refuses every CONTENT column change, and these two
+    # bookkeeping columns are the demotion's declared write set.
     "demote_current": Statement(
-        "UPDATE submission_grade SET is_current = 0 WHERE run_id = :run_id "
-        "AND submission_id = :submission_id AND is_current = 1"
+        "UPDATE submission_grade SET is_current = 0, superseded_at = :superseded_at "
+        "WHERE run_id = :run_id AND submission_id = :submission_id AND is_current = 1"
     ),
     "settle_current": Statement(
         "UPDATE submission_grade SET state = :state, finalized_at = :settled_at "
         "WHERE run_id = :run_id AND submission_id = :submission_id AND is_current = 1"
+    ),
+    # The amendment's durable audit row (TC-GRADE-13 step 4's Tier D form): who, what,
+    # when and why, appended to the append-only trail AFTER the cohort revision
+    # commits (tiers are separate files; a failed audit write never un-lands the
+    # revision, and an audit row is never written for a revision that failed to land).
+    # One row per amendment CALL — the actor and reason are per-call facts; the
+    # per-criterion detail rides `profile_summary` as canonical JSON, so a multi-
+    # criterion edit is one audit event with its full content, not duplicated
+    # actor/reason text across rows. `evaluation_mode='judged'`: a teacher's
+    # decision, never a deterministic derivation.
+    "insert_amendment_audit_record": Statement(
+        "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, "
+        "profile_summary, submission_id, decided_by, package_version_id, "
+        "evaluation_mode) VALUES (:audit_record_id, :run_id, :recorded_at, "
+        ":profile_summary, :submission_id, :decided_by, :package_version_id, "
+        ":evaluation_mode)"
+    ),
+    # The grading stage's signal write (TC-GRADE-24, CT-GRADE-18): the same durable
+    # EAV shape every other stage's signals ride (`TC-ORCH-35`'s
+    # `insert_run_metric`), declared here because the grading stage's figures are
+    # this module's to emit — orch's own statement is that module's declaration of
+    # ITS flush, and a cross-module import for one shared SQL text would couple the
+    # two dispatch surfaces (det.py's audit-record insert is the same-footing
+    # precedent: each writer declares its own INSERT into the shared table).
+    "insert_run_metric": Statement(
+        "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) "
+        "VALUES (:run_id, :metric, :value)"
     ),
     # The operator routing for a missing input (TC-GRADE-07 step 4): a content-derived
     # queue id, so a re-run of the same missing input replaces its own row rather than
@@ -1103,8 +1163,14 @@ class GradingService:
 
     def _run_row(self, run_id: str) -> Any:
         """The run row, or a refusal that names the run — a missing run is a caller
-        mistake, not an empty batch."""
-        return self._find_run(run_id)[1]
+        mistake, not an empty batch. Every resolution also registers the store under
+        the run id, the module-level seam the observability accessors read back
+        (`record_grade_signals` / `evaluate_grade_alerts` resolve their store the same
+        way `class_rollup` resolves its cohort's — the `_MIXED_REVISION_COHORTS`
+        precedent: the headless constructor that built the ledger leaves it findable)."""
+        row = self._find_run(run_id)[1]
+        _GRADE_RUN_STORES[run_id] = self._store
+        return row
 
     def _policy_surface(
         self, package_handle: Any, package_id: str, version: str
@@ -1417,6 +1483,7 @@ class GradingService:
                     GRADE_STATEMENTS["demote_current"],
                     run_id=run_id,
                     submission_id=submission_id,
+                    superseded_at=now_raw,
                 )
             for row in inserts:
                 tx.execute(GRADE_STATEMENTS["insert_grade"], **row)
@@ -1541,6 +1608,7 @@ class GradingService:
                     GRADE_STATEMENTS["demote_current"],
                     run_id=run["run_id"],
                     submission_id=submission_id,
+                    superseded_at=now_raw,
                 )
             tx.execute(
                 GRADE_STATEMENTS["insert_grade"],
@@ -1680,6 +1748,18 @@ class GradingService:
                     state=STATE_FINAL,
                     settled_at=settled_at,
                 )
+        # The batch road is the one settlement path the ledger cannot derive (both
+        # automatic roads settle in place through the same UPDATE, with no path
+        # column to attribute by), so the action records itself: one durable EAV
+        # row, the same table every other stage's figures ride (CT-GRADE-18's
+        # observability; `record_grade_signals` derives the rest).
+        with self._store.durable().transaction() as tx:
+            tx.execute(
+                GRADE_STATEMENTS["insert_run_metric"],
+                run_id=run_id,
+                metric="finalization_path_batch",
+                value=float(len(current)),
+            )
         return FinalizationRecord(
             finalized=len(current),
             coverage=named,
@@ -1710,7 +1790,27 @@ class GradingService:
         missing stays `incomplete` — an edit never launders an absence into a
         deliverable. An edit naming a criterion with no stored score row is refused,
         naming it: recording an edit that applied nowhere would claim a change that
-        never happened, and a missing input is the operator routing's to fill."""
+        never happened, and a missing input is the operator routing's to fill.
+
+        **No new revision without a change** (`NFR-GRADE-05`, TC-GRADE-13's no-op
+        variant): an edit whose application reproduces the current revision's content
+        EXACTLY — re-entering the points a revision already carries — writes no
+        revision. The comparison is the compute passes' own change-detection tuple, so
+        "changed" means the same thing here as everywhere else in the module. The
+        review the call records is still real: a no-op amendment settles the current
+        revision `final` in place when the state model pressures it (the teacher
+        reviewed it), and the call is appended to the audit trail either way — the
+        ledger records content changes, the audit trail records human actions.
+
+        Every amendment call — minting or not — also appends one `audit_record` row to
+        Tier D (the durable form of the who/what/when/why record; the `amendments` JSON
+        on the grade row stays the revision-local record the recomputation replays):
+        one row per call, `decided_by` the actor, `evaluation_mode='judged'` (a
+        teacher's decision, never a derivation), the full criterion-level detail
+        canonical-JSON in `profile_summary`. The write follows the cohort
+        transaction's commit — tiers are separate files, so the two writes cannot share
+        one transaction, and an audit row is never written for a revision that failed
+        to land."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         surface = self._policy_surface(
@@ -1751,6 +1851,41 @@ class GradingService:
             else STATE_FINAL
         )
         now_raw = self._clock()
+        if self._content_of(outcome) == self._stored_content(prior):
+            # The no-op rule (NFR-GRADE-05): the edit's application reproduces the
+            # current revision's content exactly, so no revision is minted — the
+            # ledger already holds this grade. The only write the call may still
+            # make is the settlement the state model commands: a fully scored
+            # grade the teacher just reviewed settles `final` IN PLACE (the same
+            # in-place arrow the compute passes use, never a mint).
+            if (
+                outcome["coverage"].criteria_missing == 0
+                and prior["state"] == STATE_PROVISIONAL
+            ):
+                with cohort.transaction() as tx:
+                    tx.execute(
+                        GRADE_STATEMENTS["settle_current"],
+                        run_id=run_id,
+                        submission_id=submission_id,
+                        state=STATE_FINAL,
+                        settled_at=prior["finalized_at"] or now_raw,
+                    )
+            self._write_amendment_audit(
+                run, surface, submission_id, int(prior["revision"]), overrides,
+                prior_total=prior["total"], new_total=outcome["total"],
+                actor=actor, reason=reason, at=now_raw, outcome="no_content_change",
+            )
+            return GradeRevision(
+                submission_id=submission_id,
+                revision=int(prior["revision"]),
+                state=STATE_FINAL
+                if outcome["coverage"].criteria_missing == 0
+                else STATE_INCOMPLETE,
+                grade=outcome["grade"],
+                total=outcome["total"],
+                actor=actor,
+                reason=reason,
+            )
         revision = int(prior["revision"]) + 1
         settled_at = prior["finalized_at"] or now_raw
         with cohort.transaction() as tx:
@@ -1758,6 +1893,7 @@ class GradingService:
                 GRADE_STATEMENTS["demote_current"],
                 run_id=run_id,
                 submission_id=submission_id,
+                superseded_at=now_raw,
             )
             tx.execute(
                 GRADE_STATEMENTS["insert_grade"],
@@ -1797,6 +1933,11 @@ class GradingService:
                     sort_keys=True,
                 ),
             )
+        self._write_amendment_audit(
+            run, surface, submission_id, revision, overrides,
+            prior_total=prior["total"], new_total=outcome["total"],
+            actor=actor, reason=reason, at=now_raw, outcome="revision_minted",
+        )
         return GradeRevision(
             submission_id=submission_id,
             revision=revision,
@@ -1806,6 +1947,57 @@ class GradingService:
             actor=actor,
             reason=reason,
         )
+
+    def _write_amendment_audit(
+        self,
+        run: Any,
+        surface: dict[str, Any],
+        submission_id: str,
+        revision: int,
+        overrides: Mapping[str, float],
+        *,
+        prior_total: Any,
+        new_total: Any,
+        actor: str,
+        reason: str,
+        at: str,
+        outcome: str,
+    ) -> None:
+        """Append the amendment's one `audit_record` row (TC-GRADE-13 step 4's Tier D
+        form, the #106 reconciliation): who (`decided_by`), when (`recorded_at`), and
+        the what/why canonical JSON in `profile_summary` — the criterion-level detail,
+        the totals before and after, the revision it produced (or stood behind), and
+        the content outcome. Appends AFTER the cohort revision commits, in its own
+        durable transaction (det.py's audit append is the same-footing precedent)."""
+        with self._store.durable().transaction() as tx:
+            tx.execute(
+                GRADE_STATEMENTS["insert_amendment_audit_record"],
+                audit_record_id=uuid.uuid4().hex,
+                run_id=run["run_id"],
+                recorded_at=at,
+                profile_summary=json.dumps(
+                    {
+                        "event": "grade_amendment",
+                        "run_id": run["run_id"],
+                        "submission_id": submission_id,
+                        "revision": revision,
+                        "criteria": [
+                            {"criterion_id": criterion_id, "points": points}
+                            for criterion_id, points in sorted(overrides.items())
+                        ],
+                        "from_total": prior_total,
+                        "to_total": new_total,
+                        "reason": reason,
+                        "outcome": outcome,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                submission_id=submission_id,
+                decided_by=actor,
+                package_version_id=surface["package_version_id"],
+                evaluation_mode="judged",
+            )
 
     def rollup(self, run_id: str) -> ClassRollup:
         """The run's rollup, segmented by rubric version (§3.14's Protocol member).
@@ -2635,6 +2827,383 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 ))
 
 
+# --- the append-only enforcement (TC-GRADE-23) -------------------------------------------------------
+#
+# `FR-GRADE-12` and the security census's own words (§4.1: "append-only discipline on
+# `audit_record` **enforced by the owning module**") land here as DATABASE triggers, not
+# as a service-level check — the `aeh.pkg` elicitation-history precedent (FR-PKG-20:
+# append-only IN PRACTICE, an unconditional trigger pair aborting any UPDATE or DELETE,
+# "including raw SQL around the catalog"). A check inside `amend()` would leave the raw
+# `cohort.transaction()` handle — which the settlement paths themselves use, and which
+# the review-window fixtures legitimately reach through — able to rewrite a delivered
+# grade with nothing but a different WHERE clause.
+#
+# The two tables get different shapes, because their legal write sets differ:
+#
+# - `submission_grade` is refused only on its CONTENT columns. The lifecycle's own
+#   in-place writes must stay open: `settle_current` (state, finalized_at), the
+#   demotion (is_current, superseded_at) and the review-window fixtures' backdating of
+#   `computed_at` (the disclosed wall-clock stand-in of `grade_vocabulary.py` — the
+#   schema must admit what the test plan's own cases write). A `WHEN` clause keyed on
+#   the OLD/NEW difference of every content column refuses exactly the tamper the case
+#   pins — an edit of a delivered revision's total, grade, coverage, provenance or
+#   amendment trail — while the demotion and the settlement pass untouched. A no-op
+#   UPDATE (every column identical) also passes: it changes nothing, and a refusal
+#   that fires on idempotent rewrites would break the compute passes' own settlement
+#   writes. INSERT is never refused (append-only means appends are the write), and
+#   there is deliberately NO delete trigger here: `purge_cohort` deletes this table's
+#   rows by name (`_COHORT_PURGE_ORDER`, FR-STORE-07) — a grade ledger row lives and
+#   dies with its cohort, and a blanket refusal would make the one legitimate deletion
+#   of student work impossible.
+# - `audit_record` gets the pkg.py blanket pair: no UPDATE, no DELETE, no exceptions.
+#   Its only writers append (det.py's per-grade rows, orch.py's run-start row, this
+#   module's amendment rows), and it has no purge path — Tier D survives the cohort
+#   purge by construction, so a DELETE that ever needed to exist would be a schema
+#   change, not a trigger gap.
+#
+# `enforce_ledger_append_only` is the discipline's named seam — the registry's
+# invented-and-disclosed key — returning exactly the statements the two migrations
+# install, so the enforcement has one readable home and the migrations consume it
+# rather than restating it.
+
+_SUBMISSION_GRADE_APPEND_ONLY_TRIGGER = Statement(
+    """
+    CREATE TRIGGER submission_grade_append_only_content
+    BEFORE UPDATE ON submission_grade
+    WHEN NEW.revision IS NOT OLD.revision
+      OR NEW.run_id IS NOT OLD.run_id
+      OR NEW.submission_id IS NOT OLD.submission_id
+      OR NEW.grade IS NOT OLD.grade
+      OR NEW.total IS NOT OLD.total
+      OR NEW.policy_version IS NOT OLD.policy_version
+      OR NEW.answer_key_ref IS NOT OLD.answer_key_ref
+      OR NEW.package_version_id IS NOT OLD.package_version_id
+      OR NEW.criteria_total IS NOT OLD.criteria_total
+      OR NEW.criteria_auto IS NOT OLD.criteria_auto
+      OR NEW.criteria_reviewed IS NOT OLD.criteria_reviewed
+      OR NEW.criteria_provisional IS NOT OLD.criteria_provisional
+      OR NEW.criteria_missing IS NOT OLD.criteria_missing
+      OR NEW.boundary_at_risk IS NOT OLD.boundary_at_risk
+      OR NEW.score_low IS NOT OLD.score_low
+      OR NEW.score_high IS NOT OLD.score_high
+      OR NEW.missing_criteria IS NOT OLD.missing_criteria
+      OR NEW.amendments IS NOT OLD.amendments
+    BEGIN
+        SELECT RAISE(ABORT, 'submission_grade is append-only: a delivered grade is never mutated in place - corrections mint a new revision (FR-GRADE-12, TC-GRADE-23)');
+    END
+    """
+)
+
+_AUDIT_RECORD_APPEND_ONLY_UPDATE = Statement(
+    "CREATE TRIGGER audit_record_append_only_update "
+    "BEFORE UPDATE ON audit_record "
+    "BEGIN SELECT RAISE(ABORT, 'audit_record is append-only: rows are never "
+    "updated — the trail answers grade disputes and a forged or expunged record "
+    "defeats the dispute path (FR-DET-10, TC-GRADE-23)'); END"
+)
+
+_AUDIT_RECORD_APPEND_ONLY_DELETE = Statement(
+    "CREATE TRIGGER audit_record_append_only_delete "
+    "BEFORE DELETE ON audit_record "
+    "BEGIN SELECT RAISE(ABORT, 'audit_record is append-only: rows are never "
+    "deleted — Tier D survives the cohort purge, and so does its trail "
+    "(FR-DET-10, TC-GRADE-23)'); END"
+)
+
+#: The append-only enforcement, as data (`enforce_ledger_append_only`'s return): the
+#: exact statements migrations 19 (Cohort) and 7 (Durable) install on the ledgers this
+#: module owns. Order is (cohort trigger, durable update refusal, durable delete
+#: refusal) — the migration tuples below slice the same objects, so the function and
+#: the migrations cannot disagree.
+_APPEND_ONLY_ENFORCEMENT: tuple[Statement, ...] = (
+    _SUBMISSION_GRADE_APPEND_ONLY_TRIGGER,
+    _AUDIT_RECORD_APPEND_ONLY_UPDATE,
+    _AUDIT_RECORD_APPEND_ONLY_DELETE,
+)
+
+
+def enforce_ledger_append_only() -> tuple[Statement, ...]:
+    """The append-only discipline as data (`TC-GRADE-23`'s seam): the trigger
+    statements that refuse an in-place mutation of a delivered `submission_grade`
+    revision and any UPDATE or DELETE of an `audit_record` row. The migrations below
+    install exactly these statements — the enforcement is the schema's, this function
+    is its single home and its inspectable form."""
+    return _APPEND_ONLY_ENFORCEMENT
+
+
+# Cohort v19 — ADR-9's `superseded_at` (the column ADR-9 declares beside the current
+# flag; the #106 reconciliation names it the owed retention stamp) plus the ledger's
+# append-only content trigger. An additive ALTER appends the column after every
+# declared one, which is exactly what TC-STORE-04's positional fixture builder
+# tolerates (the leading columns are the compatibility surface; a trailing nullable
+# column is invisible to the fixture's leading-column insert).
+_GRADE_SUPERSEDED_AT = Migration(
+    version=19,
+    name="grade_superseded_at_and_append_only",
+    statements=(
+        Statement("ALTER TABLE submission_grade ADD COLUMN superseded_at TEXT"),
+        _SUBMISSION_GRADE_APPEND_ONLY_TRIGGER,
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_GRADE_SUPERSEDED_AT,), key=lambda m: m.version
+))
+
+# Durable v7 — the audit trail's append-only pair. M-GRADE is `audit_record`'s writer
+# per `CT-GRADE-14`, and the census's "enforced by the owning module" clause makes the
+# enforcement this module's migration to land; the blanket pair is the pkg.py
+# elicitation-history precedent (det.py and orch.py only ever INSERT, and a purge of
+# Tier D does not exist to break).
+_AUDIT_APPEND_ONLY = Migration(
+    version=7,
+    name="grade_audit_record_append_only",
+    statements=(
+        _AUDIT_RECORD_APPEND_ONLY_UPDATE,
+        _AUDIT_RECORD_APPEND_ONLY_DELETE,
+    ),
+)
+
+TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.DURABLE] + (_AUDIT_APPEND_ONLY,), key=lambda m: m.version
+))
+
+
+# --- the stage's observability surface (CT-GRADE-18, TC-GRADE-24) -----------------------------------
+#
+# The signal set design §3.14's observability paragraph names, written where every
+# other stage's figures ride: the durable `run_metrics` EAV rows `(run_id, metric,
+# value)` (the TC-ORCH-35 write contract). `record_grade_signals` derives every
+# figure from the current-revision ledger; the one figure the ledger cannot derive —
+# the batch finalization road — is recorded by `finalize_batch` itself. The accessors
+# are module-level seams (the `class_rollup` precedent): they take a store handle or
+# resolve one from the registry the service's run resolutions populate, because a
+# read-side signal sweep must not need a grading pass in the room.
+#
+# The store registry is keyed by run id — every `_run_row` resolution registers — so
+# a run graded through the headless constructor leaves its store findable. It holds
+# strong references the way `_MIXED_REVISION_COHORTS` does; the same disclosed
+# trade (a service's runs are a bounded, small set, and a store that scored a run
+# stays open for its reads).
+
+
+@dataclass(frozen=True)
+class GradeAlert:
+    """One fired grading alert (`TC-GRADE-24`'s alert half): the condition's kind,
+    the run it fired on, how many grades it covers, and a detail line naming the
+    submissions — an alert an operator cannot act on is noise, so the row names its
+    grades, not only their count."""
+
+    kind: str
+    run_id: str
+    count: int
+    detail: str
+
+
+_GRADE_RUN_STORES: dict[str, Store] = {}
+
+
+def _signal_store(run_id: str, store: Store | None) -> Store:
+    """The observability accessors' store resolution: explicit, else the registry the
+    service's run resolutions populate, else a refusal that says how to satisfy it."""
+    if store is not None:
+        return store
+    registered = _GRADE_RUN_STORES.get(run_id)
+    if registered is None:
+        raise GradeError(
+            f"no store is registered for run {run_id!r} — pass store= explicitly, "
+            "or open the run through open_grade(store), whose run resolutions "
+            "register it"
+        )
+    return registered
+
+
+def record_grade_signals(
+    run_id: str, *, store: Store | None = None
+) -> dict[str, float]:
+    """The grading stage's signal set (CT-GRADE-18), flushed to the durable
+    `run_metrics` EAV rows (the TC-ORCH-35 write contract, `INSERT OR REPLACE` —
+    re-flushing a run updates its figures in place, never duplicates them):
+
+    - **grades by state** — one row per state literal (`grades_by_state_incomplete`
+      / `..._provisional` / `..._final`), the `CoverageSummary.grades_by_state`
+      shape broken out per state so an incomplete figure is nameable;
+    - **`boundary_at_risk` count** — how many current grades sit on a boundary;
+    - **coverage distribution** — the five counters summed over the run's current
+      grades (the class-level coverage, not one scalar);
+    - **finalization path taken** — the settled/awaiting split the ledger CAN
+      derive: `finalization_path_settled_at_issuance` (final with
+      `finalized_at == computed_at` — settled when issued),
+      `finalization_path_settled_after_issuance` (final with a later stamp — the
+      automatic roads: run completion or the lapsed window, which settle through
+      the same in-place UPDATE and are not distinguishable beyond this without a
+      path column — the disclosed boundary of the derivation),
+      `finalization_path_awaiting_settlement` (not yet final); the batch road
+      writes its own `finalization_path_batch` row at action time;
+    - **amendment count** — the amendment entries the run's current revisions
+      carry, the revisions' trail counted.
+
+    Returns the emitted figures — the value half of the "exact signal" oracle, and
+    the seam-4 surface: a caller reads what the stage reported without re-querying
+    the table."""
+    resolved = _signal_store(run_id, store)
+    return _emit_grade_signals(run_id, resolved)
+
+
+def _emit_grade_signals(run_id: str, store: Store) -> dict[str, float]:
+    """The signal computation `record_grade_signals` flushes: read the run's current
+    revisions, derive every CT-GRADE-18 figure, write them in one durable
+    transaction, and return what was written."""
+    service = GradingService(store)
+    run = service._run_row(run_id)
+    cohort = store.cohort(run["cohort_id"])
+    grades = [
+        dict(row)
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_current_grades_for_run"], run_id=run_id
+        )
+    ]
+    by_state = {state: 0 for state in GRADE_STATES}
+    for row in grades:
+        by_state[row["state"]] = by_state.get(row["state"], 0) + 1
+    coverage_sum = {
+        counter: sum(int(row[counter] or 0) for row in grades)
+        for counter in (
+            "criteria_total",
+            "criteria_auto",
+            "criteria_reviewed",
+            "criteria_provisional",
+            "criteria_missing",
+        )
+    }
+    settled_at_issuance = sum(
+        1
+        for row in grades
+        if row["state"] == STATE_FINAL
+        and row["finalized_at"] is not None
+        and row["finalized_at"] == row["computed_at"]
+    )
+    settled_total = by_state.get(STATE_FINAL, 0)
+    metrics: dict[str, float] = {
+        "grades_by_state_incomplete": float(by_state.get(STATE_INCOMPLETE, 0)),
+        "grades_by_state_provisional": float(by_state.get(STATE_PROVISIONAL, 0)),
+        "grades_by_state_final": float(settled_total),
+        "boundary_at_risk_count": float(
+            sum(1 for row in grades if int(row["boundary_at_risk"] or 0))
+        ),
+        "coverage_criteria_total": float(coverage_sum["criteria_total"]),
+        "coverage_criteria_auto": float(coverage_sum["criteria_auto"]),
+        "coverage_criteria_reviewed": float(coverage_sum["criteria_reviewed"]),
+        "coverage_criteria_provisional": float(coverage_sum["criteria_provisional"]),
+        "coverage_criteria_missing": float(coverage_sum["criteria_missing"]),
+        "finalization_path_settled_at_issuance": float(settled_at_issuance),
+        "finalization_path_settled_after_issuance": float(
+            settled_total - settled_at_issuance
+        ),
+        "finalization_path_awaiting_settlement": float(
+            len(grades) - settled_total
+        ),
+        "amendment_count": float(
+            sum(
+                len(json.loads(row["amendments"] or "[]"))
+                for row in grades
+            )
+        ),
+    }
+    with store.durable().transaction() as tx:
+        for metric, value in sorted(metrics.items()):
+            tx.execute(
+                GRADE_STATEMENTS["insert_run_metric"],
+                run_id=run_id,
+                metric=metric,
+                value=value,
+            )
+    return metrics
+
+
+def evaluate_grade_alerts(
+    run_id: str, *, store: Store | None = None
+) -> tuple[GradeAlert, ...]:
+    """The grading stage's alert evaluation (`TC-GRADE-24`'s alert half): the
+    conditions that fire over the run's current ledger, each on its own condition
+    (the OBS-05 discipline):
+
+    - **`incomplete_grades_outstanding`** — current grades still `incomplete` past
+      their settlement pressure: the run has completed, or the review window has
+      lapsed over them (`FR-GRADE-07`'s operator routing is actionable, not a dead
+      end — the rescan is late and the operator hears it);
+    - **`provisional_grades_past_window`** — current grades still `provisional` with
+      the window lapsed while the run is still running: the settlement pass that
+      should have reached them has not (a lapsed window with no recompute since is
+      exactly the shape a scheduler gap produces).
+
+    A healthy run — nothing outstanding past its pressure — fires nothing."""
+    resolved = _signal_store(run_id, store)
+    service = GradingService(resolved)
+    run = service._run_row(run_id)
+    surface = service._policy_surface(
+        resolved.package(run["package_id"]),
+        run["package_id"],
+        run["package_version_id"],
+    )
+    window_hours = surface["policy"].review_window_hours
+    now = _parse_timestamp(_now()) or datetime.now(timezone.utc)
+    cohort = resolved.cohort(run["cohort_id"])
+    grades = [
+        dict(row)
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_current_grades_for_run"], run_id=run_id
+        )
+    ]
+
+    def _past(row: dict[str, Any]) -> bool:
+        if run["status"] == STATUS_COMPLETE:
+            return True
+        if window_hours is None:
+            return False
+        issued = _parse_timestamp(row["computed_at"])
+        return issued is not None and (now - issued) >= timedelta(hours=window_hours)
+
+    alerts: list[GradeAlert] = []
+    outstanding = [
+        row
+        for row in grades
+        if row["state"] == STATE_INCOMPLETE and _past(row)
+    ]
+    if outstanding:
+        alerts.append(
+            GradeAlert(
+                kind="incomplete_grades_outstanding",
+                run_id=run_id,
+                count=len(outstanding),
+                detail="incomplete grades outstanding past settlement ("
+                + ", ".join(sorted(row["submission_id"] for row in outstanding))
+                + ") — the operator rescan is late (FR-GRADE-07)",
+            )
+        )
+    stale_provisional = [
+        row
+        for row in grades
+        if run["status"] != STATUS_COMPLETE
+        and window_hours is not None
+        and row["state"] == STATE_PROVISIONAL
+        and _past(row)
+    ]
+    if stale_provisional:
+        alerts.append(
+            GradeAlert(
+                kind="provisional_grades_past_window",
+                run_id=run_id,
+                count=len(stale_provisional),
+                detail="provisional grades past the review window with no "
+                "settlement pass since ("
+                + ", ".join(sorted(row["submission_id"] for row in stale_provisional))
+                + ") — a settlement pass is due",
+            )
+        )
+    return tuple(alerts)
+
+
 __all__ = [
     "BoundaryRisk",
     "ClassRollup",
@@ -2645,6 +3214,7 @@ __all__ = [
     "GRADE_EXPORT_DIR_ENV",
     "GRADE_STATEMENTS",
     "GRADE_STATES",
+    "GradeAlert",
     "GradeArtifacts",
     "GradeComputation",
     "GradeError",
@@ -2665,10 +3235,13 @@ __all__ = [
     "criterion_band_figures",
     "cohort_with_mixed_revisions",
     "coverage_for",
+    "enforce_ledger_append_only",
+    "evaluate_grade_alerts",
     "export_dir",
     "export_grade_artifacts",
     "open_grade",
     "policy_version_of",
+    "record_grade_signals",
     "resolve_grade",
     "rollup_findings",
     "separated_rollup",
