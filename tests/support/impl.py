@@ -271,14 +271,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_review]",
         ),
     ),
-    "#96 c07 M-CONSOLE presents ungradeable_by_panel": (
-        "symbol",
-        f"{CONSOLE_MODULE}:build_console",
-        (
-            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
-            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_console]",
-        ),
-    ),
     "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
         "symbol",
         f"{REVIEW_MODULE}:build_review",
@@ -609,59 +601,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # declares could exist first. The whole invented surface is settled in one place
     # (`tests/support/console_vocabulary.py`), so twelve cases cannot each guess a different shape.
     # Checked: none of the four symbols below appears in either design document or the HLD.
-    "#122 console_app": (
-        # `symbol`, not `module`. The `#122` entry below is a **module** key that three other
-        # suites' consumer sweeps ride on, and it fires on the first `aeh/console.py` commit --
-        # right for a sweep that only needs the module to exist, wrong for eleven cases that drive
-        # a running console. A second entry rather than a changed one, so neither loses precision.
-        "symbol",
-        f"{CONSOLE_MODULE}:build_console",
-        (
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c18_"
-            "the_upload_handler_dispatches_the_work_rather_than_awaiting_it",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c18_"
-            "a_large_upload_streams_to_the_blob_store_rather_than_into_memory",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
-            "the_run_monitor_polls_the_ledger_and_adds_no_write_load",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c20_"
-            "the_three_knobs_carry_their_declared_defaults",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c20_"
-            "a_routable_bind_does_not_defeat_the_cloud_hosted_refusal",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c21_"
-            "the_console_renders_with_no_toolchain_and_no_network",
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c21_"
-            "the_coupling_surface_is_its_reads_plus_its_declared_writes",
-            # Node IDs, not the file: `TC-CONSOLE-C24` lives in the same file and is #127's. A
-            # file-level entry would have told whoever closed #122 to unmark C24 as well, and it
-            # would then have failed inside TEST_CMD naming an issue nobody was working on — the
-            # precise trap the entries above are written to avoid.
-            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
-            "c22_the_console_emits_all_four_declared_metrics",
-            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
-            "c22_skip_rates_are_emitted_per_setup_step_not_in_aggregate",
-            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
-            "c23_the_absence_of_auth_holds_only_within_the_loopback_bound",
-            "tests/contract/console/test_ct_console_observability_and_honesty.py::test_tc_console_"
-            "c23_no_audit_surface_presents_an_actor_string_as_an_identity",
-            # TS-76 (#131). `TC-CONSOLE-C01`, `-C02` and `-C03` are all `build_console`'s: they
-            # drive a console object rather than a served process, which is what separates them
-            # from the three under the `serve_console` key above.
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c01_the_console_makes_no_inference_and_effects_change_by_writing_a_row",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c01_two_tabs_and_a_closed_browser_leave_the_run_untouched",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c02_the_runtime_write_surface_equals_the_declared_control_actions",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c02_every_write_a_screen_makes_maps_to_a_declared_action",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c02_everything_else_the_console_does_is_a_read",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c03_every_control_action_is_idempotent_through_all_three_replay_routes",
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c03_an_action_against_stale_state_is_refused_or_idempotent_never_partial",
-        ),
-    ),
+    # The `"#122 console_app"` entry that stood here is gone because #122 landed:
+    # `aeh.console:build_console` exists and drives all eighteen of its cases -- the
+    # `build_console`-keyed eleven (knobs, uploads, monitor, coupling, observability, the
+    # audit surface) and TS-76's `TC-CONSOLE-C01`/`-C02`/`-C03` seven. `#124`, `#125`
+    # and `#127` stay: their symbols (`render_review_queue`, `amend_finalized_grade`,
+    # `render_submission_text`) are still deliberately absent from the module, and the
+    # node-ID discipline above is what kept those three out of #122's sweep.
     "#124": (
         "symbol",
         f"{CONSOLE_MODULE}:render_review_queue",
@@ -739,18 +685,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # it bind a real socket or spawn a process, and `require()` reports whichever blocker resolves
     # first -- so a test whose first call is `serve_console` must be registered against
     # `serve_console`, or the gate unmarks it while the thing it actually needs is still missing.
-    "#122 serve_console": (
-        "symbol",
-        f"{CONSOLE_MODULE}:serve_console",
-        (
-            "tests/contract/console/test_ct_console_statelessness_and_writes.py::test_tc_console_"
-            "c01_killing_the_console_process_leaves_the_run_and_its_queued_rows_intact",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c05_"
-            "the_console_binds_loopback_verified_against_the_actual_socket",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c05_"
-            "every_cloud_hosted_setting_combination_refuses_to_start",
-        ),
-    ),
+    # The `"#122 serve_console"` entry that stood here is gone because #122 landed:
+    # `aeh.console:serve_console` exists, so the kill test and both `-C05` binding cases run
+    # in the gate.
     # #123 owns HLD §11.6's invariants 1-7, which is where `-C07` through `-C12`'s separation half
     # and `-C10`/`-C11`(a) live. `render_setup_step` is invented and absent from both design
     # documents and the HLD.
@@ -791,38 +728,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #122 -- so it is a **sibling** of #123 and #125 rather than downstream of them. That is
     # exactly why `TC-CONSOLE-C11`(c) has its own key: `FR-CONSOLE-26` is S1's rule and no amount
     # of #123 or #125 landing makes it renderable.
-    "#126": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_package_catalog",
-        (
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
-            "c11c_a_package_never_administered_here_renders_no_borrowed_figure",
-        ),
-    ),
-    "#122": (
-        "module",
-        CONSOLE_MODULE,
-        ("tests/contract/conf/test_no_rebinding.py::test_tc_conf_c14_step_3_no_consumer_"
-         "exposes_a_path_that_rebinds_a_run",
-         # TS-74's consumer-side cases. `TC-CALIB-C01` is the unusual one: §6.11.17 says it is
-         # "really an assertion about M-CONSOLE, M-GRADE and M-ORCH, not of this module" -- it runs
-         # the pipeline with M-CALIB *absent*, so its blocker is the pipeline rather than any
-         # calibration story.
-         "tests/contract/calib/test_ct_calib_removability.py"
-         "::test_tc_calib_c01_grades_deliver_with_calibration_absent_and_with_it_disabled",
-         "tests/contract/calib/test_ct_calib_removability.py"
-         "::test_tc_calib_c15_the_console_renders_phase_4_surfaces_as_present_and_unavailable",
-         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
-         "::test_tc_calib_c03_the_console_renders_no_accuracy_language",
-         "tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superiority",
-         # TS-75's console half of `TC-CONFORM-C14`. The console is where a release decision is
-         # actually read, so it is the surface on which a backend-equivalence claim does damage.
-         # Its `M-PKG` twin is keyed on #29 above: the two land at different moments, and keying
-         # both on the later would hold one of them outside the gate for nothing.
-         "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py"
-         "::test_tc_conform_c14_m_console_renders_no_backend_equivalence_claim"),
-    ),
+    # Both `"#126"` and the `"#122"` **module** entry that stood here are gone because #122 and
+    # #126 landed: `aeh.console` exists with `render_package_catalog` and `render_preflight`, so
+    # `TC-CONSOLE-C11`(c) runs in the gate, and the eight module-keyed consumer rows -- the
+    # conf step-3 rebinding check, the four TS-74 calibration consumer cases, TS-75's conform
+    # C14 console half -- all run too. `render_setup_step`, `render_review_queue`,
+    # `amend_finalized_grade` and `render_submission_text` stay absent: #123, #124, #125 and
+    # #127 are still open, and those are the keys their rows ride on.
     # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
     #
     # `M-STATS` is four stories -- #115 (the admissible-label filter, the figure, the scoped
@@ -1059,14 +971,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank",
         ),
     ),
-    "#126 stats": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_preflight",
-        (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run",
-        ),
-    ),
+    # The `"#126 stats"` entry that stood here is gone because #126 landed: `aeh.console`
+    # ships `render_preflight`, so `TC-STATS-C12`'s drift consumer runs in the gate reading
+    # the real S6 ladder rather than a stand-in.
     # --- TS-70 (#100), the fourteen CT-SYNTH contract cases --------------------------------
     #
     # Four consumer sweeps are written ahead of their consumers, keyed on the symbols
@@ -1090,14 +997,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # (The grade-only rows went at #101's landing: `aeh.grade` ships `open_grade`, so
     # the C05/C08/C09 consumer legs run unmarked; C03 and C13 still wait on the
     # console conjunction.)
-    "#100 suppression consumers (C03)": (
-        "symbols",
-        f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
-        (
-            "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
-            "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
-        ),
-    ),
+    # The `"#100 suppression consumers (C03)"` entry that stood here is gone because
+    # #126 landed: `aeh.console:build_console` exists alongside `aeh.grade:open_grade`,
+    # so C03's suppression consumer sweep runs in the gate. C13's conjunction stays --
+    # `aeh.stats` does not exist yet, and a half-resolved conjunction must not unmark a
+    # test whose other half is still missing.
     "#100 language consumers (C13)": (
         "symbols",
         f"{CONSOLE_MODULE}:build_console,{STATS_MODULE}:promote",

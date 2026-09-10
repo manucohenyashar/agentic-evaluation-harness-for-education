@@ -57,7 +57,6 @@ FAILURE_MODES: tuple[str, ...] = (
 # --- CT-CALIB-01 — never on the critical path ---------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c01_grades_deliver_with_calibration_absent_and_with_it_disabled():
     """`CT-CALIB-01` — a **full-pipeline differential**, run twice: module absent, module disabled.
 
@@ -201,7 +200,6 @@ def test_tc_calib_c15_an_edit_against_a_package_predating_the_lock_is_refused():
     # gap is visible today: `test_ct_calib_vocabulary.py::test_every_protocol_member_has_a_declared_phase`.
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c15_the_console_renders_phase_4_surfaces_as_present_and_unavailable():
     """`CT-CALIB-15`, second half — the **consumer rendering rule**, and its own blocker.
 

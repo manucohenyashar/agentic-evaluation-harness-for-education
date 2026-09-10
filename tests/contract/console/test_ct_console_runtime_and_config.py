@@ -52,7 +52,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-18 — long work, and where the bytes go -----------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c18_the_upload_handler_dispatches_the_work_rather_than_awaiting_it():
     """`FR-CONSOLE-04`, first half — *"long work shall never occur in a request handler"*.
 
@@ -85,7 +84,6 @@ def test_tc_console_c18_the_upload_handler_dispatches_the_work_rather_than_await
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_console_c18_a_large_upload_streams_to_the_blob_store_rather_than_into_memory():
     """`NFR-CONSOLE-06` — asserted as **peak RSS relative to the upload**, not as an absolute.
@@ -188,7 +186,6 @@ def test_tc_console_c19_the_review_queue_and_rollup_render_inside_their_budgets_
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c19_the_run_monitor_polls_the_ledger_and_adds_no_write_load():
     """The other half of `CT-CONSOLE-19`, and it needs only the monitor — so it is keyed on #122.
 
@@ -234,7 +231,6 @@ def test_tc_console_c19_the_run_monitor_polls_the_ledger_and_adds_no_write_load(
 # --- CT-CONSOLE-20 — the knobs, and the one that must not be a switch ---------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c20_the_three_knobs_carry_their_declared_defaults():
     """Design §3.19's Configuration line, asserted against the module.
 
@@ -254,7 +250,6 @@ def test_tc_console_c20_the_three_knobs_carry_their_declared_defaults():
     assert build_console is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c20_a_routable_bind_does_not_defeat_the_cloud_hosted_refusal():
     """`CT-CONSOLE-20`'s security-relevant half, and the reason the clause mentions the knob at all.
 
@@ -287,7 +282,6 @@ def test_tc_console_c20_a_routable_bind_does_not_defeat_the_cloud_hosted_refusal
 # --- CT-CONSOLE-21 — no toolchain, and the seam ---------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c21_the_console_renders_with_no_toolchain_and_no_network(network_guard):
     """`NFR-CONSOLE-02` — the achievable half of *"install into a clean environment"*.
 
@@ -317,7 +311,6 @@ def test_tc_console_c21_the_console_renders_with_no_toolchain_and_no_network(net
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c21_the_coupling_surface_is_its_reads_plus_its_declared_writes():
     """`NFR-CONSOLE-05` — the durable half of the clause, and the one worth asserting.
 

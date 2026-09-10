@@ -14,8 +14,9 @@ sweep does not:
   deterministic pass-through — yields a state outside the four. A fifth state, or a
   cause that quietly reuses another's, is the enum eroding;
 - **the consumer presentation differential** (the case's rung-3 limb, writtenahead on
-  the two unlanded consumers — M-REVIEW #108, M-CONSOLE #123; M-GRADE #101's
-  `apply_policy` landed and its param runs unmarked): the breaker path
+  the two unlanded consumers — M-REVIEW #108, M-CONSOLE #123 — until each landed:
+  M-GRADE #101's `apply_policy` first, M-REVIEW #108's queue next, and the console
+  module at the #122/#126 landing; all three params run unmarked now): the breaker path
   and the fallback path route **`provisional` identically** — `routing` carries no
   distinction; only `state` does. So the differential is exact: the same figures,
   written twice, differing in the state column alone, presented to a consumer whose
@@ -188,8 +189,7 @@ def _stored(store, score):
         pytest.param("M-GRADE", GRADE_MODULE, "apply_policy", "#101"),
         pytest.param("M-REVIEW", REVIEW_MODULE, "build_review", "#108",
                      marks=pytest.mark.writtenahead),
-        pytest.param("M-CONSOLE", CONSOLE_MODULE, "build_console", "#123",
-                     marks=pytest.mark.writtenahead),
+        pytest.param("M-CONSOLE", CONSOLE_MODULE, "build_console", "#123"),
     ],
     ids=["m_grade", "m_review", "m_console"],
 )

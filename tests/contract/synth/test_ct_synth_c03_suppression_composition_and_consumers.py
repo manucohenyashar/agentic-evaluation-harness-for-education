@@ -200,7 +200,6 @@ def test_tc_synth_c03_claim_stored_flagged_suppressed_from_composition(tmp_data_
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c03_consumers_honour_the_suppression_flag(tmp_data_dir):
     """`TC-SYNTH-C03` (P0, rung 3 consumer sweep) — `M-CONSOLE` renders the
     submission without the flagged narrative, and `M-GRADE`'s export carries none of
@@ -223,7 +222,7 @@ def test_tc_synth_c03_consumers_honour_the_suppression_flag(tmp_data_dir):
         provider = CaptureProvider(_replies())
         Worker(store, provider, synth_ref()).synthesize_submission(run_id, _SUBMISSION)
 
-        app = build_console(cohort_size=1, provider=provider)
+        app = build_console(store=store, cohort_size=1, provider=provider)
         page = app.render("/students/SYN-001")
         assert _CLAIM_AGAIN not in page.html and _CLAIM_FIRST not in page.html, (
             "the console rendered the flagged narrative — M-CONSOLE must honour the "
@@ -237,8 +236,12 @@ def test_tc_synth_c03_consumers_honour_the_suppression_flag(tmp_data_dir):
         )
 
         service = open_grade(store)
-        exported = service.export(run_id)
-        exported_text = exported if isinstance(exported, str) else str(exported)
+        # Reconciled at #126's landing: `GradingService.export` shipped as
+        # `export(run_id, revision)` returning the path of the CSV it wrote (#104),
+        # not the free-form text this case guessed at while written ahead — the CSV
+        # is the exported record, so its contents are what the assertion reads.
+        exported = service.export(run_id, 1)
+        exported_text = exported.read_text(encoding="utf-8")
         assert _CLAIM_FIRST not in exported_text and _CLAIM_AGAIN not in exported_text, (
             "M-GRADE's export carried the flagged narrative — the suppression flag "
             "is the contract every consumer reads, and the export is the one the "

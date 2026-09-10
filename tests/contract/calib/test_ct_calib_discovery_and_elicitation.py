@@ -78,7 +78,6 @@ def test_tc_calib_c03_the_discovery_report_carries_no_accuracy_figure():
     assert calib is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c03_the_console_renders_no_accuracy_language():
     """`CT-CALIB-03`'s **consumer half**, at rung 3 and on its own blocker.
 

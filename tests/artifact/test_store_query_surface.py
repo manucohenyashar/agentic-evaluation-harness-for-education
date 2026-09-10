@@ -555,6 +555,25 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.integ:979",
     "aeh.integ:989",
     "aeh.integ:999",
+    # The #122/#126 console sites: one — the control row `perform` writes into the
+    # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
+    # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
+    # reviewer's real-store findings were fixed — the control row now writes in the
+    # cohort tier's own transaction, never nested inside a durable one), the quarantine
+    # resolution the S8 close writes (`_UPDATE_QUARANTINE_RESOLUTION`, the operator's
+    # decision, never an automatic one) — and the headless driver's six fixture seed
+    # inserts (the pinned rubric version's package and package_version rows, then the
+    # cohort, submission, document and document_region seeds). All keyword-parameterized
+    # literals; the driver's disclosure notes cover why it pins ids the catalog would
+    # otherwise mint.
+    "aeh.console:1444",
+    "aeh.console:1521",
+    "aeh.console:2475",
+    "aeh.console:2480",
+    "aeh.console:2501",
+    "aeh.console:2509",
+    "aeh.console:2517",
+    "aeh.console:2530",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
