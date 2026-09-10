@@ -131,15 +131,52 @@ unannotated figure (`RISK-06`). The fixture helper builds the mixed-revision coh
 registers it, keyed by cohort id, for the rollup to find; it is a fixture seam living on
 the module because the case names the module as its surface.
 
+**The rollup's statistics, separation and findings** (#104, `FR-GRADE-14`/`15`/`16`,
+`CT-GRADE-12`/`13`): `criterion_band_figures(scores, band_order)` is the per-criterion
+band-figure accessor — histogram, entropy in **nats** (the base is a convention the
+design does not pin; the committed reference `0.75·ln 4` in `TC-GRADE-14` pins natural
+log), and the interior rate against the declared band order — with entropy and
+interior rate **null for deterministic criteria** (`CT-GRADE-13`'s data clause; a zero
+would read as "no variation", which is a different claim from "the figure does not
+apply"). A criterion is deterministic here when every band its score rows carry is one
+of M-DET's result values (`correct` / `incorrect`, plus the never-scored marker
+`unresolved`) — the bands are the deterministic-criterion marker the accessor has when
+no package is in hand. The rollup classifies by the package's declared criterion
+kind (`kind='mcq'` IS `evaluation_mode='deterministic'`, orch.py's disclosure) and
+trusts that verdict for the figures: its judged block computes real entropy and a
+real interior rate for every criterion the package declared judged — even one whose
+rubric names its bands like M-DET's (a judged pass/fail rubric may) — and falls
+back to the band reading only for rows no declared criterion owns. (The pure
+accessor, which holds no package, keeps the band reading as its only contract;
+that is the pinned seam the unit case tests.)
+`separated_rollup(run_id, store)` is the rollup with the separation built in: a judged
+block and a deterministic block, each its own population and its own figures, and —
+deliberately — **no** field anywhere on the record that could carry a combined figure
+across the two (`FR-GRADE-15`'s refusal is structural, not a comment).
+`rollup_findings(run_id, store)` surfaces the criteria the system could not apply: the
+ones the escalation circuit breaker marked `ungradeable_by_panel` (the mark M-AGG
+writes when the breaker trips, `FR-ORCH-13`/`CT-AGG-07`) and the ones whose review
+queue rows exhausted the review budget (the residual `FR-REVIEW-04` leaves behind;
+`review_queue` has no status column, so the exhaustion rides the reason text and is
+matched **in Python** — a SQL `LIKE` is `TC-STORE-15`/C08's banned search shape) —
+each naming the count of affected students.
+`export_grade_artifacts(run_id, revision, dest)` is the school-facing export mapping
+(`TC-REG-03`'s producer): one CSV of marks and one PDF per student, written into
+`dest`; called without a store it materializes the module's reference cohort (the
+`cohort_with_mixed_revisions` registry precedent) so the golden baselines are
+reproducible from the shipped code alone. The per-student PDF is written by a minimal
+deterministic PDF emitter — no timestamps, no producer string, nothing volatile — so
+the per-student documents are byte-reproducible and the baseline's normalization has
+nothing to strip.
+
 **Carried forward** (design-declared, unpinned by the shipped cases, and so left
 minimal rather than invented): `criterion_stats` — §3.14 names this module the sole
 writer of `submission_grade` and `criterion_stats`, but no `criterion_stats` table
 exists in the shipped schema and no shipped case reads one; the table and its writer
 land with the statistics story that consumes them (#118's M-STATS surface) rather than
-invented here. The `pdf` export format raises `NotImplementedError` naming #104, which
-owns `export_grade_artifacts` and the golden-file export mapping (`TC-REG-03`) — this
-module's CSV export is the service's declared member with its column set, not the
-school-facing mapping that case pins.
+invented here. The figures above are computed at read time over the stored
+criterion-score rows; persisting them into Tier D is that landing's schema change, not
+this one's (#104 pins the figures and the rollup surfaces, no migration).
 """
 
 from __future__ import annotations
@@ -149,6 +186,7 @@ import hashlib
 import json
 import math
 import os
+import shutil
 import tempfile
 import uuid
 from dataclasses import dataclass, field
@@ -157,6 +195,7 @@ from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from aeh.det import BAND_CORRECT, BAND_INCORRECT, BAND_UNRESOLVED
 from aeh.pkg import GradePolicy, PKG_STATEMENTS, PackageCatalog, points_for_band
 from aeh.store import (
     STATEMENTS,
@@ -534,6 +573,108 @@ def boundary_risk(
     return BoundaryRisk(at_risk=False, score_low=None, score_high=None)
 
 
+#: M-DET's result vocabulary — the deterministic-criterion marker the pure accessor
+#: reads. A criterion whose every score row carries one of these band values is a
+#: multiple-choice result: its histogram is a real count, but entropy and interior
+#: rate do not apply to a keyed selection (`FR-GRADE-14`'s null contract). The names
+#: are imported, never re-declared: a second copy of the vocabulary is exactly the
+#: drift the single-source rule exists to prevent.
+_DETERMINISTIC_BANDS = frozenset({BAND_CORRECT, BAND_INCORRECT, BAND_UNRESOLVED})
+
+
+def _band_population_is_deterministic(bands: Sequence[str]) -> bool:
+    """Whether a criterion's bands name deterministic results (M-DET's vocabulary)
+    rather than judged bands. Empty is not deterministic — a figure needs a
+    population."""
+    return bool(bands) and all(band in _DETERMINISTIC_BANDS for band in bands)
+
+
+def _shannon_entropy(counts: Sequence[int]) -> float:
+    """The distribution's Shannon entropy in nats over the observed histogram. Zero
+    cells contribute nothing (0·ln 0 = 0 by the standard convention); a
+    single-band population is genuinely 0.0 — that is a judged criterion with no
+    variation, not a deterministic one, and it keeps its real figure."""
+    total = sum(counts)
+    if total <= 0:
+        return 0.0
+    return -math.fsum(
+        (count / total) * math.log(count / total)
+        for count in counts
+        if count > 0
+    )
+
+
+def criterion_band_figures(
+    scores: Iterable[Any], band_order: Sequence[str] = ()
+) -> tuple[CriterionBandFigure, ...]:
+    """The per-criterion band figures over a population of criterion scores
+    (`FR-GRADE-14`; the pure seam `TC-GRADE-14` pins — the `apply_policy` shape:
+    score value objects in, figures out, no store and no model in the path).
+
+    - **Histogram** — every band the criterion's rows carry, as a count; the
+      histogram is a real figure even for a deterministic criterion (its
+      correct/incorrect bands are real counts).
+    - **Entropy** — Shannon entropy of the band distribution in nats. `None` for a
+      deterministic criterion (M-DET's result vocabulary, see
+      `_DETERMINISTIC_BANDS`): a zero would read as "no variation", which is a
+      different claim from "the figure does not apply".
+    - **Interior rate** — the share of scores in the declared band order's interior
+      (strictly between its first and last band). `None` for a deterministic
+      criterion, and `None` when the declared order's interior is empty — fewer
+      than two bands leaves no order to be interior of, and exactly two leaves no
+      band strictly between them. The order is an input (the
+      rubric's declared order is the package's), so the figure cannot silently read
+      a band name's digits; a band the order does not declare is not interior, and
+      still counts in the denominator — it is a real score outside the known
+      interior, not a hidden one.
+
+    Figures are returned per criterion in sorted criterion-id order; the histogram
+    is a plain dict in sorted band order, so the record is deterministic end to end.
+    """
+    by_criterion: dict[str, list[str]] = {}
+    for item in scores:
+        criterion_id = str(_row_value(item, "criterion_id"))
+        band = _row_value(item, "band")
+        if band is None:
+            # A row with no band carries no figure — the same honesty the score
+            # reads apply (a quarantined extraction leaves nothing to count).
+            continue
+        by_criterion.setdefault(criterion_id, []).append(str(band))
+
+    order = [str(band) for band in band_order]
+    interior = set(order[1:-1]) if len(order) >= 2 else set()
+
+    figures = []
+    for criterion_id in sorted(by_criterion):
+        bands = by_criterion[criterion_id]
+        histogram = {band: bands.count(band) for band in sorted(set(bands))}
+        if _band_population_is_deterministic(bands):
+            figures.append(
+                CriterionBandFigure(
+                    criterion_id=criterion_id,
+                    histogram=histogram,
+                    entropy=None,
+                    interior_rate=None,
+                )
+            )
+            continue
+        entropy = _shannon_entropy(list(histogram.values()))
+        rate = (
+            sum(1 for band in bands if band in interior) / len(bands)
+            if interior
+            else None
+        )
+        figures.append(
+            CriterionBandFigure(
+                criterion_id=criterion_id,
+                histogram=histogram,
+                entropy=entropy,
+                interior_rate=rate,
+            )
+        )
+    return tuple(figures)
+
+
 def _row_value(row: Any, field: str) -> Any:
     """A tolerant read of one field off a stored score row — agg.py's `_row_value`
     idiom, mirrored here because the criterion-score rows this module reads arrive
@@ -714,6 +855,45 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "SELECT package_version_id, state, total FROM submission_grade "
         "WHERE run_id = :run_id AND is_current = 1 ORDER BY submission_id"
     ),
+    # The separated rollup's block reads (FR-GRADE-15): the run's criterion-score
+    # bands, cohort-scoped the same way compute_all scopes the run's population —
+    # a run's population IS its cohort's submissions (the batch pass's own read).
+    "select_run_criterion_bands": Statement(
+        "SELECT cs.criterion_id, cs.submission_id, cs.band FROM criterion_score cs "
+        "JOIN submission s ON cs.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id "
+        "ORDER BY cs.criterion_id, cs.submission_id"
+    ),
+    # The findings reads (FR-GRADE-16). The breaker's mark is the criterion-score
+    # state M-AGG writes when the escalation breaker trips (CT-AGG-07/FR-ORCH-13);
+    # the review budget's exhaustion rides the queue row's reason text —
+    # `review_queue` has no status column — so the read takes the run's queue rows
+    # whole and the match happens in Python: a SQL LIKE is TC-STORE-15/C08's banned
+    # search shape, and a reason-text filter is not a declared query.
+    "select_ungradeable_by_panel": Statement(
+        "SELECT cs.criterion_id, cs.submission_id FROM criterion_score cs "
+        "JOIN submission s ON cs.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id AND cs.state = 'ungradeable_by_panel' "
+        "ORDER BY cs.criterion_id, cs.submission_id"
+    ),
+    "select_run_review_queue": Statement(
+        "SELECT rq.criterion_id, rq.submission_id, rq.reason FROM review_queue rq "
+        "JOIN submission s ON rq.submission_id = s.submission_id "
+        "WHERE s.cohort_id = :cohort_id "
+        "ORDER BY rq.criterion_id, rq.submission_id"
+    ),
+    # The exports' read: the named revision's grade rows joined to their
+    # submissions for the student ref the school-facing mapping needs (the
+    # pseudonymous identity column — Tier D's rule reaches every exported row).
+    "select_run_grades_with_students": Statement(
+        "SELECT g.submission_id, g.revision, g.state, g.grade, g.total, "
+        "g.criteria_total, g.criteria_auto, g.criteria_reviewed, "
+        "g.criteria_provisional, g.criteria_missing, g.missing_criteria, "
+        "s.student_ref FROM submission_grade g "
+        "JOIN submission s ON g.submission_id = s.submission_id "
+        "WHERE g.run_id = :run_id AND g.revision = :revision "
+        "ORDER BY g.submission_id"
+    ),
 }
 STATEMENTS.update(GRADE_STATEMENTS)
 
@@ -813,6 +993,64 @@ class ClassRollup:
 
     segments: tuple[RollupSegment, ...]
     revision_annotation: str
+
+
+@dataclass(frozen=True)
+class CriterionBandFigure:
+    """One criterion's band figures (`FR-GRADE-14`, `TC-GRADE-14`): the histogram is
+    always a real count; `entropy` and `interior_rate` are **null for deterministic
+    criteria** — never zero, because "no figure" is a different claim from "no
+    variation" (`CT-GRADE-13` makes the nulls a consumer obligation, so the producer
+    emits a real None). Entropy is in nats (natural log) — the base is a convention
+    the design leaves open and the committed reference in `TC-GRADE-14` pins."""
+
+    criterion_id: str
+    histogram: Mapping[str, int]
+    entropy: float | None
+    interior_rate: float | None
+
+
+@dataclass(frozen=True)
+class RollupBlock:
+    """One block of the separated rollup (`FR-GRADE-15`): a population and the
+    per-criterion figures over it. Judged and deterministic results each get their
+    own block; nothing on the separated rollup composes across the two."""
+
+    submission_count: int
+    criteria: tuple[CriterionBandFigure, ...]
+
+
+@dataclass(frozen=True)
+class SeparatedRollup:
+    """The run's rollup with deterministic results in a block separate from judged
+    ones (`FR-GRADE-15`, `CT-GRADE-12`), and no combined figure anywhere: the record
+    carries exactly these two blocks, each over its own population — a figure across
+    judged and deterministic results is the clause's exact refusal (the two are not
+    comparable)."""
+
+    judged: RollupBlock
+    deterministic: RollupBlock
+
+
+@dataclass(frozen=True)
+class RollupFinding:
+    """One rollup finding (`FR-GRADE-16`, `TC-GRADE-16`): a criterion the system
+    could not apply, the count of students it touched, and what happened — a finding
+    that names a criterion but not its reach leaves the teacher guessing."""
+
+    criterion_id: str
+    student_count: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class GradeArtifacts:
+    """The school-facing export's result (`FR-GRADE-17`, `TC-REG-03`): one CSV of
+    marks and one PDF per student, as written paths — the caller hands them to the
+    school; nothing here leaves the machine (`CT-GRADE-16`)."""
+
+    csv_path: Path
+    pdf_paths: tuple[Path, ...]
 
 
 class GradingService:
@@ -1586,46 +1824,88 @@ class GradingService:
         return _build_rollup(rows)
 
     def export(self, run_id: str, revision: int, fmt: str = "csv") -> Path:
-        """Export a run's grades at a revision (§3.14's Protocol member). The CSV is
-        this module's declared member: one row per graded submission, the full record
-        (state, grade, total, provenance, coverage, boundary risk) as columns. The
-        school-facing export mapping — column order, headers, the per-student PDF —
-        is #104's golden-file surface (`TC-REG-03`, `FR-GRADE-17`) and is raised as
-        such rather than half-implemented here."""
-        if fmt != "csv":
-            raise NotImplementedError(
-                f"export format {fmt!r} is not this module's to land: the per-student "
-                "PDF and the golden export mapping are #104's "
-                "(export_grade_artifacts, TC-REG-03, FR-GRADE-17)."
+        """Export a run's grades at a revision (§3.14's Protocol member, `CT-GRADE-16`).
+
+        `fmt="csv"` is this module's declared record mapping: one row per graded
+        submission, the full record (state, grade, total, provenance, coverage,
+        boundary risk) as columns. `fmt="pdf"` is the per-student feedback set
+        (`FR-GRADE-17`): one PDF per graded student, written into a per-export
+        subdirectory of the export dir and returned as that directory — the Protocol
+        declares one `Path`, and the format's honest unit is the set, so the returned
+        path is the set's container and the files are named by student ref inside it.
+        The school-facing mapping that pairs the marks CSV with this PDF set is
+        `export_grade_artifacts` (`TC-REG-03`'s producer). Any other format is a
+        `GradeError` — the declared error for a format the module does not own."""
+        if fmt not in ("csv", "pdf"):
+            raise GradeError(
+                f"export format {fmt!r} is not one of this module's formats "
+                "(csv, pdf); the school-facing pair — one CSV of marks and one PDF "
+                "per student from a named revision — is export_grade_artifacts "
+                "(TC-REG-03, FR-GRADE-17)."
             )
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
+        if fmt == "csv":
+            rows = [
+                dict(row)
+                for row in cohort.query(
+                    GRADE_STATEMENTS["select_run_grades"], run_id=run_id, revision=revision
+                )
+            ]
+            directory = export_dir()
+            directory.mkdir(parents=True, exist_ok=True)
+            safe_run_id = _safe_filename_part(run_id)
+            path = directory / f"grade-{safe_run_id}-rev{revision}.csv"
+            columns = [
+                "run_id", "submission_id", "revision", "state", "grade", "total",
+                "policy_version", "answer_key_ref", "computed_at",
+                "criteria_total", "criteria_auto", "criteria_reviewed",
+                "criteria_provisional", "criteria_missing",
+                "boundary_at_risk", "score_low", "score_high", "missing_criteria",
+            ]
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow({"run_id": run_id, **row})
+            return path
+        # The per-student PDF set (FR-GRADE-17): one document per graded student at
+        # the named revision, deterministic bytes, in a directory named for the
+        # export — the same move the CSV's revision-bearing filename makes.
         rows = [
             dict(row)
             for row in cohort.query(
-                GRADE_STATEMENTS["select_run_grades"], run_id=run_id, revision=revision
+                GRADE_STATEMENTS["select_run_grades_with_students"],
+                run_id=run_id,
+                revision=revision,
             )
         ]
-        directory = export_dir()
+        if not rows:
+            raise GradeError(
+                f"no grade rows exist for run {run_id!r} at revision {revision} — "
+                "there is nothing to export, and an empty export would be a lie"
+            )
+        directory = export_dir() / f"grade-{_safe_filename_part(run_id)}-rev{revision}"
         directory.mkdir(parents=True, exist_ok=True)
-        safe_run_id = "".join(
-            character if character.isalnum() or character in "-_." else "_"
-            for character in run_id
-        )
-        path = directory / f"grade-{safe_run_id}-rev{revision}.csv"
-        columns = [
-            "run_id", "submission_id", "revision", "state", "grade", "total",
-            "policy_version", "answer_key_ref", "computed_at",
-            "criteria_total", "criteria_auto", "criteria_reviewed",
-            "criteria_provisional", "criteria_missing",
-            "boundary_at_risk", "score_low", "score_high", "missing_criteria",
-        ]
-        with path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=columns, extrasaction="ignore")
-            writer.writeheader()
-            for row in rows:
-                writer.writerow({"run_id": run_id, **row})
-        return path
+        for row in rows:
+            _write_student_pdf(
+                directory / f"{_safe_filename_part(str(row['student_ref']))}.pdf",
+                run_id=run_id,
+                revision=revision,
+                student_ref=str(row["student_ref"]),
+                total=row["total"],
+                grade=row["grade"],
+                state=row["state"],
+                coverage=(
+                    int(row["criteria_total"]),
+                    int(row["criteria_auto"]),
+                    int(row["criteria_reviewed"]),
+                    int(row["criteria_provisional"]),
+                    int(row["criteria_missing"]),
+                ),
+                missing=tuple(json.loads(row["missing_criteria"] or "[]")),
+            )
+        return directory
 
     # -- helpers -------------------------------------------------------------------
 
@@ -1812,6 +2092,478 @@ def cohort_with_mixed_revisions(store: Store | None = None) -> str:
     return cohort_id
 
 
+# --- the separated rollup, the findings, and the school-facing export (#104) ------------------------
+#
+# `FR-GRADE-14`/`15`/`16`/`17` — the per-criterion band figures, the rollup's
+# deterministic/judged separation, the criteria the system could not apply, and the
+# school-facing export. The accessors are module-level seams (the `class_rollup`
+# precedent): the cases that pin them take a store handle, not a service, because the
+# figures and findings are read-side surfaces a teacher's console consumes without a
+# grading pass in the room.
+
+
+def _judged_band_figure(
+    criterion_id: str, bands: Sequence[str], band_order: Sequence[str]
+) -> CriterionBandFigure:
+    """One judged criterion's band figure, computed without the vocabulary
+    heuristic — the caller (the rollup's judged block) already holds the kind
+    verdict from the package, so the figure is real entropy and a real interior
+    rate, whatever the band names say. The pure accessor
+    (`criterion_band_figures`) keeps its own band-reading contract; this is the
+    verdict-trusted variant the separation calls."""
+    histogram = {band: bands.count(band) for band in sorted(set(bands))}
+    order = [str(band) for band in band_order]
+    interior = set(order[1:-1]) if len(order) >= 2 else set()
+    return CriterionBandFigure(
+        criterion_id=criterion_id,
+        histogram=histogram,
+        entropy=_shannon_entropy(list(histogram.values())),
+        interior_rate=(
+            sum(1 for band in bands if band in interior) / len(bands)
+            if interior
+            else None
+        ),
+    )
+
+
+def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
+    """The run's rollup with deterministic results in a block separate from judged
+    ones (`FR-GRADE-15`, `CT-GRADE-12`; `TC-GRADE-15`'s pinned surface) — and no
+    combined figure across the two, anywhere on the record: the refusal is the
+    record's shape, not a comment.
+
+    The blocks are classified by the package's declared criterion kind —
+    `kind='mcq'` IS `evaluation_mode='deterministic'` for this module (aeh/orch.py's
+    disclosure; the design's `evaluation_mode` column exists in no shipped schema) —
+    with the M-DET band vocabulary as the fallback reading for a score row no
+    declared criterion owns. Each block carries its own submission population and
+    its own per-criterion figures (`criterion_band_figures` produces the judged
+    figures, the deterministic block carries histograms with the derived figures
+    nulled by the block's own kind verdict)."""
+    service = GradingService(store)
+    cohort, run = service._find_run(run_id)
+    version = run["package_version_id"]
+    package = store.package(run["package_id"])
+    declared_kind = {
+        row["criterion_id"]: row["kind"]
+        for row in package.query(PKG_STATEMENTS["select_criteria"], v=version)
+    }
+    # The declared band order per criterion (ordinal order, the package's own
+    # declaration) — the interior rate's input, never re-derived here.
+    band_order_by_criterion: dict[str, list[str]] = {}
+    for row in package.query(PKG_STATEMENTS["select_bands"], v=version):
+        band_order_by_criterion.setdefault(row["criterion_id"], []).append(
+            row["band"]
+        )
+
+    bands_by_criterion: dict[str, list[str]] = {}
+    submissions_by_criterion: dict[str, set[str]] = {}
+    for row in cohort.query(
+        GRADE_STATEMENTS["select_run_criterion_bands"], cohort_id=run["cohort_id"]
+    ):
+        criterion_id = row["criterion_id"]
+        bands_by_criterion.setdefault(criterion_id, []).append(row["band"])
+        submissions_by_criterion.setdefault(criterion_id, set()).add(
+            row["submission_id"]
+        )
+
+    def _block(criterion_ids: Iterable[str], *, deterministic: bool) -> RollupBlock:
+        population: set[str] = set()
+        figures: list[CriterionBandFigure] = []
+        for criterion_id in sorted(criterion_ids):
+            bands = bands_by_criterion.get(criterion_id, [])
+            if not bands:
+                continue  # a criterion with no rows carries no figure to separate
+            population |= submissions_by_criterion.get(criterion_id, set())
+            histogram = {band: bands.count(band) for band in sorted(set(bands))}
+            if deterministic:
+                figures.append(
+                    CriterionBandFigure(
+                        criterion_id=criterion_id,
+                        histogram=histogram,
+                        entropy=None,
+                        interior_rate=None,
+                    )
+                )
+                continue
+            # The judged block trusts the package's kind verdict — the band
+            # vocabulary is the fallback reading for rows no declared criterion
+            # owns, never a second guess over a criterion the package declared
+            # judged (a judged pass/fail rubric may legitimately name its bands
+            # correct/incorrect; its entropy is a real figure, and nulling it
+            # here would contradict the null contract's own basis).
+            figures.append(
+                _judged_band_figure(
+                    criterion_id,
+                    bands,
+                    band_order_by_criterion.get(criterion_id, ()),
+                )
+            )
+        return RollupBlock(submission_count=len(population), criteria=tuple(figures))
+
+    judged_ids: set[str] = set()
+    deterministic_ids: set[str] = set()
+    for criterion_id in bands_by_criterion:
+        kind = declared_kind.get(criterion_id)
+        if kind == "mcq":
+            deterministic_ids.add(criterion_id)
+        elif kind is not None:
+            judged_ids.add(criterion_id)
+        elif _band_population_is_deterministic(bands_by_criterion[criterion_id]):
+            deterministic_ids.add(criterion_id)
+        else:
+            judged_ids.add(criterion_id)
+    return SeparatedRollup(
+        judged=_block(judged_ids, deterministic=False),
+        deterministic=_block(deterministic_ids, deterministic=True),
+    )
+
+
+#: The phrase the review budget's exhaustion rides on. `review_queue` has no status
+#: column; M-REVIEW's residual names the exhaustion in the reason text, and the
+#: match happens here, in Python — a SQL `LIKE` is `TC-STORE-15`/C08's banned search
+#: shape, so the read takes the run's queue rows whole and filters on the phrase.
+_BUDGET_EXHAUSTED_PHRASE = "budget exhausted"
+
+_BREAKER_FINDING_REASON = (
+    "ungradeable_by_panel: the escalation circuit breaker refused a panel for "
+    "this criterion (FR-ORCH-13, CT-AGG-07)"
+)
+
+_BUDGET_FINDING_REASON = (
+    "review budget exhausted: the review queue's residual names this criterion "
+    "(FR-REVIEW-04)"
+)
+
+
+def rollup_findings(run_id: str, store: Store) -> tuple[RollupFinding, ...]:
+    """The criteria the system could not apply, as findings (`FR-GRADE-16`,
+    `TC-GRADE-16`): the ones the escalation circuit breaker marked
+    `ungradeable_by_panel`, and the ones whose review queue rows exhausted the
+    review budget — each naming the count of **affected students** (submissions
+    carrying the mark or the exhausted row, not the class). A criterion both
+    breaker-marked and budget-exhausted is one finding whose count is the union —
+    the teacher reads how many students it swallowed, not how many marks it
+    produced. Findings are returned in sorted criterion-id order."""
+    service = GradingService(store)
+    cohort, run = service._find_run(run_id)
+    cohort_id = run["cohort_id"]
+
+    breaker_students: dict[str, set[str]] = {}
+    for row in cohort.query(
+        GRADE_STATEMENTS["select_ungradeable_by_panel"], cohort_id=cohort_id
+    ):
+        breaker_students.setdefault(row["criterion_id"], set()).add(
+            row["submission_id"]
+        )
+
+    budget_students: dict[str, set[str]] = {}
+    for row in cohort.query(
+        GRADE_STATEMENTS["select_run_review_queue"], cohort_id=cohort_id
+    ):
+        criterion_id = row["criterion_id"]
+        if criterion_id is None:
+            # A queue row that names no criterion cannot name a finding — the
+            # finding's subject is a criterion, by the case's oracle.
+            continue
+        if _BUDGET_EXHAUSTED_PHRASE not in str(row["reason"] or ""):
+            continue
+        budget_students.setdefault(criterion_id, set()).add(row["submission_id"])
+
+    findings = []
+    for criterion_id in sorted(set(breaker_students) | set(budget_students)):
+        students = breaker_students.get(criterion_id, set()) | budget_students.get(
+            criterion_id, set()
+        )
+        reasons = [
+            reason
+            for flag, reason in (
+                (criterion_id in breaker_students, _BREAKER_FINDING_REASON),
+                (criterion_id in budget_students, _BUDGET_FINDING_REASON),
+            )
+            if flag
+        ]
+        findings.append(
+            RollupFinding(
+                criterion_id=criterion_id,
+                student_count=len(students),
+                reason="; ".join(reasons),
+            )
+        )
+    return tuple(findings)
+
+
+def _safe_filename_part(raw: str) -> str:
+    """A run id or student ref as a safe filename part — the same character class
+    the CSV export's filename uses; anything else becomes an underscore."""
+    return "".join(
+        character if character.isalnum() or character in "-_." else "_"
+        for character in raw
+    )
+
+
+def _student_pdf_bytes(
+    *,
+    run_id: str,
+    revision: int,
+    student_ref: str,
+    total: float | None,
+    grade: str | None,
+    state: str,
+    coverage: tuple[int, int, int, int, int],
+    missing: Sequence[str],
+) -> bytes:
+    """One student's feedback document as PDF bytes — hand-assembled, deliberately.
+
+    A PDF library (or a text-report dependency) would buy nothing this document
+    needs and would add a reviewed supply-chain surface for it; the document is a
+    single text page, and the emitter that writes it is ~30 lines with **no**
+    volatile field anywhere — no creation date, no producer string, no file id — so
+    the same student's mark at the same revision produces byte-identical bytes on
+    every machine, which is what makes the per-student PDF a regression baseline at
+    all (`TC-REG-03`'s normalization has nothing to strip because nothing volatile
+    is ever emitted). Letter-size page, Helvetica, one line of text per line below:
+    the marks, the grade band, the state and the coverage record (`CT-GRADE-04`'s
+    render-coverage-alongside obligation reaches the student's own document).
+    """
+    criteria_total, auto, reviewed, provisional, missing_count = coverage
+    lines = [
+        f"Grade report - {run_id} (revision {revision})",
+        f"Student: {student_ref}",
+        "Mark: "
+        + ("(no figure recorded)" if total is None else f"{float(total):.2f}"),
+        "Grade: " + (grade if grade else "(none recorded)"),
+        f"State: {state}",
+        "Criteria: "
+        + f"{criteria_total} total, {auto} auto, {reviewed} reviewed, "
+        + f"{provisional} provisional, {missing_count} missing",
+    ]
+    if missing:
+        lines.append("Missing criteria: " + ", ".join(missing))
+
+    def _escape(text: str) -> str:
+        return (
+            text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+        )
+
+    content_parts = ["BT", "/F1 12 Tf", "72 720 Td"]
+    for index, line in enumerate(lines):
+        if index:
+            content_parts.append("0 -16 Td")
+        content_parts.append(f"({_escape(line)}) Tj")
+    content_parts.append("ET")
+    # cp1252 with replacement: the document is ASCII by construction (refs and
+    # figures); a store row that carries wider text degrades to '?' rather than
+    # crashing a student's export.
+    stream = "\n".join(content_parts).encode("cp1252", errors="replace")
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length " + str(len(stream)).encode("ascii")
+        + b" >>\nstream\n" + stream + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += f"{number} 0 obj\n".encode("ascii") + body + b"\nendobj\n"
+    xref_at = len(out)
+    out += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
+    out += b"0000000000 65535 f \n"
+    for offset in offsets:
+        out += f"{offset:010d} 65535 n \n".encode("ascii")
+    out += (
+        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+        f"startxref\n{xref_at}\n%%EOF\n"
+    ).encode("ascii")
+    return bytes(out)
+
+
+def _write_student_pdf(path: Path, **fields: Any) -> None:
+    """Write one student's PDF (the bytes from `_student_pdf_bytes`) to `path`."""
+    path.write_bytes(_student_pdf_bytes(**fields))
+
+
+#: The school-facing export's reference cohort — the content the `TC-REG-03`
+#: baselines are recorded against, reproducible from the shipped module alone. Four
+#: students, four distinct marks (distinct documents are the point: identical
+#: per-student PDFs would mean the export is not reading the student it names), one
+#: fixed issuance timestamp. The `cohort_with_mixed_revisions` precedent: a fixture
+#: seam on the module because the case names the module as its surface; built
+#: through this module's own insert statement, so the rows are exactly the rows the
+#: service writes.
+_REFERENCE_EXPORT_RUN = "RUN-0001"
+_REFERENCE_EXPORT_STAMP = "2026-08-01T09:00:00+00:00"
+_REFERENCE_EXPORT_POPULATION: tuple[tuple[str, str, float, str], ...] = (
+    ("S-0001", "student-001", 71.0, "B"),
+    ("S-0002", "student-002", 64.5, "C"),
+    ("S-0003", "student-003", 83.25, "A"),
+    ("S-0004", "student-004", 58.0, "D"),
+)
+
+
+def _reference_export_cohort(run_id: str) -> tuple[Store, Any, Path]:
+    """The reference cohort's (store, cohort handle, store root) for the
+    school-facing export's no-store call — the golden baseline's reproducible
+    world. Any other run id is a caller mistake: without a store there is nothing
+    to read, and inventing one would be exactly the guess the golden discipline
+    refuses. The caller owns the ephemeral world: it closes the store and removes
+    the directory when the read is done (the export's output is files, the ledger
+    is scaffolding)."""
+    from aeh.store import open_store
+
+    if run_id != _REFERENCE_EXPORT_RUN:
+        raise GradeError(
+            f"export_grade_artifacts needs the run's store: none was passed and "
+            f"{run_id!r} is not the module's reference run "
+            f"({_REFERENCE_EXPORT_RUN!r}, the golden export's reproducible content)"
+        )
+    root = Path(tempfile.mkdtemp(prefix="aeh-grade-export-ref-"))
+    store = open_store(root)
+    cohort_id = f"c-ref-{uuid.uuid4().hex[:10]}"
+    handle = store.cohort(cohort_id)
+    with handle.transaction() as tx:
+        tx.execute(
+            "INSERT INTO cohort (cohort_id, consent_class, created_at) "
+            "VALUES (:c, 'synthetic', :t)",
+            c=cohort_id, t=_REFERENCE_EXPORT_STAMP,
+        )
+        for submission_id, student_ref, total, grade in _REFERENCE_EXPORT_POPULATION:
+            tx.execute(
+                "INSERT INTO submission (submission_id, cohort_id, student_ref) "
+                "VALUES (:s, :c, :r)",
+                s=submission_id, c=cohort_id, r=student_ref,
+            )
+            tx.execute(
+                GRADE_STATEMENTS["insert_grade"],
+                run_id=run_id,
+                submission_id=submission_id,
+                revision=1,
+                state=STATE_FINAL,
+                grade=grade,
+                total=total,
+                policy_version=_content_hash(["fixture", "export-reference"]),
+                answer_key_ref=_content_hash(["fixture-key", "export"]),
+                package_version_id="pkg-reference",
+                computed_at=_REFERENCE_EXPORT_STAMP,
+                finalized_at=_REFERENCE_EXPORT_STAMP,
+                criteria_total=2,
+                criteria_auto=2,
+                criteria_reviewed=0,
+                criteria_provisional=0,
+                criteria_missing=0,
+                boundary_at_risk=0,
+                score_low=None,
+                score_high=None,
+                missing_criteria="[]",
+                amendments="[]",
+            )
+    return store, handle, root
+
+
+#: The school-facing marks mapping (`TC-REG-03`'s baseline covers it, order
+#: included). The `mark` column is the one the baseline's first comparison lifts
+#: out: a moved mark is a defect, not a layout change, and the mapping is the only
+#: part of this export the grading owner may accept a diff on.
+_MARKS_COLUMNS = (
+    "run_id", "revision", "student_ref", "submission_id", "mark", "grade", "state",
+)
+
+
+def export_grade_artifacts(
+    run_id: str,
+    revision: int,
+    dest: Path | str,
+    store: Store | None = None,
+) -> GradeArtifacts:
+    """The school-facing export (`FR-GRADE-17`, `TC-REG-03`'s producer): one CSV of
+    marks and one PDF per student, written into `dest`, read from the **named**
+    revision — exporting a named revision is what makes the amendment trail usable
+    (revision 1's export reproduces the marks as they were delivered then).
+
+    The marks CSV is `_MARKS_COLUMNS` verbatim; the PDFs are named by student ref,
+    one per student the CSV carries, byte-deterministic (see `_student_pdf_bytes`).
+    Without a store the export reads the module's reference cohort — the content the
+    committed baselines describe; with one, the run's own ledger."""
+    owns_reference = store is None
+    reference_root: Path | None = None
+    if owns_reference:
+        store, cohort, reference_root = _reference_export_cohort(run_id)
+    else:
+        cohort = GradingService(store)._find_run(run_id)[0]
+    try:
+        rows = [
+            dict(row)
+            for row in cohort.query(
+                GRADE_STATEMENTS["select_run_grades_with_students"],
+                run_id=run_id,
+                revision=revision,
+            )
+        ]
+    finally:
+        if owns_reference:
+            # The reference cohort is scaffolding: once the rows are read, the
+            # ephemeral ledger is closed and its directory removed — the export's
+            # output is the files in `dest`, and a leaked handle per call would be
+            # a resource bug the golden case's own reuse would multiply.
+            store.close()
+            shutil.rmtree(reference_root, ignore_errors=True)
+    if not rows:
+        raise GradeError(
+            f"no grade rows exist for run {run_id!r} at revision {revision} — "
+            "there is nothing to export, and an empty export would be a lie"
+        )
+    directory = Path(dest)
+    directory.mkdir(parents=True, exist_ok=True)
+    csv_path = directory / f"grade-{_safe_filename_part(run_id)}-rev{revision}.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as handle:
+        # LF terminators, not the csv module's platform default: the committed
+        # baseline is pinned to LF in the working tree on every platform
+        # (.gitattributes' fixtures rule), so the producer must emit the bytes
+        # the checkout carries — the marks file is a regression baseline, and a
+        # line ending the OS chose would fail every fresh clone.
+        writer = csv.writer(handle, lineterminator="\n")
+        writer.writerow(_MARKS_COLUMNS)
+        for row in rows:
+            writer.writerow(
+                [
+                    run_id,
+                    revision,
+                    row["student_ref"],
+                    row["submission_id"],
+                    "" if row["total"] is None else f"{float(row['total']):.2f}",
+                    row["grade"] or "",
+                    row["state"],
+                ]
+            )
+    pdf_paths = tuple(
+        directory / f"{_safe_filename_part(str(row['student_ref']))}.pdf"
+        for row in rows
+    )
+    for path, row in zip(pdf_paths, rows):
+        _write_student_pdf(
+            path,
+            run_id=run_id,
+            revision=revision,
+            student_ref=str(row["student_ref"]),
+            total=row["total"],
+            grade=row["grade"],
+            state=row["state"],
+            coverage=(
+                int(row["criteria_total"]),
+                int(row["criteria_auto"]),
+                int(row["criteria_reviewed"]),
+                int(row["criteria_provisional"]),
+                int(row["criteria_missing"]),
+            ),
+            missing=tuple(json.loads(row["missing_criteria"] or "[]")),
+        )
+    return GradeArtifacts(csv_path=csv_path, pdf_paths=pdf_paths)
+
+
 # --- the migration ----------------------------------------------------------------------------------
 #
 # Cohort v18 — ADR-9's grade ledger: the `(run_id, submission_id, revision)` key with
@@ -1888,10 +2640,12 @@ __all__ = [
     "ClassRollup",
     "Coverage",
     "CoverageSummary",
+    "CriterionBandFigure",
     "CriterionInput",
     "GRADE_EXPORT_DIR_ENV",
     "GRADE_STATEMENTS",
     "GRADE_STATES",
+    "GradeArtifacts",
     "GradeComputation",
     "GradeError",
     "GradeReport",
@@ -1899,16 +2653,23 @@ __all__ = [
     "GradingService",
     "FinalizationRecord",
     "HARNESS_EXPORT_DIR_ENV",
+    "RollupBlock",
+    "RollupFinding",
     "RollupSegment",
+    "SeparatedRollup",
     "SubmissionGrade",
     "answer_key_ref_of",
     "apply_policy",
     "boundary_risk",
     "class_rollup",
+    "criterion_band_figures",
     "cohort_with_mixed_revisions",
     "coverage_for",
     "export_dir",
+    "export_grade_artifacts",
     "open_grade",
     "policy_version_of",
     "resolve_grade",
+    "rollup_findings",
+    "separated_rollup",
 ]

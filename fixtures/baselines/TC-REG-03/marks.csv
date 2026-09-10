@@ -1,0 +1,5 @@
+run_id,revision,student_ref,submission_id,mark,grade,state
+RUN-0001,1,student-001,S-0001,71.00,B,final
+RUN-0001,1,student-002,S-0002,64.50,C,final
+RUN-0001,1,student-003,S-0003,83.25,A,final
+RUN-0001,1,student-004,S-0004,58.00,D,final

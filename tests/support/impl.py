@@ -430,15 +430,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `"#31 baselines"` is gone because #31 landed: `aeh.pkg:export_package` exists (the
     # module-level seam the written-ahead suites anticipated), `TC-REG-02` runs in the gate
     # and its baseline `TC-REG-02/PKG-REF.archive.json` was recorded in #31's PR.
-    "#104": (
-        # `GradingService.export` is declared in design §3.14, so it is Protocol surface and
-        # cannot be the key. `export_grade_artifacts` is this suite's -- it returns the CSV and
-        # the per-student PDF set together, which is what `FR-GRADE-17` promises and what the
-        # baseline covers. Checked: absent from both design documents.
-        "symbol",
-        f"{GRADE_MODULE}:export_grade_artifacts",
-        ("tests/regression/test_reg_03_grade_exports.py",),
-    ),
+    # `"#104"` is gone because #104 landed: `aeh.grade:export_grade_artifacts` exists — the
+    # school-facing export whose shape the doctrine anticipated (the CSV of marks and the
+    # per-student PDF set returned together, `FR-GRADE-17`) — `TC-REG-03` runs in the gate
+    # and both its baselines were recorded in #104's PR.
     # `TC-PROV-18`'s six counters (`FR-PROV-12`). Keyed on **#20** rather than #19, although
     # both must have landed: `transport_retries` cannot be implemented before there is a retry
     # to count, so #19 lands first by construction and keying on it would fire while the
@@ -1650,21 +1645,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{GRADE_MODULE}:record_grade_signals,{GRADE_MODULE}:evaluate_grade_alerts",
         ("tests/integration/grade/test_grade_observability.py",),
     ),
-    "#104 criterion band figures (TC-GRADE-14)": (
-        "symbol",
-        f"{GRADE_MODULE}:criterion_band_figures",
-        ("tests/unit/grade/test_criterion_band_figures.py",),
-    ),
-    "#104 separated rollup (TC-GRADE-15)": (
-        "symbol",
-        f"{GRADE_MODULE}:separated_rollup",
-        ("tests/integration/grade/test_rollup_blocks.py",),
-    ),
-    "#104 rollup findings (TC-GRADE-16)": (
-        "symbol",
-        f"{GRADE_MODULE}:rollup_findings",
-        ("tests/integration/grade/test_rollup_findings.py",),
-    ),
+    # The three `"#104 ..."` entries that stood here (TC-GRADE-14/15/16) are gone:
+    # #104 landed `criterion_band_figures`, `separated_rollup` and `rollup_findings`
+    # in the same PR that unmarked their cases. #103's two entries stay — #103 is
+    # still open.
 }
 
 

@@ -501,14 +501,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
-    # The grade sites are #101's line numbers (the module's own write surface, every
+    # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
-    # the migration's rebuild statements (the v18 create/copy/drop/rename plus the
-    # partial unique index), the batch pass's demote/insert/settle/queue writes and
-    # the cohort-fixture cohort+submission inserts in `cohort_with_mixed_revisions`,
-    # and the single-submission path's demote/insert/settle/queue writes. The
-    # module's reads go through `store.cohort(...).query()` / the package handle's
-    # `query()`, which are not census sites (FR-STORE-08). (Moved once as a block,
+    # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
+    # `_grade_one`'s five single-submission writes (the same statements on the
+    # per-submission path), `finalize_batch`'s settlement write, `amend`'s
+    # demote-and-reinsert pair, and the two cohort-fixture seams' three writes each —
+    # a cohort INSERT, a submission INSERT and the module's own `insert_grade` — in
+    # `cohort_with_mixed_revisions` and #104's `_reference_export_cohort` (the golden
+    # export's reproducible reference cohort; the rows are the rows the service
+    # writes). The v18 migration's rebuild statements are a `Migration(...)` object
+    # the store's runner executes, not call sites here; the module's reads go through
+    # `store.cohort(...).query()` / the package handle's `query()`, which are not
+    # census sites (FR-STORE-08) — the #104 rollup and export accessors
+    # (`criterion_band_figures`, `separated_rollup`, `rollup_findings`) are reads and
+    # added none. (Moved once as a block,
     # +21: the `panel_refused` presentation field the CT-AGG-07 consumer
     # differential demanded — `GradeComputation`'s disclosure of the
     # breaker-refused criteria — landing above every site; moved again, the six
@@ -527,24 +534,30 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `select_current_grade` statement gained its `policy_version`/`answer_key_ref`
     # projection (the statement had omitted columns `_as_submission_grade` reads,
     # crashing every `compute_one` — TC-GRADE-13 step 7 is the regression case);
-    # five disclosure lines above every site below the statements dict. Same
-    # statements; re-read from the walker, never hand-unioned.
-    "aeh.grade:1178",
-    "aeh.grade:1184",
-    "aeh.grade:1186",
-    "aeh.grade:1194",
-    "aeh.grade:1204",
-    "aeh.grade:1277",
-    "aeh.grade:1302",
-    "aeh.grade:1307",
-    "aeh.grade:1338",
-    "aeh.grade:1346",
-    "aeh.grade:1438",
-    "aeh.grade:1519",
-    "aeh.grade:1524",
-    "aeh.grade:1771",
-    "aeh.grade:1782",
-    "aeh.grade:1787",
+    # five disclosure lines above every site below the statements dict. #104's
+    # re-pin, once more as a block: the rollup/export surfaces landed between the
+    # statements dict and the service, and `_reference_export_cohort` added its
+    # three fixture writes at the tail. Same statements plus three; re-read from
+    # the walker, never hand-unioned.
+    "aeh.grade:1416",
+    "aeh.grade:1422",
+    "aeh.grade:1424",
+    "aeh.grade:1432",
+    "aeh.grade:1442",
+    "aeh.grade:1515",
+    "aeh.grade:1540",
+    "aeh.grade:1545",
+    "aeh.grade:1576",
+    "aeh.grade:1584",
+    "aeh.grade:1676",
+    "aeh.grade:1757",
+    "aeh.grade:1762",
+    "aeh.grade:2051",
+    "aeh.grade:2062",
+    "aeh.grade:2067",
+    "aeh.grade:2429",
+    "aeh.grade:2435",
+    "aeh.grade:2440",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
