@@ -46,7 +46,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 
-pytestmark = pytest.mark.writtenahead
+
 
 _RUN = "run-integ-2026-7B"
 _COHORT = "c-2026-7B-integ"
@@ -65,12 +65,14 @@ DECLARED_WRITE_SET = frozenset({
 FORBIDDEN_SCORE_COLUMNS = frozenset({"band", "points", "confidence"})
 
 #: The non-signal columns the module's routing requests legitimately ride on — the
-#: work-ledger and run-metrics plumbing. Everything else the SQL writes must be one of
-#: the six signals (the reverse half of the set-equality assertion).
+#: work-ledger and run-metrics plumbing, plus the review queue's (the plan's declared
+#: destination for the empty-evidence route). Everything else the SQL writes must be one
+#: of the six signals (the reverse half of the set-equality assertion).
 INFRA_WRITE_COLUMNS = frozenset({
     "work_id", "submission_id", "criterion_id", "run_id",
     "stage", "status", "attempts", "origin",
     "metric", "name", "value",
+    "queue_id", "reason",
 })
 
 _INSERT_COLUMNS = re.compile(r"INSERT\s+INTO\s+\w+\s*\(([^)]*)\)", re.IGNORECASE)
@@ -337,17 +339,18 @@ def test_tc_integ_03_criterion_not_requiring_citation_is_not_routed_for_citation
 
 
 def test_tc_integ_03_evidence_present_but_every_span_failing_routes_not_scores(tmp_data_dir):
-    """`TC-INTEG-03`'s variant — evidence present but every span failing verification:
-    must route, not score. `evidence_present` is True (spans were extracted) while
-    `spans_verified` is False; the unit goes back for re-extraction and no score row
-    appears."""
+    """`TC-INTEG-03`'s variant — spans extracted but every one failing verification:
+    must route, not score. `evidence_present` is False (no span SURVIVED verification —
+    evidence is what the check certified, not what the extractor claimed; reconciled at
+    #74's landing) while `spans_verified` is False; the unit goes back for re-extraction
+    and no score row appears."""
     doc = _seeded_store(tmp_data_dir, "SUB-003")
     hallucinated = (Span(0, 5, "nope!"),)  # bytes that are not in the document
     view = ExtractionView(spans=hallucinated, panel=PanelFlags((True, True, True)),
                           evidence_type_requires_citation=True)
     gate, store = _gate(tmp_data_dir, view)
     signals = gate.verify(_RUN, "SUB-003", "C1")
-    assert signals.evidence_present is True
+    assert signals.evidence_present is False
     assert signals.spans_verified is False
     routed = _fresh_retries(store, "SUB-003", "C1")
     assert routed, (

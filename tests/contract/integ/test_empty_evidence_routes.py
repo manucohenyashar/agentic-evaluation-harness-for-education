@@ -114,7 +114,6 @@ def _assert_no_path_from_empty_evidence_to_a_band(source: str, label: str) -> No
             )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c07_no_path_exists_from_empty_evidence_to_a_band():
     """`TC-INTEG-C07` step 1 — the static limb: over `src/aeh/integ.py`'s
     statements, no band id is ever named and no scored column is ever written.
@@ -204,7 +203,6 @@ def _gate(store, view):
                          ocr_conf_floor=OCR_FLOOR)
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c07_the_three_empty_evidences_route_identically(tmp_data_dir):
     """`TC-INTEG-C07` steps 2+3 — never extracted, extracted-then-all-rejected,
     and extracted-for-the-wrong-criterion all produce the SAME outcome: a
@@ -231,7 +229,6 @@ def test_tc_integ_c07_the_three_empty_evidences_route_identically(tmp_data_dir):
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c07_m_agg_never_auto_scores_empty_evidence():
     """`TC-INTEG-C07`'s rung-3 consumer half — `aggregate` over an
     empty-evidence outcome and a fully sufficient, unanimous panel: the routing

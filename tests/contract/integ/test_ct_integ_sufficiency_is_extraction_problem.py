@@ -129,7 +129,6 @@ def _assert_no_path_from_insufficiency_to_a_band(source: str, label: str) -> Non
             )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c08_no_path_from_an_insufficiency_flag_to_a_band():
     """`TC-INTEG-C08` — the prohibition, statically: over `src/aeh/integ.py`'s
     statements no band id is ever named and no scored column is ever written,
@@ -177,7 +176,6 @@ def _score_rows(handle) -> list[dict]:
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("panel", [
     PanelFlags((False, True, True)),
     PanelFlags((True, False, True)),
@@ -198,7 +196,6 @@ def test_tc_integ_c08_a_lone_flagging_judge_is_recorded_as_an_extraction_problem
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c08_repeated_insufficiency_goes_to_a_human_never_a_band(
         tmp_data_dir):
     """`TC-INTEG-C08` — the repeat half: the same insufficiency again widens
@@ -229,7 +226,6 @@ def test_tc_integ_c08_repeated_insufficiency_goes_to_a_human_never_a_band(
 # --- the rung-3 consumer half ---------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c08_m_agg_never_scores_an_insufficiency_flag():
     """`TC-INTEG-C08`'s rung-3 half — `aggregate` over an insufficiency-flagged
     outcome: the routing is never `auto`. The flag is an extraction problem,
