@@ -23,7 +23,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from harness.corpora import adv_inj, adv_pdf, graphic, hand, reference_package, scan, stats, synth
+from harness.corpora import adv_inj, adv_pdf, conform_set, graphic, hand, reference_package, scan, stats, synth
 from harness.corpora.baselines import (
     BASELINES,
     WORK_ID_INPUTS,
@@ -325,6 +325,20 @@ def _build_scan(root: Path) -> None:
     )
 
 
+def _build_conform(fixtures_root: Path) -> None:
+    """`F-CONFORM` — the version-pinned fixture set #133's suite measures with.
+
+    Composed from the source corpora built just above (F-FROZEN, F-ADV-INJ, F-SCAN and
+    F-ADV-PDF's manifest rows), read from THIS fixtures root rather than the committed
+    fixtures tree, so `--check`'s scratch build verifies the composition against a fresh
+    generation of every source rather than against whatever is checked in. See
+    `harness.corpora.conform_set` for the selection and what each entry carries.
+    """
+    write_manifest(
+        fixtures_root / conform_set.CORPUS_NAME, conform_set.conform_manifest(fixtures_root)
+    )
+
+
 def _build_hand(root: Path) -> None:
     """`F-HAND` — a declaration, and no student work. See `harness.corpora.hand`."""
     root.mkdir(parents=True, exist_ok=True)
@@ -415,6 +429,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-ADV-INJ/` | Injection twin pairs: each payload paired with a benign twin (`FR-CONFORM-09`) |
 | `F-ADV-PDF/` | **Manifest only.** One entry per malicious/malformed construct, with the digest of the bytes the generator emits |
 | `F-SCAN/` | Synthetic rendered scans: the scanned-handwriting tier (`FR-CONFORM-03`, #133) — pixels-only pages, legible to marginal, plus one mixed-format paper |
+| `F-CONFORM/` | **Manifest only.** The version-pinned fixture set the conformance suite measures with (#133): a digest-addressed selection from the corpora above |
 | `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
 
@@ -471,6 +486,7 @@ def build(root: Path) -> None:
     _build_adv_inj(root / "F-ADV-INJ")
     _build_adv_pdf(root / "F-ADV-PDF")
     _build_scan(root / "F-SCAN")
+    _build_conform(root)
     _build_hand(root / "F-HAND")
     _build_baselines(root / "baselines")
 
