@@ -138,7 +138,6 @@ def test_tc_review_c09_no_system_output_is_available_before_submission(forbidden
 # --- step 3: the transport layer ---------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrendered():
     """Step 3 — *"A value present in a payload but hidden by CSS satisfies step 2's naive form and
     fails here."*

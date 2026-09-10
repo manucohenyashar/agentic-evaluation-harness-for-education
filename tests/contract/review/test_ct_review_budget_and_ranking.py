@@ -436,7 +436,6 @@ def test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_bad
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c19_the_console_does_not_present_the_budget_as_a_guarantee_of_elapsed_time():
     """The consumer obligation, over rendered language: *"a consumer must not present the budget
     as a guarantee of elapsed time."*

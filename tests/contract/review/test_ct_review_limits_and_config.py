@@ -412,7 +412,6 @@ def test_tc_review_c20_the_group_signature_is_exactly_the_declared_components():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c20_the_console_does_not_describe_a_group_as_semantically_clustered():
     """The consumer obligation, over rendered language.
 

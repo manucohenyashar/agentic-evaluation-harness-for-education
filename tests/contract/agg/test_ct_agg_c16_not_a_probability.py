@@ -16,9 +16,9 @@ Two limbs:
   lives there — the clause binds the consumers. The permitted uses stay permitted:
   the shipped routing thresholds ON confidence, and that use is asserted live so
   the scan cannot drift into banning use altogether;
-- **the presentation sweep** (rung 3, writtenahead on M-CONSOLE #123 only —
-  M-GRADE #101's `apply_policy` landed and its param runs unmarked, and
-  M-REVIEW #108's queue landed and its param runs since then too): each
+- **the presentation sweep** (rung 3; all three consumer params run —
+  M-GRADE #101's `apply_policy`, M-REVIEW #108's queue, and M-CONSOLE's
+  limb rekeyed at #124's landing to the landed `build_console`): each
   consumer's presentation of a low-confidence
   queued row carries no percentage framing, no "probability", no calibration
   language — "0.62" as a bare figure is the permitted thresholding input; "62%
@@ -183,14 +183,16 @@ def _queued_low_confidence_row(aggregate):
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        # Per-param keying, the sweep's own per-row convention: M-GRADE's param
-        # runs — #101 landed `apply_policy` — and M-REVIEW's runs since #108
-        # landed the queue; M-CONSOLE is unlanded and stays red by design until
-        # its story lands.
+        # Per-param keying, the sweep's own per-row convention: all three run.
+        # Reconciled at #124's landing: the M-CONSOLE limb was written ahead
+        # against an invented `render_review_queue(store).render_scores(...)`
+        # shape, but the landed console surface that presents a queued row is
+        # `build_console` (#122's) — whose `render_scores` presents the
+        # submission's score rows per state. The mark came off and the param
+        # was rekeyed to the surface it actually calls.
         pytest.param("M-GRADE", GRADE_MODULE, "apply_policy", "#101"),
         pytest.param("M-REVIEW", REVIEW_MODULE, "rank_queue_items", "#108"),
-        pytest.param("M-CONSOLE", CONSOLE_MODULE, "render_review_queue", "#123",
-                     marks=pytest.mark.writtenahead),
+        pytest.param("M-CONSOLE", CONSOLE_MODULE, "build_console", "#122"),
     ],
     ids=["m_grade", "m_review", "m_console"],
 )
