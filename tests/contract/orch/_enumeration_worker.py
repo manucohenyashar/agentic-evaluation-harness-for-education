@@ -19,16 +19,13 @@ import json
 import sys
 
 # The nine migration contributors, imported before the first store open in THIS process
-# (`aeh.judge` owns Cohort's last migration — #80's `judge_verdict_response_columns` —
-# and `aeh.integ` owns Durable's last — #73's `integ_rate_dimensions` — so a short
-# import list leaves a chain short of its pin and the open refuses it).
+# (aeh.judge owns Cohort's last migration, #80's judge_verdict_response_columns;
+# aeh.integ owns Durable's last, #73's integ_rate_dimensions).
 import aeh.agg  # noqa: F401,E402
 import aeh.det  # noqa: F401,E402
 import aeh.extract  # noqa: F401,E402
 import aeh.ingest  # noqa: F401,E402
 import aeh.integ  # noqa: F401,E402
-import aeh.extract  # noqa: F401,E402
-import aeh.ingest  # noqa: F401,E402
 import aeh.judge  # noqa: F401,E402
 import aeh.orch  # noqa: F401,E402
 import aeh.pkg  # noqa: F401,E402

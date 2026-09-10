@@ -2,24 +2,27 @@
 
 Everything here is **test-side data or a declared seam**, not a double of M-INTEG itself:
 §4.2 permits doubles only at the model boundary, and the two boundaries M-INTEG sits on —
-the extractor's span payload and the panel's sufficiency flags — are exactly the surfaces
-`#68` (M-EXTRACT) and `#78`/#79 (M-JUDGE) have not landed yet. `ExtractionView` is the
-single place that reconciliation happens.
+the extractor's span payload and the panel's sufficiency flags — are the surfaces the
+injected `ExtractionView` stands in for. The producers of both have since landed (#68/#69
+persist spans and a second family into `evidence.payload`; M-JUDGE persists
+`verdict.evidence_sufficient`), but the view stays the read model: it is the single place
+that reconciliation happens, and it keeps the fault-injection points the fail-closed cases
+drive.
 
 **The interface the TS-28 files assume of `#73`/`#74`**, listed so it is reconciled
 deliberately rather than discovered (the TS-24 precedent):
 
 | Name | Status |
 |---|---|
-| `aeh.integ.verify_span(doc, span) -> bool` | **invented as a module-level function**: design §3.9 declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and FUZZ-03 are rung 0 — a pure function over (document bytes, span), no store, no construction. The `#65` `aeh.synth:synthesize` precedent: the minimal entry point the pure cases can call; the method and the function reconcile at `#73`'s landing |
-| `aeh.integ.IntegrityGate(handle, blobs, extraction_view, ocr_conf_floor=...)` | **constructor invented** — the Protocol declares no construction. The arguments are the design's own dependency set: M-STORE (the cohort handle documents, regions and work units are read through), the blob store (CT-INTEG-10's crop reachability), and the extraction side below; the floor is FR-INTEG-04's configured threshold. The signature reconciles at `#74`'s landing |
+| `aeh.integ.verify_span(doc, span) -> bool` | **invented as a module-level function**: design §3.9 declares it as an `IntegrityGate` *method*, but TC-INTEG-01/09 and FUZZ-03 are rung 0 — a pure function over (document bytes, span), no store, no construction. The `#65` `aeh.synth:synthesize` precedent: the minimal entry point the pure cases can call. **Reconciled at the `#73`/`#74` landing**: the module-level function is the one computation, and `IntegrityGate.verify_span` is the Protocol's method spelling over it — a pure delegation, no state either spelling lacks |
+| `aeh.integ.IntegrityGate(handle, blobs, extraction_view, ocr_conf_floor=...)` | **constructor invented** — the Protocol declares no construction. The arguments are the design's own dependency set: M-STORE (the cohort handle documents, regions and work units are read through), the blob store (CT-INTEG-10's crop reachability), and the extraction side below; the floor is FR-INTEG-04's configured threshold. **Reconciled at the `#74` landing under exactly this signature** |
 | `aeh.integ.IntegritySignals` | design-declared dataclass (§3.9): exactly six fields, `extractor_disagreement` tri-state |
 | `IntegrityGate.verify(run_id, submission_id, criterion_id)` | design-declared (§3.9 Protocol), returns `IntegritySignals` |
 | `aeh.integ.ALERT_SPAN_VERIFICATION_FAILURES` | **invented name**: CT-INTEG-14 declares the *alert* ("a span verification failure rate above a low threshold means the extractor is hallucinating spans") but not its spelling; the store's precedent (`ALERT_FREE_DISK`, `DECLARED_ALERTS`) makes the name part of the interface, so the case requires the constant and reconciles the string at `#74`'s landing |
 | `aeh.integ.INTEG_RATE_METRICS` | **invented spelling** of CT-INTEG-14's six per-criterion rates — the design names the rates but not their metric strings; the tuple is required by name so the case fails loudly if the names move |
 | `run_metrics` carries per-criterion rows | **assumed `#74` migration**: the landed durable table is `(run_id, metric, value)` with PK `(run_id, metric)`, which structurally cannot hold a per-criterion rate; CT-INTEG-14's "emitted per criterion" requires the dimension. TC-INTEG-14 reads `submission_id`, `criterion_id`, `value` for a `(run_id, metric)` through the **durable** handle and asserts the dimension set — a `#74` that emits elsewhere (or keeps the aggregate PK) fails the case rather than the reader |
 | `INTEG_SPAN_VERIFICATION_DISABLED` (env) | **invented knob** for TC-INTEG-11's differential (the plan's own oracle measures "against a run with verification disabled", which requires a disable switch; seam rule 3 makes it env-gated). PERF-06 (TS-53) needs the same switch |
-| spans' persistence | none of the landed modules store spans (grep: no `span` table or column anywhere in `src/aeh`). `ExtractionView` injects them as data at the one place design §3.9's *Requires* row says M-EXTRACT is read; `#68`'s landing replaces the injected payload with the real surface and the view is the single line that changes |
+| spans' persistence | the extractor's span payload **is** persisted now — #68's migration 11 added `evidence.payload`, and #69's worker writes `{"spans": [...], "second_family": {...}}` JSON into it — so the "no span table anywhere" premise this row was written under is gone. What is still missing is the REGION half: `document_region` carries `region_kind`/`ocr_conf`/`crop_ref`/`content_state` but **no extent columns** in the canonical-Markdown byte coordinate system, so the geometric reads FR-INTEG-04/05 need (the span∩region intersection) cannot be served from the store yet — that schema belongs to M-INGEST, not to this pair. `ExtractionView` therefore stays the read model both halves ride; a store-backed view (evidence payload for the spans, fault-closed for the unreadable regions) remains the single line that changes when the extents land |
 
 **Coordinate system**: spans and region extents are **byte offsets** into
 `document.markdown` (CT-INGEST-03: "the coordinate system every later stage uses";
@@ -33,9 +36,11 @@ this module imports `aeh.ingest`, which is what registers the `markdown` /
 that import the migration is never registered and `document.markdown` does not exist).
 `seed_document` also ensures the `cohort` and `submission` rows the document's foreign
 keys reference exist — idempotently, so a file that seeds documents without a full
-`seed_run` still satisfies the enforced FK. Verdict rows are seeded directly with a
-`sufficiency` flag carried by `ExtractionView` instead, because the `verdict` table has
-no `evidence_sufficient` column until M-JUDGE lands.
+`seed_run` still satisfies the enforced FK. Verdict rows are seeded directly, with the
+panel's sufficiency flags carried by `ExtractionView` rather than by the `verdict`
+table: M-JUDGE's migration 17 has since added `verdict.evidence_sufficient`, but the
+flags stay view-carried because the sufficiency read is fault-injected through the
+view, not because the column is missing.
 """
 
 from __future__ import annotations
@@ -54,8 +59,9 @@ _SEED_STAMP = "2026-01-01T00:00:00+00:00"
 class Span:
     """The span shape CT-EXTRACT-01 declares: BYTE offsets into `document.markdown`.
 
-    A test-side record until `#68` lands the extractor's payload; `verify_span` is
-    duck-typed over `.start` / `.end` / `.text`, which is the whole declared surface.
+    The test-side twin of the payload record #68's `evidence.payload` carries and #69's
+    worker persists; `verify_span` is duck-typed over `.start` / `.end` / `.text`,
+    which is the whole declared surface (dict payloads included).
     """
 
     start: int
@@ -227,8 +233,9 @@ def seed_verdict(
     judge_id: str,
     band: str,
 ) -> None:
-    """Insert one verdict row (the `verdict` table has band but no sufficiency column
-    until M-JUDGE lands; the panel flag rides `ExtractionView.panel_sufficiency`)."""
+    """Insert one verdict row (band only; the panel's sufficiency flags ride
+    `ExtractionView.panel_sufficiency` — see the module docstring's note on
+    M-JUDGE's `evidence_sufficient` column)."""
     with handle.transaction() as tx:
         tx.execute(
             "INSERT INTO verdict (verdict_id, work_id, judge_id, band) "
