@@ -24,7 +24,6 @@ pytestmark = pytest.mark.contract
 # --- CT-REVIEW-04 — the residual triple, and the obligation to render it -----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c04_the_queue_states_all_three_figures_and_they_are_arithmetically_consistent():
     """*"Assert `ReviewQueue` states all three of `flagged_total`, `shown` and
     `residual_provisional`, and that they are arithmetically consistent."*
