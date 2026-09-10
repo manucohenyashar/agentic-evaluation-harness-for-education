@@ -635,35 +635,31 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
     #
-    # `TC-CONSOLE-C19`'s measurement half rides here too, and that is a judgment call worth
-    # stating: `NFR-CONSOLE-01` is traced to **#126**, which builds S1, S2, S6 and S8 -- none of
-    # the two screens the NFR names. The case needs the review queue (#124) and the rollup (#125),
-    # which are siblings with no dependency between them, so no single key is certainly last.
-    # #125 is chosen because it completes the rollup surface. The mis-trace is a finding for
-    # `/plan-to-issues`, reported on the PR rather than fixed here.
-    "#125": (
-        "symbol",
-        f"{CONSOLE_MODULE}:amend_finalized_grade",
+    # The `"#125"` entry that stood here is gone because #125 landed: `aeh.console` ships
+    # `amend_finalized_grade`, `export_package`, `ProvenanceRefused`, `touchpoint_surface` and
+    # `render_agreement_block`, so the finalization/touchpoints file, `-C08`'s editable-band
+    # sweep, `-C11`(b)'s honest absence, `-C12`'s reservation-ordering half and the stats
+    # `-C05` console message all run in the gate. `render_rollup` landed with #126, so
+    # `TC-CONSOLE-C19` and `TC-REG-04` are the two rows left behind, and they moved to the
+    # `"#124 console"` entry below: their *remaining* blockers are #124's, not #125's.
+    "#124 console": (
+        "symbols",
+        f"{CONSOLE_MODULE}:render_review_queue,{CONSOLE_MODULE}:review_queue_header",
         (
-            "tests/contract/console/test_ct_console_finalization_and_touchpoints.py",
+            # `NFR-CONSOLE-01` is traced to **#126**, which builds S1, S2, S6 and S8 -- none of
+            # the two screens the NFR names. The case needs the review queue (#124) and the
+            # rollup (#125), which are siblings with no dependency between them. The rollup half
+            # (`render_rollup`) landed with #125; what is still missing is #124's renderer, so
+            # the key is the conjunction of #124's two symbols. The mis-trace of
+            # `NFR-CONSOLE-01` to #126 remains a finding for `/plan-to-issues`, reported on the
+            # PR rather than fixed here.
             "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
             "the_review_queue_and_rollup_render_inside_their_budgets_at_350_students",
-            # TS-76 (#131). Three renderings whose FR is #125's rather than #123's:
-            # `FR-CONSOLE-20` (invariant 16, every displayed band editable), `FR-CONSOLE-24`
-            # (invariant 20, the absent agreement block) and `FR-CONSOLE-19` (invariant 15, the
-            # blind reservation subtracted before ranking). Their sibling halves in the same files
-            # are keyed on #123, which is why these are node IDs.
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c08_"
-            "every_route_that_shows_a_grade_shows_it_as_an_editable_band",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
-            "c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
-            "the_blind_reservation_is_subtracted_before_ranking_not_after",
-            # TS-01 (#2). `TC-REG-04`'s baseline is the rendered HTML of *three* surfaces -- the
-            # review queue, the rollup and the student view. Keyed on #125 for the same reason
-            # `TC-CONSOLE-C19`'s measurement half above is: the queue is #124's and the rollup is
-            # #125's, they are siblings, and #125 is the one that completes the surface. Keying on
-            # #124 would unmark a test that then fails on a rollup nobody has built.
+            # TS-01 (#2). `TC-REG-04`'s baseline is the rendered HTML of *three* surfaces --
+            # the review queue, the rollup and the student view. The queue is #124's and the
+            # rollup was #125's; with #125 landed the remaining blocker is exactly #124's
+            # pair, so the same conjunction keys this file. Its baselines are recorded when
+            # the entry fires, in the PR that closes #124.
             "tests/regression/test_reg_04_console_html.py",
         ),
     ),
@@ -968,12 +964,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_console]",
         ),
     ),
+    # The `"#125 stats"` entry that stood here split when #125 landed: `-C05`'s console
+    # message needs only `render_agreement_block`, which exists now, so that row runs in
+    # the gate unmarked. `-C03`'s absence rendering also needs `NoValidationData`
+    # (`M-STATS`, #115), and `aeh.stats` does not exist yet -- so it rides the
+    # conjunction of the two symbols it actually requires, and fires for whoever of
+    # #115 and #125 lands last.
     "#125 stats": (
-        "symbol",
-        f"{CONSOLE_MODULE}:amend_finalized_grade",
+        "symbols",
+        f"{CONSOLE_MODULE}:render_agreement_block,{STATS_MODULE}:NoValidationData",
         (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c05_the_console_renders_the_message_not_the_previous_administrations_number",
             "tests/contract/stats/test_no_validation_data_type.py"
             "::test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank",
         ),

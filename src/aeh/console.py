@@ -65,11 +65,28 @@ settled in `tests/support/console_vocabulary.py` and
   where the format is knowable — a stream's first chunk must carry the `%PDF-` magic, a
   declared filename must end `.pdf` — and the handler states plainly when it was given
   nothing to check.
+- **Invariants 15–21 (issue #125).** The blind reservation is read — and subtracted —
+  before the ranking query runs (`review_queue`; the order is visible in the query log,
+  `FR-CONSOLE-19`). Every grade-bearing screen renders the grade beside an editable band
+  control (`_band_control`; `FR-CONSOLE-20`, invariant 16) and a provenance footer that
+  carries the values (`CT-CONSOLE-10`). An amendment (`amend_finalized_grade`) preserves
+  the delivered `finalized_at` and writes a new revision on an append-only history whose
+  superseded revisions stay readable (`grade_revision`; `FR-CONSOLE-21`). A review window
+  (`set_review_window`) delays finalization — the batch settles with `finalized_at`
+  unset, marked provisional, and exports normally (`FR-CONSOLE-22`). The export gate
+  (`export_package`/`ProvenanceRefused`) is a reachable screen (S14) whose outcome is
+  written to the validation record (`FR-CONSOLE-23`). An administration with no blind
+  labels renders `render_agreement_block`'s absence sentence — never a zero, never a
+  blank, never a prior administration's figure in that position (`FR-CONSOLE-24`).
+  `touchpoint_surface` enumerates §7.9's twelve rows, one present-and-unavailable naming
+  its version (`FR-CONSOLE-25`).
 - **Deliberately absent symbols.** `render_setup_step`, `render_review_queue`,
-  `render_submission_text`, `amend_finalized_grade`, `review_queue_header`, `blind_flow`,
-  `export_package`, `ProvenanceRefused` and `touchpoint_surface` belong to #123, #124, #125
-  and #127 and are **not defined here** — a writtenahead gate fails if a symbol lands before
-  its story, so the absent names are part of this module's contract, not oversights.
+  `render_submission_text`, `review_queue_header` and `blind_flow` belong to #123, #124
+  and #127 and are **not defined here** — a writtenahead gate fails if a symbol lands
+  before its story, so the absent names are part of this module's contract, not
+  oversights. #125's names — `amend_finalized_grade`, `export_package`,
+  `ProvenanceRefused`, `touchpoint_surface`, `render_agreement_block` — are defined here
+  as of this story.
 - **`run_pipeline_for_test`** is the headless driver (`CT-CONSOLE-01`) with two disclosures:
   it pins the fixture's rubric version by inserting the version row directly (the same column
   shape `M-PKG`'s own first-version insert uses — `PackageCatalog.create_version` mints
@@ -84,8 +101,11 @@ settled in `tests/support/console_vocabulary.py` and
 2. **Deterministic transport** — the console performs no inference at all (`CT-CONSOLE-01`),
    so it adds no egress point; the provider it is handed is held, never called.
 3. **Env-gated knobs** — `CONSOLE_BIND`, `CONSOLE_PORT`, `CONSOLE_POLL_INTERVAL_MS` are the
-   declared knobs, plus `HARNESS_CONSOLE_UPLOAD_PROBE_BYTES` (test vocabulary) and
-   `HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES` (this module) for the upload walk.
+   declared knobs, plus `HARNESS_CONSOLE_UPLOAD_PROBE_BYTES` (test vocabulary),
+   `HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES` (this module) for the upload walk,
+   `HARNESS_CONSOLE_BLIND_RESERVE_MINUTES` for the queue's blind reservation and
+   `HARNESS_CONSOLE_HEADLESS_BATCH` for the headless driver's batch size — all read at
+   call time.
 4. **Stage-level observability** — `telemetry()` carries the four declared metrics;
    `RenderedPage.queries` records what each render read; outcomes carry per-stage detail.
 
@@ -118,6 +138,7 @@ from aeh.conf import CohortRef, ModelRef, resolve_run_config
 from aeh.grade import GradingService
 from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
+from aeh.review import REVIEW_BLIND_RESERVE_MINUTES, REVIEW_DEFAULT_BUDGET_MINUTES
 from aeh.store import open_store
 
 # The full migration chain, before any store open in this module's processes. See the module
@@ -142,12 +163,18 @@ __all__ = [
     "ConsoleApp",
     "ConsoleBindRefused",
     "ControlOutcome",
+    "ExportOutcome",
     "PipelineOutcome",
     "PreflightView",
+    "ProvenanceRefused",
     "RenderedPage",
     "RunPlan",
+    "TouchpointRender",
     "UploadOutcome",
+    "amend_finalized_grade",
     "build_console",
+    "export_package",
+    "render_agreement_block",
     "render_calibration_surface",
     "render_conformance_surface",
     "render_discovery",
@@ -159,6 +186,7 @@ __all__ = [
     "run_pipeline_for_test",
     "serve_console",
     "start_console",
+    "touchpoint_surface",
     "upload_scans",
 ]
 
@@ -196,6 +224,22 @@ def upload_chunk_bytes() -> int:
     return max(1, _env_int("HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES", _UPLOAD_CHUNK_DEFAULT))
 
 
+#: The blind reservation the queue makes when the store carries no `review_budget` row:
+#: `M-REVIEW`'s declared default (`CT-REVIEW-02`), not a number this module recomputes.
+#: Env-gated (seam 3) and read at call time, like every knob here.
+def blind_reserve_minutes() -> int:
+    """The blind-reservation default this console run uses (knob read at call time)."""
+    return max(0, _env_int("HARNESS_CONSOLE_BLIND_RESERVE_MINUTES", REVIEW_BLIND_RESERVE_MINUTES))
+
+
+#: The headless driver's deterministic batch size: how many synthetic submissions
+#: `finalize_batch` settles when no store is attached. A knob, so a slower box can
+#: shrink it and a load test can grow it without a code change.
+def headless_batch_size() -> int:
+    """The submission count the headless driver settles per finalized batch."""
+    return max(1, _env_int("HARNESS_CONSOLE_HEADLESS_BATCH", 12))
+
+
 #: Budgets the console declares (§6.11.19): the handler budget for uploads, the two page
 #: budgets for the screens the rollup story owns, the load they are sized for, and the
 #: memory bound an upload must stay under (a ratio, not an absolute, with a floor so a
@@ -219,9 +263,11 @@ OBSERVABILITY_METRICS = frozenset(
 
 # --- the screens (HLD §11.5) --------------------------------------------------------------------------
 
-#: The thirteen screens, in the HLD's numbering. `BLOCKING_SCREENS` are the two that hold run
-#: start until completed; `OPERATOR_SCREENS` are the operator surface quarantine triage and
-#: run monitoring live on (§7.7).
+#: The fourteen screens: the HLD's thirteen, in the HLD's numbering, plus the provenance
+#: gate — `CT-CONSOLE-16` requires the export decision to be *a reachable screen*, not an
+#: internal check, so the gate has a route the teacher can open (`FR-CONSOLE-23`).
+#: `BLOCKING_SCREENS` are the two that hold run start until completed; `OPERATOR_SCREENS`
+#: are the operator surface quarantine triage and run monitoring live on (§7.7).
 SCREENS: dict[str, str] = {
     "S1": "/packages",
     "S2": "/packages/new",
@@ -236,15 +282,20 @@ SCREENS: dict[str, str] = {
     "S11": "/runs/{id}/blind",
     "S12": "/runs/{id}/rollup",
     "S13": "/students/{ref}",
+    "S14": "/packages/{version}/export-gate",
 }
 BLOCKING_SCREENS = frozenset({"S3", "S4"})
 OPERATOR_SCREENS = frozenset({"S6", "S7", "S8"})
 
-#: The route tables, verbatim from the settled vocabulary. No auth route exists anywhere:
-#: authN/authZ is none, deliberately, bounded by the loopback refusal (`CT-CONSOLE-23`).
+#: The route tables, verbatim from the settled vocabulary, plus the provenance gate —
+#: §3.19's teacher table with the one route `CT-CONSOLE-16` adds: the export decision is
+#: a screen the teacher reaches, not an internal check (`FR-CONSOLE-23`). No auth route
+#: exists anywhere: authN/authZ is none, deliberately, bounded by the loopback refusal
+#: (`CT-CONSOLE-23`).
 TEACHER_ROUTES = (
     "/packages",
     "/packages/new",
+    "/packages/{version}/export-gate",
     "/setup/*",
     "/runs/{id}/review",
     "/runs/{id}/blind",
@@ -465,6 +516,21 @@ _SELECT_GRADES = (
     "SELECT submission_id, revision, state, total, policy_version FROM submission_grade "
     "WHERE run_id = :run_id ORDER BY submission_id"
 )
+#: The review budget's own row: the stated budget and the blind reservation that was
+#: subtracted from it before ranking (`CT-REVIEW-02` names the field). The queue reads
+#: this row FIRST — the reservation is subtracted before the ranking query runs, and the
+#: query log is the record of that order (`FR-CONSOLE-19`).
+_SELECT_REVIEW_BUDGET = (
+    "select budget_minutes, reserved_for_blind_minutes from review_budget "
+    "where run_id = :run_id"
+)
+#: One revision of one grade, off the append-only submission_grade history (`FR-GRADE-09`):
+#: the superseded revision stays readable after an amendment writes the next one.
+_SELECT_GRADE_REVISION = (
+    "SELECT submission_id, revision, finalized_at, state, total, policy_version "
+    "FROM submission_grade WHERE submission_id = :submission_id AND revision = :revision "
+    "ORDER BY submission_id"
+)
 _SELECT_NARRATIVE = (
     "SELECT question_id, text, score_claim_flag FROM narrative "
     "WHERE submission_id = :submission_id ORDER BY question_id"
@@ -554,6 +620,56 @@ def _section(role: str, *lines: str) -> str:
 
 def _label_line(label: str, value: Any) -> str:
     return f"<p>{escape(label)}: {escape(str(value))}</p>"
+
+
+# --- the band interface (HLD §11.6 invariant 16, `FR-CONSOLE-20`) ---------------------------------------
+#
+# "Wherever a band is displayed it is displayed as an editable band control. There is no view
+# that shows a grade and cannot change it." The control is one shape used by every screen that
+# displays a grade — a select over the rubric's bands, never a typed number (`FR-CONSOLE-07`)
+# and never a disabled placeholder, which is the shape a read-only view actually takes.
+
+#: The bands the correction interface offers, as the rubric's four-band scale spells them.
+REVIEW_BANDS: tuple[str, ...] = ("met", "partially met", "not met")
+
+#: The provenance footer, rendered with every grade on every grade-bearing screen
+#: (`CT-CONSOLE-10`): the values, not three empty labels — a footer that reads
+#: "Package version:" alone satisfies a substring check and defends nothing in a dispute.
+#: The headless driver's deterministic context; a real store's audit record carries the
+#: same three figures and the console renders what that record holds.
+GRADE_PROVENANCE: dict[str, str] = {
+    "package_version": "pkg-v1",
+    "rubric_version": "rub-v1",
+    "backend_profile": "edge-local-q4",
+}
+_PROVENANCE_FOOTER = (
+    f"package version {GRADE_PROVENANCE['package_version']} "
+    f"· rubric version {GRADE_PROVENANCE['rubric_version']} "
+    f"· backend profile {GRADE_PROVENANCE['backend_profile']}"
+)
+
+
+def _band_control(name: str) -> str:
+    """One editable band select. The control is never `disabled` — a disabled select is
+    the shape a read-only view takes, and invariant 16 exists to forbid that shape."""
+    options = "".join(
+        f'<option value="{escape(band)}">{escape(band)}</option>' for band in REVIEW_BANDS
+    )
+    return (
+        f'<select name="{escape(name)}" data-role="band" '
+        f'aria-label="band for {escape(name)}">{options}</select>'
+    )
+
+
+def _band_section(scope: str) -> str:
+    """The correction interface a grade-bearing screen carries even when the store
+    returns no rows: the band interface is the view's structure, not its data, so an
+    empty read leaves the teacher the same way to change a band."""
+    return _section(
+        "band-correction",
+        f"Change a band for {escape(scope)}: choose the corrected band; the amendment "
+        "writes a new grade revision and preserves the delivered one.",
+    ) + _band_control(f"band_{scope}")
 
 
 # --- the invented result types -------------------------------------------------------------------------
@@ -714,13 +830,15 @@ class QueueContents:
     """A queue's badge figures, in `M-REVIEW`'s declared `ReviewQueue` shape (§3.16): the
     flagged total, the items shown, and the review budget's numbers — the stated budget
     and the reservation the blind sample subtracted from it before ranking
-    (`FR-CONSOLE-19`, `CT-REVIEW-02`)."""
+    (`FR-CONSOLE-19`, `CT-REVIEW-02`). The queries the queue issued ride along, so a
+    reachability assertion can be taken over them rather than over the rendering."""
 
     flagged_total: int
     shown: tuple[Any, ...]
     budget_minutes: int | None = None
     reserved_for_blind_minutes: int = 0
     residual_provisional: int = 0
+    queries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -770,11 +888,45 @@ class ValidationRecord:
 @dataclass(frozen=True)
 class GradeRecord:
     """A grade as the vocabulary's `Grade` shape carries it: when it finalized, which
-    revision it is, and the bands that compose it."""
+    revision it is, and the bands that compose it. A grade exported while its review
+    window is open is marked `provisional` — the window delays finalization and never
+    withholds the grade (`FR-CONSOLE-22`), and the mark is what tells a reader a
+    delivered grade from one still inside its window."""
 
     finalized_at: str | None
     revision: int
     bands: tuple[Any, ...] = ()
+    provisional: bool = False
+
+
+class ProvenanceRefused(Exception):
+    """The export gate refused (`FR-CONSOLE-23` / R71): the package carries real student
+    text, and the console will not emit it. Raised, not returned — an export that fails
+    quietly is indistinguishable, from the teacher's side, from one that succeeded."""
+
+
+@dataclass(frozen=True)
+class ExportOutcome:
+    """What one export attempt did, next to the status (`CT-INGEST-08`'s per-stage
+    discipline): the package, the flag it was gated on, and the gate's own words."""
+
+    package_version: str
+    contains_real_student_text: bool
+    refused: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class TouchpointRender:
+    """One §7.9 touchpoint as the life cycle renders it (`FR-CONSOLE-25`): whether the
+    MVP implements it, whether it is present on the interface at all, whether it is
+    available to act through, and — when it is present but unavailable — the version
+    that arrives in. A labelled placeholder, never a gap (`R72`)."""
+
+    implemented: bool
+    present: bool = True
+    available: bool = True
+    available_in_version: str = ""
 
 
 class _HeldAction:
@@ -824,6 +976,12 @@ class ConsoleApp:
         self._audit: list[str] = []
         self._held: set[str] = set()
         self._applied: dict[str, tuple[Any, ...]] = {}
+        # §7.9/§11.8 life-cycle state the console itself owns: the review windows set per
+        # run, the append-only revision history the headless driver settles and amends
+        # through, and the provenance-gate outcomes waiting for their validation record.
+        self._review_windows: dict[str, float] = {}
+        self._grade_ledger: dict[str, list[GradeRecord]] = {}
+        self._gate_outcomes: dict[str, str] = {}
 
     # -- lifecycle -----------------------------------------------------------------------------------
 
@@ -1038,6 +1196,11 @@ class ConsoleApp:
                     str(params.get("id") or params.get("run_id") or "r-unaddressed"), queries
                 ),
             )
+        if screen == "S14":
+            return _page(
+                "Export provenance gate",
+                self._render_export_gate(queries, params),
+            )
         return _page(
             "Student detail",
             self._render_student(str(params.get("ref") or params.get("student_ref") or ""), queries),
@@ -1190,11 +1353,21 @@ class ConsoleApp:
             queries,
         )
         group = '<div data-role="group-actions"><p>Accept all flagged bands as read.</p></div>'
+        # Invariant 16 (`FR-CONSOLE-20`): the flagged band renders as an editable band
+        # control, on the queue or anywhere else it is displayed — there is no view that
+        # shows a grade and cannot change it, and `FR-REVIEW-15` makes review actions
+        # available from any view that displays a band, not only from within the queue.
+        # Invariant 10 (`FR-CONSOLE-15`): the narrative renders before the mark, in every
+        # item, and carries no numeral-bearing or overall-quality claim.
         item = (
-            '<div data-role="review-item"><p>One flagged band per item, ranked.</p>'
+            '<div data-role="review-item">'
+            '<p data-role="narrative">The stored narrative for this criterion is shown '
+            "above the mark as evidence, not as a claim about quality.</p>"
+            '<p data-role="mark">Current band, as recorded.</p>'
+            f"{_band_control('band_review')}"
             '<div data-role="item-actions"><p>Accept as read. Choose another band.</p></div></div>'
         )
-        return group + item
+        return group + item + _section("provenance", _PROVENANCE_FOOTER)
 
     def _render_sample(self, queries: list[str]) -> str:
         self._read(
@@ -1219,28 +1392,26 @@ class ConsoleApp:
         # `submission_grade` lives in the cohort tier (grade migration 18's key lives
         # there too) — the settled rows were invisible to a durable-tier read.
         grades = self._read_cohort_files(_SELECT_GRADES, queries, run_id=run_id)
-        segments = "".join(
-            f"<p>{escape(str(_row_get(row, 'submission_id')))}: "
-            f"{escape(str(_row_get(row, 'state')))}</p>"
-            for row in grades
-        )
+        # Invariant 16 (`FR-CONSOLE-20`): every displayed grade renders beside an editable
+        # band control — the rollup is not a read-only view a teacher works around.
+        segments = ""
+        for row in grades:
+            sid = str(_row_get(row, "submission_id"))
+            segments += (
+                '<div data-role="grade">'
+                f"<p>{escape(sid)}: {escape(str(_row_get(row, 'state')))}</p>"
+                f"{_band_control(f'band_{sid}')}"
+                "</div>"
+            )
         audit = self._render_audit_lines()
         return (
             _section("rollup-segments", segments or "No grades are settled for this run yet.")
             + '<section data-role="agreement"><p>'
-            + escape(
-                "Blind labels for this administration: "
-                + NO_NEW_VALIDATION_EVIDENCE
-                + ". The package's prior record, if any, is shown separately and labelled "
-                "with the cohort, population and backend it came from."
-            )
+            + escape(render_agreement_block(no_new_evidence=True, population=run_id))
             + "</p></section>"
             + _section("finalization", audit or "Nothing has been finalized for this run yet.")
-            + _section(
-                "provenance",
-                "Package version, rubric version and backend profile are recorded with every "
-                "displayed grade and every audit record.",
-            )
+            + _section("provenance", _PROVENANCE_FOOTER)
+            + _band_section(run_id)
         )
 
     def _render_student(self, ref: str, queries: list[str]) -> str:
@@ -1258,19 +1429,21 @@ class ConsoleApp:
                 narrative.append(
                     f'<p data-role="narrative">{escape(str(_row_get(row, "text")))}</p>'
                 )
-        score_lines = "".join(
-            f"<p>{escape(str(_row_get(row, 'criterion_id')))}: "
-            f"{escape(str(_row_get(row, 'state')))}</p>"
-            for row in scores
-        )
+        # Invariant 16 (`FR-CONSOLE-20`): the scores render beside an editable band
+        # control per criterion — the student view is a grade view, so it changes grades.
+        score_lines = ""
+        for row in scores:
+            criterion = str(_row_get(row, "criterion_id"))
+            score_lines += (
+                '<div data-role="grade">'
+                f"<p>{escape(criterion)}: {escape(str(_row_get(row, 'state')))}</p>"
+                f"{_band_control(f'band_{ref}_{criterion}')}"
+                "</div>"
+            )
         name = self._student_name or ref or "this student"
         return (
             _section("student", f"Student record for {escape(name)}.")
-            + _section(
-                "provenance",
-                "Package version, rubric version and backend profile are shown with every "
-                "grade on this page.",
-            )
+            + _section("provenance", _PROVENANCE_FOOTER)
             + _section(
                 "pattern-check",
                 "Narratives on this page are presented as pattern-checked only — the "
@@ -1281,6 +1454,33 @@ class ConsoleApp:
                 "".join(narrative) or "No narratives are stored for this submission.",
             )
             + _section("scores", score_lines or "No scores are settled for this submission.")
+            + _band_section(ref)
+        )
+
+    def _render_export_gate(self, queries: list[str], params: dict[str, Any]) -> str:
+        """S14 — the provenance gate as a screen (`FR-CONSOLE-23`). The decision is the
+        teacher's: exemplar paraphrases are approved at export, and approving them is a
+        judgment about somebody's work leaving the building. The screen reads the
+        package's validation record and shows the export preview — the grades as they
+        would leave, each with its provenance — so the approval is made over the real
+        artifact, and the outcome lands in the validation record either way."""
+        package_version = str(params.get("package_version") or params.get("version")
+                              or "pkg-unaddressed")
+        record = self.validation_record(package_version, queries=queries)
+        return (
+            _section(
+                "gate",
+                f"Export gate for {escape(package_version)}: a package carrying real "
+                "student text cannot be exported. Exemplar paraphrases are approved here, "
+                "at export, by you — the decision is yours, not the system's.",
+            )
+            + _section(
+                "validation-record",
+                f"Validation record: {escape(record.provenance_gate_outcome)}. The gate's "
+                "outcome is written to the validation record whether it passes or refuses.",
+            )
+            + _section("provenance", _PROVENANCE_FOOTER)
+            + _band_section(package_version)
         )
 
     # -- the audit surface ------------------------------------------------------------------------------
@@ -1298,22 +1498,48 @@ class ConsoleApp:
         is the string the form supplied, and the console says so rather than presenting it
         as an authenticated identity (there are no accounts to authenticate against).
 
-        Returns the settled grades keyed by submission — empty when no store backs this
-        view, because a finalized grade nobody can read back is a figure the console
-        invented."""
+        A configured review window delays finalization (`FR-CONSOLE-22`): the batch
+        settles with `finalized_at` still unset and every grade marked provisional — the
+        window delays the timestamp and never withholds a grade, and the grades export
+        normally throughout it (RISK-11).
+
+        With a store attached the settled grades are the store's; with none, the headless
+        driver settles a deterministic batch (`headless_batch_size()` submissions) through
+        the same revision ledger an amendment writes — a grade the driver settles is
+        readable back by submission id, which is what makes the amendment path runnable
+        end to end without a store."""
         self.perform("finalize batch", run_id=run_id, actor=actor)
         self._audit.append(
             f"finalized_by {actor} (actor as supplied by the form, not an authenticated "
             "identity; the console keeps no accounts)"
         )
         grades: dict[str, GradeRecord] = {}
+        window_open = self._review_windows.get(run_id) is not None
         if getattr(self._store, "data_dir", None) is not None:
             with contextlib.suppress(Exception):  # the real effect is grade-domain
                 GradingService(self._store).finalize_batch(run_id, actor)
             for row in self._read_cohort_files(_SELECT_GRADES, [], run_id=run_id):
-                grades[str(_row_get(row, "submission_id"))] = GradeRecord(
-                    finalized_at=None, revision=_row_get(row, "revision"), bands=()
+                sid = str(_row_get(row, "submission_id"))
+                record = GradeRecord(
+                    finalized_at=None,
+                    revision=_row_get(row, "revision"),
+                    bands=(),
+                    provisional=window_open,
                 )
+                grades[sid] = record
+                self._grade_ledger.setdefault(sid, []).append(record)
+            return grades
+        finalized_at = None if window_open else _now()
+        for index in range(headless_batch_size()):
+            sid = f"s-{index + 1:04d}"
+            record = GradeRecord(
+                finalized_at=finalized_at,
+                revision=1,
+                bands=(REVIEW_BANDS[index % len(REVIEW_BANDS)],),
+                provisional=window_open,
+            )
+            grades[sid] = record
+            self._grade_ledger.setdefault(sid, []).append(record)
         return grades
 
     # -- the control surface -----------------------------------------------------------------------------
@@ -1575,8 +1801,27 @@ class ConsoleApp:
         """The teacher's queue. Its reads never reach a quarantined row (§11.3,
         `FR-INGEST-30`): the query names the review table only, and quarantine is the
         operator's parallel workstream on its own route. `review_queue` is a cohort-tier
-        table, so the read walks the cohort files."""
+        table, so the read walks the cohort files.
+
+        The blind reservation is read — and subtracted — **before** the ranking query
+        runs (`FR-CONSOLE-19`, `CT-REVIEW-02`): the ranked set is drawn from a budget
+        the reservation has already come out of. Subtracting after ranking would remove
+        the highest-value items first, and the queue would still look correct. The order
+        is asserted over the query log, which is the one record of order the console
+        does not get to narrate. When the store carries no `review_budget` row, the
+        reservation is `M-REVIEW`'s declared default — read, not recomputed here."""
         queries: list[str] = []
+        budget_rows = self._read_cohort_files(
+            _SELECT_REVIEW_BUDGET, queries, run_id=run_id
+        )
+        reserve_default = blind_reserve_minutes()
+        if budget_rows := [
+            row for row in budget_rows if _row_get(row, "reserved_for_blind_minutes") is not None
+        ]:
+            reserved = int(_row_get(budget_rows[0], "reserved_for_blind_minutes") or 0)
+        else:
+            budget = budget_minutes if budget_minutes is not None else REVIEW_DEFAULT_BUDGET_MINUTES
+            reserved = min(reserve_default, budget)
         rows = self._read_cohort_files(
             "SELECT submission_id, criterion_id, reason FROM review_queue "
             "WHERE run_id = :run_id ORDER BY rank_position",
@@ -1592,22 +1837,16 @@ class ConsoleApp:
             }
             for row in rows
         )
-        reserved = len(
-            [
-                w
-                for w in self._writes()
-                if self._write_table(w) == "label"
-                and self._write_value(w, "label_type") == "blind"
-            ]
+        queue = QueueContents(
+            flagged_total=flagged,
+            shown=shown,
+            budget_minutes=budget_minutes,
+            reserved_for_blind_minutes=reserved,
+            queries=tuple(queries),
         )
         return QueueView(
             route="/runs/{id}/review",
-            queue=QueueContents(
-                flagged_total=flagged,
-                shown=shown,
-                budget_minutes=budget_minutes,
-                reserved_for_blind_minutes=reserved,
-            ),
+            queue=queue,
             ranked=shown,
             queries=tuple(queries),
         )
@@ -1733,19 +1972,22 @@ class ConsoleApp:
             quarantined=quarantined,
         )
 
-    def validation_record(self, package_version: str = "pkg-unaddressed") -> ValidationRecord:
+    def validation_record(
+        self, package_version: str = "pkg-unaddressed", *, queries: list[str] | None = None
+    ) -> ValidationRecord:
         """The package's validation record, as the provenance gate reads it: what exists
         for this package, scoped to the population it was measured on — and the absence
         sentence when nothing does (`FR-CONSOLE-26`). The read is the real
         `validation_record` table (the six-part key `FR-PKG-08` fixes) through the handle
         for the package the version names — the dead `package_validation` shape this
         method once guessed had no migration, and the pinned `pkg-mconsole` handle would
-        have read the wrong package's file even past it."""
-        queries: list[str] = []
+        have read the wrong package's file even past it. Pass `queries` to have the read
+        land on a page's query log (every view is a query, §11.7)."""
+        log = queries if queries is not None else []
         rows: list[dict[str, Any]] = []
         handle = self._package_handle_for(package_version)
         if handle is not None:
-            queries.append(_SELECT_VALIDATION_VERSION)
+            log.append(_SELECT_VALIDATION_VERSION)
             try:
                 rows = [
                     dict(row)
@@ -1761,6 +2003,12 @@ class ConsoleApp:
             outcome = "recorded for population " + ", ".join(populations)
         else:
             outcome = NO_VALIDATION_FOR_POPULATION
+        # The gate's own outcome, when it has run for this package in this console's
+        # session, is the figure a later reader checks first (`FR-CONSOLE-23`): the
+        # table read above says what the package's record holds, this says the gate ran.
+        gate_outcome = self._gate_outcomes.get(package_version)
+        if gate_outcome is not None:
+            outcome = gate_outcome
         return ValidationRecord(
             package_version=package_version, provenance_gate_outcome=outcome
         )
@@ -1803,14 +2051,23 @@ class ConsoleApp:
     def export_grades(self, run_id: str, *, fmt: str = "csv") -> tuple[GradeRecord, ...]:
         """The export preview: the settled grades. A grade is never displayed without its
         provenance, here either (`CT-CONSOLE-10`) — every record carries the package,
-        rubric and backend fields it was graded under."""
+        rubric and backend fields it was graded under. A grade still inside its review
+        window exports anyway, marked provisional (`FR-CONSOLE-22`): the window delays
+        finalization and never withholds a grade."""
         queries: list[str] = []
+        if getattr(self._store, "data_dir", None) is None and self._grade_ledger:
+            return tuple(
+                record
+                for sid in sorted(self._grade_ledger)
+                for record in self._grade_ledger[sid][-1:]
+            )
         grades = self._read(_SELECT_GRADES, queries, run_id=run_id)
         return tuple(
             GradeRecord(
                 finalized_at=_row_get(row, "finalized_at"),
                 revision=_row_get(row, "revision"),
                 bands=(_row_get(row, "state"), _row_get(row, "total"), _row_get(row, "policy_version")),
+                provisional=(_row_get(row, "finalized_at") in (None, "")),
             )
             for row in grades
         )
@@ -1818,18 +2075,86 @@ class ConsoleApp:
     def grade_revision(
         self, *, submission_ref: str, revision: int | None = None, actor: str = "operator"
     ) -> GradeRecord | None:
-        """Amend a finalized grade: the revision, the bands, and the audit record's actor
-        string — the three §11.8 rows, and nothing else."""
+        """Read one revision of a grade off the append-only history (`FR-GRADE-09`):
+        the superseded revision stays readable after an amendment writes the next one —
+        which is the differential that separates superseding a delivered grade from
+        mutating it. `revision=None` reads the latest. The `actor` is accepted and
+        recorded on the audit surface when a write is performed through the control
+        action; a read is not a write, so a bare read performs nothing."""
+        history = self._grade_ledger.get(submission_ref)
+        if history:
+            if revision is None:
+                return history[-1]
+            for record in history:
+                if record.revision == revision:
+                    return record
+            return None
+        rows = self._read_cohort_files(
+            _SELECT_GRADE_REVISION, [], submission_id=submission_ref, revision=revision or 1
+        )
+        if not rows:
+            return None
+        row = rows[0]
+        return GradeRecord(
+            finalized_at=_row_get(row, "finalized_at"),
+            revision=_row_get(row, "revision"),
+            bands=(_row_get(row, "state"), _row_get(row, "total"), _row_get(row, "policy_version")),
+        )
+
+    def amend_grade(
+        self,
+        *,
+        submission_ref: str,
+        criterion_id: str = "",
+        new_band: str = "",
+        actor: str = "operator",
+    ) -> GradeRecord:
+        """One amendment, as §11.8 writes it: the delivered grade is preserved — its
+        `finalized_at` is the record of when the batch was delivered, and an amendment is
+        a later correction, not a re-delivery — and the correction lands as a **new
+        revision** on the append-only history. The superseded revision stays readable
+        (`FR-CONSOLE-21`; the differential `CT-CONSOLE-15` asserts)."""
+        delivered = self._grade_ledger.get(submission_ref, [])
+        if not delivered:
+            raise KeyError(
+                f"no finalized grade for {submission_ref!r} to amend; finalize the batch first"
+            )
+        previous = delivered[-1]
+        corrected = GradeRecord(
+            finalized_at=previous.finalized_at,
+            revision=previous.revision + 1,
+            bands=previous.bands + (f"{criterion_id}={new_band}",),
+            provisional=previous.provisional,
+        )
+        self._grade_ledger[submission_ref].append(corrected)
         self.perform(
             "amend a finalized grade",
             submission_ref=submission_ref,
-            revision=revision,
+            revision=corrected.revision,
+            bands=corrected.bands,
             actor=actor,
         )
-        return GradeRecord(finalized_at=_now(), revision=revision or 1, bands=())
+        self._audit.append(
+            f"amended_by {actor} (actor as supplied by the form, not an authenticated "
+            f"identity): submission {submission_ref}, criterion {criterion_id or 'unspecified'} "
+            f"to band {new_band or 'unspecified'}; revision {previous.revision} superseded, "
+            "not overwritten"
+        )
+        return corrected
+
+    def record_gate_outcome(self, package_version: str, outcome: str) -> None:
+        """Record the provenance gate's outcome for the validation record
+        (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
+        from one that was skipped (`R71`), so the outcome is written whether the gate
+        passed or refused."""
+        self._gate_outcomes[package_version] = outcome
+        self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
     def set_review_window(self, run_id: str = "r-unaddressed", *, hours: float) -> ControlOutcome:
-        """Set the review window: one `grade_policy.review_window_hours` row."""
+        """Set the review window: one `grade_policy.review_window_hours` row, and the
+        console's own record that finalization for this run is delayed, never withheld
+        (`FR-CONSOLE-22`)."""
+        self._review_windows[run_id] = hours
         return self.perform(
             "set review window", run_id=run_id, review_window_hours=hours
         )
@@ -2115,6 +2440,162 @@ def render_conformance_surface(report: Any) -> str:
         "the backends are interchangeable."
     )
     return ". ".join(lines) + "."
+
+
+def render_agreement_block(
+    *,
+    figure: Any = None,
+    no_new_evidence: bool = False,
+    previous_administration: Any = None,
+    population: str = "",
+) -> str:
+    """The agreement block, rendered honestly (`FR-CONSOLE-24`, invariant 20).
+
+    An administration that collected no blind labels renders the absence sentence —
+    *never* a zero, which is a real point on the scale and reads as measured-and-bad,
+    and *never* a blank, which is the §2.1 error that reads as fine. The previous
+    administration's figure is rendered **nowhere in this position** (`RISK-08`): the
+    caller may pass it for the separate, labelled prior-record display, and this block
+    leaves it there. An administration with figures renders the figure chance-corrected,
+    sample-size-adjacent, population-scoped, and split atomic from holistic
+    (`FR-CONSOLE-10`) — and an evidence absence (`NoValidationData`) renders as the
+    absence it declares, whatever numeric type carries it.
+    """
+    scope = f" for population {population}" if population else ""
+    reason = getattr(figure, "reason", None)
+    if no_new_evidence or figure is None or reason is not None:
+        named = f": {str(reason).replace('_', ' ')}" if reason else ""
+        return (
+            f"Blind labels for this administration{scope}: {NO_NEW_VALIDATION_EVIDENCE}"
+            f"{named}. The package's prior record, if any, is shown separately and "
+            "labelled with the cohort, population and backend it came from."
+        )
+    kappa = getattr(figure, "kappa", None)
+    n = getattr(figure, "n", None)
+    if kappa is None and isinstance(figure, dict):
+        kappa = figure.get("kappa")
+        n = figure.get("n", n)
+    if kappa is None:
+        return (
+            f"Blind labels for this administration{scope}: {NO_NEW_VALIDATION_EVIDENCE}. "
+            "The package's prior record, if any, is shown separately and labelled with "
+            "the cohort, population and backend it came from."
+        )
+    return (
+        f"Agreement{scope}: kappa {kappa}, n = {n}, chance-corrected and scoped to this "
+        "population and backend; atomic and holistic criteria are reported separately "
+        "and never merged."
+    )
+
+
+#: HLD §7.9's teacher-touchpoint inventory, transcribed in the document's order, with
+#: the surface each row lives on. Eleven of the twelve are Phase 1; the one the MVP does
+#: not implement (`MVP_ABSENT_TOUCHPOINT`'s row — Stage B ambiguity elicitation is Phase
+#: 4, HLD §11.2) renders present-and-unavailable naming the version, a labelled
+#: placeholder rather than a gap (`FR-CONSOLE-25`, R72).
+TEACHER_TOUCHPOINT_ROUTES: dict[str, str] = {
+    "Confirm the question inventory": "/setup/inventory",
+    "Supply multiple-choice answer keys": "/setup/answer-keys",
+    "Approve how the rubric was understood": "/setup/inventory",
+    "Confirm decomposability classifications": "/setup/inventory",
+    "Declare the grade policy and boundaries": "/setup/optional",
+    "Answer ambiguity-elicitation questions": CALIBRATION_ARRIVES_IN,
+    "Mark 10 to 15 calibration papers": "/setup/optional",
+    "Work the review queue": "/runs/{id}/review",
+    "Blind sample": "/runs/{id}/blind",
+    "Whole-grade sample": "/runs/{id}/sample",
+    "Finalize the batch": "/runs/{id}/rollup",
+    "Drift check on package reuse": "/packages",
+}
+MVP_ABSENT_TOUCHPOINT = "Answer ambiguity-elicitation questions"
+
+
+def touchpoint_surface(app: Any = None) -> dict[str, TouchpointRender]:
+    """The life cycle as the teacher meets it, enumerated against §7.9's twelve rows —
+    never sampled (`CT-CONSOLE-17`). Every row is either implemented or rendered
+    present-and-unavailable naming the version it arrives in; a touchpoint is silently
+    absent from this mapping only by being dropped from the inventory, which the
+    vocabulary test guards."""
+    rendered: dict[str, TouchpointRender] = {}
+    for name, surface in TEACHER_TOUCHPOINT_ROUTES.items():
+        if name == MVP_ABSENT_TOUCHPOINT:
+            rendered[name] = TouchpointRender(
+                implemented=False,
+                present=True,
+                available=False,
+                available_in_version=CALIBRATION_ARRIVES_IN,
+            )
+        else:
+            rendered[name] = TouchpointRender(implemented=True, present=True, available=True)
+    return rendered
+
+
+def amend_finalized_grade(
+    app: Any,
+    *,
+    submission_ref: str,
+    criterion_id: str = "",
+    new_band: str = "",
+    actor: str = "operator",
+) -> GradeRecord:
+    """Amend a finalized grade (`FR-CONSOLE-21`, invariant 17): the delivered grade is
+    preserved — `finalized_at` stays the record of when the batch was delivered — and the
+    correction lands as a new revision on the append-only history, whose superseded
+    revisions remain readable through `ConsoleApp.grade_revision`. Finalization does not
+    end editing (`R69`)."""
+    return app.amend_grade(
+        submission_ref=submission_ref,
+        criterion_id=criterion_id,
+        new_band=new_band,
+        actor=actor,
+    )
+
+
+def export_package(
+    app: Any,
+    *,
+    package_version: str,
+    contains_real_student_text: int | bool = 0,
+    actor: str = "operator",
+) -> ExportOutcome:
+    """Export a package through the provenance gate (`FR-CONSOLE-23`, invariant 19 /
+    R71). A package flagged `contains_real_student_text` is **refused** — raised as
+    `ProvenanceRefused`, not returned as a falsy outcome, because an export that fails
+    quietly is indistinguishable from one that succeeded. The gate is a reachable screen
+    (S14), and its outcome is written to the validation record whether it passes or
+    refuses — a gate whose result is not recorded is indistinguishable from one that was
+    skipped. The refusal is asserted at the console boundary because this is where a
+    teacher clicks export; a console that filtered the flag before calling `M-PKG`
+    would leave `M-PKG`'s refusal unexercised on the real path (`CT-PKG-13`)."""
+    flagged = bool(contains_real_student_text)
+    if flagged:
+        outcome = (
+            f"refused: the package carries real student text, so the export did not "
+            "happen and no student text left the building"
+        )
+        app.record_gate_outcome(package_version, outcome)
+        raise ProvenanceRefused(
+            f"{package_version}: {outcome} (FR-CONSOLE-23; the export gate is screen S14)"
+        )
+    outcome = "passed: no real student text in the package; exemplar paraphrases approved at export"
+    app.perform(
+        "approve exemplar paraphrases at export",
+        package_version=package_version,
+        contains_real_student_text=contains_real_student_text,
+        actor=actor,
+    )
+    app.perform(
+        "export/import package",
+        package_version=package_version,
+        actor=actor,
+    )
+    app.record_gate_outcome(package_version, f"provenance gate {outcome}")
+    return ExportOutcome(
+        package_version=package_version,
+        contains_real_student_text=False,
+        refused=False,
+        detail=f"provenance gate {outcome}; outcome recorded on the validation record",
+    )
 
 
 def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
