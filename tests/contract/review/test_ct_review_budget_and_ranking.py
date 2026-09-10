@@ -464,7 +464,6 @@ def test_tc_review_c19_the_console_does_not_present_the_budget_as_a_guarantee_of
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c19_both_calibration_inputs_are_stored_so_phase_2_has_a_path():
     """*"Assert the Phase 2 path exists: calibration against observed `review_seconds` is possible
     from stored data, since `CT-REVIEW-18` records both."*

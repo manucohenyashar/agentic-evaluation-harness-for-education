@@ -1182,36 +1182,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # draft's single-routing pin became the landed two-routing admission — the provisional
     # family routes `provisional` and `CT-AGG-07`'s consumer differential makes admitting it
     # load-bearing — recorded in the test's docstring and in `review_vocabulary`.
-    "#110 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:record_label",
-        (
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c19_both_calibration_inputs_are_stored_so_phase_2_has_a_path",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c12_an_edit_from_any_view_writes_the_same_action_and_the_same_label_type",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c12_new_points_is_derived_from_new_band_through_the_pinned_mapping",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c12_no_interface_in_the_module_accepts_a_numeric_score",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c18_every_named_counter_is_emitted",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c18_shown_and_flagged_are_emitted_as_a_pair",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c18_the_budget_exhaustion_signal_is_retained_across_administrations",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_an_override_from_the_queue_still_records_that_the_system_was_visible",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_null",
-        ),
-    ),
+    # The `#110 review` entry also stood here (`aeh.review:record_label`, ten cases);
+    # #110 landed the module-level `record_label`/`labels_for` pair and the service's
+    # label store, so its ten cases unmarked and rejoined the gate with this story.
     # The CT-REVIEW-02 event-order case (`c02_blind_minutes_are_subtracted...`)
     # unmarked at #108's landing: `build_trace` is #108's and the reservation step
     # sits in its trace, so the case's binding blocker resolved there. Only the
-    # survival case below still waits on #111's sample surface.
+    # survival case below still waits on #111's sample surface. The `#110 review`
+    # entry was removed at #110's landing: `record_label`/`labels_for` and the
+    # service's label store are in, and its ten cases rejoined the gate.
     "#111 review": (
         "symbol",
         f"{REVIEW_MODULE}:blind_sample_skipped",

@@ -49,8 +49,8 @@ CHILD = textwrap.dedent(
     # imports every contributing module before the first open (#234) — the open site
     # refuses the truncated chain otherwise. `aeh.grade` owns Cohort's last migration
     # (18, #101's `grade_submission_grade_key`), `aeh.judge` the one before it
-    # (17, #80) and `aeh.integ` Durable's (5, #73).
-    import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth  # noqa: E401
+    # (17, #80) and `aeh.review` Durable's (6, #110).
+    import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth  # noqa: E401
 
     store = open_store(sys.argv[1])
     handle = store.cohort("c-kill")

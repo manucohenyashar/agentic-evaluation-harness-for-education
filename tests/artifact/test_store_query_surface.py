@@ -490,8 +490,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # ninth and tenth contributors (`aeh.grade`, then `aeh.integ` at the merge) and the
     # class docstring's contributor list moved each site; re-read from the walker,
     # never hand-unioned.)
-    "aeh.store:1823",
-    "aeh.store:2606",
+    # (#110's re-pin: Durable's pin bump to 6 and the refusal text's eleventh
+    # contributor (`aeh.review`) moved each site two lines; the sites are the same
+    # statements as before. Re-read from the walker, never hand-unioned.)
+    "aeh.store:1819",
+    "aeh.store:2602",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -569,7 +572,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # ingests (`tests/security/ingest/test_active_content.py`), now riding the
     # submission's declared consent class. (Re-pinned from the walker on any
     # line move.)
-    "aeh.conform:470",
+    "aeh.conform:471",
+    # The review site is #110's: the label store's one durable write, a single
+    # `tx.execute` inside `_persist_label`'s transaction body, passing
+    # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
+    # parameters (FR-STORE-08, design §3.3) — the same label the service holds
+    # in memory. (Re-pinned from the walker on any line move.)
+    "aeh.review:1792",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

@@ -69,6 +69,10 @@ import aeh.grade  # noqa: F401 -- M-GRADE owns cohort 18 (#101's
 # the current flag and its partial unique index), imported after agg by the same
 # owner-order rule — the golden describes the full binary, the grade ledger's columns
 # included.
+import aeh.review  # noqa: F401 -- M-REVIEW owns Durable 6 (#110's
+# review_label_store_columns, the fully-typed label's twelve columns), imported after
+# grade by the same owner-order rule — the golden describes the full binary, the
+# label store's columns included.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

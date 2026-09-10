@@ -261,7 +261,6 @@ def test_tc_review_c17_m_stats_achievable_precision_moves_with_the_knobs():
 # --- CT-REVIEW-18 — the counters, in pairs, retained across administrations ----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c18_every_named_counter_is_emitted():
     """§3.15's Observability line, by set containment.
 
@@ -283,7 +282,6 @@ def test_tc_review_c18_every_named_counter_is_emitted():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c18_shown_and_flagged_are_emitted_as_a_pair():
     """*"Both, since the pair **is** the R12 honesty check and either alone is uninformative."*
 
@@ -320,7 +318,6 @@ def test_tc_review_c18_shown_and_flagged_are_emitted_as_a_pair():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c18_the_budget_exhaustion_signal_is_retained_across_administrations():
     """*"So assert the signal is retained across administrations rather than reset each term,
     which is what 'absorbed each term' describes."*

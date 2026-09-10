@@ -439,7 +439,7 @@ class ConformanceSuite:
             text = source_bytes.decode("utf-8")
             source_bytes = typed_document(_markdown_pages(text))
 
-        # The nine-module migration chain (CLAUDE.md): the store's tiers are built by the
+        # The ten-module migration chain (CLAUDE.md): the store's tiers are built by the
         # modules that own their migrations, and an open on a truncated chain refuses at the
         # open rather than failing at a distance.
         import aeh.agg  # noqa: F401
@@ -450,6 +450,7 @@ class ConformanceSuite:
         import aeh.judge  # noqa: F401
         import aeh.orch  # noqa: F401
         import aeh.pkg  # noqa: F401
+        import aeh.review  # noqa: F401
         import aeh.synth  # noqa: F401
 
         from aeh.conf import ModelRef

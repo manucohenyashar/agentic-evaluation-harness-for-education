@@ -31,7 +31,6 @@ pytestmark = pytest.mark.contract
 # --- step 1: populated on every label, with no default and no null ---------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_null():
     """*"A null here is indistinguishable from a 0 at query time and would admit contaminated
     labels silently."*
@@ -142,7 +141,6 @@ def test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_outpu
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c08_an_override_from_the_queue_still_records_that_the_system_was_visible():
     """The block form's **adversarial construction**, asserted directly.
 
