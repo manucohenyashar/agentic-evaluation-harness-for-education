@@ -15,8 +15,11 @@ their own message, and the layout comparison happens after. A single byte-for-by
 over the whole file would report both failures identically and let the more serious one be
 waved through with the less serious one.
 
-**Written ahead of implementation** (§8.2). `export_grade_artifacts` is #104's. Remove the
-marker — never the test — when #104 closes, and record the baselines in that PR.
+**Landed** (`Written ahead of implementation: yes` is stale — #104 landed
+`export_grade_artifacts`, and both baselines below were recorded in the same PR: the
+marks CSV from the module's reference cohort and the per-student PDF manifest over
+its deterministic documents, byte-reproducible by construction — the PDF emitter
+carries no volatile field, so the normalization below strips nothing).
 """
 
 from __future__ import annotations
@@ -27,12 +30,8 @@ import io
 import json
 import re
 
-import pytest
-
 from tests.support.baselines import assert_matches_golden, entry_for, golden_bytes
 from tests.support.impl import GRADE_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#104"
 CASE = "TC-REG-03"

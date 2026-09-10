@@ -1,0 +1,25 @@
+{
+  "count": 4,
+  "students": {
+    "student-001": {
+      "bytes": 803,
+      "pages": 1,
+      "sha256": "9e7b5416f76939a4e4ef69071e1324ea0c9f29c2920f4944418a6612f5fa38dd"
+    },
+    "student-002": {
+      "bytes": 803,
+      "pages": 1,
+      "sha256": "41be2645b8690e60b3674b413a20ca9d859a70fa7fb53f767543b73c3a7dfd7e"
+    },
+    "student-003": {
+      "bytes": 803,
+      "pages": 1,
+      "sha256": "a115e695b08c288519f293c076638d13462ebcca477184fdb65c97efa7c15a40"
+    },
+    "student-004": {
+      "bytes": 803,
+      "pages": 1,
+      "sha256": "bb45a6c801af34cef656efad0c6e3936fa68eda61ed960036fb6c5ef4cf44649"
+    }
+  }
+}
