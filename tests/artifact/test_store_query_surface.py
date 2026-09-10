@@ -477,8 +477,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # migration) adding a line above each; the sites are the same statements as before.
     # (#92's re-pin: the 15→16 pin bump and the refusal text's eighth contributor added
     # three lines above each site — re-read from the walker, never hand-unioned.)
-    "aeh.store:1816",
-    "aeh.store:2598",
+    # (#101's re-pin: the 16→17 pin bump, the ninth contributor in the refusal text
+    # and the class docstring's contributor list moved each site by four lines.)
+    "aeh.store:1820",
+    "aeh.store:2603",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -488,6 +490,30 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
+    # The grade sites are #101's line numbers (the module's own write surface, every
+    # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
+    # the migration's rebuild statements (the v17 create/copy/drop/rename plus the
+    # partial unique index), the batch pass's demote/insert/settle/queue writes and
+    # the cohort-fixture cohort+submission inserts in `cohort_with_mixed_revisions`,
+    # and the single-submission path's demote/insert/settle/queue writes. The
+    # module's reads go through `store.cohort(...).query()` / the package handle's
+    # `query()`, which are not census sites (FR-STORE-08).
+    "aeh.grade:1125",
+    "aeh.grade:1131",
+    "aeh.grade:1133",
+    "aeh.grade:1141",
+    "aeh.grade:1151",
+    "aeh.grade:1225",
+    "aeh.grade:1250",
+    "aeh.grade:1255",
+    "aeh.grade:1286",
+    "aeh.grade:1294",
+    "aeh.grade:1336",
+    "aeh.grade:1417",
+    "aeh.grade:1422",
+    "aeh.grade:1669",
+    "aeh.grade:1680",
+    "aeh.grade:1685",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

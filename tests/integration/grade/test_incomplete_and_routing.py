@@ -49,7 +49,7 @@ from tests.support.grade_vocabulary import GRADE_BLOCKER, grade_rows, write_crit
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = GRADE_BLOCKER
 

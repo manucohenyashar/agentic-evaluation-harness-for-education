@@ -62,6 +62,11 @@ import aeh.agg  # noqa: F401 -- M-AGG owns cohort 16 (#92's agg_confidence_colum
 # confidence/reconstructibility columns on criterion_score), imported after judge by the
 # same owner-order rule — the golden describes the full binary, the confidence columns
 # included.
+import aeh.grade  # noqa: F401 -- M-GRADE owns cohort 17 (#101's
+# grade_submission_grade_key, the ADR-9 (run_id, submission_id, revision) rebuild with
+# the current flag and its partial unique index), imported after agg by the same
+# owner-order rule — the golden describes the full binary, the grade ledger's columns
+# included.
 from aeh.store import (
     TIER_MIGRATIONS,
     Tier,

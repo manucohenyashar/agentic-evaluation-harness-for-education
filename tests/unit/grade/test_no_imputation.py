@@ -37,8 +37,6 @@ from aeh.pkg import GradePolicy
 from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = GRADE_BLOCKER
 
 #: The plan's fixture: 15 criteria, 11 auto / 2 reviewed / 1 provisional / 1 missing.
