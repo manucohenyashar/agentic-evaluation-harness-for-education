@@ -55,9 +55,10 @@ and this implementation chose; all are reported on the PR):
   route ``provisional``, one state apart, and the queue must present them
   differently). Panel work the panel routed to the teacher arrives ``final``
   (`CT-AGG-06` puts ``queued`` in the teacher's queue regardless). An acted-on
-  row leaves the count through the service's acted-set (in memory) or #109's
-  annotation (at rung 2), which is what makes ``flagged_total`` fall by
-  exactly the reviewed item across sessions.
+  row leaves the count through the service's acted-set (in memory) or through
+  the store write #109's audit declares (rung 2, once #110 lands the label
+  store), which is what makes ``flagged_total`` fall by exactly the reviewed
+  item across sessions.
 * *No-data override history reads as 0.5* (`AEH_REVIEW_OVERRIDE_RATE_NO_DATA`) —
   the same unmeasured-risk posture as `aeh.agg`'s escalation weight: a
   criterion nobody has reviewed is not a criterion nobody disagrees with
@@ -100,12 +101,69 @@ and this implementation chose; all are reported on the PR):
   M-GRADE/M-STATS's columns, and no migration was added here (the issue
   forbids one).
 
+**#109 — the prohibitions, the persistent residual, and the no-annotation
+rule.** Extends the queue with the three `CT-REVIEW-05`/`-06`/`-14` surfaces
+the clause suite resolves through `require_attr` (`FR-REVIEW-06/-07/-08/-17`):
+
+* *The admission is a declared plan, not an observed absence.* ``admission_query()``
+  returns the ``QueryPlan`` the queue actually runs — the routing values, the
+  evaluation mode, the excluded origins. ``_admitted`` is the one predicate the
+  in-memory filter and the store-form SQL both read, so the plan cannot drift
+  from what runs, and `CT-REVIEW-05`'s reachability claim is asserted against
+  the plan rather than against one fixture's outcome.
+* *The write set is declared, and every write is audited.* ``write_fields()`` is
+  the module-level declaration of every field a review action writes
+  (`FR-REVIEW-17`'s intersection with the scoring prompt fields is asserted
+  against it — and the intersection holds for prompts nobody has written yet,
+  which is the strength the clause asks for), and ``act``/``act_on_group``
+  append a ``WriteRecord`` per write to ``write_audit()``: ``criterion_score``
+  for the reduction through the score row, ``label`` for the label itself.
+  `CT-REVIEW-06` reads the indirection from the audit rather than from the
+  resulting counts, because the counts are identical either way.
+* *The residual persists across its two vanishing moments.* ``end_session`` and
+  ``close_run`` are the sitting's end and the run's close — the two moments a
+  residual could silently stop being one (`FR-REVIEW-08`). Neither clears, and
+  neither finalizes: the acted set, the labels, and every residual row's
+  ``provisional_unreviewed`` state survive both, and ``scores()`` keeps
+  returning every still-flagged row. Each moment returns a ``ResidualReport``
+  stating the residual as it left it, so the persistence is readable off the
+  result rather than trusted.
+* *No annotation surface.* The module writes no field any scoring prompt reads
+  and exposes no per-student annotation surface (`FR-REVIEW-17`, R15) — the
+  review-side half of the store and console annotation prohibitions
+  (`FR-STORE-08`/`FR-CONSOLE-03`). Nothing a teacher records here reaches a
+  re-run of the same unit, which is the route that would actually open.
+
+Interpretations #109 records:
+
+* *The two moments are audited reports, not state changes.* The honest
+  implementation of "the residual persists" is that nothing happens to it:
+  ``end_session``/``close_run`` mutate nothing, and their reports state the
+  residual and the (empty) ``finalized``/``backfilled`` lists rather than a
+  boolean trust flag — the fields are what a later change that starts
+  finalizing would have to name its write in. The store-form write that
+  updates an acted row's state, and the label store that carries a residual
+  across processes, are #110's.
+* *``routing_values`` reports both advisory routings.* The written-ahead c05
+  reachability draft pinned ``("queued",)`` alone; the landed admission admits
+  the provisional family with it — `CT-AGG-07`'s consumer differential makes
+  that load-bearing (both its rows route ``provisional``, one state apart) —
+  so the plan reports both and the draft's pin was reconciled at this unmark.
+  ``triage``, the operator's queue, is reachable by neither, which is the half
+  the original pin protected.
+* *``skip`` writes nothing.* No label, no reduction, no audit record: the item
+  stays flagged and stays residual, which is `CT-REVIEW-06`'s point — a skip
+  that wrote a resolution would be the silent finalization `FR-REVIEW-08`
+  forbids.
+
 **The four seams.**
 
 1. *Headless driver.* ``build_queue``/``act``/``act_on_group`` return structured
    results — the queue carries the residual triple plus a per-stage
    ``build_trace`` (one ``BuildEvent`` per stage, in order), and every action
-   returns the label it wrote (or ``None`` for a skip). Nothing needs a console.
+   returns the label it wrote (or ``None`` for a skip). #109's reads and
+   moments are the same shape: ``admission_query``, ``write_audit``, ``scores``,
+   ``end_session``/``close_run`` all return structured results, no console.
 2. *Deterministic transport.* There is no egress here. The rung-2 constructor
    ``open_review`` reads the cohort's own SQLite through ``aeh.store`` — the
    same deterministic store every other module reads — and never opens a
@@ -120,11 +178,16 @@ and this implementation chose; all are reported on the PR):
 4. *Stage-level observability.* ``ReviewQueue.build_trace`` records what each
    build stage did, in order — `CT-REVIEW-02`'s event-order contract (reserve
    before rank) is asserted against exactly this trace — and the residual
-   triple in the header is the run's own observability surface.
+   triple in the header is the run's own observability surface. #109 carries
+   the rule to the actions: every write is audited with the table it landed
+   on, and the residual's two vanishing moments each report what they left.
 
 ``ReviewService`` here is the concrete in-memory implementation of the §3.15
-Protocol's three #108 members (``build_queue``, ``act``, ``act_on_group``); the
-two samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``) are
+Protocol's three #108 members (``build_queue``, ``act``, ``act_on_group``) plus
+#109's read-and-audit surface (``admission_query``, ``write_audit``, ``scores``,
+``labels_for``, ``end_session``/``close_run``; ``write_fields`` is module
+level); the two samples (``blind_sample``, ``submit_blind``,
+``whole_grade_sample``) are
 #111's and the label store's persistence surface is #110's — deliberately
 absent here. Actions write in-memory labels until those stories land, and a
 label's ``new_points`` stays ``None`` until #110 routes it through
@@ -153,12 +216,16 @@ __all__ = [
     "ReviewQueue",
     "BuildEvent",
     "LabelRecord",
+    "QueryPlan",
+    "WriteRecord",
+    "ResidualReport",
     "CriterionOverrideRank",
     "SupersededScore",
     "ReviewService",
     "build_review",
     "open_review",
     "rank_queue_items",
+    "write_fields",
 ]
 
 
@@ -347,6 +414,89 @@ class SupersededScore:
     version: int
 
 
+@dataclass(frozen=True)
+class QueryPlan:
+    """The admission query, as a plan (`CT-REVIEW-05`'s reachability surface):
+    the routing values the queue's queries read over, the evaluation mode they
+    gate on, and the origins they can never reach. This is the plan the queue
+    runs — ``_admitted`` is the one predicate the in-memory filter executes
+    and the store form runs on every fetched row — not a description of one
+    fixture's outcome."""
+
+    routing_values: tuple[str, ...]
+    evaluation_modes: tuple[str, ...]
+    excluded_origins: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WriteRecord:
+    """One write a review action made, as ``write_audit`` reports it
+    (`CT-REVIEW-06` reads the indirection from the write side rather than from
+    the resulting counts). ``table`` names the store table the write lands on —
+    ``criterion_score`` for the reduction through the score row, ``label`` for
+    the label itself; nothing this module writes is ever named on a grade
+    table. In the in-memory service the writes land on the service's own state
+    and each record names the table that state stands in for; #110's store
+    writes keep the same tables."""
+
+    table: str
+    score_id: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class ResidualReport:
+    """What ``end_session``/``close_run`` return (`FR-REVIEW-08`'s two
+    vanishing moments): the residual as the moment leaves it. ``state`` is the
+    mark the residual persists in; ``finalized`` and ``backfilled`` name rows
+    the moment wrote into a resolved state or invented a label for — empty by
+    construction, because the moment writes nothing, and the fields exist so a
+    later change that does write one has to name it there rather than in the
+    silence the clause forbids."""
+
+    run_id: str
+    moment: str
+    residual_provisional: int
+    state: str
+    finalized: tuple[str, ...] = ()
+    backfilled: tuple[str, ...] = ()
+
+
+# --- the write set (CT-REVIEW-14) --------------------------------------------------------------------
+
+
+def write_fields() -> tuple[str, ...]:
+    """Every field this module writes (`CT-REVIEW-14`'s write set): the label's
+    own fields — `FR-REVIEW-09`'s eight plus `NFR-REVIEW-03`'s attribution and
+    the identity fields a differential reads — the action that produced it, and
+    the field the reduction writes on the score row, the review state
+    `FR-REVIEW-08` disciplines.
+
+    The declaration is the module's write surface, not a survey of today's
+    writes: a field added to a label or to the reduction must appear here, and
+    must never appear in a scoring prompt's assembly — `CT-REVIEW-14` asserts
+    the intersection with every prompt field empty, which holds for prompts
+    nobody has written yet."""
+    return (
+        "label_id",
+        "label_type",
+        "saw_system_output",
+        "routing",
+        "origin",
+        "evaluation_mode",
+        "review_seconds",
+        "system_band",
+        "teacher_band",
+        "actor",
+        "timestamp",
+        "score_id",
+        "criterion_id",
+        "review_queue_action",
+        "new_points",
+        "state",
+    )
+
+
 # --- the admitted population and the ranking --------------------------------------------------------
 
 #: The teacher's population, by routing (`CT-AGG-06`): ``queued`` — the
@@ -362,6 +512,11 @@ _JUDGED_MODE = "judged"
 #: the random arm — the arm is the only unbiased comparison RISK-07 has, and it
 #: spends compute, never teacher minutes (`CT-REVIEW-05`).
 _EXCLUDED_ORIGINS = frozenset({"quarantine", "blind_sample", "random_arm"})
+#: `FR-REVIEW-08`'s residual mark: an item nobody looked at is provisional and
+#: unreviewed, and it says so. ``aeh.agg`` writes the mark when it routes the
+#: row; this module only ever leaves it alone — ``end_session``/``close_run``
+#: persist the residual by never touching it.
+_RESIDUAL_STATE = "provisional_unreviewed"
 
 #: §3.15's ``act`` action domain. ``skip`` is an action but not a label type —
 #: a skipped item stays residual (`CT-REVIEW-06`).
@@ -744,9 +899,11 @@ class ReviewService:
 
     Constructed by ``build_review`` (rung 0/1, over score rows in memory) or
     ``open_review`` (rung 2, over a stored run). The three §3.15 members #108
-    owns are here; the samples and the label store's persistence are #111's and
-    #110's and are not on this class yet — actions write in-memory labels until
-    those stories land.
+    owns are here, plus #109's admission plan, write audit and residual reads
+    (``admission_query``, ``write_audit``, ``scores``, ``labels_for``,
+    ``end_session``/``close_run``); the samples and the label store's
+    persistence are #111's and #110's and are not on this class yet — actions
+    write in-memory labels until those stories land.
     """
 
     def __init__(
@@ -776,6 +933,7 @@ class ReviewService:
         self._default_budget = default_budget_minutes
         self._store = store
         self._labels: list[LabelRecord] = []
+        self._audit: list[WriteRecord] = []
         self._acted: set[str] = set()
         self._versions: dict[str, int] = {}
 
@@ -881,6 +1039,31 @@ class ReviewService:
         anything."""
         return _signature_of(row)
 
+    def admission_query(self, run_id: str = "run-1") -> QueryPlan:
+        """The admission query as a plan, not an observation (`CT-REVIEW-05`'s
+        reachability clause): the routing values the queue's queries read over,
+        the evaluation mode they gate on, and the origins they can never reach.
+
+        ``_admitted`` is the single predicate the plan restates — the in-memory
+        filter executes it, and the store form runs it on every fetched row
+        beneath its WHERE clause — so the plan cannot drift from what the
+        service runs. The store's routing narrow is a declared SQL literal
+        (SEC-15 permits no runtime assembly), matching this tuple by
+        transcription rather than by construction; the mode and origin halves
+        ride the predicate. The routings are both of the teacher's (`CT-AGG-06`'s
+        ``queued``, plus the provisional family whose rows `CT-AGG-07` binds
+        this module to surface); ``triage``, the operator's queue, is reachable
+        by neither. The mode is gated on the evaluation-mode column
+        (`FR-REVIEW-06`, `CT-DET-06`), not by convention.
+
+        ``run_id`` is bookkeeping: the plan is the same over every run the
+        service carries, and is stated for the run the caller names."""
+        return QueryPlan(
+            routing_values=tuple(_ADVISORY_ROUTINGS),
+            evaluation_modes=(_JUDGED_MODE,),
+            excluded_origins=tuple(sorted(_EXCLUDED_ORIGINS)),
+        )
+
     # -- actions -------------------------------------------------------------------------------------
 
     def act(
@@ -897,7 +1080,11 @@ class ReviewService:
         number (`FR-REVIEW-10`); ``skip`` writes no label and leaves the item
         residual (`CT-REVIEW-06`). Acting on a superseded score is refused with
         a refresh message (`CT-REVIEW-15`). Returns the label id, or None.
-        """
+
+        Every write the action makes is audited (`CT-REVIEW-06`): a
+        ``criterion_score`` record for the reduction through the score row and
+        a ``label`` record for the label itself — a ``skip`` writes nothing at
+        all."""
         if action not in _ACTIONS:
             raise ValueError(f"{action!r} is not a review action; one of {_ACTIONS}")
         if action == "skip":
@@ -913,6 +1100,7 @@ class ReviewService:
             review_seconds=review_seconds,
             review_queue_action=action,
         )
+        self._record_writes(item, action, label)
         self._acted.add(item.score_id)
         return label.label_id
 
@@ -936,6 +1124,7 @@ class ReviewService:
                 review_seconds=per_member,
                 review_queue_action=action,
             )
+            self._record_writes(member, action, label)
             self._acted.add(member.score_id)
             label_ids.append(label.label_id)
         return label_ids
@@ -962,6 +1151,108 @@ class ReviewService:
         """Attach the rung-2 store handle (``open_review``'s plumbing)."""
         self._store = store
         return self
+
+    # -- the write audit, and the residual's read path (#109) -----------------------------------------
+
+    def write_audit(self) -> tuple[WriteRecord, ...]:
+        """Every write this service's actions have made, in write order
+        (`CT-REVIEW-06` reads the indirection from the write side, not from the
+        resulting counts, because the counts are identical either way).
+
+        In the in-memory service the writes land on the service's own state —
+        the label list and the acted set — and each ``WriteRecord`` names the
+        store table that state stands in for: ``criterion_score`` for the
+        reduction through the score row (the acted row leaves the flagged count
+        *through* ``criterion_score``, never through a grade table — this
+        module never writes a grade) and ``label`` for the label itself. #110's
+        store writes keep the same tables, so the audit reads the same after."""
+        return tuple(self._audit)
+
+    def scores(self, run_id: str = "run-1") -> tuple[Any, ...]:
+        """The run's still-flagged score rows, read back for the residual
+        (`FR-REVIEW-08`'s read path): the admitted population minus what this
+        service has acted on — the population ``build_queue`` counts into
+        ``flagged_total``, so ``len(scores())`` is the flagged figure at the
+        same moment.
+
+        States ride through exactly as stored. Review writes no state it did
+        not decide: the residual's ``provisional_unreviewed`` mark is the
+        producer's (``aeh.agg`` writes it when it routes the row), and the
+        three prohibitions keep it that way — ``end_session`` and ``close_run``
+        persist the residual by leaving it exactly where it stands. The acted
+        rows' state updates are #110's store write; until then an acted row is
+        visible through ``labels_for`` and has left the count through the
+        acted set."""
+        return tuple(self._admitted_rows())
+
+    def labels_for(self, run_id: str = "run-1") -> tuple[LabelRecord, ...]:
+        """The labels this service has written, in write order — the in-memory
+        read the residual's no-backfill assertion reads (`FR-REVIEW-08`: a
+        residual item gains no label nobody entered) and the refusal case of
+        `CT-REVIEW-15` checks. The label store's own persistence surface is
+        #110's; until then the labels live here, and ``run_id`` is
+        bookkeeping."""
+        return tuple(self._labels)
+
+    def end_session(self, run_id: str = "run-1") -> ResidualReport:
+        """Close the sitting (`FR-REVIEW-08`'s first vanishing moment): the
+        residual persists. The acted set, the labels and every residual row's
+        ``provisional_unreviewed`` state survive it untouched — clearing per
+        sitting would silently convert "not reviewed" into "reviewed and
+        accepted" — so the next sitting's queue still owes exactly what this
+        one did not finish. Nothing is mutated; the report is the moment."""
+        return self._residual_report(run_id, moment="end_session")
+
+    def close_run(self, run_id: str = "run-1") -> ResidualReport:
+        """Close the run (`FR-REVIEW-08`'s second vanishing moment): the run's
+        close is where finalization pressure lands, and neither prohibition is
+        met. No residual row is finalized, none gains a label nobody entered,
+        and ``scores()`` keeps returning every one of them — the residual does
+        not answer to the run's lifecycle. Nothing is mutated; the report is
+        the moment."""
+        return self._residual_report(run_id, moment="close_run")
+
+    def _residual_report(self, run_id: str, *, moment: str) -> ResidualReport:
+        """The residual as the moment leaves it: every still-flagged row, in
+        the state `FR-REVIEW-08` marks it with. ``finalized``/``backfilled``
+        are what the moment wrote — nothing, by construction, since the service
+        writes no state and no label at a session or run boundary; the lists
+        exist so a later change that does write one has a field to carry it
+        in.
+
+        ``state`` reports the ordinary residual mark. A residual can also hold
+        an unacted ``ungradeable_by_panel`` row (it routes ``provisional``,
+        so it is admitted and still unreviewed); consumers keep that state
+        distinct per `CT-AGG-07`, and #110's store form carries the per-state
+        counts when the report gains them."""
+        residual = self._admitted_rows()
+        return ResidualReport(
+            run_id=run_id,
+            moment=moment,
+            residual_provisional=len(residual),
+            state=_RESIDUAL_STATE,
+            finalized=(),
+            backfilled=(),
+        )
+
+    def _record_writes(self, item: ReviewItem, action: str, label: LabelRecord) -> None:
+        """Audit one action's writes (`CT-REVIEW-06`). The reduction through
+        the score row is recorded first — it is the write the clause asserts —
+        and the label second."""
+        self._audit.append(
+            WriteRecord(
+                table="criterion_score",
+                score_id=item.score_id,
+                detail=f"{action} leaves the flagged count through the score row",
+            )
+        )
+        self._audit.append(
+            WriteRecord(
+                table="label",
+                score_id=item.score_id,
+                detail=f"{action} label {label.label_id}",
+            )
+        )
 
     # -- internals -----------------------------------------------------------------------------------
 
@@ -1145,6 +1436,12 @@ def _service_from_store(
     if cohort_ids is None:
         cohort_ids = _store_cohort_ids(store)
     rows: list[Any] = []
+    # The routing narrow is a declared literal, not an assembly: SEC-15's
+    # walker (`FR-STORE-08`) forbids building SQL at runtime, so this statement
+    # matches ``_ADVISORY_ROUTINGS`` by transcription and the admission_query
+    # plan reports the same values. Drift between the two is caught by review
+    # of the pair, as the plan's docstring says. The mode and origin halves of
+    # the admission ride the predicate on the fetched rows.
     for cohort_id in cohort_ids:
         rows.extend(
             _row_mapping(row)

@@ -462,7 +462,13 @@ def excluded_population() -> dict[str, ScoreRow]:
         "quarantine": ScoreRow(score_id="quar-1", routing="triage", origin="quarantine"),
         "blind_sample": ScoreRow(score_id="blind-1", routing="queued", origin="blind_sample"),
         "random_arm": ScoreRow(score_id="rand-1", routing="auto", origin="random_arm"),
+        # Routing `queued`, not the `auto` a producer never violates (FR-AGG-10): the row the
+        # mode gate exists to catch is one routed into the teacher's queue anyway, and only
+        # `evaluation_mode` excludes it — CT-DET-06's "enforced from this column rather than by
+        # convention". With `routing="auto"` the sweep passed a module whose `_admitted` had
+        # dropped the mode check, excluded by routing alone. Review found it at #109; it is the
+        # shape the blind-sample cases already build their deterministic rows in.
         "deterministic_criterion": ScoreRow(
-            score_id="det-1", routing="auto", evaluation_mode="deterministic"
+            score_id="det-1", routing="queued", evaluation_mode="deterministic"
         ),
     }

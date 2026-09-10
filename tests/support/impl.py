@@ -1172,34 +1172,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # label store (#110) or the write surface (#109) through a `require_attr` that
     # is still absent stays red for its own story, exactly as the keying above
     # intended.
-    "#109 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:write_fields",
-        (
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_no_excluded_population_appears_in_a_built_queue",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_populations",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_the_random_arm_spends_compute_and_produces_no_review_item",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_a_residual_item_is_never_silently_finalized_or_backfilled",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_a_review_action_writes_through_criterion_score_and_never_a_grade",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_residual_items_are_marked_provisional_unreviewed",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_the_residual_persists_across_review_sessions",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh",
-        ),
-    ),
+    # `"#109 review"` stood here (`aeh.review:write_fields`, for the eleven cases it gated).
+    # #109 landed: `write_fields` is the module-level write set, `admission_query` the
+    # reachability plan, `write_audit` the per-write records, and `scores`/`end_session`/
+    # `close_run` the residual's read path and its two audited moments — with `labels_for` as
+    # the in-memory read the backfill and refusal assertions check. Unmarked 2026-09, that
+    # story; the `[judge]`/`[extract]` write-set params unmarked with it (the marker was
+    # function-level and shared). One reconciliation at the unmark: the c05 reachability
+    # draft's single-routing pin became the landed two-routing admission — the provisional
+    # family routes `provisional` and `CT-AGG-07`'s consumer differential makes admitting it
+    # load-bearing — recorded in the test's docstring and in `review_vocabulary`.
     "#110 review": (
         "symbol",
         f"{REVIEW_MODULE}:record_label",
@@ -1316,7 +1298,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # param). #78 landed it, but the param's BINDING blocker is #109's `write_fields`
     # -- the test resolves it before it reads either consumer -- and the writtenahead
     # marker is function-level, shared with the `[extract]` param. So the `[judge]`
-    # half stays marked with the file and unmarks with #109, below; keying this entry
+    # half stayed marked with the file and unmarked with #109, below; keying this entry
     # on a symbol that is no longer what blocks it would have fired the gate and sent
     # someone to unmark a test that then fails on `write_fields`.
     #
@@ -1325,14 +1307,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # blocker was always #108's `build_review` -- its first require resolves it before
     # `assemble_prompt` is read. #108 landed, and the c14 rerun case unmarked with
     # that story (verified green against the landed queue); the `[judge]` write-set
-    # param below stays marked for #109's `write_fields`, which still registers this
-    # file.
+    # param below stayed marked for #109's `write_fields` and unmarked with it.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
-    # so its blocker no longer holds. The `[extract]` param it named stays marked for
-    # now — its first require is #109's `write_fields` (the test resolves it before it
-    # reads either consumer), and the marker is function-level, shared with the
-    # `[judge]` param — so the file is unmarked by #109's implementer, together with
-    # the `#109 review` entry below, which is the file's remaining registration.
+    # so its blocker no longer holds. The `[extract]` param it named stayed marked for
+    # #109's `write_fields` (its first require resolves it before it reads either
+    # consumer), and the marker was function-level, shared with the `[judge]` param —
+    # so both unmarked with the `#109 review` entry, which landed with that story.
     # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
     #
     # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
