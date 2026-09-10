@@ -301,9 +301,10 @@ class IncompleteMigrationChainError(StoreError):
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
     pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
     11 of its 15 migrations — `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
-    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns`,
-    `aeh.orch` again for #62's `orch_report_indexes`, and `aeh.agg` for the last, #92's
-    `agg_confidence_columns`).
+    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns` and #80's
+    `judge_verdict_response_columns` — the last, Cohort 17,
+    `aeh.orch` again for #62's `orch_report_indexes`, and `aeh.agg` for #92's
+    `agg_confidence_columns` before it).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1386,10 +1387,12 @@ def current_schema_version(tier: Tier) -> int:
 #: 11→12, #78's `judge_verdict_columns` 12→13, #97's `synth_narrative_key` 13→14, and
 #: #62's `orch_report_indexes` 14→15 — the earliest caught by that gate test, not by a
 #: failed open. #92's `agg_confidence_columns` moved it 15→16, and `aeh.agg` joined the
-#: contributor import lists (it owns Cohort's last migration now).
+#: contributor import lists. #80's `judge_verdict_response_columns` moved it 16→17, and
+#: `aeh.judge` owns Cohort's last migration again (the response-contract columns on
+#: `verdict`).
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 16,
+    Tier.COHORT: 17,
     Tier.DURABLE: 4,
 }
 
