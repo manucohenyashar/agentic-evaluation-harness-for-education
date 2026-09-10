@@ -26,27 +26,35 @@ registry makes the absence explicit and checkable: the composition requirement i
 the environment knob that points at the real corpus is named, and
 `tests/artifact/test_tc_conform_03_real_medium.py` reads both.
 
-**What is deliberately *not* here.** No synthetic corpus in this repository carries
+**What is deliberately *not* here.** No synthetic *text* corpus in this repository carries
 `media_kind: "scanned_handwriting"`. Stamping that attribute onto generated Markdown would make
 `CT-CONFORM-02`'s composition assertion pass against a clean-typed-text corpus, which is verbatim
 the measurement §6.11.18 says the clause exists to prevent. Every synthetic submission declares
-`media_kind: "synthetic_markdown"` instead, and the honest consequence is that the real-medium
-half of `FR-CONFORM-03` is unmet until the consent arrangement lands.
+`media_kind: "synthetic_markdown"` instead.
 
-The consequence lands on #133, and it is stated here rather than left to be found
--------------------------------------------------------------------------------
+The collision, and how #133 resolved it
+---------------------------------------
 TS-75's `test_tc_conform_c02_the_corpus_carries_handwriting_spanning_the_legibility_range_and_
 mixed_format` requires `load_fixture_set("v1").submissions` to contain `scanned_handwriting` and
-`mixed_format`. It is `writtenahead`, keyed on **#133**. Given the paragraph above, that case
-**cannot go green in this repository** whichever way #133 composes the fixture set: from committed
-`F-FROZEN` it contradicts the sweep in `tests/artifact/test_tc_conform_03_real_medium.py`, and from
-`F-FROZEN + F-HAND` — which is what `FR-CONFORM-03` actually describes — the corpus is not here.
+`mixed_format` — and this module's registry note once said no synthetic corpus could honestly
+declare that. #133 resolved the collision rather than colliding with it, and the resolution is
+recorded here because this module is the declaration the collision was about:
 
-So when #133 closes, `tests/unit/harness/test_harness.py` will correctly instruct somebody to
-unmark a test that then fails on an unarranged prerequisite. The right resolution is #133's, not
-this module's: either it arrives after the consent arrangement, or it declares the real-medium tier
-absent and the TS-75 case is re-keyed on that arrangement rather than on a symbol. Reported on
-TS-02's PR for `/plan-to-issues` rather than pre-empted here.
+* **`F-SCAN` (#133)** is committed image-bearing PDFs whose student work exists only as pixels —
+  rendered by committed scripts, declared `rendering: "synthetic_scan"` in its manifest, consent
+  declared `synthetic` in the manifest *and in the raw PDF bytes*. It carries the real-medium
+  *vocabulary* because the pixels are real rasters, while carrying no consented *content*. That
+  is a third option the paragraph above did not anticipate, and it is what makes the TS-75 case
+  satisfiable: the scans ride in `F-CONFORM`'s selection.
+* **The text corpora keep `synthetic_markdown`**, and the rule guarding them is unchanged:
+  `tests/artifact/test_tc_conform_03_real_medium.py` sweeps `COMMITTED_MEDIA_DECLARING_CORPORA`
+  and would still condemn a clean-typed corpus labelled as a scan. `F-SCAN` is in
+  `COMMITTED_SCAN_CORPORA` and guarded by its own rule.
+* **`F-HAND` is unchanged** — still the only corpus of consented real student work, still an
+  unarranged external prerequisite (§8.1) for the consumers that need real work (`TC-INGEST-45`,
+  `PERF-10`). #133 exercises transcription on the real *medium*; it does not substitute for the
+  consented real *work*, and this registry still declares what that corpus must contain when it
+  is arranged.
 """
 
 from __future__ import annotations
@@ -152,9 +160,12 @@ def registry() -> dict[str, Any]:
         "tier_c_rules": list(TIER_C_RULES),
         "consumers": list(CONSUMERS),
         "note": (
-            "No synthetic corpus in this repository declares media_kind "
-            f"'{REAL_MEDIA_KIND}'. Stamping it onto generated Markdown would make the "
+            "No synthetic TEXT corpus declares media_kind "
+            f"'{REAL_MEDIA_KIND}': stamping it onto generated Markdown would make the "
             "CT-CONFORM-02 composition assertion pass against a clean-typed-text corpus, "
-            "which is the measurement that clause exists to prevent."
+            "which is the measurement that clause exists to prevent. #133's F-SCAN carries "
+            "the real-medium vocabulary on actual pixels (rendering 'synthetic_scan', "
+            "consent-declared synthetic in the PDF bytes); this corpus remains the only one "
+            "of consented real student work and is still an unarranged external prerequisite."
         ),
     }
