@@ -275,7 +275,6 @@ def test_tc_review_c11_the_draw_is_uniform_over_the_eligible_set_rather_than_fir
 # --- CT-REVIEW-15 — the stale action, and the interrupted session --------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh():
     """*"Construct the race directly: open the item, escalate underneath it, then act."*
 
