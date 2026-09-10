@@ -532,6 +532,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             # *detected*, not a baseline to update. `detect_build_substitution` is therefore the
             # symbol the case actually drives, so it is already the right key.
             "tests/regression/test_reg_05_score_distributions.py",
+            # `M-JUDGE`'s `TC-JUDGE-C17` limb 4 (TS-67, #85) rides here, joined when
+            # #302 landed the module: the limb needs a divergence REPORT, and `run()`'s
+            # divergence machinery is #134's (the module's own stub says so) — the
+            # constructor alone resolves against #302's build-only module, so a key on
+            # it would unmark the limb while what it drives was still a stub. The
+            # limb's FIRST `require()` is this entry's `detect_build_substitution`, so
+            # `require()` reports THIS entry's blocker and the nodeid unmarks with the
+            # rest of #134's surface.
+            "tests/contract/judge/test_nonpromise_reproducibility.py"
+            "::test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility",
         ),
     ),
     # --- TS-02 (#3), the behavioural half of `TC-CONFORM-09` ---------------------------------
@@ -560,21 +570,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         f"{CONFORM_MODULE}:run_adversarial_tier",
         ("tests/integration/conform/test_tc_conform_09_adversarial_tier.py",),
     ),
-    # --- #85's `TC-JUDGE-C17`, the `M-CONFORM` limb ------------------------------------------
-    #
-    # Keyed on the symbol the limb's first `require()` resolves —
-    # `build_conformance_suite` — not on `detect_build_substitution` (the `#134`
-    # entry's key): `require()` reports whichever blocker it resolves first, and the
-    # reasoning the `#134 adversarial` entry records applies verbatim. Like
-    # `run_adversarial_tier`, the name is invented-and-used-together (no Interfaces
-    # block declares it — the corpus test's docstring records the same reasoning), so
-    # the key cannot resolve against a Protocol-only module.
-    "#85 conform": (
-        "symbol",
-        f"{CONFORM_MODULE}:build_conformance_suite",
-        ("tests/contract/judge/test_nonpromise_reproducibility.py"
-         "::test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility",),
-    ),
     # --- #148's OBS-07, the judge signals' emitter (`#85`'s `TC-JUDGE-C16`) -------------------
     #
     # `CT-JUDGE-16`'s six observability signals are not emitted by anything yet, and
@@ -590,7 +585,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # per-(criterion, judge) signals plus the concentrated-violation alert are
     # `OBS-07`'s acceptance — TS-55, issue #148. #85 is a TEST issue that closes with
     # its own PR; keying the marker on it would strand a red test naming a closed
-    # issue — the `#85 conform` → `#134` reconciliation's rule. The stats module is
+    # issue — the registry's own rule, the one the `#134 adversarial` note records.
+    # The stats module is
     # the Requires tables' own word; a symbol key releases on the name's landing
     # regardless of which story carries it.
     "#148 judge_signals": (
