@@ -23,7 +23,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from harness.corpora import adv_inj, adv_pdf, graphic, hand, reference_package, stats, synth
+from harness.corpora import adv_inj, adv_pdf, graphic, hand, reference_package, scan, stats, synth
 from harness.corpora.baselines import (
     BASELINES,
     WORK_ID_INPUTS,
@@ -263,6 +263,68 @@ def _build_adv_pdf(root: Path) -> None:
     )
 
 
+def _build_scan(root: Path) -> None:
+    """`F-SCAN` — synthetic rendered scans: the real-medium tier issue #133 commits.
+
+    Four scanned-paper PDFs whose student work exists only as pixels (see
+    `harness.corpora.scan` for why the medium claim is honest and the handwriting is declared
+    synthetic). Unlike `F-ADV-PDF` the bytes ARE committed: the medium is the fixture, and a
+    manifest-only corpus of scans would be a corpus nobody could ingest without this module
+    being on the path. The digests below make the committed bytes citable the same way every
+    other corpus's are.
+    """
+    members = [
+        (
+            s.submission_id,
+            f"submissions/{s.submission_id}.pdf",
+            s.pdf,
+            {
+                "student_ref": s.student_ref,
+                "consent_class": "synthetic",
+                "media_kind": s.media_kind,
+                "legibility": s.legibility,
+                "pages": synth.PAGES_PER_SUBMISSION,
+                "reference_bands": dict(s.bands),
+                "reference_points": s.reference_points,
+            },
+        )
+        for s in scan.scan_set()
+    ]
+    entries = entries_from(root, members)
+    write_manifest(
+        root,
+        Manifest(
+            corpus="F-SCAN",
+            version=CORPUS_VERSION,
+            seed=scan.SCAN_SEED,
+            generator="harness.corpora.scan:scan_set",
+            description=(
+                "Synthetic rendered scans (FR-CONFORM-03, #133): scanned handwriting spanning "
+                "legible to marginal, plus one mixed-format paper whose first page is typed "
+                "and whose remaining pages are handwritten. The medium is a bilevel image "
+                "raster — the work exists only as pixels; the handwriting is synthetic by "
+                "declaration, and F-HAND remains the only consented real corpus."
+            ),
+            entries=entries,
+            extra={
+                "package_id": reference_package.PACKAGE_ID,
+                "package_version": reference_package.PACKAGE_VERSION,
+                "consent_class": "synthetic",
+                "media_kinds": [hand.REAL_MEDIA_KIND, hand.MIXED_FORMAT_MEDIA_KIND],
+                "legibilities": ["legible", "marginal"],
+                # The honest-wording field: the medium is a scan; the handwriting is not real.
+                "rendering": "synthetic_scan",
+                "image": {
+                    "width_px": scan.BODY_WIDTH,
+                    "height_px": scan.BODY_HEIGHT,
+                    "color_space": "DeviceGray",
+                    "bits_per_component": 1,
+                },
+            },
+        ),
+    )
+
+
 def _build_hand(root: Path) -> None:
     """`F-HAND` — a declaration, and no student work. See `harness.corpora.hand`."""
     root.mkdir(parents=True, exist_ok=True)
@@ -352,6 +414,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-STATS/` | Label sets whose statistics were worked out by hand (`NFR-STATS-01`) |
 | `F-ADV-INJ/` | Injection twin pairs: each payload paired with a benign twin (`FR-CONFORM-09`) |
 | `F-ADV-PDF/` | **Manifest only.** One entry per malicious/malformed construct, with the digest of the bytes the generator emits |
+| `F-SCAN/` | Synthetic rendered scans: the scanned-handwriting tier (`FR-CONFORM-03`, #133) — pixels-only pages, legible to marginal, plus one mixed-format paper |
 | `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
 
@@ -407,6 +470,7 @@ def build(root: Path) -> None:
     _build_stats(root / "F-STATS")
     _build_adv_inj(root / "F-ADV-INJ")
     _build_adv_pdf(root / "F-ADV-PDF")
+    _build_scan(root / "F-SCAN")
     _build_hand(root / "F-HAND")
     _build_baselines(root / "baselines")
 

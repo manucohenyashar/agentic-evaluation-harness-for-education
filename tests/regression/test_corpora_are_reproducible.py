@@ -22,7 +22,7 @@ import hashlib
 import json
 
 from harness.corpora import build as corpora_build
-from harness.corpora import adv_inj, adv_pdf, graphic, reference_package, synth
+from harness.corpora import adv_inj, adv_pdf, graphic, hand, reference_package, scan, synth
 from tests.support import corpora
 
 
@@ -49,7 +49,7 @@ def test_every_manifest_hash_still_describes_the_bytes_on_disk():
     let a copied submission pass a disjointness check. The same reasoning applies to every
     corpus: `NFR-CONFORM-01`'s point is that a result can *name* the fixtures that produced it.
     """
-    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ"):
+    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ", "F-SCAN"):
         corpus = corpora.load(name)
         for member in corpus.members:
             actual = "sha256:" + hashlib.sha256(member.path.read_bytes()).hexdigest()
@@ -110,6 +110,61 @@ def test_the_submission_corpora_span_the_score_range_including_the_middle():
             f"partial-credit cases explicitly; a set of extremes spans the range and tests "
             f"nothing about the middle, which is where routing and escalation actually live."
         )
+
+
+def test_f_scan_is_the_real_medium_tier_the_conformance_set_requires():
+    """`FR-CONFORM-03` (#133): the corpus holds scans and a mixed-format paper, at known scores.
+
+    Composition is asserted on the **bytes**, not only the labels: a corpus that declared
+    `scanned_handwriting` while carrying clean-typed text would be exactly the mislabelled
+    corpus `CT-CONFORM-02` exists to prevent, so this counts the image XObjects per member —
+    three wholly handwritten papers carry four rasters each, and the mixed-format paper
+    carries three (its first page is typed, its remaining pages are not).
+    """
+    import pypdf
+
+    corpus = corpora.load("F-SCAN")
+    assert len(corpus.members) == 4
+    media = {m.attributes["media_kind"] for m in corpus.members}
+    assert media == {hand.REAL_MEDIA_KIND, hand.MIXED_FORMAT_MEDIA_KIND}, (
+        f"F-SCAN declares {sorted(media)}; FR-CONFORM-03 requires scanned handwriting and a "
+        f"mixed-format paper"
+    )
+    legibilities = {
+        m.attributes["legibility"]
+        for m in corpus.members if m.attributes["media_kind"] == hand.REAL_MEDIA_KIND
+    }
+    assert legibilities == set(hand.REQUIRED_LEGIBILITY), (
+        f"F-SCAN's handwriting spans {sorted(legibilities)}; FR-CONFORM-03 says the scans span "
+        f"legible to marginal"
+    )
+    mixed = [m for m in corpus.members if m.attributes["media_kind"] == hand.MIXED_FORMAT_MEDIA_KIND]
+    assert len(mixed) == 1, "FR-CONFORM-03 requires a mixed-format paper (singular but present)"
+    max_points = reference_package.MAX_POINTS
+    for member in corpus.members:
+        assert member.attributes["consent_class"] == "synthetic"
+        assert member.attributes["student_ref"]
+        # Known reference labels, like every other submission corpus: an agreement figure
+        # against an unlabelled corpus is a figure against nothing.
+        assert member.attributes["reference_bands"]
+        assert 0.0 < member.attributes["reference_points"] < reference_package.MAX_POINTS
+        document = pypdf.PdfReader(member.path.open("rb"))
+        assert len(document.pages) == member.attributes["pages"]
+        images = sum(
+            len(page["/Resources"]["/XObject"]) if "/XObject" in page["/Resources"] else 0
+            for page in document.pages
+        )
+        if member.attributes["media_kind"] == hand.MIXED_FORMAT_MEDIA_KIND:
+            # One typed page (no raster — it is read as text) and the rest handwritten.
+            assert images == member.attributes["pages"] - 1, (
+                f"{member.id}: the mixed-format paper carries {images} rasters; its typed page "
+                f"must not carry one and its handwritten pages must"
+            )
+        else:
+            assert images == member.attributes["pages"], (
+                f"{member.id}: {images} image rasters across {member.attributes['pages']} "
+                f"pages — the work must exist as pixels for the medium claim to be honest"
+            )
 
 
 def test_every_submission_carries_a_student_ref_and_no_name_shaped_field():
@@ -274,6 +329,7 @@ def test_the_generators_are_deterministic_across_two_runs_in_one_process():
     assert [s.as_document() for s in adv_inj.submissions()] == [
         s.as_document() for s in adv_inj.submissions()
     ]
+    assert [s.pdf for s in scan.scan_set()] == [s.pdf for s in scan.scan_set()]
 
 
 def test_the_adversarial_pdf_generators_emit_identical_bytes_on_every_run():

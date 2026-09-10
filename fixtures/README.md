@@ -19,6 +19,7 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-STATS/` | Label sets whose statistics were worked out by hand (`NFR-STATS-01`) |
 | `F-ADV-INJ/` | Injection twin pairs: each payload paired with a benign twin (`FR-CONFORM-09`) |
 | `F-ADV-PDF/` | **Manifest only.** One entry per malicious/malformed construct, with the digest of the bytes the generator emits |
+| `F-SCAN/` | Synthetic rendered scans: the scanned-handwriting tier (`FR-CONFORM-03`, #133) — pixels-only pages, legible to marginal, plus one mixed-format paper |
 | `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
 
