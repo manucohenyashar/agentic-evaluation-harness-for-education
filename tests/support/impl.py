@@ -1087,24 +1087,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #   of them must resolve before the test may rejoin TEST_CMD (C03 needs a console
     #   AND a grade service; C13 a console AND the narrative-quality story; C14 the
     #   rung-2 stats constructor AND the conform run).
+    # (The grade-only rows went at #101's landing: `aeh.grade` ships `open_grade`, so
+    # the C05/C08/C09 consumer legs run unmarked; C03 and C13 still wait on the
+    # console conjunction.)
     "#100 suppression consumers (C03)": (
         "symbols",
         f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
         (
             "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
             "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
-        ),
-    ),
-    "#100 grade consumers (C05/C08/C09)": (
-        "symbol",
-        f"{GRADE_MODULE}:open_grade",
-        (
-            "tests/contract/synth/test_ct_synth_c05_incomplete_vs_failed.py"
-            "::test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure",
-            "tests/contract/synth/test_ct_synth_c08_retry_budgets_and_grades.py"
-            "::test_tc_synth_c08_total_synthesis_failure_fails_no_grade",
-            "tests/contract/synth/test_ct_synth_c09_bounded_and_off_critical_path.py"
-            "::test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding",
         ),
     ),
     "#100 language consumers (C13)": (

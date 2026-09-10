@@ -19,8 +19,8 @@ stored state, not the budgets):
   count in the rate.
 
 The grade-completion half (total synthesis failure, `M-GRADE` still computes and
-finalizes) is written ahead of `M-GRADE` and registered in
-`WRITTEN_AHEAD_BLOCKERS` under `"#100 grade consumers (C05/C08/C09)"`.
+finalizes) landed with `M-GRADE` (#101): `open_grade` ships, and the batch
+finalizes through the outage.
 
 Isolation: rung 2 — real SQLite; the flaky and failing providers are the
 failure-injection doubles the model boundary permits.
@@ -32,6 +32,7 @@ import pytest
 
 from aeh.prov import TransportError
 from aeh.store import open_store
+from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.impl import GRADE_MODULE, SYNTH_MODULE, require
 from tests.support.orch_run import seed_run
 from tests.support.synth_vocabulary import (
@@ -121,7 +122,27 @@ class _AlwaysFailingProvider:
 def _seeded_store(tmp_data_dir, *, complete=_QUESTIONS):
     store = open_store(tmp_data_dir)
     _, run_id, _ = seed_run(store, submissions=(_SUBMISSION,), criteria=FIVE_QUESTION_CRITERIA)
-    seed_scored_submission(store, run_id, _SUBMISSION, complete_questions=set(complete))
+    seeded = seed_scored_submission(
+        store, run_id, _SUBMISSION, complete_questions=set(complete)
+    )
+    # The grade legs read M-AGG's stored output, not the verdicts this fixture
+    # seeds (CT-GRADE-14: the grade never touches the verdict table). Aggregation
+    # is the fixture's upstream premise — a synthesis outage leaves in place the
+    # scores aggregation already wrote — so the declared stand-in
+    # (`write_criterion_scores`, the grade vocabulary's disclosed seeding helper,
+    # the one this file's c08 docstring names) states the rows aggregation would
+    # have written: one auto row per criterion of a complete question, at the
+    # panel's band. An incomplete question keeps its absence — the criteria_missing
+    # the grade reads, never a zero.
+    write_criterion_scores(
+        store.cohort(COHORT_ID),
+        [
+            (_SUBMISSION, criterion_id, "high", 6.0, "auto")
+            for question, criteria in seeded.items()
+            if question in complete
+            for criterion_id in criteria
+        ],
+    )
     return store, run_id
 
 
@@ -268,7 +289,6 @@ def test_tc_synth_c08_an_exhausted_budget_fails_one_question_in_isolation(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c08_total_synthesis_failure_fails_no_grade(
     tmp_data_dir, monkeypatch
 ):
@@ -278,12 +298,10 @@ def test_tc_synth_c08_total_synthesis_failure_fails_no_grade(
     narrative is a missing narrative; a synthesis outage that withheld grades is
     RISK-11.
 
-    Written ahead of `M-GRADE` (test plan §8.2); registered in
-    `WRITTEN_AHEAD_BLOCKERS` under `"#100 grade consumers (C05/C08/C09)"` (symbol
-    `aeh.grade:open_grade`). The service surface is `GradingService.compute_all /
-    finalize_batch(run_id, actor) -> FinalizationRecord` (disclosed in
-    `tests/support/grade_vocabulary.py`); criterion scores are seeded with the
-    vocabulary's disclosed `write_criterion_scores` stand-in.
+    Landed with `M-GRADE` (#101): the service surface is the shipped
+    `GradingService.compute_all / finalize_batch(run_id, actor) -> FinalizationRecord`
+    (disclosed in `tests/support/grade_vocabulary.py`); criterion scores are seeded
+    with the vocabulary's disclosed `write_criterion_scores` stand-in.
     """
     monkeypatch.setenv(_ATTEMPT_BUDGET, str(_BUDGET))
     open_grade = require(GRADE_MODULE, "open_grade", issue="#101")

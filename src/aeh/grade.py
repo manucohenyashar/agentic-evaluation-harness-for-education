@@ -1179,7 +1179,7 @@ class GradingService:
             policy_version=surface["policy_version"],
             submitted=len(submissions),
             computed=computed,
-            grades_by_state=self._grades_by_state(cohort, run_id),
+            grades_by_state=self._grades_by_state(run, cohort),
         )
 
     def compute_one(self, run_id: str, submission_id: str) -> SubmissionGrade:
@@ -1319,20 +1319,65 @@ class GradingService:
 
     def coverage(self, run_id: str) -> CoverageSummary:
         """The run's grade-state counts, named BEFORE any batch action (`FR-GRADE-09`).
-        All three state keys are always present, zero included."""
+        All three state keys are always present, zero included — a missing key is not
+        a zero.
+
+        The counts are the class's states AS THEY STAND, not the stored rows alone
+        (`CT-SYNTH-05`'s consumer differential reads them before any pass runs): a
+        submission's current grade row carries its state, and a submission with no
+        current grade row is counted `incomplete` exactly when its stored criterion
+        data is missing criteria — `CT-GRADE-08`'s biconditional read from the stored
+        side, the operator-rescan state the data holds whether or not a pass has run
+        — and is not counted at all otherwise, because an uncomputed, fully-scored
+        submission is not yet a grade and coverage never claims a state no grade
+        holds."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
         return CoverageSummary(
-            run_id=run_id, grades_by_state=self._grades_by_state(cohort, run_id)
+            run_id=run_id, grades_by_state=self._grades_by_state(run, cohort)
         )
 
-    @staticmethod
-    def _grades_by_state(cohort: Any, run_id: str) -> dict[str, int]:
+    def _grades_by_state(self, run: Any, cohort: Any) -> dict[str, int]:
+        """The state counts behind `coverage` and behind every action that names its
+        coverage — one derivation, so the coverage an action names is the coverage
+        the method reports (`TC-GRADE-09`). Stored current rows count by their state;
+        the derivation adds only `incomplete`, for a submission the ledger has no
+        current grade for but whose criterion data is missing inputs."""
         counts = {state: 0 for state in GRADE_STATES}
         for row in cohort.query(
-            GRADE_STATEMENTS["count_run_grades_by_state"], run_id=run_id
+            GRADE_STATEMENTS["count_run_grades_by_state"], run_id=run["run_id"]
         ):
             counts[row["state"]] = int(row["n"])
+        current_ids = {
+            row["submission_id"]
+            for row in cohort.query(
+                GRADE_STATEMENTS["select_current_grades_for_run"], run_id=run["run_id"]
+            )
+        }
+        package_handle = self._store.package(run["package_id"])
+        criteria_ids = [
+            row["criterion_id"]
+            for row in package_handle.query(
+                PKG_STATEMENTS["select_criteria"], v=run["package_version_id"]
+            )
+        ]
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_run_submissions"], cohort_id=run["cohort_id"]
+        ):
+            submission_id = row["submission_id"]
+            if submission_id in current_ids:
+                continue
+            present = {
+                score["criterion_id"]
+                for score in cohort.query(
+                    GRADE_STATEMENTS["select_submission_scores"],
+                    submission_id=submission_id,
+                )
+                if score["points"] is not None
+                and score["routing"] != ROUTING_TRIAGE
+            }
+            if any(cid not in present for cid in criteria_ids):
+                counts[STATE_INCOMPLETE] += 1
         return counts
 
     def finalize_batch(self, run_id: str, actor: str) -> FinalizationRecord:
@@ -1343,7 +1388,7 @@ class GradingService:
         carries exactly one `final` name, this one (`TC-GRADE-09`'s API clause)."""
         run = self._run_row(run_id)
         cohort = self._store.cohort(run["cohort_id"])
-        named = self._grades_by_state(cohort, run_id)
+        named = self._grades_by_state(run, cohort)
         settled_at = self._clock()
         with cohort.transaction() as tx:
             current = [

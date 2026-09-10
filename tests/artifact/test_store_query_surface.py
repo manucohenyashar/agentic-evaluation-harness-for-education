@@ -511,7 +511,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `query()`, which are not census sites (FR-STORE-08). (Moved once as a block,
     # +21: the `panel_refused` presentation field the CT-AGG-07 consumer
     # differential demanded — `GradeComputation`'s disclosure of the
-    # breaker-refused criteria — landing above every site; re-pinned from the
+    # breaker-refused criteria — landing above every site; moved again, the six
+    # sites after the service's coverage helper, +45: the derived
+    # `_grades_by_state` the CT-SYNTH-05 consumer differential demanded — the
+    # class's states as they stand, not the stored rows alone; re-pinned from the
     # walker.)
     "aeh.grade:1146",
     "aeh.grade:1152",
@@ -523,12 +526,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.grade:1276",
     "aeh.grade:1307",
     "aeh.grade:1315",
-    "aeh.grade:1357",
-    "aeh.grade:1438",
-    "aeh.grade:1443",
-    "aeh.grade:1690",
-    "aeh.grade:1701",
-    "aeh.grade:1706",
+    "aeh.grade:1402",
+    "aeh.grade:1483",
+    "aeh.grade:1488",
+    "aeh.grade:1735",
+    "aeh.grade:1746",
+    "aeh.grade:1751",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
