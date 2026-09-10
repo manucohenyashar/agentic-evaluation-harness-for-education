@@ -5,7 +5,7 @@ imported BEFORE the store opens (see `CLAUDE.md`'s "Store opens require the full
 chain" — `IncompleteMigrationChainError` refuses a short chain at the open), and an
 explicit import block is that requirement stated where it is met:
 
-    import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
+    import aeh.agg, aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
 
 Not test scaffolding beyond the harness: the child runs the shipped `Orchestrator` against
 the shipped store — the same call a second dispatcher process would make. Its only job is
@@ -18,7 +18,9 @@ from __future__ import annotations
 import json
 import sys
 
-# The seven migration contributors, imported before the first store open in THIS process.
+# The eight migration contributors, imported before the first store open in THIS process
+# (aeh.agg owns Cohort's last migration, #92's agg_confidence_columns).
+import aeh.agg  # noqa: F401,E402
 import aeh.det  # noqa: F401,E402
 import aeh.extract  # noqa: F401,E402
 import aeh.ingest  # noqa: F401,E402
