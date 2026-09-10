@@ -322,6 +322,87 @@ def test_tc_conform_c09_a_malicious_pdf_quarantines_at_v0_and_reaches_no_model_c
     network_guard.assert_no_network()
 
 
+# --- regression (#133 review): the declared refusal world holds for the whole malicious tier -----
+
+
+def test_regression_ingest_one_quarantines_the_decompression_bomb_at_v0_with_no_model_call(
+        network_guard):
+    """The `ingest_one` seam's declared world must refuse the whole F-ADV-PDF tier — the
+    decompression bomb included — and the ceiling that refuses it must not refuse the scans.
+
+    **How this case exists:** the first-pass review drove all four malicious fixtures through
+    `ingest_one` and found three of them at `V0` with zero calls — and the bomb at `V1` with
+    three. ADV-PDF-09 carries no *active* content, so the strip knob refuses it in neither
+    world: at M-INGEST's 512 MiB production default its declared 64 MiB expansion passes V0,
+    is rasterized, and is transcribed before the strike limit quarantines it. The security
+    suite already knows the world that refuses it — `TC-INGEST-34`'s bomb case runs under a
+    1 MiB `HARNESS_INGEST_MAX_DECOMPRESSED_BYTES` ceiling — so the seam now holds that knob
+    alongside the strip knob (both restored after), and this case pins the outcome **green**
+    where the `#134`-keyed clause case above cannot yet run: that case's recorded provider
+    would make the bomb's transcription *succeed*, so resolving `detect_build_substitution`
+    alone would never have turned it green.
+
+    The scan half is the other side of the same coin: a ceiling tuned to refuse the bomb
+    would silently break `FR-CONFORM-03` if it refused legitimate pixels, so the largest
+    measured decompressed figure among the committed PDFs (SC-04's 1,338 bytes) is asserted
+    to pass V0 — the boundary the ceiling must sit between.
+    """
+    build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#133")
+    load_fixture_set = require(CONFORM_MODULE, "load_fixture_set", issue="#133")
+
+    from aeh.prov import Completion
+
+    class PlainPageProvider:
+        """The deterministic transport's canned reading, in the ingest's own dispatch
+        shape — the security suite's provider inner
+        (`tests/security/ingest/test_active_content.py`), plus a count, because the
+        clause's *"reach no model call"* is an exact zero counted at the provider seam."""
+
+        def __init__(self) -> None:
+            self.calls: list = []
+
+        def complete(self, prompt, model_ref, params) -> Completion:
+            self.calls.append(prompt)
+            return Completion(text="plain page", tokens_in=1, tokens_out=1,
+                              latency_ms=1, resolved_build=model_ref.build_id,
+                              cached_prefix_tokens=0, cost=None)
+
+    provider = PlainPageProvider()
+    fixtures = load_fixture_set("v1")
+    malicious = [s for s in fixtures.submissions if s.pdf_threat_kind is not None]
+
+    assert {s.pdf_threat_kind for s in malicious} == MALICIOUS_PDF_KINDS, (
+        "the regression must cover the whole tier; the corpus moved under it"
+    )
+
+    for submission in malicious:
+        provider.calls.clear()
+        outcome = build_suite(provider=provider).ingest_one(submission)
+
+        assert outcome.quarantined_at == QUARANTINE_GATE, (
+            f"{submission.submission_id} ({submission.pdf_threat_kind}) quarantined at "
+            f"{outcome.quarantined_at!r} rather than {QUARANTINE_GATE}; the declared "
+            f"refusal world must refuse every construct before it is parsed further"
+        )
+        assert len(provider.calls) == 0, (
+            f"{submission.submission_id} reached {len(provider.calls)} model call(s); "
+            f"the declared outcome is zero"
+        )
+
+    # The anti-over-refusal half: the ceiling that refuses the bomb must not refuse a real
+    # scan. SC-04 carries the largest decompressed figure among the legitimate PDFs.
+    scan = next(s for s in fixtures.submissions
+                if s.submission_id == "SC-04")
+    provider.calls.clear()
+    scan_outcome = build_suite(provider=provider).ingest_one(scan)
+    assert scan_outcome.gates.get("v0") == "pass", (
+        f"the refusal-world ceiling refused a legitimate scan at V0 ({scan_outcome.gates}); "
+        f"the ceiling must sit between the corpora's largest legitimate figure and the bomb"
+    )
+
+    network_guard.assert_no_network()
+
+
 # --- CT-CONFORM-10 — consent, and where it is enforced ------------------------------------------------
 
 

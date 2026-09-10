@@ -30,8 +30,8 @@ means reading `harness.corpora.manifest`, and the malicious-PDF fixtures' bytes 
 `harness.corpora.adv_pdf`'s generator. The walker is unaffected (nothing imports back), and the
 dependency is one-way: `harness` never imports `aeh`.
 
-Why `ingest_one` sets the strip knob
-------------------------------------
+Why `ingest_one` holds the declared refusal world
+-------------------------------------------------
 `FR-INGEST-33`'s strip knob has two declared worlds (SEC-05's fork): at its default the
 sanitizer *strips* active constructs and the pipeline processes the stripped copy; with
 `HARNESS_INGEST_STRIP_ACTIVE_CONTENT=false` the same construct **quarantines** and reaches no
@@ -40,6 +40,16 @@ model call. The adversarial tier is the second world — the F-ADV-PDF manifest'
 it performs and restores the caller's value afterwards. The knob stays where M-INGEST put it
 (read from the environment at call time, so a run can retune without a code change); the suite
 choosing the refusal world for the corpus it measures is the declared reading, not a bypass.
+
+The strip knob alone is not that whole world. The decompression bomb (`ADV-PDF-09`) carries no
+active content — its declared outcome (`reference_score_basis: "quarantine_at_v0"`) is written
+for a world whose decompressed-bytes **ceiling** sits below its declared 64 MiB expansion.
+M-INGEST's production default (512 MiB) accepts it at V0, and the construct is then rasterized
+and transcribed: three model calls, quarantine at V1 — exactly the failure a review of this
+module's first pass caught, because `_markdown_pages`' sibling wrapper pinned only the strip
+knob. So the ingest seam holds **both** knobs at the declared refusal world and restores them
+afterwards: quarantine-at-V0-with-no-model-call is what every F-ADV-PDF row declares, and that
+outcome only holds in a world whose ceilings refuse it.
 """
 
 from __future__ import annotations
@@ -75,6 +85,18 @@ FIXTURE_ROOT_ENV = "HARNESS_FIXTURE_ROOT"
 #: The cohort the ingest surface writes into — an ephemeral store's whole population, so the
 #: name is a label rather than a scope to be careful about.
 INGEST_COHORT = "c-conform-fixtures"
+
+#: The declared refusal world's decompressed-bytes ceiling, derived from the corpora's own
+#: declaration: one sixty-fourth of the bomb's expansion (`BOMB_DECOMPRESSED_BYTES`, 64 MiB) —
+#: 1 MiB today. Below it ADV-PDF-09 crosses the ceiling at V0 and quarantines having reached no
+#: model call; above it sit every legitimate fixture with orders of magnitude to spare (the
+#: largest figure measured through the sanitizer's own accounting among the committed PDFs is
+#: SC-04's 1,338 bytes). M-INGEST's production default (512 MiB) *accepts* the bomb — that
+#: default is the production posture; this is the stricter world the F-ADV-PDF rows' declared
+#: outcomes (`quarantine_at_v0`) are written against. Deriving from the declaration keeps the
+#: wrapper below the bomb if the declaration is ever retuned, and the regression case
+#: (`test_regression_..._decompression_bomb_...`) fails if either side drifts.
+_DECLARED_REFUSAL_MAX_DECOMPRESSED_BYTES = adv_pdf.BOMB_DECOMPRESSED_BYTES // 64
 
 #: The gate order `IngestReport.gates` is read in when naming the first gate that failed. V3's
 #: failing values are its own (the identity gate reports `unmatched`/`ambiguous`, not `fail`),
@@ -394,9 +416,10 @@ class ConformanceSuite:
         quarantine at V0 having reached no model call, and that outcome is only meaningful if
         the gates it passed are the real ones.
 
-        The strip knob is set to the refusal world for the ingest (see the module docstring):
-        the adversarial tier's contract is *quarantine*, and SEC-05's fork is the declared
-        choice between stripping and refusing. The caller's value is restored afterwards.
+        The declared refusal world's knobs (the strip knob and the decompressed-bytes ceiling —
+        see the module docstring) are held for the ingest: the adversarial tier's contract
+        is *quarantine*, and SEC-05's fork is the declared choice between stripping and
+        refusing. The caller's values are restored afterwards.
 
         The package catalog is not wired (`ingest_submission`'s `package_catalog=None`): the
         ingest surface runs the integrity ladder's ingest-side gates; the conformance
@@ -438,14 +461,17 @@ class ConformanceSuite:
             store = open_store(Path(raw_dir))
             try:
                 handle = store.cohort(INGEST_COHORT)
-                # The ingest surface writes into the cohort it was handed; on an ephemeral store
-                # the row does not exist yet, so create it the same way the security suite's
-                # fixture surface does (`tests/security/ingest/test_active_content.py`).
+                # The ingest surface writes into the cohort it was handed; on an ephemeral store the row does
+                # not exist yet, so create it the way the security suite's fixture surface does
+                # (`tests/security/ingest/test_active_content.py`) — with the submission's
+                # *declared* class rather than a literal, so the module spells no consent
+                # vocabulary itself (`CT-CONFORM-10`: the gate is M-CONF's, not this module's).
                 with handle.transaction() as tx:
                     tx.execute(
                         "INSERT OR IGNORE INTO cohort (cohort_id, consent_class, created_at) "
-                        "VALUES (:c, 'synthetic', 'x')",
+                        "VALUES (:c, :cc, 'x')",
                         c=INGEST_COHORT,
+                        cc=submission.consent_class,
                     )
                 blobs = store.blobs()
                 blob_hash = blobs.put(source_bytes)
@@ -476,18 +502,29 @@ class ConformanceSuite:
 
 
 def _ingest_with_refusal_world(ingestor: Any, blob_hashes: Sequence[str], filename: str) -> Any:
-    """Run the ingest with the strip knob held at the refusal world, restoring it after.
+    """Run the ingest with the declared refusal world's knobs held, restoring them after.
 
     The adversarial tier's declared reading (SEC-05's other half): an active construct
-    **quarantines** and reaches no model call, rather than being stripped and processed. The
-    knob itself is M-INGEST's, read from the environment at sanitize time — this sets it for
-    the duration of the ingest and restores whatever the caller had, so a run never leaks the
-    reading into a pipeline that did not ask for it.
+    **quarantines** and reaches no model call, rather than being stripped and processed. Two
+    knobs make that world, and both are M-INGEST's, read from the environment at sanitize
+    time — the strip knob (`STRIP_ACTIVE_CONTENT_ENV`) and the decompressed-bytes ceiling
+    (`MAX_DECOMPRESSED_BYTES_ENV`). The strip knob alone does not refuse the decompression
+    bomb: it carries no active content, so at M-INGEST's 512 MiB production default it
+    passes V0, is rasterized, and is transcribed — three model calls, quarantine at V1, the
+    exact failure the first-pass review caught (see the module docstring). The ceiling rides
+    alongside at the value the declaration supports, and both are restored to whatever the
+    caller had, so a run never leaks the refusal world into a pipeline that did not ask
+    for it.
     """
-    from aeh.ingest import STRIP_ACTIVE_CONTENT_ENV
+    from aeh.ingest import MAX_DECOMPRESSED_BYTES_ENV, STRIP_ACTIVE_CONTENT_ENV
 
-    previous = os.environ.get(STRIP_ACTIVE_CONTENT_ENV)
-    os.environ[STRIP_ACTIVE_CONTENT_ENV] = "false"
+    declared_world = {
+        STRIP_ACTIVE_CONTENT_ENV: "false",
+        MAX_DECOMPRESSED_BYTES_ENV: str(_DECLARED_REFUSAL_MAX_DECOMPRESSED_BYTES),
+    }
+    previous = {name: os.environ.get(name) for name in declared_world}
+    for name, value in declared_world.items():
+        os.environ[name] = value
     try:
         return ingestor.ingest_submission(
             list(blob_hashes),
@@ -496,10 +533,11 @@ def _ingest_with_refusal_world(ingestor: Any, blob_hashes: Sequence[str], filena
             filenames={blob_hashes[0]: filename},
         )
     finally:
-        if previous is None:
-            os.environ.pop(STRIP_ACTIVE_CONTENT_ENV, None)
-        else:
-            os.environ[STRIP_ACTIVE_CONTENT_ENV] = previous
+        for name, caller_value in previous.items():
+            if caller_value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = caller_value
 
 
 def _first_refused_gate(gates: Mapping[str, str]) -> str | None:
