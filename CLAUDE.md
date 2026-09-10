@@ -115,10 +115,12 @@ The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time
 modules that own the schema they add. Before the first store open in any process, import all
 eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
 `import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it),
-`aeh.grade` owns Cohort's last migration (#101's `grade_submission_grade_key`, 18),
+`aeh.grade` owns Cohort's last migration (#103's `grade_superseded_at_and_append_only`, 19;
+#101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.review` owns
-Durable's last migration (#110's `review_label_store_columns`, 6), `aeh.integ` the one
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.grade` also owns
+Durable's last migration (#103's `grade_audit_record_append_only`, 7; #110's
+`review_label_store_columns` was 6), `aeh.integ` the one
 before that (#73's `integ_rate_dimensions`, 5), `aeh.synth` the one before
 that (#97's `synth_narrative_key`, 13), `aeh.orch` the one before that (#61's
 `orch_run_lifecycle`, 12), and `aeh.extract` the one before that (11). An open on a

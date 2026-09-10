@@ -1457,6 +1457,7 @@ def _is_pure_refusal_trigger(sql: str | None) -> bool:
     if re.fullmatch(r" ?select raise\((abort|fail),.*; ?", body, flags=re.S) is None:
         return False
     return re.search(r"\b(insert|update|delete|replace|drop|create|attach)\b", body) is None
+
 _PRAGMA_DEFER_FOREIGN_KEYS = Statement("PRAGMA defer_foreign_keys = ON")
 #: Table-valued pragma form (#225): the FK-graph introspection purge does runs with the
 #: table name as a **bound parameter**, so no identifier is ever interpolated into SQL.
