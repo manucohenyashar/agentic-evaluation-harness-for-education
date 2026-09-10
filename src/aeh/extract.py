@@ -140,8 +140,11 @@ EXTRACT_STATEMENTS: dict[str, Statement] = {
 #: orchestration boundary — a caller that configures the run with this constant (as
 #: the contract suite does) gets the automatic invalidation of dependent extract
 #: units on a template change, no cleanup job (`TC-EXTRACT-13`); this module only
-#: pins the value and renders by it.
-EXTRACTION_PROMPT_TEMPLATE_VERSION = "extract-prompt/1"
+#: pins the value and renders by it. Bumped `extract-prompt/1` → `extract-prompt/2` by
+#: #81's escape fix below (the constant's own contract: the render changed in the same
+#: change — transcripts carrying a raw marker now render the well-formed escape, so
+#: dependent extract units invalidate and re-extract rather than compare stale bytes).
+EXTRACTION_PROMPT_TEMPLATE_VERSION = "extract-prompt/2"
 
 #: The fixed field order (`FR-EXTRACT-04`, CT-EXTRACT-06): invariant elements first,
 #: the submission LAST — nothing after it can be reframed by what it carries.
@@ -557,9 +560,12 @@ def _render_dependency(entries: tuple[DependencyEvidence, ...]) -> str:
 
 #: The delimiter-neutralizing substitutions (`M-INGEST`'s `<\\/` idiom,
 #: `FR-INGEST-35`/G6) — applied to BOTH markers, so no byte of the transcript can
-#: open or close the block the harness owns.
+#: open or close the block the harness owns. The CLOSE's `[2:]` strips `</`; the
+#: OPEN's `[1:]` strips the single leading `<` (the close's form was misapplied to
+#: the open once, mangling `<u` — caught by TS-32's TC-JUDGE-23 escape assertion,
+#: `#81`).
 _ESCAPED_UNTRUSTED_CLOSE = "<\\/" + UNTRUSTED_CLOSE[2:]
-_ESCAPED_UNTRUSTED_OPEN = "<\\/" + UNTRUSTED_OPEN[2:]
+_ESCAPED_UNTRUSTED_OPEN = "<\\/" + UNTRUSTED_OPEN[1:]
 
 
 def _render_submission(transcript: str) -> str:
