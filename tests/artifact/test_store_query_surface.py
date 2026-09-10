@@ -621,14 +621,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # cohort, submission, document and document_region seeds). All keyword-parameterized
     # literals; the driver's disclosure notes cover why it pins ids the catalog would
     # otherwise mint.
-    "aeh.console:1444",
-    "aeh.console:1521",
-    "aeh.console:2475",
-    "aeh.console:2480",
-    "aeh.console:2501",
-    "aeh.console:2509",
-    "aeh.console:2517",
-    "aeh.console:2530",
+    # (#124's re-pin: the review-queue rendering, the blind-flow plan and the request
+    # assembler were inserted above these sites and moved every one of them; the
+    # statements are the same eight. Re-read from the walker, never hand-unioned.)
+    "aeh.console:1491",
+    "aeh.console:1568",
+    "aeh.console:2874",
+    "aeh.console:2879",
+    "aeh.console:2900",
+    "aeh.console:2908",
+    "aeh.console:2916",
+    "aeh.console:2929",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

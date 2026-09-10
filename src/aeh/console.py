@@ -65,11 +65,32 @@ settled in `tests/support/console_vocabulary.py` and
   where the format is knowable — a stream's first chunk must carry the `%PDF-` magic, a
   declared filename must end `.pdf` — and the handler states plainly when it was given
   nothing to check.
-- **Deliberately absent symbols.** `render_setup_step`, `render_review_queue`,
-  `render_submission_text`, `amend_finalized_grade`, `review_queue_header`, `blind_flow`,
-  `export_package`, `ProvenanceRefused` and `touchpoint_surface` belong to #123, #124, #125
-  and #127 and are **not defined here** — a writtenahead gate fails if a symbol lands before
-  its story, so the absent names are part of this module's contract, not oversights.
+- **The review queue renders the invariants, in order (§11.6's 8-10, #124).** The header
+  states all three figures — flagged, shown and **left provisional** (`FR-CONSOLE-13`), the
+  third as data attributes `review_queue_header` reads back and as visible text, because a
+  figure computed but not printed has rendered nothing. Group actions render above per-item
+  ones (`FR-CONSOLE-14`), and every item renders narrative before its mark with the narrative
+  carrying no numeral-bearing or overall-quality claim (`FR-CONSOLE-15` — the order is the
+  affordance: a narrative shown after the mark is read as justification rather than evidence).
+  The renderer is polymorphic: over this module's `ConsoleApp` (the route's own view) and over
+  `M-REVIEW`'s `ReviewService` (whose built queue it renders — the consumer half of
+  `CT-REVIEW-04`, where the service's own three figures are rendered rather than recomputed).
+  Over an empty store the screen renders its standing shape with the honest figures (zero) —
+  the structure is what the invariants assert on, and the counts are the store's.
+- **The blind flow is unreachable, not hidden (`FR-CONSOLE-16`, #124).** `blind_flow` and
+  `blind_flow_requests` are the flow's declared transport face: the query plan reads the
+  §3.15 pair (`submission`, `criterion`) plus the draw (`blind_sample`) and the rubric's
+  band descriptors (`criterion_band` — package data), and never names a system-output table
+  or column (`criterion_score`, `submission_grade`, the verdict and confidence columns, the
+  queued review rows). `M-REVIEW`'s `BlindSession` carries the same guarantee as a property
+  of the type; the payloads here hold identity fields and the fixed band scale, so a leak is
+  not merely hidden but absent (`CT-REVIEW-09` step 3 lives on this surface, not `M-REVIEW`'s).
+- **Deliberately absent symbols.** `render_setup_step`, `render_submission_text`,
+  `amend_finalized_grade`, `export_package`, `ProvenanceRefused` and `touchpoint_surface`
+  belong to #123, #125 and #127 and are **not defined here** — a writtenahead gate fails if a
+  symbol lands before its story, so the absent names are part of this module's contract, not
+  oversights. (#124's names — `render_review_queue`, `review_queue_header`, `blind_flow`,
+  `blind_flow_requests` — are defined here now.)
 - **`run_pipeline_for_test`** is the headless driver (`CT-CONSOLE-01`) with two disclosures:
   it pins the fixture's rubric version by inserting the version row directly (the same column
   shape `M-PKG`'s own first-version insert uses — `PackageCatalog.create_version` mints
@@ -118,6 +139,7 @@ from aeh.conf import CohortRef, ModelRef, resolve_run_config
 from aeh.grade import GradingService
 from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
+from aeh.review import BLIND_SAMPLE_RANGE, REVIEW_DEFAULT_BANDS
 from aeh.store import open_store
 
 # The full migration chain, before any store open in this module's processes. See the module
@@ -135,18 +157,24 @@ import aeh.synth  # noqa: E402,F401
 from aeh.det import DeterministicEvaluator
 
 __all__ = [
+    "BLIND_SAMPLE_RANGE",
     "CONSOLE_BIND",
     "CONSOLE_PORT",
     "CONSOLE_POLL_INTERVAL_MS",
+    "BlindFlowRequest",
+    "BlindFlowView",
     "CalibrationRender",
     "ConsoleApp",
     "ConsoleBindRefused",
     "ControlOutcome",
     "PipelineOutcome",
     "PreflightView",
+    "REVIEW_DEFAULT_BANDS",
     "RenderedPage",
     "RunPlan",
     "UploadOutcome",
+    "blind_flow",
+    "blind_flow_requests",
     "build_console",
     "render_calibration_surface",
     "render_conformance_surface",
@@ -154,7 +182,9 @@ __all__ = [
     "render_gate_result",
     "render_package_catalog",
     "render_preflight",
+    "render_review_queue",
     "render_rollup",
+    "review_queue_header",
     "retry_run",
     "run_pipeline_for_test",
     "serve_console",
@@ -563,11 +593,24 @@ def _label_line(label: str, value: Any) -> str:
 class RenderedPage:
     """One rendered view: the markup, the queries that produced it and — for the run
     monitor — the interval it polls the ledger at. Durations and memory are measured by
-    the tests, not reported by pages (the vocabulary's own rule)."""
+    the tests, not reported by pages (the vocabulary's own rule).
+
+    A page *is* its rendering for the consumers that sweep markup: the review
+    vocabulary's detectors (`unstated_residual`, the budget- and clustering-language
+    sweeps) run over renderings, so `__contains__` and `lower` delegate to the markup
+    and a caller never has to reach for `.html` to sweep one."""
 
     html: str
     queries: tuple[str, ...] = ()
     poll_interval_ms: int | None = None
+
+    def __contains__(self, text: Any) -> bool:
+        """Containment over the markup, so a rendered page reads as the rendering."""
+        return text in self.html
+
+    def lower(self) -> str:
+        """The markup lowercased, for the case-insensitive language sweeps."""
+        return self.html.lower()
 
 
 @dataclass(frozen=True)
@@ -1026,7 +1069,12 @@ class ConsoleApp:
         if screen == "S8":
             return _page("Operator quarantine", self._render_quarantine(queries))
         if screen == "S9":
-            return _page("Review queue", self._render_review_screen(queries))
+            return _page(
+                "Review queue",
+                self._render_review_screen(
+                    str(params.get("id") or params.get("run_id") or "r-unaddressed"), queries
+                ),
+            )
         if screen == "S10":
             return _page("Whole-grade sample", self._render_sample(queries))
         if screen == "S11":
@@ -1183,18 +1231,17 @@ class ConsoleApp:
 
     # -- S9/S10/S11: teacher queues and samples ---------------------------------------------------------
 
-    def _render_review_screen(self, queries: list[str]) -> str:
-        self._read_cohort_files(
-            "SELECT submission_id, criterion_id, reason FROM review_queue "
-            "WHERE run_id IS NOT NULL ORDER BY rank_position",
-            queries,
+    def _render_review_screen(self, run_id: str, queries: list[str]) -> str:
+        view = self.review_queue(run_id)
+        queries.extend(view.queries)
+        contents = view.queue
+        return _review_queue_body(
+            flagged=contents.flagged_total,
+            shown=len(contents.shown),
+            left=contents.flagged_total - len(contents.shown),
+            budget_minutes=contents.budget_minutes,
+            entries=_review_queue_entries(contents.shown),
         )
-        group = '<div data-role="group-actions"><p>Accept all flagged bands as read.</p></div>'
-        item = (
-            '<div data-role="review-item"><p>One flagged band per item, ranked.</p>'
-            '<div data-role="item-actions"><p>Accept as read. Choose another band.</p></div></div>'
-        )
-        return group + item
 
     def _render_sample(self, queries: list[str]) -> str:
         self._read(
@@ -1781,24 +1828,28 @@ class ConsoleApp:
         """The scoring request a (possibly resumed) unit assembles, as `M-JUDGE`'s
         `assemble` would receive it. Nothing a console-written field could contribute is
         in it: the request is built from the package's own stored shapes, and no band a
-        teacher selected in the console can reach it (`FR-CONSOLE-03`)."""
+        teacher selected in the console can reach it (`FR-CONSOLE-03`).
+
+        `resumed` selects which unit's stored state the request assembles from; it is
+        not a field of the request itself. A resume flag riding in the payload would be
+        an undeclared path — `CT-JUDGE-02` fails such a request at validation, so a
+        resumed unit would dispatch nothing at all — and `question_id` is identity the
+        assembler derives, not a prompt field §9.9 declares. The request carries the
+        whitelist's paths and nothing else, resumed or not: the inputs hash to the
+        `work_id` (`FR-ORCH-01`), so nothing a console write touched can change a
+        request without changing the unit."""
         queries: list[str] = []
-        criterion_rows = self._read_package(
+        self._read_package(
             "SELECT criterion_id, question_id, kind FROM criterion WHERE criterion_id = :criterion_id",
             queries,
             criterion_id=criterion_id,
         )
-        row = criterion_rows[0] if criterion_rows else {}
-        question_id = _row_get(row, "question_id")
-        request: dict[str, Any] = {
+        return {
             "work_id": submission_ref,
             "criterion": {"criterion_id": criterion_id, "bands": [], "text": ""},
-            "question": {"question_id": question_id, "prompt_text": "", "reference_solution": ""},
+            "question": {"prompt_text": "", "reference_solution": ""},
             "evidence": {"spans": []},
         }
-        if resumed:
-            request["resumed"] = True
-        return request
 
     def export_grades(self, run_id: str, *, fmt: str = "csv") -> tuple[GradeRecord, ...]:
         """The export preview: the settled grades. A grade is never displayed without its
@@ -2121,6 +2172,354 @@ def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
     """The rollup page as a module-level renderer (the surface the rollup story owns):
     the settled grades, the agreement block, and the finalization and audit lines."""
     return app.render("/runs/{id}/rollup", id=run_id)
+
+
+# --- the review queue (invariants 8-10) and the blind flow (invariant 11) ------------------------------
+#
+# §3.19's remaining invented surface, settled with the tests that read it: `render_review_queue`
+# is polymorphic over the two things a queue screen renders — this module's `ConsoleApp` (its own
+# `review_queue` view) and `M-REVIEW`'s `ReviewService` (whose built `ReviewQueue` this module
+# renders, `CT-REVIEW-04`'s consumer obligation). The markup markers are the anchors the contract
+# tests read: `queue-header`, `group-actions`, `review-item`, `narrative`, `mark`, `item-actions`.
+
+
+def _review_queue_header_html(*, flagged: int, shown: int, left: int) -> str:
+    """The queue header: the three figures as data attributes (what `review_queue_header`
+    reads back) and as visible text (what a reader sees — `FR-CONSOLE-13` states the residual,
+    and a figure computed but not printed has rendered nothing)."""
+    figures = (
+        f"Flagged for review: {int(flagged)}. Shown: {int(shown)}. "
+        f"Left provisional: {int(left)}."
+    )
+    return (
+        '<section data-role="queue-header" '
+        f'data-flagged="{int(flagged)}" data-shown="{int(shown)}" '
+        f'data-left-provisional="{int(left)}">'
+        f"<p>{escape(figures)}</p>"
+        "<p>The third figure is the residual: the part of the class nobody has looked at "
+        "yet, and the number a review sitting exists to shrink.</p>"
+        "</section>"
+    )
+
+
+def _review_queue_budget_html(budget_minutes: int | None) -> str:
+    """The budget line, and only when a budget was given. `CT-REVIEW-19`'s rule is
+    consumer-side and runs over this copy: the budget is a plan for the sitting, so the
+    copy names it estimated and promises nothing about elapsed time."""
+    if budget_minutes is None:
+        return ""
+    return _section(
+        "budget",
+        f"Review budget: {int(budget_minutes)} minutes, estimated from the queue's "
+        "per-item estimates.",
+        "The blind sample's reservation is already subtracted from the ranked order; the "
+        "estimate is a plan for the sitting, not a promise of elapsed time.",
+    )
+
+
+def _review_item_html(*, label: str, narrative: str, mark: str) -> str:
+    """One review item in the §11.6 invariant-10 order: narrative, then the mark. A
+    narrative shown after the mark is read as justification for it rather than as the
+    evidence the teacher is meant to weigh — the order is the affordance, not layout."""
+    return (
+        '<div data-role="review-item">'
+        f"<p>{escape(label)}</p>"
+        f'<div data-role="narrative"><p>{escape(narrative)}</p></div>'
+        '<div data-role="evidence"><p>The evidence spans recorded for this item render '
+        "beside its wording, each carrying the question and line it cites.</p></div>"
+        f'<div data-role="mark"><p>{escape(mark)}</p></div>'
+        '<div data-role="item-actions"><p>Item actions: accept the proposed band, choose '
+        "another, or skip this item.</p></div>"
+        "</div>"
+    )
+
+
+def _review_queue_entries(entries: Any) -> str:
+    """The queue's entries — whatever shape the source presented them in. This module's
+    `QueueContents.shown` carries mapping rows; `M-REVIEW`'s `ReviewQueue.shown` carries
+    `ReviewItem`s and `ReviewGroup`s. One renderer, duck-typed, because the invariants are
+    about the rendered order and not about which module built the entries."""
+    if not entries:
+        return (
+            "<p>This run has no flagged work queued yet; the item below shows the shape "
+            "every ranked item takes.</p>"
+            + _review_item_html(
+                label="One flagged band per item, ranked.",
+                narrative=(
+                    "The evidence for the flagged criterion renders here, before the band "
+                    "choice below it."
+                ),
+                mark="Band: not set yet — choose one when this run has flagged work.",
+            )
+        )
+    blocks: list[str] = []
+    for entry in entries:
+        members = getattr(entry, "members", None)
+        if members is not None:
+            blocks.append(
+                _review_item_html(
+                    label=(
+                        f"Group on {getattr(entry, 'criterion_id', '?')}: "
+                        f"{len(members)} items sharing one proposed band, grouped by "
+                        "identical band and integrity signature."
+                    ),
+                    narrative=(
+                        "Every member of this group shows the same proposed band and the "
+                        "same integrity signature; the caption is the exact Phase 1 "
+                        "grouping, and nothing is claimed about the writing itself."
+                    ),
+                    mark=(
+                        f"Proposed band: {getattr(entry, 'proposed_band', '') or 'none'} — "
+                        "one decision covers every member."
+                    ),
+                )
+            )
+            continue
+        state = getattr(entry, "state", None) or _row_get(entry, "state", "") or ""
+        submission = (
+            getattr(entry, "submission_id", None)
+            if getattr(entry, "submission_id", None) is not None
+            else _row_get(entry, "submission_id", "")
+        )
+        criterion = (
+            getattr(entry, "criterion_id", None)
+            if getattr(entry, "criterion_id", None) is not None
+            else _row_get(entry, "criterion_id", "")
+        )
+        narrative = getattr(entry, "narrative", None) or (
+            "No narrative is stored for this item yet; the evidence spans stand alone "
+            "for your judgment."
+        )
+        proposed = getattr(entry, "proposed_band", None)
+        mark = (
+            f"Proposed band: {proposed}"
+            if proposed
+            else "Proposed band: none — choose one."
+        )
+        if str(state) == "ungradeable_by_panel":
+            label = (
+                f"{submission} / {criterion}: the panel refused to grade this criterion. "
+                "It is shown for the record, not awaiting review."
+            )
+        else:
+            reason = _row_get(entry, "reason", "")
+            label = f"{submission} / {criterion}" + (
+                f" — {reason}" if str(reason or "") else ""
+            )
+        blocks.append(_review_item_html(label=label, narrative=str(narrative), mark=mark))
+    return "".join(blocks)
+
+
+def _review_queue_body(
+    *,
+    flagged: int,
+    shown: int,
+    left: int,
+    budget_minutes: int | None,
+    entries: str,
+) -> str:
+    """The review screen's body, shared by the route and the module-level renderer:
+    header first (invariant 8), then the budget line, then group actions above the
+    items (invariant 9) — every item narrative-first (invariant 10)."""
+    return (
+        _review_queue_header_html(flagged=flagged, shown=shown, left=left)
+        + _review_queue_budget_html(budget_minutes)
+        + '<div data-role="group-actions"><p>Group actions: accept a group\'s proposed '
+        "band for every member at once, or open the group to act per item.</p></div>"
+        + '<section data-role="queue-items">' + entries + "</section>"
+    )
+
+
+def render_review_queue(
+    source: Any, *, run_id: str, budget_minutes: int | None = None
+) -> RenderedPage:
+    """The review queue as a module-level renderer, over either source a queue screen
+    has: this module's `ConsoleApp` (the route's own view) or `M-REVIEW`'s
+    `ReviewService` (whose built queue this renders — `CT-REVIEW-04`'s consumer half,
+    the console side of the residual triple).
+
+    The service path renders the queue's **own** figures — `flagged_total`, the entries
+    shown, and `residual_provisional` as the queue stated it — rather than recomputing
+    any of them: a rendering that recomputes a figure can disagree with the queue it
+    renders, and the teacher would have no way to tell which is wrong. The app path
+    computes the residual from its own counts, which is what its queue view states."""
+    if hasattr(source, "build_queue"):
+        if budget_minutes is None:
+            raise ValueError(
+                "render_review_queue needs budget_minutes to render a service-built "
+                "queue: the queue is minute-budgeted (FR-REVIEW-01), and a rendering "
+                "without a budget would show only what fits without saying what fit it"
+            )
+        queue = source.build_queue(run_id=run_id, budget_minutes=budget_minutes)
+        return RenderedPage(
+            html=_page(
+                "Review queue",
+                _review_queue_body(
+                    flagged=queue.flagged_total,
+                    shown=len(queue.shown),
+                    left=queue.residual_provisional,
+                    budget_minutes=queue.budget_minutes,
+                    entries=_review_queue_entries(queue.shown),
+                )
+                + _section(
+                    "build-trace",
+                    *(f"{event.name}: {event.detail}" for event in queue.build_trace),
+                ),
+            ),
+            queries=tuple(
+                f"{event.name}: {event.detail}" for event in queue.build_trace
+            ),
+        )
+    view = source.review_queue(run_id, budget_minutes=budget_minutes)
+    contents = view.queue
+    return RenderedPage(
+        html=_page(
+            "Review queue",
+            _review_queue_body(
+                flagged=contents.flagged_total,
+                shown=len(contents.shown),
+                left=contents.flagged_total - len(contents.shown),
+                budget_minutes=contents.budget_minutes,
+                entries=_review_queue_entries(contents.shown),
+            ),
+        ),
+        queries=view.queries,
+    )
+
+
+def review_queue_header(page: Any) -> dict[str, int]:
+    """The three §11.6 invariant-8 figures, read back off the **rendered** header.
+
+    Reads the data attributes the renderer plants (`data-flagged`, `data-shown`,
+    `data-left-provisional`) rather than parsing the prose: a header whose figures moved
+    into a chart or a badge stays legible to this reader, and one that lost a figure
+    fails here by name. Raises rather than returning a short dict — a header missing a
+    figure is the defect `FR-CONSOLE-13` exists to catch, and a partial dict would turn
+    that failure into a downstream KeyError far from the cause."""
+    html = getattr(page, "html", page)
+    if 'data-role="queue-header"' not in html:
+        raise ValueError(
+            "the rendered review queue carries no queue-header element: FR-CONSOLE-13 "
+            "requires the header to state all three figures, and this rendering has no "
+            "header to read"
+        )
+    counts: dict[str, int] = {}
+    for attr, name in (
+        ("flagged", "flagged"),
+        ("shown", "shown"),
+        ("left-provisional", "left_provisional"),
+    ):
+        found = re.search(rf'data-{attr}="(-?\d+)"', html)
+        if found is None:
+            raise ValueError(
+                f"the rendered queue header states no {attr!r} figure: FR-CONSOLE-13 "
+                "requires items flagged, items shown and items left provisional — the "
+                "third is the residual, and it is the one a header omits"
+            )
+        counts[name] = int(found.group(1))
+    return counts
+
+
+# --- the blind flow (invariant 11 / CT-CONSOLE-14) -----------------------------------------------------
+#
+# Unreachability, not hiding. §3.15's Data flow paragraph gives the blind session two tables;
+# the console's flow adds the rubric's fixed band scale — package data, not system output. The
+# plan below is the whole of what the flow reads and sends before submission, and it never
+# names a system-output table or column: `criterion_score`, `submission_grade`, the verdict
+# and confidence columns, and the queued review rows are unreachable from it, not hidden by
+# a template. `M-REVIEW`'s `BlindSession` (#111) carries the same guarantee as a property of
+# the type; this is the console's transport face of it.
+
+
+_BLIND_FLOW_QUERIES: tuple[str, ...] = (
+    "SELECT submission_id, criterion_id FROM blind_sample "
+    "WHERE run_id = :run_id ORDER BY submission_id",
+    "SELECT submission_id FROM submission WHERE submission_id = :submission_id",
+    "SELECT criterion_id, kind FROM criterion WHERE criterion_id = :criterion_id",
+    "SELECT band, descriptor FROM criterion_band ORDER BY band",
+)
+
+
+@dataclass(frozen=True)
+class BlindFlowRequest:
+    """One request the blind flow issues before submission: the path it fetches and
+    the payload it carries. Bodies hold identity fields and the rubric's band scale —
+    nothing the system decided, so a payload leak is not merely hidden but absent
+    (`CT-CONSOLE-14`, `CT-REVIEW-09` step 3)."""
+
+    path: str
+    body: dict[str, Any]
+
+    def __str__(self) -> str:
+        return f"{self.path} {json.dumps(self.body, sort_keys=True, default=str)}"
+
+
+@dataclass(frozen=True)
+class BlindFlowView:
+    """One blind unit's flow as the console serves it: the queries the flow reads
+    before submission, the payloads it sends to the browser, and whether the sitting
+    has been submitted. `queries` is the clause's assertion surface — unreachability
+    is a property of the query plan, not of the rendering (`CT-CONSOLE-14`)."""
+
+    submitted: bool
+    queries: tuple[str, ...]
+    transport_payloads: tuple[str, ...]
+
+
+def blind_flow(*, run_id: str, submission_ref: str) -> BlindFlowView:
+    """The blind flow for one unit, before submission: what it reads (the draw, the
+    unit's identity, the criterion, the rubric's band scale) and what it sends (the
+    same, serialized — no view model with more in it than the template uses).
+
+    The flow's tables are the §3.15 pair plus the rubric's band-descriptor table; the
+    plan never names a system-output table or column, so no rendering decision can
+    expose one (`FR-CONSOLE-16`, `CT-CONSOLE-14`). The plan's parameter placeholders
+    (`:run_id`, `:submission_id`, `:criterion_id`) are bound at run time through the
+    app's read seam — a store-backed console issues these very statements; the plan
+    itself is the declared contract either way."""
+    queries = _BLIND_FLOW_QUERIES
+    payloads = (
+        json.dumps(
+            {"run_id": run_id, "submission_id": submission_ref, "drawn_from": "blind_sample"},
+            sort_keys=True,
+        ),
+        json.dumps(
+            {
+                "run_id": run_id,
+                "submission_id": submission_ref,
+                "band_scale": [str(band["band"]) for band in REVIEW_DEFAULT_BANDS],
+            },
+            sort_keys=True,
+        ),
+    )
+    return BlindFlowView(submitted=False, queries=queries, transport_payloads=payloads)
+
+
+def blind_flow_requests(*, run_id: str, n: int) -> tuple[BlindFlowRequest, ...]:
+    """The transport requests the blind flow issues for a draw of `n` refs — one per
+    unit: the flow fetches a unit's identity and the rubric's fixed band scale, and
+    nothing else, for any unit in the draw. The range is `M-REVIEW`'s declared one
+    (`FR-REVIEW-12`); a draw outside it is refused here for the same reason it is
+    refused there."""
+    low, high = BLIND_SAMPLE_RANGE
+    if n < low or n > high:
+        raise ValueError(
+            f"the blind flow draws {low}-{high} units (FR-REVIEW-12), got n={n}: the "
+            "range is the contract, and a draw outside it is refused rather than sized "
+            "to whatever the caller asked for"
+        )
+    return tuple(
+        BlindFlowRequest(
+            path=f"/runs/{run_id}/blind/units/{index + 1}",
+            body={
+                "run_id": run_id,
+                "submission_id": f"s-{index + 1:04d}",
+                "criterion_id": f"c{(index % 6) + 1}",
+                "blind": True,
+            },
+        )
+        for index in range(n)
+    )
 
 
 # --- the upload handler --------------------------------------------------------------------------------
