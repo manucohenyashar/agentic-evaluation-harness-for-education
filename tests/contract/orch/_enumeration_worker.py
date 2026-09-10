@@ -18,10 +18,10 @@ from __future__ import annotations
 import json
 import sys
 
-# The ten migration contributors, imported before the first store open in THIS process.
+# The eleven migration contributors, imported before the first store open in THIS process.
 # (`aeh.grade` owns Cohort's last migration — #101's `grade_submission_grade_key`, 18 —
-# `aeh.judge` the one before it, #80's response columns, 17, and `aeh.integ` Durable's,
-# #73's rate dimensions, 5; the list was seven when this worker was written and the
+# `aeh.judge` the one before it, #80's response columns, 17, and `aeh.review` Durable's,
+# #110's label-store columns, 6; the list was seven when this worker was written and the
 # pin-rot gate caught the shortfall the moment Cohort's tail moved past judge.)
 import aeh.agg  # noqa: F401,E402
 import aeh.det  # noqa: F401,E402
@@ -32,6 +32,7 @@ import aeh.integ  # noqa: F401,E402
 import aeh.judge  # noqa: F401,E402
 import aeh.orch  # noqa: F401,E402
 import aeh.pkg  # noqa: F401,E402
+import aeh.review  # noqa: F401,E402
 import aeh.synth  # noqa: F401,E402
 from aeh.orch import Orchestrator
 from aeh.store import open_store

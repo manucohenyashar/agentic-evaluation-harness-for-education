@@ -79,6 +79,44 @@ and this implementation chose; all are reported on the PR):
 * *Group labels record the honest per-member time*: ``review_seconds`` is
   divided across the members, because the group action genuinely took less per
   member — which is why ``GROUP_INDISTINGUISHABILITY_FIELDS`` excludes it.
+* *The no-package-context points route reads the declared default band scale.*
+  ``FR-REVIEW-10`` derives ``new_points`` from the band through `CT-PKG-05`'s
+  pinned mapping — but the mapping needs a band table, and a score row carries
+  none (the store rows carry no package linkage). With a ``catalog=`` attached
+  the criterion's own pinned table is read
+  (``PackageCatalog.points_for_band``); without one, the derivation reads the
+  declared default scale below through the *same* mapping function, so the
+  conversion logic still exists in exactly one place (`NFR-AGG-02`) — only the
+  default band *data* is review's. A band absent from whichever table governs
+  refuses (`PackageError`) rather than defaulting to a number.
+* *A label is persisted when the service holds a store.* The store form's
+  ``act`` writes the same label to Tier D's ``label`` table (the Durable 6
+  columns this module's migration adds) that it writes in memory. `CT-STORE-03`
+  scopes atomicity to one transaction body and cross-tier atomicity is
+  deliberately not provided, so the two halves are sequential: a durable-write
+  failure aborts the action with the in-memory record already written, and the
+  caller sees the refusal. Label ids are per-service sequential, so two
+  services over one store collide on the row's primary key and refuse — one
+  review session per run is the Phase 1 shape. A store-backed action with no
+  run context (nothing built, and the service opened over zero or several
+  cohorts) is refused rather than attributed to an invented run.
+* *Observability is per run, attributed from the service's own bookkeeping.*
+  ``build_queue`` records the run it built for; actions after a build attribute
+  their labels to that run. ``blind_completion_rate`` is emitted as ``None``
+  until #111's blind flow exists — an unmeasured rate, never a silent zero.
+* *The budget-exhaustion streak counts the administrations a criterion
+  exhausted.* The service sees exhaustion events, not the administrations that
+  went without one, so the streak is the recorded sequence for the criterion
+  and the alert fires at two and stays — the pattern is retained across
+  administrations, not reset per term.
+* *The no-browser-storage rule is console-side, and this module is not the
+  console.* `FR-REVIEW-12`'s clause binds the review views that display
+  verbatim student work to write none of it to browser storage; the
+  boundary reading is that this module — the headless core those views call —
+  holds no browser surface at all: it writes labels to the store or memory,
+  never to any client-side persistence, so the rule is unviolable from here.
+  The obligation itself belongs to M-CONSOLE's view layer, where the student
+  text is actually displayed; that layer's story carries the rule.
 * *The skip-over fill is not a prefix fill at every budget.* The ranking rule
   is identical at every budget (same score, same order), but because an entry
   that does not fit is passed over rather than stopping the walk, a squeezed
@@ -122,18 +160,23 @@ and this implementation chose; all are reported on the PR):
    before rank) is asserted against exactly this trace — and the residual
    triple in the header is the run's own observability surface.
 
-``ReviewService`` here is the concrete in-memory implementation of the §3.15
-Protocol's three #108 members (``build_queue``, ``act``, ``act_on_group``); the
-two samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``) are
-#111's and the label store's persistence surface is #110's — deliberately
-absent here. Actions write in-memory labels until those stories land, and a
-label's ``new_points`` stays ``None`` until #110 routes it through
-`CT-PKG-05`'s pinned mapping (``aeh.pkg.points_for_band``), which `NFR-AGG-02`
-keeps defined in exactly one place in the source.
+``ReviewService`` here is the concrete implementation of the §3.15 Protocol's
+three #108 members (``build_queue``, ``act``, ``act_on_group``) plus #110's
+label store: ``record_label``/``labels_for`` at module level — the collection
+surface for paths that hold no service handle — and ``label``,
+``points_for_band``, ``edit_views``, ``act_from_view``, ``observability_counters``,
+``counter_emissions``, ``exhaust_budget_on`` and ``alerts`` on the service.
+The two samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``) are
+#111's and are deliberately absent here. Actions write in-memory labels and, on
+a store-backed service, the same label to Tier D; a label's ``new_points`` is
+derived from its band through `CT-PKG-05`'s pinned mapping
+(``aeh.pkg.points_for_band``), which `NFR-AGG-02` keeps defined in exactly one
+place in the source.
 """
 
 from __future__ import annotations
 
+import itertools
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -141,11 +184,20 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+# The label store's own schema: this module owns Tier D's last migration (the
+# durable ``label`` columns the fully-typed label needs), so the schema imports
+# are module-level — importing ``aeh.review`` is what completes a durable chain
+# to the pin (CLAUDE.md's contributor rule).
+from aeh.store import Migration, Statement, Tier, TIER_MIGRATIONS
+
 __all__ = [
     "REVIEW_BLIND_RESERVE_MINUTES",
     "REVIEW_BLIND_N",
     "REVIEW_WHOLE_GRADE_N",
     "REVIEW_DEFAULT_BUDGET_MINUTES",
+    "REVIEW_DEFAULT_BANDS",
+    "REVIEW_STATEMENTS",
+    "REVIEW_BUDGET_EXHAUSTION_ALERT",
     "ReviewError",
     "StaleReviewItemError",
     "ReviewItem",
@@ -155,10 +207,14 @@ __all__ = [
     "LabelRecord",
     "CriterionOverrideRank",
     "SupersededScore",
+    "CounterEmission",
+    "ReviewAlert",
     "ReviewService",
     "build_review",
     "open_review",
     "rank_queue_items",
+    "record_label",
+    "labels_for",
 ]
 
 
@@ -225,6 +281,130 @@ class StaleReviewItemError(ReviewError):
     (`CT-REVIEW-15`): the row was superseded by an escalation after this queue
     was built, and acting on the stale copy would overwrite a judgment somebody
     else already made. The message says to refresh the queue."""
+
+
+# --- the label store's durable schema (FR-REVIEW-09, #110) ------------------------------------------
+#
+# The durable `label` table predates this module (M-STORE's base DDL carries
+# label_id/run_id/student_ref/criterion_id/label_type/band, and #87's
+# `det_audit_separation_columns` added `evaluation_mode` — deliberately not
+# re-added here, its CHECK would fail the ALTER). What it could not carry was a
+# *fully-typed* label: `FR-REVIEW-09`'s eight fields, `NFR-REVIEW-03`'s
+# attribution pair, the queue action `FR-REVIEW-15`'s parity clause compares,
+# and the `cohort_id` scoping column the Tier D promotion gate reads
+# (`_PURGE_PROMOTED_ROWS`). This migration is what makes the store able to hold
+# one, so an acted review session outlives the process that acted it.
+
+_DURABLE_006 = Migration(
+    version=6,
+    name="review_label_store_columns",
+    statements=(
+        # CT-REVIEW-08's admissibility column: 1 = the teacher saw the system's
+        # output (an operational signal, excluded from agreement at the
+        # consumer per FR-STATS-01), 0 = the blind flow's earned 0 (#111). The
+        # default of 1 discloses the honest worst case for pre-existing rows —
+        # they count as operational, not as validity evidence they never were.
+        Statement("ALTER TABLE label ADD COLUMN saw_system_output INTEGER "
+                  "NOT NULL DEFAULT 1"),
+        # The routing/origin/mode triple the queue admitted on, recorded so a
+        # label can be traced back to the population rule that surfaced it.
+        Statement("ALTER TABLE label ADD COLUMN routing TEXT "
+                  "NOT NULL DEFAULT 'queued'"),
+        Statement("ALTER TABLE label ADD COLUMN origin TEXT "
+                  "NOT NULL DEFAULT 'escalation'"),
+        # CT-REVIEW-19's Phase 2 calibration input: the seconds the decision
+        # actually took, against est_seconds stored on the score row.
+        Statement("ALTER TABLE label ADD COLUMN review_seconds REAL "
+                  "NOT NULL DEFAULT 0"),
+        # The agreement pair itself. `band` above stays NOT NULL — it is the
+        # effective band the label stands for; the pair records both sides.
+        # system_band is nullable: a blind label carries none (#111).
+        Statement("ALTER TABLE label ADD COLUMN system_band TEXT"),
+        Statement("ALTER TABLE label ADD COLUMN teacher_band TEXT"),
+        # NFR-REVIEW-03's attribution pair. actor carries '' on pre-existing
+        # rows (unattributed — a DEFAULT of a name would be the attribution
+        # lie CT-REVIEW-07 refuses) rather than pretending an owner.
+        Statement("ALTER TABLE label ADD COLUMN actor TEXT NOT NULL DEFAULT ''"),
+        Statement("ALTER TABLE label ADD COLUMN timestamp TEXT"),
+        # Identity: the score the label is about, the queue action
+        # FR-REVIEW-15's parity clause compares, and the derived points.
+        Statement("ALTER TABLE label ADD COLUMN score_id TEXT"),
+        Statement("ALTER TABLE label ADD COLUMN review_queue_action TEXT"),
+        Statement("ALTER TABLE label ADD COLUMN new_points REAL"),
+        # The promotion scoping column: `_purge_precondition_failures` refuses a
+        # cohort purge while this table lacks it, and a promotion keys labels to
+        # the administration they belong to.
+        Statement("ALTER TABLE label ADD COLUMN cohort_id TEXT"),
+    ),
+)
+
+#: This module's declared statements (`FR-STORE-08`): the one write the label
+#: store makes to the durable tier, keyword-parameterized. Registered in the
+#: module's own registry, the shape every other contributing module uses.
+REVIEW_STATEMENTS: dict[str, Statement] = {
+    "insert_label": Statement(
+        "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
+        "label_type, band, evaluation_mode, saw_system_output, routing, origin, "
+        "review_seconds, system_band, teacher_band, actor, timestamp, score_id, "
+        "review_queue_action, new_points, cohort_id) "
+        "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
+        ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
+        ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
+        ":score_id, :review_queue_action, :new_points, :cohort_id)"
+    ),
+}
+
+TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_006,)
+
+#: The views that display a band and can therefore carry a review action
+#: (`FR-REVIEW-15`; the teacher routes of the design's console table): the
+#: queue itself (S9), the run rollup, the student view (S13 — the case
+#: `TC-REVIEW-15` names), and the submission detail. The blind flow and the
+#: whole-grade sample are deliberately absent: the blind flow must not display
+#: the system's band at all (`FR-REVIEW-11`), and the sample displays grades,
+#: not band decisions. `edit_views()` is a method over this constant so a view
+#: added later joins `CT-REVIEW-12`'s sweep on the day it appears.
+_EDIT_VIEWS: tuple[str, ...] = (
+    "review_queue",
+    "rollup",
+    "student",
+    "submission_detail",
+)
+
+#: The default band scale the no-package-context points route reads. The
+#: *mapping* is `aeh.pkg.points_for_band`'s alone (`NFR-AGG-02`); this constant
+#: is only the band *data* the derivation needs when a score row carries no
+#: package linkage (none of the store rows do — #108's ranking interpretation
+#: records the same absence). The scale is the plan's 0–100 spread over five
+#: bands; a criterion's real table supersedes it the moment a catalog is
+#: attached.
+REVIEW_DEFAULT_BANDS: tuple[dict[str, Any], ...] = (
+    {"band": "B1", "points": 0.0},
+    {"band": "B2", "points": 25.0},
+    {"band": "B3", "points": 50.0},
+    {"band": "B4", "points": 75.0},
+    {"band": "B5", "points": 100.0},
+)
+
+#: The counter names `CT-REVIEW-18`'s surface names. Every one is a key of
+#: ``observability_counters``'s result for any run — an unmeasured value is
+#: ``None``, never absent, so a missing name is a defect and not a quiet gap.
+_OBSERVABILITY_COUNTERS: tuple[str, ...] = (
+    "review_minutes_used",
+    "review_items_shown",
+    "review_items_flagged",
+    "override_rate_by_criterion",
+    "group_action_usage_share",
+    "blind_completion_rate",
+    "mean_review_seconds",
+    "mean_est_seconds",
+)
+
+#: The budget-exhaustion alert and the streak length that fires it
+#: (`CT-REVIEW-18`): a criterion that exhausted its budget on two
+#: administrations in a row is a pattern, not a coincidence.
+REVIEW_BUDGET_EXHAUSTION_ALERT = "criterion_exhausts_budget_across_administrations"
+_ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS = 2
 
 
 # --- the queue's wire shapes ------------------------------------------------------------------------
@@ -303,11 +483,11 @@ class ReviewQueue:
 @dataclass(frozen=True)
 class LabelRecord:
     """The label an action writes — `FR-REVIEW-09`'s eight fields, `NFR-REVIEW-03`'s
-    attribution, and the identity fields a differential reads. In memory until
-    #110 lands the store surface; deliberately carries none of the fields
-    `CT-REVIEW-07` forbids (no confidence, no narrative, and no points but
-    ``new_points``, derived through `CT-PKG-05`'s pinned mapping once #110 lands
-    the route through it — `None` until then)."""
+    attribution, and the identity fields a differential reads, with ``new_points``
+    derived through `CT-PKG-05`'s pinned mapping from the band the label records
+    (`None` only where no band was recorded). Deliberately carries none of the
+    fields `CT-REVIEW-07` forbids — no confidence, no narrative, no system-side
+    points."""
 
     label_id: str
     label_type: str
@@ -324,6 +504,11 @@ class LabelRecord:
     criterion_id: str
     review_queue_action: str
     new_points: float | None
+    #: Whether this label was one member of a group action (`CT-REVIEW-13`'s
+    #: per-member count): service bookkeeping, deliberately not one of the
+    #: seven indistinguishability fields the differential reads, and not one
+    #: of the durable columns — the share it feeds is a session figure.
+    via_group: bool = False
 
 
 @dataclass(frozen=True)
@@ -345,6 +530,30 @@ class SupersededScore:
 
     score_id: str
     version: int
+
+
+@dataclass(frozen=True)
+class CounterEmission:
+    """One observability emission (`CT-REVIEW-18`'s seam 4 surface): when it
+    fired, which counters it carried, and their values. The shown/flagged pair
+    travels in ONE emission by construction — the build emits them together, or
+    not at all — which is what the pairing assertion reads."""
+
+    at: str
+    names: tuple[str, ...]
+    values: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class ReviewAlert:
+    """One fired alert (`CT-REVIEW-18`'s Alert). ``name`` is the stable
+    identifier the contract reads; the criterion and its administration
+    sequence say what the pattern is in."""
+
+    name: str
+    criterion_id: str
+    consecutive_administrations: int
+    administrations: tuple[str, ...]
 
 
 # --- the admitted population and the ranking --------------------------------------------------------
@@ -740,13 +949,14 @@ def _rank_criteria(criteria: Any) -> tuple[CriterionOverrideRank, ...]:
 
 
 class ReviewService:
-    """The in-memory review service: builds the queue, ranks it, writes labels.
+    """The review service: builds the queue, ranks it, writes labels.
 
     Constructed by ``build_review`` (rung 0/1, over score rows in memory) or
     ``open_review`` (rung 2, over a stored run). The three §3.15 members #108
-    owns are here; the samples and the label store's persistence are #111's and
-    #110's and are not on this class yet — actions write in-memory labels until
-    those stories land.
+    owns are here with #110's label store (``label``, ``points_for_band``,
+    ``edit_views``, ``act_from_view`` and the observability surface); the two
+    samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``) are
+    #111's and are not on this class yet.
     """
 
     def __init__(
@@ -767,15 +977,24 @@ class ReviewService:
         self._rows_by_id = {_score_id_of(row): row for row in self._rows}
         self._actor_name = actor
         self._clock = clock or (lambda: datetime.now(timezone.utc).isoformat())
-        # Held for #110's points route through `aeh.pkg.points_for_band` — unused
-        # until the label store lands (see ``LabelRecord.new_points``).
+        # The points route (`FR-REVIEW-10`): a catalog attached at construction
+        # is read per criterion; without one the declared default scale below
+        # is read through the same mapping function (see the interpretations).
         self._catalog = catalog
         self._blind_reserve = blind_reserve_minutes
         self._blind_n = blind_n
         self._whole_grade_n = whole_grade_n
         self._default_budget = default_budget_minutes
         self._store = store
+        self._cohort_ids: tuple[str, ...] = ()
         self._labels: list[LabelRecord] = []
+        self._labels_by_id: dict[str, LabelRecord] = {}
+        # -- observability bookkeeping (CT-REVIEW-18) -----------------------------------------------
+        self._current_run_id: str | None = None
+        self._run_labels: dict[str, list[LabelRecord]] = {}
+        self._builds: dict[str, dict[str, Any]] = {}
+        self._emissions: dict[str, list[CounterEmission]] = {}
+        self._exhaustions: dict[str, list[str]] = {}
         self._acted: set[str] = set()
         self._versions: dict[str, int] = {}
 
@@ -832,6 +1051,24 @@ class ReviewService:
             BuildEvent(
                 "compute_residual", f"{residual} of {flagged_total} remain provisional"
             )
+        )
+
+        # CT-REVIEW-18's bookkeeping: this build is the run's queue as it now
+        # stands, and its honesty pair is emitted together or not at all —
+        # which is the shape the pairing assertion reads.
+        self._current_run_id = run_id
+        self._builds[run_id] = {
+            "shown_items": _items_shown_count(shown),
+            "flagged": flagged_total,
+            "est_seconds": tuple(entry.est_seconds for entry in shown),
+        }
+        self._record_emission(
+            run_id,
+            ("review_items_shown", "review_items_flagged"),
+            {
+                "review_items_shown": _items_shown_count(shown),
+                "review_items_flagged": flagged_total,
+            },
         )
 
         return ReviewQueue(
@@ -914,6 +1151,7 @@ class ReviewService:
             review_queue_action=action,
         )
         self._acted.add(item.score_id)
+        self._record_action_emission([label])
         return label.label_id
 
     def act_on_group(self, group: Any, band: str, review_seconds: float = 0) -> list[str]:
@@ -926,6 +1164,7 @@ class ReviewService:
             return []
         per_member = review_seconds / len(members)
         label_ids: list[str] = []
+        labels: list[LabelRecord] = []
         for member in members:
             self._check_not_stale(member)
             action = "accept" if band == member.proposed_band else "edit"
@@ -935,10 +1174,146 @@ class ReviewService:
                 teacher_band=band,
                 review_seconds=per_member,
                 review_queue_action=action,
+                via_group=True,
             )
             self._acted.add(member.score_id)
+            labels.append(label)
             label_ids.append(label.label_id)
+        self._record_action_emission(labels)
         return label_ids
+
+    # -- the label store (FR-REVIEW-09 / FR-REVIEW-15, #110) ------------------------------------------
+
+    def label(self, label_id: str) -> LabelRecord:
+        """One label this service wrote, by id (`CT-REVIEW-07`'s read back)."""
+        label = self._labels_by_id.get(label_id)
+        if label is None:
+            raise ReviewError(
+                f"no label {label_id!r} in this service's label store; the ids "
+                "act()/act_on_group()/act_from_view() returned are the store's ids"
+            )
+        return label
+
+    def _points_for_band(
+        self,
+        package_version_id: str | None = None,
+        criterion_id: str | None = None,
+        band: str | None = None,
+    ) -> float:
+        """Band → points, through the one pinned mapping (`FR-REVIEW-10`). With
+        a ``catalog=`` attached the criterion's own pinned table is read
+        (``PackageCatalog.points_for_band``); without one, the declared default
+        scale (`REVIEW_DEFAULT_BANDS`) is read through the same function —
+        never a second table (`NFR-AGG-02`). A band absent from whichever
+        table governs refuses (`PackageError`) rather than defaulting to a
+        number. ``package_version_id`` is accepted for interface parity with
+        the queue item and ignored: the mapping is criterion-scoped.
+        """
+        if band is None:
+            raise ReviewError(
+                "a score edit is a band selection; there is no band here to map"
+            )
+        if self._catalog is not None:
+            return self._catalog.points_for_band(criterion_id, band)
+        from aeh import pkg as _pkg  # lazy: pkg's import graph must not pull review in
+
+        return float(_pkg.points_for_band(REVIEW_DEFAULT_BANDS, band))
+
+    # The public face, aliased to the body above. Deliberately an alias and not
+    # a second definition: NFR-AGG-02 keeps the mapping *defined* in exactly
+    # one module (aeh.pkg — CT-PKG-05's pinned mapping), and the artifact sweep
+    # enforcing it reads the source.
+    points_for_band = _points_for_band
+
+    def edit_views(self) -> tuple[str, ...]:
+        """The views that display a band and can therefore carry a review
+        action (`FR-REVIEW-15`) — enumerable precisely so `CT-REVIEW-12`'s
+        parity sweep covers a view added later."""
+        return _EDIT_VIEWS
+
+    def act_from_view(
+        self,
+        item: Any,
+        *,
+        view: str,
+        action: str,
+        new_band: str | None = None,
+        review_seconds: float = 0,
+    ) -> str | None:
+        """One teacher decision made outside the budgeted queue (`FR-REVIEW-15`):
+        the same action from any view that displays a band. The validation is
+        the view's membership — and then the record is `act`'s, by *delegation*,
+        not by imitation: an edit made outside the queue runs the same code path
+        and so writes the same `review_queue` action and the same label type by
+        construction, which is the clause's whole point."""
+        if view not in self.edit_views():
+            raise ReviewError(
+                f"{view!r} is not a view that displays a band; review actions "
+                f"are available from {self.edit_views()}"
+            )
+        return self.act(item, action, new_band=new_band, review_seconds=review_seconds)
+
+    def observability_counters(self, run_id: str) -> dict[str, Any]:
+        """The run's counter surface (`CT-REVIEW-18`): every name in
+        ``OBSERVABILITY_COUNTERS`` as a key, with the value the service's own
+        bookkeeping supports. ``blind_completion_rate`` is ``None`` — the blind
+        flow is #111's, and an unmeasured rate is never a silent zero."""
+        builds = self._builds.get(run_id)
+        labels = self._run_labels.get(run_id, [])
+        if builds is None and not labels:
+            return {name: None for name in _OBSERVABILITY_COUNTERS}
+        est = builds["est_seconds"] if builds else ()
+        used = sum(label.review_seconds for label in labels)
+        judged = [label for label in labels if label.label_type in ("edit", "override")]
+        by_criterion: dict[str, float] = {}
+        for label in judged:
+            by_criterion[label.criterion_id] = by_criterion.get(label.criterion_id, 0) + 1
+        total = len(labels)
+        return {
+            "review_minutes_used": used / 60,
+            "review_items_shown": builds["shown_items"] if builds else 0,
+            "review_items_flagged": builds["flagged"] if builds else 0,
+            "override_rate_by_criterion": dict(by_criterion),
+            "group_action_usage_share": (
+                (sum(1 for label in labels if label.via_group) / total) if total else None
+            ),
+            # The blind flow is #111's; until it lands the rate is unmeasured.
+            "blind_completion_rate": None,
+            "mean_review_seconds": (
+                sum(label.review_seconds for label in labels) / total if total else None
+            ),
+            "mean_est_seconds": (
+                sum(est) / len(est) if est else None
+            ),
+        }
+
+    def counter_emissions(self, run_id: str) -> tuple[CounterEmission, ...]:
+        """The ordered emissions the run produced (`CT-REVIEW-18`'s read back)."""
+        return tuple(self._emissions.get(run_id, ()))
+
+    def exhaust_budget_on(self, criterion_id: str, administration_id: str) -> None:
+        """Record that a criterion exhausted its budget on one administration
+        (`CT-REVIEW-18`'s exhaustion signal). A repeat for an administration
+        already recorded does not extend the streak: the signal is that the
+        criterion exhausted, once per administration."""
+        streak = self._exhaustions.setdefault(criterion_id, [])
+        if administration_id not in streak:
+            streak.append(administration_id)
+
+    def alerts(self) -> tuple[ReviewAlert, ...]:
+        """The standing alerts: one per criterion whose exhaustion streak has
+        reached `ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS`, recomputed from the
+        retained sequence — never reset between terms (`CT-REVIEW-18`)."""
+        return tuple(
+            ReviewAlert(
+                name=REVIEW_BUDGET_EXHAUSTION_ALERT,
+                criterion_id=criterion_id,
+                consecutive_administrations=len(streak),
+                administrations=tuple(streak),
+            )
+            for criterion_id, streak in self._exhaustions.items()
+            if len(streak) >= _ALERT_MIN_CONSECUTIVE_ADMINISTRATIONS
+        )
 
     def escalate(self, score_id: str) -> SupersededScore:
         """Mark one score superseded (`CT-REVIEW-15`'s induced race): every queue
@@ -958,9 +1333,15 @@ class ReviewService:
             self._store.close()
             self._store = None
 
-    def _with_store(self, store: Any) -> "ReviewService":
-        """Attach the rung-2 store handle (``open_review``'s plumbing)."""
+    def _with_store(
+        self, store: Any, cohort_ids: Sequence[str] = ()
+    ) -> "ReviewService":
+        """Attach the rung-2 store handle (``open_review``'s plumbing). The
+        cohort ids ride along so a label written before any queue build can
+        still attribute itself — to the sole cohort, when there is exactly
+        one; never to an invented run (`NFR-REVIEW-04`)."""
         self._store = store
+        self._cohort_ids = tuple(cohort_ids)
         return self
 
     # -- internals -----------------------------------------------------------------------------------
@@ -1001,9 +1382,25 @@ class ReviewService:
         teacher_band: str | None,
         review_seconds: float,
         review_queue_action: str,
+        via_group: bool = False,
     ) -> LabelRecord:
         row = self._rows_by_id.get(item.score_id)
         self._versions.setdefault(item.score_id, item.version)
+        # ``new_points`` is derived from the band the label records through
+        # `CT-PKG-05`'s pinned mapping (`FR-REVIEW-10`) — the same call the
+        # derivation contract names (`points_for_band`), not a second table
+        # (`NFR-AGG-02`). An accept records the system's proposed band; an
+        # edit or override records the teacher's.
+        effective_band = item.proposed_band if label_type == "accept" else teacher_band
+        new_points = (
+            self._points_for_band(
+                package_version_id=getattr(item, "package_version_id", None),
+                criterion_id=item.criterion_id,
+                band=effective_band,
+            )
+            if effective_band is not None
+            else None
+        )
         label = LabelRecord(
             label_id=f"label-{len(self._labels) + 1:04d}",
             label_type=label_type,
@@ -1021,16 +1418,111 @@ class ReviewService:
             score_id=item.score_id,
             criterion_id=item.criterion_id,
             review_queue_action=review_queue_action,
-            # ``new_points`` is derived from ``new_band`` through `CT-PKG-05`'s
-            # pinned mapping (`FR-REVIEW-10`) — and the mapping is defined in
-            # exactly one place (`aeh.pkg.points_for_band`, `NFR-AGG-02`), so the
-            # derivation here is a *route through* it, which arrives with the
-            # label store (#110). Until then an in-memory label records the band
-            # alone rather than inventing a second mapping.
-            new_points=None,
+            new_points=new_points,
+            via_group=via_group,
         )
+        # In-memory first, then the durable half (`CT-STORE-03`): a failure in
+        # the durable write aborts the action with the in-memory record already
+        # written, which is what the interpretations disclose.
         self._labels.append(label)
+        self._labels_by_id[label.label_id] = label
+        # Attribution is per-run (`NFR-REVIEW-04`): the label joins the run the
+        # service last built a queue for, or the sole cohort the service was
+        # opened over — never an invented run.
+        run_id = self._attribution_run()
+        if run_id is not None:
+            self._run_labels.setdefault(run_id, []).append(label)
+        if self._store is not None:
+            if run_id is None:
+                raise ReviewError(
+                    "this service holds a store but no run context: build a queue "
+                    "for the run (or open the service over exactly one cohort) "
+                    "before acting — a label is not attributed to an invented run"
+                )
+            self._persist_label(label, run_id, item)
         return label
+
+    def _attribution_run(self) -> str | None:
+        """The run a label written now attributes to (`NFR-REVIEW-04`): the
+        queue this service last built, or — before any build — the sole cohort
+        the service was opened over. ``None`` when neither holds."""
+        if self._current_run_id is not None:
+            return self._current_run_id
+        if len(self._cohort_ids) == 1:
+            return self._cohort_ids[0]
+        return None
+
+    def _persist_label(self, label: LabelRecord, run_id: str, item: ReviewItem) -> None:
+        """The durable half of a store-backed action (`FR-REVIEW-09`): the same
+        label this service holds in memory, written to Tier D's ``label`` table
+        in one statement. ``CT-STORE-03`` scopes atomicity to one transaction
+        body and cross-tier atomicity is deliberately not provided, so this
+        runs after the in-memory write: a failure here aborts the action with
+        the in-memory record already written."""
+        if label.teacher_band is None:
+            raise ReviewError(
+                f"label {label.label_id!r} records no band; Tier D's label table "
+                "carries a band for every label, so an action without one is refused"
+            )
+        handle = self._store.durable()
+        with handle.transaction() as tx:
+            tx.execute(
+                REVIEW_STATEMENTS["insert_label"],
+                label_id=label.label_id,
+                run_id=run_id,
+                # The store rows carry no student identity (#108's mapping
+                # records the same absence): the submission under review is
+                # what the row can honestly reference in Phase 1.
+                student_ref=item.submission_id,
+                criterion_id=label.criterion_id,
+                label_type=label.label_type,
+                band=label.teacher_band,
+                evaluation_mode=label.evaluation_mode,
+                saw_system_output=label.saw_system_output,
+                routing=label.routing,
+                origin=label.origin,
+                review_seconds=label.review_seconds,
+                system_band=label.system_band,
+                teacher_band=label.teacher_band,
+                actor=label.actor,
+                timestamp=label.timestamp,
+                score_id=label.score_id,
+                review_queue_action=label.review_queue_action,
+                new_points=label.new_points,
+                cohort_id=run_id,
+            )
+
+    def _record_emission(
+        self,
+        run_id: str,
+        names: tuple[str, ...],
+        values: Mapping[str, Any],
+    ) -> None:
+        """One observability emission, stamped at the service's clock and
+        attributed to the run (`CT-REVIEW-18`'s seam 4)."""
+        self._emissions.setdefault(run_id, []).append(
+            CounterEmission(at=self._clock(), names=names, values=dict(values))
+        )
+
+    def _record_action_emission(self, labels: Sequence[LabelRecord]) -> None:
+        """The per-action emission (`CT-REVIEW-18`): minutes used and the
+        running mean, emitted together at the instant the labels were written —
+        one emission per action, not per label (a group action is one decision)."""
+        if not labels:
+            return
+        run_id = self._attribution_run()
+        if run_id is None:
+            return
+        run_labels = self._run_labels.get(run_id, ())
+        total = sum(label.review_seconds for label in run_labels)
+        self._record_emission(
+            run_id,
+            ("review_minutes_used", "mean_review_seconds"),
+            {
+                "review_minutes_used": total / 60,
+                "mean_review_seconds": total / len(run_labels) if run_labels else None,
+            },
+        )
 
 
 # --- the constructors -------------------------------------------------------------------------------
@@ -1129,6 +1621,9 @@ def _service_from_store(
     # The store's tier migration chains are concatenated at import time by the
     # modules that own the schema they add (CLAUDE.md): the cohort handle this
     # opens must not be the first open in a process that skipped the imports.
+    # These ten plus *this module* — which owns Durable's last migration, the
+    # #110 label-store columns — make the complete chain; importing aeh.review
+    # from inside aeh.review is a no-op, so the ten it does not own are here.
     import aeh.agg  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
@@ -1169,7 +1664,7 @@ def _service_from_store(
         review_blind_n=review_blind_n,
         review_whole_grade_n=review_whole_grade_n,
         review_default_budget_minutes=review_default_budget_minutes,
-    )._with_store(store)
+    )._with_store(store, cohort_ids=cohort_ids)
 
 
 class _StoredScoreRow:
@@ -1233,8 +1728,10 @@ def open_review(
 
     Reads the cohort's own ``criterion_score`` rows through ``aeh.store`` — the
     deterministic store, no egress — and admits the same population the
-    in-memory service does. Until #110 lands the label store, actions write
-    in-memory labels; the queue and the ranking are complete.
+    in-memory service does. Actions write the label store (`FR-REVIEW-09`):
+    every label is held in memory and persisted to Tier D's ``label`` table
+    (this module's Durable 6 migration adds the columns), attributed to the
+    ``run_id`` named here.
     """
     from aeh.store import open_store as _open_store
 
@@ -1255,3 +1752,83 @@ def open_review(
     except Exception:
         store.close()
         raise
+
+
+# --- the module-level label store (FR-REVIEW-09, #110) ------------------------------------------------
+#
+# A process-level store for labels written *outside* a service session — the
+# route the C07/C08 vocabulary exercises (`record_label`/`labels_for`). It is
+# deliberately separate from `ReviewService`'s own bookkeeping: a service's
+# labels are per-session (its ids, its runs, its optional durable rows), and a
+# shared store would leak labels between tests and sessions. The durable
+# persistence is the service's, over a real store (`CT-STORE-01`: the spy
+# stores expose no transactional execute).
+
+_LABEL_TYPES: tuple[str, ...] = ("accept", "edit", "override", "blind")
+
+_LABEL_STORE: dict[str, list[LabelRecord]] = {}
+_LABEL_STORE_COUNTER = itertools.count(1)
+
+
+def record_label(
+    *,
+    run_id: str,
+    score_id: str,
+    label_type: str,
+    teacher_band: str | None = None,
+    system_band: str | None = None,
+    saw_system_output: int | None = None,
+    routing: str = "queued",
+    origin: str = "escalation",
+    evaluation_mode: str = "judged",
+    review_seconds: float = 0,
+    criterion_id: str = "",
+    actor: str = "teacher",
+    timestamp: str | None = None,
+    review_queue_action: str | None = None,
+) -> str:
+    """Write one label into the process-level store and return its id
+    (`FR-REVIEW-09`): the direct route for a label that does not ride an
+    action — and the vocabulary the C07/C08 contract reads.
+
+    ``saw_system_output`` records whether the teacher saw the system's output
+    before deciding (`FR-REVIEW-09`'s visibility column): 1 means the system
+    output was visible, 0 means the label was written blind. It defaults from
+    the label type — a ``blind`` label is by definition blind, every other type
+    is by default an operational one — and an explicit value wins, so a caller
+    that knows better can record it. The label is fully typed: band, routing,
+    origin, attribution, the visibility flag — no field is left implicit. There
+    is deliberately no ``new_points`` parameter: a score edit is a band
+    choice (`FR-REVIEW-10`), and points enter only as the *derived* value a
+    service label carries — the mapping is never handed a caller's number.
+    """
+    if label_type not in _LABEL_TYPES:
+        raise ValueError(f"{label_type!r} is not a label type; one of {_LABEL_TYPES}")
+    if saw_system_output is None:
+        saw_system_output = 0 if label_type == "blind" else 1
+    label = LabelRecord(
+        label_id=f"stored-{next(_LABEL_STORE_COUNTER):04d}",
+        label_type=label_type,
+        saw_system_output=int(saw_system_output),
+        routing=routing,
+        origin=origin,
+        evaluation_mode=evaluation_mode,
+        review_seconds=review_seconds,
+        system_band=system_band,
+        teacher_band=teacher_band,
+        actor=actor,
+        timestamp=timestamp or datetime.now(timezone.utc).isoformat(),
+        score_id=score_id,
+        criterion_id=criterion_id,
+        review_queue_action=review_queue_action,
+        new_points=None,
+    )
+    _LABEL_STORE.setdefault(run_id, []).append(label)
+    return label.label_id
+
+
+def labels_for(*, run_id: str) -> tuple[LabelRecord, ...]:
+    """Every label recorded into the process-level store for one run
+    (`CT-REVIEW-07`'s read back), in write order. A tuple, so a caller cannot
+    reorder the store's history in place."""
+    return tuple(_LABEL_STORE.get(run_id, ()))
