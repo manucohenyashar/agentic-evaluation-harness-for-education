@@ -498,8 +498,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # helper and its comment above `_SELECT_COHORT_TRIGGERS_VIEWS`) moved them
     # again; the sites are the same statements as before. Re-read from the walker,
     # never hand-unioned.)
-    "aeh.store:1856",
-    "aeh.store:2639",
+    "aeh.store:1857",
+    "aeh.store:2640",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
