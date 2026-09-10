@@ -35,9 +35,11 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
+from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.impl import GRADE_MODULE, SYNTH_MODULE, require
 from tests.support.orch_run import seed_run
 from tests.support.synth_vocabulary import (
+    COHORT_ID,
     FIVE_QUESTION_CRITERIA,
     SYNTH_ISSUE,
     WORKER,
@@ -90,8 +92,22 @@ def _seeded_store(tmp_data_dir, submissions=(_SUBMISSION,)):
         store, submissions=submissions, criteria=FIVE_QUESTION_CRITERIA
     )
     for submission_id in submissions:
-        seed_scored_submission(
+        seeded = seed_scored_submission(
             store, run_id, submission_id, complete_questions=set(_QUESTIONS)
+        )
+        # The grade legs read M-AGG's stored output, not the verdicts this fixture
+        # seeds (CT-GRADE-14: the grade never touches the verdict table), and the
+        # critical-path premise is that aggregation's scores survive a synthesis
+        # outage — so the grade vocabulary's disclosed stand-in
+        # (`write_criterion_scores`) states the rows aggregation would have
+        # written: one auto row per criterion, at the panel's band.
+        write_criterion_scores(
+            store.cohort(COHORT_ID),
+            [
+                (submission_id, criterion_id, "high", 6.0, "auto")
+                for criteria in seeded.values()
+                for criterion_id in criteria
+            ],
         )
     runs = {submission_id: run_id for submission_id in submissions}
     return store, runs
@@ -204,16 +220,13 @@ def test_tc_synth_c09_the_call_arithmetic_matches_the_stated_load(tmp_data_dir):
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding(tmp_data_dir):
     """`TC-SYNTH-C09` (P1, rung 3 critical-path assertion) — grades finalize while
     synthesis is still outstanding: the scored units are all done, no narrative
     exists, and `M-GRADE` finalizes anyway. This is the assertion that stays true
     only if nobody makes finalization wait for narratives.
 
-    Written ahead of `M-GRADE` (test plan §8.2); registered in
-    `WRITTEN_AHEAD_BLOCKERS` under `"#100 grade consumers (C05/C08/C09)"` (symbol
-    `aeh.grade:open_grade`). Finalization is the disclosed
+    Landed with `M-GRADE` (#101): finalization is the shipped
     `GradingService.finalize_batch(run_id, actor) -> FinalizationRecord`.
     """
     open_grade = require(GRADE_MODULE, "open_grade", issue="#101")
@@ -225,8 +238,19 @@ def test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding(tmp_data_di
         )
         # Scored and judged — and synthesis deliberately never runs: the narratives
         # are outstanding, which is the scheduling state consumers plan against.
-        seed_scored_submission(
+        # The grade reads M-AGG's stored output (CT-GRADE-14), and the premise is
+        # that aggregation's scores survive the outstanding synthesis — so the
+        # disclosed `write_criterion_scores` stand-in states those rows.
+        seeded = seed_scored_submission(
             store, run_id, _SUBMISSION, complete_questions=set(_QUESTIONS)
+        )
+        write_criterion_scores(
+            store.cohort(COHORT_ID),
+            [
+                (_SUBMISSION, criterion_id, "high", 6.0, "auto")
+                for criteria in seeded.values()
+                for criterion_id in criteria
+            ],
         )
         rows = store.cohort("c-2026-7B-orch").query(
             "SELECT COUNT(*) AS n FROM narrative WHERE run_id = :r", r=run_id

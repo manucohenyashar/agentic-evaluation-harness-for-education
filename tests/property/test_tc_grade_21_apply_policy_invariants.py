@@ -41,8 +41,6 @@ from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.span_strategies import FUZZ_EXAMPLES
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = GRADE_BLOCKER
 
 _CRITERION_IDS = ("C0", "C1", "C2", "C3", "C4", "C5")
@@ -119,7 +117,6 @@ def _population_and_policy(draw) -> tuple:
     return scores, maxima, GradePolicy(**policy_kw)
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(_population_and_policy(), st.data())
 def test_tc_grade_21_totals_never_exceed_the_maximum_go_negative_or_depend_on_order(
