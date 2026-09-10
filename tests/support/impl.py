@@ -1067,6 +1067,70 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run",
         ),
     ),
+    # --- TS-70 (#100), the fourteen CT-SYNTH contract cases --------------------------------
+    #
+    # Four consumer sweeps are written ahead of their consumers, keyed on the symbols
+    # those tests actually call -- with the same two keying rules the registry's earlier
+    # entries settled:
+    #
+    # * a *member* of an unlanded story's class is gated through the story's **last**
+    #   module-level symbol, because `require()` reports the first blocker it resolves
+    #   and a key on the first would unmark a test whose member is still missing (the
+    #   `#118` defect, fixed in the TS-72 shape). So C13's stats half rides
+    #   `{STATS_MODULE}:promote` (#118's alone) exactly as the shipped `"#118 stats"`
+    #   entry does, and C14's conform half rides
+    #   `{CONFORM_MODULE}:detect_build_substitution` (#134's alone) exactly as the
+    #   shipped `"#134"` entry does -- `build_conformance_suite` is the constructor
+    #   *both* conform stories need, so keying on it would fire while #134 was
+    #   unstarted.
+    # * where one test needs two stories, the kind is `symbols` -- the conjunction: all
+    #   of them must resolve before the test may rejoin TEST_CMD (C03 needs a console
+    #   AND a grade service; C13 a console AND the narrative-quality story; C14 the
+    #   rung-2 stats constructor AND the conform run).
+    "#100 suppression consumers (C03)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
+        (
+            "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
+            "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
+        ),
+    ),
+    "#100 grade consumers (C05/C08/C09)": (
+        "symbol",
+        f"{GRADE_MODULE}:open_grade",
+        (
+            "tests/contract/synth/test_ct_synth_c05_incomplete_vs_failed.py"
+            "::test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure",
+            "tests/contract/synth/test_ct_synth_c08_retry_budgets_and_grades.py"
+            "::test_tc_synth_c08_total_synthesis_failure_fails_no_grade",
+            "tests/contract/synth/test_ct_synth_c09_bounded_and_off_critical_path.py"
+            "::test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding",
+        ),
+    ),
+    "#100 language consumers (C13)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c13_paraphrase_boundary.py"
+            "::test_tc_synth_c13_consumers_present_narrative_as_pattern_checked_not_verified",
+        ),
+    ),
+    "#100 comparison consumers (C14)": (
+        "symbols",
+        f"{STATS_MODULE}:open_stats,{CONFORM_MODULE}:detect_build_substitution",
+        (
+            "tests/contract/synth/test_ct_synth_c14_non_reproducible_prose.py"
+            "::test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives",
+        ),
+    ),
+    "#100 promotion consumer (C10)": (
+        "symbol",
+        f"{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c10_tier_d_sentinel_scan.py"
+            "::test_tc_synth_c10_the_promotion_consumer_promotes_cited_spans_not_prose",
+        ),
+    ),
     # --- TS-72 (#114), the twenty CT-REVIEW clause cases -----------------------------------
     #
     # `M-REVIEW` is four stories: #108 builds the queue, #109 the admission prohibitions and the
