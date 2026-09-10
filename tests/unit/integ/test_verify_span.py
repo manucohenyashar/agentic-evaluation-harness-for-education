@@ -60,7 +60,7 @@ import pytest
 from tests.support.impl import INTEG_MODULE, require
 from tests.support.integ_vocabulary import Doc, Span
 
-pytestmark = pytest.mark.writtenahead
+
 
 #: The no-model-call budget for the whole boundary sweep (see module docstring). Env-gated
 #: per seam rule 3 so a very slow box can widen it without a code change; the default is
@@ -258,10 +258,10 @@ def test_tc_integ_01_verify_span_imports_no_provider_seam():
 
     def imports_provider(node: ast.AST) -> bool:
         if isinstance(node, ast.Import):
-            return any("prov" in alias.name for alias in node.aliases)
+            return any("prov" in alias.name for alias in node.names)
         if isinstance(node, ast.ImportFrom):
             module = node.module or ""
-            return "prov" in module or any("prov" in a.name for a in node.aliases)
+            return "prov" in module or any("prov" in a.name for a in node.names)
         return False
 
     provider_imports = [

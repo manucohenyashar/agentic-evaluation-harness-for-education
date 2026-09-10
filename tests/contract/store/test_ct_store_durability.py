@@ -56,8 +56,9 @@ def test_tc_store_c05_the_loss_bound_is_read_from_configuration_and_held(tmp_dat
         # TC-STORE-25: the migration chains concatenate at import time, so a fresh process
         # imports every contributing module before the first open (#234) — the open site
         # refuses the truncated chain otherwise. `aeh.grade` owns Cohort's last migration
-        # (17, #101's `grade_submission_grade_key`).
-        import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, aeh.synth  # noqa: E401
+        # (18, #101's `grade_submission_grade_key`), `aeh.judge` the one before it
+        # (17, #80) and `aeh.integ` Durable's (5, #73).
+        import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth  # noqa: E401
 
         store = open_store(sys.argv[1])
         handle = store.cohort("c-c05")

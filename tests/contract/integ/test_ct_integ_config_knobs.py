@@ -123,7 +123,6 @@ def _volume(tmp_data_dir, regions, monkeypatch, env: dict[str, str] | None) -> i
 # --- the floor: moving it moves routing volume; the default is the Assumption ----------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c13_moving_the_ocr_floor_moves_routing_volume(tmp_data_dir,
                                                                 monkeypatch):
     """`TC-INTEG-C13` — the floor differential: a region at confidence 0.75
@@ -137,7 +136,6 @@ def test_tc_integ_c13_moving_the_ocr_floor_moves_routing_volume(tmp_data_dir,
     _assert_knob_moves_routing_volume(before, after)
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c13_the_floor_is_read_from_configuration_not_hard_coded(
         tmp_data_dir, monkeypatch):
     """`TC-INTEG-C13` — the honesty half: with NO env set, the default floor
@@ -165,7 +163,6 @@ def test_tc_integ_c13_the_floor_is_read_from_configuration_not_hard_coded(
 # --- the described-evidence switch ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c13_turning_described_evidence_routing_off_moves_volume(
         tmp_data_dir, monkeypatch):
     """`TC-INTEG-C13` — the switch differential: evidence wholly within a

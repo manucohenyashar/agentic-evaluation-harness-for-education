@@ -54,15 +54,17 @@ import aeh.synth  # noqa: F401 -- M-SYNTH owns cohort 13 (#97's synth_narrative_
 # in owner order and the golden describes the full binary, synth's columns included.
 import aeh.judge  # noqa: F401 -- M-JUDGE owns cohort 14 (the verdict's band_ordinal and
 # self_confidence columns; #78 — numbered 14, not 12, because #61's lifecycle took 12
-# and #97's narrative key took 13 at the merges), imported after synth for the same
+# and #97's narrative key took 13 at the merges) and, since #80, cohort 17 (the
+# response-contract columns on verdict: cited_spans, evidence_sufficient, uncited),
+# imported after synth for the same
 # owner-order rule — without it the registry this test walks depends on whether an
 # earlier test in the session happened to import aeh.judge, and the golden would be
 # order-dependent.
 import aeh.agg  # noqa: F401 -- M-AGG owns cohort 16 (#92's agg_confidence_columns, the
 # confidence/reconstructibility columns on criterion_score), imported after judge by the
 # same owner-order rule — the golden describes the full binary, the confidence columns
-# included.
-import aeh.grade  # noqa: F401 -- M-GRADE owns cohort 17 (#101's
+# included. (judge's #80 columns took 17, so M-AGG no longer owns the tail.)
+import aeh.grade  # noqa: F401 -- M-GRADE owns cohort 18 (#101's
 # grade_submission_grade_key, the ADR-9 (run_id, submission_id, revision) rebuild with
 # the current flag and its partial unique index), imported after agg by the same
 # owner-order rule — the golden describes the full binary, the grade ledger's columns

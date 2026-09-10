@@ -116,7 +116,6 @@ def _sql_write_columns(source: str) -> set[str]:
 # --- limb 1: the static prohibition ---------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c04_no_statement_of_the_module_writes_a_score_column():
     """`TC-INTEG-C04` — the prohibition as a static assertion over the module's
     statements, so it holds for paths never exercised: no INSERT column list or
@@ -152,7 +151,6 @@ def test_tc_integ_c04_no_statement_of_the_module_writes_a_score_column():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c04_the_persisted_write_set_is_exactly_signals_plus_routing():
     """`TC-INTEG-C04` — the write set by set equality: every column the
     module's SQL writes is one of the six signals or the declared routing
@@ -244,7 +242,6 @@ def _assert_write_audit_covers_only_declared_surface(tmp_data_dir, view) -> None
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c04_a_healthy_verify_writes_only_within_the_declared_surface(
         tmp_data_dir):
     """`TC-INTEG-C04` limb 2, healthy run — the write audit over real SQLite:
@@ -259,7 +256,6 @@ def test_tc_integ_c04_a_healthy_verify_writes_only_within_the_declared_surface(
     _assert_write_audit_covers_only_declared_surface(tmp_data_dir, view)
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c04_a_routing_verify_never_touches_the_score_tables(tmp_data_dir):
     """`TC-INTEG-C04` limb 2, routing run — empty evidence on a
     citation-requiring criterion: the routing request is the write, and the
@@ -277,7 +273,6 @@ def test_tc_integ_c04_a_routing_verify_never_touches_the_score_tables(tmp_data_d
 # --- limb 3: the returned output surface ----------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c04_the_returned_output_surface_is_the_six_fields(tmp_data_dir):
     """`TC-INTEG-C04` limb 3 — what `verify()` RETURNS is the six booleans and
     nothing else: set equality over the instance's public attributes, so an
@@ -288,6 +283,8 @@ def test_tc_integ_c04_the_returned_output_surface_is_the_six_fields(tmp_data_dir
     view = ExtractionView(spans=(span,), regions=(),
                           panel=PanelFlags((True, True, True)))
     gate, store = make_gate(tmp_data_dir, view)
+    seed_document(store.cohort(CONTRACT_COHORT), document_id_for(_SUBMISSION),
+                  _SUBMISSION, _MARKDOWN, CONTRACT_COHORT)
     signals = gate.verify(_RUN, _SUBMISSION, "C1")
     store.close()
     public = {name for name in dir(signals)

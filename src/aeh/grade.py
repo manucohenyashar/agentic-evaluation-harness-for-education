@@ -1712,7 +1712,7 @@ def cohort_with_mixed_revisions(store: Store | None = None) -> str:
 
 # --- the migration ----------------------------------------------------------------------------------
 #
-# Cohort v17 — ADR-9's grade ledger: the `(run_id, submission_id, revision)` key with
+# Cohort v18 — ADR-9's grade ledger: the `(run_id, submission_id, revision)` key with
 # the current flag and its partial unique index, and the full grade record the design
 # §3.14 data-structures note declares (state, grade, total, provenance refs, computed
 # and settled timestamps, the five coverage counters, the boundary-risk triple, the
@@ -1730,7 +1730,7 @@ def cohort_with_mixed_revisions(store: Store | None = None) -> str:
 # before/after).
 
 _GRADE_SUBMISSION_GRADE_KEY = Migration(
-    version=17,
+    version=18,
     name="grade_submission_grade_key",
     statements=(
         Statement(

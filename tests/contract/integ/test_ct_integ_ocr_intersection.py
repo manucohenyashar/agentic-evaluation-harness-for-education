@@ -133,7 +133,6 @@ def _risk_for(tmp_data_dir, spans, regions) -> bool:
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c09_low_confidence_uncited_does_not_flag_and_cited_does(
         tmp_data_dir):
     """`TC-INTEG-C09` — the clause's two discriminating fixtures, through the
@@ -154,7 +153,6 @@ def test_tc_integ_c09_low_confidence_uncited_does_not_flag_and_cited_does(
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name, region_start, expect_flag", [
     # cited "thesis" is [23, 29); a region beginning exactly at 29 is ADJACENT —
     # [a,b) and [b,c) do not intersect — so the signal stays False.
@@ -181,7 +179,6 @@ def test_tc_integ_c09_the_intersection_is_geometric_in_bytes(
                      (cited,), (low,)) is expect_flag
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c09_a_criterion_that_cites_nothing_has_no_intersection(
         tmp_data_dir):
     """`TC-INTEG-C09` — the empty-citation cell, disclosed: low-confidence
@@ -197,7 +194,6 @@ def test_tc_integ_c09_a_criterion_that_cites_nothing_has_no_intersection(
 # --- the cap, at rung 3 ---------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c09_a_flagged_criterion_is_not_auto_accepted_against_unanimity():
     """`TC-INTEG-C09`'s cap half — `aggregate` over a flagged outcome and a
     fully sufficient, unanimous panel: the routing is never `auto`. The clause
