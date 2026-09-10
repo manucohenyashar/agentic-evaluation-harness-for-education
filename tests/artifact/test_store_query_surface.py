@@ -498,8 +498,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # helper and its comment above `_SELECT_COHORT_TRIGGERS_VIEWS`) moved them
     # again; the sites are the same statements as before. Re-read from the walker,
     # never hand-unioned.)
-    "aeh.store:1856",
-    "aeh.store:2639",
+    "aeh.store:1857",
+    "aeh.store:2640",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -606,7 +606,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
     # parameters (FR-STORE-08, design §3.3) — the same label the service holds
     # in memory. (Re-pinned from the walker on any line move.)
-    "aeh.review:1792",
+    # (#111's re-pin: the blind-sample/whole-grade methods inserted before
+    # `_persist_label` moved the site; the statement is the same one. Re-read
+    # from the walker, never hand-unioned.)
+    "aeh.review:2417",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
