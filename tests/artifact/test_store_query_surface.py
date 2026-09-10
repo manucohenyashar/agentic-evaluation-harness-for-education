@@ -555,6 +555,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.integ:979",
     "aeh.integ:989",
     "aeh.integ:999",
+    # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
+    # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
+    # bootstrap insert the security suite's fixture surface makes before its
+    # ingests (`tests/security/ingest/test_active_content.py`), now riding the
+    # submission's declared consent class. (Re-pinned from the walker on any
+    # line move.)
+    "aeh.conform:470",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

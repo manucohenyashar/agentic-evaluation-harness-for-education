@@ -473,7 +473,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `M-CONFORM` has two implementing stories and they land in order: #133 builds the frozen
     # corpus (size, span, media, consent, the adversarial tier) and #134 runs it (full pipeline
     # per backend, the divergence report, the gates, the records, the tiers). Keyed separately,
-    # because seven of the cases become runnable at #133 and the rest need a run.
+    # because seven of the cases became runnable at #133 -- released when its fixture surface
+    # (`load_fixture_set`, `build_conformance_suite`, `ConsentRefused`) landed -- and the rest
+    # still need a run.
     #
     # **Keyed on symbols no Interfaces block declares.** Design §3.18 declares a two-member
     # Protocol -- `ConformanceSuite.run` and `.compare` -- plus the type names in their
@@ -501,26 +503,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # an early unmark is the worse direction: a test told to rejoin TEST_CMD that then fails naming
     # an issue nobody is working on is how the gate stops being believed. Reported on the PR for
     # `/plan-to-issues` rather than resolved here -- the issue bodies are that skill's artifact.
-    "#133": (
-        "symbol",
-        f"{CONFORM_MODULE}:load_fixture_set",
-        (
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_the_corpus_"
-            "spans_the_score_range_including_mid_range_partial_credit",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_a_result_"
-            "names_its_fixtures_and_one_changed_fixture_changes_the_identity",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c02_the_corpus_"
-            "carries_handwriting_spanning_the_legibility_range_and_mixed_format",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_every_"
-            "injection_submission_is_paired_with_a_benign_twin",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
-            "refuses_to_run_against_a_cohort_not_so_flagged",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_corpus_"
-            "is_only_synthetic_or_consented_work",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
-            "does_not_reimplement_the_consent_check",
-        ),
-    ),
     "#134": (
         "symbol",
         f"{CONFORM_MODULE}:detect_build_substitution",

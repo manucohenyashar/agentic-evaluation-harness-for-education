@@ -22,6 +22,18 @@ to arrange, not to discover later**, and it has not been arranged. So:
   composition assertion pass against a clean-typed-text corpus, which is verbatim the measurement
   §6.11.18 says the clause exists to prevent. An absent attribute is second-best; a wrong one is
   worse than none.
+
+**How #133 resolved the real-medium half, recorded here because it revises the paragraph above.**
+#133 did not arrange the consent, and it did not stamp the label onto Markdown. It built `F-SCAN`:
+committed image-bearing PDFs whose student work exists only as pixels — rendered by committed
+scripts, declared `rendering: "synthetic_scan"` in the manifest, consent-declared in the raw PDF
+bytes. That is a third option the paragraph did not anticipate: a corpus that carries the
+real-medium *vocabulary* because the pixels are real rasters, while carrying no consented
+*content* — the work is synthetic and says so. So the text-corpus rule below still runs unchanged
+over `COMMITTED_MEDIA_DECLARING_CORPORA` (no clean-typed corpus claims a real medium), `F-SCAN`
+is guarded by its own rule rather than silently exempted, and `F-HAND` remains the only corpus of
+consented real student work — still an unarranged external prerequisite for the consumers that
+need real work (`TC-INGEST-45`, `PERF-10`).
 * **The corpus half is `live`, and skips with the prerequisite named** when `HARNESS_F_HAND_DIR`
   is unset. `live` rather than `writtenahead`: the RTM row for `FR-CONFORM-03` reads
   *Integration(live)* and its sibling `TC-INGEST-45` is `live / 3, nightly` against the same
@@ -43,7 +55,7 @@ import pytest
 
 from harness.corpora import hand
 from tests.support import corpora
-from tests.support.adversarial import COMMITTED_MEDIA_DECLARING_CORPORA
+from tests.support.adversarial import COMMITTED_MEDIA_DECLARING_CORPORA, COMMITTED_SCAN_CORPORA
 
 CASE = "TC-CONFORM-03"
 
@@ -77,13 +89,17 @@ def test_tc_conform_03_the_real_medium_requirement_is_declared_with_its_span_and
 
 
 def test_tc_conform_03_no_committed_corpus_claims_to_be_a_real_medium():
-    """The assertion that keeps `CT-CONFORM-02` honest while `F-HAND` is unarranged.
+    """The assertion that keeps `CT-CONFORM-02` honest, scoped to the *text* corpora.
 
     This is the whole reason the synthetic corpora declare `media_kind` at all. Without the
     attribute, a later story looking for real-medium coverage finds an absence and might add the
     label rather than the corpus; with the *wrong* attribute, the composition assertions upstream
     go green and nobody looks again. `synthetic_markdown` is the third option: present, checkable
     and true.
+
+    #133's `F-SCAN` deliberately joins a different group (`COMMITTED_SCAN_CORPORA`) and is guarded
+    by the scan rule below — not swept here, because this sweep's rule (`member.text()`, and "the
+    corpus is generated Markdown") is the wrong rule for a corpus of rasters.
     """
     for corpus_name in COMMITTED_MEDIA_DECLARING_CORPORA:
         corpus = corpora.load(corpus_name)
@@ -95,6 +111,39 @@ def test_tc_conform_03_no_committed_corpus_claims_to_be_a_real_medium():
                 f"claiming {hand.REAL_MEDIA_KIND!r} makes CT-CONFORM-02's composition assertion "
                 f"pass against a clean-typed-text corpus (FR-CONFORM-03, R37)."
             )
+
+
+def test_tc_conform_03_the_synthetic_scan_corpus_declares_the_real_medium_vocabulary_and_says_so():
+    """The #133 guard: the one committed corpus allowed to carry the real-medium labels.
+
+    `F-SCAN` declares `scanned_handwriting` and `mixed_format` — the vocabulary this file's
+    other sweep forbids on the text corpora — because its members are actual bilevel rasters of
+    synthetic work. The claim is honest only while three things hold together: the manifest says
+    the rendering is synthetic, every member is consent-declared synthetic in the manifest *and*
+    in its own PDF bytes, and the corpus is not in the text-corpora group the sweep above runs
+    over. Asserted together, because the exemption is only safe as a package: rendering alone
+    would tolerate a relabelled Markdown corpus, and group membership alone would let the
+    synthetic label drift off the members.
+    """
+    assert not (set(COMMITTED_SCAN_CORPORA) & set(COMMITTED_MEDIA_DECLARING_CORPORA)), (
+        "F-SCAN must not be swept by the text-corpus rule; if it joined that group the sweep "
+        "above would condemn an honest image corpus and this one would be its only guard"
+    )
+    for corpus_name in COMMITTED_SCAN_CORPORA:
+        corpus = corpora.load(corpus_name)
+        assert corpus.manifest["rendering"] == "synthetic_scan", (
+            f"{corpus_name} carries real-medium labels without declaring its rendering synthetic"
+        )
+        assert corpus.manifest["consent_class"] == "synthetic"
+        media = {m.attributes["media_kind"] for m in corpus.members}
+        assert media == {hand.REAL_MEDIA_KIND, hand.MIXED_FORMAT_MEDIA_KIND}, (
+            f"{corpus_name} covers {sorted(media)}; it exists to carry the real-medium "
+            f"vocabulary FR-CONFORM-03 names, scanned handwriting and a mixed-format paper"
+        )
+        for member in corpus.members:
+            assert member.attributes["consent_class"] == "synthetic"
+            if member.attributes["media_kind"] == hand.REAL_MEDIA_KIND:
+                assert member.attributes["legibility"] in hand.REQUIRED_LEGIBILITY
 
 
 @pytest.mark.live

@@ -29,5 +29,5 @@
     "TC-CONFORM-03",
     "PERF-10"
   ],
-  "note": "No synthetic corpus in this repository declares media_kind 'scanned_handwriting'. Stamping it onto generated Markdown would make the CT-CONFORM-02 composition assertion pass against a clean-typed-text corpus, which is the measurement that clause exists to prevent."
+  "note": "No synthetic TEXT corpus declares media_kind 'scanned_handwriting': stamping it onto generated Markdown would make the CT-CONFORM-02 composition assertion pass against a clean-typed-text corpus, which is the measurement that clause exists to prevent. #133's F-SCAN carries the real-medium vocabulary on actual pixels (rendering 'synthetic_scan', consent-declared synthetic in the PDF bytes); this corpus remains the only one of consented real student work and is still an unarranged external prerequisite."
 }
