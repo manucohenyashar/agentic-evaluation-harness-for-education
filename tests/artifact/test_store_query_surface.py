@@ -519,24 +519,27 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # CT-PKG-05 single-reader gate from reading `["points"]` outside `aeh.pkg`;
     # and once more as a block, +9: `_settlement_state`'s docstring and
     # `input_missing` parameter — the recovered-incomplete defect fix reads this
-    # pass's verdict, not the prior revision's counters; re-pinned from the
-    # walker.)
-    "aeh.grade:1155",
-    "aeh.grade:1161",
-    "aeh.grade:1163",
-    "aeh.grade:1171",
-    "aeh.grade:1181",
-    "aeh.grade:1254",
-    "aeh.grade:1279",
-    "aeh.grade:1284",
-    "aeh.grade:1315",
-    "aeh.grade:1323",
-    "aeh.grade:1415",
-    "aeh.grade:1496",
-    "aeh.grade:1501",
-    "aeh.grade:1748",
-    "aeh.grade:1759",
-    "aeh.grade:1764",
+    # pass's verdict, not the prior revision's counters; and once more as a block,
+    # +17: #102's degenerate-range fix (the pinned-reading bullet and the
+    # `boundary_risk` docstring's positive-width disclosure above every site —
+    # the sites are the same statements as #101's; re-pinned from the walker,
+    # never hand-unioned.)
+    "aeh.grade:1172",
+    "aeh.grade:1178",
+    "aeh.grade:1180",
+    "aeh.grade:1188",
+    "aeh.grade:1198",
+    "aeh.grade:1271",
+    "aeh.grade:1296",
+    "aeh.grade:1301",
+    "aeh.grade:1332",
+    "aeh.grade:1340",
+    "aeh.grade:1432",
+    "aeh.grade:1513",
+    "aeh.grade:1518",
+    "aeh.grade:1765",
+    "aeh.grade:1776",
+    "aeh.grade:1781",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -555,6 +558,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.integ:979",
     "aeh.integ:989",
     "aeh.integ:999",
+    # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
+    # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
+    # bootstrap insert the security suite's fixture surface makes before its
+    # ingests (`tests/security/ingest/test_active_content.py`), now riding the
+    # submission's declared consent class. (Re-pinned from the walker on any
+    # line move.)
+    "aeh.conform:470",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
