@@ -22,7 +22,8 @@ import hashlib
 import json
 
 from harness.corpora import build as corpora_build
-from harness.corpora import adv_inj, adv_pdf, graphic, reference_package, synth
+from harness.corpora import adv_inj, adv_pdf, conform_set, graphic, hand, reference_package, scan, synth
+from harness.corpora.manifest import set_content_hash
 from tests.support import corpora
 
 
@@ -49,7 +50,7 @@ def test_every_manifest_hash_still_describes_the_bytes_on_disk():
     let a copied submission pass a disjointness check. The same reasoning applies to every
     corpus: `NFR-CONFORM-01`'s point is that a result can *name* the fixtures that produced it.
     """
-    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ"):
+    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ", "F-SCAN"):
         corpus = corpora.load(name)
         for member in corpus.members:
             actual = "sha256:" + hashlib.sha256(member.path.read_bytes()).hexdigest()
@@ -110,6 +111,160 @@ def test_the_submission_corpora_span_the_score_range_including_the_middle():
             f"partial-credit cases explicitly; a set of extremes spans the range and tests "
             f"nothing about the middle, which is where routing and escalation actually live."
         )
+
+
+def test_f_scan_is_the_real_medium_tier_the_conformance_set_requires():
+    """`FR-CONFORM-03` (#133): the corpus holds scans and a mixed-format paper, at known scores.
+
+    Composition is asserted on the **bytes**, not only the labels: a corpus that declared
+    `scanned_handwriting` while carrying clean-typed text would be exactly the mislabelled
+    corpus `CT-CONFORM-02` exists to prevent, so this counts the image XObjects per member —
+    three wholly handwritten papers carry four rasters each, and the mixed-format paper
+    carries three (its first page is typed, its remaining pages are not).
+    """
+    import pypdf
+
+    corpus = corpora.load("F-SCAN")
+    assert len(corpus.members) == 4
+    media = {m.attributes["media_kind"] for m in corpus.members}
+    assert media == {hand.REAL_MEDIA_KIND, hand.MIXED_FORMAT_MEDIA_KIND}, (
+        f"F-SCAN declares {sorted(media)}; FR-CONFORM-03 requires scanned handwriting and a "
+        f"mixed-format paper"
+    )
+    legibilities = {
+        m.attributes["legibility"]
+        for m in corpus.members if m.attributes["media_kind"] == hand.REAL_MEDIA_KIND
+    }
+    assert legibilities == set(hand.REQUIRED_LEGIBILITY), (
+        f"F-SCAN's handwriting spans {sorted(legibilities)}; FR-CONFORM-03 says the scans span "
+        f"legible to marginal"
+    )
+    mixed = [m for m in corpus.members if m.attributes["media_kind"] == hand.MIXED_FORMAT_MEDIA_KIND]
+    assert len(mixed) == 1, "FR-CONFORM-03 requires a mixed-format paper (singular but present)"
+    max_points = reference_package.MAX_POINTS
+    for member in corpus.members:
+        assert member.attributes["consent_class"] == "synthetic"
+        assert member.attributes["student_ref"]
+        # Known reference labels, like every other submission corpus: an agreement figure
+        # against an unlabelled corpus is a figure against nothing.
+        assert member.attributes["reference_bands"]
+        assert 0.0 < member.attributes["reference_points"] < reference_package.MAX_POINTS
+        document = pypdf.PdfReader(member.path.open("rb"))
+        assert len(document.pages) == member.attributes["pages"]
+        images = sum(
+            len(page["/Resources"]["/XObject"]) if "/XObject" in page["/Resources"] else 0
+            for page in document.pages
+        )
+        if member.attributes["media_kind"] == hand.MIXED_FORMAT_MEDIA_KIND:
+            # One typed page (no raster — it is read as text) and the rest handwritten.
+            assert images == member.attributes["pages"] - 1, (
+                f"{member.id}: the mixed-format paper carries {images} rasters; its typed page "
+                f"must not carry one and its handwritten pages must"
+            )
+        else:
+            assert images == member.attributes["pages"], (
+                f"{member.id}: {images} image rasters across {member.attributes['pages']} "
+                f"pages — the work must exist as pixels for the medium claim to be honest"
+            )
+
+
+def test_f_conform_is_the_version_pinned_set_the_conformance_suite_measures_with():
+    """`NFR-CONFORM-01` (#133): the composition is content-addressed, pinned, and honest.
+
+    `F-CONFORM` has no bytes of its own — every entry points into a source corpus and carries
+    that member's digest — so the failure mode unique to it is the composition drifting from
+    the sources it cites: a selection regenerated without a rebuild, a digest copied from a
+    row that has since changed, a twin pair reduced to one half. A loader that trusts the
+    manifest would then measure against fixtures that are not the ones named.
+
+    So this verifies the composition three ways: the set digest recomputes from the selection
+    function itself, every entry's digest and path match its source row by id, and the tiers
+    the conformance requirements name are actually present — not just declared.
+    """
+    corpus = corpora.load("F-CONFORM")
+    rows = {row["id"]: row for row in corpus.manifest["submissions"]}
+
+    # 1. The digest is the selection's, not a stale copy of it.
+    entries = conform_set.conform_entries(corpora.CORPUS_ROOT)
+    recomputed = set_content_hash(entries)
+    assert recomputed == corpus.manifest["set_content_hash"], (
+        "F-CONFORM's set digest is not the digest of the selection conform_entries() produces; "
+        "the committed manifest and the generator disagree"
+    )
+    assert corpus.manifest["fixture_set_id"] == (
+        f"F-CONFORM@{corpus.manifest['version']}+{recomputed}"
+    ), "fixture_set_id is not the corpus, version and digest it claims to pin"
+    assert corpus.manifest["version"] == conform_set.pinned_version()
+    assert corpus.manifest["version_label"] == conform_set.VERSION_LABEL
+
+    # 2. Every entry verifies against its source corpus, by id.
+    sources: dict[str, dict[str, dict]] = {}
+    for name in ("F-FROZEN", "F-ADV-INJ", "F-SCAN"):
+        sources[name] = {r["id"]: r for r in corpora.load(name).manifest["submissions"]}
+    sources["F-ADV-PDF"] = {r["id"]: r for r in adv_pdf.manifest_entries()}
+    for entry in entries:
+        row = rows[entry.id]
+        source = sources[entry.extra["source_corpus"]][entry.id]
+        assert entry.content_hash == source["content_hash"], (
+            f"{entry.id}: F-CONFORM cites {entry.content_hash}; {entry.extra['source_corpus']} "
+            f"declares {source['content_hash']} for the same id"
+        )
+        assert entry.path == f"{entry.extra['source_corpus']}/{source['path']}"
+
+    # 3. The composition is the one the requirements name — asserted from the rows, not from
+    #    the manifest's own summary fields, which would agree with any mistake they share.
+    counts: dict[str, int] = {}
+    for entry in entries:
+        counts[entry.extra["source_corpus"]] = counts.get(entry.extra["source_corpus"], 0) + 1
+    assert counts == {"F-FROZEN": 36, "F-ADV-INJ": 6, "F-ADV-PDF": 4, "F-SCAN": 4}
+    assert len(rows) == 50, "FR-CONFORM-01: the fixture set is 30-50 submissions"
+    assert corpus.manifest["composition_counts"] == counts
+
+    # The adversarial tier: every required injection kind, both halves present.
+    injected = [row for row in rows.values() if row["injection_kind"] is not None]
+    assert {row["injection_kind"] for row in injected} == set(conform_set.REQUIRED_INJECTION_KINDS)
+    benign = [row for row in rows.values() if row["injection_kind"] is None and row["source_corpus"] == "F-ADV-INJ"]
+    assert len(injected) == len(benign) == 3, "each injection payload rides with exactly one twin"
+    for row in injected:
+        twin = rows[row["twin_id"]]
+        assert twin["injection_kind"] is None, (
+            f"{row['id']} cites {row['twin_id']}, which is not a benign half"
+        )
+        # The link is mutual: either half of the pair names the other, so the differential is
+        # recoverable from either side of the manifest.
+        assert twin["twin_id"] == row["id"]
+    # One construct per required malicious-PDF threat kind, floor-scored on purpose and labelled.
+    pdfs = [row for row in rows.values() if row["pdf_threat_kind"] is not None]
+    assert sorted(row["pdf_threat_kind"] for row in pdfs) == [
+        "decompression_bomb", "embedded_file", "embedded_javascript", "launch_action",
+    ]
+    for row in pdfs:
+        assert row["reference_score"] == 0.0
+        assert row["reference_score_basis"] == "quarantine_at_v0", (
+            f"{row['id']}: a construct that quarantines at V0 reaches no model call, so its "
+            f"floor score must say so rather than claim 0/39 as performance"
+        )
+
+    # The real-medium tier: scans and the mixed-format paper ride along with their classes.
+    scans = [row for row in rows.values() if row["source_corpus"] == "F-SCAN"]
+    assert {row["media_kind"] for row in scans} == {hand.REAL_MEDIA_KIND, hand.MIXED_FORMAT_MEDIA_KIND}
+    handwriting = [row for row in scans if row["media_kind"] == hand.REAL_MEDIA_KIND]
+    assert {row["legibility"] for row in handwriting} == set(hand.REQUIRED_LEGIBILITY)
+    assert len([row for row in scans if row["media_kind"] == hand.MIXED_FORMAT_MEDIA_KIND]) == 1
+
+    # The score span, over one scale: every fixture carries a known score and a common ceiling,
+    # spanning the range with mid-range partial credit — the tier the extremes-only corpora miss.
+    max_score = reference_package.MAX_POINTS
+    for row in rows.values():
+        assert row["reference_score"] is not None, f"{row['id']} carries no reference score"
+        assert row["max_score"] == max_score
+        assert row["consent_class"] == "synthetic"
+    fractions = [row["reference_score"] / max_score for row in rows.values()]
+    assert min(fractions) < 0.2 and max(fractions) > 0.8
+    assert any(1 / 3 <= f <= 2 / 3 for f in fractions), (
+        "the fixture set spans the range without mid-range partial credit, which is the corpus "
+        "FR-CONFORM-01's second clause exists to rule out"
+    )
 
 
 def test_every_submission_carries_a_student_ref_and_no_name_shaped_field():
@@ -274,6 +429,7 @@ def test_the_generators_are_deterministic_across_two_runs_in_one_process():
     assert [s.as_document() for s in adv_inj.submissions()] == [
         s.as_document() for s in adv_inj.submissions()
     ]
+    assert [s.pdf for s in scan.scan_set()] == [s.pdf for s in scan.scan_set()]
 
 
 def test_the_adversarial_pdf_generators_emit_identical_bytes_on_every_run():
@@ -307,13 +463,18 @@ def test_the_adversarial_pdf_generators_emit_identical_bytes_on_every_run():
 
 
 def test_neither_uncommitted_corpus_has_acquired_member_files():
-    """`F-ADV-PDF` and `F-HAND` are the two directories that must stay almost empty.
+    """`F-ADV-PDF`, `F-CONFORM` and `F-HAND` are the three directories that must stay almost empty.
 
-    Different reasons — §4.7 for one, §4.4's Tier C rules for the other — and the same failure
-    mode: a well-meaning change to `build()` starts writing files out, and nothing else in the
-    suite would notice, because every other assertion about those corpora reads their manifest.
+    Different reasons — §4.7 for one, composition-not-copy for the second, §4.4's Tier C rules
+    for the third — and the same failure mode: a well-meaning change to `build()` starts writing
+    files out, and nothing else in the suite would notice, because every other assertion about
+    those corpora reads their manifest.
     """
-    for name, allowed in (("F-ADV-PDF", {"manifest.json"}), ("F-HAND", {"registry.json"})):
+    for name, allowed in (
+        ("F-ADV-PDF", {"manifest.json"}),
+        ("F-CONFORM", {"manifest.json"}),
+        ("F-HAND", {"registry.json"}),
+    ):
         root = corpora.CORPUS_ROOT / name
         present = {p.name for p in root.rglob("*") if p.is_file()}
         assert present == allowed, (

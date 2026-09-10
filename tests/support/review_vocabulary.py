@@ -33,16 +33,57 @@ one place, so an invented name is visibly invented:
     ReviewGroup.members                               so "one label per member" is countable
     ReviewItem.score_id / .criterion_id /
         .submission_id / .version                     identity, for differentials and staleness
+    ReviewService.queue                               the store-form read: the shown entries
+                                                      flattened, in presentation order —
+                                                      `build_review(store).queue()` is the
+                                                      c05/c07/c09 consumer limbs' declared shape
+    ReviewService.scoring_model_for(criterion_id)     the planned owner of the scoring-model
+                                                      read for the queue, re-keyed at #108's
+                                                      landing (c09's ranking limb): the model
+                                                      lives only in Tier P's `criterion` table
+                                                      and cohort rows carry no package linkage,
+                                                      so no landed surface can rank holistic-
+                                                      first at equal value through the store.
+                                                      INVENTED and unscheduled — no open issue
+                                                      owns it; reported as a finding on #108's PR
 
 **#109 — S-REVIEW-02, the prohibitions and the residual**
 
     .admission_query() -> QueryPlan                   CT-REVIEW-05's reachability; carries
                                                       .routing_values, .excluded_origins,
-                                                      .evaluation_modes
-    .write_audit()                                    CT-REVIEW-06's indirection; .table per write
-    .write_fields() -> Sequence[str]                  CT-REVIEW-14's write set
-    .scores(run_id=...)                               reading score rows back, for the residual
-    .end_session(run_id=...) / .close_run(run_id=...) the two moments a residual can vanish
+                                                      .evaluation_modes. LANDED at #109 as
+                                                      `aeh.review.QueryPlan` (frozen, fields in
+                                                      that order), restating the one `_admitted`
+                                                      predicate the in-memory filter and the
+                                                      store SQL both read. `.routing_values` is
+                                                      `(QUEUE_ROUTING, PROVISIONAL_ROUTING)` —
+                                                      the provisional family's admission is
+                                                      load-bearing (`CT-AGG-07`'s consumer
+                                                      differential, both rows routing
+                                                      `provisional` one state apart), so the
+                                                      written-ahead draft's single-routing pin
+                                                      was reconciled at the unmark
+    .write_audit()                                    CT-REVIEW-06's indirection; .table per
+                                                      write. LANDED at #109 as
+                                                      `aeh.review.WriteRecord` (.table,
+                                                      .score_id, .detail), one record per write
+                                                      a review action makes — criterion_score
+                                                      for the reduction, label for the label
+    .write_fields() -> Sequence[str]                  CT-REVIEW-14's write set. LANDED at #109 as
+                                                      a module-level function, not a service
+                                                      member: every field the module writes
+    .scores(run_id=...)                               reading score rows back, for the residual.
+                                                      LANDED at #109: the run's still-flagged
+                                                      rows, states exactly as stored
+    .end_session(run_id=...) / .close_run(run_id=...) the two moments a residual can vanish.
+                                                      LANDED at #109: neither clears, finalizes
+                                                      nor backfills; each returns a
+                                                      `aeh.review.ResidualReport` carrying the
+                                                      residual count, the persisted state, and
+                                                      the (empty) finalized/backfilled lists
+    .labels_for(run_id=...)                           the in-memory label read the c06 backfill
+                                                      and c15 refusal assertions need; the
+                                                      label store's persistence form is #110's
 
 **#110 — S-REVIEW-03, the label store**
 
@@ -59,9 +100,11 @@ one place, so an invented name is visibly invented:
 **#111 — S-REVIEW-04, the two samples**
 
     ReviewQueue.build_trace                           CT-REVIEW-02's event order; .name per
-                                                      event. #111's, not #108's: S-REVIEW-04
-                                                      owns the budget subtraction the trace
-                                                      has to show happening first
+                                                      event. Landed at #108 — the trace is the
+                                                      queue's own observability surface and the
+                                                      event-order case unmarked with that story.
+                                                      #111's residual claim is the sample the
+                                                      reservation protects (the survival case)
     BlindSession.readable_tables()                    CT-REVIEW-09 — see the note below
     BlindSession.available_data() / .items            CT-REVIEW-09 step 2, and the refs to answer
     .render_blind_flow(session_id)                    the rendered half of step 2
@@ -358,6 +401,13 @@ RANDOM_ARM_ORIGIN = "random_arm"
 #: `CT-AGG-06`: the queue's population is `routing = 'queued'`; `triage` is the operator's.
 QUEUE_ROUTING = "queued"
 OPERATOR_ROUTING = "triage"
+
+#: The advisory routing of the provisional family — the single-judge fallback and the breaker
+#: refusal, which route like `queued` work and are told apart by state alone. `aeh.review`'s
+#: landed admission reads both (`CT-AGG-07`'s consumer differential forces it: both its rows
+#: route `provisional`, one state apart, and the queue must present them differently), so the
+#: reachability pin above carries both. Landed with #109's `admission_query` reconciliation.
+PROVISIONAL_ROUTING = "provisional"
 
 #: `CT-DET-06`: the column that makes the deterministic exclusion enforceable *from the data*
 #: rather than by convention.

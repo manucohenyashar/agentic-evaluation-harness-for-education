@@ -490,8 +490,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # ninth and tenth contributors (`aeh.grade`, then `aeh.integ` at the merge) and the
     # class docstring's contributor list moved each site; re-read from the walker,
     # never hand-unioned.)
-    "aeh.store:1823",
-    "aeh.store:2606",
+    # (#110's re-pin: Durable's pin bump to 6 and the refusal text's eleventh
+    # contributor (`aeh.review`) moved each site two lines; the sites are the same
+    # statements as before. Re-read from the walker, never hand-unioned.)
+    "aeh.store:1819",
+    "aeh.store:2602",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -519,24 +522,32 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # CT-PKG-05 single-reader gate from reading `["points"]` outside `aeh.pkg`;
     # and once more as a block, +9: `_settlement_state`'s docstring and
     # `input_missing` parameter — the recovered-incomplete defect fix reads this
-    # pass's verdict, not the prior revision's counters; re-pinned from the
-    # walker.)
-    "aeh.grade:1155",
-    "aeh.grade:1161",
-    "aeh.grade:1163",
-    "aeh.grade:1171",
-    "aeh.grade:1181",
-    "aeh.grade:1254",
-    "aeh.grade:1279",
-    "aeh.grade:1284",
-    "aeh.grade:1315",
-    "aeh.grade:1323",
-    "aeh.grade:1415",
-    "aeh.grade:1496",
-    "aeh.grade:1501",
-    "aeh.grade:1748",
-    "aeh.grade:1759",
-    "aeh.grade:1764",
+    # pass's verdict, not the prior revision's counters; and once more as a block,
+    # +17: #102's degenerate-range fix (the pinned-reading bullet and the
+    # `boundary_risk` docstring's positive-width disclosure above every site —
+    # the sites are the same statements as #101's; re-pinned from the walker,
+    # never hand-unioned.) TS-39's re-pin, once more as a block, +6: the
+    # `select_current_grade` statement gained its `policy_version`/`answer_key_ref`
+    # projection (the statement had omitted columns `_as_submission_grade` reads,
+    # crashing every `compute_one` — TC-GRADE-13 step 7 is the regression case);
+    # five disclosure lines above every site below the statements dict. Same
+    # statements; re-read from the walker, never hand-unioned.
+    "aeh.grade:1178",
+    "aeh.grade:1184",
+    "aeh.grade:1186",
+    "aeh.grade:1194",
+    "aeh.grade:1204",
+    "aeh.grade:1277",
+    "aeh.grade:1302",
+    "aeh.grade:1307",
+    "aeh.grade:1338",
+    "aeh.grade:1346",
+    "aeh.grade:1438",
+    "aeh.grade:1519",
+    "aeh.grade:1524",
+    "aeh.grade:1771",
+    "aeh.grade:1782",
+    "aeh.grade:1787",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -555,6 +566,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.integ:979",
     "aeh.integ:989",
     "aeh.integ:999",
+    # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
+    # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
+    # bootstrap insert the security suite's fixture surface makes before its
+    # ingests (`tests/security/ingest/test_active_content.py`), now riding the
+    # submission's declared consent class. (Re-pinned from the walker on any
+    # line move.)
+    "aeh.conform:471",
+    # The review site is #110's: the label store's one durable write, a single
+    # `tx.execute` inside `_persist_label`'s transaction body, passing
+    # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
+    # parameters (FR-STORE-08, design §3.3) — the same label the service holds
+    # in memory. (Re-pinned from the walker on any line move.)
+    "aeh.review:1792",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

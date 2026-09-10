@@ -296,7 +296,8 @@ class IncompleteMigrationChainError(StoreError):
     opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
     a refusal **at the open site, naming the cause**. The fix on the
 caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
-    aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth`
+    aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth,
+    aeh.review`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
     pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
@@ -305,7 +306,8 @@ caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
     #80's `judge_verdict_response_columns` — `aeh.orch` again for #62's
     `orch_report_indexes`, `aeh.agg` for #92's `agg_confidence_columns`, and
     `aeh.grade` for the last, #101's `grade_submission_grade_key`, Cohort 18;
-    `aeh.integ` owns Durable's tail, #73's `integ_rate_dimensions`).
+    `aeh.review` owns Durable's tail, #110's `review_label_store_columns`, after
+    `aeh.integ`'s #73 `integ_rate_dimensions`).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1384,20 +1386,14 @@ def current_schema_version(tier: Tier) -> int:
 #: `tests/regression/store/test_import_order_tier_p.py` imports every contributing module and
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
 #: same phantom bug in mirror image. (The rule has now fired five times since the pin
-#: landed: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it
-#: 11→12, #97's `synth_narrative_key` 12→13, #78's `judge_verdict_columns` 13→14, and
-#: #62's `orch_report_indexes` 14→15 — the earliest caught by that gate test, not by a
-#: failed open. #92's `agg_confidence_columns` moved it 15→16, and `aeh.agg` joined the
-#: contributor import lists. #80's `judge_verdict_response_columns` moved it 16→17, and
-#: `aeh.judge` owned Cohort's last migration again (the response-contract columns on
-#: `verdict`); #73's `integ_rate_dimensions` moved Durable 4→5, `aeh.integ` joining the
-#: same lists — the two moves landed on different tiers and needed no renumber. #101's
 #: `grade_submission_grade_key` moved it 17→18, and `aeh.grade` joined the contributor
-#: import lists the same way — the tail returning to `aeh.grade`.)
+#: import lists the same way — the tail returning to `aeh.grade`. #110's
+#: `review_label_store_columns` moved Durable 5→6, and `aeh.review` joined the
+#: contributor import lists — Durable's tail is now `aeh.review`'s.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
     Tier.COHORT: 18,
-    Tier.DURABLE: 5,
+    Tier.DURABLE: 6,
 }
 
 
@@ -1965,11 +1961,11 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
             f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
             f"aeh.orch, aeh.extract, aeh.synth, aeh.judge, aeh.agg and aeh.grade; "
-            f"Tier D: aeh.det and aeh.integ), so this "
+            f"Tier D: aeh.det, aeh.integ and aeh.review), so this "
             f"process has imported some "
             f"of them and not the rest. Import the owning modules before the first open — "
             f"`import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, "
-            f"aeh.judge, aeh.orch, aeh.pkg, aeh.synth` "
+            f"aeh.judge, aeh.orch, aeh.pkg, aeh.synth, aeh.review` "
             f"registers every "
             f"tier's complete chain — or the file builds short of the full schema and the "
             f"missing columns surface later, far from this open, as a distant `no such "

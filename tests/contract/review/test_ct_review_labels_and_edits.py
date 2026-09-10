@@ -143,7 +143,6 @@ def test_tc_review_c07_every_label_names_an_actor_and_a_timestamp():
 # --- CT-REVIEW-12 — edits are band selections, everywhere ---------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c12_no_interface_in_the_module_accepts_a_numeric_score():
     """*"Asserted over the whole surface rather than the queue screen alone."*
 
@@ -174,7 +173,6 @@ def test_tc_review_c12_no_interface_in_the_module_accepts_a_numeric_score():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c12_new_points_is_derived_from_new_band_through_the_pinned_mapping():
     """The derivation, asserted against `CT-PKG-05`'s mapping rather than against a number.
 
@@ -205,7 +203,6 @@ def test_tc_review_c12_new_points_is_derived_from_new_band_through_the_pinned_ma
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c12_an_edit_from_any_view_writes_the_same_action_and_the_same_label_type():
     """The completeness clause: *"Sweep every such view; an edit path that skips label creation
     silently removes data from the validity argument."*
@@ -261,7 +258,6 @@ def test_tc_review_c12_an_edit_from_any_view_writes_the_same_action_and_the_same
 # --- CT-REVIEW-13 — a group action is N individual actions --------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c13_a_group_action_emits_one_label_per_member():
     """*"So a group action is statistically indistinguishable from N individual actions in the
     label store."*
@@ -290,7 +286,6 @@ def test_tc_review_c13_a_group_action_emits_one_label_per_member():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones():
     """*"Assert that indistinguishability directly by comparing the resulting label set against N
     individual actions."*
@@ -348,7 +343,6 @@ def test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones()
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c13_group_items_rank_above_per_item_entries():
     """`FR-REVIEW-05` — *"ranked above per-item entries, rather than N separate items."*
 

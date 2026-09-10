@@ -22,11 +22,7 @@ autouse.
 
 from __future__ import annotations
 
-import pytest
-
 from tests.support.impl import REVIEW_MODULE, require
-
-pytestmark = [pytest.mark.writtenahead]
 
 
 def test_tc_agg_07_holistic_ranks_higher_than_atomic_at_equal_expected_value():

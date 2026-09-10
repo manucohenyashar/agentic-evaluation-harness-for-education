@@ -120,6 +120,34 @@ COMMITTED_MEDIA_DECLARING_CORPORA: tuple[str, ...] = (
     *COMMITTED_PAGE_CORPORA,
 )
 
+#: The committed corpora whose members are image-bearing PDFs — the synthetic scan tier #133
+#: added (`F-SCAN`). Their members declare the real-medium vocabulary (`scanned_handwriting`,
+#: `mixed_format`) because the pixels are real rasters of synthetic work, and their consent
+#: declaration lives in the raw PDF bytes (the printed form header is uncompressed text
+#: operators) rather than in a UTF-8 text layer. Kept out of `COMMITTED_MEDIA_DECLARING_CORPORA`
+#: deliberately: that list's rules read `member.text()`, which is strict UTF-8 and would refuse a
+#: PDF, and the text-corpus rule they serve — no clean-typed corpus claims a real medium — is the
+#: wrong rule for a corpus of actual rasters. Different medium, different sweep, different list.
+COMMITTED_SCAN_CORPORA: tuple[str, ...] = ("F-SCAN",)
+
+#: The committed corpora that are manifest-only compositions (#133's `F-CONFORM`): every entry
+#: cites a source corpus, a source path and that member's content hash, and no member file exists
+#: under the composition's directory. Their consent declarations are inherited per-entry from the
+#: source rows — which are swept in their own corpora — and their entries carry no `student_ref`,
+#: so they stay out of the submission sweeps above on purpose.
+COMMITTED_COMPOSITION_CORPORA: tuple[str, ...] = ("F-CONFORM",)
+
+#: Every committed corpus whose manifest declares a `consent_class` — the union the consent sweep
+#: runs over. Three groups joined rather than one flat list, because the three are swept for
+#: different things: text corpora in their document text, scans in their raw PDF bytes, and
+#: compositions in their manifest alone. One list per rule is what keeps a corpus from falling out
+#: of a sweep while looking covered by another.
+COMMITTED_CONSENT_DECLARING_CORPORA: tuple[str, ...] = (
+    *COMMITTED_MEDIA_DECLARING_CORPORA,
+    *COMMITTED_SCAN_CORPORA,
+    *COMMITTED_COMPOSITION_CORPORA,
+)
+
 def missing_phrases(row_text: str, phrases: Iterable[str]) -> list[str]:
     """The phrases absent from a §4.4 row.
 

@@ -82,13 +82,27 @@ def test_tc_det_09_the_exclusion_filter_is_defined_exactly_once():
 
 
 def test_tc_det_09_no_other_module_touches_the_label_mode():
-    """No other `aeh` module holds SQL against the label table's mode column — the
-    exclusion cannot be bypassed by a consumer re-spelling it at a call site."""
+    """No other `aeh` module holds SQL that *filters or rewrites* the label table's
+    mode column — the exclusion cannot be bypassed by a consumer re-spelling it at
+    a call site. The scan was broadened once, at #110: a statement that merely
+    *carries* the column (the label store's INSERT INTO label, naming evaluation_mode
+    to write the label's own value) is not a re-spelled exclusion and must not fire —
+    a guard that reds on the sanctioned write would train readers to ignore it."""
     touching = _modules_with(
-        lambda text: "label" in text and "evaluation_mode" in text
+        lambda text: (
+            "label" in text
+            and "evaluation_mode" in text
+            and (
+                "WHERE" in text
+                or "<>" in text
+                or "!=" in text
+                or "UPDATE" in text
+                or "DELETE" in text
+            )
+        )
     )
     assert touching == ["det.py"], (
-        f"{touching} reference the label table's mode column outside det.py — a "
+        f"{touching} read or rewrite the label table's mode column outside det.py — a "
         "statistics consumer is spelling its own exclusion instead of importing the "
         "one filter (NFR-DET-03)"
     )
