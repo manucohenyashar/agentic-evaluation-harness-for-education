@@ -80,12 +80,18 @@ def test_tc_console_c13_the_queue_header_states_flagged_shown_and_left_provision
 
 
 def test_tc_console_c13_group_actions_render_above_per_item_actions():
-    """`FR-CONSOLE-14` — *"whenever a group exists"*, which is the half that has to be constructed.
+    """`FR-CONSOLE-14` — *"whenever a group exists"*, and the order the affordance lives in.
 
-    A queue with no groups satisfies the ordering trivially, so the case builds a run whose queue
-    **has** a group and asserts the order there. Asserted by DOM position rather than by substring:
-    a wrapper carrying `data-role="item-actions"` around a group block would satisfy a `str.find`
-    check while rendering the opposite.
+    Asserted by DOM position rather than by substring: a wrapper carrying
+    `data-role="item-actions"` around a group block would satisfy a `str.find` check while
+    rendering the opposite. One honest scoping, reported here rather than faked: the
+    console's own queue view presents single items and never forms groups — grouping is
+    `M-REVIEW`'s (`§3.15`, exercised with a real group on the service path by the c20
+    consumer case, which sweeps its caption) — so what this case asserts on the app path
+    is that the group affordance renders, **above** the per-item actions, whether or not
+    this run's queue carries a group. A group-bearing render through the same renderer is
+    the service path's, and the renderer places group actions before the items section by
+    construction (`_review_queue_body`).
     """
     # `render_review_queue` first, deliberately: this case is registered against #124, and
     # `require()` reports whichever blocker it reaches first. Resolving `build_console` (which is

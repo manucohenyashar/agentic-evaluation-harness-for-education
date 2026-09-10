@@ -1622,7 +1622,14 @@ class ConsoleApp:
         """The teacher's queue. Its reads never reach a quarantined row (§11.3,
         `FR-INGEST-30`): the query names the review table only, and quarantine is the
         operator's parallel workstream on its own route. `review_queue` is a cohort-tier
-        table, so the read walks the cohort files."""
+        table, so the read walks the cohort files.
+
+        The flagged count is the **rows**, not the write log: the write log records
+        what this console did, and a real store keeps no such log — a count read only
+        from it reported zero flagged beside a screen showing three items, and a
+        residual of flagged-minus-shown went negative in front of the teacher. The
+        write-log tally is the fallback for the audit double, whose reads return
+        nothing — the same preference `quarantine` makes below."""
         queries: list[str] = []
         rows = self._read_cohort_files(
             "SELECT submission_id, criterion_id, reason FROM review_queue "
@@ -1630,7 +1637,11 @@ class ConsoleApp:
             queries,
             run_id=run_id,
         )
-        flagged = len([w for w in self._writes() if self._write_table(w) == "review_queue"])
+        # The write-log tally is the audit double's fallback, never the count a real
+        # store's screen shows — the rows, when the statement returns any, are it.
+        flagged = len(rows) if rows else len(
+            [w for w in self._writes() if self._write_table(w) == "review_queue"]
+        )
         shown = tuple(
             {
                 "submission_id": _row_get(row, "submission_id"),
@@ -2183,7 +2194,39 @@ def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
 # tests read: `queue-header`, `group-actions`, `review-item`, `narrative`, `mark`, `item-actions`.
 
 
+def _items_covered(entries: Any) -> int:
+    """How many review **items** a shown list covers — a group entry covers its
+    members, a plain entry is one item. The same arithmetic `M-REVIEW` derives
+    `residual_provisional` from (`CT-REVIEW-04`'s arithmetic is about items, not
+    entries): `len(shown)` counts entries, and a queue presenting 200 items as 16
+    groups shows 16 entries and covers 200 items — a header that mixed the units
+    would reconcile with nothing, least of all with the residual beside it."""
+    total = 0
+    for entry in entries or ():
+        members = getattr(entry, "members", None)
+        total += len(members) if members is not None else 1
+    return total
+
+
 def _review_queue_header_html(*, flagged: int, shown: int, left: int) -> str:
+    """The queue header: the three figures as data attributes (what `review_queue_header`
+    reads back) and as visible text (what a reader sees — `FR-CONSOLE-13` states the residual,
+    and a figure computed but not printed has rendered nothing). All three are **items**:
+    the unit the residual is computed in, so flagged minus shown is left provisional by
+    construction rather than by coincidence."""
+    figures = (
+        f"Flagged for review: {int(flagged)}. Shown: {int(shown)} items. "
+        f"Left provisional: {int(left)}."
+    )
+    return (
+        '<section data-role="queue-header" '
+        f'data-flagged="{int(flagged)}" data-shown="{int(shown)}" '
+        f'data-left-provisional="{int(left)}">'
+        f"<p>{escape(figures)}</p>"
+        "<p>The third figure is the residual: the part of the class nobody has looked at "
+        "yet, and the number a review sitting exists to shrink.</p>"
+        "</section>"
+    )
     """The queue header: the three figures as data attributes (what `review_queue_header`
     reads back) and as visible text (what a reader sees — `FR-CONSOLE-13` states the residual,
     and a figure computed but not printed has rendered nothing)."""
@@ -2338,11 +2381,15 @@ def render_review_queue(
     `ReviewService` (whose built queue this renders — `CT-REVIEW-04`'s consumer half,
     the console side of the residual triple).
 
-    The service path renders the queue's **own** figures — `flagged_total`, the entries
-    shown, and `residual_provisional` as the queue stated it — rather than recomputing
-    any of them: a rendering that recomputes a figure can disagree with the queue it
-    renders, and the teacher would have no way to tell which is wrong. The app path
-    computes the residual from its own counts, which is what its queue view states."""
+    The service path renders the queue's **own** figures — `flagged_total`, the items its
+    shown entries cover (the count `residual_provisional` was derived from), and
+    `residual_provisional` as the queue stated it — rather than recomputing any of them:
+    a rendering that recomputes a figure can disagree with the queue it renders, and the
+    teacher would have no way to tell which is wrong. The app path computes the residual
+    from its own counts, which is what its queue view states. `len(queue.shown)` is the
+    figure the build trace states — "N entries shown" — and the trace section carries it
+    where the two counts differ; the header states items, because that is the unit the
+    residual is computed in."""
     if hasattr(source, "build_queue"):
         if budget_minutes is None:
             raise ValueError(
@@ -2356,7 +2403,7 @@ def render_review_queue(
                 "Review queue",
                 _review_queue_body(
                     flagged=queue.flagged_total,
-                    shown=len(queue.shown),
+                    shown=_items_covered(queue.shown),
                     left=queue.residual_provisional,
                     budget_minutes=queue.budget_minutes,
                     entries=_review_queue_entries(queue.shown),

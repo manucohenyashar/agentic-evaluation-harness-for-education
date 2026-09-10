@@ -623,15 +623,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # otherwise mint.
     # (#124's re-pin: the review-queue rendering, the blind-flow plan and the request
     # assembler were inserted above these sites and moved every one of them; the
-    # statements are the same eight. Re-read from the walker, never hand-unioned.)
+    # statements are the same eight. Re-read from the walker, never hand-unioned.
+    # Second re-pin, still #124's: the reviewer's fixes to the queue header's item
+    # arithmetic and the app-path flagged count moved the driver's six again.)
     "aeh.console:1491",
     "aeh.console:1568",
-    "aeh.console:2874",
-    "aeh.console:2879",
-    "aeh.console:2900",
-    "aeh.console:2908",
-    "aeh.console:2916",
-    "aeh.console:2929",
+    "aeh.console:2921",
+    "aeh.console:2926",
+    "aeh.console:2947",
+    "aeh.console:2955",
+    "aeh.console:2963",
+    "aeh.console:2976",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():
