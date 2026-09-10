@@ -1,5 +1,6 @@
-"""`M-JUDGE` (#78, #79) — judgment isolation: the whitelist request schema, the fresh
-context, and the version-pinned prompt template.
+"""`M-JUDGE` (#78, #79, #80) — judgment isolation: the whitelist request schema, the
+fresh context, the version-pinned prompt template, and the response contract with the
+verdict row it persists.
 
 Design §3.10 pins the *shapes* — a `ScoringWorker` whose `assemble(unit)` is pure, a
 `ScoringRequest` that is a **whitelist** (no field capable of carrying another judge's
@@ -47,13 +48,43 @@ temperature-zero by default — judgment is a temperature-zero task — and the 
 is the render itself, so a knob change that would move a backend's answer moves the
 key: a fixture recorded against an old render misses rather than mis-replays).
 Knobs: the retry budget is `HARNESS_JUDGE_MAX_ATTEMPTS`, the sampling temperature
-`HARNESS_JUDGE_TEMPERATURE`, the output cap `HARNESS_JUDGE_MAX_OUTPUT_TOKENS` and the
-exemplar-order salt `HARNESS_JUDGE_EXEMPLAR_SEED` — all read at call time.
+`HARNESS_JUDGE_TEMPERATURE`, the output cap `HARNESS_JUDGE_MAX_OUTPUT_TOKENS`, the
+exemplar-order salt `HARNESS_JUDGE_EXEMPLAR_SEED` and the assessment re-request
+budget `HARNESS_JUDGE_ASSESSMENT_RETRIES` — all read at call time.
 Observability: the result carries what the stage did next to its outcome — attempts,
-the resolved build, the uncited marking (`FR-JUDGE-12`), a note when a refusal
+the resolved build, the uncited marking (`FR-JUDGE-12`), the integrity flags
+(`FR-JUDGE-10`'s accepted-after-amendment mark), a note when a refusal
 happened, and the invariant prefix's byte share of the payload (`CT-JUDGE-13`'s
 throughput observable, in bytes — the tokenizer is the provider's, the byte split is
 the transport-neutral form of the same invariant).
+
+**The response contract (#80).** The reply is accepted only in its declared field
+order — `REPLY_FIELDS` is the contract, a re-ordered reply is REJECTED as a contract
+violation and never reordered and accepted (`FR-JUDGE-09`, `CT-JUDGE-05`: the order is
+the mitigation, so repairing it would remove the thing being tested) — and the order
+is the commitment device: a judge must place `cited_spans` and the evidence inventory
+BEFORE it may name a band. `evidence_assessment` is validated as an inventory
+referencing spans or band conditions: a reply whose assessment is magnitude-only
+prose (`SETUP_MAGNITUDE_PHRASES`' vocabulary, M-SETUP's configured bar, with no span
+or band-condition reference) is refused as `ProseAssessmentError` and re-requested
+ONCE with an AMENDED prompt — the same render plus a static ground-rules correction
+inserted before the submission field, a different fully-assembled request and so a
+legal new call rather than a re-sampled verdict (`FR-PROV-06`, `CT-PROV-05`'s fixture
+key moves with the payload) — and an acceptance after that re-request carries the
+`ASSESSMENT_AMENDED` integrity flag. A refusal that survives the amendment budget is
+an ordinary strike toward `HARNESS_JUDGE_MAX_ATTEMPTS`; exhaustion raises
+`JudgmentError` and the upstream orchestrator quarantines the unit (`NFR-JUDGE-05`) —
+never a fallback band, never a default verdict. What a LEGAL reply produced is
+persisted in the verdict row: the band, its ordinal in the declared set, the judge's
+own confidence, the cited-span inventory as JSON (`NULL` when the reply cited
+nothing — persisted as uncited and MARKED, so M-AGG downgrades confidence rather
+than discarding, `FR-JUDGE-12`/`CT-JUDGE-06`: a discarded verdict would turn a
+three-judge panel into two, which `FR-AGG-03` forbids), the sufficiency answer and
+the uncited mark; the row writes no value from the package's points scale, and the
+table has no column for one (`FR-JUDGE-11`). `self_confidence` is persisted and
+exposed as one weighted input among the observable ones; nothing in this module lets
+it alone determine routing (`FR-JUDGE-13`, R22 — #93's `should_escalate` is the
+consumer that holds it).
 
 **The template (#79).** `JUDGE_PROMPT_TEMPLATE_V` pins the render; the run's
 `prompt_template_v` (panel configuration) is the CALLER's declared value of that
@@ -128,9 +159,12 @@ reading):
   no entry — the orchestrator's topological order and extraction gate are what
   guarantee the row exists (CT-ORCH-05); this module refuses nothing it cannot see.
 - `persist(unit, result)` writes ONE `verdict` row — `verdict_id = work_id`, idempotent
-  under `INSERT OR IGNORE` — and the arm's done transition in the same guarded
-  transaction (the `M-EXTRACT` at-least-once shape). No criterion_score, evidence,
-  narrative or package write exists in this module (CT-JUDGE-12).
+  under `INSERT OR IGNORE` — carrying the band, its ordinal, the confidence, the
+  cited-span inventory (JSON; `NULL` when uncited, with the mark set), the sufficiency
+  answer and the uncited mark, and nothing else — and the arm's done transition in the
+  same guarded transaction (the `M-EXTRACT` at-least-once shape). No criterion_score,
+  evidence, narrative or package write exists in this module (CT-JUDGE-12); no points
+  value is written anywhere (FR-JUDGE-11).
 """
 
 from __future__ import annotations
@@ -140,6 +174,7 @@ import hashlib
 import json
 import os
 import random
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -156,8 +191,13 @@ from aeh.orch import (
     _judge_id_of,
 )
 from aeh.pkg import PackageCatalog
-from aeh.prov import PromptPayload, SamplingParams
-from aeh.prov import ProviderError
+from aeh.prov import (
+    MalformedResponseError,
+    PromptPayload,
+    ProviderError,
+    SamplingParams,
+)
+from aeh.setup import SETUP_MAGNITUDE_PHRASES
 from aeh.store import Migration, Statement, Tier, TIER_MIGRATIONS, lease_clock
 
 # --- the schema step -----------------------------------------------------------------------------
@@ -181,6 +221,41 @@ TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
         statements=_JUDGE_VERDICT_COLUMNS,
     ),
 )
+
+#: Tier C, migration 17: the response-contract columns #80 adds to the verdict row
+#: (`CT-JUDGE-06`): the reply's cited-span inventory (a JSON array of the span documents
+#: the reply cited, `NULL` when the reply cited nothing — a null is `FR-JUDGE-12`'s
+#: uncited verdict, persisted and MARKED, never discarded), the reply's sufficiency
+#: answer, and the uncited mark itself. Every column is nullable because the migration
+#: is additive: a pre-existing row (a migration-001-era verdict, or any writer that did
+#: not know the mark) carries `NULL`, and the consumers' reading is fail-open toward
+#: *cited* — M-AGG's rule is "the mark is the signal" (`_verdict_cited`), so an
+#: unmarked row is read as cited, exactly as the shipped reading demands; a row THIS
+#: module writes always carries the mark. The booleans are 0/1-or-`NULL` (three-valued,
+#: the `agg_confidence_columns` pattern). **No points column exists and none is added**
+#: (`FR-JUDGE-11`: a verdict carries a band and the band's ordinal — the points scale is
+#: the package tier's, and a single judge's verdict never carries a number of points).
+#: (Numbered 17, the next free Cohort number after #92's `agg_confidence_columns` took
+#: 16 — the merge-order convention the chain has followed since 12.)
+_JUDGE_VERDICT_RESPONSE_COLUMNS: tuple[Statement, ...] = (
+    Statement("ALTER TABLE verdict ADD COLUMN cited_spans TEXT"),
+    Statement(
+        "ALTER TABLE verdict ADD COLUMN evidence_sufficient "
+        "INTEGER CHECK (evidence_sufficient IN (0, 1))"
+    ),
+    Statement(
+        "ALTER TABLE verdict ADD COLUMN uncited INTEGER CHECK (uncited IN (0, 1))"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(
+            version=17, name="judge_verdict_response_columns",
+            statements=_JUDGE_VERDICT_RESPONSE_COLUMNS,
+        ),
+    ), key=lambda m: m.version
+))
 
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
@@ -211,9 +286,9 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     ),
     "insert_verdict": Statement(
         "INSERT OR IGNORE INTO verdict (verdict_id, work_id, judge_id, band, "
-        "band_ordinal, self_confidence) "
+        "band_ordinal, self_confidence, cited_spans, evidence_sufficient, uncited) "
         "VALUES (:verdict_id, :work_id, :judge_id, :band, :band_ordinal, "
-        ":self_confidence)"
+        ":self_confidence, :cited_spans, :evidence_sufficient, :uncited)"
     ),
 }
 
@@ -312,6 +387,29 @@ MAX_OUTPUT_TOKENS_ENV = "HARNESS_JUDGE_MAX_OUTPUT_TOKENS"
 EXEMPLAR_SEED_ENV = "HARNESS_JUDGE_EXEMPLAR_SEED"
 _EXEMPLAR_SEED_DEFAULT = JUDGE_PROMPT_TEMPLATE_V
 
+#: The assessment re-request's budget knob (`FR-JUDGE-10`: "rejected and re-requested
+#: once, then accepted with an integrity flag"). Production default ONE — the design's
+#: word — adjustable per environment without a code change, read at call time like every
+#: knob here. The re-request is NOT a replay: a re-issued identical payload would
+#: re-sample a verdict, which `FR-PROV-06` forbids on any path that got a parseable
+#: reply — so the re-request goes out with an AMENDED prompt (`_amended_payload`: the
+#: assessment ground-rules correction inserted before the final submission field), a
+#: different fully-assembled request and therefore a different fixture key (`CT-PROV-05`)
+#: and a different call in the `FR-PROV-06` sense. A prose-only reply that recurs after
+#: the amendment budget is spent is an ordinary strike toward the main budget
+#: (`MAX_ATTEMPTS_ENV`), whose exhaustion quarantines the unit (`NFR-JUDGE-05`) — never
+#: a fallback band.
+ASSESSMENT_RETRIES_ENV = "HARNESS_JUDGE_ASSESSMENT_RETRIES"
+ASSESSMENT_RETRIES_DEFAULT = 1
+
+#: The integrity flag's name (`FR-JUDGE-10`'s "accepted with an integrity flag"): set on
+#: a `ScoringResult.integrity_flags` exactly when the accepted verdict's dispatch used at
+#: least one assessment amendment re-request. Stage-level observability next to the
+#: outcome (`CT-INGEST-08`'s per-gate shape), so a downstream consumer can see — without
+#: re-reading the prompt log — that this verdict's assessment was re-requested before it
+#: was accepted.
+ASSESSMENT_AMENDED = "assessment_amended"
+
 
 class IsolationViolation(Exception):
     """A request violated the whitelist (`§3.10`: the machine-checkable form of §7.2
@@ -323,6 +421,16 @@ class JudgmentError(Exception):
     reply, a band outside the declared set. There is NO fallback band and NO default
     verdict on any path (`NFR-JUDGE-05`): a broken judge must fail visibly, never
     grade confidently."""
+
+
+class ProseAssessmentError(MalformedResponseError):
+    """The reply's `evidence_assessment` is free evaluative prose: it matches the
+    configured magnitude-phrase vocabulary and references no span and no band condition
+    (`FR-JUDGE-10`'s rejection, `R42`). A subclass of `aeh.prov`'s
+    `MalformedResponseError` — the reply IS malformed under the response contract, so
+    the `FUZZ-04` oracle's named exception is what surfaces — and the dispatch loop
+    treats the name as the re-request trigger: this one refusal earns an AMENDED prompt
+    (never a verbatim replay, `FR-PROV-06`), once per dispatch."""
 
 
 # --- the whitelist request schema (FR-JUDGE-01, FR-JUDGE-02) -------------------------------------
@@ -492,6 +600,13 @@ class ScoringResult:
     notes: str | None = None
     prefix_bytes: int | None = None
     total_bytes: int | None = None
+    #: `FR-JUDGE-10`'s integrity flag(s), named tokens rather than one boolean (the
+    #: `IngestReport.gates` shape): `ASSESSMENT_AMENDED` rides exactly on a verdict whose
+    #: dispatch re-requested the assessment with an amended prompt before accepting.
+    #: Empty on a clean first-acceptance dispatch. Observability, not routing — no
+    #: consumer branches a verdict away for carrying one (`FR-JUDGE-13`'s rule is about
+    #: `self_confidence`, and the same "one weighted input" posture governs here).
+    integrity_flags: tuple[str, ...] = ()
 
 
 # --- request assembly ----------------------------------------------------------------------------
@@ -1264,56 +1379,144 @@ class _Verdict:
     self_confidence: float
 
 
+#: `FR-JUDGE-10`'s magnitude vocabulary, as configured: M-SETUP's own bar
+#: (`SETUP_MAGNITUDE_PHRASES`, the `FR-SETUP-05` constant — the system keeps magnitude
+#: language away from the model at every stage, and the reply's assessment is the one
+#: place left it could come back). Matching is case-insensitive SUBSTRING, the
+#: configured list's own documented semantics (a descriptor "matching any of these
+#: (case-insensitive substring) is rejected" — the setup-time twin, mirrored, not
+#: re-spelled). Deliberately NOT #79's numeral scan: that prohibition classifies
+#: prompt surfaces (rubric vs content strictness) and has no reply-side counterpart —
+#: the assessment is one free-prose field — while a numeral in a reply is ordinarily
+#: DATA (a quoted offset, the student's "12 kg" quoted back), so this gate keys on the
+#: magnitude PHRASES alone and leaves numerals to the span-reference test: prose that
+#: names a span or a band condition is an inventory whatever digits it carries.
+_MAGNITUDE_PHRASES: tuple[str, ...] = SETUP_MAGNITUDE_PHRASES
+
+#: What counts as a span reference (`FR-JUDGE-10`'s "an inventory referencing spans or
+#: band conditions"): the assessment names span-evidence vocabulary, or quotes the text
+#: of one of the reply's cited spans, or quotes a declared band's descriptor (the band
+#: condition). Disclosed boundary: the bar is deliberately "names the evidence channel",
+#: not "identifies the byte range" — WHICH span a citation resolves to is M-INTEG's
+#: verification (`spans_verified`), never the parser's; a reply that names no evidence
+#: channel and instead grades ("excellent work throughout") is the prose-only case this
+#: gate exists for. The shipped reply fixture's "the cited spans support the band" is an
+#: inventory under this reading (it names the spans channel) — which is the point: the
+#: gate fires on magnitude-only prose, not on terse citations.
+_ASSESSMENT_SPAN_MARKS = re.compile(
+    r"\bspans?\b|\boffsets?\b|\bcitations?\b|\bcited\b|\bexcerpt\b|\bpassage\b"
+    r"|\bquot(?:e|ed|ing)\b",
+    re.IGNORECASE,
+)
+
+
+def _references_evidence(
+    assessment: str, cited: tuple, request: ScoringRequest
+) -> bool:
+    """Whether the assessment references spans or band conditions (`FR-JUDGE-10`'s
+    inventory reading): span vocabulary named, a cited span's text quoted, or a
+    declared band's descriptor quoted."""
+    if _ASSESSMENT_SPAN_MARKS.search(assessment):
+        return True
+    for span in cited:
+        text = span.get("text") if isinstance(span, dict) else None
+        if isinstance(text, str) and text and text in assessment:
+            return True
+    for view in request.criterion.bands:
+        if view.descriptor and view.descriptor in assessment:
+            return True
+    return False
+
+
+def _prose_only(assessment: str, cited: tuple, request: ScoringRequest) -> bool:
+    """`FR-JUDGE-10`'s free-evaluative-prose test: the assessment matches the configured
+    magnitude-phrase list AND references no span and no band condition. BOTH arms must
+    hold — prose that names evidence is an inventory even when it also says "good", and
+    an assessment with no magnitude word in it is not evaluative-only prose however
+    vague it is (the gate's rejection is the magnitude vocabulary's, not a general
+    prose ban)."""
+    lowered = assessment.lower()
+    return (
+        not _references_evidence(assessment, cited, request)
+        and any(phrase in lowered for phrase in _MAGNITUDE_PHRASES)
+    )
+
+
 def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
-    """Parse and VALIDATE one judge reply against the pinned contract.
+    """Parse and VALIDATE one judge reply against the pinned response contract.
 
     The five fields must arrive in `REPLY_FIELDS`' exact order — a re-ordered reply is
-    not a format variation, it is a different contract (`FR-JUDGE-09`) — and the band
-    must be in the criterion's declared set: a contract violation is refused, never
-    answered with a fallback band (`CT-JUDGE-11`, `NFR-JUDGE-05`). Refusals raise
-    `ValueError`, which the dispatch loop retries within the strike budget.
+    not a format variation, it is a different contract (`FR-JUDGE-09`, `CT-JUDGE-05`) —
+    the band must be in the criterion's declared set (`CT-JUDGE-04`), and the
+    `evidence_assessment` must not be magnitude-only prose with no evidence reference
+    (`FR-JUDGE-10`). Every refusal is a `MalformedResponseError` — the `FUZZ-04` oracle's
+    named exception, a `ProviderError` the dispatch loop strikes within the budget —
+    and a prose-only assessment is the `ProseAssessmentError` subtype, the re-request
+    trigger. A contract violation is refused, never repaired and never answered with a
+    fallback band (`CT-JUDGE-11`, `NFR-JUDGE-05`).
     """
     try:
         reply = json.loads(text)
     except json.JSONDecodeError as error:
-        raise ValueError(f"judge reply is not valid JSON: {error}") from error
+        raise MalformedResponseError(
+            f"judge reply is not valid JSON: {error}"
+        ) from error
     if not isinstance(reply, dict):
-        raise ValueError(f"judge reply is not a JSON object: {type(reply).__name__}")
+        raise MalformedResponseError(
+            f"judge reply is not a JSON object: {type(reply).__name__}"
+        )
     if list(reply.keys()) != list(REPLY_FIELDS):
-        raise ValueError(
+        raise MalformedResponseError(
             f"judge reply fields arrived {list(reply.keys())}, not the pinned order "
             f"{list(REPLY_FIELDS)} — reordering is not a format variation (FR-JUDGE-09)"
         )
-    cited = tuple(
-        _span_of(span, where=f"reply cited_spans[{index}]")
-        for index, span in enumerate(
-            _sequence_of(reply["cited_spans"], "cited_spans")
+    try:
+        cited = tuple(
+            _span_of(span, where=f"reply cited_spans[{index}]")
+            for index, span in enumerate(
+                _sequence_of(reply["cited_spans"], "cited_spans")
+            )
         )
-    )
+    except (TypeError, ValueError) as error:
+        # A malformed span inventory is a malformed response like any other: the
+        # `FUZZ-04` oracle admits no other exception out of `_verdict_of`, and the
+        # dispatch loop can only strike refusals it is shown (`NFR-JUDGE-05`).
+        raise MalformedResponseError(
+            f"judge reply cited_spans is not a valid span inventory: {error}"
+        ) from error
     assessment = reply["evidence_assessment"]
     if not isinstance(assessment, str):
-        raise ValueError(
+        raise MalformedResponseError(
             f"judge reply evidence_assessment must be a string, got "
             f"{type(assessment).__name__}"
         )
+    if _prose_only(assessment, cited, request):
+        raise ProseAssessmentError(
+            f"judge reply evidence_assessment is free evaluative prose — it matches the "
+            f"configured magnitude phrases and references no span and no band condition "
+            f"(FR-JUDGE-10); the assessment must be an inventory citing spans or band "
+            f"conditions"
+        )
     sufficient = reply["evidence_sufficient"]
     if not isinstance(sufficient, bool):
-        raise ValueError(
+        raise MalformedResponseError(
             f"judge reply evidence_sufficient must be a boolean, got "
             f"{type(sufficient).__name__}"
         )
     band = reply["band"]
     if not isinstance(band, str) or not band:
-        raise ValueError(f"judge reply band must be a non-empty string, got {band!r}")
+        raise MalformedResponseError(
+            f"judge reply band must be a non-empty string, got {band!r}"
+        )
     confidence = reply["self_confidence"]
     if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-        raise ValueError(
+        raise MalformedResponseError(
             f"judge reply self_confidence must be a number, got "
             f"{type(confidence).__name__}"
         )
     declared = {view.band: view.ordinal for view in request.criterion.bands}
     if band not in declared:
-        raise ValueError(
+        raise MalformedResponseError(
             f"judge reply band {band!r} is outside the criterion's declared set "
             f"{sorted(declared)} — a contract violation is refused, never answered "
             f"with a fallback (CT-JUDGE-11, NFR-JUDGE-05)"
@@ -1326,6 +1529,42 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
         band_ordinal=declared[band],
         self_confidence=float(confidence),
     )
+
+
+# --- the assessment re-request (FR-JUDGE-10's one amendment) -------------------------------------
+
+#: The amendment's field name. It carries STATIC ground-rules text — no per-submission
+#: byte — so it joins the invariant prefix, and it is inserted BEFORE the final
+#: submission field, which keeps `FR-JUDGE-07`'s submission-LAST invariant intact on the
+#: amended render too. The name carries no prohibited stem, so the escalation-variant's
+#: stem scan over a render stays clean.
+_ASSESSMENT_AMENDMENT_FIELD = "evidence_rules_amendment"
+
+#: The amendment's text — a static correction to the evidence ground rules, saying what
+#: the contract requires of `evidence_assessment` and nothing about the particular unit.
+_AMENDMENT_TEXT = (
+    "Correction to the ground rules, because the previous reply was refused: the"
+    " evidence_assessment field must be an inventory that references evidence — cite"
+    " the spans that support the band you chose (by their text or their byte offsets)"
+    " or state the band condition that holds. An assessment that only grades the work"
+    " in overall terms, naming no span and no band condition, is refused under the"
+    " response contract. Reply again with all five fields in their pinned order."
+)
+
+
+def _amended_payload(payload: PromptPayload) -> PromptPayload:
+    """The amended render the `FR-JUDGE-10` re-request goes out with: the same pinned
+    field order with the assessment ground-rules correction inserted immediately BEFORE
+    the final field (the submission — `prompt_fields` guarantees it last, and the
+    insertion keeps it last). The amendment is a different fully-assembled request —
+    a different fixture key (`CT-PROV-05`) and a different call in `FR-PROV-06`'s
+    sense, which is what makes the re-request legal where a verbatim replay would be a
+    re-sampled verdict. Because the amendment text is static, the amended render's
+    invariant prefix stays prefix-invariant across the batch (`FR-JUDGE-06`): every
+    judge re-requesting on the same batch inserts the same bytes in the same place."""
+    fields = list(payload.fields)
+    fields.insert(len(fields) - 1, (_ASSESSMENT_AMENDMENT_FIELD, _AMENDMENT_TEXT))
+    return PromptPayload(fields=tuple(fields))
 
 
 # --- the driver (§3.10 Interfaces, the three methods verbatim) -----------------------------------
@@ -1365,6 +1604,16 @@ class ScoringWorker:
         declared set) is a strike; when the budget runs out the refusal surfaces as
         `JudgmentError` — there is NO fallback verdict on any path (`NFR-JUDGE-05`),
         and nothing has been persisted.
+
+        One refusal earns a MODIFIED prompt rather than a replay: a reply refused as
+        `ProseAssessmentError` (magnitude-only `evidence_assessment`, `FR-JUDGE-10`)
+        re-requests ONCE — the `HARNESS_JUDGE_ASSESSMENT_RETRIES` budget, default one —
+        with the assessment ground-rules amendment inserted before the submission field
+        (`_amended_payload`). The amended render is a different fully-assembled request,
+        so the re-request is a new call, never a re-sampled verdict (`FR-PROV-06`); the
+        re-request is logged in the strikes and accepted with the `ASSESSMENT_AMENDED`
+        integrity flag. A prose-only reply that recurs after the amendment budget is
+        spent strikes like any other refusal.
         """
         if not isinstance(request, ScoringRequest):
             raise TypeError(
@@ -1383,7 +1632,10 @@ class ScoringWorker:
             max_tokens=_env_int(MAX_OUTPUT_TOKENS_ENV, 0) or None,
         )
         budget = _env_int(MAX_ATTEMPTS_ENV, ORCH_MAX_ATTEMPTS)
+        amendment_budget = _env_int(ASSESSMENT_RETRIES_ENV, ASSESSMENT_RETRIES_DEFAULT)
         strikes: list[str] = []
+        integrity_flags: list[str] = []
+        amendments_used = 0
         last_error: Exception | None = None
         for attempt in range(1, budget + 1):
             try:
@@ -1392,6 +1644,16 @@ class ScoringWorker:
             except (ProviderError, ValueError) as error:
                 last_error = error
                 strikes.append(f"attempt {attempt}/{budget}: {error}")
+                if isinstance(error, ProseAssessmentError) and amendments_used < amendment_budget:
+                    amendments_used += 1
+                    payload = _amended_payload(payload)
+                    if ASSESSMENT_AMENDED not in integrity_flags:
+                        integrity_flags.append(ASSESSMENT_AMENDED)
+                    strikes.append(
+                        f"attempt {attempt}/{budget}: evidence_assessment re-requested "
+                        f"with an amended prompt "
+                        f"({amendments_used}/{amendment_budget}, FR-JUDGE-10)"
+                    )
                 continue
             return ScoringResult(
                 work_id=request.work_id,
@@ -1412,6 +1674,7 @@ class ScoringWorker:
                 total_bytes=sum(
                     len(value.encode("utf-8")) for _name, value in payload.fields
                 ),
+                integrity_flags=tuple(integrity_flags),
             )
         raise JudgmentError(
             f"judgment for {request.work_id[:12]} refused after {budget} attempt(s); "
@@ -1422,7 +1685,9 @@ class ScoringWorker:
         """One verdict row and the arm's done transition, in one guarded transaction —
         the `M-EXTRACT` at-least-once shape. The verdict row is `INSERT OR IGNORE` on
         `verdict_id = work_id` (`FR-JUDGE-11`: the row carries the band AND the band's
-        position in the declared set, plus the judge's own confidence), and the
+        position in the declared set, plus the judge's own confidence — and, `#80`'s
+        response contract, the cited-span inventory, the sufficiency answer and the
+        uncited mark; never a points value, `FR-JUDGE-11`), and the
         done-marking is guarded on the leased/pending states inside the same
         transaction, so a double-run cannot double-write. Another completion having
         landed first is the at-least-once contract working: its row stands."""
@@ -1457,6 +1722,14 @@ class ScoringWorker:
             )
             won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
             if won:
+                # The response contract, persisted (`CT-JUDGE-06`): the cited-span
+                # inventory as a JSON array — `NULL` when the reply cited nothing, a
+                # null being FR-JUDGE-12's uncited verdict, persisted and marked below,
+                # never discarded (a discarded verdict would shrink a three-judge panel
+                # to two, which FR-AGG-03 forbids) — plus the sufficiency answer and
+                # the uncited mark. No points value is written anywhere: the verdict
+                # carries a band and its ordinal, and the table has no points column
+                # (FR-JUDGE-11).
                 tx.execute(
                     JUDGE_STATEMENTS["insert_verdict"],
                     verdict_id=result.work_id,
@@ -1465,10 +1738,23 @@ class ScoringWorker:
                     band=result.band,
                     band_ordinal=int(result.band_ordinal),
                     self_confidence=float(result.self_confidence),
+                    cited_spans=(
+                        json.dumps(
+                            [_span_document(span) for span in result.cited_spans],
+                            sort_keys=True,
+                        )
+                        if result.cited_spans
+                        else None
+                    ),
+                    evidence_sufficient=int(bool(result.evidence_sufficient)),
+                    uncited=int(bool(result.uncited)),
                 )
 
 
 __all__ = [
+    "ASSESSMENT_AMENDED",
+    "ASSESSMENT_RETRIES_DEFAULT",
+    "ASSESSMENT_RETRIES_ENV",
     "BandView",
     "CriterionView",
     "DependencyEvidence",
@@ -1478,6 +1764,7 @@ __all__ = [
     "JUDGE_STATEMENTS",
     "JudgmentError",
     "PROMPT_FIELD_NAMES",
+    "ProseAssessmentError",
     "QuestionView",
     "REPLY_FIELDS",
     "ScoringRequest",

@@ -55,7 +55,6 @@ _NONE = type(None)
 # --- the type half -------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c02_signal_fields_are_exactly_six_with_one_tri_state():
     """`TC-INTEG-C02` — field-set equality: exactly the six declared names (an
     added field fails, a renamed one fails), five annotated `bool` and
@@ -96,7 +95,6 @@ def _admits_none(hint: object) -> bool:
     return hint is _NONE
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c02_all_three_states_construct_and_the_none_one_is_not_falsy_collapsible():
     """`TC-INTEG-C02` — the three states construct directly (the compatibility
     note's own form): no second extraction (`None`), second family agrees
@@ -176,7 +174,6 @@ def test_tc_integ_c02_the_collapsing_consumer_mutant_turns_this_oracle_red():
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c02_m_agg_treats_not_measured_differently_from_measured_agreement():
     """`TC-INTEG-C02`'s rung-3 limb — the same unanimous panel over the same
     verified, present, not-at-risk evidence, differing ONLY in

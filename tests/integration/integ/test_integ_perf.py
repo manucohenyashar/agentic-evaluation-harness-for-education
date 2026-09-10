@@ -44,14 +44,14 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 
-pytestmark = [pytest.mark.slow, pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
 _COHORT = "c-2026-7B-integ"
 _CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},)
 
 _DISABLE_ENV = "INTEG_SPAN_VERIFICATION_DISABLED"
 _REPS_ENV = "INTEG_PERF_REPS"  # seam rule 3: a slow box widens the min-of, not the budget
-_REPS = 5
+_REPS = 9
 _LINEAR_WINDOW = 12.0  # time(8x bytes) <= 12x time(1x bytes): O(bytes) with headroom
 _DIFFERENTIAL_BUDGET = 1.01  # the design's own "under 1%"
 
@@ -104,6 +104,15 @@ def _timed_verify(tmp_data_dir, docs, *, disabled: bool) -> float:
         # verification in both arms, which would vacate the differential.
         os.environ.pop(_DISABLE_ENV, None)
     try:
+        # One untimed warmup sweep per arm, before the min-of: the first verify
+        # over a fresh store pays one-time costs the differential must not see —
+        # the durable metrics surface opens a second store inside the first
+        # verify(), Windows creates and scans the new WAL files, the page cache
+        # is cold. The warmup puts both arms on equal footing so the min-of
+        # converges to the true per-rep cost from above; the budget itself is
+        # never widened (the module docstring's rule).
+        for submission, gate in gates:
+            gate.verify("run-perf", submission, "C1")
         best = float("inf")
         for _ in range(_reps()):
             start = time.perf_counter()

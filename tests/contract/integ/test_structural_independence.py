@@ -31,7 +31,7 @@ running either module:
 |---|---|
 | public seams | the aeh top-level modules that exist before this story and are neither of the pair (`conf`, `det`, `ingest`, `orch`, `pkg`, `prov`, `setup`, `store`) plus the package root — enumerated by name below so a NEW public module fails this case until it joins the list deliberately. Both sides reading the same canonical markdown through M-INGEST, or the same store through M-STORE, is the declared coordinate system, not a code path the pair shares |
 | checker shape | static AST over the module files (a `state` clause: it holds for paths never exercised); import targets are followed only where they resolve to a first-party file on disk, so third-party and stdlib imports are out of scope and function-level `from X import name` never fabricates a module |
-| synthetic teeth | the checker is proven against mini-packages under `tmp_path` now (faithful pair, self-certification mutant, shared-private-helper mutant, physical-containment mutant); the real-tree assertion is writtenahead behind `#74`+`#68` |
+| synthetic teeth | the checker is proven against mini-packages under `tmp_path` (faithful pair, self-certification mutant, shared-private-helper mutant, physical-containment mutant) AND against the real landed tree below |
 | `EXTRACT_MODULE:prompt_fields` | the representative symbol standing for "the M-EXTRACT module file exists" (the `#68 review` registry precedent), exactly as `INTEG_MODULE:verify_span` stands for M-INTEG |
 """
 
@@ -268,10 +268,9 @@ def test_tc_integ_c05_a_certifier_inside_the_producer_package_is_rejected(tmp_pa
                                          frozenset({"store_like"}))
 
 
-# --- the real tree, writtenahead ------------------------------------------------------------
+# --- the real tree ---------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c05_the_landed_pair_is_structurally_independent():
     """`TC-INTEG-C05` — the clause against the real tree: the landed M-INTEG
     and M-EXTRACT are separate module trees, neither's import closure reaches

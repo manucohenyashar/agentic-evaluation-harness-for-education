@@ -35,7 +35,7 @@ of an unknown), asserted as a routing request, not a signal value.
 returning the previous run's cached values, to avoid spurious routing when the
 store hiccups") is executable twice over: the oracle checker rejects the
 caching mutant's stale set on record-shaped data now (green, teeth), and
-against the real gate with a faulted second run (writtenahead) — where the
+against the real gate with a faulted second run — where the
 mutant's routing volume DROPS, which looks like an improvement, and the
 failure mode is that a broken integrity check reads as clean evidence. That
 is RISK-01's enabling condition, and it is why the regression
@@ -128,21 +128,21 @@ class _FaultView(ExtractionView):
         return result if result is not _NotFaulted else fallback(*args)
 
     def spans(self, submission_id, criterion_id):
-        return self._maybe("spans", super().spans, (submission_id, criterion_id))
+        return self._maybe("spans", super().spans, submission_id, criterion_id)
 
     def second_family_spans(self, submission_id, criterion_id):
         return self._maybe("second-family", super().second_family_spans,
-                           (submission_id, criterion_id))
+                           submission_id, criterion_id)
 
     def regions(self, document_id):
-        return self._maybe("regions", super().regions, (document_id,))
+        return self._maybe("regions", super().regions, document_id)
 
     def panel_sufficiency(self, submission_id, criterion_id):
         return self._maybe("panel", super().panel_sufficiency,
-                           (submission_id, criterion_id))
+                           submission_id, criterion_id)
 
     def criterion_requires_citation(self, criterion_id):
-        return self._maybe("citation", super().criterion_requires_citation, (criterion_id,))
+        return self._maybe("citation", super().criterion_requires_citation, criterion_id)
 
 
 _FAULT_MODES = (
@@ -176,7 +176,6 @@ def _healthy_view_kwargs() -> dict:
 # --- step 1: the exhaustive cross product ---------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("read, mode", CELLS, ids=[f"{r}-{m}" for r, m in CELLS])
 def test_tc_integ_c03_every_signal_times_every_failure_mode_resolves_conservative(
         tmp_data_dir, read, mode):
@@ -198,7 +197,6 @@ def test_tc_integ_c03_every_signal_times_every_failure_mode_resolves_conservativ
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c03_the_citation_read_failing_resolves_to_the_routing_candidate(
         tmp_data_dir):
     """`TC-INTEG-C03` step 1's fifth read — the citation-requirement read
@@ -229,7 +227,6 @@ def test_tc_integ_c03_the_citation_read_failing_resolves_to_the_routing_candidat
 # --- step 3: no partially-computed set that looks complete -----------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c03_an_all_faults_run_is_fully_conservative(tmp_data_dir):
     """`TC-INTEG-C03` step 3 — every read faulting at once: all six signals
     land on their conservative values simultaneously. A mix — one faulted
@@ -255,7 +252,6 @@ def test_tc_integ_c03_an_all_faults_run_is_fully_conservative(tmp_data_dir):
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c03_a_single_fault_leaves_the_rest_of_the_set_computed_honest(
         tmp_data_dir):
     """`TC-INTEG-C03` step 3's other half — with only the panel read faulting,
@@ -313,7 +309,6 @@ def test_tc_integ_c03_the_unknown_therefore_fine_mutant_turns_this_oracle_red():
             SimpleNamespace(confidence=0.9, routing="auto"), threshold)
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("dropped", [
     "spans_verified", "evidence_present", "sufficiency_flag",
     "ocr_overlap_risk", "described_evidence", "extractor_disagreement",
@@ -387,15 +382,21 @@ def test_tc_integ_c03_the_cached_values_mutant_turns_this_oracle_red():
         _assert_signal_set_is_conservative(stale, "regions")
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c03_the_cached_values_mutant_turns_the_real_gate_red(tmp_data_dir):
     """`TC-INTEG-C03`'s construction against the real gate: run 1 healthy (its
-    clean set cached), run 2 over a gate whose regions read faults — the
-    mutant serves the stale set, the oracle reds on exactly that set, and the
-    honest gate on the same fault returns the conservative one. The FR-style
-    cases stay green on the mutant (its healthy run is indistinguishable from
-    the honest one); only the faulted read separates them, which is why this
-    regression is permanent (REG-CT-INTEG-03)."""
+    clean set cached), run 2 over a gate whose verify RAISES — the mutant
+    serves the stale set, the oracle reds on exactly that set, and the honest
+    gate on a faulted regions read returns the conservative one BY VALUE (a
+    read fault never raises, so a caching wrapper has no stale window on it —
+    reconciled at the unmark: the written-ahead draft faulted the regions read
+    for run 2 too, but the real gate resolves that fault to the conservative
+    set rather than raising, and the mutant's except never fires on it). The
+    raise class the mutant catches is the disclosed one — a metrics-surface
+    fault propagates out of verify() after the routing writes have committed
+    (`aeh.integ._metrics_target`'s docstring). The FR-style cases stay green
+    on the mutant (its healthy run is indistinguishable from the honest one);
+    only the faulted call separates them, which is why this regression is
+    permanent (REG-CT-INTEG-03)."""
     _seeded_store(tmp_data_dir)
 
     class _FaultingRegionsGate:
@@ -406,7 +407,21 @@ def test_tc_integ_c03_the_cached_values_mutant_turns_the_real_gate_red(tmp_data_
             gate, _ = make_gate(tmp_data_dir, faulted)
             return gate.verify(run_id, submission_id, criterion_id)
 
-    # The honest gate on the same fault: conservative, not stale.
+    class _RaisingMetricsGate:
+        """The real gate on the fault class the design lets raise: the durable
+        metrics surface is unreachable, so verify() propagates after routing —
+        the exception a caching wrapper would swallow."""
+
+        def verify(self, run_id, submission_id, criterion_id):
+            gate, _ = make_gate(tmp_data_dir, ExtractionView(**_healthy_view_kwargs()))
+
+            def _refuse():
+                raise RuntimeError("injected: the metrics surface is unreachable")
+
+            gate._metrics_target = _refuse  # noqa: SLF001 - the injection point
+            return gate.verify(run_id, submission_id, criterion_id)
+
+    # The honest gate on a faulted read: conservative BY VALUE, not stale.
     honest = _FaultingRegionsGate().verify(_RUN, _SUBMISSION, "C1")
     _assert_signal_set_is_conservative(honest, "regions")
 
@@ -416,8 +431,8 @@ def test_tc_integ_c03_the_cached_values_mutant_turns_the_real_gate_red(tmp_data_
     first = mutant.verify(_RUN, _SUBMISSION, "C1")
     assert first.ocr_overlap_risk is False
 
-    # Run 2 through the mutant over the faulting gate: stale set served.
-    stale_mutant = _CachingGate(_FaultingRegionsGate())
+    # Run 2 through the mutant over the raising gate: stale set served.
+    stale_mutant = _CachingGate(_RaisingMetricsGate())
     stale_mutant._cache = first
     stale = stale_mutant.verify(_RUN + "-2", _SUBMISSION, "C1")
     assert stale is first, "premise: the mutant served run 1's cached set"

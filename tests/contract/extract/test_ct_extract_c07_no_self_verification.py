@@ -51,6 +51,7 @@ from tests.support.impl import INTEG_MODULE, EXTRACT_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID
 from tests.contract.extract._doubles import (
     build_markdown,
+    byte_span,
     extract_once,
     make_world,
     require_extract_surface,
@@ -68,7 +69,7 @@ _CRITERIA = [
     {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},
 ]
 _SPANS = [
-    {"start": 41, "end": 84, "text": "The derivation holds for the open criterion.",
+    {**byte_span(_MARKDOWN, "The derivation holds for the open criterion."),
      "region_kind": "transcribed_text"},
 ]
 
@@ -144,7 +145,6 @@ def test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source(
     )
 
 
-@pytest.mark.writtenahead  # rung 3: `verify_span` is M-INTEG's (#73), not yet landed
 def test_tc_extract_c07_m_integ_rederives_verification_rather_than_trusting_a_flag(
     tmp_data_dir, make_fixture_provider
 ):

@@ -44,9 +44,11 @@ import time
 import aeh.prov
 import pytest
 
+from aeh.store import open_store
 from tests.contract.integ._doubles import block_module_surfaces
 from tests.support.impl import INTEG_MODULE, require
 from tests.support.integ_vocabulary import (
+    Doc,
     ExtractionView,
     PanelFlags,
     Span,
@@ -61,6 +63,7 @@ _COHORT = ORCH_COHORT_ID
 _DISABLE_ENV = "INTEG_SPAN_VERIFICATION_DISABLED"
 _REPS_ENV = "INTEG_PERF_REPS"
 _REPS = 3
+_INNER = 20
 _EXPONENT_WINDOW = (0.5, 1.5)
 _BUDGET = 1.01  # the design's own "under 1%"
 _COVERAGE_UNITS = 12
@@ -150,21 +153,50 @@ def _fitted_exponent(points: list[tuple[float, float]]) -> float:
     return cov / var
 
 
+def _timed_verify_span(docs) -> float:
+    """Minimum per-call pure-verification wall clock over `_reps()` repetitions.
+
+    The fit measures the computation the O(total span bytes) claim NAMES —
+    `verify_span` over the workload's spans. The gate's `verify()` adds
+    constant-per-cell store traffic (the routing write and the six rate
+    emissions) that at these byte volumes drowns the linear term entirely
+    (measured: a ~0.06 fitted exponent, a flat line under the SQLite floor);
+    that traffic is common to both arms of the budget limb below, which is
+    why the budget can keep measuring the whole `verify()` differential.
+    Each timed sample sweeps the workload `_INNER` times and divides, so the
+    per-call dispatch constant (measured ~2 microseconds — try/except, the
+    duck-typed field reads, the UTF-8 setup) sits well above the timer's
+    resolution instead of tilting the fit at the ladder's small end."""
+    VerifySpan = require(INTEG_MODULE, "verify_span", issue="#73")
+    best = float("inf")
+    for _ in range(_reps()):
+        started = time.perf_counter()
+        for _inner in range(_INNER):
+            for markdown, (start, end, text) in docs:
+                assert VerifySpan(Doc(markdown=markdown), Span(start, end, text)) is True
+        best = min(best, (time.perf_counter() - started) / _INNER)
+    return best
+
+
 # --- limb 1: the complexity fit, two orders of magnitude -------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_integ_c12_verification_is_linear_in_total_span_bytes(tmp_data_dir):
     """`TC-INTEG-C12` — the fit: seven doublings of total span bytes (1x..128x,
-    past the two orders of magnitude the clause names), time measured per size,
-    the log-log growth exponent asserted linear. The quadratic a rescanning or
-    model-assisted implementation produces fails the window."""
-    sizes = [25, 50, 100, 200, 400, 800, 1600]
+    past the two orders of magnitude the clause names), time measured per size
+    over the pure verification computation, the log-log growth exponent
+    asserted linear. The quadratic a rescanning or model-assisted
+    implementation produces fails the window. (Reconciled at #74's landing:
+    the fit times `verify_span`, the computation the O() claim names, and the
+    ladder starts at 200 sentences because below that the per-call dispatch
+    constant — not the byte compare — dominates the measurement; see
+    `_timed_verify_span` for why a whole-`verify()` fit reads flat.)"""
+    sizes = [200, 400, 800, 1600, 3200, 6400, 12800, 25600]
     points = []
     for size in sizes:
         docs = _workload(n_sentences=size)
-        elapsed = _timed_verify(tmp_data_dir / f"size-{size}", docs, disabled=False)
+        elapsed = _timed_verify_span(docs)
         points.append((_total_span_bytes(docs), elapsed))
     alpha = _fitted_exponent(points)
     low, high = _EXPONENT_WINDOW
@@ -176,7 +208,6 @@ def test_tc_integ_c12_verification_is_linear_in_total_span_bytes(tmp_data_dir):
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_integ_c12_verification_adds_under_one_percent_to_run_wall_clock(
         tmp_data_dir):
@@ -193,7 +224,6 @@ def test_tc_integ_c12_verification_adds_under_one_percent_to_run_wall_clock(
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c12_no_unit_verification_needs_a_model_call(tmp_data_dir,
                                                               monkeypatch):
     """`TC-INTEG-C12` — no model call at scale: the whole multi-unit workload
@@ -255,7 +285,6 @@ def test_tc_integ_c12_the_coverage_oracle_has_teeth():
         _assert_total_coverage(truth[:11], truth)           # a unit dropped
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c12_every_unit_is_verified_total_not_sampled(tmp_data_dir):
     """`TC-INTEG-C12` — the coverage limb over the real gate: 12 units, unit 0
     clean, units 1..11 each carrying a UNIQUE invalid span (distinct text, so a

@@ -2,7 +2,8 @@
 
 **The footgun.** The chains in `TIER_MIGRATIONS` are *concatenated at import time* by the
 modules that own the schema they add — `aeh.pkg` and `aeh.det` for Tier P, `aeh.ingest`,
-`aeh.det`, `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth` and `aeh.agg` for Cohort, `aeh.det` for Tier D — so the
+`aeh.det`, `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth` and `aeh.agg` for Cohort,
+`aeh.det` and `aeh.integ` for Tier D — so the
 chain an
 open sees is only as long as the list of contributing modules the process has imported so
 far. A process that opens a Tier P file before those imports builds the file at the base
@@ -34,7 +35,9 @@ the third and fourth rotations — numbered 13 when it first landed, renumbered 
 as #61's lifecycle and then #97's `synth_narrative_key` took the numbers first at the
 merges (`aeh.judge` owned Cohort's last migration; `aeh.synth` joined the import lists
 below in the same change). #92's `agg_confidence_columns` is the fifth — Cohort 15→16,
-`aeh.agg` joining the lists and owning the tail.)
+`aeh.agg` joining the lists and owning the tail — and #80's
+`judge_verdict_response_columns` the sixth — Cohort 16→17, the tail returning to
+`aeh.judge`.)
 
 **Why fresh interpreters.** Inside this suite the conftest imports every contributing module
 up front, so an in-process case could never see the truncated world — the very reason the
@@ -80,6 +83,7 @@ import aeh.agg  # noqa: F401
 import aeh.det  # noqa: F401
 import aeh.extract  # noqa: F401
 import aeh.ingest  # noqa: F401
+import aeh.integ  # noqa: F401
 import aeh.judge  # noqa: F401
 import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
@@ -174,6 +178,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.ingest  # noqa: F401
+    import aeh.integ  # noqa: F401
     import aeh.judge  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401

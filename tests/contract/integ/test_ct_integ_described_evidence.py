@@ -46,6 +46,7 @@ from tests.contract.integ._doubles import (
     OCR_FLOOR,
     byte_span,
     make_gate,
+    seeded_document,
 )
 from tests.support.integ_vocabulary import (
     CitedRegion,
@@ -95,7 +96,6 @@ def _otherwise_perfect_view(regions, crop_ref=None):
 # --- limb 1 + 2: routing on that basis alone, and the described marking ----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c10_perfect_evidence_in_a_described_region_still_routes_and_is_marked(
         tmp_data_dir):
     """`TC-INTEG-C10` — the span verifies, the panel is unanimous and
@@ -106,6 +106,7 @@ def test_tc_integ_c10_perfect_evidence_in_a_described_region_still_routes_and_is
     region = _described_region(start, start + len("describes"))
     view = _otherwise_perfect_view((region,))
     gate, store = make_gate(tmp_data_dir, view, ocr_conf_floor=OCR_FLOOR)
+    seeded_document(store, _SUBMISSION, _MARKDOWN)
     signals = gate.verify(_RUN, _SUBMISSION, _CRITERION)
     assert signals.described_evidence is True, (
         "evidence wholly within a described_graphic region was not marked described "
@@ -125,7 +126,6 @@ def test_tc_integ_c10_perfect_evidence_in_a_described_region_still_routes_and_is
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c10_evidence_straddling_described_and_transcribed_is_not_marked(
         tmp_data_dir):
     """`TC-INTEG-C10`'s precision cell — the WHOLLY half: the cited span starts
@@ -141,6 +141,7 @@ def test_tc_integ_c10_evidence_straddling_described_and_transcribed_is_not_marke
         panel=PanelFlags((True, True, True)),
     )
     gate, store = make_gate(tmp_data_dir, view, ocr_conf_floor=OCR_FLOOR)
+    seeded_document(store, _SUBMISSION, _MARKDOWN)
     signals = gate.verify(_RUN, _SUBMISSION, _CRITERION)
     assert signals.described_evidence is False, (
         "evidence straddling a described and a transcribed region came out marked "
@@ -152,7 +153,6 @@ def test_tc_integ_c10_evidence_straddling_described_and_transcribed_is_not_marke
 # --- limb 3: the crop is retained and reachable in one action --------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c10_the_described_regions_crop_is_retained_and_reachable(
         tmp_data_dir):
     """`TC-INTEG-C10` — the crop half: the described region's `crop_ref`
@@ -161,6 +161,7 @@ def test_tc_integ_c10_the_described_regions_crop_is_retained_and_reachable(
     case fetches rather than trusts the reference."""
     store = open_store(tmp_data_dir)
     crop_ref = store.blobs().put(_CROP_BYTES)
+    seeded_document(store, _SUBMISSION, _MARKDOWN)
     start = _MARKDOWN.encode("utf-8").find(b"describes")
     region = _described_region(start, start + len("describes"))
     view = _otherwise_perfect_view((region,), crop_ref=crop_ref)

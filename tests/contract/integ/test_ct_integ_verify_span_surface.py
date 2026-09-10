@@ -55,7 +55,6 @@ def _doc() -> Doc:
 # --- the purity limb, with all three surfaces blocked --------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c01_verify_span_is_pure_with_model_network_and_store_blocked(
         network_guard, monkeypatch):
     """`TC-INTEG-C01` — the call runs under the TS-00 socket guard with every
@@ -89,7 +88,6 @@ def test_tc_integ_c01_verify_span_is_pure_with_model_network_and_store_blocked(
     network_guard.assert_no_network()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c01_a_failing_span_verifies_under_blocked_surfaces_too(
         network_guard, monkeypatch):
     """`TC-INTEG-C01`'s negative control — rejection must also be computable
@@ -169,7 +167,6 @@ def _boundary_cases() -> list[tuple[str, Span, bool]]:
 _BOUNDARY_NAMES = [name for name, _, _ in _boundary_cases()]
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name, span, expected", _boundary_cases(), ids=_BOUNDARY_NAMES)
 def test_tc_integ_c01_every_enumerated_boundary_verdicts_exactly(name, span, expected):
     """`TC-INTEG-C01` — the boundary set the clause names, one exact verdict per
@@ -190,7 +187,6 @@ def test_tc_integ_c01_every_enumerated_boundary_verdicts_exactly(name, span, exp
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c01_boundary_verdicts_are_independent_of_call_order():
     """`TC-INTEG-C01`'s purity corollary over the whole boundary set — the same
     calls in a different order return the same verdicts: no cached-by-position

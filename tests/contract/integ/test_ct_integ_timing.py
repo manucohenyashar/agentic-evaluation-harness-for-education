@@ -127,7 +127,6 @@ def _scenario(tmp_data_dir, verdicts: bool) -> tuple:
     return handle, run_id, gate, store
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c11_before_sweep_two_the_flag_is_its_conservative_default(
         tmp_data_dir):
     """`TC-INTEG-C11` — the exact instant, read: extraction's payload is in the
@@ -161,7 +160,6 @@ def test_tc_integ_c11_before_sweep_two_the_flag_is_its_conservative_default(
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c11_after_scoring_the_flag_is_finally_computed(tmp_data_dir):
     """`TC-INTEG-C11` — the second instant: verdicts exist for the criterion,
     and the same gate now computes the flag (the unanimous-sufficient panel
@@ -185,7 +183,6 @@ def test_tc_integ_c11_after_scoring_the_flag_is_finally_computed(tmp_data_dir):
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c11_the_two_instants_differ_on_the_same_view(tmp_data_dir):
     """`TC-INTEG-C11`'s differential — the extraction side held identical (same
     view, same unanimous-sufficient payload), only the ledger's scoring state
