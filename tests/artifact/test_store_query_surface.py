@@ -475,10 +475,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # in store.py, and again with #97's and #78's contributions named in the refusal's
     # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    # (#92's re-pin: the 15→16 pin bump and the refusal text's eighth contributor added
-    # three lines above each site — re-read from the walker, never hand-unioned.)
-    "aeh.store:1816",
-    "aeh.store:2598",
+    # (#92's re-pin moved them again; #73's Durable pin and refusal text moved them once
+    # more — re-read from the walker, never hand-unioned.)
+    "aeh.store:1818",
+    "aeh.store:2600",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -488,6 +488,24 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
+    # The #73/#74 integ sites: the routing ladder's ledger writes (the four
+    # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
+    # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
+    # emissions (`upsert_metric` in its six-signal loop, `upsert_alert` above
+    # threshold). All are INTEG_STATEMENTS with keyword parameters — the module writes
+    # only the declared signals-plus-routing surface (CT-INTEG-04's audit); its reads
+    # go through `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
+    "aeh.integ:831",
+    "aeh.integ:840",
+    "aeh.integ:856",
+    "aeh.integ:867",
+    "aeh.integ:913",
+    "aeh.integ:931",
+    "aeh.integ:945",
+    "aeh.integ:962",
+    "aeh.integ:979",
+    "aeh.integ:989",
+    "aeh.integ:999",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

@@ -110,7 +110,6 @@ def _rejection_cases() -> list[tuple[str, Span]]:
     ]
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name, span",
                          _rejection_cases(),
                          ids=[name for name, _ in _rejection_cases()])
@@ -228,7 +227,6 @@ def _scenario(tmp_data_dir, spans) -> tuple:
     return store, handle, run_id, doc, payload, gate
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c06_a_rejected_span_is_discarded_and_the_unit_retried(tmp_data_dir):
     """`TC-INTEG-C06` — the hallucinated span goes through the gate: it did not
     verify, it left no `done` extract unit and no evidence row behind, and the
@@ -255,7 +253,6 @@ def test_tc_integ_c06_a_rejected_span_is_discarded_and_the_unit_retried(tmp_data
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c06_repeated_rejection_quarantines_and_nothing_scores(tmp_data_dir):
     """`TC-INTEG-C06` — the ladder's ceiling: `RETRY_LIMIT` rejections end in
     `quarantined` with no live retry left and no score unit completed —
@@ -289,7 +286,6 @@ def test_tc_integ_c06_repeated_rejection_quarantines_and_nothing_scores(tmp_data
     store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c06_one_rejected_span_retries_the_whole_unit(tmp_data_dir):
     """`TC-INTEG-C06` — partial rejection: a verified span alongside a
     hallucinated one. The unit still retries (the extractor hallucinated once;

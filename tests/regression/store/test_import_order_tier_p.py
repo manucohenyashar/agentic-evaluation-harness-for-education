@@ -2,7 +2,8 @@
 
 **The footgun.** The chains in `TIER_MIGRATIONS` are *concatenated at import time* by the
 modules that own the schema they add — `aeh.pkg` and `aeh.det` for Tier P, `aeh.ingest`,
-`aeh.det`, `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth` and `aeh.agg` for Cohort, `aeh.det` for Tier D — so the
+`aeh.det`, `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth` and `aeh.agg` for Cohort,
+`aeh.det` and `aeh.integ` for Tier D — so the
 chain an
 open sees is only as long as the list of contributing modules the process has imported so
 far. A process that opens a Tier P file before those imports builds the file at the base
@@ -80,6 +81,7 @@ import aeh.agg  # noqa: F401
 import aeh.det  # noqa: F401
 import aeh.extract  # noqa: F401
 import aeh.ingest  # noqa: F401
+import aeh.integ  # noqa: F401
 import aeh.judge  # noqa: F401
 import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
@@ -174,6 +176,7 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.ingest  # noqa: F401
+    import aeh.integ  # noqa: F401
     import aeh.judge  # noqa: F401
     import aeh.orch  # noqa: F401
     import aeh.pkg  # noqa: F401

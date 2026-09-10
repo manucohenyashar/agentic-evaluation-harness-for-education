@@ -26,6 +26,7 @@ fails as a stated `NotImplementedYet` naming its issue, never as a fake pass.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Iterable
 
 from aeh.store import open_store as open_store
@@ -114,29 +115,65 @@ def byte_span(markdown: str, needle: str, *, occurrence: int = 0) -> Span:
 class ConsumerVerdict:
     """A consumer-constructed verdict record (HLD §9.9's shape; `#76` precedent).
 
-    `aggregate(verdicts, criterion, signals)` is §3.12's declared pure surface;
-    the records below carry the field names the `#76` file reconciled —
-    `judge_id`, `band`, `cited_spans`, `self_confidence`, `evidence_sufficient`
-    — and reconcile when M-JUDGE/M-AGG land their dataclasses.
+    `aggregate(verdicts, criterion, signals)` is §3.12's declared pure surface.
+    Reconciled at M-AGG's landing (`#91`/`#92`): a verdict names a declared band
+    **with an ordinal** and carries no points of its own (§3.12's Requires table),
+    so `ordinal` is derived from the band name's declared position — the records
+    keep `cited_spans` (the `#76` shape `aeh.agg._verdict_cited` reads), plus
+    `self_confidence` and `evidence_sufficient` for the cases that vary them.
     """
 
     def __init__(self, judge_id: str, band: str, cited_spans: tuple[Span, ...] = (),
                  self_confidence: float = 0.95, evidence_sufficient: bool = True) -> None:
         self.judge_id = judge_id
         self.band = band
+        suffix = band[1:] if band[:1] == "B" else ""
+        if not suffix.isdigit():
+            raise ValueError(
+                f"ConsumerVerdict band {band!r} carries no declared ordinal — "
+                "the double derives `aggregate`'s `verdict.ordinal` from the "
+                "declared `B<n>` name (reconciled at M-AGG's landing)"
+            )
+        self.ordinal = int(suffix)
         self.cited_spans = cited_spans
         self.self_confidence = self_confidence
         self.evidence_sufficient = evidence_sufficient
 
 
 class Criterion:
-    """The criterion record `aggregate` reads (HLD §9.9's criterion block)."""
+    """The criterion record `aggregate` reads (HLD §9.9's criterion block).
+
+    Reconciled at M-AGG's landing: `.bands` is the ordered band **row set**
+    CT-PKG-04 declares — rows of `(name, ordinal, points)`, `band_count` even and
+    in 2..6, points non-decreasing in ordinal — and `aggregate` maps the median
+    band to points exactly once through `aeh.pkg.points_for_band`. The names stay
+    the constructor's interface (every case here passes band *names*); the rows
+    are built from the canonical 4-band schedule the landed `#92` suite pins
+    (0.0, 1.0, 3.0, 6.0), extended by the triangular continuation so a wider
+    declared set stays monotone. `evidence_required` defaults True — the
+    citation-requiring reading the consumer cap cases sit under.
+    """
+
+    #: The canonical 4-band points schedule (the #92 suite's B0/B1/B2/B3 fixture),
+    #: then the triangular numbers — monotone, so CT-PKG-04 holds at any width.
+    _POINTS = (0.0, 1.0, 3.0, 6.0, 10.0, 15.0)
 
     def __init__(self, criterion_id: str, bands: tuple[str, ...] = ("B0", "B1", "B2", "B3"),
                  scoring_model: str = "atomic") -> None:
+        if not 2 <= len(bands) <= 6:
+            raise ValueError(
+                f"Criterion {criterion_id!r} declares {len(bands)} bands — "
+                "CT-PKG-04 requires an even 2..6"
+            )
         self.criterion_id = criterion_id
-        self.bands = bands
         self.scoring_model = scoring_model
+        self.bands = tuple(
+            SimpleNamespace(band=name, ordinal=ordinal,
+                            points=self._POINTS[ordinal])
+            for ordinal, name in enumerate(bands)
+        )
+        self.band_count = len(self.bands)
+        self.evidence_required = True
 
 
 def unanimous_panel(band: str = "B2", size: int = 3) -> tuple[ConsumerVerdict, ...]:

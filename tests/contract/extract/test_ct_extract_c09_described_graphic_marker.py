@@ -169,7 +169,6 @@ def test_tc_extract_c09_described_graphic_spans_carry_the_exact_marker_and_the_r
         world.close()
 
 
-@pytest.mark.writtenahead  # rung 3: the routing signal is M-INTEG's (#74), not yet landed
 def test_tc_extract_c09_m_integ_routes_on_the_marker_alone(
     tmp_data_dir, make_fixture_provider
 ):
