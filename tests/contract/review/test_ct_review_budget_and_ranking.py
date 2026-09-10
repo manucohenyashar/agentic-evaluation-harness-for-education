@@ -156,7 +156,6 @@ def test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget():
     """The discriminating fixture: *"a run with far more flagged items than budget, where
     reserve-after-ranking would produce a full queue and zero blind items."*

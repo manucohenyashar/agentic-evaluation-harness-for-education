@@ -33,7 +33,6 @@ pytestmark = pytest.mark.contract
 # --- step 1: unreachability, at the query level -----------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_query_level():
     """Step 1 — *"asserted at the query/session level, so the guarantee holds regardless of what
     any template does. Hiding in the UI is what this clause explicitly refuses, so a case that
@@ -66,7 +65,6 @@ def test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_que
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c09_no_blind_session_object_caches_a_score_row():
     """The block form's **adversarial construction**, asserted on the object rather than the page.
 
@@ -94,7 +92,6 @@ def test_tc_review_c09_no_blind_session_object_caches_a_score_row():
 # --- step 2: five absences, swept individually -------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("forbidden", vocab.BLIND_FORBIDDEN_FIELDS)
 def test_tc_review_c09_no_system_output_is_available_before_submission(forbidden):
     """Step 2 — *"swept as five separate absences over the rendered flow and over the session's
@@ -186,7 +183,6 @@ def test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrender
 # --- step 4: the two clauses are one guarantee -------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c09_blind_labels_carry_saw_system_output_zero_legitimately():
     """Step 4 — joining `CT-REVIEW-08`, *"so the two clauses are verified as the single guarantee
     they jointly make."*

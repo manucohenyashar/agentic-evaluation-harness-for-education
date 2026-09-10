@@ -25,7 +25,6 @@ pytestmark = pytest.mark.contract
 # --- CT-REVIEW-07 — every action writes a label carrying the named fields ----------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("label_type", vocab.LABEL_TYPES)
 def test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality(label_type):
     """*"Assert every action writes a `label` carrying all nine named fields, by set equality.
@@ -116,7 +115,6 @@ def test_tc_review_c07_both_bands_are_present_and_agreement_is_computed_over_the
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c07_every_label_names_an_actor_and_a_timestamp():
     """`NFR-REVIEW-03` — *"what makes the label store auditable rather than merely large."*
 

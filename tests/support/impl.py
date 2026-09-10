@@ -1191,42 +1191,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # survival case below still waits on #111's sample surface. The `#110 review`
     # entry was removed at #110's landing: `record_label`/`labels_for` and the
     # service's label store are in, and its ten cases rejoined the gate.
-    "#111 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:blind_sample_skipped",
-        (
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_blind_labels_carry_saw_system_output_zero_legitimately",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_blind_session_object_caches_a_score_row",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_system_output_is_available_before_submission",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_query_level",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_names_an_actor_and_a_timestamp",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_produced",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c10_skipping_the_blind_sample_leaves_grades_delivered_and_finalized",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_blind_sample_draws_inside_its_range_over_judged_criteria_only",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_blind_sample_refuses_a_draw_outside_its_stated_range",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_draw_is_uniform_over_the_eligible_set_rather_than_first_n",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_population_only",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c15_an_interrupted_blind_session_keeps_the_criteria_actually_answered",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_output_value",
-        ),
-    ),
+    # `"#111 review"` is gone because #111 landed (unmarked 2026-09, that story):
+    # `aeh.review:blind_sample_skipped` reports the skip, and with it the whole
+    # blind surface is in — `blind_sample`/`submit_blind` (the 15-25 draw over
+    # judged criteria), `whole_grade_sample` (the 10-15 auto-accepted grades),
+    # `skip_blind_sample` with its one-consequence report, and the `BlindSession`
+    # whose `readable_tables()`/`available_data()` are CT-REVIEW-09's probe
+    # surface. Its fifteen cases unmarked and rejoined the gate. One
+    # reconciliation at the unmark: the CT-REVIEW-08 sweep's fixture was
+    # `flagged_population(12)`, which groups nothing by construction — `groups[0]`
+    # was an IndexError for any implementation — so the fixture now appends a
+    # two-row identical-signature population and the per-item paths select the
+    # entries that carry no `members` attribute (a group ranks above items).
+    # Recorded in the sweep's docstring. The CT-REVIEW-09 transport step and the
+    # CT-REVIEW-10 absence case stay red for their own stories (#124/#115), as
+    # the keying above intended.
     "#115 review": (
         "symbol",
         f"{STATS_MODULE}:build_stats",

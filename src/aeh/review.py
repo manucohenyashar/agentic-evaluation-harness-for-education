@@ -122,8 +122,9 @@ and this implementation chose; all are reported on the PR):
   cohort the in-memory rows do not carry is not Phase 1's shape.
 * *Observability is per run, attributed from the service's own bookkeeping.*
   ``build_queue`` records the run it built for; actions after a build attribute
-  their labels to that run. ``blind_completion_rate`` is emitted as ``None``
-  until #111's blind flow exists — an unmeasured rate, never a silent zero.
+  their labels to that run. ``blind_completion_rate`` is measured from #111's
+  blind flow: answered refs over drawn refs for the run — ``None`` for a run
+  that never drew, which stays an unmeasured rate, never a silent zero.
 * *The budget-exhaustion streak counts the administrations a criterion
   exhausted.* The service sees exhaustion events, not the administrations that
   went without one, so the streak is the recorded sequence for the criterion
@@ -243,22 +244,100 @@ Interpretations #109 records:
 three #108 members (``build_queue``, ``act``, ``act_on_group``), #109's
 read-and-audit surface (``admission_query``, ``write_audit``, ``scores``,
 ``labels_for``, ``end_session``/``close_run``; ``write_fields`` is module
-level) and #110's label store: ``record_label``/``labels_for`` at module level —
-the collection surface for paths that hold no service handle — and ``label``,
+level), #110's label store — ``record_label``/``labels_for`` at module level,
+the collection surface for paths that hold no service handle, and ``label``,
 ``points_for_band``, ``edit_views``, ``act_from_view``, ``observability_counters``,
-``counter_emissions``, ``exhaust_budget_on`` and ``alerts`` on the service.
-The two samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``) are
-#111's and are deliberately absent here. Actions write in-memory labels and, on
+``counter_emissions``, ``exhaust_budget_on`` and ``alerts`` on the service —
+and #111's two samples: ``blind_sample``/``submit_blind`` (the blind flow the
+reserve protects), ``whole_grade_sample``, ``skip_blind_sample`` and
+``render_blind_flow`` on the service, with ``blind_sample_skipped`` at module
+level beside ``record_label``. Actions write in-memory labels and, on
 a store-backed service, the same label to Tier D; a label's ``new_points`` is
 derived from its band through `CT-PKG-05`'s pinned mapping
 (``aeh.pkg.points_for_band``), which `NFR-AGG-02` keeps defined in exactly one
 place in the source.
+
+**#111 — the two samples, the skip, and the budget the reservation protects.**
+Extends the service with `FR-REVIEW-12`/`-13`/`-14`'s three surfaces — the
+blind sample the reserve protects, its submission, and the whole-grade sample —
+plus the skip and its report (`CT-REVIEW-09`/`-10`/`-11`, `CT-REVIEW-15`'s
+interrupted-session half, and the blind path of `CT-REVIEW-08`):
+
+* *The reserve reconciliation is kept as landed.* #108's flagged finding asked
+  this story to keep or revise the reserve reading; the reserve-cap +
+  floor-of-one interpretation above is **kept** unchanged — the reserve is
+  ``min(REVIEW_BLIND_RESERVE_MINUTES, budget_minutes)`` and the queue never
+  returns an empty ``shown`` over a non-empty admitted population. The blind
+  sample is drawn independently of the queue's fill (`CT-REVIEW-02`'s survival
+  case is about the reserved minutes staying unspent on queue items), so the
+  floor never costs the sample its draw — it costs the queue items, which is
+  the honest degradation `NFR-REVIEW-05` states.
+* *The draw is uniform over the eligible set, seeded per draw.* Each draw's
+  RNG is derived from the service's seed and the draw's index, so the same
+  seed reproduces the same *sequence* of draws while successive draws on one
+  service differ — the per-run rate aggregates sittings, and a second sitting
+  that re-drew the first's refs would double-write its labels; a declared seed
+  of ``None`` stays entropy-per-draw, since an undeclared seed that silently
+  pinned every administration to the same sample would be first-N's defect in
+  disguise. ``blind_sample`` samples over the admitted judged rows. A blind
+  label is evidence about the system, not a resolution of the row, so a drawn
+  and answered ref stays eligible for the queue — the flow collects validation
+  evidence, it does not review the row (`CT-REVIEW-06`'s indirection is the
+  queue action's). A pool smaller than ``n`` floors the draw at the pool — the
+  floor-of-one reading applied to a population: a small cohort gets a smaller
+  sample, disclosed by the session's item count, rather than a refusal that
+  would leave a small administration no validation evidence at all.
+* *The system's output is structurally unreachable from the blind flow, not
+  hidden.* `CT-REVIEW-09` words the clause as reachability, so the guarantee is
+  a property of the type: a ``BlindItem`` carries ``submission_id``,
+  ``criterion_id`` and ``evaluation_mode`` — the identity a judgement is about
+  — and nothing else, exactly as `aeh.synth`'s ``L2Request`` carries no field a
+  score could ride. ``BlindSession`` exposes ``readable_tables()``
+  (``submission`` and ``criterion``, per §3.15's Data flow paragraph),
+  ``available_data()`` and no field a score row could occupy; the rendered flow
+  is built from the session alone, so the five outputs `FR-REVIEW-11` forbids
+  are unreachable from the draw through to the render. The label's
+  ``saw_system_output = 0`` is earned by that construction, not stored as a
+  constant (`CT-REVIEW-09` step 4).
+* *A submission records exactly the criteria answered.* ``submit_blind`` writes
+  one ``blind`` label per answered ref — ``saw_system_output = 0``,
+  ``system_band = None``, no ``review_queue_action`` (a blind label is not a
+  queue action) — and refuses a ref the session never drew. An interrupted
+  session is the same path with ``interrupted=True``: the labels written are
+  the answered ones, which is `CT-REVIEW-15`'s clause in both directions (more
+  would invent a judgement nobody made; fewer would discard the scarcest data
+  the system collects). A session submits once; a second submission of the
+  same session is refused rather than double-written.
+* *The whole-grade sample is an offer, not a step.* ``whole_grade_sample``
+  draws 10–15 complete final grades from the auto-accepted population — a
+  submission qualifies only when **every** criterion row routed ``auto``:
+  sampling reviewed grades would measure the review, not the system, and a
+  submission holding a reviewed criterion is excluded with them, because a
+  partial band set presented as the student's final grade understates it and a
+  mixed one shows the teacher's corrections as system work. Each grade is one
+  ``rendered_as_student_sees_it``. It writes no label — `FR-REVIEW-14` offers
+  a display, and `FR-REVIEW-09` writes labels for decisions. The store form
+  reads its population through the declared ``select_auto_grades`` statement,
+  whose NOT IN guard carries the same restriction (the service's own fetch
+  admits only the teacher's routings); the in-memory form filters its own rows
+  to the same set.
+* *Skipping has exactly one consequence.* ``skip_blind_sample`` records the
+  skip; ``blind_sample_skipped`` reads it back as the reported absence. The
+  report's ``current_figure`` is ``None`` — never a previous administration's
+  figure, which is the silent carry-forward RISK-08 forbids — and the run's
+  ``close_run`` report carries ``grades_delivered``/``grades_finalized`` as
+  ``True`` by construction: the sample is the system's instrument, not the
+  student's gate (`FR-REVIEW-13`). A run either draws its sample or skips it:
+  a draw after a skip, and a skip beside a draw, are both refused, so the
+  report's "no new validation evidence was collected" is guaranteed to agree
+  with the evidence on record rather than asserted over it.
 """
 
 from __future__ import annotations
 
 import itertools
 import os
+import random
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -279,6 +358,8 @@ __all__ = [
     "REVIEW_DEFAULT_BANDS",
     "REVIEW_STATEMENTS",
     "REVIEW_BUDGET_EXHAUSTION_ALERT",
+    "BLIND_SAMPLE_RANGE",
+    "WHOLE_GRADE_SAMPLE_RANGE",
     "ReviewError",
     "StaleReviewItemError",
     "ReviewItem",
@@ -286,6 +367,10 @@ __all__ = [
     "ReviewQueue",
     "BuildEvent",
     "LabelRecord",
+    "BlindItem",
+    "BlindSession",
+    "SubmissionGrade",
+    "BlindSampleSkipReport",
     "QueryPlan",
     "WriteRecord",
     "ResidualReport",
@@ -299,6 +384,7 @@ __all__ = [
     "rank_queue_items",
     "record_label",
     "labels_for",
+    "blind_sample_skipped",
     "write_fields",
 ]
 
@@ -313,14 +399,25 @@ __all__ = [
 #: Minutes always reserved for the blind sample, subtracted BEFORE any ranking
 #: (`FR-REVIEW-02`) — the event order is the contract (`CT-REVIEW-02`).
 REVIEW_BLIND_RESERVE_MINUTES = 10
-#: Submissions the blind sample draws (`FR-REVIEW-12`); #111 sizes the draw.
+#: Submissions the blind sample draws by default (`FR-REVIEW-12`); the draw
+#: itself is #111's ``blind_sample``, range-checked against BLIND_SAMPLE_RANGE.
 REVIEW_BLIND_N = 15
-#: Complete final grades the whole-grade sample draws (`FR-REVIEW-14`); #111's.
+#: Complete final grades the whole-grade sample draws by default (`FR-REVIEW-14`;
+#: #111's ``whole_grade_sample``, range-checked against WHOLE_GRADE_SAMPLE_RANGE).
 REVIEW_WHOLE_GRADE_N = 12
 #: The budget `build_queue` assumes when a caller states none. §3.15's
 #: Interfaces block declares ``budget_minutes`` required, so nothing reads this
 #: today — it is declared because CT-REVIEW-17 asserts its value.
 REVIEW_DEFAULT_BUDGET_MINUTES = 30
+
+#: The blind sample's draw range, inclusive at both ends (`FR-REVIEW-12`): a
+#: draw outside it is refused, not clamped — a κ over three labels is a number
+#: with no business being reported, and a 40-item draw is not what the teacher
+#: asked for either. `CT-REVIEW-11` refuses both ends by name.
+BLIND_SAMPLE_RANGE = (15, 25)
+#: The whole-grade sample's range, inclusive at both ends (`FR-REVIEW-14`),
+#: refused the same way.
+WHOLE_GRADE_SAMPLE_RANGE = (10, 15)
 
 
 # --- the calibration constants (Phase 1; FR-REVIEW-16's calibration is Phase 2) ---------------------
@@ -436,6 +533,18 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
         ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
         ":score_id, :review_queue_action, :new_points, :cohort_id)"
+    ),
+    # #111's whole-grade read: the auto-accepted population the sample draws
+    # from. The service's own fetch admits only the teacher's routings
+    # (`queued`/`provisional`), so the sample reads its population through this
+    # declared literal — a `.query`, never a runtime assembly (SEC-15), and
+    # never a join to anything the blind flow can reach. In-memory services
+    # filter their own rows instead.
+    "select_auto_grades": Statement(
+        "SELECT submission_id, criterion_id, band FROM criterion_score "
+        "WHERE routing = 'auto' "
+        "AND submission_id NOT IN "
+        "(SELECT submission_id FROM criterion_score WHERE routing <> 'auto')"
     ),
 }
 
@@ -585,9 +694,13 @@ class LabelRecord:
     teacher_band: str | None
     actor: str
     timestamp: str
-    score_id: str
+    #: ``None`` on a blind label (#111): the flow that produced it cannot reach
+    #: a score row — that is the guarantee — so there is no score id to name.
+    score_id: str | None
     criterion_id: str
-    review_queue_action: str
+    #: ``None`` on a blind label: it is not a queue action, and `CT-REVIEW-08`'s
+    #: parity clause compares queue paths with queue paths.
+    review_queue_action: str | None
     new_points: float | None
     #: Whether this label was one member of a group action (`CT-REVIEW-13`'s
     #: per-member count): service bookkeeping, deliberately not one of the
@@ -672,6 +785,83 @@ class WriteRecord:
 
 
 @dataclass(frozen=True)
+class BlindItem:
+    """One blind-flow draw unit (#111): the identity a judgement is about, and
+    nothing else. `CT-REVIEW-09` words its clause as *reachability* — the
+    system's output must be structurally absent from what the teacher answers
+    on, not merely unrendered — so the item carries the three fields the flow
+    needs to pose the question and no field a score row could occupy, the same
+    boundary-as-the-type reading `aeh.synth`'s ``L2Request`` takes. Frozen and
+    hashable: the refs are the keys of a submission's ``bands`` mapping."""
+
+    submission_id: str
+    criterion_id: str
+    evaluation_mode: str
+
+
+@dataclass(frozen=True)
+class BlindSession:
+    """One blind sample sitting (#111): the drawn refs, and the two reads
+    `CT-REVIEW-09` asserts against. ``readable_tables()`` is the query-level
+    guarantee — ``submission`` and ``criterion`` only, per §3.15's Data flow
+    paragraph, and never ``criterion_score``; ``available_data()`` is what the
+    session holds, over which the value-level sweep runs. The session carries
+    no attribute a prefetched score row could hide behind (`FR-REVIEW-11`):
+    unreachability is a property of the type, not of the template."""
+
+    session_id: str
+    run_id: str
+    items: tuple[BlindItem, ...]
+
+    def readable_tables(self) -> frozenset[str]:
+        """The tables this session's queries read: the two §3.15's Data flow
+        paragraph permits, and nothing else — asserted by set equality and by
+        the named absence of ``criterion_score``."""
+        return frozenset({"submission", "criterion"})
+
+    def available_data(self) -> dict[str, Any]:
+        """Everything the session can reach before submission, as plain data:
+        the identity fields of the drawn refs. No band, no points, no
+        narrative — the value-level probe walks this structure recursively, so
+        it is complete by construction."""
+        return {
+            "session_id": self.session_id,
+            "run_id": self.run_id,
+            "submissions": tuple(sorted({item.submission_id for item in self.items})),
+            "criteria": tuple(sorted({item.criterion_id for item in self.items})),
+            "evaluation_modes": tuple(sorted({item.evaluation_mode for item in self.items})),
+            "items": self.items,
+        }
+
+
+@dataclass(frozen=True)
+class SubmissionGrade:
+    """One complete final grade as the student would receive it
+    (`FR-REVIEW-14`'s whole-grade sample): the submission's auto-accepted bands
+    per criterion and the points those bands map to. ``rendered_as_student_sees_it``
+    is the clause's own marker — the sample shows the grade, not the system's
+    internal view of it."""
+
+    submission_id: str
+    criterion_bands: Mapping[str, str]
+    points: float
+    rendered_as_student_sees_it: bool = True
+
+
+@dataclass(frozen=True)
+class BlindSampleSkipReport:
+    """What a skipped blind sample reports (`FR-REVIEW-13`): the absence, and
+    nothing in its place. ``reported`` is the honesty half — a blank where a
+    figure belongs is the finding, not a gap to fill — and ``current_figure``
+    is ``None`` by construction: a previous administration's figure presented
+    as current is RISK-08 arriving through the back door."""
+
+    reported: bool
+    message: str
+    current_figure: float | None = None
+
+
+@dataclass(frozen=True)
 class ResidualReport:
     """What ``end_session``/``close_run`` return (`FR-REVIEW-08`'s two
     vanishing moments): the residual as the moment leaves it. ``state`` is the
@@ -679,7 +869,11 @@ class ResidualReport:
     the moment wrote into a resolved state or invented a label for — empty by
     construction, because the moment writes nothing, and the fields exist so a
     later change that does write one has to name it there rather than in the
-    silence the clause forbids."""
+    silence the clause forbids. ``grades_delivered``/``grades_finalized`` are
+    #111's (`FR-REVIEW-13`): skipping the blind sample has exactly one
+    consequence — no new validation evidence — and these two are the assertion
+    that the student's marks did not hear about it; ``True`` by construction,
+    because nothing here delivers, blocks or finalizes a grade."""
 
     run_id: str
     moment: str
@@ -687,6 +881,8 @@ class ResidualReport:
     state: str
     finalized: tuple[str, ...] = ()
     backfilled: tuple[str, ...] = ()
+    grades_delivered: bool = True
+    grades_finalized: bool = True
 
 
 # --- the write set (CT-REVIEW-14) --------------------------------------------------------------------
@@ -1129,9 +1325,10 @@ class ReviewService:
     owns are here with #110's label store (``label``, ``points_for_band``,
     ``edit_views``, ``act_from_view`` and the observability surface), plus
     #109's admission plan, write audit and residual reads (``admission_query``,
-    ``write_audit``, ``scores``, ``labels_for``, ``end_session``/``close_run``);
-    the two samples (``blind_sample``, ``submit_blind``, ``whole_grade_sample``)
-    are #111's and are not on this class yet.
+    ``write_audit``, ``scores``, ``labels_for``, ``end_session``/``close_run``)
+    and #111's two samples (``blind_sample``/``submit_blind``,
+    ``whole_grade_sample``) with the skip (``skip_blind_sample``) and the
+    rendered blind flow (``render_blind_flow``).
     """
 
     def __init__(
@@ -1146,6 +1343,9 @@ class ReviewService:
         blind_n: int | None = None,
         whole_grade_n: int | None = None,
         default_budget_minutes: int | None = None,
+        seed: int | None = None,
+        administration_id: str | None = None,
+        previous_administration: Any = None,
         store: Any = None,
     ) -> None:
         self._rows = tuple(rows)
@@ -1160,6 +1360,15 @@ class ReviewService:
         self._blind_n = blind_n
         self._whole_grade_n = whole_grade_n
         self._default_budget = default_budget_minutes
+        # #111's sampling: one seed per service, both samples draw from it; the
+        # administration identity rides along for attribution and for the skip
+        # report's context. `previous_administration` is held, never read: the
+        # carry-forward RISK-08 forbids is a *value* a skip report could
+        # present, and holding the earlier administration's result without
+        # reading it is what makes `current_figure=None` an honest None.
+        self._seed = seed
+        self._administration_id = administration_id
+        self._previous_administration = previous_administration
         self._store = store
         self._cohort_ids: tuple[str, ...] = ()
         self._labels: list[LabelRecord] = []
@@ -1173,6 +1382,13 @@ class ReviewService:
         self._exhaustions: dict[str, list[str]] = {}
         self._acted: set[str] = set()
         self._versions: dict[str, int] = {}
+        # -- #111's blind-flow bookkeeping ------------------------------------------------------------
+        self._blind_sessions: dict[str, BlindSession] = {}
+        self._blind_submitted: set[str] = set()
+        self._blind_drawn: dict[str, int] = {}
+        self._blind_answered: dict[str, int] = {}
+        self._skipped_runs: set[str] = set()
+        self._whole_grade_draws = 0
 
     # -- the queue -----------------------------------------------------------------------------------
 
@@ -1464,11 +1680,411 @@ class ReviewService:
             )
         return self.act(item, action, new_band=new_band, review_seconds=review_seconds)
 
+    # -- the two samples, and the skip (#111) ---------------------------------------------------------
+
+    def _rng(self, draw_index: int) -> random.Random:
+        """One draw's RNG: derived from the service's seed and the draw's
+        index, so the same seed reproduces the same *sequence* of draws while
+        successive draws on one service differ — a second sitting draws fresh
+        refs instead of re-drawing the first's (`CT-REVIEW-11`'s uniformity is
+        per draw, and a per-run rate aggregates sittings). A declared seed of
+        ``None`` stays entropy-per-draw: an undeclared seed must not silently
+        pin every administration to the same sample, which is first-N's defect
+        in disguise."""
+        if self._seed is None:
+            return random.Random()
+        # A str seed, not a tuple: Random() accepts only None/int/float/str/
+        # bytes/bytearray, and str's version-2 seeding is a sha512 digest, so
+        # the derived seed is deterministic across processes, not hash-ordered.
+        return random.Random(f"{self._seed}:{draw_index}")
+
+    def blind_sample(self, run_id: str = "run-1", n: int | None = None) -> BlindSession:
+        """Draw the blind sample (`FR-REVIEW-12`): 15–25 judged refs at random
+        over judged criteria, as one ``BlindSession``. The draw is
+        ``self._rng``-seeded ``sample`` over the admitted judged population —
+        uniform over the eligible set, reproducible from the service's seed,
+        and never first-N (`CT-REVIEW-11`'s distribution case). A pool smaller
+        than ``n`` floors the draw at the pool (the interpretations); a request
+        outside ``BLIND_SAMPLE_RANGE`` is refused, naming the range.
+
+        A run that recorded its skip refuses to draw: the skip's one
+        consequence is the missing evidence, and a draw after a skip would
+        make the skip's report false (see ``skip_blind_sample``).
+
+        The refs the session returns carry identity only — that is
+        `CT-REVIEW-09`'s whole guarantee, so it is a property of the type
+        rather than of the rendering."""
+        count = self._blind_n if n is None else int(n)
+        low, high = BLIND_SAMPLE_RANGE
+        if count < low or count > high:
+            raise ValueError(
+                f"blind_sample draws {low}-{high} judged refs (FR-REVIEW-12), got n={count}: "
+                "the range is the contract, and a draw outside it is refused rather than sized "
+                "to whatever the caller asked for"
+            )
+        if run_id in self._skipped_runs:
+            raise ReviewError(
+                f"run {run_id!r} skipped its blind sample, so it does not draw one: "
+                "a run either draws its sample or skips it. Drawing after a skip would make "
+                "the skip's report — no new validation evidence — false, and the report is "
+                "the clause's whole content (FR-REVIEW-13)"
+            )
+        pool: list[BlindItem] = []
+        seen: set[tuple[str, str]] = set()
+        for row in self._admitted_rows():
+            ref = BlindItem(
+                submission_id=str(getattr(row, "submission_id", "") or ""),
+                criterion_id=str(getattr(row, "criterion_id", "") or ""),
+                evaluation_mode=str(getattr(row, "evaluation_mode", "") or ""),
+            )
+            key = (ref.submission_id, ref.criterion_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            pool.append(ref)
+        drawn = tuple(
+            self._rng(len(self._blind_sessions)).sample(pool, min(count, len(pool)))
+        )
+        self._blind_drawn[run_id] = self._blind_drawn.get(run_id, 0) + len(drawn)
+        session = BlindSession(
+            session_id=f"blind-{len(self._blind_sessions) + 1:04d}",
+            run_id=run_id,
+            items=drawn,
+        )
+        self._blind_sessions[session.session_id] = session
+        return session
+
+    def submit_blind(
+        self,
+        session_id: str,
+        bands: Mapping[BlindItem, str],
+        *,
+        interrupted: bool = False,
+        review_seconds: float = 0,
+    ) -> list[str]:
+        """Submit a blind sitting's answers (`FR-REVIEW-12`'s collection path,
+        `CT-REVIEW-15`'s interrupted half): one ``blind`` label per answered
+        ref — ``saw_system_output = 0`` (earned: the session could not reach
+        the output, `CT-REVIEW-09` step 4), ``system_band = None``, no
+        ``review_queue_action`` — and nothing for a ref the teacher never
+        answered. A ref the session never drew is refused: a band for a
+        criterion the flow never posed is a judgement nobody made.
+
+        ``interrupted`` records that the sitting ended early; the labels
+        written are the answered ones either way, which is the clause in both
+        directions. The session submits once — a second submission is refused
+        rather than double-written. Returns the label ids in the session's
+        draw order."""
+        session = self._blind_sessions.get(session_id)
+        if session is None:
+            raise ReviewError(
+                f"no blind session {session_id!r} in this service; the ids "
+                "blind_sample() returned are the submission's ids"
+            )
+        if session_id in self._blind_submitted:
+            raise ReviewError(
+                f"blind session {session_id!r} was already submitted: a sitting answers once, "
+                "and a second submission would double-write the labels an agreement figure "
+                "counts"
+            )
+        drawn = set(session.items)
+        unknown = [ref for ref in bands if ref not in drawn]
+        if unknown:
+            raise ReviewError(
+                f"the bands name a ref this session never drew ({unknown[0]!r}): "
+                "submit_blind records the criteria the flow posed, and a ref outside the "
+                "session is a judgement nobody was asked for"
+            )
+        labels = [
+            self._write_blind_label(
+                ref,
+                band,
+                interrupted=interrupted,
+                review_seconds=review_seconds,
+            )
+            for ref in session.items
+            if (band := bands.get(ref)) is not None
+        ]
+        self._blind_submitted.add(session_id)
+        run_id = session.run_id
+        self._blind_answered[run_id] = self._blind_answered.get(run_id, 0) + len(labels)
+        self._record_action_emission(labels)
+        rate = self._blind_rate(run_id)
+        self._record_emission(
+            run_id, ("blind_completion_rate",), {"blind_completion_rate": rate}
+        )
+        return [label.label_id for label in labels]
+
+    def whole_grade_sample(
+        self, run_id: str = "run-1", n: int | None = None
+    ) -> tuple[SubmissionGrade, ...]:
+        """Draw the whole-grade sample (`FR-REVIEW-14`): 10–15 complete final
+        grades from the auto-accepted population, each as the student would
+        receive it. The population is the submissions whose **every** criterion
+        row routed ``auto`` — sampling reviewed grades would measure the review,
+        not the system, so the restriction is the clause's point
+        (`CT-REVIEW-11`'s membership assertion), and a submission holding a
+        reviewed criterion is excluded with them: its grade mixes the teacher's
+        corrections into what is presented as the system's work, and a partial
+        band set presented as a final grade understates it. One grade per
+        submission, bands mapped to points through the one pinned mapping (the
+        default-policy sum — a package grade policy supersedes it the moment
+        one is attached); the offer writes no label. A request outside
+        ``WHOLE_GRADE_SAMPLE_RANGE`` is refused, naming the range."""
+        count = self._whole_grade_n if n is None else int(n)
+        low, high = WHOLE_GRADE_SAMPLE_RANGE
+        if count < low or count > high:
+            raise ValueError(
+                f"whole_grade_sample draws {low}-{high} complete grades (FR-REVIEW-14), got "
+                f"n={count}: the range is the contract, refused rather than clamped"
+            )
+        by_submission: dict[str, list[tuple[str, str]]] = {}
+        for submission_id, criterion_id, band in self._auto_grade_population():
+            by_submission.setdefault(submission_id, []).append((criterion_id, band))
+        candidates = list(by_submission)
+        picked = self._rng(self._whole_grade_draws).sample(
+            candidates, min(count, len(candidates))
+        )
+        self._whole_grade_draws += 1
+        return tuple(
+            SubmissionGrade(
+                submission_id=submission_id,
+                criterion_bands=dict(by_submission[submission_id]),
+                points=float(sum(
+                    self._points_for_band(criterion_id=criterion_id, band=band)
+                    for criterion_id, band in by_submission[submission_id]
+                )),
+            )
+            for submission_id in picked
+        )
+
+    def skip_blind_sample(self, run_id: str = "run-1") -> BlindSampleSkipReport:
+        """Record that this administration skips the blind sample
+        (`FR-REVIEW-13`): exactly one consequence — no new validation evidence
+        for this administration — and the report states the absence rather
+        than filling it. Grades deliver and finalize normally
+        (``ResidualReport.grades_delivered``/``grades_finalized``); the
+        report's ``current_figure`` is ``None``, never a previous
+        administration's figure. Idempotent: skipping twice skips once.
+
+        A run that already drew refuses the skip: the draw *is* validation
+        evidence, and recording a skip beside it would make the report say
+        "no new validation evidence was collected" about a run whose counter
+        says otherwise. A run either draws its sample or skips it; the two
+        refusals (this one, and ``blind_sample``'s against a skipped run) are
+        what keep the report and the evidence in agreement."""
+        if self._blind_drawn.get(run_id):
+            raise ReviewError(
+                f"run {run_id!r} already drew a blind sample "
+                f"({self._blind_drawn[run_id]} refs on record): there is no skip to record. "
+                "A run either draws its sample or skips it — recording a skip beside a draw "
+                "would report 'no new validation evidence' about a run that holds it"
+            )
+        self._skipped_runs.add(run_id)
+        return self.skip_report(run_id)
+
+    def skip_report(self, run_id: str = "run-1") -> BlindSampleSkipReport:
+        """A run's skip, read back as the report (`FR-REVIEW-13`): whether the
+        sample was skipped, the consequence said in words, and
+        ``current_figure = None`` — the honest None, whatever an earlier
+        administration produced."""
+        skipped = run_id in self._skipped_runs
+        if skipped:
+            message = (
+                "the blind sample was skipped for this administration: no new "
+                "validation evidence was collected, so this administration has "
+                "no agreement figure of its own — grades deliver and finalize "
+                "normally, and no earlier figure is presented in its place"
+            )
+        else:
+            message = (
+                "the blind sample was not skipped for this administration, so "
+                "there is no absence to report; the run's own evidence speaks "
+                "when it exists"
+            )
+        return BlindSampleSkipReport(reported=skipped, message=message, current_figure=None)
+
+    def render_blind_flow(self, session_id: str) -> str:
+        """The blind flow as the teacher sees it (`CT-REVIEW-09` step 2's
+        rendered probe): the drawn refs and the fixed band scale, built from
+        the session alone. Nothing the system decided can appear here, because
+        the session carries nothing the system decided — the render is a
+        projection of identity fields, not a template filtering a richer
+        object."""
+        session = self._blind_sessions.get(session_id)
+        if session is None:
+            raise ReviewError(
+                f"no blind session {session_id!r} in this service; the ids "
+                "blind_sample() returned are the render's ids"
+            )
+        lines = [
+            f"Blind validation session {session.session_id} (run {session.run_id})",
+            (
+                f"{len(session.items)} criteria drawn at random. The system's own "
+                "bands are not available in this flow."
+            ),
+            "",
+        ]
+        lines.extend(
+            f"- submission {ref.submission_id} / criterion {ref.criterion_id}"
+            for ref in session.items
+        )
+        lines.append("")
+        lines.append(
+            "For each criterion, record the band you judge: "
+            + ", ".join(str(band["band"]) for band in REVIEW_DEFAULT_BANDS)
+        )
+        lines.append("Submit what you answered; an interrupted sitting keeps the answered criteria.")
+        return "\n".join(lines)
+
+    def _blind_rate(self, run_id: str) -> float | None:
+        """The run's blind completion rate (`CT-REVIEW-18`): answered refs over
+        drawn refs, from the service's own bookkeeping. ``None`` for a run
+        that never drew — an unmeasured rate, never a silent zero."""
+        drawn = self._blind_drawn.get(run_id)
+        if not drawn:
+            return None
+        return self._blind_answered.get(run_id, 0) / drawn
+
+    def _row_for_ref(self, ref: BlindItem) -> Any:
+        """The score row a blind ref came from — the *service's* lookup, for
+        the label's routing/origin metadata. The session never sees it: the
+        guarantee is a property of what the session carries, not of what the
+        service's internals hold."""
+        for row in self._rows:
+            if (
+                str(getattr(row, "submission_id", "") or "") == ref.submission_id
+                and str(getattr(row, "criterion_id", "") or "") == ref.criterion_id
+            ):
+                return row
+        return None
+
+    def _auto_grade_population(self) -> list[tuple[str, str, str]]:
+        """The whole-grade sample's population (`FR-REVIEW-14`): the
+        completely auto-accepted submissions, as ``(submission_id,
+        criterion_id, band)`` triples — a submission holding any row with
+        another routing is excluded with the reviewed ones, because the grade
+        presented must be complete and wholly the system's (a partial band set
+        shown as the student's final grade understates it; a mixed one shows
+        the teacher's corrections as system work). The store form reads them
+        through the declared ``select_auto_grades`` statement, whose NOT IN
+        guard carries the same restriction — the service's own fetch admits
+        only the teacher's routings, so the sample needs its own declared read
+        (a ``.query``, never a runtime assembly, SEC-15); the in-memory form
+        filters its own rows to the same set."""
+        if self._store is not None:
+            triples: list[tuple[str, str, str]] = []
+            for cohort_id in self._cohort_ids:
+                for row in self._store.cohort(cohort_id).query(
+                    REVIEW_STATEMENTS["select_auto_grades"]
+                ):
+                    mapping = _row_mapping(row)
+                    submission_id = str(mapping.get("submission_id") or "")
+                    criterion_id = str(mapping.get("criterion_id") or "")
+                    band = str(mapping.get("band") or "")
+                    if submission_id and criterion_id and band:
+                        triples.append((submission_id, criterion_id, band))
+            return triples
+        non_auto: set[str] = set()
+        auto_bands: dict[str, list[tuple[str, str]]] = {}
+        for row in self._rows:
+            submission_id = str(getattr(row, "submission_id", "") or "")
+            if not submission_id:
+                continue
+            if getattr(row, "routing", None) != "auto":
+                non_auto.add(submission_id)
+                continue
+            criterion_id = str(getattr(row, "criterion_id", "") or "")
+            band = str(getattr(row, "proposed_band", "") or "")
+            if criterion_id and band:
+                auto_bands.setdefault(submission_id, []).append((criterion_id, band))
+        return [
+            (submission_id, criterion_id, band)
+            for submission_id, bands in auto_bands.items()
+            if submission_id not in non_auto
+            for criterion_id, band in bands
+        ]
+
+    def _write_blind_label(
+        self,
+        ref: BlindItem,
+        band: str,
+        *,
+        interrupted: bool,
+        review_seconds: float,
+    ) -> LabelRecord:
+        """One blind label (#111): the same record an action writes, collected
+        by the flow that could not see the output. ``score_id`` is ``None`` —
+        the flow cannot reach a score row, so there is no score id to name and
+        the honest label says so; ``review_queue_action`` is ``None`` — this is
+        not a queue action; ``system_band`` is ``None`` and
+        ``saw_system_output`` is 0, earned by the session's construction
+        (`CT-REVIEW-09` step 4). The band is the teacher's alone; its points
+        ride the one pinned mapping (`NFR-AGG-02`). Writes no reduction: the
+        row stays flagged — a blind label is evidence about the system, not a
+        resolution of it (`CT-REVIEW-06`'s indirection is the queue's)."""
+        row = self._row_for_ref(ref)
+        label = LabelRecord(
+            label_id=f"label-{len(self._labels) + 1:04d}",
+            label_type="blind",
+            saw_system_output=0,
+            routing=str(getattr(row, "routing", "queued") or "queued")
+            if row is not None
+            else "queued",
+            origin=str(getattr(row, "origin", "escalation") or "escalation")
+            if row is not None
+            else "escalation",
+            evaluation_mode=ref.evaluation_mode,
+            review_seconds=review_seconds,
+            system_band=None,
+            teacher_band=band,
+            actor=self._actor_name,
+            timestamp=self._clock(),
+            score_id=None,
+            criterion_id=ref.criterion_id,
+            review_queue_action=None,
+            # The label's points derive from the band through the one pinned
+            # mapping (`FR-REVIEW-10`), exactly as a queue label's do — the
+            # derivation is the teacher's band's, never the system's.
+            new_points=self._points_for_band(criterion_id=ref.criterion_id, band=band),
+        )
+        self._labels.append(label)
+        self._labels_by_id[label.label_id] = label
+        run_id = self._attribution_run()
+        if run_id is not None:
+            self._run_labels.setdefault(run_id, []).append(label)
+        if self._store is not None:
+            if run_id is None:
+                raise ReviewError(
+                    "this service holds a store but no run context: build a queue "
+                    "for the run (or open the service over exactly one cohort) "
+                    "before submitting the blind flow — a label is not attributed "
+                    "to an invented run"
+                )
+            # `ref` itself: `_persist_label` reads the item's `submission_id`,
+            # and a BlindItem carries exactly that identity — no ReviewItem is
+            # needed, and handing one over would smuggle the score row back
+            # into the flow that cannot see it.
+            self._persist_label(label, run_id, ref)
+        self._audit.append(
+            WriteRecord(
+                table="label",
+                score_id=ref.submission_id,
+                detail=(
+                    f"blind label {label.label_id}"
+                    + (" (interrupted session, answered criteria only)" if interrupted else "")
+                ),
+            )
+        )
+        return label
+
     def observability_counters(self, run_id: str) -> dict[str, Any]:
         """The run's counter surface (`CT-REVIEW-18`): every name in
         ``OBSERVABILITY_COUNTERS`` as a key, with the value the service's own
-        bookkeeping supports. ``blind_completion_rate`` is ``None`` — the blind
-        flow is #111's, and an unmeasured rate is never a silent zero.
+        bookkeeping supports. ``blind_completion_rate`` is measured from #111's
+        blind flow — answered refs over drawn refs for this run — and is
+        ``None`` for a run that never drew, which stays an unmeasured rate,
+        never a silent zero.
         ``override_rate_by_criterion`` is a per-criterion *count* of
         edit/override labels for now — the denominator a rate divides by (the
         judgments the criterion received) is #115's read over the stored
@@ -1477,7 +2093,8 @@ class ReviewService:
         shape is decided there."""
         builds = self._builds.get(run_id)
         labels = self._run_labels.get(run_id, [])
-        if builds is None and not labels:
+        drawn = self._blind_drawn.get(run_id)
+        if builds is None and not labels and not drawn:
             return {name: None for name in _OBSERVABILITY_COUNTERS}
         est = builds["est_seconds"] if builds else ()
         used = sum(label.review_seconds for label in labels)
@@ -1494,8 +2111,10 @@ class ReviewService:
             "group_action_usage_share": (
                 (sum(1 for label in labels if label.via_group) / total) if total else None
             ),
-            # The blind flow is #111's; until it lands the rate is unmeasured.
-            "blind_completion_rate": None,
+            # #111's blind flow, measured: answered refs over drawn refs for
+            # this run; None when the run never drew — an unmeasured rate,
+            # never a silent zero.
+            "blind_completion_rate": self._blind_rate(run_id),
             "mean_review_seconds": (
                 sum(label.review_seconds for label in labels) / total if total else None
             ),
@@ -1775,13 +2394,19 @@ class ReviewService:
             return self._cohort_ids[0]
         return None
 
-    def _persist_label(self, label: LabelRecord, run_id: str, item: ReviewItem) -> None:
+    def _persist_label(
+        self, label: LabelRecord, run_id: str, item: ReviewItem | BlindItem
+    ) -> None:
         """The durable half of a store-backed action (`FR-REVIEW-09`): the same
         label this service holds in memory, written to Tier D's ``label`` table
         in one statement. ``CT-STORE-03`` scopes atomicity to one transaction
         body and cross-tier atomicity is deliberately not provided, so this
         runs after the in-memory write: a failure here aborts the action with
-        the in-memory record already written."""
+        the in-memory record already written. ``item`` is the identity the
+        label's student-reference column carries — the queue item an action
+        acted on, or the blind ref the flow drew (#111; a ``BlindItem`` carries
+        ``submission_id`` and nothing else, which is all the durable row
+        reads)."""
         if label.teacher_band is None:
             raise ReviewError(
                 f"label {label.label_id!r} records no band; Tier D's label table "
@@ -1867,6 +2492,9 @@ def build_review(
     review_blind_n: int | None = None,
     review_whole_grade_n: int | None = None,
     review_default_budget_minutes: int | None = None,
+    seed: int | None = None,
+    administration_id: str | None = None,
+    previous_administration: Any = None,
 ) -> ReviewService:
     """The rung-0/1 constructor: a review service over score rows — or, in the
     store form, over a whole store.
@@ -1877,7 +2505,13 @@ def build_review(
     form (`build_review(store)`, the c05/c07/c09 consumer limbs' declared
     shape) reads every cohort the store carries and admits the same
     population `open_review` does; the queue is then the service's read path
-    (``.queue()``)."""
+    (``.queue()``).
+
+    #111's sampling keywords ride both forms: ``seed=`` reproduces both
+    samples' draws, ``administration_id=`` names the administration the skip
+    report speaks for, and ``previous_administration=`` is held — never read —
+    so the skip report's ``current_figure=None`` is an honest None rather than
+    an uninformed one (`FR-REVIEW-13`'s no-carry-forward clause)."""
     if scores is not None and hasattr(scores, "cohort"):
         return _service_from_store(
             scores,
@@ -1889,6 +2523,9 @@ def build_review(
             review_blind_n=review_blind_n,
             review_whole_grade_n=review_whole_grade_n,
             review_default_budget_minutes=review_default_budget_minutes,
+            seed=seed,
+            administration_id=administration_id,
+            previous_administration=previous_administration,
         )
     return ReviewService(
         scores or (),
@@ -1910,6 +2547,9 @@ def build_review(
             review_default_budget_minutes, config, "REVIEW_DEFAULT_BUDGET_MINUTES",
             REVIEW_DEFAULT_BUDGET_MINUTES,
         ),
+        seed=seed,
+        administration_id=administration_id,
+        previous_administration=previous_administration,
     )
 
 
@@ -1934,6 +2574,9 @@ def _service_from_store(
     review_blind_n: int | None = None,
     review_whole_grade_n: int | None = None,
     review_default_budget_minutes: int | None = None,
+    seed: int | None = None,
+    administration_id: str | None = None,
+    previous_administration: Any = None,
 ) -> ReviewService:
     """The rung-2 constructor's body, shared by ``open_review`` (one named
     cohort) and ``build_review`` (a whole store — every cohort it carries).
@@ -1998,6 +2641,9 @@ def _service_from_store(
         review_blind_n=review_blind_n,
         review_whole_grade_n=review_whole_grade_n,
         review_default_budget_minutes=review_default_budget_minutes,
+        seed=seed,
+        administration_id=administration_id,
+        previous_administration=previous_administration,
     )._with_store(store, cohort_ids=cohort_ids)
 
 
@@ -2057,6 +2703,9 @@ def open_review(
     review_blind_n: int | None = None,
     review_whole_grade_n: int | None = None,
     review_default_budget_minutes: int | None = None,
+    seed: int | None = None,
+    administration_id: str | None = None,
+    previous_administration: Any = None,
 ) -> ReviewService:
     """The rung-2 constructor: a review service over a stored run's flagged rows.
 
@@ -2082,6 +2731,9 @@ def open_review(
             review_blind_n=review_blind_n,
             review_whole_grade_n=review_whole_grade_n,
             review_default_budget_minutes=review_default_budget_minutes,
+            seed=seed,
+            administration_id=administration_id,
+            previous_administration=previous_administration,
         )
     except Exception:
         store.close()
@@ -2181,3 +2833,13 @@ def labels_for(*, run_id: str) -> tuple[LabelRecord, ...]:
     (`CT-REVIEW-07`'s read back), in write order. A tuple, so a caller cannot
     reorder the store's history in place."""
     return tuple(_LABEL_STORE.get(run_id, ()))
+
+
+def blind_sample_skipped(service: Any, run_id: str = "run-1") -> BlindSampleSkipReport:
+    """The skip, read back from a service (`FR-REVIEW-13`'s reporting surface,
+    `CT-REVIEW-10`'s read side): whether this run's blind sample was skipped,
+    the consequence in words, and ``current_figure = None`` — always, whatever
+    a previous administration produced. The module-level form mirrors
+    ``record_label``/``labels_for``: the report is read *about* a service, so a
+    caller holding one asks here rather than reaching into its state."""
+    return service.skip_report(run_id)

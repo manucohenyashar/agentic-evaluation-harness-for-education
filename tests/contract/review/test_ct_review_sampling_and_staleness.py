@@ -26,7 +26,6 @@ pytestmark = pytest.mark.contract
 # --- CT-REVIEW-10 — skipping has exactly one consequence ----------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c10_skipping_the_blind_sample_leaves_grades_delivered_and_finalized():
     """The *"exactly one"* half, asserted as everything-else-normal.
 
@@ -119,7 +118,6 @@ def test_tc_review_c10_the_absence_is_reported_rather_than_papered_over():
 # --- CT-REVIEW-11 — the two samples and their populations ---------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c11_the_blind_sample_draws_inside_its_range_over_judged_criteria_only():
     """`FR-REVIEW-12`'s two halves.
 
@@ -157,7 +155,6 @@ def test_tc_review_c11_the_blind_sample_draws_inside_its_range_over_judged_crite
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c11_the_blind_sample_refuses_a_draw_outside_its_stated_range():
     """The other side of the range, which the acceptance test above cannot see.
 
@@ -179,7 +176,6 @@ def test_tc_review_c11_the_blind_sample_refuses_a_draw_outside_its_stated_range(
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_population_only():
     """*"The auto-accepted restriction is the clause's stated point, so it gets its own
     assertion."*
@@ -232,7 +228,6 @@ def test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_popul
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c11_the_draw_is_uniform_over_the_eligible_set_rather_than_first_n():
     """*"Assert randomness is genuine (seeded, uniform over the eligible set) rather than
     first-N."*
@@ -327,7 +322,6 @@ def test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c15_an_interrupted_blind_session_keeps_the_criteria_actually_answered():
     """The second half, *"which protects data rather than rejecting it"*.
 
