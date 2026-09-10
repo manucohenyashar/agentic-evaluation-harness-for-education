@@ -1514,28 +1514,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # amendment-replay idempotence is GREEN against shipped code
     # (`tests/integration/grade/test_recompute_idempotence.py`), and scaled-interval
     # composition is disclosed in the PR, not a case in the table.
-    "#103 append-only enforcement (TC-GRADE-23)": (
-        # M-GRADE is `submission_grade`'s sole writer and `audit_record`'s writer
-        # (`CT-GRADE-14`), so the enforcement seam is grade-owned. If #103 ships the
-        # discipline as bare triggers with no function, the rename is one line — the
-        # refusals asserted in the test do not move.
-        "symbol",
-        f"{GRADE_MODULE}:enforce_ledger_append_only",
-        ("tests/integration/grade/test_ledger_append_only.py",),
-    ),
-    "#103 grade signals and incomplete alert (TC-GRADE-24)": (
-        # One test file, two symbols, one story — the conjunction encoding (the
-        # TC-STORE-15 rationale: keying either symbol alone fires the gate while the
-        # other is still a stub, and a reader who unmarks as instructed puts a red
-        # case inside `TEST_CMD`).
-        "symbols",
-        f"{GRADE_MODULE}:record_grade_signals,{GRADE_MODULE}:evaluate_grade_alerts",
-        ("tests/integration/grade/test_grade_observability.py",),
-    ),
     # The three `"#104 ..."` entries that stood here (TC-GRADE-14/15/16) are gone:
     # #104 landed `criterion_band_figures`, `separated_rollup` and `rollup_findings`
-    # in the same PR that unmarked their cases. #103's two entries stay — #103 is
-    # still open.
+    # in the same PR that unmarked their cases. #103's two entries (TC-GRADE-23,
+    # TC-GRADE-24) are gone the same way: #103 landed `enforce_ledger_append_only`
+    # and the `record_grade_signals`/`evaluate_grade_alerts` conjunction, and both
+    # files unmarked and rejoined the gate green.
 }
 
 

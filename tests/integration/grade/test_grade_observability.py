@@ -20,30 +20,15 @@ The signal set is design §3.14's observability paragraph (CT-GRADE-18):
   window fire an alert: the operator rescan is late (FR-GRADE-07's operator routing is
   actionable, not a dead end).
 
-**Written ahead of implementation** (test plan §8.2). The signals have no shipped
-emitter: nothing in `aeh.grade` writes a metrics or alert surface, and the alert
-engine itself (`aeh.orch:evaluate_alerts`) is still reserved for #66 (`TC-ORCH-36`'s
-entry in `WRITTEN_AHEAD_BLOCKERS`). The design's M-GRADE observability paragraph is
-this story's to implement, so this file carries `@pytest.mark.writtenahead` and its
-registry entry is the conjunction over the two symbols below.
-
-**The invented-and-disclosed keys** (the `evaluate_alerts` / `export_grade_artifacts`
-precedent — names no design document declares, that the tests call and the landing
-reconciles; checked: zero occurrences in both design documents):
-
-- `aeh.grade:record_grade_signals` — the signal writer: the grading stage's figures
-  land where every other stage's do, the durable `run_metrics` EAV rows
-  `(run_id, metric, value)` (`TC-ORCH-35`'s precedent — CT-ORCH-20 makes that write
-  contract; the grading stage's own signal set rides the same table).
-- `aeh.grade:evaluate_grade_alerts` — the alert evaluator over the same store state:
-  returns the alerts that fire, of which the outstanding-`incomplete`-past-the-window
-  is this case's pinned one.
-
-The names reconcile at the story's landing like every other reserved name in this
-suite. Keyed on **#103** (the finalization/amendment story — `FR-GRADE-10`'s owner,
-whose "Observability from the design implemented" definition-of-done clause is where
-this surface ships), not on `#101` (landed — the gate would fire immediately) nor on
-a Protocol-declared name (resolves against a stub).
+Written ahead of implementation (test plan §8.2), **landed by #103**: the M-GRADE
+observability paragraph ships as the two module-level accessors this file calls —
+`aeh.grade:record_grade_signals` (the figures land in the durable `run_metrics` EAV
+rows `(run_id, metric, value)`, the `TC-ORCH-35` write contract every other stage
+rides) and `aeh.grade:evaluate_grade_alerts` (the alert evaluator over the same store
+state, returning the fired alerts as `GradeAlert` rows whose `kind` names the
+condition). The marker is gone; the case runs inside the gate on the landed surface.
+`aeh.orch:evaluate_alerts` remains #66's — this surface is deliberately independent
+of it.
 
 **Disclosed stand-ins** (`grade_vocabulary.py`, header): the run-completion UPDATE
 (`M-ORCH` is the run row's single writer), `write_criterion_scores` standing in for
@@ -67,12 +52,9 @@ from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = [
     pytest.mark.integration,
-    # Red by design until the observability surface lands (WRITTEN_AHEAD_BLOCKERS:
-    # "#103 grade signals and incomplete alert" -> the conjunction over
-    # `aeh.grade:record_grade_signals` and `aeh.grade:evaluate_grade_alerts` — one
-    # entry, because the test needs both and a half-landed surface must not fire the
-    # gate into a still-red unmark).
-    pytest.mark.writtenahead,
+    # #103 landed the observability surface (`record_grade_signals` /
+    # `evaluate_grade_alerts`) — the conjunction resolves, so the case runs
+    # inside the gate.
 ]
 
 ISSUE = "#103"
@@ -147,7 +129,7 @@ def test_tc_grade_24_the_grading_stage_emits_every_signal_and_fires_the_alert(
     evaluate_grade_alerts = require(GRADE_MODULE, "evaluate_grade_alerts", issue=ISSUE)
     store = open_store(tmp_data_dir)
     try:
-        run_id = _seed_run_finishing_with_two_incomplete(store)
+        run_id = _seed_run_finishing_with_two_incomplete_past_the_window(store)
 
         record_grade_signals(run_id)
         alerts = evaluate_grade_alerts(run_id)
