@@ -1610,6 +1610,61 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `SYNTH_SCORE_CLAIM_PATTERNS` — their three files unmarked and rejoined the
     # gate green on the landed surface (the TC-SYNTH-11 purge case never carried a
     # marker: its worker-half resolved at #97).
+    # --- TS-39 (#106), the M-GRADE revisions/amendment/rollup/export suite -------------------
+    #
+    # Five files, five entries (the observability pair below is one conjunction entry, not
+    # two, for the reason its comment gives). Every key is an **invented-and-disclosed**
+    # name — the `aeh.orch:evaluate_alerts` / `export_grade_artifacts` precedent: a name
+    # neither design document declares (checked: zero occurrences in both), that the test
+    # calls and the landing reconciles; a different name at the landing is one rename here
+    # and in the test module.
+    #
+    # Why not the obvious names: `ClassRollup`, `rollup`, `criterion_stats` and
+    # `GradingService.export` are §3.14-declared Protocol surface, and `class_rollup` /
+    # `export` already SHIPPED with #101 — keying on a landed name fires this gate
+    # immediately (the resolved-`"#2"`/`"#37"` doctrine), and keying on a Protocol name
+    # resolves the gate against exactly the un-separated, findings-less, figures-less
+    # shapes the cases exist to refuse. Why not `criterion_figures`: #118/M-STATS already
+    # reserves that name for its analytical read (its entry above); M-GRADE's producer is
+    # a different surface from M-STATS's analytical export (`CT-GRADE-13` names the
+    # consumer obligation the other way), so `criterion_band_figures` is the producer's
+    # own bet. The #101 carry-forwards this suite owns are keyed nowhere on purpose —
+    # amendment-replay idempotence is GREEN against shipped code
+    # (`tests/integration/grade/test_recompute_idempotence.py`), and scaled-interval
+    # composition is disclosed in the PR, not a case in the table.
+    "#103 append-only enforcement (TC-GRADE-23)": (
+        # M-GRADE is `submission_grade`'s sole writer and `audit_record`'s writer
+        # (`CT-GRADE-14`), so the enforcement seam is grade-owned. If #103 ships the
+        # discipline as bare triggers with no function, the rename is one line — the
+        # refusals asserted in the test do not move.
+        "symbol",
+        f"{GRADE_MODULE}:enforce_ledger_append_only",
+        ("tests/integration/grade/test_ledger_append_only.py",),
+    ),
+    "#103 grade signals and incomplete alert (TC-GRADE-24)": (
+        # One test file, two symbols, one story — the conjunction encoding (the
+        # TC-STORE-15 rationale: keying either symbol alone fires the gate while the
+        # other is still a stub, and a reader who unmarks as instructed puts a red
+        # case inside `TEST_CMD`).
+        "symbols",
+        f"{GRADE_MODULE}:record_grade_signals,{GRADE_MODULE}:evaluate_grade_alerts",
+        ("tests/integration/grade/test_grade_observability.py",),
+    ),
+    "#104 criterion band figures (TC-GRADE-14)": (
+        "symbol",
+        f"{GRADE_MODULE}:criterion_band_figures",
+        ("tests/unit/grade/test_criterion_band_figures.py",),
+    ),
+    "#104 separated rollup (TC-GRADE-15)": (
+        "symbol",
+        f"{GRADE_MODULE}:separated_rollup",
+        ("tests/integration/grade/test_rollup_blocks.py",),
+    ),
+    "#104 rollup findings (TC-GRADE-16)": (
+        "symbol",
+        f"{GRADE_MODULE}:rollup_findings",
+        ("tests/integration/grade/test_rollup_findings.py",),
+    ),
 }
 
 
