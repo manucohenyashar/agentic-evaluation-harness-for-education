@@ -1367,14 +1367,19 @@ class GradingService:
             submission_id = row["submission_id"]
             if submission_id in current_ids:
                 continue
+            # Score rows read through the module's tolerant `_row_value`, as the
+            # other `select_submission_scores` sites do — and CT-PKG-05's
+            # single-reader gate reads any `["points"]` subscript outside `aeh.pkg`
+            # as a second band-points mapping, whatever column it is actually
+            # touching.
             present = {
-                score["criterion_id"]
+                _row_value(score, "criterion_id")
                 for score in cohort.query(
                     GRADE_STATEMENTS["select_submission_scores"],
                     submission_id=submission_id,
                 )
-                if score["points"] is not None
-                and score["routing"] != ROUTING_TRIAGE
+                if _row_value(score, "points") is not None
+                and _row_value(score, "routing") != ROUTING_TRIAGE
             }
             if any(cid not in present for cid in criteria_ids):
                 counts[STATE_INCOMPLETE] += 1

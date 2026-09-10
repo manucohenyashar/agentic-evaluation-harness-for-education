@@ -514,8 +514,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # breaker-refused criteria — landing above every site; moved again, the six
     # sites after the service's coverage helper, +45: the derived
     # `_grades_by_state` the CT-SYNTH-05 consumer differential demanded — the
-    # class's states as they stand, not the stored rows alone; re-pinned from the
-    # walker.)
+    # class's states as they stand, not the stored rows alone; and once more, the
+    # same six, +5: the `_row_value` idiom inside the derivation, which keeps the
+    # CT-PKG-05 single-reader gate from reading `["points"]` outside `aeh.pkg`;
+    # re-pinned from the walker.)
     "aeh.grade:1146",
     "aeh.grade:1152",
     "aeh.grade:1154",
@@ -526,12 +528,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.grade:1276",
     "aeh.grade:1307",
     "aeh.grade:1315",
-    "aeh.grade:1402",
-    "aeh.grade:1483",
+    "aeh.grade:1407",
     "aeh.grade:1488",
-    "aeh.grade:1735",
-    "aeh.grade:1746",
+    "aeh.grade:1493",
+    "aeh.grade:1740",
     "aeh.grade:1751",
+    "aeh.grade:1756",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
