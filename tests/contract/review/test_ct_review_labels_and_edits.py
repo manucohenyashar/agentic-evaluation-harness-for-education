@@ -261,7 +261,6 @@ def test_tc_review_c12_an_edit_from_any_view_writes_the_same_action_and_the_same
 # --- CT-REVIEW-13 — a group action is N individual actions --------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c13_a_group_action_emits_one_label_per_member():
     """*"So a group action is statistically indistinguishable from N individual actions in the
     label store."*
@@ -348,7 +347,6 @@ def test_tc_review_c13_group_labels_are_indistinguishable_from_individual_ones()
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c13_group_items_rank_above_per_item_entries():
     """`FR-REVIEW-05` — *"ranked above per-item entries, rather than N separate items."*
 
