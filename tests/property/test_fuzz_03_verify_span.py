@@ -31,7 +31,7 @@ from tests.support.span_strategies import (
     spans_over,
 )
 
-pytestmark = [pytest.mark.property, pytest.mark.writtenahead]
+pytestmark = pytest.mark.property
 
 
 # --- the property ---------------------------------------------------------------------------

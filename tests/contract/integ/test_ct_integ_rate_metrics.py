@@ -193,7 +193,6 @@ def _sweep(tmp_data_dir, problems: dict[str, str]) -> tuple:
 # --- the artifact: names, distinctness, and the alert's place --------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c14_the_six_rate_names_and_the_alert_are_declared_interface():
     """`TC-INTEG-C14`'s artifact limb — the six rates exist as a declared
     constant of six DISTINCT strings (the clause names exactly six), and the
@@ -226,7 +225,6 @@ def test_tc_integ_c14_the_six_rate_names_and_the_alert_are_declared_interface():
 # --- dimensionality: per criterion, not aggregated --------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c14_rates_are_per_criterion_not_aggregated(tmp_data_dir):
     """`TC-INTEG-C14`'s dimensionality limb — two criteria in the SAME run with
     different injected truth (one hallucinating, one clean): the failure rate
@@ -268,7 +266,6 @@ def test_tc_integ_c14_rates_are_per_criterion_not_aggregated(tmp_data_dir):
 # --- the reading is contract: attribution specificity -----------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_integ_c14_a_data_problem_is_never_a_span_verification_failure(
         tmp_data_dir):
     """`TC-INTEG-C14`'s reading limb — five criteria, five different problems,

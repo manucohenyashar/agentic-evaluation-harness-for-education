@@ -119,28 +119,32 @@ class ExtractionView:
         panel: PanelFlags = PanelFlags(),
         evidence_type_requires_citation: bool = True,
     ) -> None:
-        self._spans = tuple(spans)
-        self._second_family = (
-            None if second_family_spans is None else tuple(second_family_spans)
-        )
-        self._regions = tuple(regions)
+        # Stored BY REFERENCE, deliberately: the mutation cases (TC-INTEG-02's
+        # payload rewrite, CT-INTEG-11's partial append) change the payload
+        # they handed over between two `verify()` calls and expect the next
+        # read to see the change — a snapshot here would freeze the first
+        # scenario's data under every later one. Each read returns a fresh
+        # tuple, so the gate still cannot mutate the caller's list.
+        self._spans = spans
+        self._second_family = second_family_spans
+        self._regions = regions
         self._panel = panel
         self._requires_citation = evidence_type_requires_citation
 
     # -- the four fault-injectable reads ------------------------------------------------
     def spans(self, submission_id: str, criterion_id: str) -> tuple[Span, ...]:
         """The extraction unit's spans for this criterion (no judge dimension, CT-EXTRACT-03)."""
-        return self._spans
+        return tuple(self._spans)
 
     def second_family_spans(
         self, submission_id: str, criterion_id: str
     ) -> tuple[Span, ...] | None:
         """The second-family span set, or `None` when no second extraction ran (FR-INTEG-06)."""
-        return self._second_family
+        return None if self._second_family is None else tuple(self._second_family)
 
     def regions(self, document_id: str) -> tuple[CitedRegion, ...]:
         """The document's regions with per-region `ocr_conf` (FR-INGEST-15)."""
-        return self._regions
+        return tuple(self._regions)
 
     def panel_sufficiency(self, submission_id: str, criterion_id: str) -> PanelFlags:
         """Per-judge `evidence_sufficient` (CT-JUDGE-06; FR-INTEG-07's input)."""

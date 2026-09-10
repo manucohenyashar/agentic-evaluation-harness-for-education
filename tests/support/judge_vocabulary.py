@@ -65,6 +65,15 @@ __all__ = [
     "TEMPLATE_VERSION",
     "TS30_JUDGE_SYMBOLS",
     "TS30_PROMPT_SYMBOLS",
+    "TS31_REPLY_FIELDS",
+    "TS31_RESPONSE_SYMBOLS",
+    "REPLY_FIELD_ORDER",
+    "PROSE_ERROR",
+    "MALFORMED_ERROR",
+    "ASSESSMENT_RETRIES_KNOB",
+    "ASSESSMENT_AMENDED_FLAG",
+    "INTEGRITY_FLAGS_FIELD",
+    "VERDICT_RESPONSE_COLUMNS",
     "fields_of",
     "field_names",
     "string_leaves",
@@ -97,6 +106,56 @@ TS30_JUDGE_SYMBOLS = (WORKER, REQUEST_TYPE, ISOLATED_CHECK, VIOLATION, PROMPT_FI
 #: `TEMPLATE_VERSION` is the #79 discriminator — without it the conjunction would fire
 #: when #78 lands and unmark cases whose owning story has not started.
 TS30_PROMPT_SYMBOLS = (WORKER, REQUEST_TYPE, PROMPT_FIELDS, TEMPLATE_VERSION)
+
+
+#: --- the response-contract surface (#80, TS-31) ------------------------------------------
+#
+# The response side of the contract, declared here for the same reason as the TS-30
+# rows: the TS-31 cases (#83's suite, written against these names) must reconcile from
+# ONE place. Everything below **landed with #80** — the table states the shipped name
+# for each design-named thing, so a rename is one edit here.
+#
+# | Assumed of #80 | Landed name |
+# |---|---|
+# | the reply's five fields in their pinned order | `aeh.judge:REPLY_FIELDS` — exactly `(cited_spans, evidence_assessment, evidence_sufficient, band, self_confidence)` (FR-JUDGE-09); a reply whose keys arrive in another order is refused, never reordered and accepted |
+# | the malformed-reply exception the FUZZ-04 oracle names | `aeh.prov:MalformedResponseError` — every `_verdict_of` refusal raises it (a `ProviderError`, so the dispatch loop strikes it within the budget) |
+# | the prose-only assessment refusal (FR-JUDGE-10) | `aeh.judge:ProseAssessmentError` — a subclass of `MalformedResponseError` raised when `evidence_assessment` matches the configured magnitude-phrase list (`aeh.setup:SETUP_MAGNITUDE_PHRASES`) and references no span and no band condition |
+# | the one re-request's knob | `aeh.judge:ASSESSMENT_RETRIES_ENV` = `"HARNESS_JUDGE_ASSESSMENT_RETRIES"`, production default 1 (`ASSESSMENT_RETRIES_DEFAULT`), read at call time; the re-request goes out with an AMENDED payload (a new field inserted before the submission field), so it is a new fixture key, never a verbatim replay (FR-PROV-06) |
+# | the integrity flag (FR-JUDGE-10) | `aeh.judge:ASSESSMENT_AMENDED` = `"assessment_amended"`, riding `ScoringResult.integrity_flags` (a tuple of named tokens, empty on a clean first-acceptance dispatch) |
+# | the persisted response columns (CT-JUDGE-06) | Cohort migration 17 `judge_verdict_response_columns`: `verdict.cited_spans TEXT` (JSON, NULL when uncited), `evidence_sufficient INTEGER CHECK IN (0,1)`, `uncited INTEGER CHECK IN (0,1)` — nullable, because additive; a NULL mark reads as cited (M-AGG's "the mark is the signal"). NO points column exists or is added (FR-JUDGE-11) |
+
+#: The pinned reply field order, restated from `aeh.judge:REPLY_FIELDS` (the suite's
+#: assertion reads the module's own tuple; this constant is what a test that must state
+#: the order literally asserts against).
+REPLY_FIELD_ORDER = (
+    "cited_spans",
+    "evidence_assessment",
+    "evidence_sufficient",
+    "band",
+    "self_confidence",
+)
+TS31_REPLY_FIELDS = "REPLY_FIELDS"
+
+#: The symbols the TS-31 response-contract suite resolves from `aeh.judge` (and, for the
+#: malformed-reply exception, from `aeh.prov`) — the same conjunction convention as the
+#: TS-30 tuples, for the #83 registry entry when the test story lands.
+TS31_RESPONSE_SYMBOLS = (
+    TS31_REPLY_FIELDS,
+    "ProseAssessmentError",
+    "ScoringResult",
+    "ScoringWorker",
+)
+
+#: The TS-31 names, as landed.
+PROSE_ERROR = "ProseAssessmentError"
+MALFORMED_ERROR = "MalformedResponseError"  # resolved from aeh.prov, not aeh.judge
+ASSESSMENT_RETRIES_KNOB = "HARNESS_JUDGE_ASSESSMENT_RETRIES"
+ASSESSMENT_AMENDED_FLAG = "assessment_amended"
+INTEGRITY_FLAGS_FIELD = "integrity_flags"
+
+#: The migration-17 columns #80 adds to `verdict`, in DDL order — the
+#: `test_tc_store_04` golden and the verdict-row reads assert against this shape.
+VERDICT_RESPONSE_COLUMNS = ("cited_spans", "evidence_sufficient", "uncited")
 
 
 def fields_of(prompt_fields_fn: Any, request: Any) -> list[tuple[str, str]]:
