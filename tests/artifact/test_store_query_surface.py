@@ -578,7 +578,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
     # parameters (FR-STORE-08, design §3.3) — the same label the service holds
     # in memory. (Re-pinned from the walker on any line move.)
-    "aeh.review:1469",
+    "aeh.review:1792",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

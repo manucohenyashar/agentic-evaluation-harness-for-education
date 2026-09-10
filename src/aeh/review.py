@@ -89,18 +89,37 @@ and this implementation chose; all are reported on the PR):
   declared default scale below through the *same* mapping function, so the
   conversion logic still exists in exactly one place (`NFR-AGG-02`) — only the
   default band *data* is review's. A band absent from whichever table governs
-  refuses (`PackageError`) rather than defaulting to a number.
+  refuses (`PackageError`) rather than defaulting to a number — but a band
+  whose *name* exists in both a stored package's table and the default scale
+  is not detectable without a catalog, so the no-catalog route derives the
+  default scale's points for it. Open the service with the run's
+  ``catalog=`` when the labels' points must follow the package's own table;
+  the no-catalog route is the in-memory flow's convenience, not a
+  package-aware conversion.
 * *A label is persisted when the service holds a store.* The store form's
   ``act`` writes the same label to Tier D's ``label`` table (the Durable 6
   columns this module's migration adds) that it writes in memory. `CT-STORE-03`
   scopes atomicity to one transaction body and cross-tier atomicity is
   deliberately not provided, so the two halves are sequential: a durable-write
   failure aborts the action with the in-memory record already written, and the
-  caller sees the refusal. Label ids are per-service sequential, so two
+  caller sees the refusal. The same per-row scope makes a *group* action's
+  durability partial by construction — members persist one row at a time, so
+  a mid-loop failure leaves the earlier members durable and aborts the rest;
+  a retry writes fresh label ids for every member, double-marking the already
+  durable ones. Label ids are per-service sequential, so two
   services over one store collide on the row's primary key and refuse — one
   review session per run is the Phase 1 shape. A store-backed action with no
   run context (nothing built, and the service opened over zero or several
-  cohorts) is refused rather than attributed to an invented run.
+  cohorts) is refused rather than attributed to an invented run. The durable
+  row's ``cohort_id`` scoping column — what `CT-STORE-10`'s promotion gate
+  counts against — carries the *run's* id, not a per-row cohort: a run
+  belongs to one cohort in this codebase (`aeh.orch`'s ``run`` table pairs
+  each run id with a cohort id, and ``open_review`` names the cohort as the
+  run), so in the declared store flow the two are the same string. A queue
+  built under a fresh id over a multi-cohort ``build_review(store)`` service
+  attributes its labels to that run id — `purge_cohort` keyed by a cohort id
+  will not find those rows and refuses, fail-closed; keying the row to a
+  cohort the in-memory rows do not carry is not Phase 1's shape.
 * *Observability is per run, attributed from the service's own bookkeeping.*
   ``build_queue`` records the run it built for; actions after a build attribute
   their labels to that run. ``blind_completion_rate`` is emitted as ``None``
@@ -1394,8 +1413,12 @@ class ReviewService:
         scale (`REVIEW_DEFAULT_BANDS`) is read through the same function —
         never a second table (`NFR-AGG-02`). A band absent from whichever
         table governs refuses (`PackageError`) rather than defaulting to a
-        number. ``package_version_id`` is accepted for interface parity with
-        the queue item and ignored: the mapping is criterion-scoped.
+        number — but a band whose name exists in both tables is not
+        distinguishable without a catalog, so the no-catalog route derives the
+        default scale's points for it (the collision hazard is disclosed in
+        the module interpretations). ``package_version_id`` is accepted for
+        interface parity with the queue item and ignored: the mapping is
+        criterion-scoped.
         """
         if band is None:
             raise ReviewError(
@@ -1445,7 +1468,13 @@ class ReviewService:
         """The run's counter surface (`CT-REVIEW-18`): every name in
         ``OBSERVABILITY_COUNTERS`` as a key, with the value the service's own
         bookkeeping supports. ``blind_completion_rate`` is ``None`` — the blind
-        flow is #111's, and an unmeasured rate is never a silent zero."""
+        flow is #111's, and an unmeasured rate is never a silent zero.
+        ``override_rate_by_criterion`` is a per-criterion *count* of
+        edit/override labels for now — the denominator a rate divides by (the
+        judgments the criterion received) is #115's read over the stored
+        labels, and a count is the honest numerator the service itself
+        observed; the name is the contract's (`CT-REVIEW-18`'s plan), the
+        shape is decided there."""
         builds = self._builds.get(run_id)
         labels = self._run_labels.get(run_id, [])
         if builds is None and not labels:
@@ -1735,7 +1764,11 @@ class ReviewService:
     def _attribution_run(self) -> str | None:
         """The run a label written now attributes to (`NFR-REVIEW-04`): the
         queue this service last built, or — before any build — the sole cohort
-        the service was opened over. ``None`` when neither holds."""
+        the service was opened over. ``None`` when neither holds. The durable
+        row's ``cohort_id`` scoping column carries this same id — the run's id
+        is the administration's id in the store flow (`open_review` names the
+        cohort as the run), and the rule's full shape is disclosed in the
+        module interpretations."""
         if self._current_run_id is not None:
             return self._current_run_id
         if len(self._cohort_ids) == 1:
@@ -1779,6 +1812,11 @@ class ReviewService:
                 score_id=label.score_id,
                 review_queue_action=label.review_queue_action,
                 new_points=label.new_points,
+                # The promotion gate's scoping column carries the run's id, not
+                # a per-row cohort: a run belongs to one cohort in this
+                # codebase, so in the declared store flow the two coincide —
+                # the rule and its purge consequence are disclosed in the
+                # module interpretations.
                 cohort_id=run_id,
             )
 
@@ -2097,6 +2135,14 @@ def record_label(
     is deliberately no ``new_points`` parameter: a score edit is a band
     choice (`FR-REVIEW-10`), and points enter only as the *derived* value a
     service label carries — the mapping is never handed a caller's number.
+
+    This is the in-memory surface, deliberate at #110: the durable
+    per-label write outside a service session is #115's collection route,
+    and the stats cases written ahead of both stories call a planned
+    ``record_label(data_dir=..., label=...)`` shape against it — at #115's
+    landing those calls reconcile to whichever surface that story ships
+    (this one, or its durable extension); the `require(..., issue="#115")`
+    blocker ahead of every such call keeps them outside the gate until then.
     """
     if label_type not in _LABEL_TYPES:
         raise ValueError(f"{label_type!r} is not a label type; one of {_LABEL_TYPES}")
