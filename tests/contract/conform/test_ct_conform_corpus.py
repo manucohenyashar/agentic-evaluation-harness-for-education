@@ -55,7 +55,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONFORM-01 — the corpus that can tell two backends apart ---------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c01_the_corpus_spans_the_score_range_including_mid_range_partial_credit():
     """`CT-CONFORM-01` — size, span, **mid-range**, and a known reference score for every fixture.
 
@@ -95,7 +94,6 @@ def test_tc_conform_c01_the_corpus_spans_the_score_range_including_mid_range_par
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c01_a_result_names_its_fixtures_and_one_changed_fixture_changes_the_identity():
     """`NFR-CONFORM-01` — content-addressed and version-pinned, asserted as a **differential**.
 
@@ -134,7 +132,6 @@ def test_tc_conform_c01_a_result_names_its_fixtures_and_one_changed_fixture_chan
 # --- CT-CONFORM-02 — the real medium ---------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c02_the_corpus_carries_handwriting_spanning_the_legibility_range_and_mixed_format():
     """`CT-CONFORM-02` — corpus composition, with the **span** asserted at both ends.
 
@@ -202,7 +199,6 @@ def test_tc_conform_c02_the_fixtures_traverse_the_vlm_path_rather_than_a_text_sh
 # --- CT-CONFORM-09 — the adversarial tier ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c09_every_injection_submission_is_paired_with_a_benign_twin():
     """`CT-CONFORM-09` — the pairing, asserted before anything is measured with it.
 
@@ -352,7 +348,6 @@ def test_tc_conform_c10_the_consent_gate_that_refuses_lives_in_m_conf():
     assert resolve_run_config(hosted_cfg(), _synthetic_cohort()) is not None
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("consent_class", CONSENT_CLASSES_REFUSED)
 def test_tc_conform_c10_the_suite_refuses_to_run_against_a_cohort_not_so_flagged(consent_class):
     """`CT-CONFORM-10` / `FR-CONFORM-02` — the refusal, swept over every unflagged class.
@@ -390,7 +385,6 @@ def test_tc_conform_c10_the_suite_refuses_to_run_against_a_cohort_not_so_flagged
         build_suite().run("v1", [hosted_cfg()], cohort=_cohort_with(consent_class))
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c10_the_corpus_is_only_synthetic_or_consented_work():
     """`FR-CONFORM-02`'s first half — the corpus itself, not the cohort it is run against."""
     load_fixture_set = require(CONFORM_MODULE, "load_fixture_set", issue="#133")
@@ -408,7 +402,6 @@ def test_tc_conform_c10_the_corpus_is_only_synthetic_or_consented_work():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c10_the_suite_does_not_reimplement_the_consent_check():
     """`CT-CONFORM-10`'s boundary, asserted **structurally** rather than behaviourally.
 
