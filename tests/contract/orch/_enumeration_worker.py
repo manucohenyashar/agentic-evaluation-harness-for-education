@@ -5,7 +5,7 @@ imported BEFORE the store opens (see `CLAUDE.md`'s "Store opens require the full
 chain" — `IncompleteMigrationChainError` refuses a short chain at the open), and an
 explicit import block is that requirement stated where it is met:
 
-    import aeh.det, aeh.extract, aeh.ingest, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
+    import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth
 
 Not test scaffolding beyond the harness: the child runs the shipped `Orchestrator` against
 the shipped store — the same call a second dispatcher process would make. Its only job is
@@ -18,10 +18,17 @@ from __future__ import annotations
 import json
 import sys
 
-# The seven migration contributors, imported before the first store open in THIS process.
+# The ten migration contributors, imported before the first store open in THIS process.
+# (`aeh.grade` owns Cohort's last migration — #101's `grade_submission_grade_key`, 18 —
+# `aeh.judge` the one before it, #80's response columns, 17, and `aeh.integ` Durable's,
+# #73's rate dimensions, 5; the list was seven when this worker was written and the
+# pin-rot gate caught the shortfall the moment Cohort's tail moved past judge.)
+import aeh.agg  # noqa: F401,E402
 import aeh.det  # noqa: F401,E402
 import aeh.extract  # noqa: F401,E402
+import aeh.grade  # noqa: F401,E402
 import aeh.ingest  # noqa: F401,E402
+import aeh.integ  # noqa: F401,E402
 import aeh.judge  # noqa: F401,E402
 import aeh.orch  # noqa: F401,E402
 import aeh.pkg  # noqa: F401,E402
