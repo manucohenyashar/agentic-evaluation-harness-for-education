@@ -13,7 +13,12 @@ a judge whose violation rate reaches half the batch while every other judge sits
 zero is the concentration signature — and the assertion is exact: each judge's six
 signals are hand-counted rates over the batch, and the alert names ONLY the violating
 judge. When M-STATS's emitter lands, this file is the pinned contract it must
-reproduce.
+reproduce. **Pinned axis, disclosed**: the world seeds ONE criterion (`C1`), so the
+census's per-(criterion, judge) key collapses to per-judge — every rate is exact over
+that axis, but an emitter that aggregated across criteria would be indistinguishable
+from a correct one here; the non-degenerate per-criterion pin (marks split between
+criteria, a cross-criteria aggregation failing the exact rates) is M-STATS's own case
+when it lands.
 
 The run: a three-judge edge-local panel over four submissions. Judges 1 and 3 answer
 legally (with varied bands, one uncited verdict and one `evidence_sufficient = false`
@@ -164,11 +169,12 @@ def _driven_world(tmp_data_dir, make_fixture_provider):
         for unit in batch:
             request = ScoringWorker(store, counter, j2_ref).assemble(unit)
             worker = ScoringWorker(store, counter, j2_ref)
-            try:
+            # pytest.raises, not a recorded except: if a mutant made the permuted
+            # reply dispatch, the failure must be THIS test's, not a count mismatch
+            # three assertions later (the TC-JUDGE-18 pattern).
+            with pytest.raises(JudgmentError) as excinfo:
                 worker.dispatch(request, j2_ref)
-                raise AssertionError("the violating judge's reply refused")
-            except Exception as error:
-                orchestrator.fail(unit.work_id, error)
+            orchestrator.fail(unit.work_id, excinfo.value)
 
     # The residency boundary lifts once judge 2 holds no leased unit: judge 3's
     # units lease, and their replies — never recorded by the world's pass, which

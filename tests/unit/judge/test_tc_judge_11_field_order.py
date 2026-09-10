@@ -166,7 +166,7 @@ def test_tc_judge_11_b_a_json_object_reserialized_in_declared_order_still_parses
 @pytest.mark.parametrize(
     "order", PERMUTED_ORDERS, ids=["-".join(order) for order in PERMUTED_ORDERS]
 )
-def test_tc_judge_11_b_every_permuted_order_is_refused(order):
+def test_tc_judge_11_c_every_permuted_order_is_refused(order):
     """A permuted reply is refused as a contract violation — never reordered and
     accepted (`FR-JUDGE-09`). Over all 119 non-identity orderings."""
     error = _refused(order)
@@ -177,7 +177,7 @@ def test_tc_judge_11_b_every_permuted_order_is_refused(order):
     )
 
 
-def test_tc_judge_11_c_the_refusal_names_the_pinned_order():
+def test_tc_judge_11_d_the_refusal_names_the_pinned_order():
     """The refusal says what arrived and what the pinned order is — actionable at the
     strike, not a bare rejection."""
     error = _refused(("band",) + REPLY_FIELD_ORDER[:4])
@@ -198,7 +198,7 @@ def test_tc_judge_11_c_the_refusal_names_the_pinned_order():
     MISSING_ORDERS,
     ids=["missing-" + name for name in REPLY_FIELD_ORDER],
 )
-def test_tc_judge_11_d_a_missing_field_is_refused(order):
+def test_tc_judge_11_e_a_missing_field_is_refused(order):
     """A reply with one field dropped is not a shorter contract — it is refused with
     the exact exception, for every one of the five fields."""
     error = _refused(order)
@@ -210,7 +210,7 @@ def test_tc_judge_11_d_a_missing_field_is_refused(order):
     EXTRA_ORDERS,
     ids=["extra-before", "extra-middle", "extra-last"],
 )
-def test_tc_judge_11_e_an_extra_field_is_refused(order):
+def test_tc_judge_11_f_an_extra_field_is_refused(order):
     """A reply with an extra field is not a superset contract — refused with the
     exact exception, wherever the extra field sits."""
     MalformedResponseError = _malformed_error()
@@ -229,7 +229,7 @@ def test_tc_judge_11_e_an_extra_field_is_refused(order):
     )
 
 
-def test_tc_judge_11_f_the_exact_identity_is_the_only_accepted_order():
+def test_tc_judge_11_g_the_exact_identity_is_the_only_accepted_order():
     """The census statement of the contract: over ALL 120 orderings of the five
     fields, exactly the declared one parses and the other 119 raise the pinned
     exception."""
