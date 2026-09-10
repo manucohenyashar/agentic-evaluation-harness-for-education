@@ -997,11 +997,20 @@ class GradingService:
         issued_at: datetime,
         now: datetime,
         fresh_issuance: bool = False,
+        input_missing: bool = False,
     ) -> str:
         """The state a grade reads after this pass: `incomplete` while an input is
         missing (never settled — a missing input awaits an operator, not a window);
         otherwise `final` when the run completed or the review window lapsed
         (`FR-GRADE-10`, ADR-3's null-window reading), else `provisional`.
+
+        `input_missing` is THIS pass's verdict — the computed outcome's
+        `criteria_missing`, which the caller owns. The prior revision's counters are
+        deliberately not read here: a submission whose rescan filled its missing
+        inputs must lift out of `incomplete` on the recomputation, and a
+        prior-revision check would pin it there forever, contradicting FR-GRADE-07's
+        biconditional (`incomplete` only when `criteria_missing > 0` — the same row
+        cannot carry `criteria_missing=0` and the state).
 
         The window is measured from the grade's own issuance: an unchanged grade
         (`fresh_issuance=False`) anchors on its current revision's `computed_at`, so
@@ -1010,7 +1019,7 @@ class GradingService:
         this pass issues it and earns a fresh window (`fresh_issuance=True`). A
         correction arriving after the old window lapsed therefore re-opens review
         for the corrected content rather than minting it pre-settled."""
-        if current is not None and int(current["criteria_missing"]) > 0:
+        if input_missing:
             return STATE_INCOMPLETE
         computed_raw = "" if fresh_issuance else (current or {}).get("computed_at") or ""
         issued = _parse_timestamp(computed_raw) or issued_at
@@ -1089,9 +1098,9 @@ class GradingService:
                 issued_at=now,
                 now=now,
                 fresh_issuance=not unchanged,
+                input_missing=outcome["coverage"].criteria_missing > 0,
             )
             if outcome["coverage"].criteria_missing > 0:
-                state = STATE_INCOMPLETE
                 for cid in outcome["missing"]:
                     queue_rows.append((submission_id, cid, _RESCAN_DIRECTIVE))
             else:
@@ -1237,9 +1246,8 @@ class GradingService:
             issued_at=now,
             now=now,
             fresh_issuance=not unchanged,
+            input_missing=outcome["coverage"].criteria_missing > 0,
         )
-        if outcome["coverage"].criteria_missing > 0:
-            state = STATE_INCOMPLETE
         if unchanged:
             if current["state"] == STATE_PROVISIONAL and state == STATE_FINAL:
                 with cohort.transaction() as tx:

@@ -199,3 +199,80 @@ def test_tc_grade_07_a_purely_provisional_submission_is_never_incomplete(
         )
     finally:
         store.close()
+
+
+def test_issue_101_a_recovered_incomplete_grade_recomputes_out_of_incomplete(
+    tmp_data_dir,
+):
+    """Defect regression (issue #101's review pass), the recovery limb of
+    `TC-GRADE-22` — an `incomplete` grade whose operator resolves the ingestion
+    failure recomputes and **leaves** `incomplete` (the full illegal-transition
+    matrix is the revisions test story's to land).
+
+    The defect: the state selection read the PRIOR revision's `criteria_missing`,
+    pinning every later revision to the old incompleteness — a recomputed row
+    minted `state='incomplete'` with `criteria_missing=0`, contradicting
+    FR-GRADE-07's biconditional (`incomplete` only when an input is missing).
+    Observed failing against the unfixed code before the fix; a recovered
+    submission must lift to `provisional`, and the operator routing it earned
+    must retire with it."""
+    run_id, cohort = _seed_run(store := open_store(tmp_data_dir), ("S-I4",))
+    try:
+        write_criterion_scores(
+            cohort,
+            [("S-I4", "C1", "B2", 7.0, "auto"),
+             ("S-I4", "C2", "B1", 6.0, "auto")],
+        )  # C3 missing: the ingestion failure.
+
+        open_grade = require(GRADE_MODULE, "open_grade", issue=ISSUE)
+        service = open_grade(store)
+        service.compute_all(run_id)
+        first = [g for g in grade_rows(cohort) if g["revision"] == 1][0]
+        assert first["state"] == "incomplete", (
+            f"fixture premise failed: the first grade reads {first['state']!r}, "
+            "expected `incomplete` over the missing C3"
+        )
+
+        # The operator resolves the failure: the rescan lands C3's score.
+        write_criterion_scores(cohort, [("S-I4", "C3", "B2", 7.5, "auto")])
+        service.compute_all(run_id)
+
+        current = [g for g in grade_rows(cohort) if g["revision"] == 2]
+        assert current, (
+            "the recovery pass wrote no second revision — a rescan that fills the "
+            "missing input must recompute the grade (TC-GRADE-22's recovery limb)"
+        )
+        row = current[0]
+        assert row["criteria_missing"] == 0, (
+            f"the recomputed grade still claims {row['criteria_missing']} missing "
+            "criteria after the rescan filled them — the coverage counters must "
+            "read the current inputs"
+        )
+        assert row["state"] != "incomplete", (
+            f"the recomputed grade reads {row['state']!r} with "
+            f"criteria_missing={row['criteria_missing']} — `incomplete` is set only "
+            "when `criteria_missing > 0` (FR-GRADE-07, CT-GRADE-08): a submission "
+            "whose inputs arrived must lift out of the state, not carry the old "
+            "incompleteness forward forever"
+        )
+        assert row["state"] == "provisional", (
+            f"the recovered grade reads {row['state']!r} — it must re-enter the "
+            "deliverable states as `provisional` (the window still open; "
+            "TC-GRADE-22)"
+        )
+        assert row["total"] is not None, (
+            "the recovered grade carries no total — the recomputation delivered "
+            "inputs and must deliver a number, not the NULL of an incomplete row"
+        )
+        stale = cohort.query(
+            "SELECT COUNT(*) AS n FROM review_queue WHERE submission_id = :s",
+            s="S-I4",
+        )
+        assert stale[0]["n"] == 0, (
+            "the operator routing the submission earned while incomplete is still "
+            "queued after the recovery — a stale rescan item asks the operator to "
+            "re-scan inputs that are no longer missing (TC-GRADE-07's actionable "
+            "queue, retired by the pass that no longer needs it)"
+        )
+    finally:
+        store.close()

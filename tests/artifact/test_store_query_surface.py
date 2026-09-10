@@ -517,23 +517,26 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # class's states as they stand, not the stored rows alone; and once more, the
     # same six, +5: the `_row_value` idiom inside the derivation, which keeps the
     # CT-PKG-05 single-reader gate from reading `["points"]` outside `aeh.pkg`;
-    # re-pinned from the walker.)
-    "aeh.grade:1146",
-    "aeh.grade:1152",
-    "aeh.grade:1154",
-    "aeh.grade:1162",
-    "aeh.grade:1172",
-    "aeh.grade:1246",
-    "aeh.grade:1271",
-    "aeh.grade:1276",
-    "aeh.grade:1307",
+    # and once more as a block, +9: `_settlement_state`'s docstring and
+    # `input_missing` parameter — the recovered-incomplete defect fix reads this
+    # pass's verdict, not the prior revision's counters; re-pinned from the
+    # walker.)
+    "aeh.grade:1155",
+    "aeh.grade:1161",
+    "aeh.grade:1163",
+    "aeh.grade:1171",
+    "aeh.grade:1181",
+    "aeh.grade:1254",
+    "aeh.grade:1279",
+    "aeh.grade:1284",
     "aeh.grade:1315",
-    "aeh.grade:1407",
-    "aeh.grade:1488",
-    "aeh.grade:1493",
-    "aeh.grade:1740",
-    "aeh.grade:1751",
-    "aeh.grade:1756",
+    "aeh.grade:1323",
+    "aeh.grade:1415",
+    "aeh.grade:1496",
+    "aeh.grade:1501",
+    "aeh.grade:1748",
+    "aeh.grade:1759",
+    "aeh.grade:1764",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
