@@ -361,15 +361,20 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.extract:885",
     "aeh.extract:890",
     "aeh.extract:892",
-    # The judge sites are #79's line numbers (moved from #78's 1145/1150/1152 by the
-    # prompt-template work above them: the exemplar view, the seven-field render, the
-    # rerun door): the one write transaction in `ScoringWorker.persist` — the guarded
+    # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
+    # response-contract work above them: the v17 migration block, the prose-assessment
+    # gate, the amendment payload, the extended dispatch loop — then re-pinned once
+    # more when the review fix wrapped the reply span parsing in
+    # `MalformedResponseError`, which added nine lines above `persist`): the one write
+    # transaction in `ScoringWorker.persist` — the guarded
     # done-marking, its changes() read, and the verdict row that commits together with
     # it (the extract shape: every statement a declared constant in
-    # `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`, keyword-parameterized).
-    "aeh.judge:1453",
-    "aeh.judge:1458",
-    "aeh.judge:1460",
+    # `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`, keyword-parameterized) — the verdict row's
+    # VALUES list now carrying the #80 response columns (cited_spans JSON,
+    # evidence_sufficient, uncited), still one declared statement.
+    "aeh.judge:1718",
+    "aeh.judge:1723",
+    "aeh.judge:1733",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
@@ -475,10 +480,11 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # in store.py, and again with #97's and #78's contributions named in the refusal's
     # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    # (#92's re-pin moved them again; #73's Durable pin and refusal text moved them once
-    # more — re-read from the walker, never hand-unioned.)
-    "aeh.store:1818",
-    "aeh.store:2600",
+    # (#92's re-pin moved them once; #73's Durable pin and refusal text moved them
+    # again, and #80's pin-bump history lines added four more above them — re-read
+    # from the walker on the merged tree, never hand-unioned.)
+    "aeh.store:1821",
+    "aeh.store:2603",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,

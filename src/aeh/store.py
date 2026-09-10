@@ -300,11 +300,12 @@ class IncompleteMigrationChainError(StoreError):
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
     import `aeh.det`, and Tier P's chain is short by one migration without it; `aeh.extract`
     pulls `aeh.ingest` and `aeh.orch` in transitively but is itself needed for Cohort's tail —
-    11 of its 16 migrations — `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
-    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns`,
-    `aeh.orch` again for #62's `orch_report_indexes`, `aeh.agg` for the last, #92's
-    `agg_confidence_columns`, and `aeh.integ` for Durable's tail, #73's
-    `integ_rate_dimensions`).
+    11 of its 17 migrations — `aeh.orch` for #61's `orch_run_lifecycle`, `aeh.synth` for
+    #97's `synth_narrative_key`, `aeh.judge` for #78's `judge_verdict_columns` and
+    #80's `judge_verdict_response_columns` — the last, Cohort 17, so `aeh.judge` owns
+    Cohort's tail again — `aeh.orch` again for #62's `orch_report_indexes`, and
+    `aeh.agg` for #92's `agg_confidence_columns` before it; `aeh.integ` owns Durable's
+    tail, #73's `integ_rate_dimensions`).
 
     Import order has two failure modes, and #269's `_VersionOrderedRegistry` already fixed the
     one it could fix at the root: a tier's chain arriving **out of version order** when an early
@@ -1384,14 +1385,16 @@ def current_schema_version(tier: Tier) -> int:
 #: fails until the pin matches the chain — a stale pin refuses opens in the *full* world, the
 #: same phantom bug in mirror image. (The rule has now fired five times since the pin
 #: landed: #269's `aeh.extract` moved Cohort 10→11, #61's `orch_run_lifecycle` moved it
-#: 11→12, #78's `judge_verdict_columns` 12→13, #97's `synth_narrative_key` 13→14, and
-#: #62's `orch_report_indexes` 14→15. #92's `agg_confidence_columns` moved Cohort 15→16
-#: and `aeh.agg` joined the contributor import lists (it owns Cohort's last migration
-#: now); #73's `integ_rate_dimensions` moved Durable 4→5 — the earliest caught by that
-#: gate test, not by a failed open.)
+#: 11→12, #97's `synth_narrative_key` 12→13, #78's `judge_verdict_columns` 13→14, and
+#: #62's `orch_report_indexes` 14→15 — the earliest caught by that gate test, not by a
+#: failed open. #92's `agg_confidence_columns` moved it 15→16, and `aeh.agg` joined the
+#: contributor import lists. #80's `judge_verdict_response_columns` moved it 16→17, and
+#: `aeh.judge` owns Cohort's last migration again (the response-contract columns on
+#: `verdict`); #73's `integ_rate_dimensions` moved Durable 4→5, `aeh.integ` joining the
+#: same lists — the two moves landed on different tiers and needed no renumber.
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 16,
+    Tier.COHORT: 17,
     Tier.DURABLE: 5,
 }
 
