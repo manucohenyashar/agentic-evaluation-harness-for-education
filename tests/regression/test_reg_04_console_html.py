@@ -41,8 +41,6 @@ from tests.support.console_vocabulary import (
 )
 from tests.support.impl import CONSOLE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 CASE = "TC-REG-04"
 RUN_ID = "r-1"
 

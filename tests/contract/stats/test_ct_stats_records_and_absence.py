@@ -108,7 +108,6 @@ def test_tc_stats_c05_an_administration_with_no_blind_labels_does_not_advance_th
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c05_the_console_renders_the_message_not_the_previous_administrations_number():
     """The consumer obligation at **rung 3**, `M-CONSOLE`'s half — keyed on #125.
 
