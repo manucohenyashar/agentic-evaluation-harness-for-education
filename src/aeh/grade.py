@@ -31,6 +31,18 @@ by the shipped cases rather than invented here):
   (aeh/pkg.py migration 5): the grade with the greatest floor <= the scaled score
   resolves. A package with no table yields a NULL grade, never an invented band
   (`FR-GRADE-03`, the NoValidationData honesty rule).
+- `boundary_at_risk` asks whether the provisional criteria's plausible range could
+  **move the student across** a boundary (`FR-GRADE-05`), so the flag needs a range
+  of positive width: a zero-width range — no provisional criteria, or every
+  provisional interval collapsed to nothing — cannot move anyone, and a settled
+  grade sitting exactly on a floor is settled, not at risk (#102's degenerate limb
+  of `TC-GRADE-06`). The range-edge predicate stays the inclusive
+  floor-membership check on `[score_low, score_high]`; M-PKG's
+  `distance_to_nearest_boundary` (`FR-PKG-16`) is a point-proximity signal for
+  M-REVIEW's ranking and is deliberately NOT this predicate — reformulated as
+  distance-at-midpoint it under-flags on ulp cases (a floor at the range's very
+  edge), and the boundary table itself is the package's, read through
+  `select_boundaries` (`CT-PKG-10`'s single-representation rule), never re-derived.
 - The coverage classes map from `criterion_score.routing` (`CT-AGG-06`'s column):
   `auto` -> `criteria_auto`; `reviewed` -> `criteria_reviewed`; `provisional` and
   `queued` -> `criteria_provisional` (both are unsettled-acceptance judgment states,
@@ -499,14 +511,19 @@ def boundary_risk(
     criterion — where that criterion's eventual points may yet move relative to its
     current ones. Because each criterion's current points sit inside its own range,
     `total` always lies inside `[score_low, score_high]` (`CT-GRADE-05`'s containment
-    invariant). `at_risk` fires when any boundary floor lies inside the range,
-    inclusive both ends — landing exactly on a floor resolves to that floor's band
-    (floors are inclusive), which is the range spanning a band edge. When not at risk
-    the range is withheld: a range nobody acts on is noise (`CT-GRADE-05`)."""
+    invariant). `at_risk` fires when the range has positive width and any boundary
+    floor lies inside it, inclusive both ends — landing exactly on a floor resolves
+    to that floor's band (floors are inclusive), which is the range spanning a band
+    edge. A **zero-width** range (no provisional criteria, or every provisional
+    interval collapsed to nothing) cannot move the student anywhere, so it can never
+    span a band edge even when the total sits exactly on a floor — a settled grade
+    on a floor is settled, not at risk (the #102 degenerate limb of `TC-GRADE-06`).
+    When not at risk the range is withheld: a range nobody acts on is noise
+    (`CT-GRADE-05`)."""
     intervals = list(provisional_intervals)
     low = math.fsum([float(total), *(float(pair[0]) for pair in intervals)])
     high = math.fsum([float(total), *(float(pair[1]) for pair in intervals)])
-    if boundaries:
+    if boundaries and low < high:
         at_risk = any(
             low <= float(floor) <= high for _, floor in boundaries
         )
