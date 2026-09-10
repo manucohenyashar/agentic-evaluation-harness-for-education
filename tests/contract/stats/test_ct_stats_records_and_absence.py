@@ -337,7 +337,6 @@ def test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_
             REVIEW_MODULE,
             "rank_queue_items",
             "#108",
-            marks=pytest.mark.writtenahead,
         ),
         ("M-AGG", AGG_MODULE, "rank_criteria_for_escalation", "#93"),
     ],

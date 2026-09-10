@@ -26,7 +26,6 @@ pytestmark = pytest.mark.contract
 # --- CT-REVIEW-01 — sized by minutes, degrading honestly ---------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c01_queue_size_tracks_the_minute_budget_and_not_a_proportion():
     """*"Holding the flagged population constant and varying only the budget, then confirming the
     queue size tracks minutes rather than a proportion."*
@@ -64,7 +63,6 @@ def test_tc_review_c01_queue_size_tracks_the_minute_budget_and_not_a_proportion(
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_ranking_rule():
     """`NFR-REVIEW-05`'s honest degradation, and the half that is easy to get wrong.
 
@@ -201,7 +199,6 @@ def test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_
 # --- CT-REVIEW-03 — expected value, and what may not drive it ----------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("signal", vocab.ERROR_PROBABILITY_SIGNALS)
 def test_tc_review_c03_ranking_responds_to_each_error_probability_signal_alone(signal):
     """*"By varying each alone and asserting the order responds."*
@@ -233,7 +230,6 @@ def test_tc_review_c03_ranking_responds_to_each_error_probability_signal_alone(s
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c03_the_order_does_not_move_when_only_self_confidence_changes():
     """The prohibition: *"hold the observables fixed, sweep self-confidence, assert the order is
     unchanged."*
@@ -263,7 +259,6 @@ def test_tc_review_c03_the_order_does_not_move_when_only_self_confidence_changes
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c03_rebuilding_with_unchanged_data_yields_an_identical_order():
     """`NFR-REVIEW-02` — *"a queue that reshuffles between sittings cannot be reasoned about or
     tested."*
@@ -288,7 +283,6 @@ def test_tc_review_c03_rebuilding_with_unchanged_data_yields_an_identical_order(
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c03_the_ranking_score_is_expected_value_per_estimated_second():
     """The formula itself: `(P(score wrong) × impact) / est_seconds`.
 
@@ -327,7 +321,6 @@ def test_tc_review_c03_the_ranking_score_is_expected_value_per_estimated_second(
 # --- CT-REVIEW-16 — the build is fast, and it is not billed to the teacher ---------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_review_c16_the_queue_builds_within_two_seconds_at_the_stated_load():
     """`NFR-REVIEW-01`'s threshold at `NFR-REVIEW-01`'s load: 350 students, ~800 flagged items.
@@ -360,7 +353,6 @@ def test_tc_review_c16_the_queue_builds_within_two_seconds_at_the_stated_load():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c16_build_time_is_excluded_from_the_teachers_minute_budget():
     """*"Assert build time is excluded from the teacher's minute budget rather than silently
     consuming it."*
@@ -411,7 +403,6 @@ def test_tc_review_c16_build_time_is_excluded_from_the_teachers_minute_budget():
 # --- CT-REVIEW-19 — the non-promise about est_seconds ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_badly_wrong():
     """*"Run with `est_seconds` deliberately wrong by a large factor and assert the queue still
     functions and degrades honestly — ranking still reproducible, residual still stated

@@ -147,7 +147,6 @@ def test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_uni
 # --- CT-REVIEW-17 — the four knobs are M-STATS's inputs -----------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("knob", sorted(vocab.CONFIG_DEFAULTS))
 def test_tc_review_c17_each_knob_declares_its_documented_default(knob):
     """*"Assert the four knobs' declared defaults (10, 15, 12, 30)."*
@@ -348,7 +347,6 @@ def test_tc_review_c18_the_budget_exhaustion_signal_is_retained_across_administr
 # --- CT-REVIEW-20 — what grouping is at Phase 1, and what it may be called ------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("component", sorted(vocab.GROUP_SIGNATURE_COMPONENTS))
 def test_tc_review_c20_two_items_differing_in_any_signature_component_are_not_grouped(component):
     """*"Assert the actual grouping rule rather than a semantic one: two items differing in any
@@ -380,7 +378,6 @@ def test_tc_review_c20_two_items_differing_in_any_signature_component_are_not_gr
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c20_the_group_signature_is_exactly_the_declared_components():
     """The other direction of the same rule: twelve items sharing all five components **do** group.
 

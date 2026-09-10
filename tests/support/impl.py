@@ -284,13 +284,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "score states" (`should_escalate` re-keyed at #91's landing as the states' gate)
     # and "policy purity" (the three-member conjunction) — all resolved when #93
     # shipped `should_escalate` beside the routing/state assignment. The round-trip
-    # entry (TC-AGG-15) went at #92's. Remaining: the review-queue rank limb, whose
-    # blocker is M-REVIEW's, not M-AGG's.
-    "#95 TS-36 review-queue rank (TC-AGG-07)": (
-        "symbol",
-        f"{REVIEW_MODULE}:rank_queue_items",
-        ("tests/unit/agg/test_review_queue_rank.py",),
-    ),
+    # entry (TC-AGG-15) went at #92's. The review-queue rank limb (TC-AGG-07) was
+    # the last: its blocker was M-REVIEW's, not M-AGG's, and it unmarked at #108's
+    # landing (`aeh.review:rank_queue_items`, whose `items` form orders
+    # holistic-first at equal expected value and expected-value dominant
+    # otherwise — FR-AGG-06's tie-break, taken as given).
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
     # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens
@@ -1009,16 +1007,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # `"#93 stats"` is gone because #93 landed: `aeh.agg:rank_criteria_for_escalation`
     # ranks no-data first and a measured zero by its rate (CT-STATS-09's consumer
-    # differential, c09), and the sweep's `m_agg` param runs unmarked while `m_review`
-    # stays #108's (its own per-param marker — the TC-AGG-20 precedent).
-    "#108 stats": (
-        "symbol",
-        f"{REVIEW_MODULE}:rank_queue_items",
-        (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero[m_review]",
-        ),
-    ),
+    # differential, c09), and the sweep's `m_agg` param runs unmarked.
+    #
+    # `"#108 stats"` is gone because #108 landed: `aeh.review:rank_queue_items`
+    # carries the same `criteria=` form (`CriterionOverrideRank`, no data first,
+    # then override rate descending — the mirror of `aeh.agg`), so the sweep's
+    # `m_review` param runs unmarked too and both consumers answer c09 the same
+    # way.
     "#123 stats": (
         "symbol",
         f"{CONSOLE_MODULE}:render_setup_step",
@@ -1077,42 +1072,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # parametrized per consumer and each half carries its own key. And `CT-REVIEW-09`'s
     # transport-layer step reaches a different console symbol from the other three console cases,
     # so it gets its own entry rather than riding on `render_review_queue`.
-    "#108 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:build_review",
-        (
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c04_the_queue_states_all_three_figures_and_they_are_arithmetically_consistent",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_ranking_rule",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c01_queue_size_tracks_the_minute_budget_and_not_a_proportion",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_ranking_responds_to_each_error_probability_signal_alone",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_rebuilding_with_unchanged_data_yields_an_identical_order",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_the_order_does_not_move_when_only_self_confidence_changes",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_the_ranking_score_is_expected_value_per_estimated_second",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c16_build_time_is_excluded_from_the_teachers_minute_budget",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c16_the_queue_builds_within_two_seconds_at_the_stated_load",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_badly_wrong",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_a_group_action_emits_one_label_per_member",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_group_items_rank_above_per_item_entries",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c17_each_knob_declares_its_documented_default",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c20_the_group_signature_is_exactly_the_declared_components",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c20_two_items_differing_in_any_signature_component_are_not_grouped",
-        ),
-    ),
+    #
+    # `"#108 review"` is gone because #108 landed (unmarked 2026-09, that story):
+    # `aeh.review:build_review` constructs the service and its queue carries the
+    # residual triple, the build trace, the groups and the greedy rank-order fill —
+    # so those fifteen cases unmark while every case below that reaches the
+    # samples (#111), the label store (#110) or the write surface (#109) through a
+    # `require_attr` stays red for its own story, exactly as the keying above
+    # intended.
     "#109 review": (
         "symbol",
         f"{REVIEW_MODULE}:write_fields",
