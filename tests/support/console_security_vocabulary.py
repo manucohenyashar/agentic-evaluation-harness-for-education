@@ -133,7 +133,14 @@ CONSOLE_WRITE_FIELDS: dict[str, tuple[str, ...]] = {
     "set review window": ("grade_policy.review_window_hours",),
     "start run": ("run.run_id", "run.status"),
     "pause/resume": ("run.status",),
-    "resolve quarantine item": ("submission.ingest_status",),
+    # Reconciled at #126's landing: the resolve action's real write clears the park
+    # flag beside the diagnosis it writes — `submission.quarantined` is the column
+    # M-INGEST's CHECK constraint and the S8 close both spell, so the declared
+    # contract carries it too.
+    "resolve quarantine item": (
+        "submission.ingest_status",
+        "submission.quarantined",
+    ),
     "review action": (
         "review_queue.action",
         "review_queue.new_band",

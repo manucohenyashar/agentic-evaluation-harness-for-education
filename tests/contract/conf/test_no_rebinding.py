@@ -452,7 +452,6 @@ def test_tc_conf_c14_the_adversarial_construction_turns_this_case_red_and_nothin
 # --- step 3 — the consumer sweep, rung 3 -------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_c14_step_3_no_consumer_exposes_a_path_that_rebinds_a_run():
     """Step 3 — the consumer sweep, at **rung 3**, with `M-ORCH` and `M-CONSOLE` real.
 

@@ -181,7 +181,6 @@ def test_tc_console_c11b_with_no_blind_labels_the_block_says_so_and_carries_no_p
             )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c11c_a_package_never_administered_here_renders_no_borrowed_figure():
     """`FR-CONSOLE-26` — S1's rule, and HLD §11.5 calls it *"the one most likely to be violated by
     a well-meaning summary card"*.

@@ -22,10 +22,10 @@ All three are written ahead of **#122**. Every name is invented; the base surfac
 `tests/support/console_security_vocabulary.py`, because design §3.19 declares no Python interface
 at all.
 
-**Markers.** `TC-CONSOLE-C01`'s process-kill half carries `integration` alongside `writtenahead`:
-its rung is 4, it spawns a real process, and when the `writtenahead` marker comes off it must not
-land inside `TEST_CMD`'s 60-second contract budget (§4.10). Chosen now rather than at unmark time,
-because at unmark time the choice is made by whoever is reading a failure.
+**Markers.** `TC-CONSOLE-C01`'s process-kill half carries `integration` (its rung is 4, it
+spawns a real process, and it must not land inside `TEST_CMD`'s 60-second contract budget,
+§4.10). The choice was made when the case was written, not at unmark time, because at unmark
+time the choice is made by whoever is reading a failure.
 """
 
 from __future__ import annotations
@@ -48,7 +48,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-01 — no state, no inference, and nothing that survives a kill --------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c01_the_console_makes_no_inference_and_effects_change_by_writing_a_row():
     """`CT-CONSOLE-01` / `FR-CONSOLE-01` — the two prohibitions and the one mechanism.
 
@@ -96,7 +95,6 @@ def test_tc_console_c01_the_console_makes_no_inference_and_effects_change_by_wri
     ), "a control action wrote a blob; control rows are rows"
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c01_two_tabs_and_a_closed_browser_leave_the_run_untouched():
     """`CT-CONSOLE-01` / `NFR-CONSOLE-03` — the differential across concurrent views.
 
@@ -138,7 +136,6 @@ def test_tc_console_c01_two_tabs_and_a_closed_browser_leave_the_run_untouched():
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c01_killing_the_console_process_leaves_the_run_and_its_queued_rows_intact():
     """`CT-CONSOLE-01` at rung 4 — the assertion that needs a real process to mean anything.
 
@@ -152,8 +149,8 @@ def test_tc_console_c01_killing_the_console_process_leaves_the_run_and_its_queue
     the run across the kill is the ledger. That is what makes this different from the two-tab case
     above: there, both consoles were alive; here, everything in memory is gone by construction.
 
-    Marked `integration` as well as `writtenahead`: this spawns a process, and it must not land in
-    `TEST_CMD`'s 60-second contract budget when the marker comes off.
+    Marked `integration`: this spawns a process, and it must not land inside `TEST_CMD`'s
+    60-second contract budget (§4.10).
     """
     serve = require(CONSOLE_MODULE, "serve_console", issue="#122")
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
@@ -196,7 +193,6 @@ def test_tc_console_c01_killing_the_console_process_leaves_the_run_and_its_queue
 # --- CT-CONSOLE-02 — exactly fifteen, enumerable, and nothing else writes ------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c02_the_runtime_write_surface_equals_the_declared_control_actions():
     """`CT-CONSOLE-02` / `FR-CONSOLE-32` — **set equality**, against the running console.
 
@@ -235,7 +231,6 @@ def test_tc_console_c02_the_runtime_write_surface_equals_the_declared_control_ac
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c02_every_write_a_screen_makes_maps_to_a_declared_action():
     """`CT-CONSOLE-02`'s dynamic cross-check: the enumeration is not merely self-consistent.
 
@@ -278,7 +273,6 @@ def test_tc_console_c02_every_write_a_screen_makes_maps_to_a_declared_action():
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c02_everything_else_the_console_does_is_a_read():
     """The clause's complement, and §6.11.19 asks for it explicitly: *"asserted as the complement"*.
 
@@ -349,7 +343,6 @@ def _payload_fields(payload: object) -> list[str]:
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("action", CONTROL_SURFACE_ACTIONS)
 def test_tc_console_c03_every_control_action_is_idempotent_through_all_three_replay_routes(action):
     """`CT-CONSOLE-03` / `FR-CONSOLE-02` — **per action**, not sampled.
@@ -382,7 +375,6 @@ def test_tc_console_c03_every_control_action_is_idempotent_through_all_three_rep
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c03_an_action_against_stale_state_is_refused_or_idempotent_never_partial():
     """`CT-CONSOLE-03`'s stale-state rule, asserted on the **rows** rather than on the response.
 

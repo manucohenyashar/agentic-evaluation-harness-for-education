@@ -237,7 +237,6 @@ def _undeclared_paths(payload: object, path: str = "") -> set[str]:
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c05_the_console_binds_loopback_verified_against_the_actual_socket():
     """`CT-CONSOLE-05` / `FR-CONSOLE-05` — asserted on the **bound socket**, not the setting.
 
@@ -265,7 +264,6 @@ def test_tc_console_c05_the_console_binds_loopback_verified_against_the_actual_s
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c05_every_cloud_hosted_setting_combination_refuses_to_start():
     """The refusal, swept as a **product** — §6.11.19: *"every combination of settings"*.
 

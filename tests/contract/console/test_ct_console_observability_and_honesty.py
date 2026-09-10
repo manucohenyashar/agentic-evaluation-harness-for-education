@@ -43,7 +43,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-22 — the instrument, not the telemetry -------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c22_the_console_emits_all_four_declared_metrics():
     """Design §3.19's Observability line, asserted by set equality over the emitted names.
 
@@ -72,7 +71,6 @@ def test_tc_console_c22_the_console_emits_all_four_declared_metrics():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c22_skip_rates_are_emitted_per_setup_step_not_in_aggregate():
     """The clause's own reason, asserted directly: *per step*, because the six questions are per step.
 
@@ -108,7 +106,6 @@ def test_tc_console_c22_skip_rates_are_emitted_per_setup_step_not_in_aggregate()
 # --- CT-CONSOLE-23 — the boundary of a deliberate absence --------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c23_the_absence_of_auth_holds_only_within_the_loopback_bound():
     """`CT-CONSOLE-23` — the case asserts the **boundary**, not a capability.
 
@@ -139,7 +136,6 @@ def test_tc_console_c23_the_absence_of_auth_holds_only_within_the_loopback_bound
     assert start_console is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c23_no_audit_surface_presents_an_actor_string_as_an_identity():
     """The consumer obligation, which is the part that could be got wrong.
 
