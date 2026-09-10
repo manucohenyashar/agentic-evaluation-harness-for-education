@@ -1470,12 +1470,20 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
             f"judge reply fields arrived {list(reply.keys())}, not the pinned order "
             f"{list(REPLY_FIELDS)} — reordering is not a format variation (FR-JUDGE-09)"
         )
-    cited = tuple(
-        _span_of(span, where=f"reply cited_spans[{index}]")
-        for index, span in enumerate(
-            _sequence_of(reply["cited_spans"], "cited_spans")
+    try:
+        cited = tuple(
+            _span_of(span, where=f"reply cited_spans[{index}]")
+            for index, span in enumerate(
+                _sequence_of(reply["cited_spans"], "cited_spans")
+            )
         )
-    )
+    except (TypeError, ValueError) as error:
+        # A malformed span inventory is a malformed response like any other: the
+        # `FUZZ-04` oracle admits no other exception out of `_verdict_of`, and the
+        # dispatch loop can only strike refusals it is shown (`NFR-JUDGE-05`).
+        raise MalformedResponseError(
+            f"judge reply cited_spans is not a valid span inventory: {error}"
+        ) from error
     assessment = reply["evidence_assessment"]
     if not isinstance(assessment, str):
         raise MalformedResponseError(
@@ -1639,7 +1647,8 @@ class ScoringWorker:
                 if isinstance(error, ProseAssessmentError) and amendments_used < amendment_budget:
                     amendments_used += 1
                     payload = _amended_payload(payload)
-                    integrity_flags.append(ASSESSMENT_AMENDED)
+                    if ASSESSMENT_AMENDED not in integrity_flags:
+                        integrity_flags.append(ASSESSMENT_AMENDED)
                     strikes.append(
                         f"attempt {attempt}/{budget}: evidence_assessment re-requested "
                         f"with an amended prompt "

@@ -363,16 +363,18 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.extract:892",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
-    # gate, the amendment payload, the extended dispatch loop): the one write
+    # gate, the amendment payload, the extended dispatch loop — then re-pinned once
+    # more when the review fix wrapped the reply span parsing in
+    # `MalformedResponseError`, which added nine lines above `persist`): the one write
     # transaction in `ScoringWorker.persist` — the guarded
     # done-marking, its changes() read, and the verdict row that commits together with
     # it (the extract shape: every statement a declared constant in
     # `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`, keyword-parameterized) — the verdict row's
     # VALUES list now carrying the #80 response columns (cited_spans JSON,
     # evidence_sufficient, uncited), still one declared statement.
-    "aeh.judge:1709",
-    "aeh.judge:1714",
-    "aeh.judge:1724",
+    "aeh.judge:1718",
+    "aeh.judge:1723",
+    "aeh.judge:1733",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
