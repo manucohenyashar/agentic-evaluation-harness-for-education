@@ -103,7 +103,6 @@ def test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c14_nothing_a_teacher_records_reaches_a_rerun_of_the_same_unit():
     """The rung-3 reachability half, *"including on a resumed or re-run unit, which is the route
     that would actually open."*

@@ -125,7 +125,6 @@ def test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_rank
 # --- CT-REVIEW-02 — the subtraction happens first ----------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs():
     """The **event-order** assertion, because *"the clause says the ordering is the contract"*.
 

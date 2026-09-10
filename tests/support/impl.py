@@ -1076,9 +1076,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `"#108 review"` is gone because #108 landed (unmarked 2026-09, that story):
     # `aeh.review:build_review` constructs the service and its queue carries the
     # residual triple, the build trace, the groups and the greedy rank-order fill —
-    # so those fifteen cases unmark while every case below that reaches the
-    # samples (#111), the label store (#110) or the write surface (#109) through a
-    # `require_attr` stays red for its own story, exactly as the keying above
+    # so the entry's fifteen cases unmark, and with them two orphans whose
+    # substance landed with the same story: the CT-REVIEW-02 event-order case
+    # (`build_trace` is #108's to provide; its marker came off and its line left
+    # the "#111" list below) and the CT-REVIEW-14 rerun case (its binding blocker
+    # was `build_review`). Every case below that reaches the samples (#111), the
+    # label store (#110) or the write surface (#109) through a `require_attr` that
+    # is still absent stays red for its own story, exactly as the keying above
     # intended.
     "#109 review": (
         "symbol",
@@ -1100,6 +1104,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c06_the_residual_persists_across_review_sessions",
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface",
+            "tests/contract/review/test_ct_review_limits_and_config.py"
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
+            "tests/contract/review/test_ct_review_limits_and_config.py"
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
             "tests/contract/review/test_ct_review_sampling_and_staleness.py"
             "::test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh",
         ),
@@ -1130,6 +1138,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_null",
         ),
     ),
+    # The CT-REVIEW-02 event-order case (`c02_blind_minutes_are_subtracted...`)
+    # unmarked at #108's landing: `build_trace` is #108's and the reservation step
+    # sits in its trace, so the case's binding blocker resolved there. Only the
+    # survival case below still waits on #111's sample surface.
     "#111 review": (
         "symbol",
         f"{REVIEW_MODULE}:blind_sample_skipped",
@@ -1142,8 +1154,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c09_no_system_output_is_available_before_submission",
             "tests/contract/review/test_blind_unreachability.py"
             "::test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_query_level",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs",
             "tests/contract/review/test_ct_review_budget_and_ranking.py"
             "::test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
@@ -1225,17 +1235,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#78 rerun review"` entry stood here too (`aeh.judge:assemble_prompt` for
     # the c14 rerun case): #79 landed the id-keyed door, but the test's BINDING
     # blocker was always #108's `build_review` -- its first require resolves it before
-    # `assemble_prompt` is read -- and the marker is function-level, shared with the
-    # file's other cases. So the c14 case stays marked with the file and unmarks with
-    # the #108/#109 landings, which still register this file; keying the entry on a
-    # symbol that is no longer what blocks it would have fired the gate for the same
-    # reason the `"#78 review"` entry could not stay.
-    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
-    # so its blocker no longer holds. The `[extract]` param it named stays marked for
-    # now — its first require is #109's `write_fields` (the test resolves it before it
-    # reads either consumer), and the marker is function-level, shared with the
-    # `[judge]` param — so the file is unmarked by #109's implementer, together with
-    # the `#109 review` entry below, which is the file's remaining registration.
+    # `assemble_prompt` is read. #108 landed, and the c14 rerun case unmarked with
+    # that story (verified green against the landed queue); the `[judge]` write-set
+    # param below stays marked for #109's `write_fields`, which still registers this
+    # file.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
     # so its blocker no longer holds. The `[extract]` param it named stays marked for
     # now — its first require is #109's `write_fields` (the test resolves it before it

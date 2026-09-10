@@ -70,6 +70,26 @@ and this implementation chose; all are reported on the PR):
 * *Group labels record the honest per-member time*: ``review_seconds`` is
   divided across the members, because the group action genuinely took less per
   member — which is why ``GROUP_INDISTINGUISHABILITY_FIELDS`` excludes it.
+* *The skip-over fill is not a prefix fill at every budget.* The ranking rule
+  is identical at every budget (same score, same order), but because an entry
+  that does not fit is passed over rather than stopping the walk, a squeezed
+  budget can show a different selection than a prefix of the generous budget's
+  — a cheap tail item can ride along while an expensive head item is skipped.
+  ``CT-REVIEW-C01``'s pinned assertion (the 5-minute floor-of-one showing the
+  single top entry) is structurally a prefix at any fixture, so the case holds
+  today; the divergence lives at intermediate budgets the plan does not pin.
+  A prefix fill was rejected because it would strand the budget behind one
+  expensive entry the design's "spend it where a wrong score costs the most"
+  does not ask for.
+* *Ranking is vacuous at rung 2 until the store carries the signals.*
+  ``FR-REVIEW-03``'s seven inputs exist in no landed schema (``criterion_score``
+  carries band/state/routing/confidence and the integrity booleans only), so
+  ``open_review``'s admitted rows all score ``expected_value = 0.0`` (P falls
+  to the 0.5 no-data default; impact falls to 0 with ``criterion_weight``
+  absent) and the queue ranks by store row order. Admission, grouping, the
+  budget and the residual all work; the expected-value ordering arrives with
+  M-GRADE/M-STATS's columns, and no migration was added here (the issue
+  forbids one).
 
 **The four seams.**
 
@@ -651,7 +671,7 @@ def _rank_criteria(criteria: Any) -> tuple[CriterionOverrideRank, ...]:
     first, then override rate descending, ties keeping the caller's order."""
     ranks: list[tuple[tuple[int, float], CriterionOverrideRank]] = []
     for criterion_id, payload in dict(criteria).items():
-        if isinstance(payload, Mapping):
+        if isinstance(payload, dict):
             override_rate = payload.get("override_rate")
             reviewed = payload.get("reviewed")
         else:
@@ -1097,9 +1117,3 @@ def open_review(
         review_whole_grade_n=review_whole_grade_n,
         review_default_budget_minutes=review_default_budget_minutes,
     )._with_store(store)
-
-
-def _attach_store(service: ReviewService, store: Any) -> ReviewService:
-    """Give a built service its rung-2 store handle (``open_review``'s plumbing)."""
-    service._store = store
-    return service

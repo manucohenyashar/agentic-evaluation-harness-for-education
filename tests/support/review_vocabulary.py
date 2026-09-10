@@ -59,9 +59,11 @@ one place, so an invented name is visibly invented:
 **#111 — S-REVIEW-04, the two samples**
 
     ReviewQueue.build_trace                           CT-REVIEW-02's event order; .name per
-                                                      event. #111's, not #108's: S-REVIEW-04
-                                                      owns the budget subtraction the trace
-                                                      has to show happening first
+                                                      event. Landed at #108 — the trace is the
+                                                      queue's own observability surface and the
+                                                      event-order case unmarked with that story.
+                                                      #111's residual claim is the sample the
+                                                      reservation protects (the survival case)
     BlindSession.readable_tables()                    CT-REVIEW-09 — see the note below
     BlindSession.available_data() / .items            CT-REVIEW-09 step 2, and the refs to answer
     .render_blind_flow(session_id)                    the rendered half of step 2
