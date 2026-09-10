@@ -358,23 +358,27 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
     # the evidence row that commits together with it (CT-STORE-03's commit-together;
     # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
-    "aeh.extract:885",
-    "aeh.extract:890",
-    "aeh.extract:892",
+    "aeh.extract:891",
+    "aeh.extract:896",
+    "aeh.extract:898",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
     # more when the review fix wrapped the reply span parsing in
-    # `MalformedResponseError`, which added nine lines above `persist`): the one write
-    # transaction in `ScoringWorker.persist` — the guarded
-    # done-marking, its changes() read, and the verdict row that commits together with
-    # it (the extract shape: every statement a declared constant in
+    # `MalformedResponseError`, which added nine lines above `persist`), and now once
+    # more by #81 (the FR-JUDGE-17 composition section in the module docstring, the
+    # extended directive, the canonical-document resolver and the citation-grounding
+    # gate above `persist`): the one write transaction in `ScoringWorker.persist` — the
+    # guarded done-marking, its changes() read, and the verdict row that commits
+    # together with it (the extract shape: every statement a declared constant in
     # `JUDGE_STATEMENTS`/`ORCH_STATEMENTS`, keyword-parameterized) — the verdict row's
     # VALUES list now carrying the #80 response columns (cited_spans JSON,
-    # evidence_sufficient, uncited), still one declared statement.
-    "aeh.judge:1718",
-    "aeh.judge:1723",
-    "aeh.judge:1733",
+    # evidence_sufficient, uncited), still one declared statement. Re-pinned from the
+    # walker's own output: the statements are verified unchanged against the prior
+    # baseline, the tripwire diff being the line move alone.
+    "aeh.judge:1825",
+    "aeh.judge:1830",
+    "aeh.judge:1840",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being

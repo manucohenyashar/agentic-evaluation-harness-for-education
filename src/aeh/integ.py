@@ -1020,6 +1020,19 @@ class IntegrityGate:
             extractor_disagreement=disagreement,
         )
 
+    def verify_span(self, doc: Any, span: Any) -> bool:
+        """The Protocol's second member (design §3.9's `IntegrityGate`), the
+        pure verifier as a method of the gate that holds the store seams.
+
+        A pure delegation to the module-level `verify_span`: the rung-0 cases
+        (TC-INTEG-01/09, FUZZ-03) call the function because they have no gate to
+        construct, and a consumer holding the Protocol calls the method — one
+        computation, two spellings, neither carrying state the other lacks. The
+        method adds nothing around the call (no floor, no view, no ledger): a
+        span verdict is a function of the bytes and the span alone, and a gate
+        that enriched it would be a second verifier."""
+        return verify_span(doc, span)
+
 
 __all__ = [
     "ALERT_SPAN_VERIFICATION_FAILURES",
