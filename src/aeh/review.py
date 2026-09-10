@@ -1806,6 +1806,13 @@ def record_label(
         raise ValueError(f"{label_type!r} is not a label type; one of {_LABEL_TYPES}")
     if saw_system_output is None:
         saw_system_output = 0 if label_type == "blind" else 1
+    elif saw_system_output not in (0, 1):
+        raise ValueError(
+            f"saw_system_output is a visibility flag, not a number: it is 1 (the "
+            f"system output was visible) or 0 (the label was written blind), got "
+            f"{saw_system_output!r} — any other value is indistinguishable from a "
+            "real one at query time"
+        )
     label = LabelRecord(
         label_id=f"stored-{next(_LABEL_STORE_COUNTER):04d}",
         label_type=label_type,
