@@ -29,11 +29,13 @@ from tests.support.store_spy import StoreSpy
 # `_VersionOrderedRegistry` already makes each chain's *order* independent of import order;
 # these imports are about *completeness* — without them a module importing only `aeh.store`
 # would open files on a truncated chain, and the open site would refuse. Eleven modules
-# contribute: `aeh.grade` owns Cohort's last migration (18, #101's
-# `grade_submission_grade_key`), `aeh.judge` the one before it (17, #80's
+# contribute: `aeh.grade` owns Cohort's last migration (19, #103's
+# `grade_superseded_at_and_append_only`; #101's `grade_submission_grade_key` was 18),
+# `aeh.judge` the one before it (17, #80's
 # `judge_verdict_response_columns`), `aeh.agg` the one before THAT (16, #92's
-# `agg_confidence_columns`), `aeh.review` owns Durable's last (6, #110's
-# `review_label_store_columns`), `aeh.integ` the one before THAT (5, #73's
+# `agg_confidence_columns`), `aeh.grade` also owns Durable's last (7, #103's
+# `grade_audit_record_append_only`; #110's `review_label_store_columns` was 6),
+# `aeh.integ` the one before THAT (5, #73's
 # `integ_rate_dimensions`), `aeh.synth` the one before THAT (13, #97's
 # `synth_narrative_key`), `aeh.orch` the one
 # before THAT (12, #61's `orch_run_lifecycle`), `aeh.extract` the one

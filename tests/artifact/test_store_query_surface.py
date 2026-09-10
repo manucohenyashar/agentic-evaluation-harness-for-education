@@ -493,8 +493,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#110's re-pin: Durable's pin bump to 6 and the refusal text's eleventh
     # contributor (`aeh.review`) moved each site two lines; the sites are the same
     # statements as before. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1819",
-    "aeh.store:2602",
+    # (#103's re-pin, twice: the pin table's history note grew two lines and each
+    # site moved with it, then the purge's pure-refusal-trigger carve-out (the
+    # helper and its comment above `_SELECT_COHORT_TRIGGERS_VIEWS`) moved them
+    # again; the sites are the same statements as before. Re-read from the walker,
+    # never hand-unioned.)
+    "aeh.store:1857",
+    "aeh.store:2640",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -541,26 +546,36 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # re-pin, once more as a block: the rollup/export surfaces landed between the
     # statements dict and the service, and `_reference_export_cohort` added its
     # three fixture writes at the tail. Same statements plus three; re-read from
-    # the walker, never hand-unioned.
-    "aeh.grade:1416",
-    "aeh.grade:1422",
-    "aeh.grade:1424",
-    "aeh.grade:1432",
-    "aeh.grade:1442",
-    "aeh.grade:1515",
-    "aeh.grade:1540",
-    "aeh.grade:1545",
-    "aeh.grade:1576",
-    "aeh.grade:1584",
-    "aeh.grade:1676",
+    # the walker, never hand-unioned. #103's re-pin: +4 sites (the no-op
+    # amendment's in-place settlement, the amendment's durable `audit_record`
+    # append, `finalize_batch`'s finalization-path metric, and
+    # `record_grade_signals`' durable signal flush — every one a declared
+    # GRADE_STATEMENTS statement with keyword parameters, the FR-STORE-08
+    # discipline), the rest moved with the docstring and statement edits above
+    # them. Re-read from the walker, never hand-unioned.
+    "aeh.grade:1482",
+    "aeh.grade:1489",
+    "aeh.grade:1491",
+    "aeh.grade:1499",
+    "aeh.grade:1509",
+    "aeh.grade:1582",
+    "aeh.grade:1607",
+    "aeh.grade:1613",
+    "aeh.grade:1644",
+    "aeh.grade:1652",
+    "aeh.grade:1744",
     "aeh.grade:1757",
-    "aeh.grade:1762",
-    "aeh.grade:2051",
-    "aeh.grade:2062",
-    "aeh.grade:2067",
-    "aeh.grade:2429",
-    "aeh.grade:2435",
-    "aeh.grade:2440",
+    "aeh.grade:1866",
+    "aeh.grade:1892",
+    "aeh.grade:1898",
+    "aeh.grade:1973",
+    "aeh.grade:2243",
+    "aeh.grade:2254",
+    "aeh.grade:2259",
+    "aeh.grade:2621",
+    "aeh.grade:2627",
+    "aeh.grade:2632",
+    "aeh.grade:3115",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -591,7 +606,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
     # parameters (FR-STORE-08, design §3.3) — the same label the service holds
     # in memory. (Re-pinned from the walker on any line move.)
-    "aeh.review:1792",
+    # (#111's re-pin: the blind-sample/whole-grade methods inserted before
+    # `_persist_label` moved the site; the statement is the same one. Re-read
+    # from the walker, never hand-unioned.)
+    "aeh.review:2417",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
@@ -603,14 +621,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # cohort, submission, document and document_region seeds). All keyword-parameterized
     # literals; the driver's disclosure notes cover why it pins ids the catalog would
     # otherwise mint.
-    "aeh.console:1444",
-    "aeh.console:1521",
-    "aeh.console:2475",
-    "aeh.console:2480",
-    "aeh.console:2501",
-    "aeh.console:2509",
-    "aeh.console:2517",
-    "aeh.console:2530",
+    # (#124's re-pin: the review-queue rendering, the blind-flow plan and the request
+    # assembler were inserted above these sites and moved every one of them; the
+    # statements are the same eight. Re-read from the walker, never hand-unioned.
+    # Second re-pin, still #124's: the reviewer's fixes to the queue header's item
+    # arithmetic and the app-path flagged count moved the driver's six again.)
+    "aeh.console:1491",
+    "aeh.console:1568",
+    "aeh.console:2921",
+    "aeh.console:2926",
+    "aeh.console:2947",
+    "aeh.console:2955",
+    "aeh.console:2963",
+    "aeh.console:2976",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

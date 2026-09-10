@@ -78,7 +78,6 @@ def test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_nul
 # --- step 2: the right value on every collection path ----------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_output_value():
     """The sweep the block form asks for: *"every path that can create a label"*, four of them.
 
@@ -90,15 +89,26 @@ def test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_outpu
     Asserting the paths **together** matters more than asserting any one of them: three correct
     paths and one wrong one is the shape this defect actually takes, and a per-path test that
     somebody forgets to extend leaves the new path unchecked.
+
+    Reconciled at the unmark (#111): the fixture was `flagged_population(12)` alone, and that
+    population **groups nothing** by construction — every row differs from the next in the
+    signature components — so `groups[0]` raised IndexError for *any* implementation and the
+    sweep could never have passed. The fixture now appends a two-row identical-signature
+    population, which is the one that groups. Because a group ranks above per-item entries, the
+    per-item paths no longer take `shown[0]`/`shown[1]` blind: they select the entries that carry
+    no `members` attribute, which is the per-item shape.
     """
     service = require(REVIEW_MODULE, "build_review", issue="#108")(
-        scores=broken.flagged_population(12)
+        scores=[*broken.flagged_population(13), *broken.identical_signature_population(2)]
     )
     require_attr(service, "act_from_view", issue="#110")
 
     produced: dict[str, object] = {}  # collection path -> the LabelId it returned
 
-    item = service.build_queue(run_id="run-1", budget_minutes=30).shown[0]
+    item = [
+        e for e in service.build_queue(run_id="run-1", budget_minutes=30).shown
+        if getattr(e, "members", None) is None
+    ][0]
     produced["queue_action"] = service.act(
         item, action="accept", new_band=None, review_seconds=20
     )
@@ -114,9 +124,13 @@ def test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_outpu
     )[0]
 
     # A different item: `item` was accepted above, and re-actioning a resolved item is a
-    # different case (CT-REVIEW-15) that would fail here for the wrong reason.
+    # different case (CT-REVIEW-15) that would fail here for the wrong reason. The accepted
+    # row has left the pool, so the fresh queue's first per-item entry is a different one.
     produced["other_view_edit"] = service.act_from_view(
-        service.build_queue(run_id="run-1", budget_minutes=30).shown[1],
+        [
+            e for e in service.build_queue(run_id="run-1", budget_minutes=30).shown
+            if getattr(e, "members", None) is None
+        ][0],
         view="submission_detail",
         action="edit",
         new_band="B4",

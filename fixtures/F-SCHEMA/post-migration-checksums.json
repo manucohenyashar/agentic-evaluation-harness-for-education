@@ -2329,9 +2329,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -2631,9 +2632,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -2933,9 +2935,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -3235,9 +3238,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -3537,9 +3541,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -3839,9 +3844,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -4141,9 +4147,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -4443,9 +4450,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -4745,9 +4753,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -5047,9 +5056,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -5349,9 +5359,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -5651,9 +5662,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -5953,9 +5965,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -6255,9 +6268,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -6557,9 +6571,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -6859,9 +6874,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -7161,9 +7177,10 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -7463,9 +7480,313 @@
         "score_low",
         "score_high",
         "missing_criteria",
-        "amendments"
+        "amendments",
+        "superseded_at"
       ],
-      "checksum": "a886ce7cc7cb188b84a28c9453755123313caebe172a024521ddf709a63992ab"
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited"
+      ],
+      "checksum": "0ab9da1d8ce5fac3f57d95d728dc660271d0bf2744847115dadb82b90655cede"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v19": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk"
+      ],
+      "checksum": "c7bcfc144b04d9e7484f05b504a9c7d24f685fe7fe4e9a1e581bf224c772d158"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content"
+      ],
+      "checksum": "0ddedd323c0c6d26dea1480386cec6146aed121fe6083f476335a2c85a22f268"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build"
+      ],
+      "checksum": "9e91b1bd965587eda063e037dea58066d92628ae7ac77d55317e12b22ca4998b"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason"
+      ],
+      "checksum": "93b39e25df2787f86d613da71e999838d549da467e81945ffb8ff25ecca6b1d8"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
     },
     "token_cluster": {
       "rows": 0,
@@ -8041,6 +8362,107 @@
     }
   },
   "durable@v6": {
+    "audit_record": {
+      "rows": 1,
+      "columns": [
+        "audit_record_id",
+        "run_id",
+        "recorded_at",
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read"
+      ],
+      "checksum": "d3061486157abc8eb1e601f2360fdbc179f728b4bece62453281029250013a4f"
+    },
+    "criterion_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "backend_profile",
+        "panel_build_ref",
+        "n"
+      ],
+      "checksum": "7cc1c51cadb477ca055baa40f51083300a627d7d81aa61246932c4c21f8fed99"
+    },
+    "label": {
+      "rows": 1,
+      "columns": [
+        "label_id",
+        "run_id",
+        "student_ref",
+        "criterion_id",
+        "label_type",
+        "band",
+        "evaluation_mode",
+        "saw_system_output",
+        "routing",
+        "origin",
+        "review_seconds",
+        "system_band",
+        "teacher_band",
+        "actor",
+        "timestamp",
+        "score_id",
+        "review_queue_action",
+        "new_points",
+        "cohort_id"
+      ],
+      "checksum": "82f88472c9a70744e5ec71a856e163ca63c2c4cc7e51c60aef6f0eb9c2666cd7"
+    },
+    "mcq_item_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option",
+        "chosen",
+        "is_key"
+      ],
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77"
+    },
+    "mcq_item_summary": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
+      ],
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667"
+    },
+    "run_metrics": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "metric",
+        "value",
+        "submission_id",
+        "criterion_id"
+      ],
+      "checksum": "cd2936a9eb2b614337a1b92e4174c92a98734aebb7716ad8b69491b97c79101b"
+    },
+    "store_lease_clock": {
+      "rows": 0,
+      "columns": [
+        "id",
+        "ticks",
+        "wall_clock"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "durable@v7": {
     "audit_record": {
       "rows": 1,
       "columns": [

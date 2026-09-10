@@ -22,16 +22,17 @@ P0; rung 2 — real store, real audit trail. Seven steps against the shipped `am
    recomputed content equals the stored amended content and writes nothing
    (`NFR-GRADE-02`'s round trip, `NFR-GRADE-05`'s no-write).
 
-**Disclosed limbs.** The plan's step 2 names a `superseded_at` on the superseded
-revision; the shipped schema carries no such column (migration 18's full column set,
-aeh/grade.py) — retention as shipped is the `is_current = 0` flag, which is what this
-suite asserts, and `superseded_at` is #103's column to land (a finding on that PR, not
-an assertion here). The plan's step 4 names "the audit record": the shipped amendment
+**Disclosed limbs, as landed by #103.** The plan's step 2 names a `superseded_at` on
+the superseded revision; #103 landed the column (migration 19, `aeh/grade.py`) and
+the demotion now stamps it — so the immutability oracle below names it beside
+`is_current` as the demotion's declared write set: a delivered revision's CONTENT is
+still byte-identical after the amendment, with the lifecycle bookkeeping the two
+columns carry. The plan's step 4 names "the audit record": the shipped amendment
 record is the `amendments` JSON on the grade row itself (who / what / when / why),
-because the `audit_record`-row form of the amendment record is #103's to land
-(CT-GRADE-14 makes M-GRADE the writer of `audit_record` per criterion at
-finalization; the amendment's audit row is not shipped) — the who/what/when/why
-contract is asserted against the shipped record's fields.
+asserted below; #103 additionally lands the `audit_record`-row form (one Tier D row
+per amendment call, `decided_by` the actor, `evaluation_mode='judged'`) — the two
+records are the revision-local trail and the durable audit trail, and this suite
+pins the revision-local one the recomputation replays.
 
 **Variant — two amendments in sequence (revisions 2 and 3).** Implemented below with
 the oracle the design actually pins, which is deliberately semantics-neutral on the
@@ -47,7 +48,9 @@ the figure must agree, whichever composition rule produced them. The composition
 question itself (the shipped `amend` recomputes each edit over the stored rows and
 records only that call's edits, so a second edit silently reverts the first
 displayed amendment) is a finding on #103's PR, disclosed in this suite's PR body,
-not pinned red here against a documented #101 contract.
+not pinned red here against a documented #101 contract. **As landed by #103**: the
+replace semantics stand (disclosed in the PR body; the recomputability oracle above
+is what pins the record/figure agreement either way).
 
 **Variant — an amendment that changes nothing must produce no new revision** (the
 plan cites `NFR-GRADE-05`). Shipped `amend` documents "the amended grade lands as
@@ -57,7 +60,15 @@ on a symbol whose landing makes the test runnable, and no symbol gates a behavio
 change inside a landed method; the conflict is between the plan's variant note and
 #101's documented contract, and its reconciliation is #103's (amendment revisions).
 Disclosed in the PR body rather than pinned red against a landed, documented decision
-(the TC-SETUP-12 deferral precedent).
+(the TC-SETUP-12 deferral precedent). **#103's reconciliation**: `amend()` now
+short-circuits on content — an edit whose application reproduces the current
+revision's content exactly mints nothing (`_content_of`/`_stored_content`, the same
+comparison the compute passes honor), settling the current revision `final` in place
+when the state model pressures it and recording the call in the audit trail either
+way. Verified against the real store at the landing (the four-limb script in the PR
+body: no mint, retention with the `superseded_at` stamp, one audit row per call, the
+trigger refusing the in-place edit); the variant case itself remains the test plan's
+to write.
 
 **Disclosed stand-ins** (`grade_vocabulary.py`, header): the run-completion UPDATE —
 `M-ORCH` is the run row's single writer, so the test writes the `status = 'complete'`
@@ -154,9 +165,11 @@ def _revisions(grades, submission_id):
 
 def _same_except(row, other, *changed):
     """The immutability oracle: two stored rows are byte-identical apart from the
-    named fields. `is_current` is the one field a demotion writes; a revision's own
-    issuance fields (`total`, `computed_at`, `amendments`) differ between revisions
-    by construction, so the chain's immutability assertion names them there."""
+    named fields. `is_current` and `superseded_at` are the two fields a demotion
+    writes (the flag clears, the supersession stamp lands — migration 19); a
+    revision's own issuance fields (`total`, `computed_at`, `amendments`) differ
+    between revisions by construction, so the chain's immutability assertion names
+    them there."""
     return (
         {key: value for key, value in row.items() if key not in changed}
         == {key: value for key, value in other.items() if key not in changed}
@@ -230,9 +243,9 @@ def test_tc_grade_13_amendment_writes_a_new_revision_and_never_mutates_the_deliv
         assert not retained["is_current"], (
             "revision 1 still reads current after the amendment — the superseded "
             "revision is retained with is_current = 0 (TC-GRADE-13 step 2; the "
-            "shipped retention flag — `superseded_at` is #103's column to land)"
+            "supersession stamp `superseded_at` lands beside it, migration 19)"
         )
-        assert _same_except(retained, delivered, "is_current"), (
+        assert _same_except(retained, delivered, "is_current", "superseded_at"), (
             "revision 1's stored row changed when the amendment landed — the delivered "
             "revision must be byte-unchanged (TC-GRADE-13 step 2, FR-GRADE-12's 'shall "
             "not mutate the delivered revision')"
@@ -250,8 +263,9 @@ def test_tc_grade_13_amendment_writes_a_new_revision_and_never_mutates_the_deliv
         )
 
         # --- step 4: the record names who changed what, when and why ------------------
-        # The shipped amendment record is the `amendments` JSON on the grade row (see
-        # the module docstring: the audit_record-row form is #103's).
+        # The revision-local record is the `amendments` JSON on the grade row (the
+        # durable audit_record row is #103's landed second trail — see the module
+        # docstring).
         entries = json.loads(second["amendments"])
         assert len(entries) == 1, (
             f"revision 2 carries {len(entries)} amendment entries — one edit was made "
@@ -414,13 +428,14 @@ def test_tc_grade_13_two_amendments_in_sequence_keep_the_ledger_consistent(
                 "a superseded revision still reads current — exactly one is_current "
                 "row per submission (ADR-9's partial unique index)"
             )
-        assert _same_except(first, delivered, "is_current"), (
+        assert _same_except(first, delivered, "is_current", "superseded_at"), (
             "revision 1 was mutated by the second amendment — no revision in the "
             "chain is ever rewritten (FR-GRADE-12)"
         )
         assert _same_except(
             second, delivered,
-            "is_current", "revision", "total", "computed_at", "amendments",
+            "is_current", "superseded_at", "revision", "total", "computed_at",
+            "amendments",
         ), (
             "revision 2's stored row changed when revision 3 landed beyond the fields "
             "its own issuance writes — a superseded revision is never rewritten "

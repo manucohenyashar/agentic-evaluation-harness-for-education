@@ -137,7 +137,6 @@ def test_tc_console_c18_a_large_upload_streams_to_the_blob_store_rather_than_int
 # --- CT-CONSOLE-19 — render budgets and the poll ------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_console_c19_the_review_queue_and_rollup_render_inside_their_budgets_at_350_students():
     """`NFR-CONSOLE-01` — two budgets, asserted separately, at the stated load.
@@ -155,6 +154,12 @@ def test_tc_console_c19_the_review_queue_and_rollup_render_inside_their_budgets_
     review queue (#124) and the rollup (#125), which are siblings with no ordering between them, so
     no single key is certainly last. #125 is chosen because it completes the rollup surface
     (`FR-CONSOLE-19`/`-20`/`-24`). The mis-trace is reported for `/plan-to-issues`.
+
+    Reconciled at the unmark (#124): the registry's premise — "the rollup is #125's" — was
+    outdated, because `render_rollup` had already landed with the console process, so the case's
+    last unmet `require` was the review queue and it unmarked with #124. The story that owns
+    `NFR-CONSOLE-01`'s remaining half is unaffected: this assertion measures render time, and
+    both surfaces it times exist.
     """
     render_rollup = require(CONSOLE_MODULE, "render_rollup", issue="#125")
     render_queue = require(CONSOLE_MODULE, "render_review_queue", issue="#124")

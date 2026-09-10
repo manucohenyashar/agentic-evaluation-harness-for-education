@@ -156,7 +156,6 @@ def test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget():
     """The discriminating fixture: *"a run with far more flagged items than budget, where
     reserve-after-ranking would produce a full queue and zero blind items."*
@@ -437,7 +436,6 @@ def test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_bad
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c19_the_console_does_not_present_the_budget_as_a_guarantee_of_elapsed_time():
     """The consumer obligation, over rendered language: *"a consumer must not present the budget
     as a guarantee of elapsed time."*

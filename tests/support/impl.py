@@ -288,14 +288,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
         ),
     ),
-    "#96 c16 M-CONSOLE renders no probability": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_review_queue",
-        (
-            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
-            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_console]",
-        ),
-    ),
+    # The `"#96 c16 M-CONSOLE renders no probability"` entry that stood here is gone
+    # because #124 landed `aeh.console:render_review_queue`, which the registry had
+    # keyed on: the c16 `[m_console]` param ran against an invented
+    # `render_review_queue(store).render_scores(...)` shape, and its reconciliation at
+    # the unmark rekeyed the param to the landed `build_console` (#122) whose
+    # `render_scores` actually presents the queued row. The entry would only re-mark
+    # a running case.
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
     # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens
@@ -592,7 +591,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # console sweeps below.
     # --- TS-77 (#132), the twelve CT-CONSOLE rendering and honesty clause cases ---------------
     #
-    # `M-CONSOLE` is six stories, and these twelve cases land across four of them: #122 builds the
+    # `M-CONSOLE` is six stories, and these twelve cases were keyed across four of them: #122 builds the
     # process (control rows, uploads, the monitor, the knobs, observability, the audit surface),
     # #124 the review queue and blind flow (invariants 8-14), #125 amendment, export and the
     # touchpoint sweep (invariants 15-21), #127 `NFR-CONSOLE-07`. Keyed per story, because a
@@ -608,61 +607,32 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#122 console_app"` entry that stood here is gone because #122 landed:
     # `aeh.console:build_console` exists and drives all eighteen of its cases -- the
     # `build_console`-keyed eleven (knobs, uploads, monitor, coupling, observability, the
-    # audit surface) and TS-76's `TC-CONSOLE-C01`/`-C02`/`-C03` seven. `#124`, `#125`
-    # and `#127` stay: their symbols (`render_review_queue`, `amend_finalized_grade`,
+    # audit surface) and TS-76's `TC-CONSOLE-C01`/`-C02`/`-C03` seven. The `"#124"` entry
+    # is gone the same way: `aeh.console:render_review_queue` and `aeh.console:blind_flow`
+    # exist and drive TS-77's CT-CONSOLE-13/-14 file plus TS-76's `TC-CONSOLE-C04`/`-C06`
+    # five. `#125` and `#127` stay: their symbols (`amend_finalized_grade`,
     # `render_submission_text`) are still deliberately absent from the module, and the
-    # node-ID discipline above is what kept those three out of #122's sweep.
-    "#124": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_review_queue",
-        (
-            "tests/contract/console/test_ct_console_review_and_blind.py",
-            # TS-76 (#131). `FR-CONSOLE-03` (no annotation surface, no path into a judgment) and
-            # `-17`/`-18` (browser storage, external origins) are all #124's, so `TC-CONSOLE-C04`
-            # and `-C06` land here rather than with #122's process work.
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
-            "no_field_the_console_writes_after_the_lock_is_read_by_a_scoring_prompt",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
-            "no_per_student_annotation_surface_exists_on_any_route",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c04_"
-            "a_resumed_unit_reads_no_console_written_field",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c06_"
-            "no_page_reaches_browser_storage_with_student_text_in_the_data",
-            "tests/contract/console/test_ct_console_isolation_and_binding.py::test_tc_console_c06_"
-            "every_page_loads_from_its_own_origin_and_nothing_else",
-        ),
-    ),
+    # node-ID discipline above is what kept them out of #122's sweep.
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
     #
-    # The `"#125"` entry that stood here is gone because #125 landed: `aeh.console` ships
-    # `amend_finalized_grade`, `export_package`, `ProvenanceRefused`, `touchpoint_surface` and
-    # `render_agreement_block`, so the finalization/touchpoints file, `-C08`'s editable-band
-    # sweep, `-C11`(b)'s honest absence, `-C12`'s reservation-ordering half and the stats
-    # `-C05` console message all run in the gate. `render_rollup` landed with #126, so
-    # `TC-CONSOLE-C19` and `TC-REG-04` are the two rows left behind, and they moved to the
-    # `"#124 console"` entry below: their *remaining* blockers are #124's, not #125's.
-    "#124 console": (
-        "symbols",
-        f"{CONSOLE_MODULE}:render_review_queue,{CONSOLE_MODULE}:review_queue_header",
-        (
-            # `NFR-CONSOLE-01` is traced to **#126**, which builds S1, S2, S6 and S8 -- none of
-            # the two screens the NFR names. The case needs the review queue (#124) and the
-            # rollup (#125), which are siblings with no dependency between them. The rollup half
-            # (`render_rollup`) landed with #125; what is still missing is #124's renderer, so
-            # the key is the conjunction of #124's two symbols. The mis-trace of
-            # `NFR-CONSOLE-01` to #126 remains a finding for `/plan-to-issues`, reported on the
-            # PR rather than fixed here.
-            "tests/contract/console/test_ct_console_runtime_and_config.py::test_tc_console_c19_"
-            "the_review_queue_and_rollup_render_inside_their_budgets_at_350_students",
-            # TS-01 (#2). `TC-REG-04`'s baseline is the rendered HTML of *three* surfaces --
-            # the review queue, the rollup and the student view. The queue is #124's and the
-            # rollup was #125's; with #125 landed the remaining blocker is exactly #124's
-            # pair, so the same conjunction keys this file. Its baselines are recorded when
-            # the entry fires, in the PR that closes #124.
-            "tests/regression/test_reg_04_console_html.py",
-        ),
-    ),
+    # The `"#125"` entry that stood here is gone because #125 landed (merged with #124's
+    # registry rewrite): `aeh.console` now ships `amend_finalized_grade`,
+    # `export_package`, `ProvenanceRefused`, `touchpoint_surface` and
+    # `render_agreement_block`, so the finalization/touchpoints file, `-C08`'s
+    # editable-band sweep, `-C11`(b)'s honest absence, `-C12`'s reservation-ordering
+    # half, the stats `-C05` console message and `TC-REG-04` -- the golden whose
+    # producer surfaces are #125's, recorded at this landing -- all run in the gate.
+    # `TC-CONSOLE-C19`'s measurement half had been keyed here too, and that was a
+    # judgment call worth stating: `NFR-CONSOLE-01` is traced to **#126**, which builds
+    # S1, S2, S6 and S8 -- none of the two screens the NFR names. The case needed the
+    # review queue (#124) and the rollup (#125), siblings with no dependency between
+    # them, so no single key was certainly last. The mis-trace was a finding for
+    # `/plan-to-issues`, reported rather than fixed here. Reconciled at #124's landing:
+    # the registry's premise -- "the rollup is #125's" -- was outdated, because
+    # `render_rollup` had already landed with the console process, so the case's last
+    # unmet `require` was the queue and it unmarked with #124. The node ID that stood
+    # here is gone.
     "#127": (
         "symbol",
         f"{CONSOLE_MODULE}:render_submission_text",
@@ -732,9 +702,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #126 landed: `aeh.console` exists with `render_package_catalog` and `render_preflight`, so
     # `TC-CONSOLE-C11`(c) runs in the gate, and the eight module-keyed consumer rows -- the
     # conf step-3 rebinding check, the four TS-74 calibration consumer cases, TS-75's conform
-    # C14 console half -- all run too. `render_setup_step`, `render_review_queue`,
-    # `amend_finalized_grade` and `render_submission_text` stay absent: #123, #124, #125 and
-    # #127 are still open, and those are the keys their rows ride on.
+    # C14 console half -- all run too. `render_setup_step`, `amend_finalized_grade` and
+    # `render_submission_text` stay absent: #123, #125 and #127 are still open, and those
+    # are the keys their rows ride on. (`render_review_queue` was #124's and landed, so
+    # the row that keyed on it -- the c16 `[m_console]` sweep -- runs too.)
     # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
     #
     # `M-STATS` is four stories -- #115 (the admissible-label filter, the figure, the scoped
@@ -1094,42 +1065,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # survival case below still waits on #111's sample surface. The `#110 review`
     # entry was removed at #110's landing: `record_label`/`labels_for` and the
     # service's label store are in, and its ten cases rejoined the gate.
-    "#111 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:blind_sample_skipped",
-        (
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_blind_labels_carry_saw_system_output_zero_legitimately",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_blind_session_object_caches_a_score_row",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_system_output_is_available_before_submission",
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_query_level",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_names_an_actor_and_a_timestamp",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_produced",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c10_skipping_the_blind_sample_leaves_grades_delivered_and_finalized",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_blind_sample_draws_inside_its_range_over_judged_criteria_only",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_blind_sample_refuses_a_draw_outside_its_stated_range",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_draw_is_uniform_over_the_eligible_set_rather_than_first_n",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c11_the_whole_grade_sample_draws_from_the_auto_accepted_population_only",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c15_an_interrupted_blind_session_keeps_the_criteria_actually_answered",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_every_collection_path_writes_the_correct_saw_system_output_value",
-        ),
-    ),
+    # `"#111 review"` is gone because #111 landed (unmarked 2026-09, that story):
+    # `aeh.review:blind_sample_skipped` reports the skip, and with it the whole
+    # blind surface is in — `blind_sample`/`submit_blind` (the 15-25 draw over
+    # judged criteria), `whole_grade_sample` (the 10-15 auto-accepted grades),
+    # `skip_blind_sample` with its one-consequence report, and the `BlindSession`
+    # whose `readable_tables()`/`available_data()` are CT-REVIEW-09's probe
+    # surface. Its fifteen cases unmarked and rejoined the gate. One
+    # reconciliation at the unmark: the CT-REVIEW-08 sweep's fixture was
+    # `flagged_population(12)`, which groups nothing by construction — `groups[0]`
+    # was an IndexError for any implementation — so the fixture now appends a
+    # two-row identical-signature population and the per-item paths select the
+    # entries that carry no `members` attribute (a group ranks above items).
+    # Recorded in the sweep's docstring. The CT-REVIEW-10 absence case stays red
+    # for #115, as the keying above intended; the CT-REVIEW-09 transport step was
+    # #124's and unmarked with it.
     "#115 review": (
         "symbol",
         f"{STATS_MODULE}:build_stats",
@@ -1144,33 +1094,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c08_m_stats_excludes_an_operational_label_from_agreement_and_says_how_many",
         ),
     ),
-    # CT-REVIEW-04's rendering half and CT-REVIEW-19/-20's consumer-language sweeps are
-    # `M-CONSOLE` surfaces. The clauses are M-REVIEW's and the assertions are not, which is
-    # reported as a finding on the PR.
-    "#124 review": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_review_queue",
-        (
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c04_the_console_renders_all_three_figures",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c19_the_console_does_not_present_the_budget_as_a_guarantee_of_elapsed_time",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c20_the_console_does_not_describe_a_group_as_semantically_clustered",
-        ),
-    ),
-    # CT-REVIEW-09 step 3, the transport-layer probe. A P0 safety-property step that lands
-    # outside the module its clause belongs to: `M-REVIEW` is a service with six methods and
-    # no requests. Keyed on its own symbol because `render_review_queue` -- which three other
-    # cases here need -- is the likelier of the two to land first.
-    "#124 transport review": (
-        "symbol",
-        f"{CONSOLE_MODULE}:blind_flow_requests",
-        (
-            "tests/contract/review/test_blind_unreachability.py"
-            "::test_tc_review_c09_no_blind_flow_request_returns_system_output_even_unrendered",
-        ),
-    ),
+    # The `"#124 review"` and `"#124 transport review"` entries stood here (`aeh.console:
+    # render_review_queue` and `aeh.console:blind_flow_requests` for CT-REVIEW-04's rendering
+    # half, CT-REVIEW-19/-20's consumer-language sweeps and CT-REVIEW-09 step 3). #124 landed
+    # both symbols, so the five cases unmarked with it -- their clauses are M-REVIEW's but the
+    # surfaces are the console's, which is a finding reported on #124's PR.
     # CT-REVIEW-14 intersects M-REVIEW's write set with what each scoring consumer assembles
     # into a prompt. #78 (M-JUDGE) and #68 (M-EXTRACT) are independent, so the case is
     # parametrized and each half was keyed on the story it actually needs -- rather than one
@@ -1514,28 +1442,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # amendment-replay idempotence is GREEN against shipped code
     # (`tests/integration/grade/test_recompute_idempotence.py`), and scaled-interval
     # composition is disclosed in the PR, not a case in the table.
-    "#103 append-only enforcement (TC-GRADE-23)": (
-        # M-GRADE is `submission_grade`'s sole writer and `audit_record`'s writer
-        # (`CT-GRADE-14`), so the enforcement seam is grade-owned. If #103 ships the
-        # discipline as bare triggers with no function, the rename is one line — the
-        # refusals asserted in the test do not move.
-        "symbol",
-        f"{GRADE_MODULE}:enforce_ledger_append_only",
-        ("tests/integration/grade/test_ledger_append_only.py",),
-    ),
-    "#103 grade signals and incomplete alert (TC-GRADE-24)": (
-        # One test file, two symbols, one story — the conjunction encoding (the
-        # TC-STORE-15 rationale: keying either symbol alone fires the gate while the
-        # other is still a stub, and a reader who unmarks as instructed puts a red
-        # case inside `TEST_CMD`).
-        "symbols",
-        f"{GRADE_MODULE}:record_grade_signals,{GRADE_MODULE}:evaluate_grade_alerts",
-        ("tests/integration/grade/test_grade_observability.py",),
-    ),
     # The three `"#104 ..."` entries that stood here (TC-GRADE-14/15/16) are gone:
     # #104 landed `criterion_band_figures`, `separated_rollup` and `rollup_findings`
-    # in the same PR that unmarked their cases. #103's two entries stay — #103 is
-    # still open.
+    # in the same PR that unmarked their cases. #103's two entries (TC-GRADE-23,
+    # TC-GRADE-24) are gone the same way: #103 landed `enforce_ledger_append_only`
+    # and the `record_grade_signals`/`evaluate_grade_alerts` conjunction, and both
+    # files unmarked and rejoined the gate green.
 }
 
 

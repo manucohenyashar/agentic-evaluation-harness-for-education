@@ -175,7 +175,6 @@ def test_tc_review_c17_each_knob_declares_its_documented_default(knob):
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("knob", ["REVIEW_BLIND_N"])
 def test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_produced(knob):
     """*"Measured as label counts, not as a settings read."*
@@ -413,7 +412,6 @@ def test_tc_review_c20_the_group_signature_is_exactly_the_declared_components():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c20_the_console_does_not_describe_a_group_as_semantically_clustered():
     """The consumer obligation, over rendered language.
 

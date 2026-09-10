@@ -12,8 +12,8 @@ Test plan §6.11.19, TS-76 (issue #131). These are the clauses whose violation h
   the second half is not privacy alone: *"a CDN reference is a console that renders blank at a
   school with no internet — the deployment this system exists for"*.
 
-Keyed on **#124** (`-04`, `-06`, which are `FR-CONSOLE-03/17/18`) and **#122** (`-05`,
-`FR-CONSOLE-05`). Every name is invented; the surface is settled in
+The `-04` and `-06` cases land with **#124** (`FR-CONSOLE-03/17/18`); `-05` is **#122**'s
+(`FR-CONSOLE-05`). Every name is invented; the surface is settled in
 `tests/support/console_vocabulary.py` and `tests/support/console_security_vocabulary.py`.
 
 Two things this file does not do, both reported on the PR rather than faked
@@ -60,7 +60,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-04 — no path from the UI into a judgment -----------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c04_no_field_the_console_writes_after_the_lock_is_read_by_a_scoring_prompt():
     """`CT-CONSOLE-04` / `FR-CONSOLE-03` — the empty intersection, computed against the **running**
     console rather than against the fixture.
@@ -111,7 +110,6 @@ def test_tc_console_c04_no_field_the_console_writes_after_the_lock_is_read_by_a_
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c04_no_per_student_annotation_surface_exists_on_any_route():
     """The clause's second half, and the one that would arrive as a feature request.
 
@@ -150,7 +148,6 @@ def test_tc_console_c04_no_per_student_annotation_surface_exists_on_any_route():
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_console_c04_a_resumed_unit_reads_no_console_written_field():
     """The reachability half, at rung 3 — *"including on resumed or re-run units, which is the
     route that would actually open"*.
@@ -302,7 +299,6 @@ def test_tc_console_c05_every_cloud_hosted_setting_combination_refuses_to_start(
 # --- CT-CONSOLE-06 — nothing on the machine, nothing on the network ------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c06_no_page_reaches_browser_storage_with_student_text_in_the_data():
     """`CT-CONSOLE-06` / `FR-CONSOLE-17`, asserted from served output with a sentinel in the data.
 
@@ -340,7 +336,6 @@ def test_tc_console_c06_no_page_reaches_browser_storage_with_student_text_in_the
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c06_every_page_loads_from_its_own_origin_and_nothing_else(network_guard):
     """`FR-CONSOLE-18` / invariant 13 — zero requests to any origin but its own.
 

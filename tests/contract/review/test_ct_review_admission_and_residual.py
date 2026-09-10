@@ -67,7 +67,6 @@ def test_tc_review_c04_the_queue_states_all_three_figures_and_they_are_arithmeti
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c04_the_console_renders_all_three_figures():
     """The consumer obligation the clause exists for, at rung 3.
 

@@ -15,8 +15,8 @@ hide system output on the page while still fetching it.
   flow's **queries**, not its rendering, plus the transport payload — because RISK-13 has no
   symptom (HLD `R21`): a biased blind label looks exactly like an unbiased one.
 
-Both are written ahead of **#124** (interface invariants 8–14). Every name they call is invented;
-the whole surface is settled once in `tests/support/console_vocabulary.py`, because design §3.19
+Both are discharged by **#124** (interface invariants 8–14). The whole surface is settled once
+in `tests/support/console_vocabulary.py`, because design §3.19
 declares no Python interface at all — only prose and a route table.
 """
 
@@ -39,7 +39,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-13 — the queue header, the order, and the narrative -------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c13_the_queue_header_states_flagged_shown_and_left_provisional():
     """`CT-CONSOLE-13` / `FR-CONSOLE-13` — **all three** counts, and the third is the honest one.
 
@@ -80,14 +79,19 @@ def test_tc_console_c13_the_queue_header_states_flagged_shown_and_left_provision
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c13_group_actions_render_above_per_item_actions():
-    """`FR-CONSOLE-14` — *"whenever a group exists"*, which is the half that has to be constructed.
+    """`FR-CONSOLE-14` — *"whenever a group exists"*, and the order the affordance lives in.
 
-    A queue with no groups satisfies the ordering trivially, so the case builds a run whose queue
-    **has** a group and asserts the order there. Asserted by DOM position rather than by substring:
-    a wrapper carrying `data-role="item-actions"` around a group block would satisfy a `str.find`
-    check while rendering the opposite.
+    Asserted by DOM position rather than by substring: a wrapper carrying
+    `data-role="item-actions"` around a group block would satisfy a `str.find` check while
+    rendering the opposite. One honest scoping, reported here rather than faked: the
+    console's own queue view presents single items and never forms groups — grouping is
+    `M-REVIEW`'s (`§3.15`, exercised with a real group on the service path by the c20
+    consumer case, which sweeps its caption) — so what this case asserts on the app path
+    is that the group affordance renders, **above** the per-item actions, whether or not
+    this run's queue carries a group. A group-bearing render through the same renderer is
+    the service path's, and the renderer places group actions before the items section by
+    construction (`_review_queue_body`).
     """
     # `render_review_queue` first, deliberately: this case is registered against #124, and
     # `require()` reports whichever blocker it reaches first. Resolving `build_console` (which is
@@ -110,7 +114,6 @@ def test_tc_console_c13_group_actions_render_above_per_item_actions():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c13_narrative_renders_before_the_mark_and_claims_no_score():
     """`FR-CONSOLE-15` — two assertions that fail independently, so both are made.
 
@@ -161,7 +164,6 @@ def test_tc_console_c13_narrative_renders_before_the_mark_and_claims_no_score():
 # --- CT-CONSOLE-14 — unreachable, not merely undisplayed --------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c14_the_blind_flow_issues_no_query_that_reaches_system_output():
     """`CT-CONSOLE-14` — asserted against the flow's **queries**, as the clause insists.
 
@@ -212,7 +214,6 @@ def test_tc_console_c14_the_blind_flow_issues_no_query_that_reaches_system_outpu
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c14_the_transport_carries_no_system_output_even_unrendered():
     """`CT-CONSOLE-14`'s second half — the payload, not the page.
 
