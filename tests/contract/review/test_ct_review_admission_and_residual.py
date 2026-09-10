@@ -100,7 +100,6 @@ def test_tc_review_c04_the_console_renders_all_three_figures():
 # --- CT-REVIEW-05 — three populations, plus the deterministic criteria -------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_populations():
     """*"As a reachability property over the queue's actual queries rather than an observed
     absence."*
@@ -114,6 +113,13 @@ def test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_popu
     Written against `admission_query()`, invented here and declared in `review_vocabulary`'s
     docstring: §3.15 declares nothing that exposes the query. The absence sweep below is kept as
     the second half rather than the first, because it is the weaker claim.
+
+    Reconciled at the unmark (#109): the written-ahead draft pinned the routing values to
+    `(QUEUE_ROUTING,)` alone, and the landed admission admits the provisional family with it —
+    the single-judge fallback and the breaker refusal route `provisional` and are told apart by
+    state alone, and `CT-AGG-07`'s consumer differential makes that admission load-bearing (both
+    its rows route `provisional`, one state apart). The operator's routing stays excluded, which
+    is the half the original pin protected; it is asserted on its own now.
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     service = build_review(scores=broken.flagged_population(40))
@@ -121,10 +127,17 @@ def test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_popu
 
     query = service.admission_query(run_id="run-1")
 
-    assert query.routing_values == (vocab.QUEUE_ROUTING,), (
+    assert query.routing_values == (vocab.QUEUE_ROUTING, vocab.PROVISIONAL_ROUTING), (
         f"the queue admits routing values {query.routing_values}. CT-AGG-06 makes "
-        f"{vocab.QUEUE_ROUTING!r} the teacher's population and {vocab.OPERATOR_ROUTING!r} the "
-        "operator's; a query that reads both puts quarantine in front of a teacher."
+        f"{vocab.QUEUE_ROUTING!r} the teacher's population — joined by the provisional family, "
+        f"whose fallback and breaker rows route {vocab.PROVISIONAL_ROUTING!r} and are told "
+        "apart by state alone (`CT-AGG-07`) — and "
+        f"{vocab.OPERATOR_ROUTING!r} the operator's; a query that reads the operator's routing "
+        "puts quarantine in front of a teacher."
+    )
+    assert vocab.OPERATOR_ROUTING not in query.routing_values, (
+        f"the admission query reads {vocab.OPERATOR_ROUTING!r}. CT-AGG-06 routes quarantine "
+        "there, so a queue whose query reads the operator's routing renders it."
     )
     assert vocab.RANDOM_ARM_ORIGIN in query.excluded_origins, (
         f"the admission query does not exclude origin {vocab.RANDOM_ARM_ORIGIN!r}. The random "
@@ -138,7 +151,6 @@ def test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_popu
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("population", sorted(vocab.NEVER_RENDERED_POPULATIONS))
 def test_tc_review_c05_no_excluded_population_appears_in_a_built_queue(population):
     """The observed-absence half, swept one population at a time.
@@ -164,7 +176,6 @@ def test_tc_review_c05_no_excluded_population_appears_in_a_built_queue(populatio
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c05_the_random_arm_spends_compute_and_produces_no_review_item():
     """The clause's own gloss, asserted directly: *"the random arm spends compute, never teacher
     minutes, and produces no review item."*
@@ -205,7 +216,6 @@ def test_tc_review_c05_the_random_arm_spends_compute_and_produces_no_review_item
 # --- CT-REVIEW-06 — the write set, and the residual that persists ------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c06_a_review_action_writes_through_criterion_score_and_never_a_grade():
     """*"Reduce `criteria_provisional` **through `criterion_score`** — asserting the indirection,
     since this module never writes a grade."*
@@ -246,7 +256,6 @@ def test_tc_review_c06_a_review_action_writes_through_criterion_score_and_never_
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c06_residual_items_are_marked_provisional_unreviewed():
     """`FR-REVIEW-08`, property one of three. The three are separate tests because they fail
     independently and a combined one would name none of them.
@@ -267,7 +276,6 @@ def test_tc_review_c06_residual_items_are_marked_provisional_unreviewed():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c06_the_residual_persists_across_review_sessions():
     """Property two, and *"the per-sitting clear is the plausible bug"*.
 
@@ -307,7 +315,6 @@ def test_tc_review_c06_the_residual_persists_across_review_sessions():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c06_a_residual_item_is_never_silently_finalized_or_backfilled():
     """Property three. The two prohibitions are separate because they arrive from opposite
     motives — finalizing is "the run has to close", backfilling is "the field cannot be empty" —

@@ -12,6 +12,8 @@ prompt field later and finds a teacher's note sitting in the row it reads.
 
 from __future__ import annotations
 
+import __future__
+
 import dataclasses
 
 import pytest
@@ -42,7 +44,6 @@ pytestmark = pytest.mark.contract
 PROMPT_ASSEMBLERS: tuple[tuple[str, str], ...] = (("judge", "#78"), ("extract", "#68"))
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "consumer, issue", PROMPT_ASSEMBLERS, ids=[c for c, _ in PROMPT_ASSEMBLERS]
 )
@@ -81,7 +82,6 @@ def test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_inters
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface():
     """*"Assert it exposes no per-student annotation surface."*
 
@@ -92,9 +92,20 @@ def test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface():
     Worth separating from the intersection test above: an annotation surface that writes to a
     table no prompt currently reads passes that one, and it is a per-student free-text field
     sitting one join away from every future prompt.
+
+    Reconciled at the unmark (#109): `from __future__ import annotations` — which every module
+    in this repo carries — binds the name `annotations` in the module's namespace, and the
+    substring rule matched `annotation` inside it. A `_Feature` object is the language
+    directive's residue, not a surface this module exposes, so the sweep skips `__future__`'s
+    residue rather than the rule; a future `annotate_submission` would still be caught.
     """
     module = require(REVIEW_MODULE, issue="#109")
-    surface = [name for name in dir(module) if not name.startswith("_")]
+    surface = [
+        name
+        for name in dir(module)
+        if not name.startswith("_")
+        and not isinstance(getattr(module, name, None), __future__._Feature)
+    ]
 
     found = vocab.annotation_surface_members(surface)
     assert found == [], (

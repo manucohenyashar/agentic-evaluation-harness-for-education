@@ -526,23 +526,28 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # +17: #102's degenerate-range fix (the pinned-reading bullet and the
     # `boundary_risk` docstring's positive-width disclosure above every site —
     # the sites are the same statements as #101's; re-pinned from the walker,
-    # never hand-unioned.)
-    "aeh.grade:1172",
+    # never hand-unioned.) TS-39's re-pin, once more as a block, +6: the
+    # `select_current_grade` statement gained its `policy_version`/`answer_key_ref`
+    # projection (the statement had omitted columns `_as_submission_grade` reads,
+    # crashing every `compute_one` — TC-GRADE-13 step 7 is the regression case);
+    # five disclosure lines above every site below the statements dict. Same
+    # statements; re-read from the walker, never hand-unioned.
     "aeh.grade:1178",
-    "aeh.grade:1180",
-    "aeh.grade:1188",
-    "aeh.grade:1198",
-    "aeh.grade:1271",
-    "aeh.grade:1296",
-    "aeh.grade:1301",
-    "aeh.grade:1332",
-    "aeh.grade:1340",
-    "aeh.grade:1432",
-    "aeh.grade:1513",
-    "aeh.grade:1518",
-    "aeh.grade:1765",
-    "aeh.grade:1776",
-    "aeh.grade:1781",
+    "aeh.grade:1184",
+    "aeh.grade:1186",
+    "aeh.grade:1194",
+    "aeh.grade:1204",
+    "aeh.grade:1277",
+    "aeh.grade:1302",
+    "aeh.grade:1307",
+    "aeh.grade:1338",
+    "aeh.grade:1346",
+    "aeh.grade:1438",
+    "aeh.grade:1519",
+    "aeh.grade:1524",
+    "aeh.grade:1771",
+    "aeh.grade:1782",
+    "aeh.grade:1787",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate

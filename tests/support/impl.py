@@ -1172,34 +1172,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # label store (#110) or the write surface (#109) through a `require_attr` that
     # is still absent stays red for its own story, exactly as the keying above
     # intended.
-    "#109 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:write_fields",
-        (
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_no_excluded_population_appears_in_a_built_queue",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_the_queues_admission_query_cannot_reach_the_excluded_populations",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c05_the_random_arm_spends_compute_and_produces_no_review_item",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_a_residual_item_is_never_silently_finalized_or_backfilled",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_a_review_action_writes_through_criterion_score_and_never_a_grade",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_residual_items_are_marked_provisional_unreviewed",
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c06_the_residual_persists_across_review_sessions",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh",
-        ),
-    ),
+    # `"#109 review"` stood here (`aeh.review:write_fields`, for the eleven cases it gated).
+    # #109 landed: `write_fields` is the module-level write set, `admission_query` the
+    # reachability plan, `write_audit` the per-write records, and `scores`/`end_session`/
+    # `close_run` the residual's read path and its two audited moments — with `labels_for` as
+    # the in-memory read the backfill and refusal assertions check. Unmarked 2026-09, that
+    # story; the `[judge]`/`[extract]` write-set params unmarked with it (the marker was
+    # function-level and shared). One reconciliation at the unmark: the c05 reachability
+    # draft's single-routing pin became the landed two-routing admission — the provisional
+    # family routes `provisional` and `CT-AGG-07`'s consumer differential makes admitting it
+    # load-bearing — recorded in the test's docstring and in `review_vocabulary`.
+    # The `#110 review` entry also stood here (`aeh.review:record_label`, ten cases);
+    # #110 landed the module-level `record_label`/`labels_for` pair and the service's
+    # label store, so its ten cases unmarked and rejoined the gate with this story.
     # The CT-REVIEW-02 event-order case (`c02_blind_minutes_are_subtracted...`)
     # unmarked at #108's landing: `build_trace` is #108's and the reservation step
     # sits in its trace, so the case's binding blocker resolved there. Only the
@@ -1292,7 +1277,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # param). #78 landed it, but the param's BINDING blocker is #109's `write_fields`
     # -- the test resolves it before it reads either consumer -- and the writtenahead
     # marker is function-level, shared with the `[extract]` param. So the `[judge]`
-    # half stays marked with the file and unmarks with #109, below; keying this entry
+    # half stayed marked with the file and unmarked with #109, below; keying this entry
     # on a symbol that is no longer what blocks it would have fired the gate and sent
     # someone to unmark a test that then fails on `write_fields`.
     #
@@ -1301,14 +1286,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # blocker was always #108's `build_review` -- its first require resolves it before
     # `assemble_prompt` is read. #108 landed, and the c14 rerun case unmarked with
     # that story (verified green against the landed queue); the `[judge]` write-set
-    # param below stays marked for #109's `write_fields`, which still registers this
-    # file.
+    # param below stayed marked for #109's `write_fields` and unmarked with it.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
-    # so its blocker no longer holds. The `[extract]` param it named stays marked for
-    # now — its first require is #109's `write_fields` (the test resolves it before it
-    # reads either consumer), and the marker is function-level, shared with the
-    # `[judge]` param — so the file is unmarked by #109's implementer, together with
-    # the `#109 review` entry below, which is the file's remaining registration.
+    # so its blocker no longer holds. The `[extract]` param it named stayed marked for
+    # #109's `write_fields` (its first require resolves it before it reads either
+    # consumer), and the marker was function-level, shared with the `[judge]` param —
+    # so both unmarked with the `#109 review` entry, which landed with that story.
     # --- TS-26 (#70), the M-EXTRACT suite ---------------------------------------------------
     #
     # The fourteen TC-EXTRACT cases. Design §3.8 pins the ExtractionRequest /
@@ -1606,6 +1589,61 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `SYNTH_SCORE_CLAIM_PATTERNS` — their three files unmarked and rejoined the
     # gate green on the landed surface (the TC-SYNTH-11 purge case never carried a
     # marker: its worker-half resolved at #97).
+    # --- TS-39 (#106), the M-GRADE revisions/amendment/rollup/export suite -------------------
+    #
+    # Five files, five entries (the observability pair below is one conjunction entry, not
+    # two, for the reason its comment gives). Every key is an **invented-and-disclosed**
+    # name — the `aeh.orch:evaluate_alerts` / `export_grade_artifacts` precedent: a name
+    # neither design document declares (checked: zero occurrences in both), that the test
+    # calls and the landing reconciles; a different name at the landing is one rename here
+    # and in the test module.
+    #
+    # Why not the obvious names: `ClassRollup`, `rollup`, `criterion_stats` and
+    # `GradingService.export` are §3.14-declared Protocol surface, and `class_rollup` /
+    # `export` already SHIPPED with #101 — keying on a landed name fires this gate
+    # immediately (the resolved-`"#2"`/`"#37"` doctrine), and keying on a Protocol name
+    # resolves the gate against exactly the un-separated, findings-less, figures-less
+    # shapes the cases exist to refuse. Why not `criterion_figures`: #118/M-STATS already
+    # reserves that name for its analytical read (its entry above); M-GRADE's producer is
+    # a different surface from M-STATS's analytical export (`CT-GRADE-13` names the
+    # consumer obligation the other way), so `criterion_band_figures` is the producer's
+    # own bet. The #101 carry-forwards this suite owns are keyed nowhere on purpose —
+    # amendment-replay idempotence is GREEN against shipped code
+    # (`tests/integration/grade/test_recompute_idempotence.py`), and scaled-interval
+    # composition is disclosed in the PR, not a case in the table.
+    "#103 append-only enforcement (TC-GRADE-23)": (
+        # M-GRADE is `submission_grade`'s sole writer and `audit_record`'s writer
+        # (`CT-GRADE-14`), so the enforcement seam is grade-owned. If #103 ships the
+        # discipline as bare triggers with no function, the rename is one line — the
+        # refusals asserted in the test do not move.
+        "symbol",
+        f"{GRADE_MODULE}:enforce_ledger_append_only",
+        ("tests/integration/grade/test_ledger_append_only.py",),
+    ),
+    "#103 grade signals and incomplete alert (TC-GRADE-24)": (
+        # One test file, two symbols, one story — the conjunction encoding (the
+        # TC-STORE-15 rationale: keying either symbol alone fires the gate while the
+        # other is still a stub, and a reader who unmarks as instructed puts a red
+        # case inside `TEST_CMD`).
+        "symbols",
+        f"{GRADE_MODULE}:record_grade_signals,{GRADE_MODULE}:evaluate_grade_alerts",
+        ("tests/integration/grade/test_grade_observability.py",),
+    ),
+    "#104 criterion band figures (TC-GRADE-14)": (
+        "symbol",
+        f"{GRADE_MODULE}:criterion_band_figures",
+        ("tests/unit/grade/test_criterion_band_figures.py",),
+    ),
+    "#104 separated rollup (TC-GRADE-15)": (
+        "symbol",
+        f"{GRADE_MODULE}:separated_rollup",
+        ("tests/integration/grade/test_rollup_blocks.py",),
+    ),
+    "#104 rollup findings (TC-GRADE-16)": (
+        "symbol",
+        f"{GRADE_MODULE}:rollup_findings",
+        ("tests/integration/grade/test_rollup_findings.py",),
+    ),
 }
 
 

@@ -51,11 +51,39 @@ one place, so an invented name is visibly invented:
 
     .admission_query() -> QueryPlan                   CT-REVIEW-05's reachability; carries
                                                       .routing_values, .excluded_origins,
-                                                      .evaluation_modes
-    .write_audit()                                    CT-REVIEW-06's indirection; .table per write
-    .write_fields() -> Sequence[str]                  CT-REVIEW-14's write set
-    .scores(run_id=...)                               reading score rows back, for the residual
-    .end_session(run_id=...) / .close_run(run_id=...) the two moments a residual can vanish
+                                                      .evaluation_modes. LANDED at #109 as
+                                                      `aeh.review.QueryPlan` (frozen, fields in
+                                                      that order), restating the one `_admitted`
+                                                      predicate the in-memory filter and the
+                                                      store SQL both read. `.routing_values` is
+                                                      `(QUEUE_ROUTING, PROVISIONAL_ROUTING)` —
+                                                      the provisional family's admission is
+                                                      load-bearing (`CT-AGG-07`'s consumer
+                                                      differential, both rows routing
+                                                      `provisional` one state apart), so the
+                                                      written-ahead draft's single-routing pin
+                                                      was reconciled at the unmark
+    .write_audit()                                    CT-REVIEW-06's indirection; .table per
+                                                      write. LANDED at #109 as
+                                                      `aeh.review.WriteRecord` (.table,
+                                                      .score_id, .detail), one record per write
+                                                      a review action makes — criterion_score
+                                                      for the reduction, label for the label
+    .write_fields() -> Sequence[str]                  CT-REVIEW-14's write set. LANDED at #109 as
+                                                      a module-level function, not a service
+                                                      member: every field the module writes
+    .scores(run_id=...)                               reading score rows back, for the residual.
+                                                      LANDED at #109: the run's still-flagged
+                                                      rows, states exactly as stored
+    .end_session(run_id=...) / .close_run(run_id=...) the two moments a residual can vanish.
+                                                      LANDED at #109: neither clears, finalizes
+                                                      nor backfills; each returns a
+                                                      `aeh.review.ResidualReport` carrying the
+                                                      residual count, the persisted state, and
+                                                      the (empty) finalized/backfilled lists
+    .labels_for(run_id=...)                           the in-memory label read the c06 backfill
+                                                      and c15 refusal assertions need; the
+                                                      label store's persistence form is #110's
 
 **#110 — S-REVIEW-03, the label store**
 
@@ -373,6 +401,13 @@ RANDOM_ARM_ORIGIN = "random_arm"
 #: `CT-AGG-06`: the queue's population is `routing = 'queued'`; `triage` is the operator's.
 QUEUE_ROUTING = "queued"
 OPERATOR_ROUTING = "triage"
+
+#: The advisory routing of the provisional family — the single-judge fallback and the breaker
+#: refusal, which route like `queued` work and are told apart by state alone. `aeh.review`'s
+#: landed admission reads both (`CT-AGG-07`'s consumer differential forces it: both its rows
+#: route `provisional`, one state apart, and the queue must present them differently), so the
+#: reachability pin above carries both. Landed with #109's `admission_query` reconciliation.
+PROVISIONAL_ROUTING = "provisional"
 
 #: `CT-DET-06`: the column that makes the deterministic exclusion enforceable *from the data*
 #: rather than by convention.

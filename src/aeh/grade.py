@@ -620,8 +620,14 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "score_high, missing_criteria, amendments FROM submission_grade "
         "WHERE run_id = :run_id AND is_current = 1"
     ),
+    # `policy_version` and `answer_key_ref` are in the projection because
+    # `compute_one`'s return path (`_as_submission_grade`) reads them off this row —
+    # the statement originally omitted them, so every `compute_one` call crashed with
+    # `IndexError: No item with that key` before returning (TC-GRADE-13 step 7 is the
+    # regression case; the columns are this module's own insert set).
     "select_current_grade": Statement(
-        "SELECT revision, state, grade, total, computed_at, finalized_at, "
+        "SELECT revision, state, grade, total, policy_version, answer_key_ref, "
+        "computed_at, finalized_at, "
         "criteria_total, criteria_auto, criteria_reviewed, criteria_provisional, "
         "criteria_missing, boundary_at_risk, score_low, score_high, missing_criteria, "
         "amendments "
