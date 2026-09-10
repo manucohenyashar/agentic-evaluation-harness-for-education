@@ -276,10 +276,16 @@ class GradeComputation:
     `total` is the declared pin (FUZZ-05's and TC-GRADE-02's oracle): a float when the
     grade stands, `None` when the policy's gate refuses — never an exception, never a
     fabricated figure. `gate_met` states the gate's verdict alongside, so a refusal is
-    observable rather than only an absent number."""
+    observable rather than only an absent number. `panel_refused` carries the same
+    honesty to the circuit breaker: the criteria the input population carries with
+    state `ungradeable_by_panel` (CT-ORCH-16). Their single-judge provisional figures
+    are real and the policy consumes them, but the presentation says a panel refused
+    to grade — never merging the refusal into the ordinary provisional presentation
+    (CT-AGG-07's consumer obligation)."""
 
     total: float | None
     gate_met: bool
+    panel_refused: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -360,13 +366,28 @@ def apply_policy(scores: Iterable[Any], policy: GradePolicy) -> GradeComputation
 
     Sums run through `math.fsum` (exactly rounded, therefore order-independent over
     criteria — `TC-GRADE-21`'s permutation limb reads the same total in every order).
+
+    The result also surfaces the population's breaker-refused criteria in
+    `panel_refused` (`CT-AGG-07`): a criterion the escalation breaker marked
+    `ungradeable_by_panel` contributes its stored figure — CT-ORCH-16 leaves it scored
+    single-judge provisional — and is named in the result, so the grade's presentation
+    of the breaker-refused row differs from its presentation of the identical
+    ordinary-provisional row.
     """
-    points = {score.criterion_id: float(score.points) for score in scores}
+    score_list = list(scores)
+    points = {score.criterion_id: float(score.points) for score in score_list}
+    # Duck-typed state read: the pure seams' score stand-ins carry no state (only
+    # criterion_id / points / routing), and a missing state is simply never refused.
+    panel_refused = tuple(sorted(
+        score.criterion_id for score in score_list
+        if getattr(score, "state", None) == "ungradeable_by_panel"
+    ))
 
     if policy.gate is not None:
         gated = points.get(policy.gate.criterion_id)
         if gated is None or gated < policy.gate.minimum:
-            return GradeComputation(total=None, gate_met=False)
+            return GradeComputation(total=None, gate_met=False,
+                                    panel_refused=panel_refused)
 
     if policy.combination == "weighted_sum":
         weights = {cid: w for cid, w in (policy.weights or ())}
@@ -403,7 +424,7 @@ def apply_policy(scores: Iterable[Any], policy: GradePolicy) -> GradeComputation
             )
         raw = float(Decimal(str(raw)).quantize(quantum, rounding=mode))
 
-    return GradeComputation(total=raw, gate_met=True)
+    return GradeComputation(total=raw, gate_met=True, panel_refused=panel_refused)
 
 
 def resolve_grade(

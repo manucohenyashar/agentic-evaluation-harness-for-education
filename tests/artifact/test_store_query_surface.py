@@ -508,23 +508,27 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # the cohort-fixture cohort+submission inserts in `cohort_with_mixed_revisions`,
     # and the single-submission path's demote/insert/settle/queue writes. The
     # module's reads go through `store.cohort(...).query()` / the package handle's
-    # `query()`, which are not census sites (FR-STORE-08).
-    "aeh.grade:1125",
-    "aeh.grade:1131",
-    "aeh.grade:1133",
-    "aeh.grade:1141",
-    "aeh.grade:1151",
-    "aeh.grade:1225",
-    "aeh.grade:1250",
-    "aeh.grade:1255",
-    "aeh.grade:1286",
-    "aeh.grade:1294",
-    "aeh.grade:1336",
-    "aeh.grade:1417",
-    "aeh.grade:1422",
-    "aeh.grade:1669",
-    "aeh.grade:1680",
-    "aeh.grade:1685",
+    # `query()`, which are not census sites (FR-STORE-08). (Moved once as a block,
+    # +21: the `panel_refused` presentation field the CT-AGG-07 consumer
+    # differential demanded — `GradeComputation`'s disclosure of the
+    # breaker-refused criteria — landing above every site; re-pinned from the
+    # walker.)
+    "aeh.grade:1146",
+    "aeh.grade:1152",
+    "aeh.grade:1154",
+    "aeh.grade:1162",
+    "aeh.grade:1172",
+    "aeh.grade:1246",
+    "aeh.grade:1271",
+    "aeh.grade:1276",
+    "aeh.grade:1307",
+    "aeh.grade:1315",
+    "aeh.grade:1357",
+    "aeh.grade:1438",
+    "aeh.grade:1443",
+    "aeh.grade:1690",
+    "aeh.grade:1701",
+    "aeh.grade:1706",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate

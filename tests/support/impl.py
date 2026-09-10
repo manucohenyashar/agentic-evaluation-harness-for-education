@@ -253,20 +253,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # renderers #123's. The executable core of every case (rungs 0-3, unmarked)
     # is in the same files; only the limbs whose consumer does not exist yet sit
     # behind these rows.
+    # (The two M-GRADE rows went at #101's landing: `aeh.grade` ships `apply_policy`,
+    # so the c07 and c16 `[m_grade]` params run unmarked.)
     "#96 c05 the inversion's rung-4 consequence (M-REVIEW)": (
         "symbol",
         f"{REVIEW_MODULE}:build_review",
         (
             "tests/contract/agg/test_ct_agg_c05_confidence_inversion.py"
             "::test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_review_queue",
-        ),
-    ),
-    "#96 c07 M-GRADE presents ungradeable_by_panel": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
-            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_grade]",
         ),
     ),
     "#96 c07 M-REVIEW presents ungradeable_by_panel": (
@@ -299,14 +293,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
             "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
-        ),
-    ),
-    "#96 c16 M-GRADE renders no probability": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
-            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_grade]",
         ),
     ),
     "#96 c16 M-REVIEW renders no probability": (
