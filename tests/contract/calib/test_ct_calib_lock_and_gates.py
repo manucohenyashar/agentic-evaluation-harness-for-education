@@ -288,7 +288,6 @@ def test_tc_calib_c09_r1_is_pinned_with_the_approval_and_a_timestamp():
     assert calib is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation():
     """`CT-CALIB-09`'s **consumer half**, at rung 3 and on its own blocker (`M-GRADE`).
 

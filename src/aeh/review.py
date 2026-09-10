@@ -1132,6 +1132,7 @@ def _service_from_store(
     import aeh.agg  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
+    import aeh.grade  # noqa: F401
     import aeh.ingest  # noqa: F401
     import aeh.integ  # noqa: F401
     import aeh.judge  # noqa: F401

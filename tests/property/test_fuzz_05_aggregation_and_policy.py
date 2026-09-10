@@ -186,7 +186,6 @@ def _scores_and_policy(draw) -> tuple:
     return scores, dict(zip(ids, maxima)), GradePolicy(**policy_kw)
 
 
-@pytest.mark.writtenahead
 @settings(max_examples=FUZZ_EXAMPLES, deadline=None)
 @given(_scores_and_policy(), st.data())
 def test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum(
