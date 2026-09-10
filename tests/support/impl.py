@@ -1276,7 +1276,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # param). #78 landed it, but the param's BINDING blocker is #109's `write_fields`
     # -- the test resolves it before it reads either consumer -- and the writtenahead
     # marker is function-level, shared with the `[extract]` param. So the `[judge]`
-    # half stays marked with the file and unmarks with #109, below; keying this entry
+    # half stayed marked with the file and unmarked with #109, below; keying this entry
     # on a symbol that is no longer what blocks it would have fired the gate and sent
     # someone to unmark a test that then fails on `write_fields`.
     #
@@ -1285,8 +1285,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # blocker was always #108's `build_review` -- its first require resolves it before
     # `assemble_prompt` is read. #108 landed, and the c14 rerun case unmarked with
     # that story (verified green against the landed queue); the `[judge]` write-set
-    # param below stays marked for #109's `write_fields`, which still registers this
-    # file.
+    # param below stayed marked for #109's `write_fields` and unmarked with it.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
     # so its blocker no longer holds. The `[extract]` param it named stayed marked for
     # #109's `write_fields` (its first require resolves it before it reads either

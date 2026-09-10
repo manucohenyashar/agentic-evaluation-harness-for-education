@@ -419,8 +419,9 @@ class QueryPlan:
     """The admission query, as a plan (`CT-REVIEW-05`'s reachability surface):
     the routing values the queue's queries read over, the evaluation mode they
     gate on, and the origins they can never reach. This is the plan the queue
-    runs — ``_admitted`` is the one predicate the in-memory filter and the
-    store-form SQL both read — not a description of one fixture's outcome."""
+    runs — ``_admitted`` is the one predicate the in-memory filter executes
+    and the store form runs on every fetched row — not a description of one
+    fixture's outcome."""
 
     routing_values: tuple[str, ...]
     evaluation_modes: tuple[str, ...]
@@ -1044,8 +1045,12 @@ class ReviewService:
         the evaluation mode they gate on, and the origins they can never reach.
 
         ``_admitted`` is the single predicate the plan restates — the in-memory
-        filter and the store-form SQL both read it — so the plan cannot drift
-        from what runs. The routings are both of the teacher's (`CT-AGG-06`'s
+        filter executes it, and the store form runs it on every fetched row
+        beneath its WHERE clause — so the plan cannot drift from what the
+        service runs. The store's routing narrow is a declared SQL literal
+        (SEC-15 permits no runtime assembly), matching this tuple by
+        transcription rather than by construction; the mode and origin halves
+        ride the predicate. The routings are both of the teacher's (`CT-AGG-06`'s
         ``queued``, plus the provisional family whose rows `CT-AGG-07` binds
         this module to surface); ``triage``, the operator's queue, is reachable
         by neither. The mode is gated on the evaluation-mode column
@@ -1213,7 +1218,13 @@ class ReviewService:
         are what the moment wrote — nothing, by construction, since the service
         writes no state and no label at a session or run boundary; the lists
         exist so a later change that does write one has a field to carry it
-        in."""
+        in.
+
+        ``state`` reports the ordinary residual mark. A residual can also hold
+        an unacted ``ungradeable_by_panel`` row (it routes ``provisional``,
+        so it is admitted and still unreviewed); consumers keep that state
+        distinct per `CT-AGG-07`, and #110's store form carries the per-state
+        counts when the report gains them."""
         residual = self._admitted_rows()
         return ResidualReport(
             run_id=run_id,
@@ -1425,6 +1436,12 @@ def _service_from_store(
     if cohort_ids is None:
         cohort_ids = _store_cohort_ids(store)
     rows: list[Any] = []
+    # The routing narrow is a declared literal, not an assembly: SEC-15's
+    # walker (`FR-STORE-08`) forbids building SQL at runtime, so this statement
+    # matches ``_ADVISORY_ROUTINGS`` by transcription and the admission_query
+    # plan reports the same values. Drift between the two is caught by review
+    # of the pair, as the plan's docstring says. The mode and origin halves of
+    # the admission ride the predicate on the fetched rows.
     for cohort_id in cohort_ids:
         rows.extend(
             _row_mapping(row)
