@@ -21,12 +21,15 @@ What is GREEN and pinned here, against shipped code:
    column order), one row per graded submission in `submission_id` order, and the
    hand-pinned record values (state, grade, total, coverage counters) reproduced from
    the ledger, verified against an independent readback.
-3. **The PDF refusal is exact** — `fmt="pdf"` raises `NotImplementedError` naming
-   `#104` / `export_grade_artifacts` / `TC-REG-03` / `FR-GRADE-17`. Pinned as the
-   shipped behaviour on purpose: the refusal IS the boundary between this module's
-   member and #104's, and a silent half-implementation (a stub PDF, an empty file)
-   would be the failure mode the pin prevents. When #104 lands, `TC-REG-03`'s baseline
-   supersedes the refusal and this pin is revisited with it.
+3. **The PDF format is #104's per-student set** (revised with #104's landing, as this
+   pin's first draft said it would be): `fmt="pdf"` writes one deterministic PDF per
+   graded student into a per-export subdirectory of the export dir and returns that
+   directory — the Protocol declares one `Path`, and the format's honest unit is the
+   set, so the returned path is the set's container with the files named by student
+   ref inside it. A format the module does not declare (`xlsx`) is refused with the
+   module's own `GradeError` naming the declared formats, and a refusal writes
+   nothing. The school-facing pair itself — the marks CSV beside the PDFs, golden
+   compared — is `TC-REG-03`'s surface: `tests/regression/test_reg_03_grade_exports.py`.
 
 **Disclosed stand-ins** (`grade_vocabulary.py`, header): the run-completion UPDATE
 (`M-ORCH` is the run row's single writer), `write_criterion_scores` standing in for
@@ -210,35 +213,72 @@ def test_tc_grade_17_the_export_names_the_revision_it_was_produced_from(
         store.close()
 
 
-def test_tc_grade_17_the_pdf_refusal_is_exact(tmp_data_dir, monkeypatch):
-    """`TC-GRADE-17` — the PDF is #104's surface, and the refusal says so exactly.
+def test_tc_grade_17_the_pdf_format_is_one_pdf_per_student(tmp_data_dir, monkeypatch):
+    """`TC-GRADE-17` — `fmt="pdf"` emits one deterministic PDF per graded student from
+    the named revision, and an undeclared format is refused exactly.
 
-    The pin is deliberate: `export`'s non-CSV refusal is the boundary between this
-    module's declared member and `#104`'s `export_grade_artifacts`. A half-implementation
-    (an empty file, a CSV with a PDF name) would pass every shape assertion below and
-    still be wrong — so the exception type and the four names the message carries are
-    the assertion."""
+    Revised with #104's landing (the first draft pinned the pre-#104 refusal and said
+    this revisit would come with `TC-REG-03`'s baseline). The pin is the behaviour
+    itself: the export returns the per-export directory, the files inside are named by
+    student ref, each declares a page, and no two are byte-identical — a set of
+    identical documents would mean the export is not reading the student it names.
+    An undeclared format (`xlsx`) raises the module's own `GradeError` naming the
+    declared formats, and — the half the first draft pinned for the same reason — a
+    refusal writes nothing."""
     monkeypatch.setenv("HARNESS_GRADE_EXPORT_DIR", str(tmp_data_dir / "exports"))
     store = open_store(tmp_data_dir)
     try:
-        run_id, _cohort, svc = _seed_final_run(store, ("S-E3",))
+        run_id, _cohort, svc = _seed_final_run(store, ("S-E3", "S-E4"))
+
+        directory = svc.export(run_id, 1, "pdf")
+
+        assert directory.name == f"grade-{run_id}-rev1", (
+            f"the pdf export returned {directory.name!r} — the per-export directory "
+            "names the run and the revision it was produced from, the same move the "
+            "CSV filename makes (FR-GRADE-17)"
+        )
+        pdfs = sorted(directory.glob("*.pdf"))
+        assert [p.stem for p in pdfs] == ["ref-S-E3", "ref-S-E4"], (
+            f"the pdf set is {[p.name for p in pdfs]} — one PDF per graded student, "
+            "named by the student ref the ledger carries (FR-GRADE-17)"
+        )
+        raws = [p.read_bytes() for p in pdfs]
+        assert all(b"/Type /Page " in raw for raw in raws), (
+            "a per-student PDF declares no page — an empty or stub document is the "
+            "half-implementation a golden baseline refuses"
+        )
+        assert len(set(raws)) == len(raws), (
+            "two per-student PDFs are byte-identical — feedback is per-student "
+            "(FR-GRADE-17); identical documents mean the export is not reading the "
+            "student it names"
+        )
+        by_ref = {p.stem: p.read_bytes() for p in pdfs}
+        assert b"Student: ref-S-E3" in by_ref["ref-S-E3"], (
+            "the student's own ref is not in their document — the PDF must read the "
+            "student it names, not a blank addressed to no one"
+        )
 
         with pytest.raises(Exception) as excinfo:
-            svc.export(run_id, 1, "pdf")
+            svc.export(run_id, 1, "xlsx")
 
-        assert type(excinfo.value).__name__ == "NotImplementedError", (
-            f"the PDF request raised {type(excinfo.value).__name__} — the refusal is "
-            "exact: NotImplementedError naming the surface that owes the format"
+        assert type(excinfo.value).__name__ == "GradeError", (
+            f"the undeclared format raised {type(excinfo.value).__name__} — the "
+            "refusal is the module's own error naming what it does declare"
         )
         message = str(excinfo.value)
-        for token in ("pdf", "#104", "export_grade_artifacts", "TC-REG-03", "FR-GRADE-17"):
+        for token in ("xlsx", "csv", "pdf", "export_grade_artifacts", "TC-REG-03"):
             assert token in message, (
                 f"the refusal message does not name {token!r}: {message!r} — the "
                 "boundary must be discoverable from the error alone"
             )
-        assert not list((tmp_data_dir / "exports").glob("**/*")), (
-            "the refused export left files behind — a refusal that writes is not a "
-            "refusal"
+        leftovers = [
+            path
+            for path in (tmp_data_dir / "exports").glob("**/*")
+            if "xlsx" in path.name.lower()
+        ]
+        assert not leftovers, (
+            f"the refused export left files behind: {leftovers} — a refusal that "
+            "writes is not a refusal"
         )
     finally:
         store.close()

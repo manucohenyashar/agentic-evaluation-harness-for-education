@@ -5,21 +5,14 @@ Test plan §5.14; `FR-GRADE-15` ("The rollup shall report deterministic (multipl
 results in a block separate from judged criteria and shall provide **no** combined figure
 across the two"); Integration / 2; artifact assertion (field enumeration); P0.
 
-**Written ahead of implementation** (test plan §8.2). The shipped `ClassRollup` carries
-only rubric-version segments (`CT-CALIB-09`'s segmentation) — no deterministic/judged
-separation and, necessarily, no combined figure to forbid. `#104` — *"Class rollup,
-criterion statistics, rubric findings and export"*, whose second acceptance criterion
-is this clause — lands the separation, so this file carries
-`@pytest.mark.writtenahead` and its registry entry names the symbol below.
-
-**The invented-and-disclosed key** (the `evaluate_alerts` / `export_grade_artifacts`
-precedent): `aeh.grade:separated_rollup`. Keying on `ClassRollup` or on `rollup` is
-barred by the doctrine — both are §3.14 Protocol surface and the shipped record would
-resolve the gate against the un-separated shape — so the key is the accessor whose
-landing IS the separation: a rollup record that carries the deterministic block. The
-name is absent from both design documents (checked: zero occurrences); the signature
-assumed here — `separated_rollup(run_id, store)` mirroring `class_rollup`'s handle
-shape — reconciles at #104's landing like every other reserved name.
+**Landed** (`Written ahead of implementation: yes` is stale — #104 landed the
+accessor): `aeh.grade:separated_rollup(run_id, store)` exists and returns the
+separated record the field enumeration below pins — a `judged` block and a
+`deterministic` block (`SeparatedRollup`), each its own population and its own
+figures, and no other field anywhere on the record. The signature assumed here held:
+`separated_rollup(run_id, store)` mirroring `class_rollup`'s handle shape. Keying on
+`ClassRollup` or on `rollup` remains barred by the doctrine — both are §3.14 Protocol
+surface; the accessor whose landing IS the separation is the pinned key.
 
 **The field-enumeration oracle** (the `test_ct_det_item_stats.py` precedent: assert the
 separation STRUCTURALLY, so a later merge FAILS rather than quietly reading wrong):
@@ -55,12 +48,7 @@ from tests.support.grade_vocabulary import grade_rows, write_criterion_scores
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [
-    pytest.mark.integration,
-    # Red by design until #104 lands the separated rollup this case pins
-    # (WRITTEN_AHEAD_BLOCKERS: "#104 separated rollup" -> `aeh.grade:separated_rollup`).
-    pytest.mark.writtenahead,
-]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#104"
 

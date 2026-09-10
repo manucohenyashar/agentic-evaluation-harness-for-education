@@ -463,7 +463,6 @@ def test_tc_stats_c12_the_drift_check_covers_judged_criteria_only():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run():
     """*"Advisory, never a gate"* at **rung 3** — driven with the worst result the check can give.
 

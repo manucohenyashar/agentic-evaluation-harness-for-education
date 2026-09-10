@@ -537,7 +537,6 @@ def test_tc_calib_c16_a_genuinely_worse_revision_that_shifts_few_students_passes
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superiority():
     """`CT-CALIB-16`'s **consumer sweep**, which is what a non-promise needs (§6.11).
 

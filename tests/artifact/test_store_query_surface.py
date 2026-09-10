@@ -493,8 +493,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#110's re-pin: Durable's pin bump to 6 and the refusal text's eleventh
     # contributor (`aeh.review`) moved each site two lines; the sites are the same
     # statements as before. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1819",
-    "aeh.store:2602",
+    # (#103's re-pin, twice: the pin table's history note grew two lines and each
+    # site moved with it, then the purge's pure-refusal-trigger carve-out (the
+    # helper and its comment above `_SELECT_COHORT_TRIGGERS_VIEWS`) moved them
+    # again; the sites are the same statements as before. Re-read from the walker,
+    # never hand-unioned.)
+    "aeh.store:1856",
+    "aeh.store:2639",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -504,14 +509,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
-    # The grade sites are #101's line numbers (the module's own write surface, every
+    # The grade sites are #104's line numbers (the module's own write surface, every
     # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
-    # the migration's rebuild statements (the v18 create/copy/drop/rename plus the
-    # partial unique index), the batch pass's demote/insert/settle/queue writes and
-    # the cohort-fixture cohort+submission inserts in `cohort_with_mixed_revisions`,
-    # and the single-submission path's demote/insert/settle/queue writes. The
-    # module's reads go through `store.cohort(...).query()` / the package handle's
-    # `query()`, which are not census sites (FR-STORE-08). (Moved once as a block,
+    # `compute_all`'s five pass writes (demote/insert/settle/queue-row/queue-clear),
+    # `_grade_one`'s five single-submission writes (the same statements on the
+    # per-submission path), `finalize_batch`'s settlement write, `amend`'s
+    # demote-and-reinsert pair, and the two cohort-fixture seams' three writes each —
+    # a cohort INSERT, a submission INSERT and the module's own `insert_grade` — in
+    # `cohort_with_mixed_revisions` and #104's `_reference_export_cohort` (the golden
+    # export's reproducible reference cohort; the rows are the rows the service
+    # writes). The v18 migration's rebuild statements are a `Migration(...)` object
+    # the store's runner executes, not call sites here; the module's reads go through
+    # `store.cohort(...).query()` / the package handle's `query()`, which are not
+    # census sites (FR-STORE-08) — the #104 rollup and export accessors
+    # (`criterion_band_figures`, `separated_rollup`, `rollup_findings`) are reads and
+    # added none. (Moved once as a block,
     # +21: the `panel_refused` presentation field the CT-AGG-07 consumer
     # differential demanded — `GradeComputation`'s disclosure of the
     # breaker-refused criteria — landing above every site; moved again, the six
@@ -530,24 +542,40 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `select_current_grade` statement gained its `policy_version`/`answer_key_ref`
     # projection (the statement had omitted columns `_as_submission_grade` reads,
     # crashing every `compute_one` — TC-GRADE-13 step 7 is the regression case);
-    # five disclosure lines above every site below the statements dict. Same
-    # statements; re-read from the walker, never hand-unioned.
-    "aeh.grade:1178",
-    "aeh.grade:1184",
-    "aeh.grade:1186",
-    "aeh.grade:1194",
-    "aeh.grade:1204",
-    "aeh.grade:1277",
-    "aeh.grade:1302",
-    "aeh.grade:1307",
-    "aeh.grade:1338",
-    "aeh.grade:1346",
-    "aeh.grade:1438",
-    "aeh.grade:1519",
-    "aeh.grade:1524",
-    "aeh.grade:1771",
-    "aeh.grade:1782",
-    "aeh.grade:1787",
+    # five disclosure lines above every site below the statements dict. #104's
+    # re-pin, once more as a block: the rollup/export surfaces landed between the
+    # statements dict and the service, and `_reference_export_cohort` added its
+    # three fixture writes at the tail. Same statements plus three; re-read from
+    # the walker, never hand-unioned. #103's re-pin: +4 sites (the no-op
+    # amendment's in-place settlement, the amendment's durable `audit_record`
+    # append, `finalize_batch`'s finalization-path metric, and
+    # `record_grade_signals`' durable signal flush — every one a declared
+    # GRADE_STATEMENTS statement with keyword parameters, the FR-STORE-08
+    # discipline), the rest moved with the docstring and statement edits above
+    # them. Re-read from the walker, never hand-unioned.
+    "aeh.grade:1482",
+    "aeh.grade:1489",
+    "aeh.grade:1491",
+    "aeh.grade:1499",
+    "aeh.grade:1509",
+    "aeh.grade:1582",
+    "aeh.grade:1607",
+    "aeh.grade:1613",
+    "aeh.grade:1644",
+    "aeh.grade:1652",
+    "aeh.grade:1744",
+    "aeh.grade:1757",
+    "aeh.grade:1866",
+    "aeh.grade:1892",
+    "aeh.grade:1898",
+    "aeh.grade:1973",
+    "aeh.grade:2243",
+    "aeh.grade:2254",
+    "aeh.grade:2259",
+    "aeh.grade:2621",
+    "aeh.grade:2627",
+    "aeh.grade:2632",
+    "aeh.grade:3115",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -582,6 +610,25 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `_persist_label` moved the site; the statement is the same one. Re-read
     # from the walker, never hand-unioned.)
     "aeh.review:2417",
+    # The #122/#126 console sites: one — the control row `perform` writes into the
+    # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
+    # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
+    # reviewer's real-store findings were fixed — the control row now writes in the
+    # cohort tier's own transaction, never nested inside a durable one), the quarantine
+    # resolution the S8 close writes (`_UPDATE_QUARANTINE_RESOLUTION`, the operator's
+    # decision, never an automatic one) — and the headless driver's six fixture seed
+    # inserts (the pinned rubric version's package and package_version rows, then the
+    # cohort, submission, document and document_region seeds). All keyword-parameterized
+    # literals; the driver's disclosure notes cover why it pins ids the catalog would
+    # otherwise mint.
+    "aeh.console:1444",
+    "aeh.console:1521",
+    "aeh.console:2475",
+    "aeh.console:2480",
+    "aeh.console:2501",
+    "aeh.console:2509",
+    "aeh.console:2517",
+    "aeh.console:2530",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

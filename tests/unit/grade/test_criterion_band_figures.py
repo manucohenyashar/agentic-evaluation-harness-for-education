@@ -4,24 +4,20 @@ Test plan §5.14; `FR-GRADE-14` ("criterion_stats ... band histogram, band entro
 interior rate ... entropy and interior rate **null for deterministic criteria**");
 Unit / 0; hand-computed reference; P1.
 
-**Written ahead of implementation** (test plan §8.2). The figures have no shipped
-surface: `criterion_stats` (store.py's Tier D migration) carries
-`(package_version_id, criterion_id, backend_profile, panel_build_ref, n)` and **no**
-band-histogram, entropy or interior-rate column, and nothing in `aeh.grade` computes
-them. `#104` — *"Class rollup, criterion statistics, rubric findings and export"*, whose
-first acceptance criterion is exactly this case — lands them, so this file carries
-`@pytest.mark.writtenahead` and its registry entry names the symbol below.
-
-**The invented-and-disclosed key** (the `evaluate_alerts` / `export_grade_artifacts`
-precedent — a name no design document declares, that the test calls and #104's landing
-reconciles): `aeh.grade:criterion_band_figures`. Deliberately NOT `criterion_figures` —
-`M-STATS`' #118 entry already reserves that name for its analytical read (`WRITTEN_AHEAD_BLOCKERS`
-"#118 criterion_figures"), and M-GRADE's producer is a different surface from M-STATS's
-analytical export (`CT-GRADE-13` names the consumer obligation the other way). The name
-is absent from both design documents (checked: zero occurrences). The rung-0 signature
-assumed here — `criterion_band_figures(scores, band_order)` over a cohort's criterion
-scores, the `apply_policy` shape — reconciles at #104's landing like every other
-reserved name in this suite.
+**Landed** (`Written ahead of implementation: yes` is stale — #104 landed the
+accessor): `aeh.grade:criterion_band_figures` exists over the score population, the
+rung-0 signature the draft assumed held — `criterion_band_figures(scores, band_order)`,
+the `apply_policy` shape, score value objects in, figures out. The natural-log entropy
+convention and the null contract below are as the draft pinned them. What did NOT land
+here is the Tier D persistence: `criterion_stats` (store.py's Tier D migration) still
+carries `(package_version_id, criterion_id, backend_profile, panel_build_ref, n)` and
+**no** band-histogram, entropy or interior-rate column — the figures are computed at
+read time, and persisting them is #118's M-STATS landing (`WRITTEN_AHEAD_BLOCKERS`
+"#118 criterion_figures" keeps its reservation), disclosed in `grade.py`'s module
+docstring. Deliberately NOT named `criterion_figures` — `M-STATS`' #118 entry reserves
+that name for its analytical read, and M-GRADE's producer is a different surface from
+M-STATS's analytical export (`CT-GRADE-13` names the consumer obligation the other
+way).
 
 **The hand-computed reference**, pinned exactly (the §5.3 oracle row: *"A library's
 answer is not a reference; two implementations agreeing on a wrong convention is the
@@ -61,8 +57,6 @@ import pytest
 
 from tests.support.grade_vocabulary import score
 from tests.support.impl import GRADE_MODULE, require
-
-pytestmark = pytest.mark.writtenahead
 
 ISSUE = "#104"
 

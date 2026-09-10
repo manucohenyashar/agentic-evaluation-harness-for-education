@@ -6,17 +6,15 @@ criteria the escalation circuit breaker marked `ungradeable_by_panel` and the cr
 that exhausted the review budget, naming the affected student counts"); Integration / 3;
 exact value; P1.
 
-**Written ahead of implementation** (test plan §8.2). The shipped rollup carries no
-findings, and `review_queue` has no budget/residual surface (`store.py`'s Tier D DDL:
-`review_queue` is a queue, `criterion_stats` carries no breaker or budget figure).
-`#104` — *"Class rollup, criterion statistics, rubric findings and export"*, whose
-third acceptance criterion is this clause — lands the findings, so this file carries
-`@pytest.mark.writtenahead` and its registry entry names the symbol below.
-
-**The invented-and-disclosed key** (the `evaluate_alerts` / `export_grade_artifacts`
-precedent): `aeh.grade:rollup_findings`. The name is absent from both design documents
-(checked: zero occurrences); the assumed signature — `rollup_findings(run_id, store) ->
-sequence of findings` — reconciles at #104's landing like every other reserved name.
+**Landed** (`Written ahead of implementation: yes` is stale — #104 landed the
+accessor): `aeh.grade:rollup_findings(run_id, store)` exists and returns the findings
+this case pins — the breaker finding (criterion scores carrying M-AGG's
+`ungradeable_by_panel` mark) and the budget finding (review-queue rows whose reason
+names the exhaustion, matched in Python; the signature assumed here held:
+`rollup_findings(run_id, store) -> sequence of findings`). `review_queue` still has no
+budget/residual status column (store.py's Tier D DDL) — the exhaustion still rides the
+reason text, and the landed read filters on the phrase in Python rather than in SQL
+(`TC-STORE-15`/C08 ban the search shapes).
 
 **The two findings, exact** (the case's oracle: *"Both surface as rollup findings
 naming the affected student counts"*):
@@ -49,12 +47,7 @@ from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [
-    pytest.mark.integration,
-    # Red by design until #104 lands the rollup findings this case pins
-    # (WRITTEN_AHEAD_BLOCKERS: "#104 rollup findings" -> `aeh.grade:rollup_findings`).
-    pytest.mark.writtenahead,
-]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#104"
 
