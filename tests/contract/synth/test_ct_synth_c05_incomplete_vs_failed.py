@@ -15,8 +15,7 @@ narrative row for a question), the work_unit rows tell the two worlds apart —
 `pending` with no verdicts (incomplete) versus `done` with verdicts (synthesis
 failed). That pairing, `(unit status, narrative absence, report.failures)`, is the
 projection a consumer reads; the rung-3 consumer differential (`M-GRADE` reading
-the same projection) is written ahead of `M-GRADE` and registered in
-`WRITTEN_AHEAD_BLOCKERS` under `"#100 grade consumers (C05/C08/C09)"`.
+the same projection) landed with `M-GRADE` (#101).
 
 Relationship to shipped cases: `tests/integration/synth/
 test_completeness_and_sentinel.py` (`TC-SYNTH-09`) holds the gate's skip (no
@@ -212,7 +211,6 @@ def test_tc_synth_c05_incomplete_and_failed_are_distinguishable_in_stored_data(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure(tmp_data_dir):
     """`TC-SYNTH-C05` (P1, rung 3 consumer differential) — `M-GRADE` reads the stored
     projection the green half pins: a question with no narrative and `pending` units
@@ -222,11 +220,11 @@ def test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure(tmp_data_dir
     still computing and finalizing — is `TC-SYNTH-C08`'s consumer test, not this
     one's; this test drives only the incomplete world.)
 
-    Written ahead of `M-GRADE` (test plan §8.2); registered in
-    `WRITTEN_AHEAD_BLOCKERS` under `"#100 grade consumers (C05/C08/C09)"` (symbol
-    `aeh.grade:open_grade`). The coverage surface is `GradingService.coverage(run_id)
-    -> CoverageSummary` with `.grades_by_state` (disclosed in
-    `tests/support/grade_vocabulary.py`).
+    Landed with `M-GRADE` (#101): `coverage(run_id)` reads the class's states as
+    they stand — a submission with no current grade row and missing criteria
+    counts `incomplete` (`CT-GRADE-08`'s biconditional read from the stored side).
+    The surface is `GradingService.coverage(run_id) -> CoverageSummary` with
+    `.grades_by_state` (disclosed in `tests/support/grade_vocabulary.py`).
     """
     open_grade = require(GRADE_MODULE, "open_grade", issue="#101")
     Worker = require(SYNTH_MODULE, WORKER, issue=SYNTH_ISSUE)

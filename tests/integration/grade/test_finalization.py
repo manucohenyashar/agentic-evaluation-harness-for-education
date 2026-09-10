@@ -58,7 +58,7 @@ from tests.support.grade_vocabulary import (
 from tests.support.impl import GRADE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = GRADE_BLOCKER
 
@@ -335,11 +335,17 @@ def test_tc_grade_11_mid_window_the_provisional_grade_is_complete_visible_export
         submissions = ("S-M1",)
         run_id, cohort = _seed_scored_run(store, submissions, hours=24)
         # Make the coverage non-trivial: one auto-accepted, one provisional input.
+        # The provisional class lives on `routing` (CT-AGG-06), and the aggregation
+        # `state` follows it — `provisional` routing pairs with
+        # `provisional_unreviewed` (the vocabulary's disclosed derivation). The
+        # writtenahead draft set `state = 'provisional'` directly, conflating the
+        # two columns; the schema's CHECK (FR-AGG-11) refuses that literal, so the
+        # reconciliation at #101 moves the class to the column that owns it.
         with cohort.transaction() as tx:
             tx.execute(
-                "UPDATE criterion_score SET points = :p, state = :s "
+                "UPDATE criterion_score SET points = :p, routing = :r, state = :s "
                 "WHERE submission_id = :sid AND criterion_id = 'C2'",
-                p=6.0, s="provisional", sid="S-M1",
+                p=6.0, r="provisional", s="provisional_unreviewed", sid="S-M1",
             )
         open_grade = require(GRADE_MODULE, "open_grade", issue=ISSUE)
         svc = open_grade(store)

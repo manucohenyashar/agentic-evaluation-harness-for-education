@@ -172,12 +172,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R0- and R1-scored
     # results must not share an unannotated rollup. Keyed on the consumer that implements it.
-    "#101": (
-        "module",
-        GRADE_MODULE,
-        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation",),
-    ),
+    # (`#101` landed: `aeh.grade` ships `class_rollup` and `cohort_with_mixed_revisions`,
+    # so the entry is gone and the case runs unmarked.)
     # §6.11.17 names `M-STATS` as a second consumer for both `CT-CALIB-09` (it scopes its figures
     # across the revision boundary) and `CT-CALIB-16` (it presents the gate as non-inferiority).
     # Both were missing from the first draft, one of them under a docstring claiming otherwise.
@@ -209,7 +205,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 
     # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
     # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
-    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
+    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keyed on the
     # declared name; only `GradeComputation`'s field set is unpinned and assumed (`.total`,
     # declared in the test's docstring). Split from the `#101` module entry above, which
     # resolves against `aeh.grade`'s **first** commit and so names a test the module's
@@ -217,53 +213,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # marker is per-test with node-ID paths (the `#118`/`#138`/`#139` form): a
     # module-level marker on a two-blocker file would let an early unmark move the
     # still-red half inside `TEST_CMD`.
-    "#101 apply_policy": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        ("tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
-    ),
-    # --- TS-38 (#105), the M-GRADE policy, coverage and no-imputation cases -------------------
-    #
-    # Three keys, split the `#118`/`#91` way: the stories' cases unmark at different
-    # seams, and a single module key would hold every case outside the gate until the
-    # last of them landed (the resolved-early trap the `#101` module entry above already
-    # records for the calib rollup half).
-    #
-    # `apply_policy` is design-declared (§3.14's Interfaces block, CT-GRADE-02) and keys
-    # the rung-0 rule cases. The other three unit seams — `resolve_grade`,
-    # `coverage_for`, `boundary_risk` — are **invented** (the design declares their
-    # behaviour on the service, the rung-0 cases need pure entry points; the
-    # `verify_span`/`synthesize` precedent), and the boundaries/coverage and
-    # no-imputation files use them *together with* `apply_policy`, so the key is the
-    # `symbols` conjunction: a module that landed only `apply_policy` would otherwise
-    # resolve the key and name tests that then fail on `require()` — the trap this
-    # registry exists to avoid. `open_grade` is the invented rung-2 constructor (the
-    # `open_review` precedent) the four integration files resolve the service through;
-    # it appears in no Interfaces block, so none can exist before an implementation
-    # does. All names reconcile at #101's landing; the vocabulary lives in
-    # `tests/support/grade_vocabulary.py`.
-    "#105 apply_policy": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        ("tests/unit/grade/test_policy_rules.py",
-         "tests/property/test_tc_grade_21_apply_policy_invariants.py"),
-    ),
-    "#105 pure seams": (
-        "symbols",
-        (f"{GRADE_MODULE}:apply_policy,{GRADE_MODULE}:resolve_grade,"
-         f"{GRADE_MODULE}:coverage_for,{GRADE_MODULE}:boundary_risk"),
-        ("tests/unit/grade/test_boundaries_and_coverage.py",
-         "tests/unit/grade/test_no_imputation.py"),
-    ),
-    "#105 open_grade": (
-        "symbol",
-        f"{GRADE_MODULE}:open_grade",
-        ("tests/integration/grade/test_grade_delivery.py",
-         "tests/integration/grade/test_finalization.py",
-         "tests/integration/grade/test_recompute_on_correction.py",
-         "tests/integration/grade/test_incomplete_and_routing.py"),
-    ),
+    # (`#101 apply_policy` landed: `aeh.grade` ships `apply_policy` with `.total`, so the
+    # entry is gone and the policy half runs unmarked.)
     # --- TS-36 (#95), the M-AGG confidence-inversion, routing and escalation cases -----------
     #
     # Thirteen cases across seven files, written ahead of THREE stories — #91 lands the
@@ -302,20 +253,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # renderers #123's. The executable core of every case (rungs 0-3, unmarked)
     # is in the same files; only the limbs whose consumer does not exist yet sit
     # behind these rows.
+    # (The two M-GRADE rows went at #101's landing: `aeh.grade` ships `apply_policy`,
+    # so the c07 and c16 `[m_grade]` params run unmarked.)
     "#96 c05 the inversion's rung-4 consequence (M-REVIEW)": (
         "symbol",
         f"{REVIEW_MODULE}:build_review",
         (
             "tests/contract/agg/test_ct_agg_c05_confidence_inversion.py"
             "::test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_review_queue",
-        ),
-    ),
-    "#96 c07 M-GRADE presents ungradeable_by_panel": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
-            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_grade]",
         ),
     ),
     "#96 c07 M-REVIEW presents ungradeable_by_panel": (
@@ -348,14 +293,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
             "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
-        ),
-    ),
-    "#96 c16 M-GRADE renders no probability": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
-            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_grade]",
         ),
     ),
     "#96 c16 M-REVIEW renders no probability": (
@@ -1132,24 +1069,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #   of them must resolve before the test may rejoin TEST_CMD (C03 needs a console
     #   AND a grade service; C13 a console AND the narrative-quality story; C14 the
     #   rung-2 stats constructor AND the conform run).
+    # (The grade-only rows went at #101's landing: `aeh.grade` ships `open_grade`, so
+    # the C05/C08/C09 consumer legs run unmarked; C03 and C13 still wait on the
+    # console conjunction.)
     "#100 suppression consumers (C03)": (
         "symbols",
         f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
         (
             "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
             "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
-        ),
-    ),
-    "#100 grade consumers (C05/C08/C09)": (
-        "symbol",
-        f"{GRADE_MODULE}:open_grade",
-        (
-            "tests/contract/synth/test_ct_synth_c05_incomplete_vs_failed.py"
-            "::test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure",
-            "tests/contract/synth/test_ct_synth_c08_retry_budgets_and_grades.py"
-            "::test_tc_synth_c08_total_synthesis_failure_fails_no_grade",
-            "tests/contract/synth/test_ct_synth_c09_bounded_and_off_critical_path.py"
-            "::test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding",
         ),
     ),
     "#100 language consumers (C13)": (

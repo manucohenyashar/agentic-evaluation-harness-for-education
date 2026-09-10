@@ -41,8 +41,6 @@ from aeh.pkg import GateRule, GradePolicy, ScaleRule
 from tests.support.grade_vocabulary import GRADE_BLOCKER, score
 from tests.support.impl import GRADE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = GRADE_BLOCKER
 
 
