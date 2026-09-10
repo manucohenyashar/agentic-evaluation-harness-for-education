@@ -284,11 +284,85 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "score states" (`should_escalate` re-keyed at #91's landing as the states' gate)
     # and "policy purity" (the three-member conjunction) — all resolved when #93
     # shipped `should_escalate` beside the routing/state assignment. The round-trip
-    # entry (TC-AGG-15) went at #92's. The review-queue rank limb (TC-AGG-07) was
+# entry (TC-AGG-15) went at #92's. The review-queue rank limb (TC-AGG-07) was
     # the last: its blocker was M-REVIEW's, not M-AGG's, and it unmarked at #108's
     # landing (`aeh.review:rank_queue_items`, whose `items` form orders
     # holistic-first at equal expected value and expected-value dominant
     # otherwise — FR-AGG-06's tie-break, taken as given).
+    # --- TS-69 (#96), the M-AGG contract suite -------------------------------------------------
+    #
+    # Nine rows, keyed per owning story because the consumers land at different
+    # moments (#101 M-GRADE, #108 M-REVIEW, #123 M-CONSOLE) and a single #96 key
+    # would hold every writtenahead limb outside the gate until the last of them
+    # shipped. Each names the symbol the OWNING story introduces — the same rule
+    # the TS-73 entries below record — never a constructor: `build_review` and
+    # `rank_queue_items` are #108's, `apply_policy` #101's, and the two console
+    # renderers #123's. The executable core of every case (rungs 0-3, unmarked)
+    # is in the same files; only the limbs whose consumer does not exist yet sit
+    # behind these rows.
+    #
+    # **Three of the four M-REVIEW rows the #108 landing dropped** (unmarked
+    # 2026-09, that story): the c05 rung-4 consequence, and the c07 and c16
+    # M-REVIEW presentation limbs — keyed on `REVIEW_MODULE:build_review` /
+    # `rank_queue_items`, which #108 shipped; each runs unmarked inside the
+    # gate against the landed queue. The c05 unmark reconciled the
+    # written-ahead draft's missing bridge (the limb asked the store-form queue
+    # for a row it never persisted; it now performs the insert its own file's
+    # rung-3 limb declares, per the queue's §3.15 data flow). The c09 ranking
+    # limb STAYS marked — the queue cannot rank holistic-first at equal value
+    # through the store, because `scoring_model` lives only in the Tier P
+    # `criterion` table and cohort rows carry no package linkage — and its row
+    # below is re-keyed on the landed queue surface plus the declared planned
+    # owner of the scoring-model read; the gap is a finding on #108's PR.
+    "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
+        "symbols",
+        (f"{REVIEW_MODULE}:ReviewService.queue,"
+         f"{REVIEW_MODULE}:ReviewService.scoring_model_for"),
+        (
+            "tests/contract/agg/test_ct_agg_c09_no_runtime_special_casing.py"
+            "::test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue",
+        ),
+    ),
+    "#96 c07 M-GRADE presents ungradeable_by_panel": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        (
+            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
+            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_grade]",
+        ),
+    ),
+    "#96 c07 M-CONSOLE presents ungradeable_by_panel": (
+        "symbol",
+        f"{CONSOLE_MODULE}:build_console",
+        (
+            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
+            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_console]",
+        ),
+    ),
+    "#96 c14 the knobs' honesty text (M-CONSOLE)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_setup_step",
+        (
+            "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
+            "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
+        ),
+    ),
+    "#96 c16 M-GRADE renders no probability": (
+        "symbol",
+        f"{GRADE_MODULE}:apply_policy",
+        (
+            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
+            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_grade]",
+        ),
+    ),
+    "#96 c16 M-CONSOLE renders no probability": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_review_queue",
+        (
+            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
+            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_console]",
+        ),
+    ),
     # --- TS-08 (#14), the nine M-STORE integration cases -------------------------------------
     #
     # Four keys because TS-08's nine cases are implemented by four different stories — #10 opens
@@ -1040,6 +1114,70 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
             "::test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run",
+        ),
+    ),
+    # --- TS-70 (#100), the fourteen CT-SYNTH contract cases --------------------------------
+    #
+    # Four consumer sweeps are written ahead of their consumers, keyed on the symbols
+    # those tests actually call -- with the same two keying rules the registry's earlier
+    # entries settled:
+    #
+    # * a *member* of an unlanded story's class is gated through the story's **last**
+    #   module-level symbol, because `require()` reports the first blocker it resolves
+    #   and a key on the first would unmark a test whose member is still missing (the
+    #   `#118` defect, fixed in the TS-72 shape). So C13's stats half rides
+    #   `{STATS_MODULE}:promote` (#118's alone) exactly as the shipped `"#118 stats"`
+    #   entry does, and C14's conform half rides
+    #   `{CONFORM_MODULE}:detect_build_substitution` (#134's alone) exactly as the
+    #   shipped `"#134"` entry does -- `build_conformance_suite` is the constructor
+    #   *both* conform stories need, so keying on it would fire while #134 was
+    #   unstarted.
+    # * where one test needs two stories, the kind is `symbols` -- the conjunction: all
+    #   of them must resolve before the test may rejoin TEST_CMD (C03 needs a console
+    #   AND a grade service; C13 a console AND the narrative-quality story; C14 the
+    #   rung-2 stats constructor AND the conform run).
+    "#100 suppression consumers (C03)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
+        (
+            "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
+            "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
+        ),
+    ),
+    "#100 grade consumers (C05/C08/C09)": (
+        "symbol",
+        f"{GRADE_MODULE}:open_grade",
+        (
+            "tests/contract/synth/test_ct_synth_c05_incomplete_vs_failed.py"
+            "::test_tc_synth_c05_the_consumer_reads_incompleteness_not_failure",
+            "tests/contract/synth/test_ct_synth_c08_retry_budgets_and_grades.py"
+            "::test_tc_synth_c08_total_synthesis_failure_fails_no_grade",
+            "tests/contract/synth/test_ct_synth_c09_bounded_and_off_critical_path.py"
+            "::test_tc_synth_c09_grades_finalize_while_synthesis_is_outstanding",
+        ),
+    ),
+    "#100 language consumers (C13)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c13_paraphrase_boundary.py"
+            "::test_tc_synth_c13_consumers_present_narrative_as_pattern_checked_not_verified",
+        ),
+    ),
+    "#100 comparison consumers (C14)": (
+        "symbols",
+        f"{STATS_MODULE}:open_stats,{CONFORM_MODULE}:detect_build_substitution",
+        (
+            "tests/contract/synth/test_ct_synth_c14_non_reproducible_prose.py"
+            "::test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives",
+        ),
+    ),
+    "#100 promotion consumer (C10)": (
+        "symbol",
+        f"{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c10_tier_d_sentinel_scan.py"
+            "::test_tc_synth_c10_the_promotion_consumer_promotes_cited_spans_not_prose",
         ),
     ),
     # --- TS-72 (#114), the twenty CT-REVIEW clause cases -----------------------------------

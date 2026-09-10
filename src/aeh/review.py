@@ -42,13 +42,22 @@ and this implementation chose; all are reported on the PR):
   is identical at every budget and the build never bills its own seconds to
   the teacher (`CT-REVIEW-16`). The residual counts items, not entries — a
   group covers its members (`vocab.items_shown`).
-* *A flagged item is one still awaiting review.* The admitted population is
-  ``routing = 'queued'`` (`CT-AGG-06`), the judged mode (`FR-REVIEW-06`, enforced
-  from the evaluation-mode column per `CT-DET-06`), outside the never-rendered
-  origins (`FR-REVIEW-07`), and in the residual state ``provisional_unreviewed``
-  (`FR-REVIEW-08`) — an acted-on row leaves the count, which is what makes
-  ``flagged_total`` fall by exactly the reviewed item across sessions. In memory
-  the state is the service's own acted-set; at rung 2 it is the stored column.
+* *A flagged item is named by the teacher's routing, whatever its state.* The
+  admitted population is ``routing`` in ``queued``/``provisional`` — the
+  panel-routed work (`CT-AGG-06`) plus the provisional family, whose
+  single-judge fallback and breaker refusal route identically and are told
+  apart by state alone — in the judged mode (`FR-REVIEW-06`, enforced from the
+  evaluation-mode column per `CT-DET-06`), outside the never-rendered origins
+  (`FR-REVIEW-07`). The state column does not gate admission: `CT-AGG-07`
+  binds consumers to surface ``ungradeable_by_panel`` rather than treat it as
+  an ordinary provisional, and a state gate would hide exactly the row that
+  clause names — the c07 consumer differential forces the read (both its rows
+  route ``provisional``, one state apart, and the queue must present them
+  differently). Panel work the panel routed to the teacher arrives ``final``
+  (`CT-AGG-06` puts ``queued`` in the teacher's queue regardless). An acted-on
+  row leaves the count through the service's acted-set (in memory) or #109's
+  annotation (at rung 2), which is what makes ``flagged_total`` fall by
+  exactly the reviewed item across sessions.
 * *No-data override history reads as 0.5* (`AEH_REVIEW_OVERRIDE_RATE_NO_DATA`) —
   the same unmeasured-risk posture as `aeh.agg`'s escalation weight: a
   criterion nobody has reviewed is not a criterion nobody disagrees with
@@ -225,12 +234,15 @@ class StaleReviewItemError(ReviewError):
 class ReviewItem:
     """One flagged criterion as the queue presents it — §3.15's wire shape plus
     the identity fields a differential reads and the ranking surface (`FR-REVIEW-03`,
-    `FR-AGG-06`'s tie-break input)."""
+    `FR-AGG-06`'s tie-break input). ``state`` rides through because `CT-AGG-07`
+    binds consumers to surface ``ungradeable_by_panel`` rather than merge it
+    into the provisional presentation."""
 
     score_id: str
     criterion_id: str
     submission_id: str
     version: int
+    state: str | None
     proposed_band: str | None
     band_options: tuple[str, ...]
     proposed_points: float | None
@@ -337,18 +349,19 @@ class SupersededScore:
 
 # --- the admitted population and the ranking --------------------------------------------------------
 
-#: `CT-AGG-06`: the queue's population is ``routing = 'queued'``; ``triage`` is
-#: the operator's.
-_ADVISORY_ROUTING = "queued"
+#: The teacher's population, by routing (`CT-AGG-06`): ``queued`` — the
+#: panel-routed work — and ``provisional`` — the single-judge fallback and the
+#: breaker refusal, which route identically and are told apart by state alone
+#: (`CT-AGG-07`'s consumer differential). ``auto`` never arrives here
+#: (deterministic work grades itself), and ``triage`` is the operator's queue,
+#: not the teacher's.
+_ADVISORY_ROUTINGS = ("queued", "provisional")
 #: `FR-REVIEW-06` (`CT-DET-06`): the exclusion is enforced from this column.
 _JUDGED_MODE = "judged"
 #: `FR-REVIEW-07`'s never-rendered origins: quarantine, the blind sample, and
 #: the random arm — the arm is the only unbiased comparison RISK-07 has, and it
 #: spends compute, never teacher minutes (`CT-REVIEW-05`).
 _EXCLUDED_ORIGINS = frozenset({"quarantine", "blind_sample", "random_arm"})
-#: `FR-REVIEW-08`'s residual state: an item nobody looked at is provisional and
-#: unreviewed, and it says so. A row that leaves this state leaves the count.
-_RESIDUAL_STATE = "provisional_unreviewed"
 
 #: §3.15's ``act`` action domain. ``skip`` is an action but not a label type —
 #: a skipped item stays residual (`CT-REVIEW-06`).
@@ -380,15 +393,22 @@ def _group_key(row: Any) -> tuple:
 
 
 def _admitted(rows: Iterable[Any]) -> list[Any]:
-    """The rows the queue may render: the teacher's population, and only work
-    still awaiting it (`CT-REVIEW-05`, `FR-REVIEW-06/-07/-08`)."""
+    """The rows the queue may render: the teacher's population by routing and
+    mode (`CT-AGG-06`, `FR-REVIEW-06/-07`), minus the never-rendered origins
+    (`FR-REVIEW-07`), and only work still awaiting it (`CT-REVIEW-05`).
+
+    The state column rides through to the presentation rather than gating
+    admission: `CT-AGG-07` binds consumers to surface ``ungradeable_by_panel``
+    rather than treat it as an ordinary provisional, and a state gate would
+    hide exactly the row that clause names — both of the c07 differential's
+    rows route ``provisional``, one state apart, and the queue must present
+    them differently."""
     return [
         row
         for row in rows
-        if getattr(row, "routing", None) == _ADVISORY_ROUTING
+        if getattr(row, "routing", None) in _ADVISORY_ROUTINGS
         and getattr(row, "evaluation_mode", None) == _JUDGED_MODE
         and getattr(row, "origin", None) not in _EXCLUDED_ORIGINS
-        and getattr(row, "state", None) == _RESIDUAL_STATE
     ]
 
 
@@ -531,6 +551,7 @@ def _itemize(row: Any, knobs: Mapping[str, float]) -> ReviewItem:
         criterion_id=str(getattr(row, "criterion_id", "") or ""),
         submission_id=str(getattr(row, "submission_id", "") or ""),
         version=int(getattr(row, "version", 1) or 1),
+        state=getattr(row, "state", None),
         proposed_band=getattr(row, "proposed_band", None),
         band_options=tuple(getattr(row, "band_options", ()) or ()),
         proposed_points=_opt_float(getattr(row, "proposed_points", None)),
@@ -643,6 +664,10 @@ def rank_queue_items(items: Sequence[Any] | None = None, *, criteria: Any = None
     value dominant, holistic ranking above atomic at equal value, stable
     otherwise. The caller's ``expected_value`` is taken as given: this is the
     queue's ordering rule over items whose value some producer has stated.
+    Stored score rows (mappings, as ``SELECT *`` hands them back) are
+    normalized to items first, honest defaults for the columns the store does
+    not carry — the c16 consumer sweep's declared assumption, that the ranker
+    takes the stored rows and returns the ranked queue.
 
     ``criteria`` (the ``CT-STATS-09`` consumer limb): a mapping of criterion ids
     to override-history payloads — mirrors
@@ -656,11 +681,29 @@ def rank_queue_items(items: Sequence[Any] | None = None, *, criteria: Any = None
         raise ReviewError(
             "rank_queue_items takes the items to rank, or criteria= for the criteria form"
         )
+    knobs = _calibration_knobs()
+    normalized: list[Any] = []
+    for item in items:
+        if hasattr(item, "expected_value"):
+            normalized.append(item)
+            continue
+        if not hasattr(item, "keys"):
+            raise ReviewError(
+                "rank_queue_items takes review items carrying expected_value, or "
+                "stored score rows as mappings; "
+                f"{type(item).__name__} carries neither"
+            )
+        normalized.append(
+            _itemize(
+                _StoredScoreRow(_row_mapping(item), knobs["default_est_seconds"]),
+                knobs,
+            )
+        )
     return sorted(
-        items,
-        key=lambda item: (
-            -float(getattr(item, "expected_value")),
-            0 if getattr(item, "scoring_model", None) == "holistic" else 1,
+        normalized,
+        key=lambda ranked: (
+            -float(ranked.expected_value),
+            0 if getattr(ranked, "scoring_model", None) == "holistic" else 1,
         ),
     )
 
@@ -802,6 +845,25 @@ class ReviewService:
             build_seconds=perf_counter() - started,
             build_trace=tuple(trace),
         )
+
+    def queue(
+        self, run_id: str = "run-1", budget_minutes: int | None = None
+    ) -> tuple["ReviewItem | ReviewGroup", ...]:
+        """The built queue as its consumer reads it (`§3.15`): the shown
+        entries — signature groups collapsed, singletons per-item — in
+        presentation order.
+
+        ``build_review(store).queue()`` is the store form's declared read
+        (the c05/c07/c09 consumer limbs' shape): no run id and no budget
+        arrive, so the module's default budget governs. The residual header
+        and the per-stage trace stay on ``build_queue`` — this is the queue's
+        face, not its bookkeeping."""
+        budget = (
+            int(budget_minutes)
+            if budget_minutes is not None
+            else int(self._default_budget or REVIEW_DEFAULT_BUDGET_MINUTES)
+        )
+        return self.build_queue(run_id, budget).shown
 
     def rank_queue_items(self, run_id: str) -> tuple[ReviewItem, ...]:
         """The ranking, separable from the queue (`FR-REVIEW-03`): every admitted
@@ -975,7 +1037,7 @@ class ReviewService:
 
 
 def build_review(
-    scores: Sequence[Any] | None = None,
+    scores: Any = None,
     *,
     actor: str = "teacher",
     clock: Callable[[], str] | None = None,
@@ -986,11 +1048,28 @@ def build_review(
     review_whole_grade_n: int | None = None,
     review_default_budget_minutes: int | None = None,
 ) -> ReviewService:
-    """The in-memory rung-0/1 constructor: a review service over score rows.
+    """The rung-0/1 constructor: a review service over score rows — or, in the
+    store form, over a whole store.
 
     The four §3.15 knobs arrive as keywords (``review_blind_n=20``), as
     ``config=`` attributes named after the constants, or not at all — the
-    module constants are the declared defaults (`CT-REVIEW-17`)."""
+    module constants are the declared defaults (`CT-REVIEW-17`). The store
+    form (`build_review(store)`, the c05/c07/c09 consumer limbs' declared
+    shape) reads every cohort the store carries and admits the same
+    population `open_review` does; the queue is then the service's read path
+    (``.queue()``)."""
+    if scores is not None and hasattr(scores, "cohort"):
+        return _service_from_store(
+            scores,
+            actor=actor,
+            clock=clock,
+            catalog=catalog,
+            config=config,
+            review_blind_reserve_minutes=review_blind_reserve_minutes,
+            review_blind_n=review_blind_n,
+            review_whole_grade_n=review_whole_grade_n,
+            review_default_budget_minutes=review_default_budget_minutes,
+        )
     return ReviewService(
         scores or (),
         actor=actor,
@@ -1012,6 +1091,84 @@ def build_review(
             REVIEW_DEFAULT_BUDGET_MINUTES,
         ),
     )
+
+
+def _store_cohort_ids(store: Any) -> list[str]:
+    """The cohort ids a store carries, in stable id order — the same discovery
+    the store's own surfaces use (`cohorts/<cohort_id>.sqlite`, one file per
+    administration; `aeh.det` and `aeh.orch` walk the identical layout)."""
+    return sorted(
+        path.stem for path in Path(store.data_dir, "cohorts").glob("*.sqlite")
+    )
+
+
+def _service_from_store(
+    store: Any,
+    *,
+    cohort_ids: Sequence[str] | None = None,
+    actor: str = "teacher",
+    clock: Callable[[], str] | None = None,
+    catalog: Any = None,
+    config: Any = None,
+    review_blind_reserve_minutes: int | None = None,
+    review_blind_n: int | None = None,
+    review_whole_grade_n: int | None = None,
+    review_default_budget_minutes: int | None = None,
+) -> ReviewService:
+    """The rung-2 constructor's body, shared by ``open_review`` (one named
+    cohort) and ``build_review`` (a whole store — every cohort it carries).
+
+    Reads the cohort's stored ``criterion_score`` rows through ``aeh.store`` —
+    the deterministic store, no egress — and maps them onto the score-row
+    vocabulary with honest defaults for the columns the store does not carry.
+    The query takes both of the teacher's routings (`CT-AGG-06`: ``queued``;
+    the provisional family whose fallback and breaker rows `CT-AGG-07` binds
+    this module to surface); the state column rides through to the item, and
+    the admission predicate — the same one the in-memory service runs — does
+    the excluding."""
+    # The store's tier migration chains are concatenated at import time by the
+    # modules that own the schema they add (CLAUDE.md): the cohort handle this
+    # opens must not be the first open in a process that skipped the imports.
+    import aeh.agg  # noqa: F401
+    import aeh.det  # noqa: F401
+    import aeh.extract  # noqa: F401
+    import aeh.ingest  # noqa: F401
+    import aeh.integ  # noqa: F401
+    import aeh.judge  # noqa: F401
+    import aeh.orch  # noqa: F401
+    import aeh.pkg  # noqa: F401
+    import aeh.synth  # noqa: F401
+
+    from aeh.store import Statement
+
+    if cohort_ids is None:
+        cohort_ids = _store_cohort_ids(store)
+    rows: list[Any] = []
+    for cohort_id in cohort_ids:
+        rows.extend(
+            _row_mapping(row)
+            for row in store.cohort(cohort_id).query(
+                Statement(
+                    "SELECT * FROM criterion_score "
+                    "WHERE routing IN ('queued', 'provisional')"
+                )
+            )
+        )
+    knobs = _calibration_knobs()
+    mapped = [
+        _StoredScoreRow(mapping, knobs["default_est_seconds"]) for mapping in rows
+    ]
+    return build_review(
+        mapped,
+        actor=actor,
+        clock=clock,
+        catalog=catalog,
+        config=config,
+        review_blind_reserve_minutes=review_blind_reserve_minutes,
+        review_blind_n=review_blind_n,
+        review_whole_grade_n=review_whole_grade_n,
+        review_default_budget_minutes=review_default_budget_minutes,
+    )._with_store(store)
 
 
 class _StoredScoreRow:
@@ -1078,42 +1235,22 @@ def open_review(
     in-memory service does. Until #110 lands the label store, actions write
     in-memory labels; the queue and the ranking are complete.
     """
-    # The store's tier migration chains are concatenated at import time by the
-    # modules that own the schema they add (CLAUDE.md): before the first open,
-    # import all nine contributors or the open refuses with
-    # IncompleteMigrationChainError.
-    import aeh.agg  # noqa: F401
-    import aeh.det  # noqa: F401
-    import aeh.extract  # noqa: F401
-    import aeh.ingest  # noqa: F401
-    import aeh.integ  # noqa: F401
-    import aeh.judge  # noqa: F401
-    import aeh.orch  # noqa: F401
-    import aeh.pkg  # noqa: F401
-    import aeh.synth  # noqa: F401
-
-    from aeh.store import Statement, open_store as _open_store
+    from aeh.store import open_store as _open_store
 
     store = _open_store(Path(data_dir))
     try:
-        rows = store.cohort(run_id).query(
-            Statement("SELECT * FROM criterion_score WHERE routing = 'queued'")
+        return _service_from_store(
+            store,
+            cohort_ids=[run_id],
+            actor=actor,
+            clock=clock,
+            catalog=catalog,
+            config=config,
+            review_blind_reserve_minutes=review_blind_reserve_minutes,
+            review_blind_n=review_blind_n,
+            review_whole_grade_n=review_whole_grade_n,
+            review_default_budget_minutes=review_default_budget_minutes,
         )
     except Exception:
         store.close()
         raise
-    knobs = _calibration_knobs()
-    mapped = [
-        _StoredScoreRow(_row_mapping(row), knobs["default_est_seconds"]) for row in rows
-    ]
-    return build_review(
-        mapped,
-        actor=actor,
-        clock=clock,
-        catalog=catalog,
-        config=config,
-        review_blind_reserve_minutes=review_blind_reserve_minutes,
-        review_blind_n=review_blind_n,
-        review_whole_grade_n=review_whole_grade_n,
-        review_default_budget_minutes=review_default_budget_minutes,
-    )._with_store(store)

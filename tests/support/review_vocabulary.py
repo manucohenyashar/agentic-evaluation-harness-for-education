@@ -33,6 +33,19 @@ one place, so an invented name is visibly invented:
     ReviewGroup.members                               so "one label per member" is countable
     ReviewItem.score_id / .criterion_id /
         .submission_id / .version                     identity, for differentials and staleness
+    ReviewService.queue                               the store-form read: the shown entries
+                                                      flattened, in presentation order —
+                                                      `build_review(store).queue()` is the
+                                                      c05/c07/c09 consumer limbs' declared shape
+    ReviewService.scoring_model_for(criterion_id)     the planned owner of the scoring-model
+                                                      read for the queue, re-keyed at #108's
+                                                      landing (c09's ranking limb): the model
+                                                      lives only in Tier P's `criterion` table
+                                                      and cohort rows carry no package linkage,
+                                                      so no landed surface can rank holistic-
+                                                      first at equal value through the store.
+                                                      INVENTED and unscheduled — no open issue
+                                                      owns it; reported as a finding on #108's PR
 
 **#109 — S-REVIEW-02, the prohibitions and the residual**
 
