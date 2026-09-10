@@ -222,6 +222,22 @@ def test_tc_grade_22_a_fully_scored_grade_never_mints_incomplete(tmp_data_dir):
             "coverage record (FR-GRADE-04), never folded into `incomplete`"
         )
 
+        # Cell: provisional -> provisional (unchanged) — the hold cell. An unchanged
+        # recompute over the issued grade writes nothing: same revision, same row
+        # count, state still provisional. (TC-GRADE-18's idempotence limb pins the
+        # same no-write from the row-count side; here the matrix cell is the state's.)
+        svc.compute_all(run_id)
+        held, rows_after_hold = _current(cohort, "S-T2")
+        assert held["state"] == "provisional" and held["revision"] == issued["revision"], (
+            f"an unchanged recompute left state={held['state']!r} revision="
+            f"{held['revision']} — the provisional hold cell: an unchanged pass "
+            "touches nothing, no mint and no settlement (TC-GRADE-18/NFR-GRADE-05)"
+        )
+        assert rows_after_hold == rows_at_issue, (
+            f"{rows_after_hold - rows_at_issue} new rows from an unchanged recompute — "
+            "the provisional hold cell writes nothing (NFR-GRADE-05)"
+        )
+
         # Pressure: the window lapses with nothing changed. The grade settles to
         # `final` IN PLACE — the same revision, no mint — and never dips through
         # `incomplete` on the way.

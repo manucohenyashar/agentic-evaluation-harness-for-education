@@ -30,8 +30,9 @@ separation STRUCTURALLY, so a later merge FAILS rather than quietly reading wron
    `all_results`/`class_total` alias, and the judged block's own fields are disjoint
    from the deterministic block's — a merge would have to rename a field, which is the
    failure the enumeration catches;
-3. the judged block's figures match the hand count (the two judged submissions' means),
-   so the block is not merely present but is the judged one.
+3. the judged block's submission count matches the hand count (all three submissions
+   carry the judged criterion, so the judged population is the whole run), so the block
+   is not merely present but is the judged one.
 
 **Disclosed stand-ins** (`grade_vocabulary.py`, header): `write_criterion_scores`
 standing in for `M-AGG`; the deterministic criterion's rows are written by the same

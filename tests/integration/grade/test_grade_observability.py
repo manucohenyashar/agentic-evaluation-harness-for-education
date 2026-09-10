@@ -140,8 +140,9 @@ def test_tc_grade_24_the_grading_stage_emits_every_signal_and_fires_the_alert(
     tmp_data_dir,
 ):
     """`TC-GRADE-24` — the signal set is emitted (every CT-GRADE-18 concept present in
-    the durable metrics, reconciled to the ledger where the fixture can count it), and
-    the outstanding-`incomplete` alert fires for the two grades past the window."""
+    the durable metrics by name-token; the incomplete figure reconciled to the ledger's
+    hand count, the value half of the "exact signal" oracle), and the
+    outstanding-`incomplete` alert fires for the two grades past the window."""
     record_grade_signals = require(GRADE_MODULE, "record_grade_signals", issue=ISSUE)
     evaluate_grade_alerts = require(GRADE_MODULE, "evaluate_grade_alerts", issue=ISSUE)
     store = open_store(tmp_data_dir)
@@ -175,6 +176,27 @@ def test_tc_grade_24_the_grading_stage_emits_every_signal_and_fires_the_alert(
         ), (
             f"run_metrics carries no incomplete count — the grades-by-state signal "
             f"must break the states out (present: {sorted(metrics)})"
+        )
+
+        # The value half of the "exact signal" oracle: the fixture hand-counts exactly
+        # two incomplete grades, so the incomplete-named signal must CARRY that count,
+        # not merely exist — a signal whose figure disagrees with the ledger is the
+        # silent-failure shape. Token-selected, not name-pinned: among the metrics
+        # whose name names `incomplete`, at least one reads the hand count.
+        def _numeric(value):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        incomplete_values = [
+            value for name, value in metrics.items() if "incomplete" in name.lower()
+        ]
+        assert any(_numeric(value) == 2.0 for value in incomplete_values), (
+            f"no incomplete-named metric carries the ledger's hand count 2 "
+            f"(incomplete-named values: {incomplete_values!r}) — the grades-by-state "
+            "signal is reconciled to the ledger, not merely emitted (TC-GRADE-24's "
+            "'exact signal' oracle; the fixture's two incomplete grades are counted)"
         )
 
         # The alert: two incomplete grades outstanding past the window fire one.
