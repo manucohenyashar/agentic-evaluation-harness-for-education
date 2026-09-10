@@ -16,12 +16,15 @@ Disposition, disclosed:
   `"#96 c09 holistic ranks higher at rung 3 (M-REVIEW)"`;
 - **the artifact assertion on consumer branches** — this file's executable core. A
   run-time branch on the scoring model is a second source of truth that drifts from
-  the package (RISK-27), so the scan asserts the reading is structurally impossible:
-  `scoring_model` is referenced by NO module outside the sanctioned four — `aeh.agg`
-  (the policy the distinction is), `aeh.pkg`/`aeh.setup` (the package side that
-  classifies and stores it, `CT-SETUP-05`'s home), and `aeh.orch`, whose single
-  reference is the declared `FR-SETUP-08` base-depth map. A consumer that cannot read
-  the attribute cannot branch on it.
+  the package (RISK-27), so the scan asserts exactly that: outside the sanctioned
+  readers, no module references `scoring_model` at all — `aeh.agg` (the policy the
+  distinction is), `aeh.pkg`/`aeh.setup` (the package side that classifies and stores
+  it, `CT-SETUP-05`'s home), `aeh.orch`, whose single reference is the declared
+  `FR-SETUP-08` base-depth map, and `aeh.review`, whose references are a closed
+  declared set — the `FR-AGG-06` tie-break at both of the ranking's shapes plus the
+  wire field that carries the row's package-declared value (`CT-AGG-09`'s own ranking
+  mandate; reconciled at #108's landing, when the queue first read the model — the
+  ban is on deriving a second distinction, not on the declared read).
 
 Isolation: rung 0 for the scan; rung 3 (real driven run) for the ranking limb; the
 socket guard is autouse.
@@ -52,12 +55,30 @@ from tests.support.orch_run import ORCH_COHORT_ID
 pytestmark = [pytest.mark.contract]
 
 #: The sanctioned readers of the scoring model: the policy itself, and the package
-#: side the distinction comes from (`CT-SETUP-05`).
+#: side the distinction comes from (`CT-SETUP-05`). `aeh.review` and `aeh.orch` are
+#: sanctioned separately, each as a closed set of declared sites (below).
 _PACKAGE_SIDE = ("agg", "pkg", "setup")
 #: `M-ORCH`'s single sanctioned reading: `FR-SETUP-08`'s declared base-depth map
 #: (`SCORING_MODEL_BASE_DEPTH` — the sanctioned scoring_model branch outside
 #: agg/pkg/setup, declared by the design, not a special case).
 _ORCH_MAP_NAME = "SCORING_MODEL_BASE_DEPTH"
+#: The review queue's sanctioned scoring-model reads, each its clause: the
+#: tie-break `FR-AGG-06` mandates (holistic first at equal expected value) at
+#: both of the ranking's declared shapes, the wire field that carries the row's
+#: package-declared value, the pass-through that reads it, the honest default
+#: for the stored rows the store cannot enrich, and the docstring that names
+#: the contract. Reconciled at #108's landing — the queue first read the model
+#: there, and the ranking differential is `CT-AGG-09`'s own mandate. Anything
+#: else — a per-model threshold, a second mapping, a multiplier — is the run-time
+#: special case the clause bans, and lands here as an unsanctioned site.
+_REVIEW_SANCTIONED = (
+    '0 if getattr(row, "scoring_model", None) == "holistic" else 1',
+    '0 if getattr(ranked, "scoring_model", None) == "holistic" else 1',
+    'scoring_model: str | None',
+    'scoring_model=getattr(row, "scoring_model", None),',
+    'self.scoring_model = "atomic"',
+    '``expected_value`` and ``scoring_model``',
+)
 
 _COHORT = ORCH_COHORT_ID
 _SUBMISSION = "SYN-C09"
@@ -77,11 +98,13 @@ def _scoring_model_sites(text: str) -> list[str]:
 
 def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
     """`TC-AGG-C09` (`CT-AGG-09`, `NFR-AGG-02`'s single-source reading, artifact
-    assertion, P0) — outside the sanctioned four, no shipped module references
-    `scoring_model` at all, and `M-ORCH`'s single reference is the declared
-    base-depth map. The scanner is validated against a positive control first: a
-    synthetic module text that branches on the model must be flagged, or the
-    all-clear below proves nothing."""
+    assertion, P0) — outside the sanctioned readers, no shipped module references
+    `scoring_model` at all; `M-ORCH`'s single reference is the declared
+    base-depth map, and `aeh.review`'s references are the closed declared set —
+    the `FR-AGG-06` tie-break at both of the ranking's shapes, the wire field,
+    the pass-through, and the store default. The scanner is validated against a
+    positive control first: a synthetic module text that branches on the model
+    must be flagged, or the all-clear below proves nothing."""
     src = Path(aeh.__file__).parent
 
     # Positive control: the detector catches the defect it exists to catch.
@@ -91,6 +114,7 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
 
     offenders: dict[str, list[str]] = {}
     orch_sites: list[str] = []
+    review_sites: list[str] = []
     for path in sorted(src.glob("*.py")):
         name = path.stem
         if name in _PACKAGE_SIDE:
@@ -98,6 +122,9 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
         sites = _scoring_model_sites(path.read_text(encoding="utf-8"))
         if name == "orch":
             orch_sites = sites
+            continue
+        if name == "review":
+            review_sites = sites
             continue
         if sites:
             offenders[name] = sites
@@ -113,6 +140,20 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
         f"orch reads the scoring model {orch_sites} — its one sanctioned reading "
         f"is the declared FR-SETUP-08 base-depth map (`{_ORCH_MAP_NAME}`); any "
         "other reading is a special case drifting from the package"
+    )
+    # The queue's sites are the closed declared set (see `_REVIEW_SANCTIONED`):
+    # a new reference — a per-model threshold, a second mapping, a multiplier —
+    # lands here and fails.
+    unsanctioned = [
+        site for site in review_sites
+        if not any(shape in site for shape in _REVIEW_SANCTIONED)
+    ]
+    assert unsanctioned == [], (
+        f"aeh.review reads the scoring model outside its declared sites "
+        f"{unsanctioned!r} — the queue's sanctioned reading is the tie-break "
+        "`FR-AGG-06` mandates (holistic first at equal expected value) and the "
+        "wire field that carries the package-declared value; anything else is "
+        "a run-time special case drifting from the package (CT-AGG-09, RISK-27)"
     )
 
 

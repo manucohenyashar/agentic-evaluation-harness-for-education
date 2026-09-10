@@ -16,8 +16,10 @@ Two limbs:
   lives there — the clause binds the consumers. The permitted uses stay permitted:
   the shipped routing thresholds ON confidence, and that use is asserted live so
   the scan cannot drift into banning use altogether;
-- **the presentation sweep** (rung 3, writtenahead per consumer — M-REVIEW #108,
-  M-GRADE #101, M-CONSOLE #123): each consumer's presentation of a low-confidence
+- **the presentation sweep** (rung 3, writtenahead on M-CONSOLE #123 only —
+  M-GRADE #101's `apply_policy` landed and its param runs unmarked, and
+  M-REVIEW #108's queue landed and its param runs since then too): each
+  consumer's presentation of a low-confidence
   queued row carries no percentage framing, no "probability", no calibration
   language — "0.62" as a bare figure is the permitted thresholding input; "62%
   sure" is the violation, and it is violated in the UI layer and nowhere else,
@@ -181,12 +183,12 @@ def _queued_low_confidence_row(aggregate):
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        # Per-param keying, the sweep's own per-row convention: each consumer is
-        # unlanded, so each param is red by design until its story lands.
-        pytest.param("M-GRADE", GRADE_MODULE, "apply_policy", "#101",
-                     marks=pytest.mark.writtenahead),
-        pytest.param("M-REVIEW", REVIEW_MODULE, "rank_queue_items", "#108",
-                     marks=pytest.mark.writtenahead),
+        # Per-param keying, the sweep's own per-row convention: M-GRADE's param
+        # runs — #101 landed `apply_policy` — and M-REVIEW's runs since #108
+        # landed the queue; M-CONSOLE is unlanded and stays red by design until
+        # its story lands.
+        pytest.param("M-GRADE", GRADE_MODULE, "apply_policy", "#101"),
+        pytest.param("M-REVIEW", REVIEW_MODULE, "rank_queue_items", "#108"),
         pytest.param("M-CONSOLE", CONSOLE_MODULE, "render_review_queue", "#123",
                      marks=pytest.mark.writtenahead),
     ],

@@ -1,0 +1,141 @@
+{
+  "corpus": "F-SCAN",
+  "version": "1",
+  "seed": 20260104,
+  "generator": "harness.corpora.scan:scan_set",
+  "description": "Synthetic rendered scans (FR-CONFORM-03, #133): scanned handwriting spanning legible to marginal, plus one mixed-format paper whose first page is typed and whose remaining pages are handwritten. The medium is a bilevel image raster — the work exists only as pixels; the handwriting is synthetic by declaration, and F-HAND remains the only consented real corpus.",
+  "set_content_hash": "sha256:89e5cdb518a307465c61fb6d462f546684264c1fa99f01c7db6336b11353acba",
+  "fixture_set_id": "F-SCAN@1+sha256:89e5cdb518a307465c61fb6d462f546684264c1fa99f01c7db6336b11353acba",
+  "package_id": "PKG-REF",
+  "package_version": "1",
+  "consent_class": "synthetic",
+  "media_kinds": [
+    "scanned_handwriting",
+    "mixed_format"
+  ],
+  "legibilities": [
+    "legible",
+    "marginal"
+  ],
+  "rendering": "synthetic_scan",
+  "image": {
+    "width_px": 540,
+    "height_px": 640,
+    "color_space": "DeviceGray",
+    "bits_per_component": 1
+  },
+  "submissions": [
+    {
+      "id": "SC-01",
+      "path": "submissions/SC-01.pdf",
+      "content_hash": "sha256:5e027b78ef2bf604b3ca0aacae3402de99301ecb781b94d86dfa07f54b4b1147",
+      "student_ref": "H-0001",
+      "consent_class": "synthetic",
+      "media_kind": "scanned_handwriting",
+      "legibility": "legible",
+      "pages": 4,
+      "reference_bands": {
+        "C-01": "secure",
+        "C-02": "secure",
+        "C-03": "secure",
+        "C-04": "secure",
+        "C-05": "secure",
+        "C-06": "secure",
+        "C-07": "secure",
+        "C-08": "secure",
+        "C-09": "secure",
+        "C-10": "secure",
+        "C-11": "developing",
+        "C-12": "developing",
+        "C-13": "met",
+        "C-14": "met",
+        "C-15": "met"
+      },
+      "reference_points": 37.0
+    },
+    {
+      "id": "SC-02",
+      "path": "submissions/SC-02.pdf",
+      "content_hash": "sha256:005fcd1dc466d93fe5b891c775772ded4c9a7a25f2421cbd74eafce710a8b199",
+      "student_ref": "H-0002",
+      "consent_class": "synthetic",
+      "media_kind": "scanned_handwriting",
+      "legibility": "marginal",
+      "pages": 4,
+      "reference_bands": {
+        "C-01": "developing",
+        "C-02": "emerging",
+        "C-03": "developing",
+        "C-04": "developing",
+        "C-05": "secure",
+        "C-06": "developing",
+        "C-07": "secure",
+        "C-08": "emerging",
+        "C-09": "developing",
+        "C-10": "emerging",
+        "C-11": "developing",
+        "C-12": "developing",
+        "C-13": "not_met",
+        "C-14": "not_met",
+        "C-15": "met"
+      },
+      "reference_points": 24.0
+    },
+    {
+      "id": "SC-03",
+      "path": "submissions/SC-03.pdf",
+      "content_hash": "sha256:ad1ddb9be5d9c2773c4fa94fbd85d39c7007d4b0cb6904ac7834ebfc0a2b994a",
+      "student_ref": "H-0003",
+      "consent_class": "synthetic",
+      "media_kind": "scanned_handwriting",
+      "legibility": "marginal",
+      "pages": 4,
+      "reference_bands": {
+        "C-01": "absent",
+        "C-02": "absent",
+        "C-03": "absent",
+        "C-04": "absent",
+        "C-05": "emerging",
+        "C-06": "absent",
+        "C-07": "emerging",
+        "C-08": "emerging",
+        "C-09": "absent",
+        "C-10": "absent",
+        "C-11": "absent",
+        "C-12": "absent",
+        "C-13": "not_met",
+        "C-14": "not_met",
+        "C-15": "not_met"
+      },
+      "reference_points": 3.0
+    },
+    {
+      "id": "SC-04",
+      "path": "submissions/SC-04.pdf",
+      "content_hash": "sha256:9c281ec3ad048daa76ef3ab1fd0eee2f1bbc50980e12b7ca38cc2308350163f9",
+      "student_ref": "H-0004",
+      "consent_class": "synthetic",
+      "media_kind": "mixed_format",
+      "legibility": "legible",
+      "pages": 4,
+      "reference_bands": {
+        "C-01": "emerging",
+        "C-02": "developing",
+        "C-03": "developing",
+        "C-04": "secure",
+        "C-05": "developing",
+        "C-06": "emerging",
+        "C-07": "secure",
+        "C-08": "secure",
+        "C-09": "secure",
+        "C-10": "emerging",
+        "C-11": "secure",
+        "C-12": "emerging",
+        "C-13": "met",
+        "C-14": "met",
+        "C-15": "not_met"
+      },
+      "reference_points": 27.0
+    }
+  ]
+}

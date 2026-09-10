@@ -96,6 +96,81 @@ def build_pdf(objects: Sequence[PdfObject], trailer_extra: bytes = b"",
     return bytes(out)
 
 
+def image_object(number: int, width: int, height: int, data: bytes) -> PdfObject:
+    """A DeviceGray, 1-bit-per-pixel image XObject — a bilevel scan of one page.
+
+    `F-SCAN` (#133) needs pages whose student work exists only as pixels: the medium the
+    transcriber reads is an image raster, with no text layer to shortcut through. Bilevel is
+    the honest scan shape — a photocopied exam is bilevel — and 1 bit per pixel keeps a
+    612×792 page at ~65 KB, small enough that the corpus stays a fixture rather than a
+    download. The samples are 0 for ink and 1 for paper, which `/Decode [0 1]` maps to
+    black and white with no ambiguity for the renderer.
+
+    Like everything in this writer the stream carries no filter: the pixel payload is
+    emitted verbatim, so the bytes are a function of the painted buffer and of nothing
+    else — no compression library's version can move a declared digest.
+    """
+    dictionary = (
+        b"<< /Type /XObject /Subtype /Image"
+        b" /Width " + str(width).encode("ascii") + b" /Height " + str(height).encode("ascii")
+        + b" /ColorSpace /DeviceGray /BitsPerComponent 1 /Decode [0 1] >>"
+    )
+    return stream_object(number, dictionary, data)
+
+
+def typed_document(pages: Sequence[str], *, font_size: int = 10,
+                   leading: int = 14) -> bytes:
+    """A multi-page PDF of plainly typed text — the clean, typed-paper shape.
+
+    `F-SCAN`'s mixed-format member is one typed page plus handwritten ones, and the
+    conformance suite's text-path fixtures (`F-FROZEN`, `F-ADV-INJ`) enter the ingest
+    pipeline as PDFs the same way a typed submission does when it is printed to PDF. Both
+    shapes are this function: one text-drawing content stream per page, uncompressed, so
+    the page's declared consent line is present in the file's raw bytes exactly as it is
+    for every other committed corpus.
+
+    The streams stay uncompressed for the same reason the image payloads do: the bytes
+    must be reproducible from this module alone, and a text layer a parser can read is
+    precisely what makes these pages the *typed* half of a mixed-format differential.
+    """
+    if not pages:
+        raise ValueError("a document needs at least one page")
+    content_objects: list[PdfObject] = []
+    page_objects: list[PdfObject] = []
+    first_content = 4
+    for index, page_text in enumerate(pages):
+        content_number = first_content + index * 2
+        page_number = content_number + 1
+        body = bytearray()
+        y = 752
+        for line in page_text.splitlines():
+            escaped = line.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
+            body += b"BT /F1 " + str(font_size).encode("ascii") + b" Tf 36 "
+            body += str(y).encode("ascii") + b" Td (" + escaped.encode("ascii") + b") Tj ET\n"
+            y -= leading
+        content_objects.append(stream_object(content_number, b"<< >>", bytes(body)))
+        page_objects.append(PdfObject(
+            page_number,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents "
+            + str(content_number).encode("ascii") + b" 0 R"
+            b" /Resources << /Font << /F1 3 0 R >> >> >>",
+        ))
+    # One indirect reference per page, in printed order: `/Kids` decides the document's
+    # page order, so it is the printed order and nothing else.
+    kids = b"[" + b" ".join(
+        str(first_content + i * 2 + 1).encode("ascii") + b" 0 R" for i in range(len(pages))
+    ) + b"]"
+    objects = [
+        PdfObject(1, b"<< /Type /Catalog /Pages 2 0 R >>"),
+        PdfObject(2, b"<< /Type /Pages /Kids " + kids + b" /Count "
+                  + str(len(pages)).encode("ascii") + b" >>"),
+        PdfObject(3, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+        *content_objects,
+        *page_objects,
+    ]
+    return build_pdf(objects)
+
+
 def simple_page_document(extra_catalog: bytes = b"", extra_page: bytes = b"",
                          extra_objects: Iterable[PdfObject] = (),
                          page_text: str = "Question 1") -> bytes:

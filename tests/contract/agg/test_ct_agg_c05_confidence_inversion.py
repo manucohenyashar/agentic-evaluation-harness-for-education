@@ -304,16 +304,22 @@ def test_tc_agg_c05_the_inversion_through_a_real_store_stays_queued(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_review_queue(
     tmp_data_dir, make_fixture_provider
 ):
-    """`TC-AGG-C05` step 5, rung 4 (`CT-AGG-05`, contract / rung 4, writtenahead
-    on `aeh.review:build_review`, #108) — the consequence end to end: a
+    """`TC-AGG-C05` step 5, rung 4 (`CT-AGG-05`, contract / rung 4, landed with
+    `aeh.review:build_review` — the queue reads the teacher's routings, #108) —
+    the consequence end to end: a
     hallucinated span with a unanimous panel reaches the REVIEW QUEUE rather than
     the student's transcript. The aggregate half is executable above at rung 3;
     this limb drives the consumer the clause names — M-REVIEW's queue holds the
-    item, keyed by the (submission, criterion) pair the score row records."""
+    item, keyed by the (submission, criterion) pair the score row records. The
+    written-ahead draft bridged nothing between its aggregate and the store
+    (reconciled at the unmark): the queue is built from `criterion_score` rows —
+    design §3.15's data flow, and the wording this file's own rung-3 limb puts
+    in its storage assertion ("which reads the stored rows") — so the limb now
+    persists the aggregated row through the same insert the rung-3 limb uses
+    before asking the store-form queue for the pair."""
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     aggregate = require(AGG_MODULE, "aggregate", issue="#92")
 
@@ -335,6 +341,24 @@ def test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_revie
         assert score.routing == "queued", (
             "the unanimous adverse panel did not route to the teacher's queue"
         )
+
+        # The persistence step the queue's data flow reads (reconciled at the
+        # unmark — the draft asked the store-form queue for a row it never
+        # wrote): the aggregate lands as a `criterion_score` row, the same
+        # insert the rung-3 limb above performs.
+        cohort = store.cohort(_COHORT)
+        with cohort.transaction() as tx:
+            tx.execute(
+                _INSERT,
+                sid=_SUBMISSION, cid=_CRITERION, band=score.band, points=score.points,
+                judge_count=score.judge_count, agreement=score.agreement,
+                state=score.state, routing=score.routing, confidence=score.confidence,
+                confidence_base=score.confidence_base,
+                spans_verified=score.spans_verified,
+                evidence_present=score.evidence_present,
+                sufficiency_flag=score.sufficiency_flag,
+                ocr_overlap_risk=score.ocr_overlap_risk,
+            )
 
         review = build_review(store)
         queue = review.queue()

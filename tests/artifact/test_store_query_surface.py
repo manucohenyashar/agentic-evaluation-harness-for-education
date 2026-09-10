@@ -484,11 +484,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # in store.py, and again with #97's and #78's contributions named in the refusal's
     # text, and again with #62's pin bump (Cohort 14→15 for the report-index
     # migration) adding a line above each; the sites are the same statements as before.
-    # (#92's re-pin moved them once; #73's Durable pin and refusal text moved them
-    # again, and #80's pin-bump history lines added four more above them — re-read
-    # from the walker on the merged tree, never hand-unioned.)
-    "aeh.store:1821",
-    "aeh.store:2603",
+    # (#92's re-pin: the 15→16 pin bump and the refusal text's eighth contributor added
+    # three lines above each site — re-read from the walker, never hand-unioned.)
+    # (#101's re-pin: the 17→18 pin bump after #80 took Cohort 17 — the refusal text's
+    # ninth and tenth contributors (`aeh.grade`, then `aeh.integ` at the merge) and the
+    # class docstring's contributor list moved each site; re-read from the walker,
+    # never hand-unioned.)
+    "aeh.store:1823",
+    "aeh.store:2606",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -498,6 +501,45 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # reviewer's pattern-tightening disclosures expanding the comments above it;
     # same statement, re-pinned from the walker each time.)
     "aeh.synth:778",
+    # The grade sites are #101's line numbers (the module's own write surface, every
+    # one from GRADE_STATEMENTS or a raw fixture DDL string, keyword-parameterized):
+    # the migration's rebuild statements (the v18 create/copy/drop/rename plus the
+    # partial unique index), the batch pass's demote/insert/settle/queue writes and
+    # the cohort-fixture cohort+submission inserts in `cohort_with_mixed_revisions`,
+    # and the single-submission path's demote/insert/settle/queue writes. The
+    # module's reads go through `store.cohort(...).query()` / the package handle's
+    # `query()`, which are not census sites (FR-STORE-08). (Moved once as a block,
+    # +21: the `panel_refused` presentation field the CT-AGG-07 consumer
+    # differential demanded — `GradeComputation`'s disclosure of the
+    # breaker-refused criteria — landing above every site; moved again, the six
+    # sites after the service's coverage helper, +45: the derived
+    # `_grades_by_state` the CT-SYNTH-05 consumer differential demanded — the
+    # class's states as they stand, not the stored rows alone; and once more, the
+    # same six, +5: the `_row_value` idiom inside the derivation, which keeps the
+    # CT-PKG-05 single-reader gate from reading `["points"]` outside `aeh.pkg`;
+    # and once more as a block, +9: `_settlement_state`'s docstring and
+    # `input_missing` parameter — the recovered-incomplete defect fix reads this
+    # pass's verdict, not the prior revision's counters; and once more as a block,
+    # +17: #102's degenerate-range fix (the pinned-reading bullet and the
+    # `boundary_risk` docstring's positive-width disclosure above every site —
+    # the sites are the same statements as #101's; re-pinned from the walker,
+    # never hand-unioned.)
+    "aeh.grade:1172",
+    "aeh.grade:1178",
+    "aeh.grade:1180",
+    "aeh.grade:1188",
+    "aeh.grade:1198",
+    "aeh.grade:1271",
+    "aeh.grade:1296",
+    "aeh.grade:1301",
+    "aeh.grade:1332",
+    "aeh.grade:1340",
+    "aeh.grade:1432",
+    "aeh.grade:1513",
+    "aeh.grade:1518",
+    "aeh.grade:1765",
+    "aeh.grade:1776",
+    "aeh.grade:1781",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -516,6 +558,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.integ:979",
     "aeh.integ:989",
     "aeh.integ:999",
+    # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
+    # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
+    # bootstrap insert the security suite's fixture surface makes before its
+    # ingests (`tests/security/ingest/test_active_content.py`), now riding the
+    # submission's declared consent class. (Re-pinned from the walker on any
+    # line move.)
+    "aeh.conform:470",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

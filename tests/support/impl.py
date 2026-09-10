@@ -172,12 +172,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R0- and R1-scored
     # results must not share an unannotated rollup. Keyed on the consumer that implements it.
-    "#101": (
-        "module",
-        GRADE_MODULE,
-        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation",),
-    ),
+    # (`#101` landed: `aeh.grade` ships `class_rollup` and `cohort_with_mixed_revisions`,
+    # so the entry is gone and the case runs unmarked.)
     # §6.11.17 names `M-STATS` as a second consumer for both `CT-CALIB-09` (it scopes its figures
     # across the revision boundary) and `CT-CALIB-16` (it presents the gate as non-inferiority).
     # Both were missing from the first draft, one of them under a docstring claiming otherwise.
@@ -209,7 +205,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
 
     # FUZZ-05 carries a second, independent blocker: its policy half pins the #101
     # applicator — the design **does** declare it (`apply_policy(scores, policy) ->
-    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keys on the
+    # GradeComputation`, detailed-design.md §3.14, CT-GRADE-02), so the entry keyed on the
     # declared name; only `GradeComputation`'s field set is unpinned and assumed (`.total`,
     # declared in the test's docstring). Split from the `#101` module entry above, which
     # resolves against `aeh.grade`'s **first** commit and so names a test the module's
@@ -217,53 +213,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # marker is per-test with node-ID paths (the `#118`/`#138`/`#139` form): a
     # module-level marker on a two-blocker file would let an early unmark move the
     # still-red half inside `TEST_CMD`.
-    "#101 apply_policy": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        ("tests/property/test_fuzz_05_aggregation_and_policy.py"
-         "::test_fuzz_05_policy_application_is_order_independent_and_totals_never_exceed_the_maximum",),
-    ),
-    # --- TS-38 (#105), the M-GRADE policy, coverage and no-imputation cases -------------------
-    #
-    # Three keys, split the `#118`/`#91` way: the stories' cases unmark at different
-    # seams, and a single module key would hold every case outside the gate until the
-    # last of them landed (the resolved-early trap the `#101` module entry above already
-    # records for the calib rollup half).
-    #
-    # `apply_policy` is design-declared (§3.14's Interfaces block, CT-GRADE-02) and keys
-    # the rung-0 rule cases. The other three unit seams — `resolve_grade`,
-    # `coverage_for`, `boundary_risk` — are **invented** (the design declares their
-    # behaviour on the service, the rung-0 cases need pure entry points; the
-    # `verify_span`/`synthesize` precedent), and the boundaries/coverage and
-    # no-imputation files use them *together with* `apply_policy`, so the key is the
-    # `symbols` conjunction: a module that landed only `apply_policy` would otherwise
-    # resolve the key and name tests that then fail on `require()` — the trap this
-    # registry exists to avoid. `open_grade` is the invented rung-2 constructor (the
-    # `open_review` precedent) the four integration files resolve the service through;
-    # it appears in no Interfaces block, so none can exist before an implementation
-    # does. All names reconcile at #101's landing; the vocabulary lives in
-    # `tests/support/grade_vocabulary.py`.
-    "#105 apply_policy": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        ("tests/unit/grade/test_policy_rules.py",
-         "tests/property/test_tc_grade_21_apply_policy_invariants.py"),
-    ),
-    "#105 pure seams": (
-        "symbols",
-        (f"{GRADE_MODULE}:apply_policy,{GRADE_MODULE}:resolve_grade,"
-         f"{GRADE_MODULE}:coverage_for,{GRADE_MODULE}:boundary_risk"),
-        ("tests/unit/grade/test_boundaries_and_coverage.py",
-         "tests/unit/grade/test_no_imputation.py"),
-    ),
-    "#105 open_grade": (
-        "symbol",
-        f"{GRADE_MODULE}:open_grade",
-        ("tests/integration/grade/test_grade_delivery.py",
-         "tests/integration/grade/test_finalization.py",
-         "tests/integration/grade/test_recompute_on_correction.py",
-         "tests/integration/grade/test_incomplete_and_routing.py"),
-    ),
+    # (`#101 apply_policy` landed: `aeh.grade` ships `apply_policy` with `.total`, so the
+    # entry is gone and the policy half runs unmarked.)
     # --- TS-36 (#95), the M-AGG confidence-inversion, routing and escalation cases -----------
     #
     # Thirteen cases across seven files, written ahead of THREE stories — #91 lands the
@@ -284,13 +235,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "score states" (`should_escalate` re-keyed at #91's landing as the states' gate)
     # and "policy purity" (the three-member conjunction) — all resolved when #93
     # shipped `should_escalate` beside the routing/state assignment. The round-trip
-    # entry (TC-AGG-15) went at #92's. Remaining: the review-queue rank limb, whose
-    # blocker is M-REVIEW's, not M-AGG's.
-    "#95 TS-36 review-queue rank (TC-AGG-07)": (
-        "symbol",
-        f"{REVIEW_MODULE}:rank_queue_items",
-        ("tests/unit/agg/test_review_queue_rank.py",),
-    ),
+# entry (TC-AGG-15) went at #92's. The review-queue rank limb (TC-AGG-07) was
+    # the last: its blocker was M-REVIEW's, not M-AGG's, and it unmarked at #108's
+    # landing (`aeh.review:rank_queue_items`, whose `items` form orders
+    # holistic-first at equal expected value and expected-value dominant
+    # otherwise — FR-AGG-06's tie-break, taken as given).
     # --- TS-69 (#96), the M-AGG contract suite -------------------------------------------------
     #
     # Nine rows, keyed per owning story because the consumers land at different
@@ -302,28 +251,29 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # renderers #123's. The executable core of every case (rungs 0-3, unmarked)
     # is in the same files; only the limbs whose consumer does not exist yet sit
     # behind these rows.
-    "#96 c05 the inversion's rung-4 consequence (M-REVIEW)": (
-        "symbol",
-        f"{REVIEW_MODULE}:build_review",
+    #
+    # **Three of the four M-REVIEW rows the #108 landing dropped** (unmarked
+    # 2026-09, that story): the c05 rung-4 consequence, and the c07 and c16
+    # M-REVIEW presentation limbs — keyed on `REVIEW_MODULE:build_review` /
+    # `rank_queue_items`, which #108 shipped; each runs unmarked inside the
+    # gate against the landed queue. The c05 unmark reconciled the
+    # written-ahead draft's missing bridge (the limb asked the store-form queue
+    # for a row it never persisted; it now performs the insert its own file's
+    # rung-3 limb declares, per the queue's §3.15 data flow). The c09 ranking
+    # limb STAYS marked — the queue cannot rank holistic-first at equal value
+    # through the store, because `scoring_model` lives only in the Tier P
+    # `criterion` table and cohort rows carry no package linkage — and its row
+    # below is re-keyed on the landed queue surface plus the declared planned
+    # owner of the scoring-model read; the gap is a finding on #108's PR.
+    # (The two M-GRADE rows went at #101's landing: `aeh.grade` ships `apply_policy`,
+    # so the c07 and c16 `[m_grade]` params run unmarked.)
+    "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
+        "symbols",
+        (f"{REVIEW_MODULE}:ReviewService.queue,"
+         f"{REVIEW_MODULE}:ReviewService.scoring_model_for"),
         (
-            "tests/contract/agg/test_ct_agg_c05_confidence_inversion.py"
-            "::test_tc_agg_c05_a_hallucinated_span_with_a_unanimous_panel_reaches_the_review_queue",
-        ),
-    ),
-    "#96 c07 M-GRADE presents ungradeable_by_panel": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
-            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_grade]",
-        ),
-    ),
-    "#96 c07 M-REVIEW presents ungradeable_by_panel": (
-        "symbol",
-        f"{REVIEW_MODULE}:build_review",
-        (
-            "tests/contract/agg/test_ct_agg_c07_state_and_consumer_presentation.py"
-            "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_review]",
+            "tests/contract/agg/test_ct_agg_c09_no_runtime_special_casing.py"
+            "::test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue",
         ),
     ),
     "#96 c07 M-CONSOLE presents ungradeable_by_panel": (
@@ -334,36 +284,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_agg_c07_consumers_present_ungradeable_by_panel_distinctly[m_console]",
         ),
     ),
-    "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
-        "symbol",
-        f"{REVIEW_MODULE}:build_review",
-        (
-            "tests/contract/agg/test_ct_agg_c09_no_runtime_special_casing.py"
-            "::test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue",
-        ),
-    ),
     "#96 c14 the knobs' honesty text (M-CONSOLE)": (
         "symbol",
         f"{CONSOLE_MODULE}:render_setup_step",
         (
             "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
             "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
-        ),
-    ),
-    "#96 c16 M-GRADE renders no probability": (
-        "symbol",
-        f"{GRADE_MODULE}:apply_policy",
-        (
-            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
-            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_grade]",
-        ),
-    ),
-    "#96 c16 M-REVIEW renders no probability": (
-        "symbol",
-        f"{REVIEW_MODULE}:rank_queue_items",
-        (
-            "tests/contract/agg/test_ct_agg_c16_not_a_probability.py"
-            "::test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability[m_review]",
         ),
     ),
     "#96 c16 M-CONSOLE renders no probability": (
@@ -547,7 +473,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `M-CONFORM` has two implementing stories and they land in order: #133 builds the frozen
     # corpus (size, span, media, consent, the adversarial tier) and #134 runs it (full pipeline
     # per backend, the divergence report, the gates, the records, the tiers). Keyed separately,
-    # because seven of the cases become runnable at #133 and the rest need a run.
+    # because seven of the cases became runnable at #133 -- released when its fixture surface
+    # (`load_fixture_set`, `build_conformance_suite`, `ConsentRefused`) landed -- and the rest
+    # still need a run.
     #
     # **Keyed on symbols no Interfaces block declares.** Design §3.18 declares a two-member
     # Protocol -- `ConformanceSuite.run` and `.compare` -- plus the type names in their
@@ -575,26 +503,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # an early unmark is the worse direction: a test told to rejoin TEST_CMD that then fails naming
     # an issue nobody is working on is how the gate stops being believed. Reported on the PR for
     # `/plan-to-issues` rather than resolved here -- the issue bodies are that skill's artifact.
-    "#133": (
-        "symbol",
-        f"{CONFORM_MODULE}:load_fixture_set",
-        (
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_the_corpus_"
-            "spans_the_score_range_including_mid_range_partial_credit",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c01_a_result_"
-            "names_its_fixtures_and_one_changed_fixture_changes_the_identity",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c02_the_corpus_"
-            "carries_handwriting_spanning_the_legibility_range_and_mixed_format",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_every_"
-            "injection_submission_is_paired_with_a_benign_twin",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
-            "refuses_to_run_against_a_cohort_not_so_flagged",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_corpus_"
-            "is_only_synthetic_or_consented_work",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c10_the_suite_"
-            "does_not_reimplement_the_consent_check",
-        ),
-    ),
     "#134": (
         "symbol",
         f"{CONFORM_MODULE}:detect_build_substitution",
@@ -1136,16 +1044,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #
     # `"#93 stats"` is gone because #93 landed: `aeh.agg:rank_criteria_for_escalation`
     # ranks no-data first and a measured zero by its rate (CT-STATS-09's consumer
-    # differential, c09), and the sweep's `m_agg` param runs unmarked while `m_review`
-    # stays #108's (its own per-param marker — the TC-AGG-20 precedent).
-    "#108 stats": (
-        "symbol",
-        f"{REVIEW_MODULE}:rank_queue_items",
-        (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zero[m_review]",
-        ),
-    ),
+    # differential, c09), and the sweep's `m_agg` param runs unmarked.
+    #
+    # `"#108 stats"` is gone because #108 landed: `aeh.review:rank_queue_items`
+    # carries the same `criteria=` form (`CriterionOverrideRank`, no data first,
+    # then override rate descending — the mirror of `aeh.agg`), so the sweep's
+    # `m_review` param runs unmarked too and both consumers answer c09 the same
+    # way.
     "#123 stats": (
         "symbol",
         f"{CONSOLE_MODULE}:render_setup_step",
@@ -1172,6 +1077,61 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         (
             "tests/contract/stats/test_ct_stats_records_and_absence.py"
             "::test_tc_stats_c12_a_maximally_adverse_drift_result_does_not_block_a_run",
+        ),
+    ),
+    # --- TS-70 (#100), the fourteen CT-SYNTH contract cases --------------------------------
+    #
+    # Four consumer sweeps are written ahead of their consumers, keyed on the symbols
+    # those tests actually call -- with the same two keying rules the registry's earlier
+    # entries settled:
+    #
+    # * a *member* of an unlanded story's class is gated through the story's **last**
+    #   module-level symbol, because `require()` reports the first blocker it resolves
+    #   and a key on the first would unmark a test whose member is still missing (the
+    #   `#118` defect, fixed in the TS-72 shape). So C13's stats half rides
+    #   `{STATS_MODULE}:promote` (#118's alone) exactly as the shipped `"#118 stats"`
+    #   entry does, and C14's conform half rides
+    #   `{CONFORM_MODULE}:detect_build_substitution` (#134's alone) exactly as the
+    #   shipped `"#134"` entry does -- `build_conformance_suite` is the constructor
+    #   *both* conform stories need, so keying on it would fire while #134 was
+    #   unstarted.
+    # * where one test needs two stories, the kind is `symbols` -- the conjunction: all
+    #   of them must resolve before the test may rejoin TEST_CMD (C03 needs a console
+    #   AND a grade service; C13 a console AND the narrative-quality story; C14 the
+    #   rung-2 stats constructor AND the conform run).
+    # (The grade-only rows went at #101's landing: `aeh.grade` ships `open_grade`, so
+    # the C05/C08/C09 consumer legs run unmarked; C03 and C13 still wait on the
+    # console conjunction.)
+    "#100 suppression consumers (C03)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{GRADE_MODULE}:open_grade",
+        (
+            "tests/contract/synth/test_ct_synth_c03_suppression_composition_and_consumers.py"
+            "::test_tc_synth_c03_consumers_honour_the_suppression_flag",
+        ),
+    ),
+    "#100 language consumers (C13)": (
+        "symbols",
+        f"{CONSOLE_MODULE}:build_console,{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c13_paraphrase_boundary.py"
+            "::test_tc_synth_c13_consumers_present_narrative_as_pattern_checked_not_verified",
+        ),
+    ),
+    "#100 comparison consumers (C14)": (
+        "symbols",
+        f"{STATS_MODULE}:open_stats,{CONFORM_MODULE}:detect_build_substitution",
+        (
+            "tests/contract/synth/test_ct_synth_c14_non_reproducible_prose.py"
+            "::test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives",
+        ),
+    ),
+    "#100 promotion consumer (C10)": (
+        "symbol",
+        f"{STATS_MODULE}:promote",
+        (
+            "tests/contract/synth/test_ct_synth_c10_tier_d_sentinel_scan.py"
+            "::test_tc_synth_c10_the_promotion_consumer_promotes_cited_spans_not_prose",
         ),
     ),
     # --- TS-72 (#114), the twenty CT-REVIEW clause cases -----------------------------------
@@ -1204,42 +1164,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # parametrized per consumer and each half carries its own key. And `CT-REVIEW-09`'s
     # transport-layer step reaches a different console symbol from the other three console cases,
     # so it gets its own entry rather than riding on `render_review_queue`.
-    "#108 review": (
-        "symbol",
-        f"{REVIEW_MODULE}:build_review",
-        (
-            "tests/contract/review/test_ct_review_admission_and_residual.py"
-            "::test_tc_review_c04_the_queue_states_all_three_figures_and_they_are_arithmetically_consistent",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_ranking_rule",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c01_queue_size_tracks_the_minute_budget_and_not_a_proportion",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_ranking_responds_to_each_error_probability_signal_alone",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_rebuilding_with_unchanged_data_yields_an_identical_order",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_the_order_does_not_move_when_only_self_confidence_changes",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c03_the_ranking_score_is_expected_value_per_estimated_second",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c16_build_time_is_excluded_from_the_teachers_minute_budget",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c16_the_queue_builds_within_two_seconds_at_the_stated_load",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c19_the_queue_still_degrades_honestly_when_est_seconds_is_badly_wrong",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_a_group_action_emits_one_label_per_member",
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c13_group_items_rank_above_per_item_entries",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c17_each_knob_declares_its_documented_default",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c20_the_group_signature_is_exactly_the_declared_components",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c20_two_items_differing_in_any_signature_component_are_not_grouped",
-        ),
-    ),
+    #
+    # `"#108 review"` is gone because #108 landed (unmarked 2026-09, that story):
+    # `aeh.review:build_review` constructs the service and its queue carries the
+    # residual triple, the build trace, the groups and the greedy rank-order fill —
+    # so the entry's fifteen cases unmark, and with them two orphans whose
+    # substance landed with the same story: the CT-REVIEW-02 event-order case
+    # (`build_trace` is #108's to provide; its marker came off and its line left
+    # the "#111" list below) and the CT-REVIEW-14 rerun case (its binding blocker
+    # was `build_review`). Every case below that reaches the samples (#111), the
+    # label store (#110) or the write surface (#109) through a `require_attr` that
+    # is still absent stays red for its own story, exactly as the keying above
+    # intended.
     "#109 review": (
         "symbol",
         f"{REVIEW_MODULE}:write_fields",
@@ -1260,6 +1196,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c06_the_residual_persists_across_review_sessions",
             "tests/contract/review/test_ct_review_limits_and_config.py"
             "::test_tc_review_c14_the_module_exposes_no_per_student_annotation_surface",
+            "tests/contract/review/test_ct_review_limits_and_config.py"
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[judge]",
+            "tests/contract/review/test_ct_review_limits_and_config.py"
+            "::test_tc_review_c14_the_write_set_and_the_scoring_prompt_fields_do_not_intersect[extract]",
             "tests/contract/review/test_ct_review_sampling_and_staleness.py"
             "::test_tc_review_c15_an_action_on_a_stale_item_is_rejected_with_a_refresh",
         ),
@@ -1290,6 +1230,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c08_saw_system_output_is_populated_on_every_label_with_no_null",
         ),
     ),
+    # The CT-REVIEW-02 event-order case (`c02_blind_minutes_are_subtracted...`)
+    # unmarked at #108's landing: `build_trace` is #108's and the reservation step
+    # sits in its trace, so the case's binding blocker resolved there. Only the
+    # survival case below still waits on #111's sample surface.
     "#111 review": (
         "symbol",
         f"{REVIEW_MODULE}:blind_sample_skipped",
@@ -1302,8 +1246,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_review_c09_no_system_output_is_available_before_submission",
             "tests/contract/review/test_blind_unreachability.py"
             "::test_tc_review_c09_the_blind_session_cannot_reach_criterion_score_at_the_query_level",
-            "tests/contract/review/test_ct_review_budget_and_ranking.py"
-            "::test_tc_review_c02_blind_minutes_are_subtracted_before_any_ranking_occurs",
             "tests/contract/review/test_ct_review_budget_and_ranking.py"
             "::test_tc_review_c02_the_blind_sample_survives_a_run_with_far_more_items_than_budget",
             "tests/contract/review/test_ct_review_labels_and_edits.py"
@@ -1385,17 +1327,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#78 rerun review"` entry stood here too (`aeh.judge:assemble_prompt` for
     # the c14 rerun case): #79 landed the id-keyed door, but the test's BINDING
     # blocker was always #108's `build_review` -- its first require resolves it before
-    # `assemble_prompt` is read -- and the marker is function-level, shared with the
-    # file's other cases. So the c14 case stays marked with the file and unmarks with
-    # the #108/#109 landings, which still register this file; keying the entry on a
-    # symbol that is no longer what blocks it would have fired the gate for the same
-    # reason the `"#78 review"` entry could not stay.
-    # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
-    # so its blocker no longer holds. The `[extract]` param it named stays marked for
-    # now — its first require is #109's `write_fields` (the test resolves it before it
-    # reads either consumer), and the marker is function-level, shared with the
-    # `[judge]` param — so the file is unmarked by #109's implementer, together with
-    # the `#109 review` entry below, which is the file's remaining registration.
+    # `assemble_prompt` is read. #108 landed, and the c14 rerun case unmarked with
+    # that story (verified green against the landed queue); the `[judge]` write-set
+    # param below stays marked for #109's `write_fields`, which still registers this
+    # file.
     # The "#68 review" entry stood here: `aeh.extract:prompt_fields` landed with #68,
     # so its blocker no longer holds. The `[extract]` param it named stays marked for
     # now — its first require is #109's `write_fields` (the test resolves it before it

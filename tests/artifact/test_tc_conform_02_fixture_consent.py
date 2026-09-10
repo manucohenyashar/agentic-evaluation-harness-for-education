@@ -38,7 +38,9 @@ import pytest
 from tests.support import corpora
 from tests.support.adversarial import (
     COMMITTABLE_CONSENT_CLASSES,
+    COMMITTED_CONSENT_DECLARING_CORPORA,
     COMMITTED_MEDIA_DECLARING_CORPORA,
+    COMMITTED_SCAN_CORPORA,
     COMMITTED_SUBMISSION_CORPORA,
 )
 from tests.support.conf_builders import hosted_cfg
@@ -46,7 +48,7 @@ from tests.support.conf_builders import hosted_cfg
 CASE = "TC-CONFORM-02"
 
 
-@pytest.mark.parametrize("corpus_name", COMMITTED_MEDIA_DECLARING_CORPORA)
+@pytest.mark.parametrize("corpus_name", COMMITTED_CONSENT_DECLARING_CORPORA)
 def test_tc_conform_02_every_committed_fixture_declares_a_permitted_consent_class(corpus_name):
     """The manifest assertion, per corpus and per member.
 
@@ -98,6 +100,42 @@ def test_tc_conform_02_the_documents_themselves_declare_their_consent_class():
             )
 
 
+@pytest.mark.parametrize("corpus_name", COMMITTED_SCAN_CORPORA)
+def test_tc_conform_02_the_scans_declare_their_consent_class_in_the_pdf_bytes(corpus_name):
+    """The bytes-level half of the consent assertion, for the corpus whose members are PDFs.
+
+    `test_tc_conform_02_the_documents_themselves_declare_their_consent_class` asserts the
+    declaration through `member.text()` — strict UTF-8, and rightly so for Markdown corpora. The
+    scans (#133) are PDFs, so their declaration is asserted where a provider would find it: in
+    the raw bytes (the form header is uncompressed text operators, so the line survives any
+    parser) and in the text a PDF library extracts. The handwritten pages carry no text layer at
+    all — the student's work is pixels — so the declaration rides on the printed form header and
+    the manifest, and nothing claims the handwriting itself said anything.
+    """
+    import pypdf
+
+    corpus = corpora.load(corpus_name)
+    assert corpus.manifest["consent_class"] in COMMITTABLE_CONSENT_CLASSES
+    assert corpus.manifest["rendering"] == "synthetic_scan", (
+        f"{corpus_name}'s members declare the real-medium vocabulary; the manifest must say the "
+        f"rendering is synthetic or the medium claim is a mislabel (FR-CONFORM-03, R37)"
+    )
+    for member in corpus.members:
+        declared = member.attributes["consent_class"]
+        line = f"consent_class: {declared}".encode("ascii")
+        raw = member.path.read_bytes()
+        assert line in raw, (
+            f"{corpus_name}/{member.id}: the manifest says {declared!r} and the PDF's raw bytes "
+            f"do not carry the declaration"
+        )
+        document = pypdf.PdfReader(member.path.open("rb"))
+        extracted = "\n".join(page.extract_text() or "" for page in document.pages)
+        assert f"consent_class: {declared}" in extracted, (
+            f"{corpus_name}/{member.id}: the declaration is in the bytes but not in the text a "
+            f"parser reads, so it would not survive a re-render"
+        )
+
+
 def test_tc_conform_02_no_committed_fixture_carries_a_name_shaped_field():
     """§4.4's PII rule, stated as a check: *"`student_ref` is present and no name-shaped field
     exists"* (`FR-STORE-12`).
@@ -113,6 +151,30 @@ def test_tc_conform_02_no_committed_fixture_carries_a_name_shaped_field():
             text = member.text().lower()
             hits = [field for field in forbidden if field in text]
             assert not hits, f"{corpus_name}/{member.id} carries name-shaped field(s) {hits}"
+
+
+@pytest.mark.parametrize("corpus_name", COMMITTED_SCAN_CORPORA)
+def test_tc_conform_02_the_scan_submissions_carry_a_student_ref_and_no_name_shaped_field(corpus_name):
+    """§4.4's PII rule over the scans, where `member.text()` cannot go.
+
+    Same rule as the text sweep above, different reading surface: the student's work is pixels,
+    so the checkable text is the printed form header, extracted the way a PDF library would.
+    `student_ref` is asserted from the manifest attribute — the field the ingest identity gate
+    would read — rather than from the pixels, which carry no text layer to read it from.
+    """
+    import pypdf
+
+    forbidden = ("student_name", "full_name", "first_name", "last_name", "surname", "pupil_name")
+    corpus = corpora.load(corpus_name)
+    for member in corpus.members:
+        assert member.attributes.get("student_ref"), f"{member.id} carries no student_ref"
+        document = pypdf.PdfReader(member.path.open("rb"))
+        extracted = "\n".join(page.extract_text() or "" for page in document.pages).lower()
+        hits = [field for field in forbidden if field in extracted]
+        assert not hits, (
+            f"{corpus_name}/{member.id} carries name-shaped field(s) {hits} in its printable "
+            f"text (FR-STORE-12, §4.4)"
+        )
 
 
 def test_tc_conform_02_a_run_against_an_unconsented_cohort_is_refused_by_the_consent_gate():

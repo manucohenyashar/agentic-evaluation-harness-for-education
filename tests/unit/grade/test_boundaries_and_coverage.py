@@ -37,8 +37,6 @@ from aeh.pkg import GradePolicy
 from tests.support.grade_vocabulary import GRADE_BLOCKER, boundary, score
 from tests.support.impl import GRADE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 ISSUE = GRADE_BLOCKER
 
 
@@ -250,3 +248,69 @@ def test_tc_grade_06_the_total_is_always_inside_the_reported_range():
             "every achievable outcome, and the current total is one of them "
             "(CT-GRADE-05)"
         )
+
+
+# --- regression: the degenerate range cannot cross a boundary --------------------------------
+
+#: The probe table with a floor moved onto the probe total: total 52.0 sits exactly
+#: on band B's floor, so a zero-width range collapsed onto the total satisfies the
+#: inclusive floor-membership check — the defect's trigger.
+_ON_FLOOR_BOUNDARIES = [boundary("A", 60.0), boundary("B", 52.0), boundary("C", 0.0)]
+
+
+def test_issue_102_a_degenerate_range_cannot_cross_a_boundary():
+    """Defect regression (issue #102), the degenerate limb of `TC-GRADE-06` — a
+    zero-width range cannot move the student, so it cannot cross a boundary, and a
+    fully-settled grade sitting exactly on a floor is never flagged.
+
+    The defect: with no provisional criteria (or a provisional criterion whose
+    effective interval is zero-width — no declared bands, or every band worth the
+    same points) the range collapsed to `[total, total]`, and the inclusive
+    floor-membership check flagged a settled grade whose total happens to sit
+    exactly on a boundary floor — `boundary_at_risk` set, `score_low == score_high
+    == total` — although nothing plausible can move the student anywhere. FR-GRADE-05
+    asks whether the provisional criteria's full plausible band range COULD MOVE the
+    student across a boundary; with no provisional criteria there is no range, and
+    the honest answer is no. Observed failing against the unfixed code before the
+    fix (a live probe graded a fully-settled submission totalling 15.0 against a
+    floor of 15.0 and persisted `boundary_at_risk=1`).
+
+    The differential limb keeps the fix honest: the SAME total against the SAME
+    table with a non-degenerate range stays flagged, so the fix narrows the
+    degenerate case and nothing else."""
+    boundary_risk = require(GRADE_MODULE, "boundary_risk", issue=ISSUE)
+
+    # A fully-settled grade (criteria_provisional = 0: no intervals at all) whose
+    # total is exactly a floor: no movement is possible, so the flag must be clear
+    # and the range withheld.
+    risk = boundary_risk(_PROBE_TOTAL, [], _ON_FLOOR_BOUNDARIES)
+    assert risk.at_risk is False, (
+        "a grade with no provisional criteria was flagged boundary_at_risk — with "
+        "no provisional criteria the plausible range is empty and cannot move the "
+        f"student across any boundary (FR-GRADE-05); got at_risk={risk.at_risk!r} "
+        f"with score_low={risk.score_low!r}"
+    )
+    assert (risk.score_low, risk.score_high) == (None, None), (
+        f"the degenerate case stated a range ({risk.score_low!r}, "
+        f"{risk.score_high!r}) — a range nobody acts on is noise (CT-GRADE-05), "
+        "and a zero-width range spans no band edge"
+    )
+
+    # The same degeneracy through a provisional criterion whose effective interval
+    # is zero-width (no declared band range to move within): still no movement.
+    risk = boundary_risk(_PROBE_TOTAL, [(0.0, 0.0)], _ON_FLOOR_BOUNDARIES)
+    assert risk.at_risk is False, (
+        "a zero-width movement interval was flagged boundary_at_risk — an interval "
+        "that cannot move the student cannot cross a boundary (FR-GRADE-05)"
+    )
+    assert (risk.score_low, risk.score_high) == (None, None)
+
+    # Differential: the same total against the same table with a range that MOVES
+    # stays flagged — the fix narrows the degenerate case, not the real one.
+    risk = boundary_risk(_PROBE_TOTAL, [(0.0, 10.0)], _ON_FLOOR_BOUNDARIES)
+    assert risk.at_risk is True, (
+        "a non-degenerate range reaching a boundary floor lost its flag — the "
+        "degenerate-range fix must not suppress the real flag (TC-GRADE-06's "
+        "pinned exactly-on-boundary scenario)"
+    )
+    assert (risk.score_low, risk.score_high) == (_PROBE_TOTAL, 62.0)

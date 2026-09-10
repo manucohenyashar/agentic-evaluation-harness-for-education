@@ -14,7 +14,7 @@ the same run — and it is where per-process nondeterminism (a set-walk feeding 
 a clock, a counter) would actually surface.
 
 The child is `tests/contract/orch/_enumeration_worker.py`: shipped modules only, the full
-eight-module migration chain imported before its open, no test imports at all. Two child
+nine-module migration chain imported before its open, no test imports at all. Two child
 runs under deliberately different `PYTHONHASHSEED` values bracket the in-process
 enumeration; all three id sets must be byte-identical, and the store must end with
 exactly one ledger row per id — three enumerations, no duplicates (`INSERT OR IGNORE`'s

@@ -72,8 +72,11 @@ __all__ = [
     "MALFORMED_ERROR",
     "ASSESSMENT_RETRIES_KNOB",
     "ASSESSMENT_AMENDED_FLAG",
+    "EXEMPLAR_SEED_KNOB",
     "INTEGRITY_FLAGS_FIELD",
     "VERDICT_RESPONSE_COLUMNS",
+    "RESPONSE_PARSER",
+    "ASSESSMENT_AMENDMENT_FIELD",
     "fields_of",
     "field_names",
     "string_leaves",
@@ -124,6 +127,9 @@ TS30_PROMPT_SYMBOLS = (WORKER, REQUEST_TYPE, PROMPT_FIELDS, TEMPLATE_VERSION)
 # | the one re-request's knob | `aeh.judge:ASSESSMENT_RETRIES_ENV` = `"HARNESS_JUDGE_ASSESSMENT_RETRIES"`, production default 1 (`ASSESSMENT_RETRIES_DEFAULT`), read at call time; the re-request goes out with an AMENDED payload (a new field inserted before the submission field), so it is a new fixture key, never a verbatim replay (FR-PROV-06) |
 # | the integrity flag (FR-JUDGE-10) | `aeh.judge:ASSESSMENT_AMENDED` = `"assessment_amended"`, riding `ScoringResult.integrity_flags` (a tuple of named tokens, empty on a clean first-acceptance dispatch) |
 # | the persisted response columns (CT-JUDGE-06) | Cohort migration 17 `judge_verdict_response_columns`: `verdict.cited_spans TEXT` (JSON, NULL when uncited), `evidence_sufficient INTEGER CHECK IN (0,1)`, `uncited INTEGER CHECK IN (0,1)` — nullable, because additive; a NULL mark reads as cited (M-AGG's "the mark is the signal"). NO points column exists or is added (FR-JUDGE-11) |
+# | the reply parser the FUZZ-04 property drives | `aeh.judge:_verdict_of(text, request)` — the shipped parse-and-validate door every reply goes through; `ScoringWorker.dispatch` calls it inside the strike loop, so a parser-level oracle is the dispatch loop's own refusal shape |
+# | the amended re-request's field name (FR-PROV-06) | `aeh.judge:_ASSESSMENT_AMENDMENT_FIELD` = `"evidence_rules_amendment"` — the field `_amended_payload` inserts immediately BEFORE the final (submission) field, so the re-request is a different fully-assembled request, never a verbatim replay |
+# | the exemplar-order salt knob (FR-JUDGE-08) | `aeh.judge:EXEMPLAR_SEED_ENV` = `"HARNESS_JUDGE_EXEMPLAR_SEED"` — the salt `_ordered_exemplars` reads at call time; production default is the template version (`_EXEMPLAR_SEED_DEFAULT` = `JUDGE_PROMPT_TEMPLATE_V`), so an unset env is still deterministic |
 
 #: The pinned reply field order, restated from `aeh.judge:REPLY_FIELDS` (the suite's
 #: assertion reads the module's own tuple; this constant is what a test that must state
@@ -145,6 +151,7 @@ TS31_RESPONSE_SYMBOLS = (
     "ProseAssessmentError",
     "ScoringResult",
     "ScoringWorker",
+    "_verdict_of",
 )
 
 #: The TS-31 names, as landed.
@@ -153,6 +160,19 @@ MALFORMED_ERROR = "MalformedResponseError"  # resolved from aeh.prov, not aeh.ju
 ASSESSMENT_RETRIES_KNOB = "HARNESS_JUDGE_ASSESSMENT_RETRIES"
 ASSESSMENT_AMENDED_FLAG = "assessment_amended"
 INTEGRITY_FLAGS_FIELD = "integrity_flags"
+
+#: The exemplar-order salt knob, as landed (`aeh.judge:EXEMPLAR_SEED_ENV` — read at
+#: call time by `_ordered_exemplars`; not in the module's `__all__`, so the suite names
+#: the env string here once, like every other knob).
+EXEMPLAR_SEED_KNOB = "HARNESS_JUDGE_EXEMPLAR_SEED"
+
+#: The reply parser the FUZZ-04 property drives (`aeh.judge:_verdict_of`) — private by
+#: the owner's naming, but it IS the response contract's one door: `dispatch` validates
+#: through it and nothing else, so the property's oracle over it is the contract's.
+RESPONSE_PARSER = "_verdict_of"
+
+#: The amended re-request's field name, as landed (`aeh.judge:_ASSESSMENT_AMENDMENT_FIELD`).
+ASSESSMENT_AMENDMENT_FIELD = "evidence_rules_amendment"
 
 #: The migration-17 columns #80 adds to `verdict`, in DDL order — the
 #: `test_tc_store_04` golden and the verdict-row reads assert against this shape.

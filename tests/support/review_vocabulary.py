@@ -33,6 +33,19 @@ one place, so an invented name is visibly invented:
     ReviewGroup.members                               so "one label per member" is countable
     ReviewItem.score_id / .criterion_id /
         .submission_id / .version                     identity, for differentials and staleness
+    ReviewService.queue                               the store-form read: the shown entries
+                                                      flattened, in presentation order —
+                                                      `build_review(store).queue()` is the
+                                                      c05/c07/c09 consumer limbs' declared shape
+    ReviewService.scoring_model_for(criterion_id)     the planned owner of the scoring-model
+                                                      read for the queue, re-keyed at #108's
+                                                      landing (c09's ranking limb): the model
+                                                      lives only in Tier P's `criterion` table
+                                                      and cohort rows carry no package linkage,
+                                                      so no landed surface can rank holistic-
+                                                      first at equal value through the store.
+                                                      INVENTED and unscheduled — no open issue
+                                                      owns it; reported as a finding on #108's PR
 
 **#109 — S-REVIEW-02, the prohibitions and the residual**
 
@@ -59,9 +72,11 @@ one place, so an invented name is visibly invented:
 **#111 — S-REVIEW-04, the two samples**
 
     ReviewQueue.build_trace                           CT-REVIEW-02's event order; .name per
-                                                      event. #111's, not #108's: S-REVIEW-04
-                                                      owns the budget subtraction the trace
-                                                      has to show happening first
+                                                      event. Landed at #108 — the trace is the
+                                                      queue's own observability surface and the
+                                                      event-order case unmarked with that story.
+                                                      #111's residual claim is the sample the
+                                                      reservation protects (the survival case)
     BlindSession.readable_tables()                    CT-REVIEW-09 — see the note below
     BlindSession.available_data() / .items            CT-REVIEW-09 step 2, and the refs to answer
     .render_blind_flow(session_id)                    the rendered half of step 2
