@@ -27,8 +27,10 @@ distribution is exactly reproducible and the tolerance is zero. The per-backend 
 asks for needs real backends, so it carries the `live` marker and runs nightly on E2/E3 — the
 same split §4.7's command table applies to every other conformance case.
 
-**Written ahead of implementation** (§8.2). `detect_build_substitution` is #134's. Remove the
-marker — never the test — when #134 closes, and record the baseline in that PR.
+**Landed at #134** (unmarked there): `detect_build_substitution` is `aeh.conform`'s, and the
+baseline the registry named (`TC-REG-05/score-distributions.json`) is recorded in the closing
+PR — produced by `FixtureSet.run` on the recorded-fixture backend over `F-FROZEN`'s 36
+submissions.
 """
 
 from __future__ import annotations
@@ -42,7 +44,6 @@ from tests.support import corpora
 from tests.support.baselines import assert_matches_golden, entry_for, load_json_baseline
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
 
 CASE = "TC-REG-05"
 GOLDEN = "TC-REG-05/score-distributions.json"

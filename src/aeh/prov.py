@@ -110,6 +110,7 @@ __all__ = [
     "ConcurrencyGovernor",
     "LocalServerProvider",
     "OpenRouterProvider",
+    "provider_for",
     "RunCounters",
     "HttpRequest",
     "HttpResponse",
@@ -1549,6 +1550,29 @@ class _DefaultTransport:
             )
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise TransportError(f"transport failure reaching {request.url}: {error}") from error
+
+
+#: The provider names served by the on-premise OpenAI-compatible server. M-PROV owns the
+#: backend identities (`CT-PROV-15`: this module is the only place in the tree that names
+#: one), so the name → implementation mapping lives here and nowhere else.
+_LOCAL_SERVER_PROVIDER_NAMES = frozenset({"local", "local-server", "ollama", "vllm-mlx"})
+
+
+def provider_for(model_ref: ModelRef, **seams: Any) -> "InferenceProvider":
+    """The live transport a model ref's declared provider name selects (`FR-PROV-11`).
+
+    A consumer asks for the transport **by ref** and names no backend itself: the
+    name → implementation mapping is M-PROV's, so a module outside `M-PROV` never carries
+    a backend-specific constant (`TC-PROV-05`'s scan reads the tree for exactly that).
+    Unknown names refuse — an unserved backend is a configuration error, never a silent
+    fall-back to a transport the caller did not ask for.
+    """
+    name = str(getattr(model_ref, "provider", "") or "")
+    if name in _LOCAL_SERVER_PROVIDER_NAMES:
+        return LocalServerProvider(**seams)
+    if name == "openrouter":
+        return OpenRouterProvider(**seams)
+    raise ProviderUnavailableError(f"no shipped live transport for provider {name!r}")
 
 
 # --- the recorded-fixture implementation ------------------------------------------------------

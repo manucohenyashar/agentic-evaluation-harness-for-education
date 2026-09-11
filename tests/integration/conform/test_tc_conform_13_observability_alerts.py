@@ -6,11 +6,9 @@ Case: test plan §5.18, `FR-CONFORM-06`, `FR-CONFORM-08`. Oracle: **exact signal
     | frozen-fixture score shift | Per-dimension divergence, fixture set version and both
     | backends' resolved builds are emitted; both alerts fire |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run machinery, the induced
-divergence, the substitution seam and the alert reader are all #134's (`evaluate_conformance_
-alerts` is the invented alert-surface name, disclosed in `conform_vocabulary.py` next to the two
-shipped alert readers it is named after). The blocker is #134 and the test is registered there
-in `WRITTEN_AHEAD_BLOCKERS`; remove the marker — never the test — when #134 closes. Rung 2, and
+**Landed at #134** (unmarked there): the run machinery, the induced divergence, the
+substitution seam and the alert reader are all `aeh.conform`'s — `evaluate_conformance_alerts`
+is the alert-surface name `conform_vocabulary.py` disclosed, adopted as declared. Rung 2, and
 not `live`: everything this case asserts is a property of what the run *emits*, driven by the
 suite's own induced-divergence and substitution seams.
 
@@ -39,7 +37,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-13"

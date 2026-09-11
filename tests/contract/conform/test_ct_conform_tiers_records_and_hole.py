@@ -15,7 +15,7 @@ stories ahead of its module:
   noticing.
 
 The behavioural halves — a fast-tier run under a hard network block, a measured duration, the
-validation-record writes and the two consumer sweeps — are red behind `writtenahead`.
+validation-record writes and the two consumer sweeps — **landed at #134** (unmarked there).
 
 **`TC-CONFORM-C11`'s gate is indirect, and worth naming.** The case asks the suite to be asserted
 *"wired as a release gate rather than as an advisory job"*, and no §4.8 exit criterion mentions a
@@ -68,7 +68,6 @@ def _synthetic_cohort():
 # --- CT-CONFORM-06 — scoped, never merged ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c06_every_written_record_carries_its_backend_profile_and_panel_build_ref():
     """`CT-CONFORM-06` — *"a consumer reading a validation record knows which backend produced it"*.
 
@@ -99,7 +98,6 @@ def test_tc_conform_c06_every_written_record_carries_its_backend_profile_and_pan
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c06_a_write_merging_two_backends_into_one_record_is_refused():
     """`CT-CONFORM-06`'s decisive negative — *"never merged across them"*.
 
@@ -150,7 +148,6 @@ def test_tc_conform_c08_the_configuration_keeps_the_full_suite_off_the_per_commi
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c08_the_fast_tier_runs_to_completion_with_the_network_hard_blocked(
     network_guard,
 ):
@@ -253,7 +250,6 @@ def test_tc_conform_c11_the_conformance_suite_is_wired_as_a_release_gate(repo_ro
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.slow
 def test_tc_conform_c11_a_run_completes_within_the_declared_budget_on_each_backend():
     """`CT-CONFORM-11`'s measurement — **per backend**, and at the stated load.
@@ -266,7 +262,7 @@ def test_tc_conform_c11_a_run_completes_within_the_declared_budget_on_each_backe
     *"well"* is left unquantified because the design never quantified it — inventing a factor here
     would make it the requirement the first time somebody hit it.
 
-    Marked `slow` as well as `writtenahead`: §4.7 budgets the contract tier at 60 s for all 330
+    Marked `slow`: §4.7 budgets the contract tier at 60 s for all 330
     clause cases and gives conformance its own command and its own hour. A real measurement does
     not belong in that budget, so it is excluded from the fast tier by marker rather than by being
     quietly shrunk into one.
@@ -296,7 +292,6 @@ def test_tc_conform_c11_a_run_completes_within_the_declared_budget_on_each_backe
 # --- CT-CONFORM-12 — runs pipelines, owns none of their output -------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c12_the_only_writes_this_module_makes_are_records_and_its_own_report():
     """`CT-CONFORM-12` — *"it runs pipelines but owns none of their output"*.
 
@@ -343,7 +338,6 @@ def test_tc_conform_c12_the_only_writes_this_module_makes_are_records_and_its_ow
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c12_the_pipelines_own_writes_stay_attributed_to_their_owning_modules():
     """`CT-CONFORM-12`'s other half — the writes that happen and are **not** this module's.
 

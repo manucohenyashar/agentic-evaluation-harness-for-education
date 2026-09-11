@@ -29,7 +29,12 @@ Disposition, disclosed:
   that keys every agreement figure with the model it is a claim about
   (`FR-STATS-02`/`NFR-STATS-02`), the criterion-declared default and the pass-through
   that stores the package's declaration (`CT-SETUP-05` again — reconciled at #115's
-  landing, when the figure first carried the model).
+  landing, when the figure first carried the model) — and `aeh.conform`, whose
+  references are likewise a closed declared set: the `FR-PKG-08` key field the
+  conformance `ValidationRecord` declares, the backend config's own declared
+  `prompt_template_v` that fills it, and the pass-through that writes the record
+  into the package registry (`CT-CONFORM-05` — reconciled at #134's landing, when
+  the conformance run first wrote backend-scoped records into the package).
 
 Isolation: rung 0 for the scan; rung 3 (real driven run) for the ranking limb; the
 socket guard is autouse.
@@ -124,6 +129,25 @@ _CALIB_SANCTIONED = (
     'elif field == "scoring_model":',
     'catalog.update_criterion_field(base, criterion, "scoring_model", "atomic")',
 )
+#: M-CONFORM's sanctioned scoring-model references, each its clause: the
+#: `ValidationRecord` field declaring the `FR-PKG-08` key component the
+#: conformance record carries (`CT-CONFORM-05`'s backend scoping), the
+#: backend-config read that fills it — the config's own declared
+#: `prompt_template_v`, not a derived value — and the pass-through that
+#: writes the record into the package registry through `M-PKG`'s declared
+#: write (`FR-PKG-08`). Landed at #134 — the conformance run's results are
+#: written into *the package's* validation record scoped per backend, and
+#: the key is what makes the scope exact and readable back (`FR-PKG-09`).
+#: The ban is on deriving a second distinction, not on the declared key
+#: field (the same reading that sanctioned review's wire field and the
+#: figure's): conform never branches on the model's VALUE — no per-model
+#: threshold, multiplier, or second mapping. Anything else lands here as an
+#: unsanctioned site.
+_CONFORM_SANCTIONED = (
+    "scoring_model: str",
+    'scoring_model=str(backend_config.get("prompt_template_v") or ""),',
+    "scoring_model=record.scoring_model,",
+)
 
 _COHORT = ORCH_COHORT_ID
 _SUBMISSION = "SYN-C09"
@@ -162,6 +186,7 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
     review_sites: list[str] = []
     stats_sites: list[str] = []
     calib_sites: list[str] = []
+    conform_sites: list[str] = []
     for path in sorted(src.glob("*.py")):
         name = path.stem
         if name in _PACKAGE_SIDE:
@@ -178,6 +203,9 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
             continue
         if name == "calib":
             calib_sites = sites
+            continue
+        if name == "conform":
+            conform_sites = sites
             continue
         if sites:
             offenders[name] = sites
@@ -237,6 +265,22 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
         "of that edit through the catalog's guard (`CT-CALIB-06`); anything "
         "else is a run-time special case drifting from the package "
         "(CT-AGG-09, RISK-27)"
+    )
+    # M-CONFORM's sites are the closed declared set (see `_CONFORM_SANCTIONED`):
+    # a new reference — a per-model branch, a second mapping, a multiplier —
+    # lands here and fails.
+    unsanctioned_conform = [
+        site for site in conform_sites
+        if not any(shape in site for shape in _CONFORM_SANCTIONED)
+    ]
+    assert unsanctioned_conform == [], (
+        f"aeh.conform reads the scoring model outside its declared sites "
+        f"{unsanctioned_conform!r} — the conformance record's sanctioned "
+        "references are the FR-PKG-08 key field the record declares, the "
+        "backend config's own declared prompt_template_v that fills it, and "
+        "the pass-through that writes the record into the package registry "
+        "(`CT-CONFORM-05`, landed at #134); anything else is a run-time "
+        "special case drifting from the package (CT-AGG-09, RISK-27)"
     )
 
 

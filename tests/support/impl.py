@@ -460,109 +460,21 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # surface is, because fourteen clauses cannot be written against two names -- and the tests
     # invent and use them together, which is what makes them self-consistent.
     #
-    # `detect_build_substitution` rather than a constructor for #134: `build_conformance_suite` is
-    # the constructor **both** stories need -- `FR-CONFORM-02`'s refusal is #133's acceptance
-    # criterion and needs a suite object -- so keying #134 on it would fire while #134 was still
-    # unstarted. `detect_build_substitution` is `FR-CONFORM-08`, which is #134's alone.
-    #
-    # **`TC-CONFORM-C09`'s two run-halves are keyed on #134, and the issues disagree about that.**
-    # #133's *acceptance criteria* name both of them verbatim ("each yields the same band... no
-    # higher confidence than its benign twin", "quarantine at V0 and reach no model call"), which
-    # argues for #133; its *Evaluation strategy* line says the story is covered by C01-C05, which
-    # argues for #134. Both cannot be right, and the same contradiction runs the other way for
-    # `TC-CONFORM-C05`. Keyed on the later of the two here, because the registry's own rule is that
-    # an early unmark is the worse direction: a test told to rejoin TEST_CMD that then fails naming
-    # an issue nobody is working on is how the gate stops being believed. Reported on the PR for
-    # `/plan-to-issues` rather than resolved here -- the issue bodies are that skill's artifact.
-    "#134": (
-        "symbol",
-        f"{CONFORM_MODULE}:detect_build_substitution",
-        (
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c02_the_fixtures_"
-            "traverse_the_vlm_path_rather_than_a_text_shortcut",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_an_injection_"
-            "never_beats_its_twin_on_band_citations_or_confidence",
-            "tests/contract/conform/test_ct_conform_corpus.py::test_tc_conform_c09_a_malicious_"
-            "pdf_quarantines_at_v0_and_reaches_no_model_call",
-            "tests/contract/conform/test_ct_conform_pipeline_and_divergence.py",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c06_every_written_record_carries_its_backend_profile_and_panel_build_ref",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c06_a_write_merging_two_backends_into_one_record_is_refused",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c08_the_fast_tier_runs_to_completion_with_the_network_hard_blocked",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c11_a_run_completes_within_the_declared_budget_on_each_backend",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c12_the_only_writes_this_module_makes_are_records_and_its_own_report",
-            "tests/contract/conform/test_ct_conform_tiers_records_and_hole.py::test_tc_conform_"
-            "c12_the_pipelines_own_writes_stay_attributed_to_their_owning_modules",
-            # TS-01 (#2). `TC-REG-05`'s baseline is the per-criterion score distribution of
-            # `F-FROZEN` on each backend, and the assertion that carries the requirement is
-            # `FR-CONFORM-08`: a shift under an unchanged package is build substitution to be
-            # *detected*, not a baseline to update. `detect_build_substitution` is therefore the
-            # symbol the case actually drives, so it is already the right key.
-            "tests/regression/test_reg_05_score_distributions.py",
-            # `M-JUDGE`'s `TC-JUDGE-C17` limb 4 (TS-67, #85) rides here, joined when
-            # #302 landed the module: the limb needs a divergence REPORT, and `run()`'s
-            # divergence machinery is #134's (the module's own stub says so) — the
-            # constructor alone resolves against #302's build-only module, so a key on
-            # it would unmark the limb while what it drives was still a stub. The
-            # limb's FIRST `require()` is this entry's `detect_build_substitution`, so
-            # `require()` reports THIS entry's blocker and the nodeid unmarks with the
-            # rest of #134's surface.
-            "tests/contract/judge/test_nonpromise_reproducibility.py"
-            "::test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility",
-            # TS-46 (#135), §5.18's seven behavioural cases, joined here. All seven drive the
-            # same surface this entry proxies: `run()`'s report, the divergence machinery, the
-            # substitution seam, and — for `TC-CONFORM-13` — the alert reader over all of it,
-            # so there is one story's landing between each of them and green, exactly as for
-            # the C-suite files above. The three `live`-marked files (TC-CONFORM-04, -08, and
-            # the budget-threshold test in TC-CONFORM-11's file) are additionally env-gated on
-            # `HARNESS_CONFORM_LIVE_BACKENDS` (the shared gate lives in `conform_vocabulary.py`),
-            # so on a box without declared backends they skip naming that prerequisite; the
-            # marker still keys them here, because the blocker is #134's machinery and only
-            # looks like hardware. TC-CONFORM-06's plan-level
-            # gap half and TC-CONFORM-07's CI half are green in `tests/artifact/` and carry
-            # no marker — not listed here. The invented surfaces these files call beyond
-            # `detect_build_substitution` (`evaluate_conformance_alerts`, the per-backend
-            # figure and dispatch fields) are centralised in `conform_vocabulary.py`'s TS-46
-            # section with the same adopt-or-rename rule.
-            "tests/integration/conform/test_tc_conform_04_full_pipeline_differential.py",
-            "tests/integration/conform/test_tc_conform_05_backend_scoped_records.py",
-            "tests/integration/conform/test_tc_conform_06_divergence_gate_and_gap.py",
-            "tests/integration/conform/test_tc_conform_08_build_substitution.py",
-            "tests/integration/conform/test_tc_conform_11_run_budget.py",
-            "tests/integration/conform/test_tc_conform_12_self_agreement.py",
-            "tests/integration/conform/test_tc_conform_13_observability_alerts.py",
-        ),
-    ),
-    # --- TS-02 (#3), the behavioural half of `TC-CONFORM-09` ---------------------------------
-    #
-    # Its own key rather than riding on `#134` above, and the reason is the one the `#122
-    # serve_console` note states: `require()` reports whichever blocker it resolves **first**, so a
-    # test whose first call is `run_adversarial_tier` must be registered against
-    # `run_adversarial_tier`. Registering it under the existing `#134` entry (keyed on
-    # `detect_build_substitution`) would unmark it when `FR-CONFORM-08` landed, while the thing it
-    # actually drives was still absent.
-    #
-    # **Keyed on a symbol no Interfaces block declares.** Design §3.18 declares `ConformanceSuite`
-    # with two members, `run` and `compare`, plus the type names in their signatures -- so a key on
-    # any of those resolves against a Protocol-only `aeh.conform` with nothing behind it, which is
-    # the measurement TS-56 made and TS-75 repeated. `run_adversarial_tier` is `FR-CONFORM-09`'s
-    # own phrase (*"an adversarial-input tier"*) turned into a name, appears nowhere in either
-    # design document (checked: zero occurrences), and is invented and used together by the one
-    # suite that drives it.
-    #
-    # #134 rather than #133, for the same reason TS-75 keys `TC-CONFORM-C09`'s two run-halves
-    # there: #133 builds the corpus and #134 runs it, and this half is a run. The corpus half of
-    # the same case is in `tests/artifact/` and carries no marker -- it is green, because the
-    # corpora are TS-02's deliverable rather than something it waits on.
-    "#134 adversarial": (
-        "symbol",
-        f"{CONFORM_MODULE}:run_adversarial_tier",
-        ("tests/integration/conform/test_tc_conform_09_adversarial_tier.py",),
-    ),
+    # The `"#134"` entry that stood here is gone because #134 landed: `aeh.conform` ships
+    # `detect_build_substitution` and the full run/compare divergence machinery (`run`, the
+    # five dimensions, the gates, the backend-scoped records, `MergeRefused`, the seams
+    # `evaluate_conformance_alerts`/`induced_divergence`/`silent_build_substitution`), so the
+    # fourteen TS-75 clause cases it gated, `TC-REG-05`, and `TC-JUDGE-C17`'s limb 4 rejoin
+    # TEST_CMD unmarked. The TC-REG-05 baseline it owed (`TC-REG-05/score-distributions.json`)
+    # is recorded in the same PR the registry's `blocked_on` named.
+    # The `"#134 adversarial"` entry that stood here is gone because #134 landed:
+    # `aeh.conform:run_adversarial_tier` ships (`F-ADV-INJ` derives the differential
+    # outcomes from the declared references; `F-ADV-PDF` drives the real ingest ladder,
+    # quarantining at V0 with zero model calls), so `TC-CONFORM-09`'s behavioural half
+    # rejoins TEST_CMD unmarked. Its keying story stands in the entry's place: the tier
+    # name is `FR-CONFORM-09`'s own phrase invented and used together by the one suite
+    # that drives it, registered apart from `#134` so `require()` reported the blocker
+    # the test's first door actually resolved.
     # --- #148's OBS-07, the judge signals' emitter (`#85`'s `TC-JUDGE-C16`) -------------------
     #
     # `CT-JUDGE-16`'s six observability signals are not emitted by anything yet, and
@@ -787,14 +699,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # (C13)"` and `"#100 promotion consumer (C10)"` entries are gone too because #118
     # landed: `aeh.stats:promote` now resolves, so both halves of C13's conjunction and
     # C10's promotion consumer run in the gate unmarked.
-    "#100 comparison consumers (C14)": (
-        "symbols",
-        f"{STATS_MODULE}:open_stats,{CONFORM_MODULE}:detect_build_substitution",
-        (
-            "tests/contract/synth/test_ct_synth_c14_non_reproducible_prose.py"
-            "::test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives",
-        ),
-    ),
+    # The `"#100 comparison consumers (C14)"` entry that stood here is gone because
+    # #134 landed: `aeh.conform:detect_build_substitution` exists alongside
+    # `aeh.stats:open_stats`, so C14's consumer sweep runs in the gate unmarked. Its
+    # M-STATS half needed the scoring surface populated to assert anything, and the
+    # seeded stores now collect identical blind labels through the declared #115
+    # collection route in the test's own seeding — disclosed in the test docstring.
     # --- TS-72 (#114), the twenty CT-REVIEW clause cases -----------------------------------
     #
     # `M-REVIEW` is four stories: #108 builds the queue, #109 the admission prohibitions and the

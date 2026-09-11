@@ -402,19 +402,15 @@ def test_tc_judge_c17_m_stats_measures_self_agreement_as_a_finding_not_a_failure
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility():
-    """`TC-JUDGE-C17` limb 4 (`M-CONFORM`, written ahead of `#134`) — the comparison
-    method does not require verdict reproducibility: its divergence dimensions carry
+    """`TC-JUDGE-C17` limb 4 (`M-CONFORM`, **landed at #134**, unmarked there) — the
+    comparison method does not require verdict reproducibility: its divergence dimensions carry
     `self_agreement_over_repeated_runs` as a MEASURED rate, not as a boolean
     'reproduced' gate. A boolean would be the reproducibility requirement the clause
     forbids, wearing a metric's name."""
-    # The discriminator first: `require()` reports whichever blocker it resolves
-    # first, so this limb's registry entry (the `#134` one, keyed
-    # `detect_build_substitution`) names the symbol the limb's FIRST door resolves —
-    # `FR-CONFORM-08`, #134's alone. The constructor below resolves against #302's
-    # build-only module; the `run()` the limb drives is #134's divergence machinery,
-    # still a stub.
+    # The registry entry that gated this limb was dropped when #134 landed: the limb's
+    # first door is `detect_build_substitution` — `FR-CONFORM-08`, #134's alone — and the
+    # `run()` the limb drives is the divergence machinery that landed with it.
     require(CONFORM_MODULE, "detect_build_substitution", issue="#134")
     build_suite = require(CONFORM_MODULE, "build_conformance_suite", issue="#134")
     report = build_suite().run(

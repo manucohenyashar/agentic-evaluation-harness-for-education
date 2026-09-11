@@ -6,11 +6,9 @@ Case: test plan §5.18, `FR-CONFORM-08`, R22. Oracle: **differential against the
     | substitution, with the package unchanged | A score shift is detected and reported as build
     | substitution rather than as a package change |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run machinery, the substitution
-seam and the detector are all #134's (`silent_build_substitution` and
-`detect_build_substitution` are the invented names `CT-CONFORM-07` uses; whoever implements #134
-adopts or renames them in both places). The blocker is #134 and the test is registered there in
-`WRITTEN_AHEAD_BLOCKERS`; remove the marker — never the test — when #134 closes. Marked `live`
+**Landed at #134** (unmarked there): the run machinery, the substitution seam and the detector
+are all `aeh.conform`'s — `silent_build_substitution` and `detect_build_substitution` are the
+invented names `CT-CONFORM-07` uses, adopted as declared. Marked `live`
 because the thing being substituted is the model a real backend serves; the gate skips naming
 `HARNESS_CONFORM_LIVE_BACKENDS` when no live backend is declared (the shared gate lives in
 `tests/support/conform_vocabulary.py`).
@@ -44,7 +42,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.live, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-08"

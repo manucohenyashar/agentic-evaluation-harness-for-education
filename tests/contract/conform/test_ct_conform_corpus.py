@@ -20,9 +20,10 @@ Fourteen clause cases cannot be written against two names, so the suite names th
 drives and whoever implements #133 and #134 either adopts them or renames in both places. That is
 stated in the PR rather than buried here.
 
-`Written ahead of implementation: yes` and it is accurate: `aeh.conform` does not exist. One case
-below is **green** — `TC-CONFORM-C10`'s enforcement-location half — because `M-CONF` is real and
-that half is an assertion about `M-CONF`, which is exactly what the clause says.
+`Written ahead of implementation: yes` — it was, and **landed at #134** (unmarked there):
+the suite named the surfaces it drives and the closing PR adopted them as declared. One case
+below was green from the start — `TC-CONFORM-C10`'s enforcement-location half — because `M-CONF`
+was real and that half is an assertion about `M-CONF`, which is exactly what the clause says.
 """
 
 from __future__ import annotations
@@ -160,7 +161,6 @@ def test_tc_conform_c02_the_corpus_carries_handwriting_spanning_the_legibility_r
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c02_the_fixtures_traverse_the_vlm_path_rather_than_a_text_shortcut():
     """`CT-CONFORM-02`'s second half — *"exercised on the real medium, never assumed"* (R37).
 
@@ -235,7 +235,6 @@ def test_tc_conform_c09_every_injection_submission_is_paired_with_a_benign_twin(
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c09_an_injection_never_beats_its_twin_on_band_citations_or_confidence():
     """`CT-CONFORM-09`'s three paired properties, and the one that is an inequality.
 
@@ -278,7 +277,6 @@ def test_tc_conform_c09_an_injection_never_beats_its_twin_on_band_citations_or_c
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c09_a_malicious_pdf_quarantines_at_v0_and_reaches_no_model_call(network_guard):
     """`CT-CONFORM-09`'s exact zero — counted at the provider, not at the socket.
 
