@@ -657,7 +657,11 @@ class ConformanceSuite:
 
         # Backend-scoped records (`CT-CONFORM-06`): one per backend, keyed on the catalog's
         # seven fields with the administration naming the backend profile the figures speak
-        # for. The durable half is the promotion through `M-PKG` (`CT-CONFORM-12`).
+        # for. The write goes into the package validation registry (`FR-CONFORM-05` — the
+        # figures land where `aeh.pkg.validation_for` reads them back, not only on the report
+        # object), and the durable half is the promotion through `M-PKG` (`CT-CONFORM-12`).
+        from aeh import pkg as pkg_module
+
         records: list[ValidationRecord] = []
         for backend_config in configs:
             profile = str(backend_config["HARNESS_PROFILE"])
@@ -675,6 +679,16 @@ class ConformanceSuite:
                 figure=dict(result.figures),
             )
             records.append(record)
+            pkg_module.record_validation(
+                package_version=record.package_version,
+                population_scope=record.population_scope,
+                criterion=record.criterion,
+                backend_profile=record.backend_profile,
+                panel_build_ref=record.panel_build_ref,
+                scoring_model=record.scoring_model,
+                administration=record.administration,
+                figure=dict(record.figure),
+            )
             _promote_validation(record)
 
         observability = {
