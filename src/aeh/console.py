@@ -100,13 +100,37 @@ settled in `tests/support/console_vocabulary.py` and
   blank, never a prior administration's figure in that position (`FR-CONSOLE-24`).
   `touchpoint_surface` enumerates §7.9's twelve rows, one present-and-unavailable naming
   its version (`FR-CONSOLE-25`).
-- **Deliberately absent symbols.** `render_setup_step` and `render_submission_text`
-  belong to #123 and #127 and are **not defined here** — a writtenahead gate fails if a
-  symbol lands before its story, so the absent names are part of this module's contract,
-  not oversights. (#124's names — `render_review_queue`, `review_queue_header`,
-  `blind_flow`, `blind_flow_requests` — landed with that story, and #125's —
-  `amend_finalized_grade`, `export_package`, `ProvenanceRefused`, `touchpoint_surface`,
-  `render_agreement_block` — with this one.)
+- **The limitation is stated, not latent (`NFR-CONSOLE-07`, #127).** Every page the shell
+  renders carries the English-and-left-to-right statement (`_LIMITATION_SECTION`) — a
+  deliberate limitation named in the UI, never an omission discovered in the field, and
+  `CT-CONSOLE-24`'s non-promise is honest on every route rather than on one. The
+  student-text render for the correction flow (`render_submission_text`) rides the same
+  statement, so a non-English or RTL submission degrades **visibly** — named on the page —
+  never silently (`TC-CONSOLE-C24`).
+- **The grade render carries its coverage, boundary language and criterion figures
+  (`render_grade_coverage`, #107's carry-forward landed here).** A grade shown without its
+  five coverage counters is a stronger claim than the system is making (`CT-GRADE-04`); a
+  null grade never reads as "fine" (`CT-GRADE-05`); a deterministic criterion's withheld
+  agreement figure presents as not-applicable, never as a zero that reads as perfect
+  agreement (`CT-GRADE-13`); and a boundary-flagged grade reads as "could cross", never as
+  a likelihood (`CT-GRADE-19`). The rollup's segments render the same presentation from
+  their batch read, so the single-submission renderer and the screen cannot drift into two
+  consoles.
+- **S12's two halves (#127).** The answer-key correction action (`correct an answer key
+  after a run`) writes a new key version (`FR-PKG-18`'s flow — M-PKG's `create_version`
+  copies the parent, the correction lands in the child), re-derives the affected
+  deterministic scores **by lookup** (M-DET's `rederive_for_key_change`, whose
+  `panel_units_enqueued` is a declared zero — a lookup, never a re-judgement, `FR-DET-08`),
+  re-runs the grade policy (M-GRADE's `compute_all` over the re-derived rows), and renders
+  the updated grades immediately. The re-point of the run row to the corrected version is
+  the correction flow's own re-baseline step — TC-GRADE-12's disclosed stand-in: the run
+  row is `M-ORCH`'s alone to write and no orchestrator API exists yet, so the console
+  performs it inside the action and names it in the outcome detail; when M-ORCH ships a
+  re-point surface, this call site becomes that call. The rubric-findings block renders
+  M-GRADE's `rollup_findings` — the criteria the escalation circuit breaker marked
+  `ungradeable_by_panel` and the ones whose review queue rows exhausted the budget
+  (`FR-CONSOLE-31`, `FR-ORCH-13`, `FR-REVIEW-04`) — beside the correction control, so the
+  findings are visible to the person who can act on them.
 - **`run_pipeline_for_test`** is the headless driver (`CT-CONSOLE-01`) with two disclosures:
   it pins the fixture's rubric version by inserting the version row directly (the same column
   shape `M-PKG`'s own first-version insert uses — `PackageCatalog.create_version` mints
@@ -216,6 +240,7 @@ __all__ = [
     "render_review_queue",
     "render_rollup",
     "render_setup_step",
+    "render_submission_text",
     "review_queue_header",
     "retry_run",
     "run_pipeline_for_test",
@@ -635,6 +660,19 @@ def _row_get(row: Any, key: str, default: Any = "") -> Any:
 _STYLESHEET = '<link rel="stylesheet" href="/assets/console.css">'
 
 
+#: The stated limitation (`NFR-CONSOLE-07`, `CT-CONSOLE-24`): English and left-to-right
+#: only in the MVP, named on **every** page the shell renders — a deliberate limitation
+#: recorded in the UI, never an omission discovered in the field. The phrasing is the
+#: honesty contract's: "deliberate", not "known issue"; "may be misordered", a visible
+#: degradation an operator who does not read the language can still notice.
+_LIMITATION_SECTION = (
+    '<section data-role="limitation"><p>This console renders English and left-to-right '
+    "only in the MVP — a deliberate limitation, not an oversight "
+    "(NFR-CONSOLE-07). Non-English and right-to-left text may be misordered here; "
+    "localisation and RTL support are a real later requirement.</p></section>"
+)
+
+
 def _page(title: str, body: str, *, poll_interval_ms: int | None = None) -> str:
     meta = (
         f'<meta http-equiv="refresh" content="{poll_interval_ms // 1000}">'
@@ -644,7 +682,7 @@ def _page(title: str, body: str, *, poll_interval_ms: int | None = None) -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f"<title>{escape(title)}</title>{meta}{_STYLESHEET}</head>"
-        f"<body><h1>{escape(title)}</h1>{body}</body></html>"
+        f"<body><h1>{escape(title)}</h1>{body}{_LIMITATION_SECTION}</body></html>"
     )
 
 
@@ -837,11 +875,17 @@ class RenderedPage:
     A page *is* its rendering for the consumers that sweep markup: the review
     vocabulary's detectors (`unstated_residual`, the budget- and clustering-language
     sweeps) run over renderings, so `__contains__` and `lower` delegate to the markup
-    and a caller never has to reach for `.html` to sweep one."""
+    and a caller never has to reach for `.html` to sweep one.
+
+    `refused` is the render's own claim that it declined the content — the student-text
+    render's refusal face (`render_submission_text`, #127). A page whose text rendered
+    carries `refused=False`; the flag exists so a refusal is a value the caller reads,
+    not a silent success."""
 
     html: str
     queries: tuple[str, ...] = ()
     poll_interval_ms: int | None = None
+    refused: bool = False
 
     def __contains__(self, text: Any) -> bool:
         """Containment over the markup, so a rendered page reads as the rendering."""
@@ -2978,6 +3022,46 @@ def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
     """The rollup page as a module-level renderer (the surface the rollup story owns):
     the settled grades, the agreement block, and the finalization and audit lines."""
     return app.render("/runs/{id}/rollup", id=run_id)
+
+
+def render_submission_text(app: Any, *, text: str) -> RenderedPage:
+    """One submission's text, as the correction flow shows it (`FR-CONSOLE-30`'s S12
+    face): the teacher correcting a key reads what the student's submission carries
+    before deciding the key was wrong. Module-level so the headless driver can render
+    it without a route.
+
+    The console renders the text and states the limitation beside it — never refuses a
+    read of student work for its language. Withholding an Arabic submission from the
+    one person who can act on it would be a worse failure than showing it inside a
+    limitation the page names; the clause (`NFR-CONSOLE-07`) concedes the MVP is
+    English and left-to-right and requires the limitation be *visible*, which the
+    shell's statement is (`_LIMITATION_SECTION`, `CT-CONSOLE-24`: the system fails or
+    degrades visibly, never silently). The text is escaped, so no non-English or RTL
+    byte is corrupted into mojibake on the way to the page — the outcome the
+    non-promise case forbids regardless of whether a warning also shows.
+
+    Refusal stays available (`RenderedPage.refused`) for a caller-facing refusal path;
+    this render chooses the stated-limitation path, so `refused` is False and the
+    degradation is the statement, visible on the page."""
+    return RenderedPage(
+        html=_page(
+            "Submission text",
+            _section(
+                "submission-text",
+                "The submission's text, as the correction flow reads it: what the "
+                "student's answer carries, shown before a key is corrected against it.",
+                escape(str(text)),
+            )
+            + _section(
+                "correction-flow",
+                "Correcting an answer key writes a new key version, re-derives the "
+                "affected deterministic scores by lookup, re-runs the grade policy, and "
+                "enqueues no panel judgment (FR-CONSOLE-30).",
+            ),
+        ),
+        queries=(),
+        refused=False,
+    )
 
 
 # --- the review queue (invariants 8-10) and the blind flow (invariant 11) ------------------------------

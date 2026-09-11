@@ -525,9 +525,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # audit surface) and TS-76's `TC-CONSOLE-C01`/`-C02`/`-C03` seven. The `"#124"` entry
     # is gone the same way: `aeh.console:render_review_queue` and `aeh.console:blind_flow`
     # exist and drive TS-77's CT-CONSOLE-13/-14 file plus TS-76's `TC-CONSOLE-C04`/`-C06`
-    # five. `#125` and `#127` stay: their symbols (`amend_finalized_grade`,
-    # `render_submission_text`) are still deliberately absent from the module, and the
-    # node-ID discipline above is what kept them out of #122's sweep.
+    # five. `#125`'s and `#127`'s symbols have landed since (`amend_finalized_grade`
+    # with #125, `render_submission_text` with #127), and the node-ID discipline
+    # above is what kept those symbols out of #122's sweep while they were absent.
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
     #
@@ -548,12 +548,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `render_rollup` had already landed with the console process, so the case's last
     # unmet `require` was the queue and it unmarked with #124. The node ID that stood
     # here is gone.
-    "#127": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_submission_text",
-        ("tests/contract/console/test_ct_console_observability_and_honesty.py"
-         "::test_tc_console_c24_non_english_and_rtl_content_fails_or_degrades_visibly",),
-    ),
+    # The `"#127"` entry that stood here is gone because #127 landed: `aeh.console`
+    # ships `render_submission_text`, and the page shell carries the English-and-
+    # left-to-right statement on every route (`NFR-CONSOLE-07`/`CT-CONSOLE-24`) — the
+    # student-text render degrades visibly by naming the limitation, never by refusing
+    # a read of student work, and the shell's statement is what makes the non-promise
+    # honest console-wide rather than per-render.
     # --- TS-76 (#131), the twelve CT-CONSOLE security, isolation and prohibition cases ----------
     #
     # Keyed per **rendering**, not per case. `TC-CONSOLE-C11` carries three separate renderings
@@ -591,8 +591,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # conf step-3 rebinding check, the four TS-74 calibration consumer cases, TS-75's conform
     # C14 console half -- all run too. `render_setup_step` landed at #123, so the rows
     # keyed on it (the `-C07`..`-C12` group and the CT-STATS `m_console` sweeps) run too;
-    # `amend_finalized_grade` and `render_submission_text` stay absent: #125 and #127 are
-    # still open, and those are the keys their rows ride on. (`render_review_queue` was
+    # `amend_finalized_grade` landed at #125 and `render_submission_text` at #127, so the
+    # rows keyed on those landings run too. (`render_review_queue` was
     # #124's and landed, so the row that keyed on it -- the c16 `[m_console]` sweep -- runs
     # too.)
     # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
