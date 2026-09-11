@@ -1266,6 +1266,55 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run_start",
         ),
     ),
+    # --- TS-42 (#119), the TC-STATS admissible-label and hand-reference suite ---------------
+    #
+    # #119 is a TEST issue over the landed M-STATS surface, and most of its cases run
+    # green against the shipped module. Two probe surfaces the module has not got, and
+    # those are plan-literal red tests carrying the marker:
+    #
+    # * `TC-STATS-04` row 7's console half: below `STATS_MIN_N_FOR_HEADLINE` the rendered
+    #   headline carries "too few to draw conclusions from" — HLD §11.5's S12 mock renders
+    #   exactly that at n = 15. `render_agreement_block` renders the number, the size, the
+    #   scope and the degeneracy disclosure today and no qualifier: the knob is declared
+    #   (`aeh.stats:STATS_MIN_N_FOR_HEADLINE`, pinned by `TC-STATS-C20`), the vocabulary
+    #   declares the exact string (`TOO_FEW_QUALIFIER`), and the rendering itself is the
+    #   unlanded half. Keyed on the constant the rendering must carry, because the gap is a
+    #   behaviour, not a missing symbol: the landing either imports that name into the
+    #   console's own namespace or re-keys this entry — the `#148 judge_signals`
+    #   invented-and-used-together pattern, with the invention recorded here rather than
+    #   left for whoever closes the behaviour to rediscover.
+    "#119 too-few headline qualifier (HLD §11.5 S12)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:TOO_FEW_QUALIFIER",
+        (
+            "tests/unit/stats/test_agreement_references.py"
+            "::test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier",
+        ),
+    ),
+    # Issue #119, TC-STATS-01's variant: *"a label whose `saw_system_output` is
+    # null — must be treated as inadmissible, not as blind."* The landed
+    # predicate (`_is_admissible`) reads `not getattr(label,
+    # "saw_system_output", 0)`, so a None flag reads as a 0 — inadmissible —
+    # while a *false* 0 reads the same way; the two are indistinguishable at
+    # this predicate, and every shipped producer writes the column
+    # (`record_label` validates it to 0/1 and `_write_collected_label` writes
+    # `int(bool(...))` into a NOT NULL column), so the store cannot even hold
+    # a null. The variant is a *consumer-side* treatment the predicate
+    # currently cannot express, so it is unreachable today: the test below is
+    # red by design. Keyed on an invented constant the treatment must name —
+    # the `#148 judge_signals` invented-and-used-together pattern, with the
+    # invention recorded here rather than left for whoever closes the
+    # behaviour to rediscover: the landing either defines that name (or its
+    # own spelling of the distinction) in the stats module's namespace or
+    # re-keys this entry.
+    "#119 null saw_system_output (consumer-side treatment)": (
+        "symbol",
+        f"{STATS_MODULE}:SAW_SYSTEM_OUTPUT_NULL_IS_INADMISSIBLE",
+        (
+            "tests/artifact/test_admissible_labels.py"
+            "::test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind",
+        ),
+    ),
 }
 
 
