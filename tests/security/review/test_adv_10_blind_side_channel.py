@@ -112,6 +112,7 @@ def _seed_output_bearing_store(tmp_data_dir):
     anchors read them back, so the scans' silence below is over output that is
     demonstrably there."""
     store = open_store(tmp_data_dir)
+    store.durable()  # touch the durable tier: the flow screen's read path logs only over a tier that exists
     seed_cohort(store, (_SUBMISSION,), cohort_id=_COHORT)
     content_hash = seed_document(store, _SUBMISSION, text=_STUDENT_WORK, cohort_id=_COHORT)
     cohort = store.cohort(_COHORT)
@@ -286,6 +287,7 @@ def test_adv_10_output_is_unreachable_by_direct_url_probing_and_link_traversal(
         violations: list[str] = []
         battery = _probe_battery()
         seen: set[str] = set()
+        queried = 0
         frontier = list(battery)
         for _hop in range(2):
             following: list[str] = []
@@ -294,6 +296,8 @@ def test_adv_10_output_is_unreachable_by_direct_url_probing_and_link_traversal(
                     continue
                 seen.add(url)
                 page = app.render(url)
+                if page.queries:
+                    queried += 1
                 violations.extend(_scan(url, page.html, page.queries))
                 following.extend(_LINK_PATTERN.findall(page.html))
             frontier = following
@@ -302,10 +306,26 @@ def test_adv_10_output_is_unreachable_by_direct_url_probing_and_link_traversal(
             "the probe battery was not fully swept — the all-clear would cover fewer "
             "URLs than the attacker typed"
         )
-        flow_html = app.render(f"/runs/{_RUN}/blind").html
-        assert "Blind-sample" in flow_html, (
+        flow_page = app.render(f"/runs/{_RUN}/blind")
+        assert "Blind-sample" in flow_page.html, (
             "the flow's own screen rendered nothing recognisable, so the probe battery "
             "would be scanning pages with no blind flow in them"
+        )
+        # The trace half is live only over pages that issued queries: the durable tier
+        # exists (touched in seeding), so the flow screen's read path ran and logged —
+        # the non-vacuity anchor the contract sibling carries. Without it the trace
+        # scan would sweep empty tuples and assert nothing.
+        assert queried >= 1, (
+            f"no probed page issued a query, so the trace half of the oracle swept "
+            "nothing — the byte scan below would be the only oracle and a page that "
+            "fetched the answer and hid it would pass"
+        )
+        # The link walk is live: every console page carries the shell's stylesheet
+        # href, so the extractor found an edge and the closure swept it. A pattern
+        # that stopped matching would silently reduce the traversal to the battery.
+        assert _LINK_PATTERN.findall(flow_page.html), (
+            "fixture bug: the link extractor found no edge on the flow's own page, so "
+            "the traversal below would never leave the typed URLs"
         )
         assert violations == [], (
             f"the blind flow's URL surface leaked system output: {violations}. ADV-10's "

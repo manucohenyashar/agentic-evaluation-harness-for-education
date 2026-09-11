@@ -6,13 +6,13 @@ blind and student views, then inspect browser storage and caches — nothing wri
 service worker.* The two are one clause, and `NFR-REVIEW-04` states its own pairing:
 *"Review views display verbatim student work; the console writes none of it to browser
 storage."* That pairing is what makes this file more than a re-run of `CT-CONSOLE-06`'s
-sweep: there the pages are swept over a store double carrying no student data, so
-"nothing written" is asserted over pages that display nothing. Here the store is real,
-the submission carries verbatim work (in the blob store, round-tripped), the student
-view renders the work-derived narrative — and the same pages still reach for no storage
-API at all. The sweep runs over pages that genuinely display the work, which is the
-condition `NFR-REVIEW-04`'s sentence describes and the one a screenshot cannot
-distinguish from an empty-store pass.
+sweep: there the pages are swept over a store double whose seeded sentinel is a
+student *name*, and the browser-level half of that clause is E6's. Here the store is
+real and the seeded content is verbatim student *work* — the submission's text sits in
+the blob store (round-tripped) and the student view renders the work-derived narrative
+— and the same pages still reach for no storage API at all. The sweep runs over pages
+that genuinely display the work, which is the condition `NFR-REVIEW-04`'s sentence
+describes and the one a screenshot cannot distinguish from an empty-store pass.
 
 Two disclosures, both inherited from the vocabulary's own reconciliation note
 (`console_security_vocabulary`'s C06 block):
@@ -62,8 +62,12 @@ _WORK = (
 )
 
 #: The three `M-REVIEW`-facing views (`SEC-11`'s exercise clause names review, blind
-#: and student), each with the non-vacuity anchor its page must show — the clause is
-#: swept over pages that display student-linked content, not over empty screens.
+#: and student), each with the anchor its page must show. The student view's anchor is
+#: data-derived — the work-derived narrative the seeded ledger renders. The review and
+#: blind pages render their declared static content over the real store (the queue's
+#: honest-zero; the blind screen is a statement, not a data view) — swept all the same,
+#: which is what the exercise clause asks; the queue's honest-zero and the blind
+#: screen's statement-only body are `#124`'s surface, disclosed above.
 _VIEWS = (
     (f"/runs/{_RUN}/review", "Review queue"),
     (f"/runs/{_RUN}/blind", "Blind-sample"),
@@ -152,9 +156,9 @@ def test_tc_review_19_no_view_writes_verbatim_student_work_to_browser_storage(
         for route, anchor in _VIEWS:
             page = app.render(route)
             assert anchor in page.html, (
-                f"{route} rendered none of its student-linked content ({anchor!r} "
-                "absent), so the storage sweep below would be an all-clear over an "
-                "empty page"
+                f"{route} rendered nothing recognisable ({anchor!r} absent), so the "
+                "storage sweep below would be an all-clear over a page that is not "
+                "the view the clause names"
             )
             writes = browser_storage_writes(page.html)
             assert writes == [], (
