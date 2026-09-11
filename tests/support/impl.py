@@ -153,17 +153,18 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#137"` entry that stood here — `symbol`, `aeh.calib:TriageCategoryRequired` — is gone
     # because #137 landed it: `TriageCategoryRequired` is the module's own refusal type, and the
     # three cases it keyed (C03's type half and both C04 halves) are unmarked and inside TEST_CMD.
-    "#138": (
-        "symbol",
-        f"{CALIB_MODULE}:PhaseDependencyError",
-        ("tests/contract/calib/test_ct_calib_removability.py",
-         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py",
-         "tests/contract/calib/test_ct_calib_lock_and_gates.py"),
-    ),
+    # The `"#138"` entry that stood here — `symbol`, `aeh.calib:PhaseDependencyError` — is gone
+    # because #138 landed it: `PhaseDependencyError` is the module's own refusal type for the
+    # pre-lock vintage (`CT-CALIB-15`), and the fifteen cases it keyed (C05's two, C06's two
+    # clauses, C10, C11's two, C12's teacher-time clause, C15's refusal) are unmarked and inside
+    # TEST_CMD.
+    # `#139`'s tuple includes the discovery file even though most of that file landed with
+    # #137/#138: its last writtenahead case, C12's dual-scoring cost disclosure, is #139's.
     "#139": (
         "symbol",
         f"{CALIB_MODULE}:ThresholdNotDeclared",
         ("tests/contract/calib/test_ct_calib_removability.py",
+         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py",
          "tests/contract/calib/test_ct_calib_lock_and_gates.py"),
     ),
     # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R0- and R1-scored

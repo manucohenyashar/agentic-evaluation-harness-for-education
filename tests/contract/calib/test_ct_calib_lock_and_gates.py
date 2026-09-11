@@ -13,11 +13,17 @@ decision rather than a default. And `CT-CALIB-16` is a **non-promise** that draw
 *non-inferiority* and *improvement* — the misreading that would turn all of the above into a
 quality claim nobody made.
 
-All red. See `test_ct_calib_vocabulary.py` for what is green and why it is not coverage.
+Green as of #138: the two CT-CALIB-06 clauses (the route and the lock sweep) and CT-CALIB-10's
+published-rubric default, and CT-CALIB-09's two consumer halves (M-GRADE, M-STATS). Still
+writtenahead behind #139: the two guardrail gates (CT-CALIB-07, -08), the threshold's owned
+decision (CT-CALIB-13), both CT-CALIB-14 observability clauses, and CT-CALIB-16's inverted
+assertion. See `test_ct_calib_vocabulary.py` for what was green before any of this landed and
+why it is not coverage.
 """
 
 from __future__ import annotations
 
+import aeh.pkg
 import pytest
 
 from tests.support.calib_vocabulary import (
@@ -41,7 +47,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CALIB-06 — every edit goes through M-PKG, and the lock does the rest ----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c06_no_edit_reaches_tier_p_except_through_the_catalog():
     """`CT-CALIB-06` — **every** applied edit is written through `M-PKG`, under a Tier P write
     audit. No direct write, on any path.
@@ -83,9 +88,15 @@ def test_tc_calib_c06_no_edit_reaches_tier_p_except_through_the_catalog():
         "direct write bypasses FR-PKG-03 entirely."
     )
     assert catalog.writes, "the edit did not reach the catalog either — nothing was applied"
+    assert "append_elicitation" in catalog.writes, (
+        f"the edit reached the catalog ({catalog.writes}) but never appended the "
+        "elicitation row — the history is part of the same applied-edit path "
+        "(FR-CALIB-14: the question, the options, the answer and the resulting edit "
+        "are appended when an elicitation completes), not a separate feature an "
+        "`apply_answers` could omit and still be routing."
+    )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("locked_field", LOCKED_FIELDS)
 def test_tc_calib_c06_an_edit_attempting_a_locked_field_raises_schema_lock_violation(locked_field):
     """The §6.2 lock swept **from `M-CALIB`'s side**, one row per forbidden field.
@@ -98,7 +109,11 @@ def test_tc_calib_c06_an_edit_attempting_a_locked_field_raises_schema_lock_viola
 
     The exception must come from the **catalog**, not from a guard in `M-CALIB`. That is the whole
     clause: a check here would be a second implementation of the lock, and two implementations of
-    one rule drift.
+    one rule drift. Provenance is asserted on the catalog's own violation counter (`CT-PKG-16`'s
+    stable-name signal): the `raised_by` attribute rides the exception class, so a caller-side
+    copy of the lock raising the same type with the same message would carry it too — but only
+    `M-PKG`'s guard increments the count, so a refusal that never reached the catalog leaves it
+    flat.
     """
     calib = require(CALIB_MODULE, issue="#138")
     apply_answers = require(CALIB_MODULE, "apply_answers", issue="#138")
@@ -106,10 +121,17 @@ def test_tc_calib_c06_an_edit_attempting_a_locked_field_raises_schema_lock_viola
 
     catalog = calib.catalog_for_test()
     edit = calib.edit_touching(locked_field)
+    refused_before = aeh.pkg.schema_lock_violation_count()
 
     with pytest.raises(SchemaLockViolation) as caught:
         apply_answers({"q1": "broaden"}, catalog=catalog, forced_edit=edit)
 
+    assert aeh.pkg.schema_lock_violation_count() == refused_before + 1, (
+        f"the {locked_field} refusal never reached the catalog's own guard — the §6.2 "
+        "violation counter did not move, so the raise came from a caller-side copy of "
+        "the lock. CT-CALIB-06's point is that this module needs no second check, and "
+        "a second check is what drifts (RISK-06)."
+    )
     assert locked_field in str(caught.value), (
         f"the refusal does not name {locked_field!r}; FR-PKG-03 says each attempt raises "
         "SchemaLockViolation *naming the field*"
@@ -343,7 +365,6 @@ def test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary():
 # --- CT-CALIB-10 — a rubric published in advance ---------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c10_a_published_rubric_defaults_to_r0_and_says_why():
     """`CT-CALIB-10` / `FR-CALIB-12` — where the rubric was published to students in advance, the
     module **defaults to R₀** and **surfaces the fairness implication explicitly**.
@@ -357,10 +378,28 @@ def test_tc_calib_c10_a_published_rubric_defaults_to_r0_and_says_why():
     calib = require(CALIB_MODULE, issue="#138")
     run = require(CALIB_MODULE, "run_for_assignment", issue="#138")
 
-    outcome = run(assignment=calib.assignment(rubric_published_in_advance=True))
+    # R₀ pinned by the CALLER, so "stayed on R₀" is checked against a value this test
+    # chose. An earlier draft compared the outcome's own two fields to each other —
+    # the exact weak shape the suite's C01 docstring names: an implementation that
+    # revised and reported both fields as the revision would pass it.
+    r0 = "pkg-v1-r0"
+    outcome = run(
+        assignment=calib.assignment(rubric_published_in_advance=True, r0_version=r0)
+    )
 
-    assert outcome.active_rubric == outcome.r0_version, (
-        "calibration revised a rubric that had been published to students in advance"
+    assert outcome.active_rubric == r0, (
+        f"calibration graded the class against {outcome.active_rubric!r}, not the R₀ "
+        "this test pinned — it revised a rubric that had been published to students "
+        "in advance"
+    )
+    assert outcome.revised_version is None, (
+        "the published branch produced a revision. Defaulting to R₀ means no revision "
+        "exists at all — whether or not the gates would later accept one, nothing may "
+        "land on the rubric students already answered (FR-CALIB-12)."
+    )
+    assert outcome.skipped is True, (
+        "the published branch ran as a live calibration pass rather than the "
+        "default-and-explain path the clause names"
     )
     assert outcome.fairness_note, (
         "the module defaulted to R₀ without surfacing why. A silent default is correct behaviour "

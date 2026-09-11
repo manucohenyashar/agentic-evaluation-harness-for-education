@@ -10,10 +10,11 @@ would make the model an assessor, a disagreement that skipped triage would let t
 failures rewrite the rubric, and an elicitation that presented a pre-authored edit would turn the
 teacher into an approver. Each is a small drift in the same direction.
 
-Three of the five run green as of #137 — C03's type half and both C04 halves. The elicitation
-and history clauses (C05, C11, C12) remain writtenahead behind #138/#139. See
-`test_ct_calib_vocabulary.py` for what was green before any of this landed and why it is not
-coverage.
+Most of the file runs green: C03's type half, both C04 halves and the whole elicitation
+and history half (C05, C11, C12's teacher-time clause) landed with #137/#138. The one
+clause still writtenahead is C12's dual-scoring cost disclosure, whose mechanism is
+#139's. See `test_ct_calib_vocabulary.py` for what was green before any of this landed
+and why it is not coverage.
 """
 
 from __future__ import annotations
@@ -181,7 +182,6 @@ def test_tc_calib_c04_only_rubric_ambiguity_can_produce_a_proposed_edit(category
 # --- CT-CALIB-05 — a question, never a pre-authored edit ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c05_elicitation_returns_a_question_with_options_and_no_edit():
     """`CT-CALIB-05` — a **question with options**, never a pre-authored rubric edit awaiting
     approval.
@@ -215,7 +215,6 @@ def test_tc_calib_c05_elicitation_returns_a_question_with_options_and_no_edit():
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c05_questions_are_capped_and_ranked_by_submissions_affected():
     """`CT-CALIB-05`'s cap and ordering, against a **hand-built fixture with known counts**.
 
@@ -254,7 +253,6 @@ def test_tc_calib_c05_questions_are_capped_and_ranked_by_submissions_affected():
 # --- CT-CALIB-11 — elicitation_history is append-only ---------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c11_elicitation_history_refuses_updates_and_deletes_at_the_store():
     """`CT-CALIB-11` — append-only, asserted **at the store level, not the application level**.
 
@@ -278,7 +276,6 @@ def test_tc_calib_c11_elicitation_history_refuses_updates_and_deletes_at_the_sto
         history.delete(row_id)
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c11_the_history_alone_answers_why_the_rubric_says_this_now():
     """`CT-CALIB-11`'s stated purpose, asserted as a **reconstruction**.
 
@@ -318,7 +315,6 @@ def test_tc_calib_c11_the_history_alone_answers_why_the_rubric_says_this_now():
 # --- CT-CALIB-12 — teacher time, and the cost that must be disclosed ------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c12_the_teacher_answers_at_most_six_questions_from_two_examples_each():
     """`CT-CALIB-12` / `NFR-CALIB-01` — teacher time is minutes, as an **interaction count**.
 
