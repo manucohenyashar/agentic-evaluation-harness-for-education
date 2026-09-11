@@ -14,10 +14,10 @@ decision rather than a default. And `CT-CALIB-16` is a **non-promise** that draw
 quality claim nobody made.
 
 Green as of #138: the two CT-CALIB-06 clauses (the route and the lock sweep) and CT-CALIB-10's
-published-rubric default, and CT-CALIB-09's two consumer halves (M-GRADE, M-STATS). Still
-writtenahead behind #139: the two guardrail gates (CT-CALIB-07, -08), the threshold's owned
-decision (CT-CALIB-13), both CT-CALIB-14 observability clauses, and CT-CALIB-16's inverted
-assertion. See `test_ct_calib_vocabulary.py` for what was green before any of this landed and
+published-rubric default, and CT-CALIB-09's two consumer halves (M-GRADE, M-STATS). Green as of
+#139: the two guardrail gates (CT-CALIB-07, -08), the threshold's owned decision (CT-CALIB-13),
+both CT-CALIB-14 observability clauses, and CT-CALIB-16's inverted assertion. See
+`test_ct_calib_vocabulary.py` for what was green before any of this landed and
 why it is not coverage.
 """
 
@@ -145,7 +145,6 @@ def test_tc_calib_c06_an_edit_attempting_a_locked_field_raises_schema_lock_viola
 # --- CT-CALIB-07 — the non-inferiority gate -------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c07_the_gate_refuses_to_run_on_the_calibration_set():
     """`CT-CALIB-07` / `NFR-CALIB-02` — the gate operates on the **full class**, and refuses the
     calibration set.
@@ -161,7 +160,6 @@ def test_tc_calib_c07_the_gate_refuses_to_run_on_the_calibration_set():
         non_inferiority(r0="pkg-v1", r1="pkg-v2", cohort_id=calib.CALIBRATION_SET, threshold=0.10)
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "shifted_fraction, expected",
     [
@@ -200,7 +198,6 @@ def test_tc_calib_c07_the_revision_is_rejected_above_the_threshold(shifted_fract
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c07_the_threshold_is_recorded_before_any_result_exists():
     """The methodological assertion that makes the gate honest — an **event-order** oracle.
 
@@ -238,7 +235,6 @@ def test_tc_calib_c07_the_threshold_is_recorded_before_any_result_exists():
 # --- CT-CALIB-08 — adversarial back-translation ---------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c08_an_off_panel_model_shared_with_the_panel_is_refused_at_configuration_time():
     """`CT-CALIB-08` / `NFR-CALIB-04` — the off-panel model is **not in the scoring panel**, and a
     shared build is refused.
@@ -260,7 +256,6 @@ def test_tc_calib_c08_an_off_panel_model_shared_with_the_panel_is_refused_at_con
         back_translate(r0="pkg-v1", r1="pkg-v2", off_panel=shared)
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c08_a_successful_construction_rejects_the_revision():
     """The interpretation the clause fixes: a construction is **evidence the construct changed**.
 
@@ -290,7 +285,6 @@ def test_tc_calib_c08_a_successful_construction_rejects_the_revision():
 # --- CT-CALIB-09 — R₁ pinning, and the rollup boundary --------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c09_r1_is_pinned_with_the_approval_and_a_timestamp():
     """`CT-CALIB-09`, first half — R₁ is version-pinned **with the teacher's approval and a
     timestamp** (`FR-CALIB-11`).
@@ -413,7 +407,6 @@ def test_tc_calib_c10_a_published_rubric_defaults_to_r0_and_says_why():
 # --- CT-CALIB-13 — the threshold is an owned decision ---------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("knob", sorted(DECLARED_KNOBS))
 def test_tc_calib_c13_each_knob_is_read_and_has_an_externally_visible_effect(knob):
     """`CT-CALIB-13` — the three knobs are read, and moving each changes something observable.
@@ -445,7 +438,6 @@ def test_tc_calib_c13_each_knob_is_read_and_has_an_externally_visible_effect(kno
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c13_the_gate_refuses_to_run_when_no_institutional_threshold_is_declared():
     """`CT-CALIB-13`'s substance, and the reason 0.10 is **not a default**.
 
@@ -471,7 +463,6 @@ def test_tc_calib_c13_the_gate_refuses_to_run_when_no_institutional_threshold_is
 # --- CT-CALIB-14 — what it emits, and how it alerts ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c14_the_module_emits_findings_by_category_questions_and_gate_outcomes():
     """`CT-CALIB-14` — an **artifact assertion on names and dimensionality**.
 
@@ -504,7 +495,6 @@ def test_tc_calib_c14_the_module_emits_findings_by_category_questions_and_gate_o
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c14_a_noisy_rubric_alerts_once_on_the_aggregate():
     """`CT-CALIB-14`'s **alert semantics**, which the clause states as wording.
 
@@ -533,7 +523,6 @@ def test_tc_calib_c14_a_noisy_rubric_alerts_once_on_the_aggregate():
 # --- CT-CALIB-16 — the non-promise ----------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c16_a_genuinely_worse_revision_that_shifts_few_students_passes():
     """`CT-CALIB-16` — the **non-promise**, asserted with its inverted fixture.
 

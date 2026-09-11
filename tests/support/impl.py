@@ -135,13 +135,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # this dict fails the gate test by design.
     # --- TS-74 (#142), the sixteen CT-CALIB clause cases ------------------------------------
     #
-    # `M-CALIB` is Phase 3/4 and two stories remain: #138 (elicitation, lock,
-    # history) -> #139 (the two gates); #137 (triage) landed `discover` and
+    # `M-CALIB` is Phase 3/4 and both of its stories have landed: #138 (elicitation, lock,
+    # history) then #139 (the two gates); #137 (triage) landed `discover` and
     # `triage` and deliberately nothing else. The `Calibration` protocol declares
     # six members and a story may stub several at once, so keying a later story
     # on a protocol member fires at the first story that touches the module —
     # #137's forecast ("will very likely stub all six") resolved to two, which
-    # is why #138 and #139 are keyed on the non-protocol names below instead.
+    # is why #138 and #139 were keyed on the non-protocol names below instead.
     #
     # An earlier draft concluded the only alternative was an invented name that might never appear
     # — leaving a P0 case outside the gate forever, which is strictly worse — and keyed #138 and
@@ -158,15 +158,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # pre-lock vintage (`CT-CALIB-15`), and the fifteen cases it keyed (C05's two, C06's two
     # clauses, C10, C11's two, C12's teacher-time clause, C15's refusal) are unmarked and inside
     # TEST_CMD.
-    # `#139`'s tuple includes the discovery file even though most of that file landed with
-    # #137/#138: its last writtenahead case, C12's dual-scoring cost disclosure, is #139's.
-    "#139": (
-        "symbol",
-        f"{CALIB_MODULE}:ThresholdNotDeclared",
-        ("tests/contract/calib/test_ct_calib_removability.py",
-         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py",
-         "tests/contract/calib/test_ct_calib_lock_and_gates.py"),
-    ),
+    # `#139`'s tuple included the discovery file even though most of that file landed with
+    # #137/#138: its last writtenahead case, C12's dual-scoring cost disclosure, was #139's.
+    # The `"#139"` entry that stood here — `symbol`, `aeh.calib:ThresholdNotDeclared` — is gone
+    # because #139 landed it: `ThresholdNotDeclared` is the module's own refusal for the
+    # undeclared non-inferiority threshold (`CT-CALIB-13`), and the eleven cases it keyed (C02's
+    # sweep, C07's three, C08's two, C09's pin, C12's cost disclosure, C13's two, C14's two,
+    # C16) are unmarked and inside TEST_CMD.
     # `TC-CALIB-C09`'s rollup half is `M-GRADE`'s behaviour, not `M-CALIB`'s: R0- and R1-scored
     # results must not share an unannotated rollup. Keyed on the consumer that implements it.
     # (`#101` landed: `aeh.grade` ships `class_rollup` and `cohort_with_mixed_revisions`,

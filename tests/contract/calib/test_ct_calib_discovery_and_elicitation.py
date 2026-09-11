@@ -10,11 +10,10 @@ would make the model an assessor, a disagreement that skipped triage would let t
 failures rewrite the rubric, and an elicitation that presented a pre-authored edit would turn the
 teacher into an approver. Each is a small drift in the same direction.
 
-Most of the file runs green: C03's type half, both C04 halves and the whole elicitation
-and history half (C05, C11, C12's teacher-time clause) landed with #137/#138. The one
-clause still writtenahead is C12's dual-scoring cost disclosure, whose mechanism is
-#139's. See `test_ct_calib_vocabulary.py` for what was green before any of this landed
-and why it is not coverage.
+The file runs green: C03's type half, both C04 halves and the whole elicitation
+and history half (C05, C11, C12's teacher-time clause) landed with #137/#138, and
+C12's dual-scoring cost disclosure landed with #139. See `test_ct_calib_vocabulary.py`
+for what was green before any of this landed and why it is not coverage.
 """
 
 from __future__ import annotations
@@ -336,7 +335,6 @@ def test_tc_calib_c12_the_teacher_answers_at_most_six_questions_from_two_example
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c12_the_dual_scoring_cost_is_disclosed_before_the_pass_is_authorized():
     """`CT-CALIB-12`'s cost disclosure — **before** authorization, not after.
 

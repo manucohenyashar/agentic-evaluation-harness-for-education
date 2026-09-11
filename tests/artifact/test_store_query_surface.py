@@ -693,11 +693,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # through `handle.query` and the catalog's `bands`, neither of which is a
     # census site. Pinned from the walker; re-pinned once more when the
     # reviewer's descriptor-composition fix grew the apply_answers flow above
-    # the sites (the statements are the same four).
-    "aeh.calib:1610",
-    "aeh.calib:1824",
-    "aeh.calib:1855",
-    "aeh.calib:1865",
+    # the sites (the statements are the same four). #139's re-pin: the two
+    # guardrail gates, the dual-scoring budget and the knob surface were
+    # inserted above the fixture builders and moved all four again (the
+    # statements are the same four).
+    "aeh.calib:2607",
+    "aeh.calib:2821",
+    "aeh.calib:2852",
+    "aeh.calib:2862",
 
 })
 
