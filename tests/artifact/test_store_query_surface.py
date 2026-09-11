@@ -625,15 +625,19 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # assembler were inserted above these sites and moved every one of them; the
     # statements are the same eight. Re-read from the walker, never hand-unioned.
     # Second re-pin, still #124's: the reviewer's fixes to the queue header's item
-    # arithmetic and the app-path flagged count moved the driver's six again.)
-    "aeh.console:1491",
-    "aeh.console:1568",
-    "aeh.console:2921",
-    "aeh.console:2926",
-    "aeh.console:2947",
-    "aeh.console:2955",
-    "aeh.console:2963",
-    "aeh.console:2976",
+    # arithmetic and the app-path flagged count moved the driver's six again.
+    # #125's re-pin: the invariants 15-21 work — the band-control helpers, the
+    # amendment ledger, the export gate and the review-window state — was inserted
+    # above the two quarantine-resolution sites and the driver's six again; the
+    # statements are the same eight.)
+    "aeh.console:1710",
+    "aeh.console:1787",
+    "aeh.console:3404",
+    "aeh.console:3409",
+    "aeh.console:3430",
+    "aeh.console:3438",
+    "aeh.console:3446",
+    "aeh.console:3459",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

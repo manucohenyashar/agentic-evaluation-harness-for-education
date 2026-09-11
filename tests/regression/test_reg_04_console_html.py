@@ -41,8 +41,6 @@ from tests.support.console_vocabulary import (
 )
 from tests.support.impl import CONSOLE_MODULE, require
 
-pytestmark = pytest.mark.writtenahead
-
 CASE = "TC-REG-04"
 RUN_ID = "r-1"
 
@@ -100,7 +98,10 @@ def test_tc_reg_04_the_three_rendered_surfaces_match_their_baselines(tmp_path):
     app = build_console()
     queue = render_queue(app, run_id=RUN_ID)
     rollup = render_rollup(app, run_id=RUN_ID)
-    student = app.render("student-view", run_id=RUN_ID, submission_ref="SYN-001")
+    # The student detail surface by its own route (S13, `/students/{ref}`): a name that matches
+    # no template resolves to S1's catalog, which would freeze the wrong page — the golden is
+    # the page this story changed, score rows beside their band controls, not the catalog.
+    student = app.render("/students/SYN-001")
 
     # First: the things no layout change may drop.
     _assert_invariant_elements_survive(queue.html, dict(queue_header(queue)))

@@ -173,7 +173,6 @@ def test_tc_console_c08_no_route_anywhere_offers_a_numeric_score_entry_field():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c08_every_route_that_shows_a_grade_shows_it_as_an_editable_band():
     """`FR-CONSOLE-20` / invariant 16 — the completeness half, and the one that keeps the first
     half honest.

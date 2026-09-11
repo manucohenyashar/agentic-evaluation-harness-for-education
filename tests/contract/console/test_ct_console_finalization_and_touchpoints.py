@@ -34,7 +34,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-15 — finalization does not end editing ---------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c15_an_amendment_preserves_finalized_at_and_writes_a_new_revision():
     """`FR-CONSOLE-21` — three assertions, because the partial implementation is the plausible one.
 
@@ -75,7 +74,6 @@ def test_tc_console_c15_an_amendment_preserves_finalized_at_and_writes_a_new_rev
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c15_a_review_window_delays_finalization_and_never_withholds_a_grade():
     """`FR-CONSOLE-22` — the console-side guard on RISK-11.
 
@@ -117,7 +115,6 @@ def test_tc_console_c15_a_review_window_delays_finalization_and_never_withholds_
 # --- CT-CONSOLE-16 — the export gate ------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c16_export_refuses_a_package_carrying_real_student_text():
     """`FR-CONSOLE-23` / `R71` — asserted **at the console boundary**, where the attempt is made.
 
@@ -138,12 +135,22 @@ def test_tc_console_c16_export_refuses_a_package_carrying_real_student_text():
     with pytest.raises(ProvenanceRefused):
         export(app, package_version="pkg-v1", contains_real_student_text=1)
 
+    # The refusal reached the validation record. Read *before* the passing call below, which
+    # overwrites the record for the same package: an outcome that is written only on the pass
+    # path is a record a refused export silently escapes (R71 — the failure that looks like a
+    # skip). "refused" cannot occur in any fallback sentence the record reads back otherwise
+    # ("no validation data for this population", "recorded for population ...").
+    refused_record = app.validation_record(package_version="pkg-v1")
+    assert "refused" in refused_record.provenance_gate_outcome, (
+        "the export was refused and the validation record does not carry the refusal, so a later "
+        "reader cannot tell a refused export from a gate that never ran (R71)"
+    )
+
     # And the same call succeeds once the flag is clear, so the refusal above is the provenance
     # gate rather than an export that is broken for an unrelated reason.
     assert export(app, package_version="pkg-v1", contains_real_student_text=0) is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c16_the_provenance_gate_is_a_reachable_screen_and_records_its_outcome():
     """`FR-CONSOLE-23`'s other two halves — *"a reachable screen"*, and an outcome that is written.
 
@@ -170,16 +177,19 @@ def test_tc_console_c16_the_provenance_gate_is_a_reachable_screen_and_records_it
 
     export(app, package_version="pkg-v1", contains_real_student_text=0)
     record = app.validation_record(package_version="pkg-v1")
-    assert record.provenance_gate_outcome is not None, (
-        "the provenance gate ran and wrote no outcome to the validation record, so a later reader "
-        "cannot tell it from a gate that was skipped (R71)"
+    # The gate's own words, not merely a non-None value: the record falls back to the table
+    # read or the absence sentence when nothing was written, and both are strings — an
+    # `is not None` assertion here would pass with `record_gate_outcome` deleted. "passed"
+    # occurs only in the outcome a passing gate writes.
+    assert "passed" in record.provenance_gate_outcome, (
+        "the provenance gate ran and wrote no outcome of its own to the validation record, so a "
+        "later reader cannot tell it from a gate that was skipped (R71)"
     )
 
 
 # --- CT-CONSOLE-17 — no touchpoint silently absent -----------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c17_every_teacher_touchpoint_is_implemented_or_labelled_present_and_unavailable():
     """`FR-CONSOLE-25` / `R72` — an **enumerated** sweep over HLD §7.9's twelve rows.
 

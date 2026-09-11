@@ -126,7 +126,6 @@ def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_un
     assert not failures, f"{failures}"
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure():
     """`FR-CONSOLE-24` — asserted as a **negative**, because `RISK-08` has no symptom.
 
@@ -324,7 +323,6 @@ def test_tc_console_c12_no_deterministic_blind_or_random_arm_item_is_rendered_in
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c12_the_blind_reservation_is_subtracted_before_ranking_not_after():
     """`FR-CONSOLE-19` — an **ordering** assertion, and the order is the requirement.
 

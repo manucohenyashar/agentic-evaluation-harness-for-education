@@ -616,40 +616,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
     #
-    # `TC-CONSOLE-C19`'s measurement half was keyed here too, and that was a judgment call
-    # worth stating: `NFR-CONSOLE-01` is traced to **#126**, which builds S1, S2, S6 and S8 --
-    # none of the two screens the NFR names. The case needed the review queue (#124) and the
-    # rollup (#125), siblings with no dependency between them, so no single key was certainly
-    # last. The mis-trace was a finding for `/plan-to-issues`, reported rather than fixed
-    # here. Reconciled at #124's landing: the registry's premise -- "the rollup is #125's" --
-    # was outdated, because `render_rollup` had already landed with the console process, so
-    # the case's last unmet `require` was the queue and it unmarked with #124. The node ID
-    # that stood here is gone.
-    "#125": (
-        "symbol",
-        f"{CONSOLE_MODULE}:amend_finalized_grade",
-        (
-            "tests/contract/console/test_ct_console_finalization_and_touchpoints.py",
-            # TS-76 (#131). Three renderings whose FR is #125's rather than #123's:
-            # `FR-CONSOLE-20` (invariant 16, every displayed band editable), `FR-CONSOLE-24`
-            # (invariant 20, the absent agreement block) and `FR-CONSOLE-19` (invariant 15, the
-            # blind reservation subtracted before ranking). Their sibling halves in the same files
-            # are keyed on #123, which is why these are node IDs.
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c08_"
-            "every_route_that_shows_a_grade_shows_it_as_an_editable_band",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
-            "c11b_with_no_blind_labels_the_block_says_so_and_carries_no_prior_figure",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
-            "the_blind_reservation_is_subtracted_before_ranking_not_after",
-            # TS-01 (#2). `TC-REG-04`'s baseline is the rendered HTML of *three* surfaces -- the
-            # review queue, the rollup and the student view. The queue (#124) and the rollup have
-            # both landed, so every symbol this file requires resolves -- but the case still
-            # fails on its own missing baseline: the golden is the output of a producer whose
-            # amendment and export surfaces are #125's, and it is recorded at that story's
-            # landing. Keying on #124 would have unmarked a test whose artifact did not exist.
-            "tests/regression/test_reg_04_console_html.py",
-        ),
-    ),
+    # The `"#125"` entry that stood here is gone because #125 landed (merged with #124's
+    # registry rewrite): `aeh.console` now ships `amend_finalized_grade`,
+    # `export_package`, `ProvenanceRefused`, `touchpoint_surface` and
+    # `render_agreement_block`, so the finalization/touchpoints file, `-C08`'s
+    # editable-band sweep, `-C11`(b)'s honest absence, `-C12`'s reservation-ordering
+    # half, the stats `-C05` console message and `TC-REG-04` -- the golden whose
+    # producer surfaces are #125's, recorded at this landing -- all run in the gate.
+    # `TC-CONSOLE-C19`'s measurement half had been keyed here too, and that was a
+    # judgment call worth stating: `NFR-CONSOLE-01` is traced to **#126**, which builds
+    # S1, S2, S6 and S8 -- none of the two screens the NFR names. The case needed the
+    # review queue (#124) and the rollup (#125), siblings with no dependency between
+    # them, so no single key was certainly last. The mis-trace was a finding for
+    # `/plan-to-issues`, reported rather than fixed here. Reconciled at #124's landing:
+    # the registry's premise -- "the rollup is #125's" -- was outdated, because
+    # `render_rollup` had already landed with the console process, so the case's last
+    # unmet `require` was the queue and it unmarked with #124. The node ID that stood
+    # here is gone.
     "#127": (
         "symbol",
         f"{CONSOLE_MODULE}:render_submission_text",
@@ -952,12 +935,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_console]",
         ),
     ),
+    # The `"#125 stats"` entry that stood here split when #125 landed: `-C05`'s console
+    # message needs only `render_agreement_block`, which exists now, so that row runs in
+    # the gate unmarked. `-C03`'s absence rendering also needs `NoValidationData`
+    # (`M-STATS`, #115), and `aeh.stats` does not exist yet -- so it rides the
+    # conjunction of the two symbols it actually requires, and fires for whoever of
+    # #115 and #125 lands last.
     "#125 stats": (
-        "symbol",
-        f"{CONSOLE_MODULE}:amend_finalized_grade",
+        "symbols",
+        f"{CONSOLE_MODULE}:render_agreement_block,{STATS_MODULE}:NoValidationData",
         (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c05_the_console_renders_the_message_not_the_previous_administrations_number",
             "tests/contract/stats/test_no_validation_data_type.py"
             "::test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank",
         ),
