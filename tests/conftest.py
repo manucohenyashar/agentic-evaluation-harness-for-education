@@ -33,7 +33,8 @@ from tests.support.store_spy import StoreSpy
 # `grade_superseded_at_and_append_only`; #101's `grade_submission_grade_key` was 18),
 # `aeh.judge` the one before it (17, #80's
 # `judge_verdict_response_columns`), `aeh.agg` the one before THAT (16, #92's
-# `agg_confidence_columns`), `aeh.grade` also owns Durable's last (7, #103's
+# `agg_confidence_columns`), `aeh.pkg` owns Durable's last (8, #118's
+# `pkg_validation_record`), `aeh.grade` the one before it (7, #103's
 # `grade_audit_record_append_only`; #110's `review_label_store_columns` was 6),
 # `aeh.integ` the one before THAT (5, #73's
 # `integ_rate_dimensions`), `aeh.synth` the one before THAT (13, #97's

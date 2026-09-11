@@ -169,7 +169,6 @@ def _pattern_checked_world(tmp_data_dir):
     return store, run_id
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c13_consumers_present_narrative_as_pattern_checked_not_verified(
     tmp_data_dir,
 ):

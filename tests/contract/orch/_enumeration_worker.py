@@ -21,8 +21,8 @@ import sys
 # The eleven migration contributors, imported before the first store open in THIS process.
 # (`aeh.grade` owns Cohort's last migration — #103's `grade_superseded_at_and_append_only`, 19;
 # #101's `grade_submission_grade_key` was 18 —
-# `aeh.judge` the one before it, #80's response columns, 17, and `aeh.grade` Durable's,
-# #103's `grade_audit_record_append_only`, 7; #110's label-store columns was 6. The
+# `aeh.judge` the one before it, #80's response columns, 17, and `aeh.pkg` Durable's,
+# #118's `pkg_validation_record`, 8; `aeh.grade`'s append-only pair was 7. The
 # list was seven when this worker was written and the
 # pin-rot gate caught the shortfall the moment Cohort's tail moved past judge.)
 import aeh.agg  # noqa: F401,E402

@@ -213,7 +213,6 @@ def test_tc_stats_c11_similar_error_rates_in_both_arms_are_reported_as_failing()
 # --- CT-STATS-15 — the write scope, and the indirection ---------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c15_the_validation_record_is_written_through_m_pkg(tmp_data_dir):
     """*"Writes are limited to `package_validation` (**through `M-PKG`**, asserted as an

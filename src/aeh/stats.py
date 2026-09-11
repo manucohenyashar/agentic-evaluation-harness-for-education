@@ -162,16 +162,67 @@ interpretation its clause fixes inside the value it returns:
   threshold here — so the field states the absence rather than leaving it
   implied.
 
+**The validation record and its figures (#118).** ``promote`` records one
+administration (`FR-STATS-10`): the operational and blind counts land
+separately, and the operational ones never reach a κ (`FR-STATS-11`); an
+administration that collected no blind labels reports
+``NO_NEW_VALIDATION_EVIDENCE`` as a first-class value and advances no
+agreement figure (`CT-STATS-05` — the #111/#125 precedent: absence is
+reported, never an earlier figure reused and never a zero); the weakest
+criterion per population travels with every aggregate (`FR-STATS-13`); and
+the narrative-quality channel — citation validity, hallucinated-claim rate,
+teacher rating where collected — is reported separately from criterion
+agreement (`FR-STATS-12`), reconciling with #98's SynthesisReport, which
+carries the same rates. Interpretations this implementation records:
+
+* *The claim is the record's write in Tier D.* `aeh.review`'s collection
+  writes labels with no cohort; ``promote`` claims the unclaimed labels into
+  the named cohort with this module's own declared statements, and the
+  record's durable row goes through `aeh.pkg.record_promotion`, so the write
+  carries `M-PKG`'s frames with `M-STATS`'s initiation (`CT-STATS-15`'s
+  attribution). Audit rows are read unclaimed, never stamped — `audit_record`
+  is append-only (`#103`'s trigger, `FR-DET-10`/`TC-GRADE-23`) — so their
+  cohort dimension rides their insert and they remain the record's sourcing
+  input only. A rung-0 instance (``build_stats``' shape) computes the same
+  counters and weakest entry in memory and writes nothing — rung 0 has
+  nothing durable to write to.
+* *The operational-evidence weighting is declared, not inferred*
+  (`FR-STATS-14`). ``operational_signal`` weights acceptance 0.25, override
+  0.75, blind 1.0 — informative, weak, authoritative — and a caller may
+  declare the mapping through ``build_stats(operational_weights=...)``; the
+  weighting never touches κ, which is computed over the admissible population
+  alone, so a weighted operational channel and an unweighted one carry the
+  same agreement figure (`CT-STATS-06`'s invariance).
+* *The record's κ is a single-criterion value.* A multi-criterion
+  administration has its per-criterion figures in ``weakest_per_population``
+  and no blended headline (`CT-STATS-04` keeps that claim unrepresentable).
+  The weakest entry is the minimum computable κ with a sorted tie-break;
+  where no κ is computable the entry names the criterion and carries
+  ``None`` — a disclosure, not a zero.
+* *The optional export touches neither the scoring pipeline nor the store*
+  (`NFR-STATS-03`). ``analytical_export`` reads the labels the instance
+  already holds, opens no connection, takes no lock, and writes one JSON
+  document under the data directory's ``exports/`` — the cost of that
+  honesty is that it reports the labels the instance was built with, which
+  is exactly what its docstring says. The requirement names Parquet/DuckDB;
+  this implementation writes JSON, a recorded descope: no Parquet/Arrow or
+  DuckDB engine exists in the harness's declared dependency set, and the
+  operative halves the requirement exists for — read-only, off the scoring
+  path, never a second source of truth (ADR-6) — are what the tests pin and
+  what the export holds.
+
 The four seams (CLAUDE.md): the constructor pair is the headless driver —
 ``build_stats``/``open_stats`` return structured values with no console in the
 loop; the deterministic transport for every external dependency is `aeh.store`
 itself, the deterministic local store this module's reads ride (no egress of
 its own); the environment-sensitive constants are env-gated knobs read at
 call time with the declared production value as the default —
-``STATS_SUBGROUP_ANALYSIS_ENABLED`` (pinned by `TC-STATS-C18`'s case) and the
+``STATS_SUBGROUP_ANALYSIS_ENABLED`` (pinned by `TC-STATS-C18`'s case), the
 three detector sensitivities #117 adds for the surface-proxy flag, the
-routing tolerance and the drift distance — so a slower box or a lawful
-installation adjusts without a code change. (``STATS_MIN_N_FOR_HEADLINE``,
+routing tolerance and the drift distance, and #118's blind-skip patience
+(``STATS_BLIND_SKIP_ALERT_AFTER``, how many consecutive administrations
+without a blind sample the alert waits before firing, read at call time) —
+so a slower box or a lawful installation adjusts without a code change. (``STATS_MIN_N_FOR_HEADLINE``,
 pinned by `TC-STATS-C20`, is a declared constant from #115 and deliberately
 not an environment knob: the display-qualifier boundary is a contract value,
 not an environment-sensitive one.) And every figure is stage-level
@@ -186,6 +237,8 @@ import hashlib
 import json
 import math
 import os
+import sqlite3
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -197,14 +250,22 @@ from aeh.store import Statement
 __all__ = [
     "AgreementFigure",
     "BandShape",
+    "BLIND_SAMPLE_SKIPPED_ALERT",
     "CompressionOutcome",
     "CompressionReport",
+    "CriterionFigure",
+    "CriterionOverrideHistory",
     "CrossValidationOutcome",
     "DRIFT_SAMPLE_RANGE",
     "DriftReport",
     "MVVPReport",
     "MVVPStep",
+    "NarrativeQualityReport",
+    "NO_NEW_VALIDATION_EVIDENCE",
     "NoValidationData",
+    "OperationalSignal",
+    "OPERATIONAL_EVIDENCE_ORDER",
+    "OPERATIONAL_EVIDENCE_WEIGHTS",
     "PositionBiasResult",
     "ProxyReport",
     "ROUTING_POLICY_ARM_SOURCES",
@@ -217,6 +278,7 @@ __all__ = [
     "SURFACE_FEATURES",
     "SURFACE_PROXY_ALERT",
     "SelfAgreementPairing",
+    "STATS_BLIND_SKIP_ALERT_AFTER",
     "STATS_MIN_N_FOR_HEADLINE",
     "STATS_STATEMENTS",
     "STATS_SUBGROUP_ANALYSIS_ENABLED",
@@ -226,14 +288,26 @@ __all__ = [
     "StatsAlert",
     "RoutingArm",
     "RoutingPolicyReport",
+    "ValidationAggregate",
     "ValidationStats",
+    "ValidationUpdate",
+    "aggregate",
     "agreement",
     "alerts",
+    "analytical_export",
     "build_stats",
+    "cohort_with_mixed_revisions",
     "compression_check",
+    "criterion_figures",
+    "criterion_override_history",
+    "describe_revision_gate",
     "drift_check",
     "latest_mvvp",
+    "narrative_quality",
+    "observability_counters",
     "open_stats",
+    "operational_signal",
+    "promote",
     "routing_policy_validity",
     "run_mvvp",
     "surface_proxies",
@@ -391,6 +465,81 @@ _DRIFT_ADVISORY_STATEMENT = (
     "is no binding threshold, by design, and the consumer decides what to do "
     "with the distances; the check only reports them."
 )
+
+
+# --- the #118 constants (FR-STATS-10..14, CT-STATS-05/06/19, NFR-STATS-03) --------------------------
+#
+# The validation record's constants. ``NO_NEW_VALIDATION_EVIDENCE`` is the
+# first-class absence value `CT-STATS-05` declares — a message, not a zero and
+# not a stale figure, so an administration that collected no blind labels is
+# reported as exactly that. ``BLIND_SAMPLE_SKIPPED_ALERT`` is the alert name
+# `CT-STATS-19` declares contract for the record. The evidence weights anchor
+# `FR-STATS-14`'s declared ordering: an override is informative, an acceptance
+# is weak, and the blind score is the authoritative one — weights for the
+# operational signal only, never for the agreement figure, which is what keeps
+# the weighting from blurring into a validity claim.
+
+#: The message `CT-STATS-05` fixes: what an administration that collected no
+#: blind labels reports, as a first-class value (`FR-STATS-11`). The agreement
+#: figures are not advanced by such an administration — the record carries this
+#: message beside the counters it did move, and the earlier figure stays where
+#: it was (RISK-08: the silent carry-forward is the failure this names).
+NO_NEW_VALIDATION_EVIDENCE: str = (
+    "no new validation evidence for this administration"
+)
+
+#: The alert name `CT-STATS-19` declares contract for the validation record:
+#: consecutive administrations whose blind sample was skipped. The detector's
+#: threshold — how many consecutive skips provoke it — is the env-gated knob
+#: ``STATS_BLIND_SKIP_ALERT_AFTER``, default 2, read at call time by the one
+#: function that implements the alert.
+BLIND_SAMPLE_SKIPPED_ALERT: str = (
+    "blind_sample_skipped_consecutive_administrations"
+)
+
+#: `FR-STATS-14`'s evidence ordering, as data: the keys a label's origin maps
+#: onto, weakest first. ``override`` — a teacher who overrode the panel — is
+#: informative; ``acceptance`` — a teacher who accepted the panel's proposal —
+#: is weak evidence, because the panel proposed what the same source confirmed;
+#: ``blind`` — the blind score — is the authoritative one. The weights are the
+#: operational signal's and only its: the agreement figure is computed
+#: unweighted, always, which is the clause's *"never blurs into a validity
+#: claim"* held in code.
+OPERATIONAL_EVIDENCE_ORDER: tuple[str, ...] = ("acceptance", "override", "blind")
+
+#: The declared default weights, keyed by ``OPERATIONAL_EVIDENCE_ORDER``. A
+#: detector calibration rather than a quality threshold: they decide how loudly
+#: an operational signal speaks, never whether the system is good. Deliberately
+#: **not** an environment knob — the ordering is a contract value (the clause
+#: names all three kinds), and re-weighting validation evidence is a policy
+#: decision this module will not make configurable.
+OPERATIONAL_EVIDENCE_WEIGHTS: Mapping[str, float] = {
+    "acceptance": 0.25,
+    "override": 0.75,
+    "blind": 1.0,
+}
+
+#: The label ``origin`` values the collection paths write (`CT-REVIEW-07`'s
+#: closed set) mapped onto the evidence order above. ``accept`` — the review
+#: accepted the panel's proposal — is the ``acceptance`` spelling; ``override``
+#: carries its own name; the blind sample's ``blind_sample`` is the ``blind``
+#: one. An origin outside the mapping falls back on the label's type — a blind
+#: label reads as ``blind`` evidence, anything else as ``acceptance`` — so the
+#: mapping is total rather than guessing an arm for an unrecorded origin.
+_ORIGIN_TO_EVIDENCE: Mapping[str, str] = {
+    "accept": "acceptance",
+    "acceptance": "acceptance",
+    "override": "override",
+    "blind_sample": "blind",
+    "blind": "blind",
+}
+
+#: How many consecutive administrations may skip their blind sample before
+#: ``BLIND_SAMPLE_SKIPPED_ALERT`` fires. Env-gated at call time under this same
+#: name (seam 3): a slower-cadence installation adjusts without a code change.
+#: A detector threshold, not a quality one — it decides when the record says
+#: the administration ran blind, never whether the system is good.
+STATS_BLIND_SKIP_ALERT_AFTER: int = 2
 
 
 # --- the admissibility filter (NFR-STATS-04) ------------------------------------------------------
@@ -761,6 +910,47 @@ STATS_STATEMENTS: dict[str, Statement] = {
     "select_labels_all": Statement(
         "SELECT * FROM label"
     ),
+    # --- the validation record's writes (#118, FR-STATS-10) ---------------------
+    # The claim is the record's own write: an administration's unclaimed
+    # *labels* are stamped with the administration's cohort id, in Tier D, by
+    # this module — `CT-STATS-15` closes *package* rows to `M-PKG` and grants
+    # label/audit/metric reads plus exactly this record-keeping, and the
+    # durable label table is where an administration lives. The row the
+    # package tier receives (``package_validation``) is written *through*
+    # ``aeh.pkg.record_promotion`` (``TC-STATS-C15``'s indirection), not here.
+    # Audit rows are deliberately absent from the claim: `audit_record` is
+    # append-only (#103's trigger, `FR-DET-10`/`TC-GRADE-23` — a forged or
+    # expunged record defeats the dispute path), so an audit row's cohort
+    # dimension rides its insert and is never updated afterwards. The
+    # unclaimed-audits read stays as the record's sourcing input; the stamp
+    # never happens.
+    "select_unclaimed_labels": Statement(
+        "SELECT * FROM label WHERE cohort_id IS NULL"
+    ),
+    "claim_labels": Statement(
+        "UPDATE label SET cohort_id = :cohort_id WHERE cohort_id IS NULL"
+    ),
+    "select_unclaimed_audits": Statement(
+        "SELECT package_version_id, profile_summary, panel_config "
+        "FROM audit_record WHERE cohort_id IS NULL"
+    ),
+    # The per-criterion figures the record carries, one row per
+    # criterion-and-administration: the key joins the cohort dimension
+    # (#118's migration), so a second administration of the same package is a
+    # second record rather than a collision.
+    "record_criterion_stats": Statement(
+        "INSERT OR REPLACE INTO criterion_stats "
+        "(package_version_id, criterion_id, backend_profile, panel_build_ref, "
+        "n, cohort_id) VALUES (:package_version_id, :criterion_id, "
+        ":backend_profile, :panel_build_ref, :n, :cohort_id)"
+    ),
+    # The read `criterion_figures` resolves one administration's record
+    # through — the same rows `record_criterion_stats` wrote, keyed on the
+    # cohort dimension the migration added, so a figure the consumer reads is
+    # exactly the figure the record wrote.
+    "select_criterion_stats": Statement(
+        "SELECT * FROM criterion_stats WHERE cohort_id = :cohort_id"
+    ),
 }
 
 
@@ -772,7 +962,11 @@ class _StoredLabel:
     side falls back to ``band`` when the explicit column is NULL. ``routing``
     is `CT-REVIEW-07`'s column (`FR-STATS-08`'s arms read it); rows predating
     the column read as ``None``, which `routing_policy_validity` keeps out of
-    both arms rather than guessing an arm for them."""
+    both arms rather than guessing an arm for them. ``origin`` is the evidence
+    class `FR-STATS-14`'s signal reads and `CT-STATS-06`'s origin counter
+    reports by; ``cohort_id`` is the administration dimension the validation
+    record's claim stamps (`#118`) — ``None`` on rows no administration has
+    claimed yet."""
 
     def __init__(self, mapping: Mapping[str, Any]) -> None:
         self.label_id = mapping.get("label_id")
@@ -787,6 +981,8 @@ class _StoredLabel:
             else mapping.get("band")
         )
         self.routing = mapping.get("routing")
+        self.origin = mapping.get("origin")
+        self.cohort_id = mapping.get("cohort_id")
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
@@ -1728,6 +1924,25 @@ def _env_float(name: str, default: float) -> float:
     return value
 
 
+def _env_int(name: str, default: int) -> int:
+    """One integer environment knob, read at call time (seam 3).
+
+    The same loud-failure discipline the other knob readers hold: an
+    unparseable or non-integer value raises with the knob's name, so a
+    mis-spelled count fails loudly instead of silently changing what a
+    detector counts.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError as error:
+        raise ValueError(
+            f"environment knob {name}={raw!r} is not an integer."
+        ) from error
+
+
 def _subgroup_analysis_enabled() -> bool:
     """The subgroup gate's effective state: the declared default, overridden by
     the environment knob of the same name where an installation declares the
@@ -1750,6 +1965,15 @@ def _routing_policy_tolerance() -> float:
 
 def _drift_tolerance() -> float:
     return _env_float("STATS_DRIFT_TOLERANCE", STATS_DRIFT_TOLERANCE)
+
+
+def _blind_skip_alert_after() -> int:
+    """How many consecutive blind-skipped administrations provoke the record's
+    alert (`CT-STATS-19`), the declared default overridden by the env knob of
+    the same name. The effective floor is one: a threshold below one would
+    alert on an empty run, raising the skip alert for every administration
+    that *ran* its blind sample."""
+    return max(_env_int("STATS_BLIND_SKIP_ALERT_AFTER", STATS_BLIND_SKIP_ALERT_AFTER), 1)
 
 
 def _require_str_or_none(member: str, **named: Any) -> None:
@@ -1985,6 +2209,141 @@ class DriftReport:
     advisory: bool
     binding_threshold: None
     why_not_binding: str
+
+
+# --- the validation record's return types (#118, FR-STATS-10..14) -----------------------------------
+#
+# Every one is a figure-shaped value: ids, counts, coefficients and the names
+# of flags — never prose about the system's quality. `promote`'s update is
+# swept for exactly that property (the sentinel scan reads every field of the
+# value `promote` returns), and the aggregate carries the weakest criterion
+# beside the figures it summarizes rather than instead of them.
+
+
+@dataclass(frozen=True)
+class ValidationUpdate:
+    """What one administration's record-keeping moved (`FR-STATS-10`,
+    `CT-STATS-05`, `CT-STATS-06`): the three counters, each answering its own
+    question, beside the figure the administration's blind population
+    supports.
+
+    ``cohorts_used`` counts the administrations the record now speaks for;
+    ``blind_count`` and ``operational_count`` count the claimed labels
+    **separately** — merging any two would let operational volume read as
+    validation depth (RISK-07), and `CT-STATS-06` pins all three values
+    distinct. ``n`` is the blind population the record's ``agreement_kappa``
+    was computed over; ``agreement_kappa`` is ``None`` whenever that population
+    is multi-criterion (a blended headline is the claim `CT-STATS-04` keeps
+    unrepresentable) or too small to compute one — the per-criterion figures
+    travel in ``weakest_per_population`` instead.
+
+    ``message`` carries `NO_NEW_VALIDATION_EVIDENCE` when the administration
+    collected no blind labels (``CT-STATS-05``'s first-class absence value) and
+    is otherwise empty — the counters, not prose, are the record's content.
+    ``surface_proxy_flags`` is #117's `ProxyReport` payload seam, carried
+    through to the durable record; ``weakest_per_population`` maps each
+    population (the claimed cohort, or the declared scopes at rung 0) to its
+    weakest criterion. All fields are figures and ids — never a claim about the
+    system."""
+    cohort_id: str | None
+    package_version_id: str | None
+    cohorts_used: int
+    operational_count: int
+    blind_count: int
+    n: int
+    agreement_kappa: float | None
+    weakest_per_population: Mapping[str, Mapping[str, Any]]
+    surface_proxy_flags: tuple[str, ...]
+    message: str
+
+
+@dataclass(frozen=True)
+class ValidationAggregate:
+    """The per-population aggregate `CT-STATS-04` permits: one value per
+    declared population scope, never a figure spanning them.
+
+    ``weakest_per_population`` is the clause's *"the weakest criterion per
+    population is exposed alongside every aggregate figure"* (`FR-STATS-13`):
+    each declared scope maps to its weakest criterion — the one whose blind
+    agreement figure is lowest — so a consumer reading the aggregate reads the
+    criterion the whole population stands or falls on, in the same value. A
+    scope whose labels carry no per-label scope attribute reports the
+    population-wide weakest (the labels a caller supplies through the
+    in-memory constructor carry no scope of their own; the declared scopes are
+    what this installation knows, and the aggregate refuses to invent a
+    per-scope split the data does not carry — that disclosure is this class's
+    whole reason to exist, and `aggregate()`'s docstring states it)."""
+
+    population_scopes: tuple[str, ...]
+    weakest_per_population: Mapping[str, Mapping[str, Any]]
+
+
+@dataclass(frozen=True)
+class CriterionOverrideHistory:
+    """One criterion's override history (`CT-STATS-09`): how many reviews it
+    has, how many of them overrode the panel, and the rate between them. A
+    criterion nobody has reviewed returns `NoValidationData` — a zero rate on
+    an unreviewed criterion would rank it safest in exactly the queue that
+    decides what gets looked at next."""
+    criterion_id: str
+    n: int
+    override_count: int
+    override_rate: float | None
+
+
+@dataclass(frozen=True)
+class NarrativeQualityReport:
+    """The narrative-quality figures, reported **separately** from
+    criterion-score agreement (`FR-STATS-12`, `CT-STATS-14`): the citation
+    validity rate, the hallucinated-claim rate, and the teacher rating where
+    one was collected.
+
+    The three ride this report and never an `AgreementFigure` — combining
+    them would let a narrative channel's numbers dress an agreement statistic
+    up as a quality claim, which is the combination `CT-STATS-14` forbids.
+    Each metric is ``None`` where its channel was not declared: absence is the
+    value, not a zero."""
+    cohort_id: str | None
+    citation_validity_rate: float | None
+    hallucinated_claim_rate: float | None
+    teacher_rating: float | None
+    channel_declared: bool
+
+
+@dataclass(frozen=True)
+class OperationalSignal:
+    """The weighted operational signal `FR-STATS-14` declares, with the
+    weights it used beside the number — a signal is not a figure, and the
+    value says so.
+
+    ``signal`` is the weighted mean agreement over the paired population;
+    ``weights`` are the evidence weights it was computed with (the declared
+    ordering's defaults, or the caller's); ``weighted`` says whether any
+    non-default weight was applied at all, so a consumer can tell a weighted
+    signal from an unweighted one without re-deriving it. The value carries no
+    validity claim: the agreement figure is the only place a validity claim
+    comes from, and it is computed unweighted."""
+    signal: float | None
+    weights: Mapping[str, float]
+    n: int
+    weighted: bool
+
+
+@dataclass(frozen=True)
+class CriterionFigure:
+    """One criterion's figure as the record carries it (`FR-STATS-13`): the
+    criterion, the rubric revision it was measured under, and the scope that
+    figure is a claim about — the per-criterion companion to
+    ``package_validation``'s per-administration row. ``rubric_version`` is the
+    package version the row's statistics were sourced from; a figure without
+    it is a claim about an unnamed revision, which is why the field is
+    non-optional."""
+    criterion_id: str
+    rubric_version: str | None
+    backend_profile: str | None
+    panel_build_ref: str | None
+    n: int
+    cohort_id: str | None
 
 
 def compression_check(
@@ -2405,11 +2764,17 @@ def alerts(self: "ValidationStats") -> tuple["StatsAlert", ...]:
     correlation means that criterion is measuring something other than what
     it claims, **whatever its agreement statistic says** — no other view in
     the system can see it, because every other view is downstream of the
-    score. The blind-sample alert is the validation record's (#118), whose
-    writer owns the administrations channel this alert reads.
+    score. The blind-sample alert is the validation record's (#118): it reads
+    the ``administrations=`` channel the constructor declares, and fires when
+    ``STATS_BLIND_SKIP_ALERT_AFTER`` consecutive administrations ran without
+    their blind sample — the record's own "you are grading without evidence"
+    detector, and the one alert that is about the evidence rather than the
+    score.
 
-    Deterministic: criteria and features in sorted order, so the same
-    declared correlations produce the same alerts on every call."""
+    Deterministic: criteria and features in sorted order, administrations in
+    declared order, one alert per maximal consecutive skip run that reaches
+    the threshold — so the same declared channels produce the same alerts on
+    every call."""
     threshold = _surface_proxy_threshold()
     fired: list["StatsAlert"] = []
     for criterion in sorted(self._surface_correlations):
@@ -2425,7 +2790,846 @@ def alerts(self: "ValidationStats") -> tuple["StatsAlert", ...]:
                     detail=f"{criterion}: {detail}",
                 )
             )
+    fired.extend(_blind_skip_alerts(self._administrations))
     return tuple(fired)
+
+
+def _administration_fields(administration: Any) -> tuple[str | None, bool]:
+    """One administration's ``(cohort_id, blind_sample)`` from either spelling
+    the channel carries — a mapping (the constructor's documented shape) or a
+    duck-typed object. An administration that declares no blind-sample fact
+    did not skip: the alert detects skips, not silences."""
+    if isinstance(administration, Mapping):
+        cohort_id = administration.get("cohort_id")
+        blind_sample = administration.get("blind_sample", True)
+    else:
+        cohort_id = getattr(administration, "cohort_id", None)
+        blind_sample = getattr(administration, "blind_sample", True)
+    return cohort_id, bool(blind_sample)
+
+
+def _blind_skip_alerts(
+    administrations: Sequence[Any],
+) -> list["StatsAlert"]:
+    """The ``blind_sample_skipped_consecutive_administrations`` alerts over the
+    declared administrations, in declared order. One alert per maximal
+    consecutive run of blind-skipped administrations that reaches the knob's
+    threshold — a run of three reports once, not twice, because the alert's
+    job is to say the evidence stopped, and saying it once per run says that."""
+    threshold = _blind_skip_alert_after()
+    alerts: list["StatsAlert"] = []
+    run: list[str | None] = []
+    for administration in administrations:
+        cohort_id, blind_sample = _administration_fields(administration)
+        if blind_sample:
+            if len(run) >= threshold:
+                alerts.append(_blind_skip_alert(run))
+            run = []
+            continue
+        run.append(cohort_id)
+    if len(run) >= threshold:
+        alerts.append(_blind_skip_alert(run))
+    return alerts
+
+
+def _blind_skip_alert(run: Sequence[str | None]) -> "StatsAlert":
+    named = ", ".join(str(cohort_id) for cohort_id in run if cohort_id is not None)
+    suffix = f": {named}" if named else ""
+    return StatsAlert(
+        name=BLIND_SAMPLE_SKIPPED_ALERT,
+        detail=(
+            f"{len(run)} consecutive administrations without a blind sample"
+            f"{suffix}"
+        ),
+    )
+
+
+# --- the validation record (#118, FR-STATS-10..14, CT-STATS-05/06/09/14/19) -------------------------
+#
+# `promote` is the record's writer: the one member of this module that holds a
+# write to the durable tier. The clause `CT-STATS-15` enforces is about the
+# *route* — the record's own claim (the administration's unclaimed label and
+# audit rows stamped with the administration's cohort id, in Tier D) is this
+# module's write, while the package tier's row goes **through**
+# `aeh.pkg.record_promotion`, whose frames make the write `M-PKG`'s (the
+# indirection the write audit asserts). What the record may never write — a
+# score, a grade, a narrative, package content — is enforced statically and
+# behaviourally (`TC-STATS-C15`), which is why every statement the writer uses
+# is declared in ``STATS_STATEMENTS`` above rather than assembled at a call
+# site.
+
+
+def _label_evidence_key(label: Any) -> str:
+    """The evidence class `FR-STATS-14`'s weights key a label into: its
+    ``origin`` where the mapping carries it, else the label's type — a blind
+    label reads as blind evidence, anything else as acceptance. Total by
+    construction, so the weighted signal never silently drops a label."""
+    origin = getattr(label, "origin", None)
+    if origin in _ORIGIN_TO_EVIDENCE:
+        return _ORIGIN_TO_EVIDENCE[origin]
+    return "blind" if getattr(label, "label_type", "") == "blind" else "acceptance"
+
+
+def _label_pair_agrees(label: Any) -> bool | None:
+    """Whether one label's two sides agree — ``None`` where the pair is
+    one-sided, so the signal drops the label exactly where the agreement
+    figure drops it (borrowing a side would manufacture agreement)."""
+    system = _system_side(label)
+    teacher = getattr(label, "teacher_band", None)
+    if system is None or teacher is None:
+        return None
+    return system == teacher
+
+
+def _per_criterion_kappas(
+    population: Sequence[Any], band_counts: Mapping[str, int]
+) -> dict[str, float | None]:
+    """Each criterion's chance-corrected coefficient over one population, the
+    same statistic ``agreement`` computes — routed through the same helpers,
+    so a record's per-criterion figure is *the* figure, not a re-spelling. A
+    criterion with fewer than two paired valuations reads ``None``: no
+    coefficient is computable, and the absence is the value (`CT-STATS-16`)."""
+    criteria = sorted({
+        (getattr(label, "criterion_id", "") or "") for label in population
+    })
+    figures: dict[str, float | None] = {}
+    for criterion in criteria:
+        subset = [
+            label
+            for label in population
+            if (getattr(label, "criterion_id", "") or "") == criterion
+        ]
+        paired = _paired_sides(subset)
+        if len(paired) < 2:
+            figures[criterion] = None
+            continue
+        ordinals, inferred_band_count = _band_ordinals(paired)
+        band_count = max(band_counts.get(criterion) or 0, inferred_band_count)
+        kappa, _qwk, _alpha, _po, _pe = _corrected_statistics(
+            ordinals, band_count
+        )
+        figures[criterion] = kappa
+    return figures
+
+
+def _weakest_entry(
+    kappas: Mapping[str, float | None],
+) -> Mapping[str, Any]:
+    """The weakest criterion in a per-criterion κ map: the lowest computable
+    coefficient, ties broken by criterion id in sorted order. Where no
+    criterion has a computable κ the entry discloses that honestly — the
+    criterion id it would have measured, and ``kappa=None`` — rather than
+    dressing an uncomputable comparison up as a number."""
+    computable = {
+        criterion: kappa for criterion, kappa in kappas.items() if kappa is not None
+    }
+    if computable:
+        criterion = min(sorted(computable), key=lambda name: computable[name])
+        return {"criterion_id": criterion, "kappa": computable[criterion]}
+    if kappas:
+        return {"criterion_id": sorted(kappas)[0], "kappa": None}
+    return {"criterion_id": None, "kappa": None}
+
+
+def _label_scope(label: Any) -> str | None:
+    """The population scope a label carries, whichever attribute spells it.
+    The durable label rows carry no scope column in Phase 1 — the declared
+    scopes are the population dimension — so an unattributed label reads
+    ``None`` and the aggregate discloses the population-wide reading for the
+    scopes it cannot split."""
+    scope = getattr(label, "population_scope_id", None)
+    if scope is None:
+        scope = getattr(label, "scope", None)
+    return scope
+
+
+def promote(
+    self: "ValidationStats",
+    cohort_id: str | None = None,
+    *,
+    package_version: str | None = None,
+) -> ValidationUpdate:
+    """Record one administration (`FR-STATS-10`, `CT-STATS-05`, `CT-STATS-06`):
+    claim the administration's unclaimed labels into the named cohort, count
+    what was claimed, and write the record's durable
+    row — the counters, the weakest criterion per population, and #117's
+    surface-proxy flags — through `aeh.pkg.record_promotion`, which is
+    `CT-STATS-15`'s indirection made real: the write reaches the package
+    tier with `M-PKG`'s frames and `M-STATS`'s initiation.
+
+    The claim is the record's write in Tier D and this module's own: the
+    labels an administration collected carry no cohort until an administration
+    takes them (`aeh.review`'s collection writes ``cohort_id`` NULL), and the
+    claim is the act that makes them one administration's evidence. Audit rows
+    are read, never stamped — `audit_record` is append-only (#103's trigger,
+    `FR-DET-10`/`TC-GRADE-23`), so their cohort dimension rides their insert
+    and the record sources its package version from the unclaimed read. The
+    counts are taken over the administration's labels after the claim, so a
+    second `promote` of the same cohort counts that cohort's rows rather
+    than re-claiming anything.
+
+    * `CT-STATS-05`: an administration that collected no blind labels reports
+      `NO_NEW_VALIDATION_EVIDENCE` as a first-class value — and advances no
+      agreement figure. The claimed rows still land (they are the
+      administration's record), the counters still move, and the figure does
+      not: nothing that cannot support a validity claim ever reaches one.
+    * `CT-STATS-06`: the three counters count separately — ``blind_count``
+      the admissible population, ``operational_count`` the claimed labels
+      that are not admissible, ``cohorts_used`` the administrations the
+      record now speaks for. ``agreement_kappa`` is computed only when the
+      administration's blind population is single-criterion; a
+      multi-criterion one has per-criterion figures in
+      ``weakest_per_population`` and no blended headline, because
+      `CT-STATS-04` keeps that claim unrepresentable.
+
+    Rung 0 (no data directory — `build_stats`' shape) computes the same
+    counters over the in-memory population and writes nothing. Rung 2 claims
+    through the durable file `open_stats` created; an instance must have been
+    built by `open_stats` for the claim to have anything to claim.
+
+    Defined at module level and bound into ``ValidationStats`` below, the way
+    ``agreement`` is."""
+    _require_str_or_none("promote", cohort_id=cohort_id, package_version=package_version)
+    _refuse_foreign_cohort(self, cohort_id, "promote")
+
+    data_dir = self._data_dir
+    if data_dir is None:
+        return self._record_in_memory(cohort_id, package_version)
+
+    # The durable record is keyed on its administration; a promote of neither
+    # a passed nor a bound cohort would count the unclaimed labels into a row
+    # keyed ("", "") and leave them unclaimed — a later administration's
+    # promote would then claim and count the same labels again. Refuse rather
+    # than write a record that makes the next one lie (rung 0 has no store, so
+    # the in-memory shape above has nothing to double-count and stays).
+    if cohort_id is None and self._cohort_id is None:
+        raise ValueError(
+            "promote needs an administration to record: pass cohort_id=, or "
+            "open_stats(cohort_id=...). An unkeyed record row would leave the "
+            "labels unclaimed for the next administration to re-count."
+        )
+
+    # --- rung 2: the durable claim --------------------------------------------------------------
+    database_path = Path(data_dir) / "durable.sqlite"
+    connection = sqlite3.connect(str(database_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        # The audit rows are read unclaimed and never stamped (`audit_record`
+        # is append-only — #103's trigger — and no writer sets the column at
+        # insert), so the read spans every administration's rows. That is
+        # exactly why sourcing refuses a multi-version world (see
+        # `_record_sourcing`): nothing in this read names *this*
+        # administration's revision except agreement or an explicit
+        # ``package_version=``.
+        audits = [
+            _row_mapping(row)
+            for row in connection.execute(STATS_STATEMENTS["select_unclaimed_audits"])
+        ]
+        if cohort_id is not None:
+            # Labels only: `audit_record` is append-only (#103's trigger,
+            # `FR-DET-10`/`TC-GRADE-23`), so the audit rows' cohort dimension
+            # rode their insert and the record reads them unclaimed rather
+            # than stamping them — an update here would raise.
+            connection.execute(
+                STATS_STATEMENTS["claim_labels"], {"cohort_id": cohort_id}
+            )
+        connection.commit()
+        if self._cohort_id is not None:
+            rows = connection.execute(
+                STATS_STATEMENTS["select_labels"], {"cohort_id": self._cohort_id}
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                STATS_STATEMENTS["select_labels_all"]
+            ).fetchall()
+        self._labels = [_StoredLabel(_row_mapping(row)) for row in rows]
+    finally:
+        connection.close()
+
+    population = self._scoped_population(cohort_id)
+    recomputation_started = time.perf_counter()
+    package_version_id, backend_profile, panel_build_ref = _record_sourcing(
+        package_version, audits
+    )
+    administration_key = cohort_id or self._cohort_id or ""
+    if cohort_id is None:
+        claimed_cohorts = {
+            getattr(label, "cohort_id", None)
+            for label in population
+            if getattr(label, "cohort_id", None) is not None
+        }
+        cohorts_used = len(claimed_cohorts)
+    else:
+        # The same arithmetic rung 0 reports: an administration that collected
+        # nothing is still recorded (the row is the disclosure), but the
+        # record speaks for zero cohorts' evidence.
+        cohorts_used = 1 if population else 0
+    admissible = [label for label in population if _is_admissible(label)]
+    blind_count = len(admissible)
+    operational_count = len(population) - blind_count
+
+    per_criterion = _per_criterion_kappas(admissible, self._band_counts)
+    if len(per_criterion) == 1:
+        agreement_kappa = next(iter(per_criterion.values()))
+    else:
+        agreement_kappa = None
+    weakest = {administration_key: _weakest_entry(per_criterion)}
+
+    connection = sqlite3.connect(str(database_path))
+    connection.row_factory = sqlite3.Row
+    try:
+        for criterion in sorted(per_criterion):
+            connection.execute(
+                STATS_STATEMENTS["record_criterion_stats"],
+                {
+                    "package_version_id": package_version_id,
+                    "criterion_id": criterion,
+                    "backend_profile": backend_profile,
+                    "panel_build_ref": panel_build_ref,
+                    "n": sum(
+                        1
+                        for label in admissible
+                        if (getattr(label, "criterion_id", "") or "") == criterion
+                    ),
+                    "cohort_id": administration_key,
+                },
+            )
+        connection.commit()
+    finally:
+        connection.close()
+
+    flags = tuple(self.surface_proxies().surface_proxy_flags)
+    message = NO_NEW_VALIDATION_EVIDENCE if blind_count == 0 else ""
+    # The counter is the honest measurement of the recomputation this record
+    # just did — scope, sourcing, per-criterion figures, weakest entries,
+    # proxy flags — read by `observability_counters` as
+    # ``statistics_recomputation_duration``.
+    self._last_recomputation_seconds = time.perf_counter() - recomputation_started
+
+    from aeh import pkg as _pkg
+
+    _pkg.record_promotion(
+        data_dir,
+        package_version_id=package_version_id,
+        cohort_id=administration_key,
+        cohorts_used=cohorts_used,
+        operational_count=operational_count,
+        blind_count=blind_count,
+        n=blind_count,
+        agreement_kappa=agreement_kappa,
+        weakest_per_population=json.dumps(weakest, sort_keys=True),
+        surface_proxy_flags=json.dumps(list(flags)),
+        message=message,
+    )
+    return ValidationUpdate(
+        cohort_id=administration_key,
+        package_version_id=package_version_id,
+        cohorts_used=cohorts_used,
+        operational_count=operational_count,
+        blind_count=blind_count,
+        n=blind_count,
+        agreement_kappa=agreement_kappa,
+        weakest_per_population=weakest,
+        surface_proxy_flags=flags,
+        message=message,
+    )
+
+
+def _record_sourcing(
+    package_version: str | None, audits: Sequence[Mapping[str, Any]]
+) -> tuple[str, str, str]:
+    """Where the record's per-criterion rows get their provenance: the
+    caller's explicit ``package_version=`` first, then the audit rows' single
+    version when they agree, then the literal ``unrecorded`` — a record whose
+    administration carries no audit rows says so rather than borrowing a
+    version from anywhere else. ``profile_summary`` and ``panel_config`` ride
+    the same rows.
+
+    Audits spanning **more than one** version are a refusal, not a vote: the
+    unclaimed-audit read cannot tell which administration collected under
+    which revision (the append-only trail carries no per-row cohort), so a
+    majority across administrations would attribute this record — and its
+    ``criterion_stats`` rows — to a revision the labels were not collected
+    under. The caller declares the version, or the record is not written."""
+    version = package_version
+    if version is None:
+        versions = sorted({
+            str(row.get("package_version_id"))
+            for row in audits
+            if row.get("package_version_id")
+        })
+        if len(versions) > 1:
+            raise ValueError(
+                "promote cannot source a record across package versions "
+                f"{versions}: the audit trail carries no per-row cohort, so "
+                "no reading of it names THIS administration's revision. Pass "
+                "package_version= explicitly to record one."
+            )
+        if versions:
+            version = versions[0]
+    profile = next(
+        (str(row.get("profile_summary")) for row in audits if row.get("profile_summary")),
+        None,
+    )
+    panel = next(
+        (str(row.get("panel_config")) for row in audits if row.get("panel_config")),
+        None,
+    )
+    return (
+        version if version else "unrecorded",
+        profile if profile else "unrecorded",
+        panel if panel else "unrecorded",
+    )
+
+
+def aggregate(
+    self: "ValidationStats", across: str | None = None
+) -> ValidationAggregate:
+    """The per-population aggregate `CT-STATS-04` permits — one weakest
+    criterion per declared population scope, and **nothing** spanning them.
+
+    The refusal is the other half of the clause: ``across=`` accepts a value
+    precisely so a spanning request can be refused by name, and any value is
+    refused — population, backend, assignment type, a scoring model — because
+    `CT-STATS-04`'s prohibition is on the *combination*, not on a particular
+    spelling of it (`FR-STATS-13`'s exposure lives in
+    ``weakest_per_population``, beside the figures, not instead of them).
+
+    Each declared scope maps to the weakest criterion among its admissible
+    labels — lowest computable κ, criterion id breaking ties in sorted order.
+    The labels the in-memory constructor holds carry no scope of their own, so
+    a scope the labels cannot be attributed to reports the population-wide
+    weakest rather than an invented split: the declared scopes are what this
+    installation knows, and the aggregate says what the data supports, which
+    is the disclosure this value exists to carry. A scope with no admissible
+    labels of its own reads the same disclosure."""
+    if across is not None:
+        raise ValueError(
+            f"aggregate() was asked for across={across!r}; the contract keeps "
+            "population, backend, assignment type and scoring model apart "
+            "(CT-STATS-04), and a value spanning them is the claim this module "
+            "exists to keep unrepresentable. The per-population reading lives "
+            "in weakest_per_population; the per-criterion figures live in "
+            "agreement()."
+        )
+    scopes = list(self._population_scopes) or [""]
+    admissible = self.admissible_labels()
+    weakest: dict[str, Mapping[str, Any]] = {}
+    for scope in scopes:
+        scoped = [
+            label for label in admissible if _label_scope(label) == scope
+        ]
+        if not scoped:
+            scoped = admissible
+        kappas = _per_criterion_kappas(scoped, self._band_counts)
+        weakest[scope] = _weakest_entry(kappas)
+    return ValidationAggregate(
+        population_scopes=tuple(scopes), weakest_per_population=weakest
+    )
+
+
+def criterion_override_history(
+    self: "ValidationStats", criterion_id: str
+) -> "CriterionOverrideHistory | NoValidationData":
+    """One criterion's override history (`CT-STATS-09`): the reviews it has,
+    how many overrode the panel, and the rate. The population is the
+    admissible one — the filter exists once (`NFR-STATS-04`) and this member
+    routes through it like every figure here.
+
+    A criterion nobody has reviewed returns `NoValidationData` — the clause's
+    own distinction: a zero rate on a reviewed criterion is evidence the
+    criterion works, a zero on an unreviewed one is evidence of nothing, and
+    the two must not be the same value (they rank oppositely in exactly the
+    queue that decides what gets looked at next)."""
+    _require_str_or_none("criterion_override_history", criterion_id=criterion_id)
+    population = [
+        label
+        for label in self.admissible_labels()
+        if (getattr(label, "criterion_id", "") or "") == criterion_id
+    ]
+    if not population:
+        return NoValidationData(reason="no_blind_labels", n=0)
+    override_count = sum(
+        1 for label in population if getattr(label, "origin", None) == "override"
+    )
+    n = len(population)
+    return CriterionOverrideHistory(
+        criterion_id=criterion_id,
+        n=n,
+        override_count=override_count,
+        override_rate=override_count / n,
+    )
+
+
+def narrative_quality(self: "ValidationStats", cohort_id: str | None = None) -> NarrativeQualityReport:
+    """The narrative-quality figures, separate from criterion-score agreement
+    (`FR-STATS-12`, `CT-STATS-14`): the citation validity rate, the
+    hallucinated-claim rate, and the teacher rating where one was collected.
+    The metrics come from the ``narrative_metrics=`` channel the constructor
+    declares — this module measures agreement, and a narrative channel's
+    numbers are reported beside it, never merged into an agreement figure
+    (`CT-STATS-14`'s prohibition, held by giving the channel its own report
+    type). A metric whose channel was not declared is ``None``: the absence
+    is the value, never a zero."""
+    _require_str_or_none("narrative_quality", cohort_id=cohort_id)
+    _refuse_foreign_cohort(self, cohort_id, "narrative_quality")
+    channel = self._narrative_metrics
+    return NarrativeQualityReport(
+        cohort_id=cohort_id if cohort_id is not None else self._cohort_id,
+        citation_validity_rate=channel.get("citation_validity_rate"),
+        hallucinated_claim_rate=channel.get("hallucinated_claim_rate"),
+        teacher_rating=channel.get("teacher_rating"),
+        channel_declared=bool(channel),
+    )
+
+
+def operational_signal(
+    self: "ValidationStats", cohort_id: str | None = None
+) -> OperationalSignal:
+    """The weighted operational signal `FR-STATS-14` declares: the weighted
+    mean agreement over the paired population, the evidence weights beside
+    the number they produced.
+
+    The weights key on the label's evidence class (`OPERATIONAL_EVIDENCE_ORDER`
+    through ``_label_evidence_key``): an override informative, an acceptance
+    weak, the blind score authoritative. ``operational_weights=None`` — the
+    constructor's default — computes with the declared ordering's defaults;
+    the caller's mapping replaces them. The value is a signal, not a figure:
+    the agreement figure is computed unweighted, always, which is the
+    clause's *"never blurs into a validity claim"* — `CT-STATS-06`'s
+    κ-invariance case pins exactly that."""
+    _require_str_or_none("operational_signal", cohort_id=cohort_id)
+    _refuse_foreign_cohort(self, cohort_id, "operational_signal")
+    declared = self._operational_weights
+    weights = dict(OPERATIONAL_EVIDENCE_WEIGHTS if declared is None else declared)
+    population = self._scoped_population(cohort_id)
+    numerator = 0.0
+    denominator = 0.0
+    n = 0
+    for label in population:
+        agrees = _label_pair_agrees(label)
+        if agrees is None:
+            continue
+        weight = float(weights.get(_label_evidence_key(label), 1.0))
+        numerator += weight * (1.0 if agrees else 0.0)
+        denominator += weight
+        n += 1
+    signal = numerator / denominator if denominator > 0.0 else None
+    return OperationalSignal(
+        signal=signal,
+        weights=weights,
+        n=n,
+        weighted=any(value != 1.0 for value in weights.values()),
+    )
+
+
+def observability_counters(self: "ValidationStats") -> dict[str, Any]:
+    """The four counters `CT-STATS-19` declares the module emits: label counts
+    by type and by origin (two counters, because *"label counts by type and
+    origin"* is two — type is blind versus operational and origin is
+    `CT-ORCH-15`'s random arm versus the rest, and collapsing them makes the
+    random arm invisible), the blind coverage per administration, and the
+    duration of the most recent statistics recomputation this instance ran.
+
+    Names are the contract: an operator's dashboard binds them, which is why
+    the values ride a plain mapping rather than a type a dashboard would have
+    to know."""
+    by_type = Counter(
+        (getattr(label, "label_type", "") or "") or "unrecorded"
+        for label in self._labels
+    )
+    by_origin = Counter(
+        (getattr(label, "origin", None) or "") or "unrecorded"
+        for label in self._labels
+    )
+    coverage: dict[str, int] = {}
+    for label in self._labels:
+        cohort = getattr(label, "cohort_id", None)
+        if cohort is not None and _is_admissible(label):
+            coverage[cohort] = coverage.get(cohort, 0) + 1
+    return {
+        "label_count_by_type": dict(by_type),
+        "label_count_by_origin": dict(by_origin),
+        "blind_coverage_per_administration": coverage,
+        "statistics_recomputation_duration": self._last_recomputation_seconds,
+    }
+
+
+def analytical_export(
+    stats: "ValidationStats", data_dir: Path | str | None = None
+) -> dict[str, Any]:
+    """The optional analytical export (`NFR-STATS-03`): one JSON document of
+    figure-shaped values — the per-criterion figures, the weakest criterion
+    per population, the counters, the narrative-quality report — written under
+    the data directory's ``exports/``.
+
+    The clause's *"optional"* and *"never touches the scoring pipeline"* are
+    both held in the shape: the export reads the labels the instance already
+    holds (its constructor read them; nothing here reopens a database), opens
+    no connection, takes no lock, and writes only under ``exports/`` — so it
+    can run beside a live scoring run without contending with it, and the
+    write audit's attribution sees exactly one file write, on a path that
+    names what it is. The cost of that honesty is that the export reports the
+    labels the instance was built with; an export of fresher data asks
+    ``open_stats`` first."""
+    target = Path(data_dir) if data_dir is not None else stats._data_dir
+    if target is None:
+        raise ValueError(
+            "analytical_export() needs a data directory: pass data_dir=, or "
+            "export an instance built by open_stats(), which carries the "
+            "directory it read."
+        )
+    export_dir = target / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    admissible = stats.admissible_labels()
+    kappas = _per_criterion_kappas(admissible, stats._band_counts)
+    figures = []
+    for criterion in sorted(kappas):
+        criterion_n = sum(
+            1
+            for label in admissible
+            if (getattr(label, "criterion_id", "") or "") == criterion
+        )
+        figures.append(
+            {"criterion_id": criterion, "n": criterion_n, "kappa": kappas[criterion]}
+        )
+    report = stats.narrative_quality()
+    quality = {
+        "citation_validity_rate": report.citation_validity_rate,
+        "hallucinated_claim_rate": report.hallucinated_claim_rate,
+        "teacher_rating": report.teacher_rating,
+        "channel_declared": report.channel_declared,
+    }
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "label_count": len(stats._labels),
+        "admissible_n": len(admissible),
+        "figures": figures,
+        "counters": stats.observability_counters(),
+        "narrative_quality": quality,
+    }
+    export_path = export_dir / "validation-analytics.json"
+    export_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    return {
+        "export_path": str(export_path),
+        "criteria": sorted(kappas),
+        "admissible_n": len(admissible),
+        "figure_count": len(figures),
+    }
+
+
+#: The cohort ids `cohort_with_mixed_revisions` created, each mapping to the
+#: store its criterion rows live in — the same fixture registry shape
+# `aeh.grade`'s `class_rollup` resolves through, so a fixture cohort a test
+#: asked for is the cohort `criterion_figures` reads.
+_MIXED_REVISION_COHORTS: dict[str, Any] = {}
+
+
+def cohort_with_mixed_revisions(store: Any = None) -> str:
+    """A cohort whose per-criterion record spans two rubric revisions — the
+    fixture `CT-CALIB-09`'s consumer half reads. Two package versions
+    (``pkg-v1``, ``pkg-v2``) over two criteria, one administration; the store
+    is registered under the returned cohort id so ``criterion_figures``
+    resolves it. Built through this module's own declared statement, so the
+    fixture rows are exactly the rows the record writes."""
+    import tempfile
+    import uuid
+
+    from aeh.store import open_store
+
+    if store is None:
+        store = open_store(Path(tempfile.mkdtemp(prefix="aeh-stats-mixed-")))
+    cohort_id = f"c-stats-mixed-{uuid.uuid4().hex[:10]}"
+    handle = store.durable()
+    with handle.transaction() as tx:
+        for package_version_id, criterion_id, n in (
+            ("pkg-v1", "C-01", 12),
+            ("pkg-v1", "C-02", 9),
+            ("pkg-v2", "C-01", 15),
+            ("pkg-v2", "C-02", 7),
+        ):
+            tx.execute(
+                STATS_STATEMENTS["record_criterion_stats"],
+                package_version_id=package_version_id,
+                criterion_id=criterion_id,
+                backend_profile="edge-local-q4",
+                panel_build_ref="9f2a1c",
+                n=n,
+                cohort_id=cohort_id,
+            )
+    _MIXED_REVISION_COHORTS[cohort_id] = store
+    return cohort_id
+
+
+def criterion_figures(
+    cohort_id: str | None = None,
+    *,
+    data_dir: Path | str | None = None,
+) -> tuple[CriterionFigure, ...]:
+    """One population's per-criterion figures as the record carries them
+    (`FR-STATS-13`): the criterion, the rubric revision each row's statistics
+    were sourced from, and the scope that row is a claim about.
+
+    The store is resolved from the fixture registry (``cohort_with_mixed_
+    revisions`` registers the cohorts it builds), or opened at ``data_dir=``
+    where the caller holds one — a cohort neither resolves to is refused, a
+    figure sourced from a store the caller did not name being the mislabeled
+    claim this module refuses everywhere else."""
+    _require_str_or_none("criterion_figures", cohort_id=cohort_id)
+    registered = _MIXED_REVISION_COHORTS.get(cohort_id) if cohort_id else None
+    if registered is None and data_dir is None:
+        raise ValueError(
+            f"criterion_figures() has no store for cohort {cohort_id!r}: the "
+            "fixture registry does not name it and no data_dir= was given. "
+            "Figures from an unnamed store would be claims about nothing."
+        )
+    statement = STATS_STATEMENTS["select_criterion_stats"]
+    if registered is not None:
+        rows = registered.durable().query(
+            statement, cohort_id=cohort_id
+        )
+    else:
+        from aeh.store import open_store as _open_store
+
+        store = _open_store(data_dir)
+        try:
+            rows = store.durable().query(statement, cohort_id=cohort_id)
+        finally:
+            store.close()
+    return tuple(
+        CriterionFigure(
+            criterion_id=str(row["criterion_id"] or ""),
+            rubric_version=row["package_version_id"] or None,
+            backend_profile=row["backend_profile"] or None,
+            panel_build_ref=row["panel_build_ref"] or None,
+            n=int(row["n"] or 0),
+            cohort_id=row["cohort_id"] or None,
+        )
+        for row in rows
+    )
+
+
+#: What the revision gate says, per outcome — a description, not a verdict.
+#: The pass entry says the two things a reader needs beside a passing gate:
+#: what was compared, and what a pass is **not** — the negated sentences are
+#: the honest disclosure (`CT-STATS-16`'s discipline, applied to prose: the
+#: value never tells the reader the revision is better, because no figure
+#: here can).
+_REVISION_GATE_DESCRIPTIONS: Mapping[str, str] = {
+    "pass": (
+        "The revision gate compares one administration's blind labels against "
+        "the figure the revised rubric declared, over one criterion, one "
+        "population, one backend profile and one panel build. A pass is not "
+        "evidence that the revision got better: it is a report that this "
+        "administration's blind agreement reached the figure the revision "
+        "declared, and nothing else. The gate reports the comparison; whether "
+        "the revision is worth keeping is a decision for the consumer, and no "
+        "number here makes it for them."
+    ),
+    "fail": (
+        "A fail is a report that this administration's blind agreement did not "
+        "reach the figure the revised rubric declared, over the scope the "
+        "figure names. It is not a verdict on the system, and it is not "
+        "evidence the revision got worse: one administration's comparison "
+        "moved the way the declared expectation says, which is the whole of "
+        "what this value reports."
+    ),
+    "no_data": (
+        "The gate reports no comparison for this administration: the blind "
+        "labels that would support one were not collected, which is the "
+        "absence value, not a zero and not a pass carried forward. The "
+        "administration's record says so (`CT-STATS-05`'s message), and the "
+        "next administration's comparison is the next chance to measure."
+    ),
+}
+
+
+def describe_revision_gate(outcome: str) -> str:
+    """What the revision gate's outcome means, in words a consumer can read
+    (`CT-STATS-C16`'s calibration case drives the ``pass`` outcome). A plain
+    string, because the gate's description is the kind of value a console
+    renders directly — and the description carries the non-promises inside
+    it: a pass is a comparison reached, never evidence the revision got
+    better, and the sentences that say so are negated ones."""
+    if outcome not in _REVISION_GATE_DESCRIPTIONS:
+        raise ValueError(
+            f"describe_revision_gate() got outcome={outcome!r}; the gate "
+            f"describes {sorted(_REVISION_GATE_DESCRIPTIONS)}."
+        )
+    return _REVISION_GATE_DESCRIPTIONS[outcome]
+
+
+def _scoped_population(
+    self: "ValidationStats", cohort_id: str | None
+) -> list[Any]:
+    """The population one administration's record speaks for.
+
+    Three cases, each honest about what it knows (`CT-STATS-05`'s
+    administration is the caller): a named cohort narrows to the labels that
+    carry it — the rows the durable claim stamped; a cohort named over an
+    in-memory population that carries no cohort facts at all is the held
+    population, disclosed as the shape it is (a rung-0 population has no
+    administration keying to narrow by, and pretending otherwise would make
+    every rung-0 record an empty one); no cohort named reads every label the
+    instance holds."""
+    if cohort_id is None:
+        return list(self._labels)
+    if not any(
+        getattr(label, "cohort_id", None) is not None for label in self._labels
+    ):
+        return list(self._labels)
+    return [
+        label
+        for label in self._labels
+        if getattr(label, "cohort_id", None) == cohort_id
+    ]
+
+
+def _record_in_memory(
+    self: "ValidationStats",
+    cohort_id: str | None,
+    package_version: str | None,
+) -> ValidationUpdate:
+    """Rung 0's promote (`CT-STATS-16`'s sweep reaches it through
+    `build_stats`, which has no data directory): the same counters and the
+    same weakest-entry figure over the in-memory population, the same
+    absence message where no blind label was collected — and **no write**,
+    because rung 0 has nothing durable to write to (`CT-STATS-15`'s
+    discipline holds at every rung: a rung-0 instance writes nothing, which
+    is also why the write audit sees nothing from it)."""
+    population = self._scoped_population(cohort_id)
+    recomputation_started = time.perf_counter()
+    administration_key = (
+        cohort_id or self._cohort_id or self._administration_id or ""
+    )
+    cohorts_used = 1 if population else 0
+    admissible = [label for label in population if _is_admissible(label)]
+    blind_count = len(admissible)
+    operational_count = len(population) - blind_count
+    per_criterion = _per_criterion_kappas(admissible, self._band_counts)
+    agreement_kappa = (
+        next(iter(per_criterion.values())) if len(per_criterion) == 1 else None
+    )
+    weakest = {administration_key: _weakest_entry(per_criterion)}
+    flags = tuple(self.surface_proxies().surface_proxy_flags)
+    message = NO_NEW_VALIDATION_EVIDENCE if blind_count == 0 else ""
+    self._last_recomputation_seconds = (
+        time.perf_counter() - recomputation_started
+    )
+    return ValidationUpdate(
+        cohort_id=administration_key,
+        package_version_id=package_version,
+        cohorts_used=cohorts_used,
+        operational_count=operational_count,
+        blind_count=blind_count,
+        n=blind_count,
+        agreement_kappa=agreement_kappa,
+        weakest_per_population=weakest,
+        surface_proxy_flags=flags,
+        message=message,
+    )
 
 
 class ValidationStats:
@@ -2463,6 +3667,10 @@ class ValidationStats:
         evaluation_modes: Mapping[str, str] | None = None,
         surface_correlations: Mapping[str, Mapping[str, float]] | None = None,
         subgroup_correlations: Mapping[str, Mapping[str, float]] | None = None,
+        operational_weights: Mapping[str, float] | None = None,
+        administrations: Sequence[Mapping[str, Any]] | None = None,
+        narrative_metrics: Mapping[str, Any] | None = None,
+        data_dir: Path | str | None = None,
     ) -> None:
         self._labels = list(labels)
         self._scoring_models = dict(scoring_models or {})
@@ -2480,6 +3688,19 @@ class ValidationStats:
             criterion: dict(features)
             for criterion, features in (subgroup_correlations or {}).items()
         }
+        # #118's declared channels: the operational-evidence weighting the
+        # signal reads (None = the module's declared defaults), the
+        # administrations the alert surface reads, the narrative-quality
+        # channel's collected metrics, and the data directory a rung-2
+        # instance's promote claims through (None on a rung-0 instance,
+        # whose promote writes nothing).
+        self._operational_weights = (
+            dict(operational_weights) if operational_weights is not None else None
+        )
+        self._administrations = list(administrations or [])
+        self._narrative_metrics = dict(narrative_metrics or {})
+        self._data_dir = data_dir
+        self._last_recomputation_seconds = 0.0
 
     def admissible_labels(self) -> list[Any]:
         """The admissible population — the single filter's application
@@ -2507,6 +3728,21 @@ class ValidationStats:
     drift_check = drift_check
     alerts = alerts
 
+    #: The validation-record member and #118's figure surface, defined at
+    #: module level and bound here — see each above. The same require-name
+    #: reaches the same function through the module or the instance, which is
+    #: what the contract vocabulary's ``require`` binds.
+    promote = promote
+    aggregate = aggregate
+    criterion_override_history = criterion_override_history
+    narrative_quality = narrative_quality
+    operational_signal = operational_signal
+    observability_counters = observability_counters
+
+    #: The population and record helpers those members route through.
+    _scoped_population = _scoped_population
+    _record_in_memory = _record_in_memory
+
     def __repr__(self) -> str:
         return f"ValidationStats(labels={len(self._labels)})"
 
@@ -2523,6 +3759,9 @@ def build_stats(
     evaluation_modes: Mapping[str, str] | None = None,
     surface_correlations: Mapping[str, Mapping[str, float]] | None = None,
     subgroup_correlations: Mapping[str, Mapping[str, float]] | None = None,
+    operational_weights: Mapping[str, float] | None = None,
+    administrations: Sequence[Mapping[str, Any]] | None = None,
+    narrative_metrics: Mapping[str, Any] | None = None,
 ) -> ValidationStats:
     """The rung-0/1 constructor: the protocol over an in-memory label
     population (§3.16's Interfaces block names the members; the constructor is
@@ -2544,7 +3783,14 @@ def build_stats(
     `CT-DET-02` makes binding for a verdict distribution — and
     ``surface_correlations=``/``subgroup_correlations=`` are the measured
     channels the proxy interpretation reads, declared by the caller exactly
-    as the MVVP's channels are (#116's pattern)."""
+    as the MVVP's channels are (#116's pattern). #118's members read three
+    more: ``operational_weights=`` declares the operational-evidence weights
+    the signal reads (``None`` keeps the module's declared defaults),
+    ``administrations=`` declares the administration history the blind-skip
+    alert reads, and ``narrative_metrics=`` declares the narrative-quality
+    channel's collected metrics — the channel is separate from criterion
+    agreement (`CT-STATS-14`), and it speaks only where the caller declares
+    it."""
     return ValidationStats(
         labels,
         scoring_models=scoring_models,
@@ -2556,6 +3802,9 @@ def build_stats(
         evaluation_modes=evaluation_modes,
         surface_correlations=surface_correlations,
         subgroup_correlations=subgroup_correlations,
+        operational_weights=operational_weights,
+        administrations=administrations,
+        narrative_metrics=narrative_metrics,
     )
 
 
@@ -2599,11 +3848,13 @@ def open_stats(
     store = _open_store(data_dir)
     try:
         handle = store.durable()
+        read_started = time.perf_counter()
         if cohort_id is not None:
             rows = handle.query(STATS_STATEMENTS["select_labels"], cohort_id=cohort_id)
         else:
             rows = handle.query(STATS_STATEMENTS["select_labels_all"])
         labels = [_StoredLabel(_row_mapping(row)) for row in rows]
+        read_seconds = time.perf_counter() - read_started
     except Exception:
         store.close()
         raise
@@ -2612,4 +3863,10 @@ def open_stats(
     # cohort's rows must refuse a report naming any other (CT-STATS-C18's
     # boundary, enforced at the report rather than by convention). Where no
     # cohort was named the instance holds every cohort's rows and binds none.
-    return ValidationStats(labels, cohort_id=cohort_id)
+    # The directory travels too (#118): the instance's promote claims through
+    # the durable file this open created, and the read's duration is the
+    # initial value of the recomputation counter — the read *is* the
+    # recomputation a rung-2 instance was built from.
+    instance = ValidationStats(labels, cohort_id=cohort_id, data_dir=store.data_dir)
+    instance._last_recomputation_seconds = read_seconds
+    return instance

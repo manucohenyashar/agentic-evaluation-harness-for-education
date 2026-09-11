@@ -404,80 +404,87 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `points_for_band` (the __all__ entry and the delegating method shifted the
     # module); the tripwire diff being the line move alone — the mapping itself
     # reads no SQL, it reads the catalog cache.
-    "aeh.pkg:1955",
+    # (#118's re-pin: `record_promotion` joined at the head — the one net-new
+    # site, the record row's `INSERT OR REPLACE INTO package_validation` as a
+    # declared literal with keyword parameters, the same shape the catalog's
+    # own writes ride; #118's validation surface above the module's first site
+    # moved every site, and the reference export's tail six moved again under
+    # it. Re-read from the walker, never hand-unioned.)
     "aeh.pkg:1997",
-    "aeh.pkg:2011",
-    "aeh.pkg:2013",
-    "aeh.pkg:2015",
-    "aeh.pkg:2038",
-    "aeh.pkg:2046",
-    "aeh.pkg:2133",
-    "aeh.pkg:2148",
-    "aeh.pkg:2150",
-    "aeh.pkg:2152",
-    "aeh.pkg:2178",
-    "aeh.pkg:2191",
-    "aeh.pkg:2194",
-    "aeh.pkg:2234",
-    "aeh.pkg:2237",
-    "aeh.pkg:2254",
-    "aeh.pkg:2259",
-    "aeh.pkg:2261",
-    "aeh.pkg:2270",
-    "aeh.pkg:2275",
-    "aeh.pkg:2277",
-    "aeh.pkg:2535",
-    "aeh.pkg:2548",
-    "aeh.pkg:2572",
-    "aeh.pkg:2573",
-    "aeh.pkg:2640",
-    "aeh.pkg:2642",
-    "aeh.pkg:2692",
+    "aeh.pkg:2104",
+    "aeh.pkg:2146",
+    "aeh.pkg:2160",
+    "aeh.pkg:2162",
+    "aeh.pkg:2164",
+    "aeh.pkg:2187",
+    "aeh.pkg:2195",
+    "aeh.pkg:2282",
+    "aeh.pkg:2297",
+    "aeh.pkg:2299",
+    "aeh.pkg:2301",
+    "aeh.pkg:2327",
+    "aeh.pkg:2340",
+    "aeh.pkg:2343",
+    "aeh.pkg:2383",
+    "aeh.pkg:2386",
+    "aeh.pkg:2403",
+    "aeh.pkg:2408",
+    "aeh.pkg:2410",
+    "aeh.pkg:2419",
+    "aeh.pkg:2424",
+    "aeh.pkg:2426",
+    "aeh.pkg:2684",
     "aeh.pkg:2697",
-    "aeh.pkg:2733",
-    "aeh.pkg:2738",
-    "aeh.pkg:2741",
-    "aeh.pkg:2765",
-    "aeh.pkg:2850",
-    "aeh.pkg:3016",
-    "aeh.pkg:3022",
-    "aeh.pkg:3030",
-    "aeh.pkg:3037",
-    "aeh.pkg:3105",
-    "aeh.pkg:3113",
-    "aeh.pkg:3114",
-    "aeh.pkg:3118",
-    "aeh.pkg:3125",
-    "aeh.pkg:3129",
-    "aeh.pkg:3166",
-    "aeh.pkg:3203",
-    "aeh.pkg:3251",
+    "aeh.pkg:2721",
+    "aeh.pkg:2722",
+    "aeh.pkg:2789",
+    "aeh.pkg:2791",
+    "aeh.pkg:2841",
+    "aeh.pkg:2846",
+    "aeh.pkg:2882",
+    "aeh.pkg:2887",
+    "aeh.pkg:2890",
+    "aeh.pkg:2914",
+    "aeh.pkg:2999",
+    "aeh.pkg:3165",
+    "aeh.pkg:3171",
+    "aeh.pkg:3179",
+    "aeh.pkg:3186",
     "aeh.pkg:3254",
-    "aeh.pkg:3307",
+    "aeh.pkg:3262",
+    "aeh.pkg:3263",
+    "aeh.pkg:3267",
+    "aeh.pkg:3274",
+    "aeh.pkg:3278",
     "aeh.pkg:3315",
-    "aeh.pkg:3319",
-    "aeh.pkg:3382",
-    "aeh.pkg:3413",
-    "aeh.pkg:3445",
-    "aeh.pkg:3466",
-    "aeh.pkg:3490",
-    "aeh.pkg:3491",
-    "aeh.pkg:3545",
-    "aeh.pkg:3553",
-    "aeh.pkg:3561",
-    "aeh.pkg:3572",
-    "aeh.pkg:3576",
-    "aeh.pkg:3580",
-    "aeh.pkg:3853",
-    "aeh.pkg:3862",
-    "aeh.pkg:3909",
-    "aeh.pkg:3998",
-    "aeh.pkg:4139",
-    "aeh.pkg:4143",
+    "aeh.pkg:3352",
+    "aeh.pkg:3400",
+    "aeh.pkg:3403",
+    "aeh.pkg:3456",
+    "aeh.pkg:3464",
+    "aeh.pkg:3468",
+    "aeh.pkg:3531",
+    "aeh.pkg:3562",
+    "aeh.pkg:3594",
+    "aeh.pkg:3615",
+    "aeh.pkg:3639",
+    "aeh.pkg:3640",
+    "aeh.pkg:3694",
+    "aeh.pkg:3702",
+    "aeh.pkg:3710",
+    "aeh.pkg:3721",
+    "aeh.pkg:3725",
+    "aeh.pkg:3729",
+    "aeh.pkg:4002",
+    "aeh.pkg:4011",
+    "aeh.pkg:4058",
     "aeh.pkg:4147",
-    "aeh.pkg:4150",
-    "aeh.pkg:4156",
-    "aeh.pkg:4164",
+    "aeh.pkg:4378",
+    "aeh.pkg:4382",
+    "aeh.pkg:4386",
+    "aeh.pkg:4389",
+    "aeh.pkg:4395",
+    "aeh.pkg:4403",
     # Lines moved with #234's chain-completeness guard (the IncompleteMigrationChainError
     # class and the COMPLETE_SCHEMA_VERSIONS pin, both above the first site), again with
     # #269's _VersionOrderedRegistry, again with #61's run-lifecycle statements landing
@@ -498,8 +505,25 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # helper and its comment above `_SELECT_COHORT_TRIGGERS_VIEWS`) moved them
     # again; the sites are the same statements as before. Re-read from the walker,
     # never hand-unioned.)
-    "aeh.store:1857",
-    "aeh.store:2640",
+    # (#118's re-pin: the validation-record wording and the append-only-audit
+    # note landed in the refusal's contributor text and the durable tier's
+    # migration registration moved both sites; the statements are the same
+    # two. Re-read from the walker, never hand-unioned.)
+    "aeh.store:1895",
+    "aeh.store:2681",
+    # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
+    # sourcing read, the label claim (the record's own declared statement),
+    # the two post-claim cohort reads — plus the per-criterion figures write
+    # and `criterion_figures`' fixture seed in `cohort_with_mixed_revisions`.
+    # Every one a declared `STATS_STATEMENTS` statement with keyword
+    # parameters (FR-STORE-08); the module's other reads go through tier
+    # handles, which are not census sites. Pinned from the walker.
+    "aeh.stats:3026",
+    "aeh.stats:3033",
+    "aeh.stats:3038",
+    "aeh.stats:3042",
+    "aeh.stats:3082",
+    "aeh.stats:3453",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -638,15 +662,20 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #125's re-pin: the invariants 15-21 work — the band-control helpers, the
     # amendment ledger, the export gate and the review-window state — was inserted
     # above the two quarantine-resolution sites and the driver's six again; the
-    # statements are the same eight.)
-    "aeh.console:1710",
-    "aeh.console:1787",
-    "aeh.console:3404",
-    "aeh.console:3409",
-    "aeh.console:3430",
-    "aeh.console:3438",
-    "aeh.console:3446",
+    # statements are the same eight.
+    # (#118's re-pin: the headless driver's idempotent package seed — the C17
+    # world re-runs baseline and live against one data directory, so the seed
+    # probes for the version row before inserting — and the per-cohort run ids
+    # moved the driver's six again; the statements are the same eight. Re-read
+    # from the walker, never hand-unioned.)
+    "aeh.console:1718",
+    "aeh.console:1795",
     "aeh.console:3459",
+    "aeh.console:3464",
+    "aeh.console:3487",
+    "aeh.console:3495",
+    "aeh.console:3503",
+    "aeh.console:3516",
 })
 
 def test_sec_15_every_database_execute_site_is_one_somebody_has_looked_at():

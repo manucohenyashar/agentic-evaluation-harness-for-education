@@ -66,10 +66,8 @@ EXPORT_WALL_CLOCK_TOLERANCE = float(os.environ.get("HARNESS_STATS_EXPORT_TOLERAN
             id=member,
             # The agreement row is #115's, the run_mvvp row is #116's, and the
             # four comparison rows are #117's -- all six landed and run in the
-            # gate unmarked. The promote row is #118's and keeps its marker;
-            # the sweep's own per-row keying (MEMBER_ISSUE) is carried in the
-            # marks.
-            marks=pytest.mark.writtenahead if member == "promote" else [],
+            # gate unmarked. The promote row is #118's and landed with it: all
+            # seven members now run in the gate unmarked.
         )
         for member in sorted(vocab.PROTOCOL_MEMBERS)
     ],
@@ -180,7 +178,6 @@ def test_tc_stats_c17_statistics_over_accumulated_labels_compute_within_the_budg
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c17_the_analytical_export_is_read_only_and_does_not_touch_a_live_run(
     tmp_data_dir,
@@ -246,7 +243,6 @@ def test_tc_stats_c17_the_analytical_export_is_read_only_and_does_not_touch_a_li
 # --- CT-STATS-19 — the counters and the two alerts ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c19_emits_the_declared_counters():
     """An artifact assertion on **names**, since the names are what an operator's dashboard binds.
 
@@ -267,13 +263,11 @@ def test_tc_stats_c19_emits_the_declared_counters():
 @pytest.mark.parametrize(
     "alert, issue",
     [
-        # The blind-skip alert is the validation record's (#118): its
-        # administrations channel does not exist yet, so its row keeps the
-        # marker. The surface-proxy flag is this story's (#117) and runs.
+        # The blind-skip alert is the validation record's (#118) and landed
+        # with it: both rows run in the gate unmarked.
         pytest.param(
             vocab.CONTRACT_ALERTS[0],
             "#118",
-            marks=pytest.mark.writtenahead,
         ),
         pytest.param(vocab.CONTRACT_ALERTS[1], "#117"),
     ],

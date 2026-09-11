@@ -220,7 +220,6 @@ def test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_functio
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("dimension", vocab.NON_AGGREGABLE_DIMENSIONS)
 def test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused(dimension):
     """The second prohibition — *"Sweep an attempt to aggregate across each of the three and
@@ -257,7 +256,6 @@ def test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused(dim
 # --- CT-STATS-13 — the weakest criterion travels with the aggregate --------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criterion():
     """*"Asserted structurally so an aggregate cannot be obtained without it, rather than by
     checking that callers ask for it."*
@@ -333,7 +331,6 @@ def test_tc_stats_c13_an_exported_package_carries_the_weakest_figure_beside_the_
 # --- CT-STATS-14 — narrative quality is a separate report ------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c14_narrative_quality_is_reported_separately_from_agreement():
     """The three metrics, on a sample, in their own report.
 
@@ -361,7 +358,6 @@ def test_tc_stats_c14_narrative_quality_is_reported_separately_from_agreement():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c14_no_function_offers_a_combined_quality_figure():
     """*"Assert the absence of a combining function over the surface."*
 

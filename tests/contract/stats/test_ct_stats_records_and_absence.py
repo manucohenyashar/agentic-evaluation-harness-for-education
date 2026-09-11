@@ -62,7 +62,6 @@ def _blind(count: int) -> list[broken.Label]:
 # --- CT-STATS-05 — the administration that collected nothing ---------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c05_an_administration_with_no_blind_labels_does_not_advance_the_figures(
     tmp_data_dir,
@@ -135,7 +134,6 @@ def test_tc_stats_c05_the_console_renders_the_message_not_the_previous_administr
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale_figure():
     """The same obligation on `M-PKG`'s side — keyed on **#29**, the validation-record story.
 
@@ -184,7 +182,6 @@ def test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale
 # --- CT-STATS-06 — three counters, and the field closed to operational labels ------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c06_promote_increments_the_three_counters_separately(tmp_data_dir):
     """Exact counter arithmetic, three assertions rather than one.
@@ -214,7 +211,6 @@ def test_tc_stats_c06_promote_increments_the_three_counters_separately(tmp_data_
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c06_an_operational_only_administration_leaves_kappa_unchanged(tmp_data_dir):
     """The categorical prohibition, as **κ-invariance**: *"promoting an administration of purely
@@ -254,7 +250,6 @@ def test_tc_stats_c06_an_operational_only_administration_leaves_kappa_unchanged(
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c06_label_weighting_applies_to_operational_signals_and_not_to_the_figure():
     """`FR-STATS-14` — the weighting exists, and it *"never blurs into a validity claim"*.
 
@@ -288,7 +283,6 @@ def test_tc_stats_c06_label_weighting_applies_to_operational_signals_and_not_to_
 # --- CT-STATS-09 — a criterion nobody has reviewed --------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_zero_rate():
     """The clause in its own words: *"a criterion nobody has reviewed is not a criterion nobody
     disagrees with"*.

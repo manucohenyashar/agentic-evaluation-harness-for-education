@@ -65,6 +65,7 @@ __all__ = [
     "QUESTION_TYPES",
     "InMemoryCatalog",
     "Manifest",
+    "NO_NEW_VALIDATION_EVIDENCE",
     "NoValidationData",
     "PROVENANCE_VOCABULARY",
     "PackageCatalog",
@@ -80,11 +81,14 @@ __all__ = [
     "SchemaLockViolation",
     "SchemaTooNewError",
     "schema_lock_violation_count",
+    "ValidationEvidenceGap",
     "default_grade_policy",
     "export_package",
     "in_memory_catalog",
     "points_for_band",
+    "record_promotion",
     "record_validation",
+    "validation_for",
 ]
 
 #: A package version's id: an opaque string the catalog mints.
@@ -1870,6 +1874,151 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_SETUP_READBACK,)
     + (_PKG_SETUP_CLASSIFICATION,)
 )
+
+# Durable v8 — #118's promotion record. M-PKG is the seam `aeh.stats.promote` stores its
+# per-administration figures through (the ProxyReport payload travels with them), so the
+# schema the figures land in is this module's migration to land, by the same ownership
+# rule that put `audit_record`'s append-only pair in `aeh.grade` (#103): the census's
+# "enforced by the owning module" clause reads as *declared and written by the owner*.
+# Three steps, one version:
+#
+# `package_validation` — one row per (package_version_id, cohort_id): the administration's
+# promotion record. Figures and ids only (`TC-SYNTH-C10` scans every Tier D cell for
+# narrative prose; this table must stay prose-free). `agreement_kappa` is **nullable** on
+# purpose — an administration with no blind labels has no agreement figure, and the
+# #111/#125 precedent says absence is reported as a first-class value, never as a zero and
+# never as an earlier figure. The absence is the NULL plus the message that names it.
+# `weakest_per_population` and `surface_proxy_flags` are JSON documents (criterion ids and
+# flag names — figure-shaped, not prose), the latter carrying #117's `ProxyReport`
+# payload seam through to the durable tier.
+#
+# `audit_record.cohort_id` — the promotion gate's first precondition (CT-STORE-10's
+# "audit records" gate) needs the column to exist and to be written by a real promotion;
+# the store's own purge preconditions were written against these ALTERs when the columns
+# were simulated by tests. An additive nullable column is invisible to v7's append-only
+# triggers and to the positional fixture builders (the leading-column insert).
+#
+# `criterion_stats.cohort_id` — rebuilt, not ALTERed: the administration dimension joins
+# the key, because two administrations of the same package/criterion/profile/panel are
+# separate records by #118's semantics, and the original PK would collide on the second.
+# The rebuild follows `aeh.integ`'s v5 precedent — legacy columns lead in their original
+# order, the new dim is NOT NULL DEFAULT '' so pre-#118 rows (there are none today: no
+# writer of the table has ever shipped) keep their shape, and the copy step preserves any.
+_PKG_DURABLE_008 = Migration(
+    version=8,
+    name="pkg_validation_record",
+    statements=(
+        Statement("ALTER TABLE audit_record ADD COLUMN cohort_id TEXT"),
+        Statement(
+            """
+            CREATE TABLE criterion_stats_v8 (
+                package_version_id TEXT    NOT NULL,
+                criterion_id       TEXT    NOT NULL,
+                backend_profile    TEXT    NOT NULL,
+                panel_build_ref    TEXT    NOT NULL,
+                n                  INTEGER NOT NULL CHECK (n >= 0),
+                cohort_id          TEXT    NOT NULL DEFAULT '',
+                PRIMARY KEY (package_version_id, criterion_id, backend_profile,
+                             panel_build_ref, cohort_id)
+            )
+            """
+        ),
+        Statement(
+            """
+            INSERT INTO criterion_stats_v8
+                (package_version_id, criterion_id, backend_profile, panel_build_ref,
+                 n, cohort_id)
+            SELECT package_version_id, criterion_id, backend_profile, panel_build_ref,
+                   n, '' FROM criterion_stats
+            """
+        ),
+        Statement("DROP TABLE criterion_stats"),
+        Statement("ALTER TABLE criterion_stats_v8 RENAME TO criterion_stats"),
+        Statement(
+            """
+            CREATE TABLE package_validation (
+                package_version_id     TEXT    NOT NULL,
+                cohort_id              TEXT    NOT NULL,
+                recorded_at            TEXT    NOT NULL,
+                cohorts_used           INTEGER NOT NULL CHECK (cohorts_used >= 0),
+                operational_count      INTEGER NOT NULL CHECK (operational_count >= 0),
+                blind_count            INTEGER NOT NULL CHECK (blind_count >= 0),
+                n                      INTEGER NOT NULL CHECK (n >= 0),
+                agreement_kappa        REAL,
+                weakest_per_population TEXT    NOT NULL,
+                surface_proxy_flags    TEXT    NOT NULL,
+                message                TEXT    NOT NULL DEFAULT '',
+                PRIMARY KEY (package_version_id, cohort_id)
+            )
+            """
+        ),
+    ),
+)
+
+TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.DURABLE] + (_PKG_DURABLE_008,), key=lambda m: m.version
+))
+
+
+def record_promotion(
+    data_dir: Path | str,
+    *,
+    package_version_id: str,
+    cohort_id: str,
+    cohorts_used: int,
+    operational_count: int,
+    blind_count: int,
+    n: int,
+    agreement_kappa: float | None,
+    weakest_per_population: str,
+    surface_proxy_flags: str,
+    message: str,
+    recorded_at: str | None = None,
+) -> None:
+    """The validation record's durable write (`FR-STATS-10`, #118): one
+    ``package_validation`` row per (package_version_id, cohort_id), into Tier
+    D's durable file. `M-STATS`'s ``promote`` is the only intended caller —
+    the write exists on this side of the boundary so the attribution the
+    write audit records carries `M-PKG`'s frames (the table is this tier's
+    schema, and `CT-STATS-15`'s indirection says the record reaches the
+    package tier through it) with `M-STATS`'s initiation still visible in the
+    frame walk.
+
+    The figures arrive as the caller computed them — counters, the nullable
+    ``agreement_kappa``, the two JSON documents (``weakest_per_population``,
+    ``surface_proxy_flags``) — and this function shapes nothing: it is the
+    record's transport, not its second author. ``recorded_at`` defaults to
+    now, in UTC, as the durable column requires."""
+    if recorded_at is None:
+        recorded_at = datetime.now(timezone.utc).isoformat()
+    database_path = Path(data_dir) / "durable.sqlite"
+    connection = sqlite3.connect(str(database_path))
+    try:
+        connection.execute(
+            "INSERT OR REPLACE INTO package_validation "
+            "(package_version_id, cohort_id, recorded_at, cohorts_used, "
+            "operational_count, blind_count, n, agreement_kappa, "
+            "weakest_per_population, surface_proxy_flags, message) VALUES "
+            "(:package_version_id, :cohort_id, :recorded_at, :cohorts_used, "
+            ":operational_count, :blind_count, :n, :agreement_kappa, "
+            ":weakest_per_population, :surface_proxy_flags, :message)",
+            {
+                "package_version_id": package_version_id,
+                "cohort_id": cohort_id,
+                "recorded_at": recorded_at,
+                "cohorts_used": cohorts_used,
+                "operational_count": operational_count,
+                "blind_count": blind_count,
+                "n": n,
+                "agreement_kappa": agreement_kappa,
+                "weakest_per_population": weakest_per_population,
+                "surface_proxy_flags": surface_proxy_flags,
+                "message": message,
+            },
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 #: The revision copy order: parents before children, so every copied row's FK is
 #: satisfied at insert time. Each key names a statement in `PKG_STATEMENTS`.
@@ -4006,14 +4155,92 @@ def in_memory_catalog() -> InMemoryCatalog:
         blobs=store.blobs()))
 
 
+#: The message an administration's record answers with when it collected no
+#: figures of its own while an adjacent administration of the same key did —
+#: `CT-STATS-05`'s first-class absence read from this module's side of
+#: `CT-PKG-07`: the answer for this key is never the adjacent
+#: administration's figure. `aeh.stats` owns the phrase for its own surface;
+#: this module carries the same literal rather than importing M-STATS (the
+#: dependency runs the other way), and the two are one wording.
+NO_NEW_VALIDATION_EVIDENCE: str = (
+    "no new validation evidence for this administration"
+)
+
+
+@dataclass(frozen=True)
+class ValidationEvidenceGap:
+    """The record's answer for one administration that collected no figures
+    of its own while an adjacent administration of the same key did —
+    `CT-PKG-07`'s *"never a figure from an adjacent key"*, carrying #118's
+    first-class absence message. Distinguishable **in type** from a figure
+    and from a zero, which is `FR-PKG-09`'s load-bearing half."""
+
+    message: str
+
+
+#: The administration-keyed record registry — the in-memory form of
+#: `package_validation` keyed on the catalog's six (`FR-PKG-08`) plus the
+#: administration dimension (#118). The durable form is `record_promotion`'s
+#: Tier D row; this registry is what the module-level read answers from when
+#: no data directory is in play, and no entry of it may answer for a
+#: different administration.
+_VALIDATION_ADMINISTRATION_RECORDS: dict[tuple, dict[str, Any]] = {}
+
+
+def validation_for(
+    *,
+    package_version: str,
+    population_scope: str,
+    backend_profile: str | None = None,
+    panel_build_ref: str | None = None,
+    criterion: str | None = None,
+    scoring_model: str = "",
+    administration: str | None = None,
+) -> Any:
+    """`FR-PKG-09`'s declared read, module-level: the record for one key —
+    the catalog's six fields plus the administration the figures speak for
+    (#118's dimension) — or the explicit absence, distinguishable **in type**
+    from a zero or a low figure (`CT-PKG-07`). The administration dimension
+    is what makes the refusal below possible: an administration that
+    collected no blind labels is answered with the absence message, never
+    the adjacent administration's figure, which is `CT-STATS-05`'s
+    obligation read from `M-PKG`'s side.
+
+    Three answers, each a different type so a caller cannot confuse them:
+    the recorded figure for the exact key; a `ValidationEvidenceGap` whose
+    ``message`` names the absence when an adjacent administration of the same
+    key holds figures this one does not; and `NoValidationData` when no
+    administration of the key has ever recorded anything."""
+    key = (package_version, criterion, population_scope, backend_profile,
+           panel_build_ref, scoring_model, administration)
+    record = _VALIDATION_ADMINISTRATION_RECORDS.get(key)
+    if record:
+        return dict(record)
+    key_sans_administration = key[:-1]
+    siblings = [
+        stored
+        for full_key, stored in _VALIDATION_ADMINISTRATION_RECORDS.items()
+        if full_key[:-1] == key_sans_administration and stored
+    ]
+    if siblings:
+        return ValidationEvidenceGap(message=NO_NEW_VALIDATION_EVIDENCE)
+    return NoValidationData()
+
+
 def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None, *,
                       package_version: str | None = None,
                       population_scope: str | None = None, headline: dict | None = None,
-                      weakest_per_population: dict | None = None) -> None:
+                      weakest_per_population: dict | None = None,
+                      criterion: str | None = None,
+                      backend_profile: str | None = None,
+                      panel_build_ref: str | None = None,
+                      scoring_model: str = "",
+                      administration: str | None = None,
+                      figure: Mapping[str, Any] | None = None) -> None:
     """Record one validation figure set — the write side `CT-PKG-12` routes through this
     module and the design never named (the `tests/support/impl.py` entry says so).
 
-    Two shapes, because two suites were written ahead against this name:
+    Three shapes, because three suites were written ahead against this name:
 
     - `record_validation(catalog, record)` — writes through the given in-memory
       catalog, whose `render_validation_summary` the `CT-CONFORM-14` sweep reads.
@@ -4021,6 +4248,12 @@ def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None
       weakest_per_population=...)` — writes the module-level registry that
       `export_package(package_version=...)` serves. Every figure is keyed by population
       scope; there is no cross-population aggregate to record.
+    - `record_validation(..., administration=..., figure=...)` — the
+      administration-keyed form #118's record makes real: one administration's figures,
+      keyed on the catalog's six (`FR-PKG-08`) **plus** the administration the figures
+      speak for. Two administrations of one key are separate records — the durable form
+      is `record_promotion`'s `package_validation` row — and neither may answer for the
+      other: `validation_for`'s refusal is that refusal made real.
     """
     if catalog is not None:
         if record is None:
@@ -4034,6 +4267,12 @@ def record_validation(catalog: InMemoryCatalog | None = None, record: Any = None
             "record_validation needs a catalog and a record, or package_version and "
             "population_scope."
         )
+    if administration is not None:
+        _VALIDATION_ADMINISTRATION_RECORDS[
+            (package_version, criterion, population_scope, backend_profile,
+             panel_build_ref, scoring_model, administration)
+        ] = dict(figure or {})
+        return
     _VALIDATION_BROADCAST.setdefault(package_version, {})[population_scope] = {
         "headline": dict(headline or {}),
         "weakest_per_population": dict(weakest_per_population or {}),

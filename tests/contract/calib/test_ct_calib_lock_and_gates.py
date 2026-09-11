@@ -316,7 +316,6 @@ def test_tc_calib_c09_a_rollup_never_mixes_r0_and_r1_results_without_annotation(
         assert {segment.rubric_version for segment in mixed.segments} == {"pkg-v1", "pkg-v2"}
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary():
     """`CT-CALIB-09`'s **second consumer**, missing from the first draft.
 
@@ -572,7 +571,6 @@ def test_tc_calib_c16_consumers_present_the_gate_as_non_inferiority_never_superi
     assert console is not None
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too():
     """`CT-CALIB-16`'s **second consumer**, which the first draft's docstring claimed to sweep
     and did not.
