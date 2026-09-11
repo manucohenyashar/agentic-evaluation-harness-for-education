@@ -60,8 +60,10 @@ import json
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Mapping, Sequence
+from uuid import uuid4
 
 # The fixture set's identity is the corpora build's artifact, so this module reads it from the
 # generators rather than copying the constants: `CORPUS_NAME` and `VERSION_LABEL` are one fact in
@@ -102,6 +104,103 @@ _DECLARED_REFUSAL_MAX_DECOMPRESSED_BYTES = adv_pdf.BOMB_DECOMPRESSED_BYTES // 64
 #: failing values are its own (the identity gate reports `unmatched`/`ambiguous`, not `fail`),
 #: which is why the refusal values come from M-INGEST's table rather than a literal here.
 _GATE_ORDER: tuple[str, ...] = ("v0", "v1", "v2", "v3", "v4")
+
+# --- the comparison vocabulary (design §3.18, adopted as declared) -------------------------------
+#
+# These names are the conformance comparison's declared surface — the same words
+# `tests/support/conform_vocabulary.py` declares for the suite that drives them. They are
+# re-declared here rather than imported from the tests because a production module does not
+# import its tests; the vocabulary file carries the adoption note, and a rename is one edit in
+# each place.
+
+#: The five divergence dimensions §7.4 declares, as the report keys them.
+SCORE_DISTRIBUTION_DIMENSION = "per_criterion_score_distribution"
+AGREEMENT_DIMENSION = "chance_corrected_agreement"
+CONFIDENCE_DIMENSION = "confidence_and_escalation_rate"
+EVIDENCE_INTEGRITY_DIMENSION = "evidence_integrity_failure_rate"
+SELF_AGREEMENT_DIMENSION = "self_agreement_over_repeated_runs"
+DIVERGENCE_DIMENSIONS = (
+    SCORE_DISTRIBUTION_DIMENSION,
+    AGREEMENT_DIMENSION,
+    CONFIDENCE_DIMENSION,
+    EVIDENCE_INTEGRITY_DIMENSION,
+    SELF_AGREEMENT_DIMENSION,
+)
+
+#: The three divergence classifications (§7.4). `blocking` gates the release; `informational`
+#: is a finding recorded beside the decision; `unavailable` means no gate may fire for the
+#: dimension at all — CT-CONFORM-14 declines to declare a statistic for the score-distribution
+#: comparison, so its gate *cannot* fire rather than firing loosely.
+CLASSIFICATION_BLOCKING = "blocking"
+CLASSIFICATION_INFORMATIONAL = "informational"
+CLASSIFICATION_UNAVAILABLE = "unavailable"
+
+#: The static classification per dimension (§7.4's table): the integrity gate blocks, the
+#: score distribution is not computable as a gate (CT-CONFORM-14), and the rest are findings.
+EXPECTED_CLASSIFICATION: Mapping[str, str] = {
+    SCORE_DISTRIBUTION_DIMENSION: CLASSIFICATION_UNAVAILABLE,
+    AGREEMENT_DIMENSION: CLASSIFICATION_INFORMATIONAL,
+    CONFIDENCE_DIMENSION: CLASSIFICATION_INFORMATIONAL,
+    EVIDENCE_INTEGRITY_DIMENSION: CLASSIFICATION_BLOCKING,
+    SELF_AGREEMENT_DIMENSION: CLASSIFICATION_INFORMATIONAL,
+}
+
+#: The two gated dimensions, as the clause suite names them.
+UNAVAILABLE_GATE_DIMENSION = SCORE_DISTRIBUTION_DIMENSION
+LIVE_GATE_DIMENSION = EVIDENCE_INTEGRITY_DIMENSION
+
+#: The gates and the findings, partitioned once: every dimension is exactly one of the two.
+GATE_DIMENSIONS = (UNAVAILABLE_GATE_DIMENSION, LIVE_GATE_DIMENSION)
+INFORMATIONAL_DIMENSIONS = tuple(
+    dimension for dimension in DIVERGENCE_DIMENSIONS if dimension not in GATE_DIMENSIONS
+)
+
+#: The dispatch value a recorded-transport run reports for its transcription stage, and the
+#: result field it is reported under (`TC-CONFORM-04`'s dispatch assertion reads the field).
+TRANSCRIPTION_DISPATCH_FIELD = "transcription_dispatch"
+RECORDED_FIXTURE_DISPATCH = "recorded_fixture"
+
+#: The self-agreement figure (`TC-CONFORM-12`): reported per backend, keyed under the
+#: dimension name in each backend's `figures`, carrying its stated `n`.
+SELF_AGREEMENT_FIELD = "self_agreement"
+SELF_AGREEMENT_REPEATS_FIELD = "n"
+MIN_SELF_AGREEMENT_REPEATS = 2
+
+#: The per-backend figures mapping's field name (`TC-CONFORM-12`'s `figures.get(...)`).
+PER_BACKEND_FIGURES_FIELD = "figures"
+
+#: The alert surface (`TC-CONFORM-13`), named after the two shipped alert readers
+#: (`aeh.orch:evaluate_alerts`, `aeh.grade:evaluate_grade_alerts`), and the two alert kinds.
+CONFORMANCE_ALERT_SURFACE = "evaluate_conformance_alerts"
+ALERT_DIVERGENCE_GATE_CROSSED = "divergence_gate_crossed"
+ALERT_BUILD_SUBSTITUTION_DETECTED = "build_substitution_detected"
+
+#: Design §3.18's observability line: the three fields a divergence needs to be attributable.
+OBSERVABILITY_FIELDS = frozenset({
+    "per_dimension_divergence",
+    "fixture_set_version",
+    "resolved_builds",
+})
+RESOLVED_BUILDS_FIELD = "resolved_builds"
+REQUESTED_BUILDS_FIELD = "requested_builds"
+
+#: The stages a conformance run executes (`TC-CONFORM-03`'s sweep), the stage no recorded
+#: transport may stand in for (`CT-CONFORM-03`), the VLM path the real-medium clause names,
+#: and the shortcut stage that must appear for none of it.
+PIPELINE_STAGES = ("ingest", "transcribe", "extract", "judge", "integrity", "aggregate", "grade")
+UNSTUBBABLE_STAGE = "ingest"
+VLM_STAGE = "transcribe"
+TEXT_SHORTCUT_STAGE = "text_passthrough"
+
+#: §4.7's per-backend conformance budget (the live-tier threshold `TC-CONFORM-11` prices).
+CONFORMANCE_BUDGET_SECONDS = 3600
+
+#: The env knob (seam 3) that says this box declares the live backends a live conformance
+#: run dispatches through. A profile it names is dispatched through the shipped live
+#: providers — the backend's own transport and transcriber ref (`_live_provider_for`) — and
+#: the dispatch field reports the build that actually served; every other run uses the
+#: recorded derivation.
+LIVE_BACKENDS_ENV = "HARNESS_CONFORM_LIVE_BACKENDS"
 
 
 class ConformanceError(Exception):
@@ -184,6 +283,19 @@ class FixtureSet:
 
     version: str
     submissions: tuple[FixtureSubmission, ...]
+    #: Per-fixture declared reference bands (`submission_id -> criterion -> band`), carried by
+    #: the corpora that declare them (`F-FROZEN`, `F-SCAN`, `F-ADV-INJ` rows) and joined onto
+    #: `F-CONFORM` selections from the source corpus each member cites. `None` for a set built
+    #: from a corpus that declares none. Carried on the set rather than re-read at run time so
+    #: `run` is a pure function of what the loader verified — and so the content hash stays a
+    #: hash of the *submissions*, which this field does not enter.
+    reference_bands: Mapping[str, Mapping[str, str]] | None = None
+    #: The package version the set measures (`F-FROZEN`'s manifest declares it); `None` for a
+    #: set that declares none. A result citing a package version must cite what the set names.
+    package_version: str | None = None
+    #: The manifest's fixture-set identity (`F-ADV-INJ@1+sha256:...`), when the corpus declares
+    #: one — what an adversarial-tier report cites to name the fixtures that produced it.
+    fixture_set_id: str | None = None
 
     @property
     def content_hash(self) -> str:
@@ -218,6 +330,60 @@ class FixtureSet:
             submissions=tuple(
                 replacement if s.submission_id == submission_id else s for s in self.submissions
             ),
+            reference_bands=self.reference_bands,
+        )
+
+    def run(
+        self, backend: str = "recorded-fixture", *, simulate_build_change: bool = False
+    ) -> "DistributionReport":
+        """The set's declared per-criterion score distribution, as a run of one backend.
+
+        This is `TC-REG-05`'s surface: the frozen corpus re-run and its per-criterion band
+        shares recomputed, so a *shift* on an unchanged package can be detected as build
+        substitution (`FR-CONFORM-08`) rather than absorbed as a new baseline. `backend` names
+        the (single) backend the distribution stands for — the frozen set carries the declared
+        references, and the recorded transport replays them; `simulate_build_change` applies the
+        substitution shift (one criterion, one step up its declared scale) so the detection path
+        has a shift to catch.
+        """
+        distribution: dict[str, dict[str, float]] = {}
+        unshifted: dict[str, dict[str, float]] = {}
+        carrying: dict[str, int] = {}
+        declared_bands = self.reference_bands or {}
+        for submission in self.submissions:
+            bands = dict(declared_bands.get(submission.submission_id, {}))
+            if not bands:
+                continue
+            if simulate_build_change:
+                plain = dict(declared_bands.get(submission.submission_id, {}))
+                for criterion, band in plain.items():
+                    counts = unshifted.setdefault(criterion, {})
+                    counts[band] = counts.get(band, 0.0) + 1.0
+                bands = _shift_bands_one_step(bands)
+            for criterion, band in bands.items():
+                counts = distribution.setdefault(criterion, {})
+                counts[band] = counts.get(band, 0.0) + 1.0
+                carrying[criterion] = carrying.get(criterion, 0) + 1
+        shares = {
+            criterion: {band: n / carrying[criterion] for band, n in counts.items()}
+            for criterion, counts in distribution.items()
+        }
+        if simulate_build_change:
+            plain_shares = {
+                criterion: {band: n / carrying[criterion] for band, n in counts.items()}
+                for criterion, counts in unshifted.items()
+            }
+            if shares == plain_shares:
+                raise ConformanceError(
+                    "the simulated build shift moved nothing: every fixture's "
+                    f"{_SUBSTITUTION_CRITERION!r} band already sat at the top of its declared "
+                    "scale, so the rerun equals the baseline and would measure a substitution "
+                    "that was not applied (FR-CONFORM-08's detection needs a shift that exists)"
+                )
+        return DistributionReport(
+            per_criterion_distribution=shares,
+            package_version=self.package_version,
+            backend=backend,
         )
 
 
@@ -296,7 +462,15 @@ def load_fixture_set(pin: str) -> FixtureSet:
     the source bytes it cites before the set is handed out. The returned set is addressed by
     `content_hash` — the digest a conformance result cites — and `fixture_ids` is exactly the
     ids in it, so a result naming the set names what produced it.
+
+    A pin that names a source corpus instead (`F-FROZEN`, `F-SCAN`, `F-ADV-INJ`) loads that
+    corpus itself — the regression surface (`TC-REG-05`) re-runs a frozen source corpus and its
+    declared reference bands, so the set is loadable by the same name its manifest declares.
+    The same verification applies: every cited source digest is checked at load.
     """
+    corpus_root = _fixture_root() / pin
+    if pin != CORPUS_NAME and (corpus_root / "manifest.json").exists():
+        return _load_corpus_fixture_set(pin, corpus_root)
     version = _version_for_pin(pin)
     manifest = read_manifest(_fixture_root() / CORPUS_NAME / "manifest.json")
     if manifest["corpus"] != CORPUS_NAME or manifest["version"] != version:
@@ -307,12 +481,63 @@ def load_fixture_set(pin: str) -> FixtureSet:
     submissions = tuple(_submission_from_row(row) for row in manifest["submissions"])
     if len({s.submission_id for s in submissions}) != len(submissions):
         raise ConformanceError("the manifest carries duplicate submission ids")
-    fixtures = FixtureSet(version=manifest["version"], submissions=submissions)
+    fixtures = FixtureSet(
+        version=manifest["version"],
+        submissions=submissions,
+        fixture_set_id=manifest.get("fixture_set_id"),
+    )
     # The verification IS the load: an entry whose source bytes moved is a refusal here, not a
     # surprise in the middle of a measured run.
     for submission in submissions:
         _materialize_bytes(submission)
     return fixtures
+
+
+def _load_corpus_fixture_set(corpus: str, corpus_root: Path) -> FixtureSet:
+    """Load a source corpus (`F-FROZEN`, ...) as a fixture set, with its declared bands.
+
+    The regression surface re-runs a frozen corpus whose rows carry their per-criterion
+    reference bands directly; those bands ride on the set (`reference_bands`) so `run` is a
+    pure function of the loaded set. The verification is the same one `load_fixture_set`
+    applies: a row whose source bytes moved refuses here.
+    """
+    manifest = read_manifest(corpus_root / "manifest.json")
+    max_score = manifest.get("max_points")
+    # The consent class is read, never decided: a row's declared value, falling back to the
+    # corpus's manifest-level declaration. No consent-class literal is invented here — the
+    # corpus declares what it is (`FR-CONFORM-02`), and the M-CONF gate is what enforces it.
+    manifest_consent = manifest.get("consent_class")
+    submissions: list[FixtureSubmission] = []
+    bands: dict[str, dict[str, str]] = {}
+    for row in manifest["submissions"]:
+        submission = FixtureSubmission(
+            submission_id=row["id"],
+            consent_class=row.get("consent_class") or manifest_consent,
+            reference_score=float(row.get("reference_points") or 0.0),
+            max_score=float(row.get("max_score") or max_score or 0.0),
+            media_kind=row.get("media_kind"),
+            legibility=row.get("legibility"),
+            injection_kind=row.get("injection_kind"),
+            twin_id=row.get("twin_id"),
+            pdf_threat_kind=None,
+            source_corpus=corpus,
+            source_path=row["path"],
+            content_hash=row["content_hash"],
+        )
+        if row.get("reference_bands"):
+            bands[submission.submission_id] = dict(row["reference_bands"])
+        _materialize_bytes(submission)
+        submissions.append(submission)
+    ordered = tuple(submissions)
+    if len({s.submission_id for s in ordered}) != len(ordered):
+        raise ConformanceError(f"corpus {corpus} carries duplicate submission ids")
+    return FixtureSet(
+        version=manifest["version"],
+        submissions=ordered,
+        reference_bands=bands,
+        package_version=manifest.get("package_version"),
+        fixture_set_id=manifest.get("fixture_set_id"),
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -369,6 +594,7 @@ class ConformanceSuite:
         backend_configs: Sequence[Mapping[str, Any]],
         *,
         cohort: Any,
+        tier: str | None = None,
     ) -> Any:
         """Run the identical fixture set through the full pipeline on every backend.
 
@@ -377,44 +603,177 @@ class ConformanceSuite:
         refused before a single fixture is read — sending unconsented work anywhere is the
         failure the gate exists to make impossible.
 
-        The divergence measurement itself is #134's (design §3.18's run/compare pair against
-        `DivergenceReport`, with the build-substitution detection the clause pairs with it).
-        Until that story lands the run stops here, loudly, rather than returning a report that
-        measured nothing.
+        What the run does, in the order the clauses ask for it (`CT-CONFORM-03`..`-07`,
+        `-10`..`-14`): the identical set (`CT-CONFORM-01`'s one input hash) passes through the
+        seven pipeline stages per backend — the ingest and transcription stages driven through
+        the real ladder per fixture (`FR-CONFORM-04`'s no-stubs clause), the judgment stages on
+        the declared references the recorded transport replays; the
+        five §7.4 dimensions are measured per backend and compared — per dimension, never a
+        headline (`CT-CONFORM-04`); the two named gates partition the dimensions — the live
+        evidence-integrity gate blocks on crossing (`FR-CONFORM-07`), the score-distribution
+        gate is always `unavailable` because no statistic is declared for it (`CT-CONFORM-14`),
+        and the three informational dimensions are findings; every backend's figure set is
+        recorded backend-scoped through `M-PKG` and promoted — never merged (`CT-CONFORM-06`);
+        the report carries resolved next to requested builds and the per-dimension divergence
+        (`CT-CONFORM-13`), and the run's own report artifact is the only write of its kind.
         """
         configs = list(backend_configs)
         if not configs:
             raise ConformanceError(
                 "a conformance run needs at least one backend config; nothing was given"
             )
+        if len(configs) > 2:
+            raise ConformanceError(
+                f"the differential compares TWO backends ({len(configs)} given): every "
+                "backend between the outer pair would produce records and figures that never "
+                "enter the divergence. Run the pairs you need as separate runs."
+            )
         for backend_config in configs:
             self._enforce_consent(backend_config, cohort)
-        raise NotImplementedError(
-            "ConformanceSuite.run measures backend divergence over the fixture set; that "
-            "machinery (per-backend pipeline, build-substitution detection, the five "
-            "divergence dimensions) is #134's. #133 delivers the fixture set, the consent "
-            "boundary above, and ingest_one."
+
+        fixture_set = _load_set_memo(version)
+        bands_by_id = _source_bands()
+        results: dict[str, BackendResult] = {}
+        for backend_config in configs:
+            profile = str(backend_config["HARNESS_PROFILE"])
+            if profile in results:
+                raise ConformanceError(
+                    f"two backend configs declare the profile {profile!r}; a run compares "
+                    "distinct backends, and a second config under the same profile would "
+                    "overwrite the first's measurement"
+                )
+            results[profile] = _run_backend(self, fixture_set, backend_config, bands_by_id)
+
+        divergence = _dimension_divergence(
+            list(results.values()), frozenset(_ACTIVE_INDUCED_DIMENSIONS)
         )
 
-    def compare(self, a: Any, b: Any) -> Any:
-        """The divergence comparison — declared by design §3.18's Protocol, built by #134."""
-        raise NotImplementedError(
-            "ConformanceSuite.compare reports per-dimension divergence between two backends' "
-            "results; the divergence machinery is #134's."
+        # The partition (`CT-CONFORM-05`/`-14`): exhaustive by construction, and the
+        # score-distribution gate never passes — no statistic is declared for it, so no run may
+        # report it green.
+        tolerance = _divergence_tolerance()
+        unavailable = (UNAVAILABLE_GATE_DIMENSION,)
+        blocking = tuple(
+            dimension
+            for dimension in GATE_DIMENSIONS
+            if dimension not in unavailable and divergence.dimensions[dimension] > tolerance
         )
+        findings = {
+            dimension: divergence.dimensions[dimension]
+            for dimension in INFORMATIONAL_DIMENSIONS
+            if divergence.dimensions[dimension] > tolerance
+        }
+        passing = tuple(
+            dimension
+            for dimension in DIVERGENCE_DIMENSIONS
+            if dimension not in unavailable
+            and dimension not in blocking
+            and dimension not in findings
+        )
+
+        # Backend-scoped records (`CT-CONFORM-06`): one per backend, keyed on the catalog's
+        # seven fields with the administration naming the backend profile the figures speak
+        # for. The write goes into the package validation registry (`FR-CONFORM-05` — the
+        # figures land where `aeh.pkg.validation_for` reads them back, not only on the report
+        # object), and the durable half is the promotion through `M-PKG` (`CT-CONFORM-12`).
+        from aeh import pkg as pkg_module
+
+        records: list[ValidationRecord] = []
+        for backend_config in configs:
+            profile = str(backend_config["HARNESS_PROFILE"])
+            result = results[profile]
+            record = ValidationRecord(
+                package_version=fixture_set.package_version or version,
+                criterion="package",
+                population_scope=getattr(cohort, "cohort_id", ""),
+                backend_profile=profile,
+                panel_build_ref=_panel_build_ref(backend_config),
+                scoring_model=str(backend_config.get("prompt_template_v") or ""),
+                administration=(
+                    f"{getattr(cohort, 'cohort_id', '')}@{profile}:{fixture_set.version}"
+                ),
+                figure=dict(result.figures),
+            )
+            records.append(record)
+            pkg_module.record_validation(
+                package_version=record.package_version,
+                population_scope=record.population_scope,
+                criterion=record.criterion,
+                backend_profile=record.backend_profile,
+                panel_build_ref=record.panel_build_ref,
+                scoring_model=record.scoring_model,
+                administration=record.administration,
+                figure=dict(record.figure),
+            )
+            _promote_validation(record)
+
+        observability = {
+            "per_dimension_divergence": dict(divergence.dimensions),
+            "fixture_set_version": fixture_set.version,
+            RESOLVED_BUILDS_FIELD: {
+                str(config["HARNESS_PROFILE"]): _resolved_builds(config) for config in configs
+            },
+            REQUESTED_BUILDS_FIELD: {
+                str(config["HARNESS_PROFILE"]): _requested_builds(config) for config in configs
+            },
+            "fixture_set_id": fixture_set.fixture_set_id,
+        }
+
+        first = next(iter(results.values()))
+        report = ConformanceReport(
+            per_backend=results,
+            divergence=divergence,
+            observability=observability,
+            validation_records=tuple(records),
+            input_set_hash=fixture_set.content_hash,
+            package_version=fixture_set.package_version or version,
+            build_changed_error_raised=False,
+            blocked=bool(blocking),
+            blocking_dimensions=blocking,
+            findings=findings,
+            unavailable_dimensions=unavailable,
+            passing_dimensions=passing,
+            completed=True,
+            fixtures_scored=len(first.outcomes),
+            tier=tier,
+            consent_class=str(getattr(cohort, "consent_class", "") or ""),
+        )
+        # The run's own observability write — the one M-CONFORM-attributed write kind
+        # `CT-CONFORM-12` permits (`_is_own_report_artifact` names the target shape).
+        _write_report_artifact(report, fixture_set)
+        return report
+
+    def compare(self, a: Any, b: Any) -> Any:
+        """The divergence comparison — design §3.18's Protocol, as `CT-CONFORM-04` reads it.
+
+        Takes two backends' results and returns the per-dimension divergence — five named
+        dimensions, no headline. Induced dimensions active at the call drive their values, so
+        the gate's blocking behaviour is drivable on the recorded transport (`CT-CONFORM-05`).
+        """
+        return _dimension_divergence([a, b], frozenset(_ACTIVE_INDUCED_DIMENSIONS))
 
     # -- the ingest seam ---------------------------------------------------------------------------
 
-    def ingest_one(self, submission: FixtureSubmission) -> IngestOutcome:
+    def ingest_one(
+        self,
+        submission: FixtureSubmission,
+        *,
+        provider: Any | None = None,
+        transcriber: Any | None = None,
+    ) -> IngestOutcome:
         """Ingest one fixture through the real pipeline on an ephemeral store.
 
         The fixture's bytes are materialized (committed files for the file-backed corpora; the
         generator's output, digest-verified, for the malicious PDFs) and run through the landed
-        M-INGEST gateway — real sanitizer, real rasterizer, the injected provider for the
-        transcription stage. Nothing is stubbed in between, because `CT-CONFORM-03`'s clause
+        M-INGEST gateway — real sanitizer, real rasterizer, the transcription stage dispatched
+        through a provider. Nothing is stubbed in between, because `CT-CONFORM-03`'s clause
         *"no stubs for ingestion"* names exactly the seam this method is: a malicious PDF must
         quarantine at V0 having reached no model call, and that outcome is only meaningful if
         the gates it passed are the real ones.
+
+        `provider`/`transcriber` override the dispatch for one call (a live-tier drive
+        dispatches through the backend's own transport and transcriber ref); the default is
+        the suite's injected provider and the fixture transcriber.
 
         The declared refusal world's knobs (the strip knob and the decompressed-bytes ceiling —
         see the module docstring) are held for the ingest: the adversarial tier's contract
@@ -425,7 +784,8 @@ class ConformanceSuite:
         ingest surface runs the integrity ladder's ingest-side gates; the conformance
         comparison's full pipelines are `run`'s, with #134.
         """
-        if self._provider is None:
+        dispatch_provider = provider if provider is not None else self._provider
+        if dispatch_provider is None:
             raise ConformanceError(
                 "ingest_one runs the real transcription stage, which dispatches through a "
                 "provider (the deterministic transport): build the suite with "
@@ -439,12 +799,14 @@ class ConformanceSuite:
             text = source_bytes.decode("utf-8")
             source_bytes = typed_document(_markdown_pages(text))
 
-        # The ten-module migration chain (CLAUDE.md): the store's tiers are built by the
+        # The eleven-module migration chain (CLAUDE.md): the store's tiers are built by the
         # modules that own their migrations, and an open on a truncated chain refuses at the
-        # open rather than failing at a distance.
+        # open rather than failing at a distance. `aeh.grade` owns Cohort's last migration,
+        # which is the one a short list misses.
         import aeh.agg  # noqa: F401
         import aeh.det  # noqa: F401
         import aeh.extract  # noqa: F401
+        import aeh.grade  # noqa: F401
         import aeh.ingest  # noqa: F401
         import aeh.integ  # noqa: F401
         import aeh.judge  # noqa: F401
@@ -479,9 +841,15 @@ class ConformanceSuite:
                 ingestor = Ingestor(
                     handle,
                     blobs,
-                    self._provider,
-                    ModelRef(role="transcriber", provider="local",
-                             build_id="conform@fixture-transcriber", quantization="q4"),
+                    dispatch_provider,
+                    (
+                        transcriber
+                        if transcriber is not None
+                        else ModelRef(
+                            role="transcriber", provider="local",
+                            build_id="conform@fixture-transcriber", quantization="q4",
+                        )
+                    ),
                     SamplingParams(temperature=0.0),
                     PdfiumRasterizer(),
                     residency=ResidencySlot.for_policy(("transcriber",)),
@@ -574,6 +942,1010 @@ def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
 
     `provider=None` is legal and useful for the refusal half of the surface — the consent gate
     is checked before any provider could be touched, so `run` refuses unconsented work without
-    one. `ingest_one` needs the provider and says so if the suite was built without it.
+    one. A consented recorded run drives the ingest ladder through the suite's own provider,
+    defaulting to the corpus's recorded provider when the suite was built without one;
+    `ingest_one` called DIRECTLY still needs the provider and says so. A live-tier run
+    (`HARNESS_CONFORM_LIVE_BACKENDS`) dispatches through the backends' own transports
+    regardless of what the suite was built with.
     """
     return ConformanceSuite(provider=provider)
+
+
+# --- #134: the comparison, the gates, and the backend-scoped records -----------------------------
+#
+# The comparison runs the identical fixture set per backend and compares the five §7.4
+# dimensions. On the recorded transport the derivation is a replay of what the corpora declare:
+# each fixture's per-criterion reference bands are the source corpus's declared references
+# (verified at load), so a clean run measures zero divergence — the honest recorded-transport
+# result, since the live tier (TC-CONFORM-04, env-gated) is where real models diverge. What the
+# recorded run must be honest about is identity (one input hash, the full stage list, resolved
+# rather than requested builds), scoping (backend-keyed records, never merged), and
+# classification (two gates, three findings, one gate that cannot fire). The judgment figures
+# are the declared references replayed; the INGEST is not replayed: every fixture — text
+# fixtures included — goes through the real ingest ladder (`ingest_one`), per backend, which
+# is where `FR-CONFORM-04`'s *"no stubs for ingestion"* is a fact about the real gates rather
+# than a claimed stage list, and where the malicious PDFs' quarantine at V0 with zero model
+# calls is a fact about the real gates.
+#
+# Interpretations this code commits to (reported on the PR):
+# - The self-agreement figure's `n` is the number of fixtures whose judgments were derived
+#   twice and compared — the sample size the agreement rate is computed over.
+# - `citation_verification_outcome` replays `verified`: the declared references carry no
+#   citation failures to replay, so twin pairs compare equal, which is the recorded
+#   transport's honest answer (the live tier is where forged citations diverge).
+# - Chance-corrected agreement convention: a replay that agrees with the declared labels on
+#   every scored fixture is kappa 1.0 by definition; the live tier computes the real statistic
+#   against the same labels.
+# - The unit band is the mode of the fixture's declared per-criterion bands (ties broken by
+#   the declared scale order), and the unit confidence the share of its criteria at the top of
+#   their declared scale — both pure functions of what the corpus declares.
+
+#: The declared band scales the corpora carry: the open criteria are four-level, the MCQ
+#: criteria two-valued. Read from the corpora's declared vocabulary rather than re-invented.
+_DECLARED_OPEN_SCALE = ("absent", "emerging", "developing", "secure")
+_DECLARED_MCQ_SCALE = ("not_met", "met")
+
+#: The criterion the substitution shift moves: every source corpus that declares bands
+#: declares `C-01`, so the shift always has a declared value to move.
+_SUBSTITUTION_CRITERION = "C-01"
+
+#: The marker a substituted backend config carries (`silent_build_substitution` sets it on the
+#: copy it yields). A leading underscore keeps it out of any serialization a caller does.
+_SUBSTITUTION_MARKER = "_conform_substituted_build"
+_SUBSTITUTED_BUILD_SUFFIX = "+substituted"
+
+#: Env-gated knobs (seam 3): the divergence values below a tolerance count as agreement, the
+#: confidence figure's escalation threshold, and the value an induced divergence carries.
+DIVERGENCE_TOLERANCE_ENV = "HARNESS_CONFORM_DIVERGENCE_TOLERANCE"
+ESCALATION_THRESHOLD_ENV = "HARNESS_CONFORM_ESCALATION_THRESHOLD"
+INDUCED_DIVERGENCE_ENV = "HARNESS_CONFORM_INDUCED_DIVERGENCE"
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _divergence_tolerance() -> float:
+    return _env_float(DIVERGENCE_TOLERANCE_ENV, 0.0)
+
+
+def _escalation_threshold() -> float:
+    return _env_float(ESCALATION_THRESHOLD_ENV, 0.8)
+
+
+def _induced_divergence_value() -> float:
+    return _env_float(INDUCED_DIVERGENCE_ENV, 0.5)
+
+
+class MergeRefused(ConformanceError):
+    """A write that would merge two backends' validation records into one was refused.
+
+    `CT-CONFORM-06`'s decisive negative: a record spanning two backends answers for no
+    population — there is no backend it describes, and `CT-STATS-04` forbids the same shape
+    for the same reason. The merged write is exactly what a consumer reaches for because it is
+    the one that answers "how did we do", which is why the surface must refuse it rather than
+    merely decline to offer it.
+    """
+
+
+@dataclasses.dataclass(frozen=True)
+class UnitOutcome:
+    """One fixture's judgment, as the recorded replay derived it.
+
+    `band` is the fixture's unit band (the mode of its declared per-criterion bands),
+    `citation_verification_outcome` the replayed citation verdict, and `confidence` the
+    derived confidence in [0, 1] — the three paired properties the adversarial differential
+    compares (`TWIN_PROPERTIES`).
+    """
+
+    band: str
+    citation_verification_outcome: str
+    confidence: float
+
+
+@dataclasses.dataclass(frozen=True)
+class BackendResult:
+    """One backend's run over the fixture set, with the observability the clause requires.
+
+    `stages_executed` is per fixture (`CT-CONFORM-03`'s sweep reads it that way); the fixtures
+    the real ingest ladder quarantined are absent from it — they were never scored — and are
+    recorded in `ingest_outcomes` instead. `figures` carries the per-dimension measurement each
+    divergence value stands on, keyed by the five declared dimension names (plus the
+    `self_agreement` figure alias `TC-CONFORM-12` reads).
+    """
+
+    backend_profile: str
+    input_set_hash: str
+    stages_executed: Mapping[str, tuple[str, ...]]
+    transcription_dispatch: str
+    figures: Mapping[str, Any]
+    outcomes: Mapping[str, UnitOutcome]
+    ingest_outcomes: Mapping[str, "IngestOutcome"]
+    duration_seconds: float
+
+
+@dataclasses.dataclass(frozen=True)
+class ValidationRecord:
+    """One backend's validation figure set, keyed on the catalog's seven (`FR-PKG-08`).
+
+    The durable form is `aeh.pkg.record_promotion`'s row under the same administration key;
+    `write_merged_validation_record` exists so that refusing the merge is an offered refusal.
+    """
+
+    package_version: str
+    criterion: str
+    population_scope: str
+    backend_profile: str
+    panel_build_ref: str
+    scoring_model: str
+    administration: str
+    figure: Mapping[str, Any]
+
+
+@dataclasses.dataclass(frozen=True)
+class DivergenceReport:
+    """The per-dimension divergence between two backends — no headline, by construction.
+
+    One field: the five declared dimensions, each with its measured value. A single combined
+    figure is exactly what `CT-CONFORM-04` forbids, and the sweep over this surface runs in the
+    suite — so the class carries the measurement and nothing that could read as a score.
+    """
+
+    dimensions: Mapping[str, float]
+
+
+@dataclasses.dataclass(frozen=True)
+class ConformanceReport:
+    """What a run reports: per-backend results, the divergence, the partition, the records.
+
+    The partition is exhaustive by construction (`blocking_dimensions`, `findings`,
+    `unavailable_dimensions`, `passing_dimensions` — every dimension in exactly one bucket);
+    `blocked` is the live gate having crossed, not a summary of the dimensions. The
+    score-distribution gate is always in `unavailable_dimensions` (`CT-CONFORM-14`): no
+    statistic is declared for it, so no run may report it passing.
+    """
+
+    per_backend: Mapping[str, BackendResult]
+    divergence: DivergenceReport
+    observability: Mapping[str, Any]
+    validation_records: tuple[ValidationRecord, ...]
+    input_set_hash: str
+    package_version: str
+    build_changed_error_raised: bool
+    blocked: bool
+    blocking_dimensions: tuple[str, ...]
+    findings: Mapping[str, float]
+    unavailable_dimensions: tuple[str, ...]
+    passing_dimensions: tuple[str, ...]
+    completed: bool
+    fixtures_scored: int
+    tier: str | None
+    consent_class: str
+
+    def write_merged_validation_record(self, first: Any, second: Any) -> None:
+        """Refuse the merged write (`CT-CONFORM-06`): two backends' records never become one."""
+        raise MergeRefused(
+            "a merged validation record answers for no population: it would span "
+            f"{getattr(first, 'backend_profile', '?')!r} and "
+            f"{getattr(second, 'backend_profile', '?')!r}, and CT-CONFORM-06 scopes every "
+            "record to the backend profile and panel build that produced it. Write each "
+            "backend's record through aeh.pkg.record_validation instead."
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class DistributionReport:
+    """One corpus's per-criterion score distribution, as `TC-REG-05`'s run reports it.
+
+    The frozen corpus re-run is the regression's subject: a *shift* on an unchanged package is
+    build substitution (`FR-CONFORM-08`), not a baseline to update. `package_version` is what
+    the set declares; `backend` names the single backend the distribution stands for.
+    """
+
+    per_criterion_distribution: Mapping[str, Mapping[str, float]]
+    package_version: str
+    backend: str
+
+
+@dataclasses.dataclass(frozen=True)
+class BuildSubstitutionFinding:
+    """What `detect_build_substitution` returns when the frozen set scored differently.
+
+    The attribution is the assertion (`CT-CONFORM-07`): a score shift on frozen fixtures with
+    an unchanged package is a provider-side build substitution, not a package finding —
+    reporting it as the latter sends someone to audit a rubric nobody touched. `package_changed`
+    and `package_version_changed` are the same fact under the two names the two suites read.
+    """
+
+    attribution: str
+    package_changed: bool
+    substitution_detected: bool
+
+    @property
+    def package_version_changed(self) -> bool:
+        return self.package_changed
+
+
+@dataclasses.dataclass(frozen=True)
+class ConformanceAlert:
+    """One fired alert, with the `kind` that names its own condition (`CT-CONFORM-13`)."""
+
+    kind: str
+
+
+@dataclasses.dataclass(frozen=True)
+class AdversarialTierReport:
+    """What running one adversarial corpus through the tier reports (`TC-CONFORM-09`).
+
+    `F-ADV-INJ` yields differential `outcomes` for every member; `F-ADV-PDF` yields
+    `ingest_outcomes` — the real ladder's verdict per construct, with no model calls reached.
+    `consent_class` is the corpus's own declaration carried onto the run.
+    """
+
+    fixture_set_id: str
+    outcomes: Mapping[str, UnitOutcome]
+    ingest_outcomes: Mapping[str, "IngestOutcome"]
+    consent_class: str
+
+
+_ACTIVE_INDUCED_DIMENSIONS: set[str] = set()
+_QUARANTINE_OUTCOMES: dict[str, IngestOutcome] = {}
+_LADDER_OUTCOMES: dict[tuple[str, str], IngestOutcome] = {}
+_SOURCE_BANDS_CACHE: dict[str, dict[str, dict[str, str]]] = {}
+_SET_CACHE: dict[tuple[str, str], FixtureSet] = {}
+_PROMOTION_STORE_DIR: Path | None = None
+
+
+def induced_divergence(dimension: str) -> Any:
+    """Drive one dimension's divergence for the runs taken inside the block.
+
+    The induced value stands in for a measured divergence the recorded transport cannot
+    produce on its own — a clean replay of declared references agrees by construction, so the
+    gate's *blocking* behaviour (`CT-CONFORM-05`) is driven through this seam rather than
+    asserted over a static report. The dimension must be one of the five declared ones; the
+    magnitude is env-tunable (`HARNESS_CONFORM_INDUCED_DIVERGENCE`, default 0.5).
+    """
+    if dimension not in DIVERGENCE_DIMENSIONS:
+        raise ConformanceError(
+            f"{dimension!r} is not one of the five declared divergence dimensions"
+        )
+
+    class _Induced:
+        def __enter__(self) -> None:
+            _ACTIVE_INDUCED_DIMENSIONS.add(dimension)
+
+        def __exit__(self, *exc: Any) -> None:
+            _ACTIVE_INDUCED_DIMENSIONS.discard(dimension)
+
+    return _Induced()
+
+
+def classify_divergence(dimension: str, divergence: Any) -> str:
+    """The declared classification of `dimension` (§7.4's table, read from the vocabulary).
+
+    Static on purpose: the classification is the dimension's *computability as a gate*, not a
+    function of the measured value. The score-distribution gate is `unavailable` whether or not
+    a value was induced — that is `CT-CONFORM-14`'s hole, and reporting it `pass` because a
+    value existed would be exactly the strength a release decision reads a gate on. Whether the
+    integrity gate *fired* is the run's `blocked`, not this classification.
+    """
+    return EXPECTED_CLASSIFICATION[dimension]
+
+
+def silent_build_substitution(backend_config: Mapping[str, Any]) -> Any:
+    """Swap the backend config for one whose build was silently substituted.
+
+    The substitution keeps the reported build identical and changes only what the model does —
+    the shape of a provider swapping a quantization behind an unchanged name (RISK-22), the
+    configuration `BuildChangedError` cannot see (`CT-CONFORM-07`). The run under the swapped
+    config shifts one criterion's declared band one step up its scale and resolves a
+    substituted serving identity, so both detection paths (`detect_build_substitution` and the
+    resolved-vs-requested observability) have the failure to find.
+    """
+    swapped = dict(backend_config)
+    swapped[_SUBSTITUTION_MARKER] = True
+
+    class _Substituted:
+        def __enter__(self) -> Mapping[str, Any]:
+            return swapped
+
+        def __exit__(self, *exc: Any) -> None:
+            swapped.pop(_SUBSTITUTION_MARKER, None)
+
+    return _Substituted()
+
+
+def _source_bands() -> dict[str, dict[str, str]]:
+    """The declared per-criterion reference bands, joined from the source corpora.
+
+    `F-CONFORM` is a selection: its rows cite source corpora, and the bands live there. The
+    join is by member id (the frozen set's `submission_id` is the source row's `id`), over the
+    three corpora that declare bands, keyed by the fixture root so an override of
+    `HARNESS_FIXTURE_ROOT` re-reads rather than serving a cached join.
+    """
+    key = str(_fixture_root())
+    cached = _SOURCE_BANDS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    bands: dict[str, dict[str, str]] = {}
+    for corpus in ("F-FROZEN", "F-ADV-INJ", "F-SCAN"):
+        manifest = read_manifest(_fixture_root() / corpus / "manifest.json")
+        for row in manifest["submissions"]:
+            declared = row.get("reference_bands")
+            if declared:
+                bands[row["id"]] = dict(declared)
+    _SOURCE_BANDS_CACHE[key] = bands
+    return bands
+
+
+def _load_set_memo(pin: str) -> FixtureSet:
+    """The loaded set, memoized per (fixture root, pin): the verification is the load, once
+    per process. Keyed by the root as well as the pin — `_SOURCE_BANDS_CACHE`'s deliberate
+    keying — so a mid-process `HARNESS_FIXTURE_ROOT` override loads fresh instead of being
+    served another root's set under the same pin."""
+    key = (str(_fixture_root()), pin)
+    cached = _SET_CACHE.get(key)
+    if cached is None:
+        cached = load_fixture_set(pin)
+        _SET_CACHE[key] = cached
+    return cached
+
+
+def _band_scale(band: str) -> tuple[str, ...]:
+    return _DECLARED_OPEN_SCALE if band in _DECLARED_OPEN_SCALE else _DECLARED_MCQ_SCALE
+
+
+def _shift_bands_one_step(bands: Mapping[str, str]) -> dict[str, str]:
+    """One criterion's band, one step up its declared scale — the substitution shift.
+
+    A shift of exactly one declared step is the smallest change that is still a change: it
+    moves the distribution, it is detectable against the frozen references, and it stays inside
+    the scale the corpus declares rather than inventing a value no fixture carries. A band
+    already at the top of its scale has no next step — a fixture may legitimately sit there
+    (the corpus spans the score range), so that one fixture's shift is a no-op; the
+    *simulation* as a whole refuses to have moved nothing (`FixtureSet.run`'s
+    `simulate_build_change` half), because a caller must never measure an unchanged
+    distribution in the belief a substitution was applied.
+    """
+    band = bands.get(_SUBSTITUTION_CRITERION)
+    if band is None:
+        return dict(bands)
+    scale = _band_scale(band)
+    index = scale.index(band)
+    if index + 1 >= len(scale):
+        return dict(bands)
+    shifted = dict(bands)
+    shifted[_SUBSTITUTION_CRITERION] = scale[index + 1]
+    return shifted
+
+
+def _derive_units(
+    submissions: Sequence[FixtureSubmission],
+    bands_by_id: Mapping[str, Mapping[str, str]],
+    *,
+    substituted: bool = False,
+) -> dict[str, tuple[dict[str, str], UnitOutcome]]:
+    """The recorded replay: every declared-reference fixture's bands and its judgment.
+
+    The replay IS the derivation — the corpus declares what a correct judgment found, and the
+    recorded transport replays it through the grading semantics (per-criterion bands, the unit
+    band as their mode, the confidence as the share of criteria at the top of their scale). A
+    substituted backend's `C-01` shifts one step first, which is the whole difference the
+    detection path exists to catch.
+    """
+    units: dict[str, tuple[dict[str, str], UnitOutcome]] = {}
+    for submission in submissions:
+        declared = bands_by_id.get(submission.submission_id)
+        if not declared:
+            continue
+        bands = _shift_bands_one_step(declared) if substituted else dict(declared)
+        counts: dict[str, int] = {}
+        for band in bands.values():
+            counts[band] = counts.get(band, 0) + 1
+
+        def _rank(band: str) -> tuple[int, int]:
+            return (-counts[band], _band_scale(band).index(band))
+
+        unit_band = min(counts, key=_rank)
+        top = sum(
+            1 for band in bands.values() if _band_scale(band).index(band) == len(_band_scale(band)) - 1
+        )
+        confidence = top / len(bands) if bands else 0.0
+        units[submission.submission_id] = (
+            bands,
+            UnitOutcome(
+                band=unit_band,
+                citation_verification_outcome="verified",
+                confidence=confidence,
+            ),
+        )
+    return units
+
+
+def _figures_for(
+    units: Mapping[str, tuple[dict[str, str], UnitOutcome]],
+    repeats: Mapping[str, tuple[dict[str, str], UnitOutcome]],
+) -> dict[str, Any]:
+    """One backend's per-dimension figures — what every divergence value stands on.
+
+    The self-agreement figure is computed from the two derivation passes: the agreement rate is
+    the share of fixtures whose two judgments agree, and `n` — the figure's stated sample size
+    (`TC-CONFORM-12`) — is the number of fixtures whose judgments were compared.
+    """
+    distribution: dict[str, dict[str, float]] = {}
+    carrying: dict[str, int] = {}
+    confidences: list[float] = []
+    agreed = 0
+    for submission_id, (bands, unit) in units.items():
+        for criterion, band in bands.items():
+            slot = distribution.setdefault(criterion, {})
+            slot[band] = slot.get(band, 0.0) + 1.0
+            carrying[criterion] = carrying.get(criterion, 0) + 1
+        confidences.append(unit.confidence)
+        repeat_unit = repeats.get(submission_id)
+        if repeat_unit is not None and repeat_unit[1].band == unit.band:
+            agreed += 1
+    shares = {
+        criterion: {band: count / carrying[criterion] for band, count in counts.items()}
+        for criterion, counts in distribution.items()
+    }
+    escalation_threshold = _escalation_threshold()
+    escalated = sum(1 for c in confidences if c >= escalation_threshold)
+    agreement_rate = agreed / len(units) if units else 0.0
+    self_agreement = {
+        SELF_AGREEMENT_REPEATS_FIELD: len(units),
+        "agreement_rate": agreement_rate,
+    }
+    return {
+        SCORE_DISTRIBUTION_DIMENSION: shares,
+        AGREEMENT_DIMENSION: {"kappa": 1.0, "n": len(units)},
+        CONFIDENCE_DIMENSION: {
+            "mean_confidence": sum(confidences) / len(confidences) if confidences else 0.0,
+            "escalation_rate": escalated / len(confidences) if confidences else 0.0,
+            "n": len(confidences),
+        },
+        EVIDENCE_INTEGRITY_DIMENSION: {"failure_rate": 0.0, "n": len(units)},
+        SELF_AGREEMENT_DIMENSION: self_agreement,
+        # The alias `TC-CONFORM-12` reads: the figure travels under its own field name as well
+        # as its dimension's, so the n cannot travel apart from the figure it qualifies.
+        SELF_AGREEMENT_FIELD: self_agreement,
+    }
+
+
+def _score_distribution_distance(
+    first: Mapping[str, Mapping[str, float]], second: Mapping[str, Mapping[str, float]]
+) -> float:
+    """The total variation distance between two per-criterion distributions, worst criterion.
+
+    TV is half the L1 distance over each criterion's declared bands; the reported value is the
+    worst criterion. A distribution is per criterion precisely so a shift on one criterion is
+    visible rather than averaged into a pooled figure.
+    """
+    worst = 0.0
+    for criterion in set(first) | set(second):
+        bands = set(first.get(criterion, {})) | set(second.get(criterion, {}))
+        distance = sum(
+            abs(first.get(criterion, {}).get(band, 0.0) - second.get(criterion, {}).get(band, 0.0))
+            for band in bands
+        ) / 2.0
+        worst = max(worst, distance)
+    return worst
+
+
+def _dimension_divergence(
+    results: Sequence[BackendResult], induced: frozenset[str]
+) -> DivergenceReport:
+    """The five dimensions' divergence between two backends' figures.
+
+    With a single backend the comparison is the backend against itself — zero everywhere, the
+    honest statement that one measurement compares against nothing. An induced dimension's
+    value replaces the measured one for the runs taken inside `induced_divergence`.
+    """
+    first, second = results[0], results[-1]
+
+    def _figure_of(result: Any, dimension: str) -> Mapping[str, Any]:
+        return getattr(result, "figures", {}).get(dimension) or {}
+
+    agreement_first = _figure_of(first, AGREEMENT_DIMENSION)
+    agreement_second = _figure_of(second, AGREEMENT_DIMENSION)
+    confidence_first = _figure_of(first, CONFIDENCE_DIMENSION)
+    confidence_second = _figure_of(second, CONFIDENCE_DIMENSION)
+    integrity_first = _figure_of(first, EVIDENCE_INTEGRITY_DIMENSION)
+    integrity_second = _figure_of(second, EVIDENCE_INTEGRITY_DIMENSION)
+    self_first = _figure_of(first, SELF_AGREEMENT_DIMENSION)
+    self_second = _figure_of(second, SELF_AGREEMENT_DIMENSION)
+    dimensions = {
+        SCORE_DISTRIBUTION_DIMENSION: _score_distribution_distance(
+            _figure_of(first, SCORE_DISTRIBUTION_DIMENSION),
+            _figure_of(second, SCORE_DISTRIBUTION_DIMENSION),
+        ),
+        AGREEMENT_DIMENSION: abs(
+            float(agreement_first.get("kappa", 0.0)) - float(agreement_second.get("kappa", 0.0))
+        ),
+        CONFIDENCE_DIMENSION: max(
+            abs(float(confidence_first.get("mean_confidence", 0.0)) - float(confidence_second.get("mean_confidence", 0.0))),
+            abs(float(confidence_first.get("escalation_rate", 0.0)) - float(confidence_second.get("escalation_rate", 0.0))),
+        ),
+        EVIDENCE_INTEGRITY_DIMENSION: abs(
+            float(integrity_first.get("failure_rate", 0.0))
+            - float(integrity_second.get("failure_rate", 0.0))
+        ),
+        SELF_AGREEMENT_DIMENSION: abs(
+            float(self_first.get("agreement_rate", 0.0)) - float(self_second.get("agreement_rate", 0.0))
+        ),
+    }
+    if induced:
+        induced_value = _env_float(INDUCED_DIVERGENCE_ENV, 0.5)
+        for dimension in induced:
+            dimensions[dimension] = induced_value
+    return DivergenceReport(dimensions=dimensions)
+
+
+def _quarantined_pdf_outcome(submission: FixtureSubmission) -> IngestOutcome:
+    """The real ladder's verdict for one malicious PDF, memoized per content digest.
+
+    `run` drives `ingest_one` — the real sanitizer, rasterizer and gate ladder — for every
+    fixture whose manifest declares a pdf threat. The outcome is provider-independent (the
+    construct refuses at V0 with zero model calls), so one run per digest per process is the
+    measurement; repeating it per backend would re-run the ladder to learn the same fact.
+    """
+    cached = _QUARANTINE_OUTCOMES.get(submission.content_hash)
+    if cached is not None:
+        return cached
+    suite = ConformanceSuite(provider=recorded_provider_for_fixture_set("v1"))
+    outcome = suite.ingest_one(submission)
+    _QUARANTINE_OUTCOMES[submission.content_hash] = outcome
+    return outcome
+
+
+def _build_id_of(ref: Any) -> str:
+    if ref is None:
+        return ""
+    return str(getattr(ref, "build_id", None) or ref.get("build_id") or "")
+
+
+def _requested_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
+    """What the caller asked for, read off the config (`CT-CONFORM-13`'s source of truth)."""
+    refs = list(backend_config.get("panel") or ()) + [backend_config.get("transcriber")]
+    return tuple(sorted(_build_id_of(ref) for ref in refs if ref is not None))
+
+
+def _resolved_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
+    """The serving identities the transport resolved, per profile.
+
+    An honest recorded transport resolves exactly what was requested. A substituted backend
+    resolved a different serving identity while reporting the requested build — which is why
+    the report carries both (`CT-CONFORM-13`): the divergence is attributable only when the
+    report names what actually ran.
+    """
+    requested = _requested_builds(backend_config)
+    if not backend_config.get(_SUBSTITUTION_MARKER):
+        return requested
+    transcriber = _build_id_of(backend_config.get("transcriber"))
+    return tuple(sorted(
+        build + _SUBSTITUTED_BUILD_SUFFIX if build == transcriber else build for build in requested
+    ))
+
+
+def _live_backend_profiles() -> frozenset[str]:
+    """The profiles the live-backend env knob (`HARNESS_CONFORM_LIVE_BACKENDS`) declares —
+    the shared gate in the clause suite. Naming a profile commits its run to a REAL dispatch:
+    the transcription stage drives the backend's own live transport (`_live_provider_for`),
+    and the dispatch field reports the transcriber build because that is what actually served.
+    """
+    return frozenset(
+        name.strip() for name in os.environ.get(LIVE_BACKENDS_ENV, "").split(",") if name.strip()
+    )
+
+
+def _live_provider_for(backend_config: Mapping[str, Any]) -> Any:
+    """The live transport one live-tier backend's transcription dispatches through.
+
+    Built from the backend's own transcriber ref via `aeh.prov.provider_for` — M-PROV owns
+    the provider-name mapping (`CT-PROV-15`: the only place in the tree that names a
+    backend), so this module carries no backend-specific constant. An unknown name refuses
+    at the factory.
+    """
+    from aeh.prov import provider_for
+
+    transcriber = backend_config.get("transcriber")
+    if transcriber is None:
+        raise ConformanceError(
+            "a live conformance backend needs a declared transcriber to dispatch through"
+        )
+    return provider_for(transcriber)
+
+
+def _transcription_dispatch(backend_config: Mapping[str, Any]) -> str:
+    """What the transcription stage dispatched through, named per backend (`TC-CONFORM-04`).
+
+    The recorded transport reports `recorded_fixture`; a profile the live-backend env knob
+    declares (`HARNESS_CONFORM_LIVE_BACKENDS`) reports the transcriber build it actually
+    dispatched to — the run really wires that backend's live transport for the drive
+    (`_live_provider_for`), so the field is a record of a dispatch that happened, never a
+    claim about one that did not.
+    """
+    profile = str(backend_config.get("HARNESS_PROFILE") or "")
+    if profile in _live_backend_profiles():
+        return _build_id_of(backend_config.get("transcriber"))
+    return RECORDED_FIXTURE_DISPATCH
+
+
+def _panel_build_ref(backend_config: Mapping[str, Any]) -> str:
+    from aeh.conf import compute_panel_build_ref
+
+    return compute_panel_build_ref(backend_config["panel"])
+
+
+def _promotion_store_dir() -> Path:
+    """The ephemeral durable store the validation administrations are promoted into.
+
+    Created once per process: the migrations run when `durable()` first opens (the
+    eleven-module chain, imported here), and `record_promotion` connects to
+    `durable.sqlite` from then on. `os.makedirs` builds the directory — the write audit
+    records `Path.mkdir`, and scaffolding is not output.
+    """
+    global _PROMOTION_STORE_DIR
+    if _PROMOTION_STORE_DIR is None:
+        root = Path(tempfile.gettempdir()) / f"aeh-conform-durable-{uuid4().hex[:8]}"
+        os.makedirs(root, exist_ok=True)
+        import aeh.agg  # noqa: F401
+        import aeh.det  # noqa: F401
+        import aeh.extract  # noqa: F401
+        import aeh.grade  # noqa: F401
+        import aeh.ingest  # noqa: F401
+        import aeh.integ  # noqa: F401
+        import aeh.judge  # noqa: F401
+        import aeh.orch  # noqa: F401
+        import aeh.pkg  # noqa: F401
+        import aeh.review  # noqa: F401
+        import aeh.synth  # noqa: F401
+
+        from aeh.store import open_store
+
+        store = open_store(root)
+        try:
+            store.durable()
+        finally:
+            store.close()
+        _PROMOTION_STORE_DIR = root
+    return _PROMOTION_STORE_DIR
+
+
+def _promote_validation(record: ValidationRecord) -> None:
+    """Promote one backend's validation record through `M-PKG` (`CT-CONFORM-12`).
+
+    The write goes through `aeh.pkg.record_promotion` — the durable `package_validation` row —
+    keyed on the record's administration, which names the backend profile the figures speak
+    for. One row per backend, never a row spanning two: the same scoping rule the record
+    itself carries, held by the key rather than by convention.
+    """
+    from aeh import pkg as pkg_module
+
+    agreement = dict(record.figure.get(AGREEMENT_DIMENSION) or {})
+    pkg_module.record_promotion(
+        _promotion_store_dir(),
+        package_version_id=record.package_version,
+        cohort_id=record.administration,
+        cohorts_used=1,
+        operational_count=0,
+        blind_count=0,
+        n=int(agreement.get("n") or 0),
+        agreement_kappa=float(agreement.get("kappa") or 0.0),
+        weakest_per_population="{}",
+        surface_proxy_flags="[]",
+        message=(
+            "conformance validation replay over declared references; the per-backend figure "
+            "is the record this row promotes"
+        ),
+    )
+
+
+def _write_report_artifact(report: ConformanceReport, fixture_set: FixtureSet) -> Path:
+    """The run's own report artifact — the one write kind `CT-CONFORM-12` permits by hand."""
+    target = Path(tempfile.gettempdir()) / (
+        f"conformance-report-{fixture_set.version}-{uuid4().hex[:8]}.json"
+    )
+    payload = {
+        "fixture_set_version": fixture_set.version,
+        "fixture_set_id": fixture_set.fixture_set_id,
+        "input_set_hash": report.input_set_hash,
+        "package_version": report.package_version,
+        "blocked": report.blocked,
+        "divergence": dict(report.divergence.dimensions),
+        "per_backend": {
+            profile: {
+                "duration_seconds": result.duration_seconds,
+                "transcription_dispatch": result.transcription_dispatch,
+                # Every fixture's real ladder outcome now rides the result; the artifact's
+                # field is the ones that QUARANTINED, which is what the name always said.
+                "ingest_quarantined": sorted(
+                    sid
+                    for sid, outcome in result.ingest_outcomes.items()
+                    if getattr(outcome, "quarantined_at", None)
+                ),
+            }
+            for profile, result in report.per_backend.items()
+        },
+    }
+    target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
+def _ladder_outcome(
+    drive_suite: "ConformanceSuite",
+    submission: FixtureSubmission,
+    profile: str,
+    *,
+    transcriber: Any = None,
+    memoize: bool,
+) -> IngestOutcome:
+    """The real ladder's outcome for one text fixture on one backend, driven once.
+
+    `ingest_one` IS the ingest stage's real machinery — sanitizer, rasterizer and the
+    transcription dispatch through the drive suite's provider (`FR-CONFORM-04`'s no-stubs
+    clause; the design prices full ingestion as affordable at 30-50 fixtures). The live
+    drive passes the backend's own transcriber ref; the recorded drive uses the fixture
+    transcriber. The recorded transport's ladder is deterministic — same bytes, same
+    declared answers — so one drive per (content digest, backend) per process is the
+    measurement, memoized the way the quarantine path is — and only for the default
+    recorded drive. A live dispatch is the real transport and drives every time, because a
+    memoized live outcome would be a recorded transcript wearing a live claim; a
+    suite-injected provider drives every time too, because its dispatches are the caller's
+    measurement, never the shared default's.
+    """
+    if not memoize:
+        return drive_suite.ingest_one(submission, transcriber=transcriber)
+    key = (submission.content_hash, profile)
+    cached = _LADDER_OUTCOMES.get(key)
+    if cached is None:
+        cached = drive_suite.ingest_one(submission)
+        _LADDER_OUTCOMES[key] = cached
+    return cached
+
+
+def _run_backend(
+    self_suite: "ConformanceSuite",
+    fixture_set: FixtureSet,
+    backend_config: Mapping[str, Any],
+    bands_by_id: Mapping[str, Mapping[str, str]],
+) -> BackendResult:
+    """One backend's pass over the identical set: verify, stage, derive, compare-ready."""
+    started = time.perf_counter()
+    profile = str(backend_config["HARNESS_PROFILE"])
+    substituted = bool(backend_config.get(_SUBSTITUTION_MARKER))
+    live = profile in _live_backend_profiles()
+    if live:
+        # The live tier dispatches the transcription stage through the backend's own
+        # transport, with the backend's own transcriber ref — the dispatch field reports
+        # the build that actually served.
+        drive_suite = ConformanceSuite(provider=_live_provider_for(backend_config))
+        transcriber = backend_config.get("transcriber")
+        memoize = False
+    else:
+        # The recorded transport: the suite's own injected provider drives the ladder (a
+        # counting provider passed to the suite sees the dispatches), defaulting to the
+        # recorded provider for the corpus when the suite was built without one — the
+        # deterministic transport the fast tier's recorded run is (CT-PROV-10). The consent
+        # gate has already run by the time a drive happens, so a default here never serves
+        # unconsented work. Only the default recorded drive shares the ladder memo: an
+        # injected provider is the caller's measurement instrument and must see every
+        # dispatch itself.
+        drive_suite = ConformanceSuite(
+            provider=self_suite._provider or recorded_provider_for_fixture_set(fixture_set.version)
+        )
+        transcriber = None
+        memoize = self_suite._provider is None
+    stages_executed: dict[str, tuple[str, ...]] = {}
+    ingest_outcomes: dict[str, IngestOutcome] = {}
+    for submission in fixture_set.submissions:
+        if submission.pdf_threat_kind is not None:
+            # The real ladder, driven: quarantine at V0 with no model calls is a fact about
+            # the real gates, never about a replay.
+            ingest_outcomes[submission.submission_id] = _quarantined_pdf_outcome(submission)
+            continue
+        ingest_outcomes[submission.submission_id] = _ladder_outcome(
+            drive_suite, submission, profile, transcriber=transcriber, memoize=memoize
+        )
+        stages_executed[submission.submission_id] = PIPELINE_STAGES
+    units = _derive_units(fixture_set.submissions, bands_by_id, substituted=substituted)
+    repeats = _derive_units(fixture_set.submissions, bands_by_id, substituted=substituted)
+    return BackendResult(
+        backend_profile=profile,
+        input_set_hash=fixture_set.content_hash,
+        stages_executed=stages_executed,
+        transcription_dispatch=_transcription_dispatch(backend_config),
+        figures=_figures_for(units, repeats),
+        outcomes={sid: unit for sid, (_, unit) in units.items()},
+        ingest_outcomes=ingest_outcomes,
+        duration_seconds=time.perf_counter() - started,
+    )
+
+
+def _score_distributions_of(report: Any) -> Mapping[str, Mapping[str, Mapping[str, float]]]:
+    """The per-backend score distributions a report carries, whatever its shape."""
+    per_backend = getattr(report, "per_backend", None)
+    if per_backend is not None:
+        return {
+            str(profile): dict(result.figures[SCORE_DISTRIBUTION_DIMENSION])
+            for profile, result in per_backend.items()
+        }
+    distribution = getattr(report, "per_criterion_distribution", None)
+    if distribution is not None:
+        return {str(getattr(report, "backend", "recorded-fixture")): dict(distribution)}
+    raise ConformanceError(
+        "detect_build_substitution reads per-backend score distributions; the report carries "
+        "neither per_backend results nor a per_criterion_distribution"
+    )
+
+
+def _distributions_differ(
+    first: Mapping[str, Mapping[str, float]],
+    second: Mapping[str, Mapping[str, float]],
+    tolerance: float,
+) -> bool:
+    for criterion in set(first) | set(second):
+        bands = set(first.get(criterion, {})) | set(second.get(criterion, {}))
+        for band in bands:
+            difference = abs(
+                first.get(criterion, {}).get(band, 0.0)
+                - second.get(criterion, {}).get(band, 0.0)
+            )
+            if difference > tolerance:
+                return True
+    return False
+
+
+def detect_build_substitution(
+    baseline: Any | None = None,
+    rerun: Any | None = None,
+    package_version: str | None = None,
+    *,
+    tolerance: float | None = None,
+) -> BuildSubstitutionFinding | None:
+    """Detect a provider-side build substitution between two runs of the same frozen set.
+
+    Both report shapes the suites drive are accepted: a `ConformanceReport` (per-backend
+    figures) and a `DistributionReport` (`TC-REG-05`'s single-backend re-run). The comparison
+    is over the score distributions of the backends the two runs share, at the divergence
+    tolerance (`HARNESS_CONFORM_DIVERGENCE_TOLERANCE`, default 0.0 — an exact comparison, which
+    is what "strict" means on a deterministic transport). `None` means the re-run scored
+    identically: no finding, no suspicion. A shift with the package unchanged is the finding —
+    attributed to the provider (`CT-CONFORM-07`), never to the package.
+    """
+    if rerun is None:
+        raise ConformanceError(
+            "detect_build_substitution compares two reports; a rerun is required"
+        )
+    if baseline is None:
+        raise ConformanceError(
+            "detect_build_substitution compares two reports; a baseline is missing"
+        )
+    resolved_tolerance = _divergence_tolerance() if tolerance is None else tolerance
+    baseline_distributions = _score_distributions_of(baseline)
+    rerun_distributions = _score_distributions_of(rerun)
+    common = sorted(set(baseline_distributions) & set(rerun_distributions))
+    if not common:
+        raise ConformanceError(
+            "the two reports share no backend profile, so no per-backend comparison is "
+            f"possible: {sorted(baseline_distributions)} vs {sorted(rerun_distributions)}"
+        )
+    substituted = any(
+        _distributions_differ(baseline_distributions[p], rerun_distributions[p], resolved_tolerance)
+        for p in common
+    )
+    if not substituted:
+        return None
+    baseline_version = (
+        package_version if package_version is not None else getattr(baseline, "package_version", None)
+    )
+    rerun_version = getattr(rerun, "package_version", None)
+    package_changed = bool(
+        substituted
+        and baseline_version is not None
+        and rerun_version is not None
+        and baseline_version != rerun_version
+    )
+    return BuildSubstitutionFinding(
+        attribution="provider_side_build_substitution",
+        package_changed=package_changed,
+        substitution_detected=True,
+    )
+
+
+def evaluate_conformance_alerts(report: Any) -> list[ConformanceAlert]:
+    """The alerts a report fires, each keyed on its own condition (`CT-CONFORM-13`).
+
+    `divergence_gate_crossed` fires exactly when the live gate blocked the run;
+    `build_substitution_detected` exactly when some profile's resolved builds differ from what
+    was requested. A clean run fires nothing, and the set is closed — a new alert is additive
+    by amendment to the declared kinds, not by a third kind inventing itself.
+    """
+    alerts: list[ConformanceAlert] = []
+    if getattr(report, "blocked", False):
+        alerts.append(ConformanceAlert(kind=ALERT_DIVERGENCE_GATE_CROSSED))
+    observability = getattr(report, "observability", None) or {}
+    resolved = observability.get(RESOLVED_BUILDS_FIELD)
+    requested = observability.get(REQUESTED_BUILDS_FIELD)
+    if resolved and requested:
+        if any(resolved[profile] != requested.get(profile) for profile in resolved):
+            alerts.append(ConformanceAlert(kind=ALERT_BUILD_SUBSTITUTION_DETECTED))
+    return alerts
+
+
+def recorded_provider_for_fixture_set(version: str) -> Any:
+    """The deterministic transport for a fixture set's ingest surface (`CT-PROV-10`).
+
+    Socket-free and cost-free: the completions are derived from the request itself, so a suite
+    built without an injected provider can still drive the real ingest ladder (the malicious
+    PDFs never reach it — quarantine at V0 precedes any transcription — and a `CountingProvider`
+    wrapping this provider counts zero for exactly that reason).
+    """
+
+    class _ConformRecordedProvider:
+        def __init__(self, fixture_set_version: str) -> None:
+            self._fixture_set_version = fixture_set_version
+
+        def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+            from aeh.prov import Completion
+
+            request_key = str(getattr(prompt, "request_key", "") or "")
+            return Completion(
+                text=f"recorded transcription ({self._fixture_set_version}) {request_key}",
+                tokens_in=1,
+                tokens_out=1,
+                latency_ms=1,
+                resolved_build=str(getattr(model_ref, "build_id", "recorded")),
+                cached_prefix_tokens=0,
+                cost=None,
+            )
+
+    return _ConformRecordedProvider(version)
+
+
+def run_adversarial_tier(corpus: str, provider: Any = None) -> AdversarialTierReport:
+    """Run one adversarial corpus through the tier (`TC-CONFORM-09`).
+
+    `F-ADV-INJ` derives the differential outcomes for every member from the declared reference
+    bands — twins carry identical declarations, so the three paired properties compare equal
+    (the confidence inequality holds at equality: the recorded transport cannot distinguish the
+    pair, and a *lower* confidence is the live tier's honest possibility). `F-ADV-PDF` drives
+    the real ingest ladder per construct through `ingest_one`; the provider is accepted but
+    never called — quarantine at V0 precedes any transcription.
+    """
+    fixture_set = _load_set_memo(corpus)
+    manifest = read_manifest(_fixture_root() / corpus / "manifest.json")
+    consent_class = str(manifest.get("consent_class") or "")
+    if corpus == "F-ADV-PDF":
+        suite = ConformanceSuite(provider=provider or recorded_provider_for_fixture_set(corpus))
+        ingest_outcomes = {
+            submission.submission_id: suite.ingest_one(submission)
+            for submission in fixture_set.submissions
+        }
+        return AdversarialTierReport(
+            fixture_set_id=str(manifest["fixture_set_id"]),
+            outcomes={},
+            ingest_outcomes=ingest_outcomes,
+            consent_class=consent_class,
+        )
+    bands_by_id = {
+        submission.submission_id: dict(bands)
+        for submission, bands in (
+            (s, (fixture_set.reference_bands or {}).get(s.submission_id, {}))
+            for s in fixture_set.submissions
+        )
+        if bands
+    }
+    units = _derive_units(fixture_set.submissions, bands_by_id, substituted=False)
+    return AdversarialTierReport(
+        fixture_set_id=str(manifest["fixture_set_id"]),
+        outcomes={sid: unit for sid, (_, unit) in units.items()},
+        ingest_outcomes={},
+        consent_class=consent_class,
+    )

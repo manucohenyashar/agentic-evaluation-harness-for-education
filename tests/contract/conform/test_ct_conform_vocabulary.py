@@ -1,7 +1,8 @@
 """The green half of TS-75: does the fixture still match the design, and do the rules still fire?
 
 **None of this is coverage of a `CT-CONFORM` clause, and it must not be counted as any.** Eleven
-of the fourteen cases are behaviourally red behind `writtenahead`, waiting on #133 and #134. What
+of the fourteen cases were behaviourally red behind `writtenahead`, waiting on #133 and #134;
+the last went green at #134's landing and the markers came off. What
 runs here is the scaffolding those cases stand on:
 
 * the **transcription** — the five divergence dimensions, the corpus bounds, the adversarial

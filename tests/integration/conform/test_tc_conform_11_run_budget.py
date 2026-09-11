@@ -5,10 +5,8 @@ Case: test plan §5.18, `NFR-CONFORM-02`, R28. Oracle: **metric threshold**.
     | TC-CONFORM-11 | Performance / 4 | A conformance run at 30-50 fixtures | Completes in well
     | under an hour per backend, so it can gate a release rather than being deferred |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run machinery is #134's
-(`ConformanceSuite.run` stops at `NotImplementedError` naming #134 after the consent gate). The
-blocker is #134 and the tests are registered there in `WRITTEN_AHEAD_BLOCKERS`; remove the
-marker — never the test — when #134 closes.
+**Landed at #134** (unmarked there): the run machinery is `ConformanceSuite.run`'s, and the
+per-backend accounting below reads the report it returns.
 
 **Rung 4, read honestly — the threshold is measured only where it can fail for the reason the
 case exists.** §4.7 prices the budget at `< 60 min per backend`, which is live-model wall clock:
@@ -41,7 +39,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-11"

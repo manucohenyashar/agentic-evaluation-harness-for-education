@@ -10,12 +10,10 @@ recording is asserted green in `tests/artifact/test_tc_conform_06_score_distribu
     | score-distribution gate's threshold is **not computable as written** — see §2.3 Q-02 and
     | §7.4; this case asserts the integrity half and records the other as a gap |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run and the divergence machinery
-it drives are #134's (`ConformanceSuite.run` stops at `NotImplementedError` naming #134 after
-the consent gate). The blocker is #134 and the test is registered there in
-`WRITTEN_AHEAD_BLOCKERS`; remove the marker — never the test — when #134 closes. Rung 3, and not
-`live`: both verdicts are driven by *induced* divergences on a real run, which needs the run
-machinery, not a live model — `induced_divergence` is #134's own test seam.
+**Landed at #134** (unmarked there): the run and the divergence machinery it drives are
+`ConformanceSuite.run`'s. Rung 3, and not `live`: both verdicts are driven by *induced*
+divergences on a real run, which needs the run machinery, not a live model —
+`induced_divergence` is the suite's own test seam.
 
 **How this differs from TS-75's `CT-CONFORM-05`.** Those cases assert the classification trio
 per dimension through `classify_divergence` at the contract rung. This file asserts the *verdict*
@@ -38,7 +36,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-06"

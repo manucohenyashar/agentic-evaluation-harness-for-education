@@ -9,11 +9,9 @@ Case: test plan §5.18, `FR-CONFORM-04`, R28. Oracle: **differential across back
     | escalation rate, evidence-integrity failure rate and self-agreement over repeated runs are
     | all compared |
 
-**Written ahead of implementation** (§8.2). Correctly red: `ConformanceSuite.run` raises
-`NotImplementedError` naming #134 after the consent gate, and the divergence machinery the
-differential reads (`DivergenceReport`, the per-backend figures) is #134's. The blocker is #134
-and the test is registered there in `WRITTEN_AHEAD_BLOCKERS`; remove the marker — never the
-test — when #134 closes. Marked `live` as well because the stub this case exists to forbid is
+**Landed at #134** (unmarked there): `ConformanceSuite.run` drives the full pipeline per
+backend and carries the divergence machinery the differential reads (`DivergenceReport`, the
+per-backend figures). Marked `live` as well because the stub this case exists to forbid is
 the model boundary itself: on the recorded transport the same assertions are `TC-CONFORM-C08`'s
 fast-tier half, and they pass there by design.
 
@@ -48,7 +46,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.live, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration, pytest.mark.live]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-04"

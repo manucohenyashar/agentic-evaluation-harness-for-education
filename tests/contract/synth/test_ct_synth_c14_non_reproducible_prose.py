@@ -20,7 +20,7 @@ Three oracles:
   excepted — it names the sentinels to scan for). Paired with the drive above
   (arbitrary prose stores cleanly), this is what "no golden file pins narrative
   prose" can honestly assert.
-- **The comparison consumers** (`M-STATS`, `M-CONFORM`, rung 3, written ahead) —
+- **The comparison consumers** (`M-STATS`, `M-CONFORM`, rung 3, **landed at #134**) —
   `M-STATS`'s scoring input surface (`admissible_labels`, the single filter every
   figure routes through) is byte-identical across prose-variant stores, and
   `M-CONFORM`'s divergence axes are exactly the five declared verdict/score
@@ -33,9 +33,11 @@ scan over the STORE tier. This case owns the CONSUMER tier: the same variation,
 asserted harmless downstream.
 
 Isolation: rung 2 for the drives (real SQLite, `CaptureProvider` at the model
-boundary) and a repository artifact scan; rung 3 for the consumer sweep, written
-ahead of both consumers and registered in `WRITTEN_AHEAD_BLOCKERS` under
-`"#100 comparison consumers (C14)"`.
+boundary) and a repository artifact scan; rung 3 for the consumer sweep, **landed at
+#134** (unmarked there — the `"#100 comparison consumers (C14)"` entry resolved when both
+consumers shipped). The sweep's M-STATS half needs the scoring surface populated to assert
+anything, so the seeded stores collect identical blind labels through the declared #115
+collection route before the drive; the prose is still the only thing that differs.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from pathlib import Path
 
 import pytest
 
+from aeh.review import record_label
 from aeh.store import open_store
 from tests.support import stats_vocabulary as stats_vocab
 from tests.support.impl import CONFORM_MODULE, STATS_MODULE, SYNTH_MODULE, require
@@ -109,11 +112,52 @@ def _variant_b_replies() -> list:
 
 def _seeded_store(tmp_data_dir, submission_id: str):
     """A store with ONE submission's verdicts, seeded identically every time — the
-    two drives below differ only in the prose their providers return."""
+    two drives below differ only in the prose their providers return.
+
+    The scoring surface `M-STATS` reads is the durable label table: `open_stats`'s
+    population is the store's blind/judged labels (`NFR-STATS-04`), which the verdict
+    seeds alone do not populate. So each store also collects the same blind labels —
+    through the declared collection route (#115's `record_label` durable form), one
+    per criterion, identical across both stores because the prose is the only thing
+    the two drives vary. Without these the consumer sweep would compare two empty
+    surfaces and assert nothing."""
     store = open_store(tmp_data_dir)
     _, run_id, _ = seed_run(store, submissions=(submission_id,), criteria=FIVE_QUESTION_CRITERIA)
     seed_scored_submission(store, run_id, submission_id, complete_questions=set(_QUESTIONS))
-    return store, run_id
+    store.close()
+    # The figure call below reads criterion C-01 (`EMPTY_DATA_CALL`'s keying), so the
+    # labels are keyed there — the criterion the store actually holds for this figure.
+    for index in range(6):
+        record_label(
+            data_dir=tmp_data_dir,
+            label=_CollectedLabel(
+                label_id=f"lbl-syn-c14-{index}", band=("B1", "B2", "B3")[index % 3]
+            ),
+            cohort_id=COHORT_ID,
+        )
+    return open_store(tmp_data_dir), run_id
+
+
+class _CollectedLabel:
+    """One blind, judged label with a paired band — the collected shape #115's
+    durable route writes. Six identical instances land in each store, so the two
+    `admissible_labels()` populations below are equal by construction and every
+    difference between the stores is prose."""
+
+    label_type = "blind"
+    evaluation_mode = "judged"
+    saw_system_output = 0
+    routing = "queued"
+    origin = "direct"
+    system_band = "B3"
+    actor = "teacher-1"
+    timestamp = "2026-01-01T09:00:00Z"
+
+    def __init__(self, *, label_id: str, band: str) -> None:
+        self.label_id = label_id
+        self.criterion_id = "C-01"
+        self.teacher_band = band
+        self.system_band = band
 
 
 def _l1_texts(store, run_id: str, submission_id: str) -> set[str]:
@@ -204,7 +248,6 @@ def test_tc_synth_c14_no_golden_file_pins_the_narrative_prose(repo_root):
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives(tmp_data_dir):
     """`TC-SYNTH-C14` (P1, rung 3 consumer sweep) — neither `M-STATS` nor
     `M-CONFORM` diffs narratives to detect a change in scoring:

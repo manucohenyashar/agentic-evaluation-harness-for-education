@@ -6,10 +6,9 @@ Case: test plan §5.18, `FR-CONFORM-05`, R30. Oracle: **exact scoping**.
     | written into the package validation record scoped to each backend profile and panel build
     | ref, **never merged across them** |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run machinery that produces the
-records is `ConformanceSuite.run`, which raises `NotImplementedError` naming #134 after the
-consent gate. The blocker is #134 and the test is registered there in `WRITTEN_AHEAD_BLOCKERS`;
-remove the marker — never the test — when #134 closes. Rung 2, and not `live`: the scoping this
+**Landed at #134** (unmarked there): the run machinery that produces the records is
+`ConformanceSuite.run`, and the figures are written into `M-PKG`'s validation registry where the
+keyed read below drives them. Rung 2, and not `live`: the scoping this
 case asserts is a property of where the results are *written and read back*, and the read side
 (`aeh.pkg.validation_for`) is landed and real — the transport plays no part in it.
 
@@ -37,7 +36,7 @@ from aeh.pkg import NoValidationData, validation_for
 from tests.support.conf_builders import EDGE_PANEL_3, HOSTED_PANEL_3, edge_cfg, hosted_cfg
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-05"

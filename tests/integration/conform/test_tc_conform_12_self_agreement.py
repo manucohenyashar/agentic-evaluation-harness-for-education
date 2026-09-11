@@ -7,10 +7,8 @@ Oracle: **statistical with stated n**.
     | fixture judgment repeated and self-agreement computed; the figure is reported per backend
     | and never merged | Statistical with stated n |
 
-**Written ahead of implementation** (§8.2). Correctly red: the run that produces the repeated
-judgments is #134's (`ConformanceSuite.run` stops at `NotImplementedError` naming #134 after the
-consent gate). The blocker is #134 and the test is registered there in `WRITTEN_AHEAD_BLOCKERS`;
-remove the marker — never the test — when #134 closes. Rung 3, and not `live`: the repetition
+**Landed at #134** (unmarked there): the run that produces the repeated judgments is
+`ConformanceSuite.run`'s. Rung 3, and not `live`: the repetition
 the case measures is a run property (the same fixtures judged again), driven through the suite's
 own machinery, not a property of a live model's uptime.
 
@@ -44,7 +42,7 @@ from tests.support.conform_vocabulary import (
 )
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-12"
