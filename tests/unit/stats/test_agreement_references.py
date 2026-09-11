@@ -284,9 +284,11 @@ def test_tc_stats_04_row7_fifteen_labels_match_their_hand_computed_fractions():
     so the union's fourth category contributes its teacher-side marginal
     against a zero system side);
     kappa = (4/5 − 1/3)/(2/3) = (7/15)/(2/3) = 7/10;
-    QWK: num = 3 cells at distance 1 → 3/(15·9) = 1/45; den includes the
-    empty (2,4) cell's marginal product 6·1/225·(4/9) —
-    Σ = (36+30+18+18+3+6+15+6)/2025·w-summed = 315/2025 = 7/45
+    QWK: num = 3 cells at distance 1 → 3/(15·9) = 1/45; den = Σ
+    sys_a·tea_b/n²·w — the distance-1 marginal products 36+30+18+18+3 = 105
+    at w = 1/9, distance-2 18+6+15 = 39 at w = 4/9 (the empty (2,4) cell's
+    6·1 included), distance-3 6 at w = 1
+    → (105·1 + 39·4 + 6·9)/(9·225) = 315/2025 = 7/45
     → QWK = 1 − (1/45)/(7/45) = 6/7;
     alpha: D_o = (1+1+1)/15/3 = 3/45 = 1/15; D_e = 5/9 → α = 22/25."""
     figure = _figure(

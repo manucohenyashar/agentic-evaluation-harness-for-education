@@ -14,7 +14,7 @@ hand-computed oracle to fail against.
 (C-HOL, 30) — with three deliberately different band mixes, because the
 separation claim is only testable when a merge would *move the number*: the
 three κ are pairwise distinct, and the figure over the pooled families (κ =
-2929/4289) is not even their n-weighted mean (which is 0.6535, not 0.6829) —
+2929/4289) is not even their n-weighted mean (which is 0.6534, not 0.6829) —
 a third number, which is why no figure may be read as spanning families. The
 API half: each keyed figure carries its family's declared `scoring_model`, the
 caller does not pass one, and the unscoped request's figure carries
@@ -33,7 +33,7 @@ three weightings:
         (4 + 0 + 2)/10 = 3/5
 
 and the separation, asserted on the *same instance*: the agreement figure is
-computed over the two blind labels alone (n = 2, 10 excluded), where unanimity
+computed over the two blind labels alone (n = 2, 8 excluded), where unanimity
 makes κ 0/0 — `None` — and the weighted signal's number is reachable from no
 figure. The four disagreeing acceptances contribute a full 1.0 of denominator
 to the signal and nothing at all to any validity figure (`FR-STATS-14`'s
@@ -167,7 +167,7 @@ def test_tc_stats_02_the_families_figures_differ_so_a_merge_would_move_the_numbe
     pairwise distinct, so any figure spanning the families would be a *third*
     number — and the pooled figure the unscoped request produces is exactly
     that third number, 2929/4289, which is not even the n-weighted mean
-    (0.6535) of the three. That is why the module hands it out with
+    (0.6534) of the three. That is why the module hands it out with
     `scoring_model = None` and no criterion: a number that spans families
     claims no family.
 
