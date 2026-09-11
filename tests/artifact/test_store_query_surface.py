@@ -631,7 +631,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # line move.) (#134's re-pin: the conformance module's divergence-gate
     # machinery and the per-fixture ingest-ladder drive grew the module above
     # the ephemeral store open.)
-    "aeh.conform:831",
+    "aeh.conform:833",
     # The review site is #110's: the label store's one durable write, a single
     # `tx.execute` inside `_persist_label`'s transaction body, passing
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
