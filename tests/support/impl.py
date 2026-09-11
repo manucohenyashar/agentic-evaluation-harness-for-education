@@ -181,19 +181,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # resolves against the module's **first** commit, which is #115's -- so the entry fired three
     # stories early and named two tests that still could not run. Both tests say `issue="#118"`
     # themselves, and each drives a different invented name, so each gets the symbol it actually
-    # resolves. The calib assertions are untouched.
-    "#118 criterion_figures": (
-        "symbol",
-        f"{STATS_MODULE}:criterion_figures",
-        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c09_m_stats_scopes_its_figures_across_the_revision_boundary",),
-    ),
-    "#118 describe_revision_gate": (
-        "symbol",
-        f"{STATS_MODULE}:describe_revision_gate",
-        ("tests/contract/calib/test_ct_calib_lock_and_gates.py"
-         "::test_tc_calib_c16_m_stats_presents_the_gate_as_non_inferiority_too",),
-    ),
+    # resolves. The calib assertions are untouched. (`#118` landed: `aeh.stats` ships
+    # both symbols, so both entries are gone and the two consumer cases run unmarked.)
     # --- TS-35 (#94), the M-AGG median-band aggregation cases ---------------------------------
     #
     # `"#91"` is gone because #91 landed: `aeh.agg` ships the median-band aggregate,
@@ -736,58 +725,22 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # run in the gate unmarked. The `"#117"` entry is gone too: `aeh.stats` ships the four
     # comparisons -- `compression_check`, `surface_proxies`, `routing_policy_validity` and
     # `drift_check` -- plus the `alerts` surface and the subgroup knob, so its thirteen
-    # registered cases run in the gate unmarked. The still-marked rows in these files -- the
-    # c16 sweep's `promote` row and the c19 blind-sample alert -- are #118's and stay
-    # registered under it; the per-row keying (MEMBER_ISSUE) is carried in the marks
-    # themselves. The `open_stats` rung-2
+    # registered cases run in the gate unmarked. The `"#118"` entry is gone too: `aeh.stats`
+    # ships `promote` -- the validation record's writer, with the three separate counters,
+    # the weakest criterion per population and the first-class absence message -- plus the
+    # figure surface it delivers (`aggregate`, `criterion_override_history`,
+    # `narrative_quality`, `operational_signal`, `observability_counters`, and the calib
+    # consumers' `criterion_figures`/`describe_revision_gate`), so all sixteen of its
+    # registered rows -- the c15 promotion write, the c04 aggregate refusals, the c13
+    # weakest, the c14 pair, the c16 sweep's promote row, the c17 export, the c19 counters
+    # and blind-sample alert, the c05/c06/c09 records cases -- and the synth c10 promotion
+    # consumer run in the gate unmarked. The `open_stats` rung-2
     # cases needed `record_label`'s durable collection route (`data_dir=, label=,
-    # cohort_id=`), which landed with #115 in `aeh.review`.
-    "#118 stats": (
-        "symbol",
-        f"{STATS_MODULE}:promote",
-        (
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c15_the_validation_record_is_written_through_m_pkg",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[assignment_type]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[backend]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused[population]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c13_an_aggregate_cannot_be_obtained_without_its_weakest_criterion",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c14_narrative_quality_is_reported_separately_from_agreement",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c14_no_function_offers_a_combined_quality_figure",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[promote]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c17_the_analytical_export_is_read_only_and_does_not_touch_a_live_run",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c19_each_contract_alert_exists_and_fires[blind_sample_skipped]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c19_emits_the_declared_counters",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c05_an_administration_with_no_blind_labels_does_not_advance_the_figures",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c06_an_operational_only_administration_leaves_kappa_unchanged",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c06_label_weighting_applies_to_operational_signals_and_not_to_the_figure",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c06_promote_increments_the_three_counters_separately",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_zero_rate",
-        ),
-    ),
-    "#29 stats": (
-        "symbol",
-        f"{PKG_MODULE}:validation_for",
-        (
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c05_the_package_record_reports_the_message_rather_than_a_stale_figure",
-        ),
-    ),
+    # cohort_id=`), which landed with #115 in `aeh.review`. The `"#29 stats"`
+    # entry is gone too: `aeh.pkg` ships the module-level `validation_for` #29's
+    # clause declared (`FR-PKG-09`) and #118's record read needed -- with the
+    # administration-keyed `record_validation` shape the consumer calls -- so its
+    # one registered case runs in the gate unmarked.
     # `"#31 stats"` is gone because #31 landed: `export_package` answers the validation
     # payload (`weakest_per_population` beside the per-population headline, never an
     # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked. The
@@ -848,31 +801,16 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # console conjunction.)
     # The `"#100 suppression consumers (C03)"` entry that stood here is gone because
     # #126 landed: `aeh.console:build_console` exists alongside `aeh.grade:open_grade`,
-    # so C03's suppression consumer sweep runs in the gate. C13's conjunction stays --
-    # `aeh.stats` does not exist yet, and a half-resolved conjunction must not unmark a
-    # test whose other half is still missing.
-    "#100 language consumers (C13)": (
-        "symbols",
-        f"{CONSOLE_MODULE}:build_console,{STATS_MODULE}:promote",
-        (
-            "tests/contract/synth/test_ct_synth_c13_paraphrase_boundary.py"
-            "::test_tc_synth_c13_consumers_present_narrative_as_pattern_checked_not_verified",
-        ),
-    ),
+    # so C03's suppression consumer sweep runs in the gate. The `"#100 language consumers
+    # (C13)"` and `"#100 promotion consumer (C10)"` entries are gone too because #118
+    # landed: `aeh.stats:promote` now resolves, so both halves of C13's conjunction and
+    # C10's promotion consumer run in the gate unmarked.
     "#100 comparison consumers (C14)": (
         "symbols",
         f"{STATS_MODULE}:open_stats,{CONFORM_MODULE}:detect_build_substitution",
         (
             "tests/contract/synth/test_ct_synth_c14_non_reproducible_prose.py"
             "::test_tc_synth_c14_the_comparison_consumers_do_not_diff_narratives",
-        ),
-    ),
-    "#100 promotion consumer (C10)": (
-        "symbol",
-        f"{STATS_MODULE}:promote",
-        (
-            "tests/contract/synth/test_ct_synth_c10_tier_d_sentinel_scan.py"
-            "::test_tc_synth_c10_the_promotion_consumer_promotes_cited_spans_not_prose",
         ),
     ),
     # --- TS-72 (#114), the twenty CT-REVIEW clause cases -----------------------------------

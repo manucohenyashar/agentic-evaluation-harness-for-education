@@ -1391,11 +1391,13 @@ def current_schema_version(tier: Tier) -> int:
 #: `review_label_store_columns` moved Durable 5→6, and `aeh.review` joined the
 #: contributor import lists — Durable's tail is now `aeh.review`'s. #103's
 #: `grade_superseded_at_and_append_only` moved Cohort 18→19 and its
-#: `grade_audit_record_append_only` moved Durable 6→7 — `aeh.grade` holds both tails.)
+#: `grade_audit_record_append_only` moved Durable 6→7 — `aeh.grade` holds both tails.
+#: #118's `pkg_validation_record` moved Durable 7→8 and `aeh.pkg` joined the
+#: contributor lists the same way — Durable's tail is now `aeh.pkg`'s.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
     Tier.COHORT: 19,
-    Tier.DURABLE: 7,
+    Tier.DURABLE: 8,
 }
 
 
@@ -1828,6 +1830,31 @@ _COMMIT = Statement("COMMIT")
 _ROLLBACK = Statement("ROLLBACK")
 
 
+#: The per-thread lock-wait sink (`#118`'s export-seam figure). `None` means "nothing is
+#: counting" — the open-time sites (migration, pragmas) run exactly there. A handle-owned
+#: window installs its counter dict for the statements it runs; `_run` reads the sink of
+#: *this thread* on every retry, so the drain thread's waits land in the same counter the
+#: handle's metrics report, and a caller code path inside a `transaction()` body counts
+#: into the same number (its `Tx` statements run inside the transaction's window).
+_LOCK_WAIT_SINK = threading.local()
+
+
+@contextmanager
+def _counting_lock_waits(counter: dict[str, int]) -> Iterator[None]:
+    """Install `counter` as this thread's lock-wait sink for the wrapped block.
+
+    Stack discipline, not assignment: a nested window (a caller running another handle's
+    `query` inside a `transaction()` body) restores the outer sink on exit, so each
+    handle's waits land in its own counter.
+    """
+    previous = getattr(_LOCK_WAIT_SINK, "counter", None)
+    _LOCK_WAIT_SINK.counter = counter
+    try:
+        yield
+    finally:
+        _LOCK_WAIT_SINK.counter = previous
+
+
 def _run(connection: sqlite3.Connection, declared: Statement,
          params: Mapping[str, Any] | None = None, *, retries: int = DEFAULT_BUSY_RETRIES
          ) -> sqlite3.Cursor:
@@ -1850,6 +1877,17 @@ def _run(connection: sqlite3.Connection, declared: Statement,
     than a new one, and the caller sees `OperationalError` exactly as it would have without the
     retry. §3.3 says busy "should not occur"; a helper that promised it could not would be
     promising something no retry loop can deliver.
+
+    `lock_waits` (the `#118` export-seam figure) is counted through the thread-local sink
+    `_LOCK_WAIT_SINK`, not through this signature: a test that patches `_run` with a
+    same-shape wrapper (TC-STORE-13's does, verbatim) must keep working, and a new keyword
+    would break every one of them. A handle-owned window (`SqliteTierHandle.query`,
+    `WriteQueue._commit`, `WriteQueue.transaction`) installs its counter dict for the
+    statements it runs; every SQLITE_BUSY retry slept through inside the window increments
+    it, and the count surfaces in `SqliteTierHandle._metrics` → `store_metrics` →
+    `PipelineOutcome.lock_waits`. Open-time sites (migration, the pragmas) run outside any
+    window and are deliberately outside the count: the figure is about a *run's* waits,
+    not the file's construction.
     """
     attempt = 0
     while True:
@@ -1861,6 +1899,9 @@ def _run(connection: sqlite3.Connection, declared: Statement,
             if attempt >= retries:
                 raise
             attempt += 1
+            sink = getattr(_LOCK_WAIT_SINK, "counter", None)
+            if sink is not None:
+                sink["lock_waits"] += 1
             time.sleep(0.02 * attempt)
 
 
@@ -1999,7 +2040,7 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
             f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
             f"aeh.orch, aeh.extract, aeh.synth, aeh.judge, aeh.agg and aeh.grade; "
-            f"Tier D: aeh.det, aeh.integ and aeh.review), so this "
+            f"Tier D: aeh.det, aeh.integ, aeh.review and aeh.pkg), so this "
             f"process has imported some "
             f"of them and not the rest. Import the owning modules before the first open — "
             f"`import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, "
@@ -2674,17 +2715,23 @@ class WriteQueue:
 
     __slots__ = (
         "_broken", "_condition", "_connect_write", "_failures", "_guard", "_halt", "_holder",
-        "_last_latency_ms", "_limits", "_over_since", "_pending", "_queue", "_stamps",
-        "_stopping", "_thread", "_tier_name", "_write_lock",
+        "_last_latency_ms", "_limits", "_lock_waits", "_over_since", "_pending", "_queue",
+        "_stamps", "_stopping", "_thread", "_tier_name", "_write_lock",
     )
 
     def __init__(self, connect_write: Any, limits: StoreLimits, *,
                  tier_name: str = "",
                  guard: Callable[[Statement], None] | None = None,
-                 halt: Callable[[BaseException], None] | None = None) -> None:
+                 halt: Callable[[BaseException], None] | None = None,
+                 lock_waits: dict[str, int] | None = None) -> None:
         self._connect_write = connect_write
         self._tier_name = tier_name
         self._limits = limits
+        # The owning handle's SQLITE_BUSY-retry counter (`#118`'s lock-waits figure): the
+        # counting windows over `_commit` and `transaction()` install it as this thread's
+        # sink, so a batch's waits and a body statement's waits land in the same number the
+        # handle's metrics report.
+        self._lock_waits = lock_waits
         # The tier write guard (Tier D's student-name check) or `None` for a tier without
         # one. Applied at both doors: `enqueue` before queueing, `transaction` via the `Tx`
         # it hands out. See `_reject_tier_d_student_name_insert`.
@@ -2873,7 +2920,10 @@ class WriteQueue:
                 "would commit independently, and a caller believing both sides committed "
                 "together is silently split. Run the tiers' transactions sequentially."
             )
-        with self._write_lock:
+        with self._write_lock, _counting_lock_waits(self._lock_waits):
+            # The lock-wait window covers the whole transaction — BEGIN, every `Tx`
+            # statement the body runs on this thread, COMMIT and the rollback paths —
+            # so a body's waits land in the same counter the handle's metrics report.
             try:
                 # The door's entry is this module's own I/O — on first write it creates
                 # the `-wal`/`-shm` siblings — so out-of-space here classifies like every
@@ -3063,7 +3113,9 @@ class WriteQueue:
         """
         started = time.perf_counter()
         try:
-            with self._write_lock:
+            # The lock-wait window covers the whole batch: BEGIN through COMMIT, and the
+            # rollback paths — a wait that postponed the commit is the wait the figure is for.
+            with _counting_lock_waits(self._lock_waits), self._write_lock:
                 connection = self._connect_write()
                 _run(connection, _BEGIN, retries=self._limits.retries)
                 try:
@@ -3132,8 +3184,8 @@ class SqliteTierHandle:
     """
 
     __slots__ = (
-        "_connection", "_extra_readers", "_limits", "_local", "_opened", "_owner_thread",
-        "_path", "_queue", "_read_only", "_retries", "_write_connection",
+        "_connection", "_extra_readers", "_limits", "_local", "_lock_waits", "_opened",
+        "_owner_thread", "_path", "_queue", "_read_only", "_retries", "_write_connection",
     )
 
     def __init__(self, connection: sqlite3.Connection, opened: TierOpened, *,
@@ -3168,10 +3220,16 @@ class SqliteTierHandle:
         # insert) -- the other tiers have no guard, because the requirement is about the one
         # tier that is permanent and pseudonymized, not about SQL in general.
         guard = None if opened.tier is not Tier.DURABLE else _reject_tier_d_student_name_insert
+        # This tier's SQLITE_BUSY-retry counter. `query` and the `WriteQueue` both hand it to
+        # `_run`, and `_metrics` reports it, so a run that had to wait on a lock — the figure
+        # `#118`'s export seam asserts stays zero while a concurrent analytical export reads —
+        # is counted here once, wherever on the handle it happened.
+        self._lock_waits: dict[str, int] = {"lock_waits": 0}
         self._queue: WriteQueue | None = (
             None if self._read_only
             else WriteQueue(self._open_write_connection, limits,
-                            tier_name=opened.tier.value, guard=guard)
+                            tier_name=opened.tier.value, guard=guard,
+                            lock_waits=self._lock_waits)
         )
 
     # -- the read connections ------------------------------------------------------------------
@@ -3282,8 +3340,9 @@ class SqliteTierHandle:
         """
         declared = statement if isinstance(statement, Statement) else Statement(statement)
         _refuse_write(declared)
-        return _run(self._connection_for_this_thread(), declared, params,
-                    retries=self._retries).fetchall()
+        with _counting_lock_waits(self._lock_waits):
+            return _run(self._connection_for_this_thread(), declared, params,
+                        retries=self._retries).fetchall()
 
     def _connection_for_this_thread(self) -> sqlite3.Connection:
         """`_connection` on the thread that opened the handle, a private one on any other.
@@ -3359,6 +3418,7 @@ class SqliteTierHandle:
             "queue_depth_sustained": False if queue is None else queue.sustained_over_threshold(),
             "write_failures": 0 if queue is None else len(queue.failures),
             "database_file_bytes": self._path.stat().st_size if self._path.exists() else 0,
+            "lock_waits": self._lock_waits["lock_waits"],
         }
 
     def _close(self) -> None:
@@ -4016,6 +4076,7 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
     depth = 0
     latency_ms = 0.0
     failures = 0
+    lock_waits = 0
     backpressure = False
     sustained = False
     sizes: dict[str, int] = {}
@@ -4025,6 +4086,7 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
         depth += int(share["write_queue_depth"])
         latency_ms = max(latency_ms, float(share["batch_commit_latency_ms"]))
         failures += int(share["write_failures"])
+        lock_waits += int(share.get("lock_waits", 0))
         backpressure = backpressure or bool(share["backpressure_active"])
         sustained = sustained or bool(share["queue_depth_sustained"])
         # Keyed per open tier, so "which tier is growing" is answerable. `TC-STORE-24` reads
@@ -4077,6 +4139,10 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
         "configured_projected_run_bytes": limits.projected_run_bytes,
         # -- writes the queue accepted and could not commit. Zero is the only healthy value ----
         "write_failures": failures,
+        # -- SQLITE_BUSY retries slept through, per handle summed (#118's export-seam figure) --
+        # Zero is the only healthy value under WAL's single-writer design; the figure exists so
+        # a run that *did* wait says so rather than silently slowing down.
+        "lock_waits": lock_waits,
     }
 
 

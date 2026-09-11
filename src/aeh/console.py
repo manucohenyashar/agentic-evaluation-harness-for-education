@@ -146,6 +146,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -164,7 +165,7 @@ from aeh.review import (
     REVIEW_DEFAULT_BANDS,
     REVIEW_DEFAULT_BUDGET_MINUTES,
 )
-from aeh.store import open_store
+from aeh.store import open_store, store_metrics
 
 # The full migration chain, before any store open in this module's processes. See the module
 # docstring: the open site refuses a short chain, and these imports are the completeness duty.
@@ -836,7 +837,13 @@ class CalibrationRender:
 class PipelineOutcome:
     """The headless driver's result: the grades, whether they delivered and finalized, the
     rubric version the run graded against, the criteria marked lower-confidence, the modules
-    the pipeline imported, and the per-stage trace."""
+    the pipeline imported, and the per-stage trace.
+
+    `lock_waits` (`#118`, the export seam's fourth half) is the store's SQLITE_BUSY-retry
+    count over every handle the run opened — the observability figure that says a scoring
+    run *waited on a lock* rather than silently slowing down. Zero is the only healthy value
+    under WAL's single-writer design, and `CT-STORE-17`-style callers assert exactly that
+    while a concurrent analytical export runs `alongside`."""
 
     modules_imported: tuple[str, ...]
     grades: tuple[Any, ...]
@@ -845,6 +852,7 @@ class PipelineOutcome:
     rubric_version: str
     lower_confidence_criteria: tuple[str, ...]
     stages: tuple[str, ...] = ()
+    lock_waits: int = 0
 
 
 @dataclass(frozen=True)
@@ -3361,8 +3369,10 @@ def run_pipeline_for_test(
     *,
     calibration: str | None = None,
     data_dir: Path | None = None,
-    run_id: str = _DRIVER_RUN_ID,
+    run_id: str | None = None,
     submissions: int = 3,
+    cohort_id: str | None = None,
+    alongside: Callable[[], Any] | None = None,
 ) -> PipelineOutcome:
     """The headless driver (`CT-CONSOLE-01`): run the pipeline end-to-end from code and
     return a structured result with a per-stage trace. Nothing here requires the console
@@ -3376,6 +3386,24 @@ def run_pipeline_for_test(
     caller can pin; and the orchestrator's package-id derivation is overridden for the
     same reason, because the default derives the package id from the version id and the
     pinned id carries no `@`.
+
+    `cohort_id` (`#118`'s export seam) names the cohort the driver seeds, runs and reads
+    back — the fixed `_DRIVER_COHORT` when omitted, as every pre-existing caller sees. A
+    driver that could only ever run one cohort could not demonstrate the property the
+    seam exists for: a statistics promotion of a *named* administration. The seeding is
+    idempotent for that seam's differential (`CT-STATS-C17` times a run against a
+    baseline run **on the same data directory**): a package version already seeded is
+    seed-present, not a collision, and a run id the caller did not pin is derived from
+    the cohort — two administrations are two runs, and the run table's primary key is
+    the run id.
+
+    `alongside` runs a callable **concurrently with the scoring run**, on a daemon thread
+    started just before the deterministic pass and joined before the store closes; its
+    first exception is re-raised on the caller's thread after the join, so a failed
+    concurrent export cannot pass as a successful run. This is what makes the seam's
+    claim checkable — that an analytical export running *during* scoring neither waits
+    the pipeline on a lock (`PipelineOutcome.lock_waits` stays 0) nor moves its wall
+    clock — instead of asserting it about an export that ran afterwards.
     """
     del calibration  # a disabled or absent M-CALIB is the same pipeline: the driver never imports it
     modules: tuple[str, ...] = (
@@ -3397,40 +3425,69 @@ def run_pipeline_for_test(
     lower: tuple[str, ...] = ()
     finalized = False
     stages: list[str] = []
+    driver_cohort = cohort_id if cohort_id is not None else _DRIVER_COHORT
+    driver_run_id = (
+        run_id
+        if run_id is not None
+        else (
+            f"{_DRIVER_RUN_ID}-{driver_cohort}"
+            if cohort_id is not None
+            else _DRIVER_RUN_ID
+        )
+    )
+    alongside_error: list[BaseException] = []
+
+    def _run_alongside() -> None:
+        try:
+            alongside()  # type: ignore[operator] -- guarded by `is not None` below
+        except BaseException as error:  # noqa: BLE001 -- re-raised on the caller's thread
+            alongside_error.append(error)
+
+    alongside_thread: threading.Thread | None = None
     try:
         clock = lambda: _DRIVER_STAMP  # noqa: E731 — the driver's pinned clock
         # -- the pinned rubric version (disclosed) ------------------------------------------------------
-        with store.package(_PACKAGE_ID).transaction() as tx:
-            tx.execute(
-                "INSERT INTO package (package_id, created_at) VALUES (:p, :t)",
-                p=_PACKAGE_ID,
-                t=_DRIVER_STAMP,
-            )
-            tx.execute(
-                "INSERT INTO package_version (package_version_id, package_id, revision, locked) "
-                "VALUES (:v, :p, 1, 0)",
-                v=_R0_VERSION,
-                p=_PACKAGE_ID,
-            )
-        catalog = PackageCatalog(store.package(_PACKAGE_ID), package_id=_PACKAGE_ID)
-        for cid, question_id, key in _DRIVER_CRITERIA:
-            catalog.add_criterion(
-                _R0_VERSION, cid, question_id=question_id, kind="mcq",
-                band_count=2,
-            )
-            catalog.add_band(_R0_VERSION, cid, 0, "incorrect", 0.0)
-            catalog.add_band(_R0_VERSION, cid, 1, "correct", 1.0)
-            catalog.set_mcq_options(
-                _R0_VERSION, cid, [(option, f"Option {option}") for option in _DRIVER_OPTIONS]
-            )
-            catalog.set_answer_key(_R0_VERSION, cid, key)
-        stages.append("package seeded")
+        # Idempotent, not INSERT OR IGNORE: a second run on the same data directory
+        # (CT-STATS-C17's differential) re-seeds nothing — the version row's presence is
+        # the seed, and re-adding criteria to it would be a second write to the same
+        # locked-by-position rows rather than a declaration.
+        seeded = store.package(_PACKAGE_ID).query(
+            "SELECT 1 FROM package_version WHERE package_version_id = :v", v=_R0_VERSION
+        )
+        if not seeded:
+            with store.package(_PACKAGE_ID).transaction() as tx:
+                tx.execute(
+                    "INSERT INTO package (package_id, created_at) VALUES (:p, :t)",
+                    p=_PACKAGE_ID,
+                    t=_DRIVER_STAMP,
+                )
+                tx.execute(
+                    "INSERT INTO package_version (package_version_id, package_id, revision, locked) "
+                    "VALUES (:v, :p, 1, 0)",
+                    v=_R0_VERSION,
+                    p=_PACKAGE_ID,
+                )
+            catalog = PackageCatalog(store.package(_PACKAGE_ID), package_id=_PACKAGE_ID)
+            for cid, question_id, key in _DRIVER_CRITERIA:
+                catalog.add_criterion(
+                    _R0_VERSION, cid, question_id=question_id, kind="mcq",
+                    band_count=2,
+                )
+                catalog.add_band(_R0_VERSION, cid, 0, "incorrect", 0.0)
+                catalog.add_band(_R0_VERSION, cid, 1, "correct", 1.0)
+                catalog.set_mcq_options(
+                    _R0_VERSION, cid, [(option, f"Option {option}") for option in _DRIVER_OPTIONS]
+                )
+                catalog.set_answer_key(_R0_VERSION, cid, key)
+            stages.append("package seeded")
+        else:
+            stages.append("package seed present")
         # -- the cohort, its submissions, and their selection reads -----------------------------------
-        with store.cohort(_DRIVER_COHORT).transaction() as tx:
+        with store.cohort(driver_cohort).transaction() as tx:
             tx.execute(
                 "INSERT INTO cohort (cohort_id, consent_class, created_at) "
                 "VALUES (:c, 'synthetic', :t)",
-                c=_DRIVER_COHORT,
+                c=driver_cohort,
                 t=_DRIVER_STAMP,
             )
             for index in range(submissions):
@@ -3439,7 +3496,7 @@ def run_pipeline_for_test(
                     "INSERT INTO submission (submission_id, cohort_id, student_ref) "
                     "VALUES (:s, :c, :r)",
                     s=submission_id,
-                    c=_DRIVER_COHORT,
+                    c=driver_cohort,
                     r=f"ref-driver-{index + 1:02d}",
                 )
                 document_id = f"doc-driver-{index + 1:02d}"
@@ -3473,21 +3530,33 @@ def run_pipeline_for_test(
         stages.append("cohort seeded")
         # -- the run, the deterministic pass, the policy pass, the finalization ------------------------
         resolved = resolve_run_config(
-            _driver_cfg(), CohortRef(cohort_id=_DRIVER_COHORT, consent_class="synthetic")
+            _driver_cfg(), CohortRef(cohort_id=driver_cohort, consent_class="synthetic")
         )
         orchestrator = Orchestrator(
             store, package_id_for=lambda version: _PACKAGE_ID, clock=clock
         )
-        orchestrator.create_run(_DRIVER_COHORT, _R0_VERSION, resolved, run_id=run_id)
+        created_run_id = orchestrator.create_run(
+            driver_cohort, _R0_VERSION, resolved, run_id=driver_run_id
+        )
+        # The id create_run returns is the one the pass runs under: a caller-pinned
+        # id resolves to itself, a derived one is what the run table carries.
         stages.append("run created")
-        DeterministicEvaluator(store).evaluate_cohort(run_id)
+        if alongside is not None:
+            # Concurrent, not sequential: the seam's claim is about an export running
+            # *during* scoring. `daemon=True` is belt-and-braces — the join below is the
+            # real lifecycle — so an export that hangs cannot outlive a killed run.
+            alongside_thread = threading.Thread(
+                target=_run_alongside, name="aeh-console-alongside", daemon=True
+            )
+            alongside_thread.start()
+        DeterministicEvaluator(store).evaluate_cohort(created_run_id)
         stages.append("deterministic pass complete")
-        GradingService(store, clock=clock).compute_all(run_id)
+        GradingService(store, clock=clock).compute_all(created_run_id)
         stages.append("grades computed")
-        record = GradingService(store, clock=clock).finalize_batch(run_id, "console-driver")
+        record = GradingService(store, clock=clock).finalize_batch(created_run_id, "console-driver")
         finalized = bool(getattr(record, "finalized", True))
         stages.append("batch finalized")
-        cohort_handle = store.cohort(_DRIVER_COHORT)
+        cohort_handle = store.cohort(driver_cohort)
         grades = tuple(
             (
                 _row_get(row, "submission_id"),
@@ -3513,10 +3582,21 @@ def run_pipeline_for_test(
             )
         )
         stages.append("read back")
+        # The lock-wait figure is read while every handle the run opened is still open:
+        # after `close()` the handles are gone and the figure would be an invention.
+        lock_waits = int(store_metrics(store).get("lock_waits", 0))
+        stages.append("metrics read")
     finally:
+        if alongside_thread is not None:
+            alongside_thread.join()
         store.close()
         if created_dir:
             shutil.rmtree(data_dir, ignore_errors=True)
+        if alongside_error and sys.exc_info()[1] is None:
+            # A concurrent export that failed must fail the run, not pass as a clean
+            # one — but it must never mask the pipeline's own failure: if the body
+            # raised, *its* exception is the news and wins.
+            raise alongside_error[0]
     return PipelineOutcome(
         modules_imported=modules,
         grades=grades,
@@ -3525,6 +3605,7 @@ def run_pipeline_for_test(
         rubric_version=_R0_VERSION,
         lower_confidence_criteria=lower,
         stages=tuple(stages),
+        lock_waits=lock_waits,
     )
 
 

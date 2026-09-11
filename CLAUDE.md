@@ -118,8 +118,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.grade` owns Cohort's last migration (#103's `grade_superseded_at_and_append_only`, 19;
 #101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.grade` also owns
-Durable's last migration (#103's `grade_audit_record_append_only`, 7; #110's
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.pkg` owns
+Durable's last migration (#118's `pkg_validation_record`, 8), `aeh.grade` the one
+before it (#103's `grade_audit_record_append_only`, 7; #110's
 `review_label_store_columns` was 6), `aeh.integ` the one
 before that (#73's `integ_rate_dimensions`, 5), `aeh.synth` the one before
 that (#97's `synth_narrative_key`, 13), `aeh.orch` the one before that (#61's

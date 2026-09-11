@@ -116,7 +116,14 @@ def test_tc_store_11_purge_refuses_every_partial_promotion_then_removes_the_byte
     # --- state 2: audit records promoted, labels and statistics missing ----------------------
     store.durable()  # open + migrate the durable file before the raw connection ALTERs it
     with sqlite3.connect(store.durable_path()) as raw:
-        raw.execute(PROMOTE_DDL[0])
+        # The same duplicate-column guard `_promote` uses: #118's migration landed the
+        # cohort_id columns for real, so the simulated ALTER here is a no-op on a current
+        # file — the gate the state needs is the audit ROW, which follows.
+        try:
+            raw.execute(PROMOTE_DDL[0])
+        except sqlite3.OperationalError as error:
+            if "duplicate column" not in str(error).lower():
+                raise
         raw.execute(
             "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, profile_summary, "
             "cohort_id) VALUES ('a-partial', 'run-1', 't', 'p', 'c-purge')")

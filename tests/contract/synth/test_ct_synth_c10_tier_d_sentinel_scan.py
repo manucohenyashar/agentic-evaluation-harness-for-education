@@ -201,7 +201,6 @@ def test_tc_synth_c10_no_narrative_sentinel_survives_into_tier_d(tmp_data_dir):
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_synth_c10_the_promotion_consumer_promotes_cited_spans_not_prose(
     tmp_data_dir,
 ):

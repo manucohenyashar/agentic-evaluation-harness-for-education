@@ -5154,3 +5154,19 @@ def record_run_start(store: Any, config: Any, *, run_id: str | None = None) -> s
             profile_summary=summary.to_canonical_json(),
         )
     return resolved_run_id
+
+
+# `#118`'s export seam reads the headless driver as `aeh.orch.run_pipeline_for_test` —
+# the *run pipeline* operation from the orchestrator's namespace, which is how the
+# stats vocabulary documents the seam and how `CT-STATS-C17` resolves it. The
+# implementation lives in `aeh.console`, which imports `aeh.orch` at module top-level;
+# a top-level import the other way round would be a cycle. PEP 562's module-level
+# `__getattr__` forwards the one name lazily — the import happens at first access, when
+# both modules are fully initialized — and every other missing name still raises
+# `AttributeError` exactly as before, so no new module surface is implied.
+def __getattr__(name: str) -> Any:
+    if name == "run_pipeline_for_test":
+        from aeh import console
+
+        return console.run_pipeline_for_test
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
