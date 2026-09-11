@@ -196,9 +196,10 @@ TEXT_SHORTCUT_STAGE = "text_passthrough"
 CONFORMANCE_BUDGET_SECONDS = 3600
 
 #: The env knob (seam 3) that says this box declares the live backends a live conformance
-#: run dispatches through. It chooses the transport (`live_conformance_backends`'s docstring):
-#: a profile it names is dispatched through the shipped live providers; every other run uses
-#: the recorded derivation.
+#: run dispatches through. A profile it names is dispatched through the shipped live
+#: providers — the backend's own transport and transcriber ref (`_live_provider_for`) — and
+#: the dispatch field reports the build that actually served; every other run uses the
+#: recorded derivation.
 LIVE_BACKENDS_ENV = "HARNESS_CONFORM_LIVE_BACKENDS"
 
 
@@ -346,6 +347,7 @@ class FixtureSet:
         has a shift to catch.
         """
         distribution: dict[str, dict[str, float]] = {}
+        unshifted: dict[str, dict[str, float]] = {}
         carrying: dict[str, int] = {}
         declared_bands = self.reference_bands or {}
         for submission in self.submissions:
@@ -353,6 +355,10 @@ class FixtureSet:
             if not bands:
                 continue
             if simulate_build_change:
+                plain = dict(declared_bands.get(submission.submission_id, {}))
+                for criterion, band in plain.items():
+                    counts = unshifted.setdefault(criterion, {})
+                    counts[band] = counts.get(band, 0.0) + 1.0
                 bands = _shift_bands_one_step(bands)
             for criterion, band in bands.items():
                 counts = distribution.setdefault(criterion, {})
@@ -362,6 +368,18 @@ class FixtureSet:
             criterion: {band: n / carrying[criterion] for band, n in counts.items()}
             for criterion, counts in distribution.items()
         }
+        if simulate_build_change:
+            plain_shares = {
+                criterion: {band: n / carrying[criterion] for band, n in counts.items()}
+                for criterion, counts in unshifted.items()
+            }
+            if shares == plain_shares:
+                raise ConformanceError(
+                    "the simulated build shift moved nothing: every fixture's "
+                    f"{_SUBSTITUTION_CRITERION!r} band already sat at the top of its declared "
+                    "scale, so the rerun equals the baseline and would measure a substitution "
+                    "that was not applied (FR-CONFORM-08's detection needs a shift that exists)"
+                )
         return DistributionReport(
             per_criterion_distribution=shares,
             package_version=self.package_version,
@@ -587,7 +605,9 @@ class ConformanceSuite:
 
         What the run does, in the order the clauses ask for it (`CT-CONFORM-03`..`-07`,
         `-10`..`-14`): the identical set (`CT-CONFORM-01`'s one input hash) passes through the
-        seven pipeline stages per backend with no ingestion stub on the unstubable stage; the
+        seven pipeline stages per backend — the ingest and transcription stages driven through
+        the real ladder per fixture (`FR-CONFORM-04`'s no-stubs clause), the judgment stages on
+        the declared references the recorded transport replays; the
         five §7.4 dimensions are measured per backend and compared — per dimension, never a
         headline (`CT-CONFORM-04`); the two named gates partition the dimensions — the live
         evidence-integrity gate blocks on crossing (`FR-CONFORM-07`), the score-distribution
@@ -601,6 +621,12 @@ class ConformanceSuite:
         if not configs:
             raise ConformanceError(
                 "a conformance run needs at least one backend config; nothing was given"
+            )
+        if len(configs) > 2:
+            raise ConformanceError(
+                f"the differential compares TWO backends ({len(configs)} given): every "
+                "backend between the outer pair would produce records and figures that never "
+                "enter the divergence. Run the pairs you need as separate runs."
             )
         for backend_config in configs:
             self._enforce_consent(backend_config, cohort)
@@ -728,16 +754,26 @@ class ConformanceSuite:
 
     # -- the ingest seam ---------------------------------------------------------------------------
 
-    def ingest_one(self, submission: FixtureSubmission) -> IngestOutcome:
+    def ingest_one(
+        self,
+        submission: FixtureSubmission,
+        *,
+        provider: Any | None = None,
+        transcriber: Any | None = None,
+    ) -> IngestOutcome:
         """Ingest one fixture through the real pipeline on an ephemeral store.
 
         The fixture's bytes are materialized (committed files for the file-backed corpora; the
         generator's output, digest-verified, for the malicious PDFs) and run through the landed
-        M-INGEST gateway — real sanitizer, real rasterizer, the injected provider for the
-        transcription stage. Nothing is stubbed in between, because `CT-CONFORM-03`'s clause
+        M-INGEST gateway — real sanitizer, real rasterizer, the transcription stage dispatched
+        through a provider. Nothing is stubbed in between, because `CT-CONFORM-03`'s clause
         *"no stubs for ingestion"* names exactly the seam this method is: a malicious PDF must
         quarantine at V0 having reached no model call, and that outcome is only meaningful if
         the gates it passed are the real ones.
+
+        `provider`/`transcriber` override the dispatch for one call (a live-tier drive
+        dispatches through the backend's own transport and transcriber ref); the default is
+        the suite's injected provider and the fixture transcriber.
 
         The declared refusal world's knobs (the strip knob and the decompressed-bytes ceiling —
         see the module docstring) are held for the ingest: the adversarial tier's contract
@@ -748,7 +784,8 @@ class ConformanceSuite:
         ingest surface runs the integrity ladder's ingest-side gates; the conformance
         comparison's full pipelines are `run`'s, with #134.
         """
-        if self._provider is None:
+        dispatch_provider = provider if provider is not None else self._provider
+        if dispatch_provider is None:
             raise ConformanceError(
                 "ingest_one runs the real transcription stage, which dispatches through a "
                 "provider (the deterministic transport): build the suite with "
@@ -804,9 +841,15 @@ class ConformanceSuite:
                 ingestor = Ingestor(
                     handle,
                     blobs,
-                    self._provider,
-                    ModelRef(role="transcriber", provider="local",
-                             build_id="conform@fixture-transcriber", quantization="q4"),
+                    dispatch_provider,
+                    (
+                        transcriber
+                        if transcriber is not None
+                        else ModelRef(
+                            role="transcriber", provider="local",
+                            build_id="conform@fixture-transcriber", quantization="q4",
+                        )
+                    ),
                     SamplingParams(temperature=0.0),
                     PdfiumRasterizer(),
                     residency=ResidencySlot.for_policy(("transcriber",)),
@@ -899,7 +942,11 @@ def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
 
     `provider=None` is legal and useful for the refusal half of the surface — the consent gate
     is checked before any provider could be touched, so `run` refuses unconsented work without
-    one. `ingest_one` needs the provider and says so if the suite was built without it.
+    one. A consented recorded run drives the ingest ladder through the suite's own provider,
+    defaulting to the corpus's recorded provider when the suite was built without one;
+    `ingest_one` called DIRECTLY still needs the provider and says so. A live-tier run
+    (`HARNESS_CONFORM_LIVE_BACKENDS`) dispatches through the backends' own transports
+    regardless of what the suite was built with.
     """
     return ConformanceSuite(provider=provider)
 
@@ -913,10 +960,12 @@ def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
 # result, since the live tier (TC-CONFORM-04, env-gated) is where real models diverge. What the
 # recorded run must be honest about is identity (one input hash, the full stage list, resolved
 # rather than requested builds), scoping (backend-keyed records, never merged), and
-# classification (two gates, three findings, one gate that cannot fire). The adversarial
-# fixtures are not replayed: the malicious PDFs go through the real ingest ladder
-# (`ingest_one`), which is where quarantine at V0 with zero model calls is a fact about the
-# real gates.
+# classification (two gates, three findings, one gate that cannot fire). The judgment figures
+# are the declared references replayed; the INGEST is not replayed: every fixture — text
+# fixtures included — goes through the real ingest ladder (`ingest_one`), per backend, which
+# is where `FR-CONFORM-04`'s *"no stubs for ingestion"* is a fact about the real gates rather
+# than a claimed stage list, and where the malicious PDFs' quarantine at V0 with zero model
+# calls is a fact about the real gates.
 #
 # Interpretations this code commits to (reported on the PR):
 # - The ingest stage for the declared-reference fixtures is the verified materialization
@@ -1153,8 +1202,9 @@ class AdversarialTierReport:
 
 _ACTIVE_INDUCED_DIMENSIONS: set[str] = set()
 _QUARANTINE_OUTCOMES: dict[str, IngestOutcome] = {}
+_LADDER_OUTCOMES: dict[tuple[str, str], IngestOutcome] = {}
 _SOURCE_BANDS_CACHE: dict[str, dict[str, dict[str, str]]] = {}
-_SET_CACHE: dict[str, FixtureSet] = {}
+_SET_CACHE: dict[tuple[str, str], FixtureSet] = {}
 _PROMOTION_STORE_DIR: Path | None = None
 
 
@@ -1241,11 +1291,15 @@ def _source_bands() -> dict[str, dict[str, str]]:
 
 
 def _load_set_memo(pin: str) -> FixtureSet:
-    """The loaded set, memoized per pin: the verification is the load, once per process."""
-    cached = _SET_CACHE.get(pin)
+    """The loaded set, memoized per (fixture root, pin): the verification is the load, once
+    per process. Keyed by the root as well as the pin — `_SOURCE_BANDS_CACHE`'s deliberate
+    keying — so a mid-process `HARNESS_FIXTURE_ROOT` override loads fresh instead of being
+    served another root's set under the same pin."""
+    key = (str(_fixture_root()), pin)
+    cached = _SET_CACHE.get(key)
     if cached is None:
         cached = load_fixture_set(pin)
-        _SET_CACHE[pin] = cached
+        _SET_CACHE[key] = cached
     return cached
 
 
@@ -1258,7 +1312,12 @@ def _shift_bands_one_step(bands: Mapping[str, str]) -> dict[str, str]:
 
     A shift of exactly one declared step is the smallest change that is still a change: it
     moves the distribution, it is detectable against the frozen references, and it stays inside
-    the scale the corpus declares rather than inventing a value no fixture carries.
+    the scale the corpus declares rather than inventing a value no fixture carries. A band
+    already at the top of its scale has no next step — a fixture may legitimately sit there
+    (the corpus spans the score range), so that one fixture's shift is a no-op; the
+    *simulation* as a whole refuses to have moved nothing (`FixtureSet.run`'s
+    `simulate_build_change` half), because a caller must never measure an unchanged
+    distribution in the belief a substitution was applied.
     """
     band = bands.get(_SUBSTITUTION_CRITERION)
     if band is None:
@@ -1480,18 +1539,46 @@ def _resolved_builds(backend_config: Mapping[str, Any]) -> tuple[str, ...]:
     ))
 
 
+def _live_backend_profiles() -> frozenset[str]:
+    """The profiles the live-backend env knob (`HARNESS_CONFORM_LIVE_BACKENDS`) declares —
+    the shared gate in the clause suite. Naming a profile commits its run to a REAL dispatch:
+    the transcription stage drives the backend's own live transport (`_live_provider_for`),
+    and the dispatch field reports the transcriber build because that is what actually served.
+    """
+    return frozenset(
+        name.strip() for name in os.environ.get(LIVE_BACKENDS_ENV, "").split(",") if name.strip()
+    )
+
+
+def _live_provider_for(backend_config: Mapping[str, Any]) -> Any:
+    """The live transport one live-tier backend's transcription dispatches through.
+
+    Built from the backend's own transcriber ref via `aeh.prov.provider_for` — M-PROV owns
+    the provider-name mapping (`CT-PROV-15`: the only place in the tree that names a
+    backend), so this module carries no backend-specific constant. An unknown name refuses
+    at the factory.
+    """
+    from aeh.prov import provider_for
+
+    transcriber = backend_config.get("transcriber")
+    if transcriber is None:
+        raise ConformanceError(
+            "a live conformance backend needs a declared transcriber to dispatch through"
+        )
+    return provider_for(transcriber)
+
+
 def _transcription_dispatch(backend_config: Mapping[str, Any]) -> str:
     """What the transcription stage dispatched through, named per backend (`TC-CONFORM-04`).
 
     The recorded transport reports `recorded_fixture`; a profile the live-backend env knob
-    declares (`HARNESS_CONFORM_LIVE_BACKENDS`, the shared gate in the clause suite) reports the
-    transcriber build it actually dispatched to.
+    declares (`HARNESS_CONFORM_LIVE_BACKENDS`) reports the transcriber build it actually
+    dispatched to — the run really wires that backend's live transport for the drive
+    (`_live_provider_for`), so the field is a record of a dispatch that happened, never a
+    claim about one that did not.
     """
     profile = str(backend_config.get("HARNESS_PROFILE") or "")
-    declared = {
-        name.strip() for name in os.environ.get(LIVE_BACKENDS_ENV, "").split(",") if name.strip()
-    }
-    if profile in declared:
+    if profile in _live_backend_profiles():
         return _build_id_of(backend_config.get("transcriber"))
     return RECORDED_FIXTURE_DISPATCH
 
@@ -1582,13 +1669,49 @@ def _write_report_artifact(report: ConformanceReport, fixture_set: FixtureSet) -
             profile: {
                 "duration_seconds": result.duration_seconds,
                 "transcription_dispatch": result.transcription_dispatch,
-                "ingest_quarantined": sorted(result.ingest_outcomes),
+                # Every fixture's real ladder outcome now rides the result; the artifact's
+                # field is the ones that QUARANTINED, which is what the name always said.
+                "ingest_quarantined": sorted(
+                    sid
+                    for sid, outcome in result.ingest_outcomes.items()
+                    if getattr(outcome, "quarantined_at", None)
+                ),
             }
             for profile, result in report.per_backend.items()
         },
     }
     target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return target
+
+
+def _ladder_outcome(
+    drive_suite: "ConformanceSuite",
+    submission: FixtureSubmission,
+    profile: str,
+    *,
+    transcriber: Any = None,
+    memoize: bool,
+) -> IngestOutcome:
+    """The real ladder's outcome for one text fixture on one backend, driven once.
+
+    `ingest_one` IS the ingest stage's real machinery — sanitizer, rasterizer and the
+    transcription dispatch through the drive suite's provider (`FR-CONFORM-04`'s no-stubs
+    clause; the design prices full ingestion as affordable at 30-50 fixtures). The live
+    drive passes the backend's own transcriber ref; the recorded drive uses the fixture
+    transcriber. The recorded transport's ladder is deterministic — same bytes, same
+    declared answers — so one drive per (content digest, backend) per process is the
+    measurement, memoized the way the quarantine path is; a live dispatch is the real
+    transport and drives every time, because a memoized live outcome would be a recorded
+    transcript wearing a live claim.
+    """
+    if not memoize:
+        return drive_suite.ingest_one(submission, transcriber=transcriber)
+    key = (submission.content_hash, profile)
+    cached = _LADDER_OUTCOMES.get(key)
+    if cached is None:
+        cached = drive_suite.ingest_one(submission)
+        _LADDER_OUTCOMES[key] = cached
+    return cached
 
 
 def _run_backend(
@@ -1601,6 +1724,26 @@ def _run_backend(
     started = time.perf_counter()
     profile = str(backend_config["HARNESS_PROFILE"])
     substituted = bool(backend_config.get(_SUBSTITUTION_MARKER))
+    live = profile in _live_backend_profiles()
+    if live:
+        # The live tier dispatches the transcription stage through the backend's own
+        # transport, with the backend's own transcriber ref — the dispatch field reports
+        # the build that actually served.
+        drive_suite = ConformanceSuite(provider=_live_provider_for(backend_config))
+        transcriber = backend_config.get("transcriber")
+        memoize = False
+    else:
+        # The recorded transport: the suite's own injected provider drives the ladder (a
+        # counting provider passed to the suite sees the dispatches), defaulting to the
+        # recorded provider for the corpus when the suite was built without one — the
+        # deterministic transport the fast tier's recorded run is (CT-PROV-10). The consent
+        # gate has already run by the time a drive happens, so a default here never serves
+        # unconsented work.
+        drive_suite = ConformanceSuite(
+            provider=self_suite._provider or recorded_provider_for_fixture_set(fixture_set.version)
+        )
+        transcriber = None
+        memoize = True
     stages_executed: dict[str, tuple[str, ...]] = {}
     ingest_outcomes: dict[str, IngestOutcome] = {}
     for submission in fixture_set.submissions:
@@ -1609,11 +1752,9 @@ def _run_backend(
             # the real gates, never about a replay.
             ingest_outcomes[submission.submission_id] = _quarantined_pdf_outcome(submission)
             continue
-        # The ingest stage for the declared-reference fixtures: the verified materialization
-        # the manifest cites. The full M-INGEST ladder is `ingest_one`'s, which run() drives
-        # for the adversarial fixtures; a recorded replay re-driving it per text fixture per
-        # backend would measure nothing the declared references do not pin.
-        _materialize_bytes(submission)
+        ingest_outcomes[submission.submission_id] = _ladder_outcome(
+            drive_suite, submission, profile, transcriber=transcriber, memoize=memoize
+        )
         stages_executed[submission.submission_id] = PIPELINE_STAGES
     units = _derive_units(fixture_set.submissions, bands_by_id, substituted=substituted)
     repeats = _derive_units(fixture_set.submissions, bands_by_id, substituted=substituted)
