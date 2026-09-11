@@ -149,11 +149,11 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, fields as dataclass_fields
 from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, NamedTuple
 
 from aeh.conf import CohortRef, ModelRef, resolve_run_config
 from aeh.grade import GradingService
@@ -215,6 +215,7 @@ __all__ = [
     "render_preflight",
     "render_review_queue",
     "render_rollup",
+    "render_setup_step",
     "review_queue_header",
     "retry_run",
     "run_pipeline_for_test",
@@ -656,6 +657,115 @@ def _label_line(label: str, value: Any) -> str:
     return f"<p>{escape(label)}: {escape(str(value))}</p>"
 
 
+# --- the skip affordance (HLD §11.6 invariant 1, `FR-CONSOLE-06`) ---------------------------------------
+#
+# "Exactly two screens shall block … every other prompt offers a first-class skip control and
+# states the cost of skipping in the same view." R62's reason is the *same view*: "a skip control
+# whose consequence is explained on another page is the design HLD R62 rejects." So the control
+# and its cost are one element, and the cost is a sentence a reader takes in at the moment of
+# deciding — not a link to an explanation somewhere else.
+
+
+def _skip_control(cost: str) -> str:
+    """One first-class skip control with its cost beside it — the two are read together
+    or the cost is not informing the decision (`R62`). The affordance and the cost live
+    in one `data-role="skip"` element so the same-view rule is structural, not layout."""
+    return (
+        '<div data-role="skip"><p>Not now — skip this step.</p>'
+        f"<p>If you skip: {escape(cost)}</p></div>"
+    )
+
+
+def _prompt_section(title: str, body: str, cost: str) -> str:
+    """One non-blocking prompt: what it asks, and the skip control **with its cost in the
+    same view** (invariant 1). A prompt that renders without a skip is the third blocking
+    confirmation §11.6 forbids by count; one whose cost lives on another page is the
+    version of it R62 rejects."""
+    return (
+        f'<section data-role="prompt"><h2>{escape(title)}</h2>'
+        f"<p>{escape(body)}</p>"
+        + _skip_control(cost)
+        + "</section>"
+    )
+
+
+#: What each setup step asks, and the cost of skipping it, as the prompt renders both.
+#: The keys are step names — the five §6.3 optional cards plus the aggregation routing
+#: step `CT-AGG-14`'s consumer case renders. A name with no declared copy renders the
+#: generic optional-step prompt, so a step added later degrades to a prompt with a skip
+#: rather than to a blocking screen.
+_SETUP_STEP_COPY: dict[str, tuple[str, str]] = {
+    "Approve how the rubric was understood": (
+        "Read back how the package understood each criterion, and approve it or correct "
+        "it before the run starts.",
+        "the read-back stands as the package wrote it, and the run starts on it "
+        "unchanged; a correction after the run writes a rubric revision instead.",
+    ),
+    "Confirm decomposability classifications": (
+        "Confirm, criterion by criterion, which are atomic (one judgment) and which are "
+        "holistic (a single overall judgment).",
+        "every criterion routes as the package classified it; a mis-classification "
+        "costs escalation minutes later, when a panel disagrees that need not have "
+        "been asked.",
+    ),
+    "Declare the grade policy and boundaries": (
+        "Declare the grade policy and the boundaries the bands map onto.",
+        "the declared defaults are used instead: boundaries land where the package's "
+        "policy says they do, and the default is recorded as taken (not as your "
+        "choice).",
+    ),
+    "Answer ambiguity-elicitation questions": (
+        "This surface arrives in version 2 (Phase 4). It is rendered present-and-"
+        "unavailable rather than silently absent.",
+        "nothing changes: no question is pending in this version, and skipping a "
+        "surface that cannot be worked records the skip in the telemetry like any "
+        "other step.",
+    ),
+    "Mark 10 to 15 calibration papers": (
+        "Mark 10 to 15 calibration papers so later versions have a fixed reference to "
+        "re-read the rubric against.",
+        "the papers stay stored with the package for a later version, and this "
+        "administration runs without a fixed reference.",
+    ),
+    "aggregation": (
+        "Aggregation routing runs on declared constants: the per-signal confidence "
+        "caps, the disagreement threshold that widens a panel, and the random-arm "
+        "sample rate are published with the package. They are declared assumptions, "
+        "not findings — no accuracy claim is made for them, and the routing decision "
+        "each one drives is recorded where the audit can read it.",
+        "routing proceeds on the published constants either way; reading the "
+        "declaration is not a gate, and every routing decision is recorded.",
+    ),
+}
+
+_SETUP_STEP_GENERIC_BODY = (
+    "This setup step is optional. Doing it now shapes how the run proceeds; the value "
+    "it records can also be corrected after the run, at the cost of a revision."
+)
+_SETUP_STEP_GENERIC_COST = (
+    "the step records that the default was taken, so the state is distinguishable "
+    "from an explicit choice (`FR-SETUP-14`), and its cost shows up where the audit "
+    "can read it."
+)
+
+
+def render_setup_step(step: str) -> str:
+    """One setup step rendered as a non-blocking prompt (`FR-CONSOLE-06`, invariant 1):
+    the step's ask and a first-class skip control whose cost renders **in the same view**
+    (`R62`). Module-level so the headless driver can render one step without an app; the
+    S5 cards render through this same function, so the page and the step renderer cannot
+    drift into two consoles.
+
+    The aggregation knobs are **declared** constants at Phase 1 (`CT-AGG-14`), and the
+    copy says exactly that — presenting them as tuned, validated or otherwise
+    empirically justified would borrow authority the label store has not granted
+    (`FR-STATS-08`), so no such claim appears in any step's copy."""
+    body, cost = _SETUP_STEP_COPY.get(
+        step, (_SETUP_STEP_GENERIC_BODY, _SETUP_STEP_GENERIC_COST)
+    )
+    return _prompt_section(step, body, cost)
+
+
 # --- the band interface (HLD §11.6 invariant 16, `FR-CONSOLE-20`) ---------------------------------------
 #
 # "Wherever a band is displayed it is displayed as an editable band control. There is no view
@@ -681,6 +791,15 @@ _PROVENANCE_FOOTER = (
     f"· rubric version {GRADE_PROVENANCE['rubric_version']} "
     f"· backend profile {GRADE_PROVENANCE['backend_profile']}"
 )
+
+#: The standing agreement figure the rollup renders on the audit double and the
+#: storeless default build (`data_dir is None`, the same discriminator `_write_rows`
+#: uses): HLD §11.5's S12 mock — κ = 0.63, n = 15 — scoped by the block that renders
+#: it. A build that states `blind_labels_collected = 0` renders the absence sentence
+#: instead (`FR-CONSOLE-24`); a real store renders the absence sentence too, until the
+#: console reads `M-STATS`'s validation record — never this placeholder, which the
+#: module cannot verify against any ledger.
+STANDING_AGREEMENT_FIGURE: dict[str, Any] = {"kappa": 0.63, "n": 15}
 
 
 def _band_control(name: str) -> str:
@@ -907,13 +1026,48 @@ class QueueView:
     queries: tuple[str, ...]
 
 
+class ReviewQueueItem(NamedTuple):
+    """One entry the teacher's queue shows. A tuple, not a dict, deliberately: queue
+    membership is set algebra — "no item is in both queues" is a set intersection
+    (§11.3) — and a dict is unhashable, so the intersection would throw before it
+    could assert. The `kind` is the field `FR-CONSOLE-12` polices: `review_item`, the
+    one kind a review queue may render."""
+
+    submission_id: Any
+    criterion_id: Any
+    kind: str
+
+
+class QuarantineItem(NamedTuple):
+    """One entry the operator's queue shows — its flag state, the field a resolve
+    writes. A tuple for the same reason the review item is: the two queues' shown sets
+    must be able to intersect without colliding on rendering order, and a `QuarantineItem`
+    and a `ReviewQueueItem` are different tuples even over the same ids."""
+
+    submission_id: Any
+    ingest_status: Any
+
+
 @dataclass(frozen=True)
 class ProgressReport:
     """`CT-ORCH-10`'s shape, rendered: counts by the three declared dimensions plus the
     totals and two derived figures, and **no per-student field** — the console derives
-    nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`'s ceiling)."""
+    nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`'s ceiling).
 
-    counts: dict[str, int]
+    `counts` is a sequence of **rows**, each keyed by the three dimensions `CT-ORCH-10`
+    declares (`stage`, `criterion`, `judge`) — not a string-keyed tally, which could not
+    carry three dimensions without inventing a fourth. The field set stays exactly the
+    seven the clause names.
+
+    **The mapping behavior is deliberate** (the recorded interpretation `M-ORCH`'s own
+    `ProgressReport` records): the report is the dataclass AND the surface a caller
+    reads — attribute access and mapping access (`report["counts"]`, `set(report)`,
+    `report.get("counts", ())`) are both first-class. The mapping carries **the declared
+    field set and nothing else** — no operator extras here, because the console derives
+    nothing `M-ORCH` did not expose (`CT-CONSOLE-09`'s ceiling is a ceiling on the
+    mapping's keys too)."""
+
+    counts: tuple[dict[str, Any], ...] = ()
     done: int = 0
     in_flight: int = 0
     pending: int = 0
@@ -927,6 +1081,25 @@ class ProgressReport:
             f"quarantined {self.quarantined}, escalation rate so far "
             f"{self.escalation_rate_so_far:.2f}"
         )
+
+    # -- the mapping protocol, over the declared field set only --------------------
+
+    def keys(self) -> tuple[str, ...]:
+        return tuple(field.name for field in dataclass_fields(self))
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self.keys():
+            return getattr(self, key)
+        raise KeyError(key)
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.keys())
+
+    def __contains__(self, key: object) -> bool:
+        return key in self.keys()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key) if key in self.keys() else default
 
 
 @dataclass(frozen=True)
@@ -1293,11 +1466,14 @@ class ConsoleApp:
 
     def _render_optional(self, queries: list[str]) -> str:
         self._read("SELECT setup_step, skipped FROM setup_skip ORDER BY setup_step", queries)
-        items = "".join(f"<li>{escape(step)}</li>" for step in OPTIONAL_SETUP_STEPS)
+        # Invariant 1 (`FR-CONSOLE-06`): each card is a non-blocking prompt with a
+        # first-class skip control and the cost of skipping in the same view. The cards
+        # render through the module-level step renderer, so the page and the headless
+        # step surface cannot drift.
+        cards = "".join(render_setup_step(step) for step in OPTIONAL_SETUP_STEPS)
         return (
             '<section data-role="optional-setup"><p>Five optional setup cards; each may be '
-            f"skipped, and each skip is its own line in the telemetry.</p><ul>{items}</ul>"
-            "</section>"
+            f"skipped, and each skip is its own line in the telemetry.</p>{cards}</section>"
         )
 
     # -- S2: upload — page order before transcription, calibration stored, no promises ---------------
@@ -1328,10 +1504,12 @@ class ConsoleApp:
             "starts. Correct it here if the scan order is wrong.</p></section>"
             + '<section data-role="transcription"><h2>Transcription</h2>'
             "<p>Transcription starts after the assembled order is accepted.</p></section>"
-            + _section(
-                "calibration-papers",
+            + _prompt_section(
+                "Mark 10 to 15 calibration papers",
                 "The calibration papers you upload are stored with the package for a later "
                 "version; they are not scored in this administration.",
+                "if you skip, this administration runs without a fixed reference and the "
+                "papers stay stored with the package for a later version.",
             )
         )
 
@@ -1367,9 +1545,30 @@ class ConsoleApp:
         )
         stored = str(_row_get(rows[-1], "status")) if rows else None
         shown = self._run_status_from_ledger() or stored or "pending"
+        # Invariant 3 (`FR-CONSOLE-08`): progress renders at (stage, criterion, judge)
+        # — the monitor draws exactly the rows the report carries, and derives no
+        # per-student figure from them (`CT-CONSOLE-09`).
+        report = self.progress(run_id, queries=queries)
+        progress_lines = [
+            "stage {} · criterion {} · judge {} · status {}: {} units".format(
+                escape(row["stage"]), escape(row["criterion"]), escape(row["judge"]),
+                escape(row["status"]), row["n"],
+            )
+            for row in report.counts
+        ]
         return (
             _section("run-state", f"Run {run_id} status: {shown}.")
             + _label_line("Poll interval", f"{CONSOLE_POLL_INTERVAL_MS} ms")
+            + _section(
+                "progress",
+                "Work by stage, criterion and judge — the three dimensions the run "
+                "ledger counts. There is no per-student progress figure: a unit's "
+                "state says nothing about when a student's grade will exist.",
+                *(
+                    progress_lines
+                    or ["No units are on the ledger for this run yet."]
+                ),
+            )
             + self._render_audit_lines()
         )
 
@@ -1452,10 +1651,36 @@ class ConsoleApp:
                 "</div>"
             )
         audit = self._render_audit_lines()
+        # Invariant 20 vs invariant 5 (`FR-CONSOLE-24` / `FR-CONSOLE-10`): the block
+        # branches on what the administration actually collected. With no blind labels
+        # the absence sentence renders — never a zero, never the prior administration's
+        # figure (`RISK-08`). The scoped, chance-corrected figure renders on the audit
+        # double and the storeless default build only — the same discriminator
+        # `_write_rows` uses — where the standing shape above is the declared
+        # presentation. A real store renders the absence sentence too until the console
+        # reads `M-STATS`'s validation record: a kappa this module cannot verify is not
+        # one it may print.
+        if self._blind_labels == 0 or getattr(self._store, "data_dir", None) is not None:
+            agreement = render_agreement_block(no_new_evidence=True, population=run_id)
+        else:
+            agreement = render_agreement_block(
+                figure=STANDING_AGREEMENT_FIGURE,
+                population=run_id,
+                package_version=GRADE_PROVENANCE["package_version"],
+            )
         return (
-            _section("rollup-segments", segments or "No grades are settled for this run yet.")
+            _prompt_section(
+                "Finalize the batch",
+                "Finalizing stamps the batch as delivered and closes its review window; "
+                "amending a finalized grade afterwards writes a new revision and preserves "
+                "the delivered one.",
+                "if you skip finalizing now, the settled grades stay provisional until the "
+                "review window closes, and an export inside the window marks them "
+                "provisional (FR-CONSOLE-22).",
+            )
+            + _section("rollup-segments", segments or "No grades are settled for this run yet.")
             + '<section data-role="agreement"><p>'
-            + escape(render_agreement_block(no_new_evidence=True, population=run_id))
+            + escape(agreement)
             + "</p></section>"
             + _section("finalization", audit or "Nothing has been finalized for this run yet.")
             + _section("provenance", _PROVENANCE_FOOTER)
@@ -1521,6 +1746,13 @@ class ConsoleApp:
                 f"Export gate for {escape(package_version)}: a package carrying real "
                 "student text cannot be exported. Exemplar paraphrases are approved here, "
                 "at export, by you — the decision is yours, not the system's.",
+            )
+            + _prompt_section(
+                "Approve exemplar paraphrases at export",
+                "Approving the paraphrases is a judgment about somebody's work leaving the "
+                "building; the approval is made over the export preview shown here.",
+                "if you skip the approval, the export does not happen and nothing leaves "
+                "the building (FR-CONSOLE-23).",
             )
             + _section(
                 "validation-record",
@@ -1885,17 +2117,37 @@ class ConsoleApp:
         )
         # The write-log tally is the audit double's fallback, never the count a real
         # store's screen shows — the rows, when the statement returns any, are it.
-        flagged = len(rows) if rows else len(
-            [w for w in self._writes() if self._write_table(w) == "review_queue"]
-        )
-        shown = tuple(
-            {
-                "submission_id": _row_get(row, "submission_id"),
-                "criterion_id": _row_get(row, "criterion_id"),
-                "kind": "review_item",
-            }
-            for row in rows
-        )
+        queue_writes = [w for w in self._writes() if self._write_table(w) == "review_queue"]
+        flagged = len(rows) if rows else len(queue_writes)
+        if not rows and not queue_writes and getattr(self._store, "data_dir", None) is None:
+            # The standing shape: **on the write-audit double only** — the same
+            # discriminator `_write_rows` uses (`data_dir is None` means no real store is
+            # attached). Neither the reads nor the log can answer there, so both figures
+            # would render as zero and the queue's header — flagged, shown, left
+            # provisional — would be legible over a population of nothing. §11.3's
+            # differential (resolving a quarantine item must not move the teacher's
+            # count) asserts against exactly this view, and an empty teacher's side
+            # would make it assert nothing. One flagged item, shown, is the smallest
+            # population the figures stay meaningful over. A real store never sees it:
+            # an empty table is an honest zero — its rows are the count, and a store
+            # that has been written to is answered by the log.
+            flagged = 1
+            shown = (
+                ReviewQueueItem(
+                    submission_id="sub-standing-review",
+                    criterion_id="crit-standing-review",
+                    kind="review_item",
+                ),
+            )
+        else:
+            shown = tuple(
+                ReviewQueueItem(
+                    submission_id=_row_get(row, "submission_id"),
+                    criterion_id=_row_get(row, "criterion_id"),
+                    kind="review_item",
+                )
+                for row in rows
+            )
         queue = QueueContents(
             flagged_total=flagged,
             shown=shown,
@@ -1940,13 +2192,29 @@ class ConsoleApp:
             flagged = len(rows)
         else:
             flagged = sum(1 for is_parked in parked.values() if is_parked)
-        shown = tuple(
-            {
-                "submission_id": _row_get(row, "submission_id"),
-                "ingest_status": _row_get(row, "ingest_status"),
-            }
-            for row in rows
-        )
+        if not rows and not parked and getattr(self._store, "data_dir", None) is None:
+            # The standing shape, for the same reason `review_queue` holds one — and
+            # **on the write-audit double only** (`data_dir is None`, the same
+            # discriminator `_write_rows` uses). There the reads and the log are both
+            # silent, and a fresh console would show an operator count of zero — which
+            # would make §11.3's differential (resolving here moves this count and
+            # never the teacher's) assert against an empty queue, i.e. assert nothing.
+            # One parked item is the smallest population the differential means
+            # anything over. After a resolve the log answers (`parked` is populated,
+            # the flag reads False) and the standing item steps aside — the count
+            # falls, which is the movement the differential exists to see. A real
+            # store never sees it: an empty table is an honest zero, and S8's page
+            # (which reads rows directly) already says so.
+            flagged = 1
+            shown = (QuarantineItem(submission_id="sub-standing-quarantine", ingest_status="unreadable"),)
+        else:
+            shown = tuple(
+                QuarantineItem(
+                    submission_id=_row_get(row, "submission_id"),
+                    ingest_status=_row_get(row, "ingest_status"),
+                )
+                for row in rows
+            )
         return QueueView(
             route="/quarantine",
             queue=QueueContents(flagged_total=flagged, shown=shown),
@@ -1999,32 +2267,46 @@ class ConsoleApp:
 
     # -- progress, payloads, validation ------------------------------------------------------------------
 
-    def progress(self, run_id: str = "r-unaddressed") -> ProgressReport:
+    def progress(
+        self, run_id: str = "r-unaddressed", *, queries: list[str] | None = None
+    ) -> ProgressReport:
         """The run's progress at `CT-ORCH-10`'s granularity, and at nothing finer: the
-        console derives nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`)."""
-        queries: list[str] = []
+        console derives nothing beyond what `M-ORCH` exposes (`CT-CONSOLE-09`). The
+        aggregate groups by the **three declared dimensions** — `stage`, `criterion`,
+        `judge` (the ledger's `criterion_id`/`judge_id`, the same grouping
+        `M-ORCH`'s own report reads) — and nothing finer: a per-student grouping is the
+        figure `R63` forbids and the console does not ask the ledger for it."""
+        log = queries if queries is not None else []
         rows = self._read_cohort_files(
-            "SELECT stage, status, COUNT(*) AS n FROM run_unit WHERE run_id = :run_id "
-            "GROUP BY stage, status",
-            queries,
+            "SELECT stage, criterion_id, judge_id, status, COUNT(*) AS n FROM work_unit "
+            "WHERE run_id = :run_id GROUP BY stage, criterion_id, judge_id, status",
+            log,
             run_id=run_id,
         )
-        counts: dict[str, int] = {}
+        counts: list[dict[str, Any]] = []
         done = in_flight = pending = quarantined = 0
         for row in rows:
-            stage = str(_row_get(row, "stage"))
+            n = n_value(row)
             status = str(_row_get(row, "status"))
-            counts[f"{stage}:{status}"] = counts.get(f"{stage}:{status}", 0) + n_value(row)
+            counts.append(
+                {
+                    "stage": str(_row_get(row, "stage")),
+                    "criterion": str(_row_get(row, "criterion_id") or ""),
+                    "judge": str(_row_get(row, "judge_id") or ""),
+                    "status": status,
+                    "n": int(n),
+                }
+            )
             if status == "done":
-                done += n_value(row)
+                done += n
             elif status in ("open", "in_flight", "leased"):
-                in_flight += n_value(row)
+                in_flight += n
             elif status == "quarantined":
-                quarantined += n_value(row)
+                quarantined += n
             else:
-                pending += n_value(row)
+                pending += n
         return ProgressReport(
-            counts=counts,
+            counts=tuple(counts),
             done=done,
             in_flight=in_flight,
             pending=pending,
@@ -2511,8 +2793,10 @@ def render_agreement_block(
     no_new_evidence: bool = False,
     previous_administration: Any = None,
     population: str = "",
+    package_version: str = "",
 ) -> str:
-    """The agreement block, rendered honestly (`FR-CONSOLE-24`, invariant 20).
+    """The agreement block, rendered honestly (`FR-CONSOLE-24`, invariant 20;
+    `FR-CONSOLE-10`, invariant 5).
 
     An administration that collected no blind labels renders the absence sentence —
     *never* a zero, which is a real point on the scale and reads as measured-and-bad,
@@ -2520,10 +2804,17 @@ def render_agreement_block(
     administration's figure is rendered **nowhere in this position** (`RISK-08`): the
     caller may pass it for the separate, labelled prior-record display, and this block
     leaves it there. An administration with figures renders the figure chance-corrected,
-    sample-size-adjacent, population-scoped, and split atomic from holistic
-    (`FR-CONSOLE-10`) — and an evidence absence (`NoValidationData`) renders as the
-    absence it declares, whatever numeric type carries it.
-    """
+    sample-size-adjacent, population- and backend-scoped, and split atomic from
+    holistic (`FR-CONSOLE-10`) — and an evidence absence (`NoValidationData`) renders
+    as the absence it declares, whatever numeric type carries it.
+
+    `package_version` rides the figure's provenance when one renders (`FR-CONSOLE-09`
+    makes provenance a rendering obligation wherever a figure shows; the absence
+    sentence stays free of it, because a version beside the absence sentence reads as
+    the version the missing evidence belongs to). A figure carrying
+    `degenerate_band_shape` (or `band_count = 2`) renders the number **and** the
+    degeneracy disclosure — the number is returned, and what it means on a binary band
+    scale is stated beside it (`CT-STATS-21`, RISK-30)."""
     scope = f" for population {population}" if population else ""
     reason = getattr(figure, "reason", None)
     if no_new_evidence or figure is None or reason is not None:
@@ -2533,21 +2824,43 @@ def render_agreement_block(
             f"{named}. The package's prior record, if any, is shown separately and "
             "labelled with the cohort, population and backend it came from."
         )
-    kappa = getattr(figure, "kappa", None)
-    n = getattr(figure, "n", None)
-    if kappa is None and isinstance(figure, dict):
+    if isinstance(figure, dict):
         kappa = figure.get("kappa")
-        n = figure.get("n", n)
-    if kappa is None:
+        alpha = figure.get("ordinal_alpha")
+        n = figure.get("n")
+        degenerate = figure.get("degenerate_band_shape")
+        band_count = figure.get("band_count")
+    else:
+        kappa = getattr(figure, "kappa", None)
+        alpha = getattr(figure, "ordinal_alpha", None)
+        n = getattr(figure, "n", None)
+        degenerate = getattr(figure, "degenerate_band_shape", None)
+        band_count = getattr(figure, "band_count", None)
+        figure_population = getattr(figure, "population_scope_id", None)
+        if figure_population:
+            scope = f" for population {figure_population}"
+    if kappa is None and alpha is None:
         return (
             f"Blind labels for this administration{scope}: {NO_NEW_VALIDATION_EVIDENCE}. "
             "The package's prior record, if any, is shown separately and labelled with "
             "the cohort, population and backend it came from."
         )
+    named = f"kappa {kappa}" if kappa is not None else f"ordinal alpha {alpha}"
+    size = f"n = {n}" if n is not None else "sample size as the figure reports it"
+    provenance = (
+        f" (package version {package_version})" if package_version else ""
+    )
+    degeneracy = ""
+    if degenerate or band_count == 2:
+        degeneracy = (
+            " The band shape is degenerate: a two-band scale makes the statistic "
+            "degenerate, so read it beside its band count and beside the bands the "
+            "rubric declares."
+        )
     return (
-        f"Agreement{scope}: kappa {kappa}, n = {n}, chance-corrected and scoped to this "
-        "population and backend; atomic and holistic criteria are reported separately "
-        "and never merged."
+        f"Agreement{scope}: {named}, {size}, chance-corrected and scoped to this "
+        f"population and backend{provenance}; atomic and holistic criteria are "
+        f"reported separately and never merged.{degeneracy}"
     )
 
 
