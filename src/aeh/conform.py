@@ -968,12 +968,6 @@ def build_conformance_suite(provider: Any | None = None) -> ConformanceSuite:
 # calls is a fact about the real gates.
 #
 # Interpretations this code commits to (reported on the PR):
-# - The ingest stage for the declared-reference fixtures is the verified materialization
-#   `_materialize_bytes` performs — the same verification load and ingest use. The full
-#   M-INGEST ladder is driven by `ingest_one`, which `run` calls for every fixture whose
-#   manifest declares a pdf threat, memoized per content digest. Re-driving the ~1 s ingest
-#   per text fixture per backend would price the fast tier at minutes per run with no
-#   measurement the declared references do not already pin.
 # - The self-agreement figure's `n` is the number of fixtures whose judgments were derived
 #   twice and compared — the sample size the agreement rate is computed over.
 # - `citation_verification_outcome` replays `verified`: the declared references carry no
@@ -1700,9 +1694,11 @@ def _ladder_outcome(
     drive passes the backend's own transcriber ref; the recorded drive uses the fixture
     transcriber. The recorded transport's ladder is deterministic — same bytes, same
     declared answers — so one drive per (content digest, backend) per process is the
-    measurement, memoized the way the quarantine path is; a live dispatch is the real
-    transport and drives every time, because a memoized live outcome would be a recorded
-    transcript wearing a live claim.
+    measurement, memoized the way the quarantine path is — and only for the default
+    recorded drive. A live dispatch is the real transport and drives every time, because a
+    memoized live outcome would be a recorded transcript wearing a live claim; a
+    suite-injected provider drives every time too, because its dispatches are the caller's
+    measurement, never the shared default's.
     """
     if not memoize:
         return drive_suite.ingest_one(submission, transcriber=transcriber)
@@ -1738,12 +1734,14 @@ def _run_backend(
         # recorded provider for the corpus when the suite was built without one — the
         # deterministic transport the fast tier's recorded run is (CT-PROV-10). The consent
         # gate has already run by the time a drive happens, so a default here never serves
-        # unconsented work.
+        # unconsented work. Only the default recorded drive shares the ladder memo: an
+        # injected provider is the caller's measurement instrument and must see every
+        # dispatch itself.
         drive_suite = ConformanceSuite(
             provider=self_suite._provider or recorded_provider_for_fixture_set(fixture_set.version)
         )
         transcriber = None
-        memoize = True
+        memoize = self_suite._provider is None
     stages_executed: dict[str, tuple[str, ...]] = {}
     ingest_outcomes: dict[str, IngestOutcome] = {}
     for submission in fixture_set.submissions:
