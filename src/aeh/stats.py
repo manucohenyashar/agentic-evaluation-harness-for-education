@@ -747,9 +747,9 @@ MVVP_SELF_AGREEMENT_PAIRING_THRESHOLD = 0.95
 
 #: `FR-STATS-16`'s replication floor: at least this many independent runs per
 #: judgment. The measured rate the caller supplies is that replication's
-#: summary — the run count travels with the measurement (`TC-STATS-16`, the
-#: live tier), and the floor is carried on the step's own outcome records so a
-#: reader can see what the rate summarised.
+#: summary; the record carries the floor itself (`runs_required`), so a reader
+#: can see what a supplied rate had to summarise — the actual run count stays
+#: with the live tier's measurement (`TC-STATS-16`), not with this record.
 MVVP_REPLICATION_RUNS = 3
 
 #: The step outcomes' declared not-measured reasons — the absence-is-a-type
@@ -758,11 +758,11 @@ MVVP_REPLICATION_RUNS = 3
 #: never a raise (`CT-STATS-16`). A measured value and an unmeasured one are
 #: distinguishable in the record itself, which is what keeps an absent figure
 #: from rendering as a zero.
-_NO_PROVIDER_BOUND = "no_provider_bound"
+_NO_POSITION_MEASUREMENT = "no_position_bias_measurement_supplied"
 _NO_REPLICATION_MEASUREMENT = "no_replication_measurement_supplied"
-_NO_SWAP_MEASUREMENT = _NO_PROVIDER_BOUND
 _NOT_DECLARED = "not_declared"
 _ASSIGNMENT_TYPE_NOT_RECORDED = "assignment_type_not_recorded"
+_NO_ASSIGNMENT_TYPE_NAMED = "no_assignment_type_named"
 _NO_LABELS_FOR_ASSIGNMENT_TYPE = "no_labels_for_assignment_type"
 
 #: The compression check's limitation, carried **in the return value** rather
@@ -946,11 +946,14 @@ class CrossValidationOutcome:
 
     A figure spanning assignment types is not representable in this value:
     one ``assignment_type`` is a field of the outcome, not a dimension that
-    could be summed over, so the spanning claim has no surface to render on.
-    (`CT-STATS-04`'s sweep of the refusal is keyed on `aggregate` — #118 —
-    which is where the behavioural refusal lives; this outcome carries the
-    structural half, ``spanning_refused``, because a report cannot be asked
-    to span and a value that cannot represent the span cannot emit it.)"""
+    could be summed over, so the spanning claim has no surface to render on —
+    and where labels carry types and the caller names none, the outcome is
+    the disclosed refusal (`no_assignment_type_named`), not a pooled figure
+    under this flag. (`CT-STATS-04`'s sweep of the refusal is keyed on
+    `aggregate` — #118 — which is where the behavioural refusal lives; this
+    outcome carries the structural half, ``spanning_refused``, because a
+    report cannot be asked to span and a value that cannot represent the span
+    cannot emit it.)"""
 
     assignment_type: str | None
     figures: Mapping[str, "AgreementFigure | NoValidationData"]
@@ -1061,10 +1064,14 @@ def _cross_validation_outcome(
     label schema names, so the dimension is read off the labels when they
     carry it — duck-typed, the way `_system_side` reads the band pair — and
     its absence is **disclosed** (`assignment_type_not_recorded`) rather than
-    papered over with a figure computed over a population nobody split. The
-    figures are the single filter's own application: the matching labels are
-    built into a sub-surface whose `agreement` routes through the same
-    admissible population every other figure uses (`NFR-STATS-04`)."""
+    papered over with a figure computed over a population nobody split. So is
+    the unnamed type: where the labels carry types and the caller names none,
+    the outcome is the disclosed refusal (`no_assignment_type_named`, no
+    figures) — a figure over the union of every type is exactly the spanning
+    figure the requirement refuses, and it is never computed. The figures are
+    the single filter's own application: the matching labels are built into a
+    sub-surface whose `agreement` routes through the same admissible
+    population every other figure uses (`NFR-STATS-04`)."""
     typed = [
         label
         for label in admissible
@@ -1078,15 +1085,17 @@ def _cross_validation_outcome(
             reason=_ASSIGNMENT_TYPE_NOT_RECORDED,
             spanning_refused=True,
         )
-    population = (
-        typed
-        if assignment_type is None
-        else [
-            label
-            for label in typed
-            if getattr(label, "assignment_type") == assignment_type
-        ]
-    )
+    if assignment_type is None:
+        return CrossValidationOutcome(
+            assignment_type=None,
+            figures={},
+            assignment_type_recorded=True,
+            reason=_NO_ASSIGNMENT_TYPE_NAMED,
+            spanning_refused=True,
+        )
+    population = [
+        label for label in typed if getattr(label, "assignment_type") == assignment_type
+    ]
     if not population:
         return CrossValidationOutcome(
             assignment_type=assignment_type,
@@ -1158,9 +1167,12 @@ def _compression_outcome(
     two distributions are its panel side and its gold side. Below one paired
     label no distribution exists and every statistic is the explicit
     not-measured value. ``band_count`` is the larger of the declared counts
-    and the inferred one — the same criterion-free inference the coefficients
-    make. The stated limitation is part of the value (`CT-STATS-10`), not a
-    footnote beside it."""
+    and the inferred one — the declared half is the maximum over the surface's
+    criteria, because the check is population-wide and keys on no single
+    criterion, so one criterion's narrower declared count cannot bound it;
+    both sides are measured against the same count either way, which is what
+    keeps ``panel_narrower`` fair. The stated limitation is part of the value
+    (`CT-STATS-10`), not a footnote beside it."""
     pairs = [
         (system, teacher)
         for system, teacher in (
@@ -1232,7 +1244,9 @@ def run_mvvp(
        different claims they are, never merged;
     4. cross-validation by assignment type (`FR-STATS-17`) — one assignment
        type's figures, per criterion, with the spanning refusal structural:
-       no figure spanning assignment types is representable in the value;
+       no figure spanning assignment types is representable in the value, and
+       where the labels carry types and none is named, the step is the
+       disclosed refusal (`no_assignment_type_named`), never a pooled figure;
     5. the consistency-bias pairing (`FR-STATS-18`) — every judge in scope's
        step-3 rate beside its step-2 position-bias result, one pair, never
        one figure alone;
@@ -1268,6 +1282,16 @@ def run_mvvp(
             "type is a string or None, and anything else is a programming error "
             "(CT-STATS-16 raises on programming errors)"
         )
+    if backend_claims_deterministic_at_temperature_zero is not None and not isinstance(
+        backend_claims_deterministic_at_temperature_zero, bool
+    ):
+        raise TypeError(
+            "run_mvvp() got backend_claims_deterministic_at_temperature_zero="
+            f"{backend_claims_deterministic_at_temperature_zero!r}; the backend's "
+            "declaration is a bool or None — a claim is carried beside the "
+            "measured rate, never computed, and anything else is a programming "
+            "error (CT-STATS-16 raises on programming errors)"
+        )
     measured_self = _validated_rate_map(
         measured_self_agreement, "measured_self_agreement"
     )
@@ -1275,15 +1299,23 @@ def run_mvvp(
         measured_position_bias, "measured_position_bias"
     )
     measured_configuration = _normalized_mvvp_configuration(configuration)
+    panel = measured_configuration["panel_member"]
+    if panel:
+        surplus = sorted((set(measured_self) | set(measured_swap)) - set(panel))
+        if surplus:
+            raise TypeError(
+                f"run_mvvp() got measured rates for judges outside the declared "
+                f"panel {surplus}; the panel is the report's scope "
+                f"({measured_configuration['panel_member']!r}), and a rate for a "
+                "judge it does not name is either a stale measurement or a "
+                "mistyped id — the same silent drop the unknown-configuration-"
+                "key guard refuses (CT-STATS-16 raises on programming errors)"
+            )
 
     stats = self if self is not None else ValidationStats()
     admissible = stats.admissible_labels()
     measured_at = datetime.now(timezone.utc)
-    judges = (
-        tuple(measured_configuration["panel_member"])
-        if measured_configuration["panel_member"]
-        else tuple(sorted(set(measured_self) | set(measured_swap)))
-    )
+    judges = panel or tuple(sorted(set(measured_self) | set(measured_swap)))
 
     # --- step 1: the agreement surface (FR-STATS-02), one figure per criterion
     criteria = sorted({getattr(label, "criterion_id", "") for label in admissible} - {""})
@@ -1307,7 +1339,7 @@ def run_mvvp(
                 judge_id=judge,
                 measured=False,
                 band_change_rate=None,
-                reason=_NO_SWAP_MEASUREMENT,
+                reason=_NO_POSITION_MEASUREMENT,
             )
         )
         for judge in judges
