@@ -164,7 +164,10 @@ def test_tc_smoke_04_data_dir_owner_only_and_not_inside_a_temp_path(tmp_data_dir
     )
     with pytest.raises(InsecureLocationError) as raised:
         open_store(fresh)
-    assert "world-writable" in str(raised.value) or "synthetic" in str(raised.value)
+    assert "synthetic: /tmp (1777)" in str(raised.value), (
+        "TC-SMOKE-04: the refusal did not surface the check's own reason. The operator "
+        "must be told why the data directory was rejected, not just that it was."
+    )
     assert not fresh.exists(), (
         "TC-SMOKE-04: the refused start created the data directory. 'Not inside a temp "
         "path' must hold before the first byte of student data has anywhere to land."

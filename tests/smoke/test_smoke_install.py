@@ -20,11 +20,17 @@ repository declares** and **what the source tree actually does**:
 
 Why the actual `pip install` is not re-run here: the socket guard (TS-00) is active for every
 non-live test and pip needs the network, and a real venv bootstrap does not fit the smoke
-budget (~60-90 s total, §6.1). The nightly E1 environment case (`PERF-05`) owns the literal
-clean-machine install; this case holds the repository-side property that makes the literal
-run *possible* — the same reason `TC-STORE-19` holds the store-side half. The store-side
-clean-environment case is TC-STORE-19's; this one is the whole-system version, which is why
-its child imports all eleven contributors rather than `aeh.store` alone.
+budget (~60-90 s total, §6.1). The clean-environment case the plan owns is `TC-STORE-19`
+(issue #16, `tests/integration/store/test_capacity.py`) — the store-side half; this case is
+the whole-system version, which is why its child imports all eleven contributors rather than
+`aeh.store` alone.
+
+One residual masking vector the demonstration cannot see: its child runs on the dev venv's
+interpreter, so an undeclared **eager** runtime import of a package that
+`requirements-dev.txt` happens to carry would ride in with the interpreter and pass. The
+declared half (`dependencies == []` above) and the shipped lazy-import convention hold that
+line — `pypdfium2`/`pypdf` are imported inside the ingest implementations that need them,
+not at module top — which is why the demonstration is the second wall, not the only one.
 
 `Written ahead of implementation: yes` is stale — every module the smoke suite drives is
 landed (#42-#302); the suite runs green by design, exactly as §8.2's unmarking rule predicts.
@@ -42,8 +48,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REPO_SRC = REPO_ROOT / "src"
 
 #: File names whose presence anywhere in the tracked tree means an install step beyond pip
-#: has entered the repository. The one `fixtures/package/reference-package.json` is Tier P
-#: package *data* (a reference import), not an npm manifest — hence the fixtures/ exclusion.
+#: has entered the repository. Scanned on basename, with no path carve-out: the tracked
+#: fixture `fixtures/package/reference-package.json` is Tier P package *data* (a reference
+#: import) and its basename is not an npm manifest, so no fixtures/ exemption is needed —
+#: and must not exist, or a future manifest placed under fixtures/ would escape the scan.
 NPM_MANIFESTS = {"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"}
 
 #: Server-shaped install steps: anything the operator would have to start before the first
@@ -78,10 +86,7 @@ def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
     tracked = subprocess.run(
         ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
     ).stdout.splitlines()
-    npm = [
-        f for f in tracked
-        if Path(f).name in NPM_MANIFESTS and not f.startswith("fixtures/")
-    ]
+    npm = [f for f in tracked if Path(f).name in NPM_MANIFESTS]
     assert npm == [], (
         f"TC-SMOKE-01: npm-shaped manifests in the tracked tree: {npm}. The install "
         "story is venv + requirements-dev.txt; a package.json means a second toolchain."

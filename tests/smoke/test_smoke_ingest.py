@@ -7,7 +7,8 @@ Everything between the bytes and the row is real: the PDF is a genuine pdfium-de
 two-page document built inline (the `minimal_pdf` builder from the live-raster suite,
 issue #226 — the bytes are the fixture), the rasterizer is the shipped `PdfiumRasterizer`
 (pypdfium2, real page rasters at the configured DPI knob), and the sanitizer is the shipped
-`PypdfSanitizer` (probed: the minimal PDF passes through unneutralized). The VLM is the one
+`PypdfSanitizer`, exercised incidentally as part of the gateway (this fixture PDF needs no
+neutralization, so no sanitizer-specific assertion is made here). The VLM is the one
 seam — and it is the shipped `RecordedFixtureProvider` in its regeneration-then-replay
 shape: a first sight of a request is answered by a fixed per-page transcript and **recorded
 into the fixture provider's own store** through the shipped `record()`/`request_key`

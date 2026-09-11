@@ -432,7 +432,6 @@ def test_tc_smoke_10_run_produces_submission_grade_for_every_submission(
         for row in verdicts
     ]
     catalog = PackageCatalog(store.package(PACKAGE_ID), package_id=PACKAGE_ID)
-    catalog.criteria(world.version)
     crit = agg_criterion(
         [
             SimpleNamespace(
