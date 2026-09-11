@@ -618,7 +618,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries, upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:2964",
+    "aeh.review:2974",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

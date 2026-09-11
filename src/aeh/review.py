@@ -2938,8 +2938,10 @@ def _write_collected_label(
 
     The column mapping reads whatever the label carries and refuses what the
     table cannot: a label with no id is a programming error, and a label with
-    no teacher band is refused exactly as ``_persist_label`` refuses it —
-    Tier D's label table carries a band for every label. Columns the
+    no teacher band — or no evaluation mode, which the table's check admits
+    as 'judged' or 'deterministic' only — is refused the way ``_persist_label``
+    refuses the band, named at the route rather than dying as a raw
+    constraint error. Columns the
     collection route has no opinion on (the score link, the queue action, the
     derived points) are written NULL rather than defaulted, so a reader can
     tell "not collected" from "collected as empty". The store is left open —
@@ -2957,6 +2959,14 @@ def _write_collected_label(
         raise ReviewError(
             f"label {label_id!r} records no band; Tier D's label table carries "
             "a band for every label, so a collection without one is refused"
+        )
+    evaluation_mode = getattr(label, "evaluation_mode", None)
+    if not evaluation_mode:
+        raise ReviewError(
+            f"label {label_id!r} records no evaluation mode; the label table "
+            "admits 'judged' or 'deterministic' only (`CT-DET-06`), so a "
+            "collection without one is refused rather than dying as a raw "
+            "constraint error"
         )
     store = _collection_store(data_dir)
     handle = store.durable()

@@ -172,10 +172,16 @@ def _is_admissible(label: Any) -> bool:
     Admissible means ``label_type = 'blind'`` **and** ``evaluation_mode =
     'judged'`` (R20/R53) — and the visibility flag rides with them: a label
     may carry ``label_type = 'blind'`` and still have been produced by a
-    teacher who reached the system's output, and a null here would be
-    indistinguishable from a 0 at query time (`CT-REVIEW-08`), so the flag's
-    falseness — not its absence, not a naming convention — is the third
-    condition. This function is the filter's single definition; every figure
+    teacher who reached the system's output, so the flag's **truthfulness**
+    is the third condition — a 1 excludes, and a falsy flag admits. No
+    shipped producer can hand this predicate a null: every collection path
+    writes the column (`CT-REVIEW-08` step 1 pins no default and no null),
+    so the flag is decidable on the store rows; on the duck-typed in-memory
+    shapes the column predates, an absent attribute reads as the pre-column
+    shape and admits, and a ``None`` is falsy like a 0 — the two are
+    indistinguishable at this predicate by `CT-REVIEW-08`'s own warning,
+    which is why the column's enforcement lives at the producers. This
+    function is the filter's single definition; every figure
     this module emits is computed over the population it admits
     (`NFR-STATS-04`), and `TC-STATS-C01` asserts that the definition exists
     exactly once.
