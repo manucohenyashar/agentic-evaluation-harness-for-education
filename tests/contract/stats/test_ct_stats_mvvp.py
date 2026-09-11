@@ -42,7 +42,6 @@ CHANGED_TO: dict[str, object] = {
 # --- CT-STATS-07 — six steps, reported individually ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c07_reports_the_six_steps_individually_and_offers_no_single_verdict():
     """*"Reports the six MVVP steps **individually**, never as one pass/fail — asserted on the
     return type, since a convenience `passed` property is the plausible addition."*
@@ -82,7 +81,6 @@ def test_tc_stats_c07_reports_the_six_steps_individually_and_offers_no_single_ve
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c07_a_judge_above_the_stability_threshold_carries_its_position_bias_result():
     """`FR-STATS-18` — the paired-reporting fixture, constructed to sit exactly where it bites.
 
@@ -117,7 +115,6 @@ def test_tc_stats_c07_a_judge_above_the_stability_threshold_carries_its_position
 # --- CT-STATS-08 — the full re-run, and no carry-forward -------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 @pytest.mark.parametrize("dimension", vocab.MVVP_RERUN_TRIGGERS)
 def test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes(dimension):
@@ -159,7 +156,6 @@ def test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes(dimension
     # would flake — and flakiness in a P0 case is how a case stops being trusted.
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_change():
     """The prohibition that carries the risk: *"not reused, not shown, and not merged."*
@@ -199,7 +195,6 @@ def test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_chang
     assert current.measured_configuration["prompt_template_version"] == "judge-v8"
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c08_a_result_names_the_exact_configuration_it_measured():
     """*"A consumer can verify the match itself."*
 

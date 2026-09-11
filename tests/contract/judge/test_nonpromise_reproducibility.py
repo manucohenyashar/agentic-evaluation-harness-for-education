@@ -360,7 +360,6 @@ def test_tc_judge_c17_m_agg_reuses_by_work_id_and_merges_nothing_on_request_equa
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_judge_c17_m_stats_measures_self_agreement_as_a_finding_not_a_failure():
     """`TC-JUDGE-C17` limb 3 (`M-STATS`, `FR-STATS-16`, written ahead of `#116`) —
     self-agreement is MEASURED, and a measured value below 1.0 is a finding, not a

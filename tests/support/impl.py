@@ -730,41 +730,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#115"` entry that stood here is gone because #115 landed: `aeh.stats` ships
     # `build_stats` -- with `agreement`, `AgreementFigure`, `NoValidationData` and the single
     # admissibility filter (NFR-STATS-04) -- so its registered cases run in the gate unmarked.
-    # The c16 sweep's six non-agreement rows keep their markers, still registered under
-    # #116/#117/#118; only the sweep's own function-level marker came off, its per-row
-    # keying (MEMBER_ISSUE) now carried in the marks themselves. The `open_stats` rung-2
+    # The `"#116"` entry is gone too: `aeh.stats` ships `run_mvvp` (the MVVP as six
+    # separately-reported steps, CT-STATS-07/-08), so its ten registered cases -- the five
+    # CT-STATS-07/-08 cases, the c16 sweep's [run_mvvp] row and the C17 M-STATS limb --
+    # run in the gate unmarked. The c16 sweep's five remaining non-agreement rows keep
+    # their markers, still registered under #117/#118; the per-row keying (MEMBER_ISSUE)
+    # stays carried in the marks themselves. The `open_stats` rung-2
     # cases needed `record_label`'s durable collection route (`data_dir=, label=,
     # cohort_id=`), which landed with #115 in `aeh.review`.
-    "#116": (
-        "symbol",
-        f"{STATS_MODULE}:run_mvvp",
-        (
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[run_mvvp]",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c07_a_judge_above_the_stability_threshold_carries_its_position_bias_result",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c07_reports_the_six_steps_individually_and_offers_no_single_verdict",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_a_prior_result_is_not_reused_shown_or_merged_after_a_change",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_a_result_names_the_exact_configuration_it_measured",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[model_build]",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[panel_member]",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[prompt_template_version]",
-            "tests/contract/stats/test_ct_stats_mvvp.py"
-            "::test_tc_stats_c08_the_full_mvvp_reruns_when_each_dimension_changes[quantization]",
-            # `TC-JUDGE-C17`'s `M-STATS` limb (#85): the consumer sweep that holds
-            # "self-agreement is measured, not assumed". Its first `require()`
-            # resolves `run_mvvp` — this entry's target — so its nodeid rides here
-            # rather than in a duplicate entry (the `#134 adversarial` note's rule).
-            "tests/contract/judge/test_nonpromise_reproducibility.py"
-            "::test_tc_judge_c17_m_stats_measures_self_agreement_as_a_finding_not_a_failure",
-        ),
-    ),
     "#117": (
         "symbol",
         f"{STATS_MODULE}:compression_check",
