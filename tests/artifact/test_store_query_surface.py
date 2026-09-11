@@ -609,7 +609,16 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#111's re-pin: the blind-sample/whole-grade methods inserted before
     # `_persist_label` moved the site; the statement is the same one. Re-read
     # from the walker, never hand-unioned.)
-    "aeh.review:2417",
+    # (#115's re-pin: the `upsert_label` Statement added to REVIEW_STATEMENTS
+    # moved the site again; the statement is the same one.)
+    "aeh.review:2432",
+    # #115's collection route: the second durable write this module owns —
+    # `_write_collected_label`'s single `tx.execute` in its transaction body,
+    # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
+    # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
+    # `insert_label` carries, upserted so a collected label can be re-keyed
+    # into another cohort's administration. Pinned from the walker.
+    "aeh.review:2974",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

@@ -224,7 +224,6 @@ def test_tc_review_c17_moving_a_knob_changes_how_much_validation_evidence_is_pro
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c17_m_stats_achievable_precision_moves_with_the_knobs():
     """The rung-3 half: the knobs are *"`M-STATS`'s inputs as much as this module's settings"*.
 

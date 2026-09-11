@@ -65,7 +65,6 @@ def test_tc_review_c07_every_label_type_carries_the_named_fields_by_set_equality
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c07_both_bands_are_present_and_agreement_is_computed_over_them_not_points():
     """*"Assert both `system_band` and `teacher_band` are present — a label with only one is
     useless for agreement."*

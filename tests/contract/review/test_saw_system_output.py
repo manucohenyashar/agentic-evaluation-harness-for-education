@@ -196,7 +196,6 @@ def test_tc_review_c08_an_override_from_the_queue_still_records_that_the_system_
 # --- steps 3 and 4: the enforcement lives at the consumer ------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c08_m_stats_excludes_an_operational_label_from_agreement_and_says_how_many():
     """Steps 3 and 4, at rung 3 — the enforcement is `M-STATS`'s and the clause says so.
 

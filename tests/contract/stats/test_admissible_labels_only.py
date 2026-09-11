@@ -48,7 +48,6 @@ def _labels_for(class_name: str) -> list[broken.Label]:
 # --- step 1: each contaminated class, excluded on its own ------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("class_name", sorted(vocab.INADMISSIBLE_LABEL_CLASSES))
 def test_tc_stats_c01_each_contaminated_label_class_is_excluded(class_name):
     """Step 1 and step 4 — one row per contaminated class, RISK-07's two named routes among them.
@@ -83,7 +82,6 @@ def test_tc_stats_c01_each_contaminated_label_class_is_excluded(class_name):
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c01_the_predicate_is_a_conjunction_and_admits_only_the_blind_judged_label():
     """Step 1's oracle in its strongest form: all four contaminants present at once.
 
@@ -110,7 +108,6 @@ def test_tc_stats_c01_the_predicate_is_a_conjunction_and_admits_only_the_blind_j
 # --- step 2: the structural guarantee, over the surface rather than the entry points ----------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_population(
     repo_root,
 ):
@@ -159,7 +156,6 @@ def test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_
 # --- step 3: the filter exists once ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c01_the_admissibility_filter_exists_once_in_the_source(repo_root):
     """Step 3 — an artifact assertion on **cardinality**, and the oracle is *exactly one*.
 
@@ -190,7 +186,6 @@ def test_tc_stats_c01_the_admissibility_filter_exists_once_in_the_source(repo_ro
 # --- step 1 and 4 at rung 2: the real population -------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c01_a_contaminated_population_in_a_real_store_is_excluded(tmp_data_dir):
     """Steps 1 and 4 at **rung 2** — real SQLite, labels written by `M-REVIEW`.

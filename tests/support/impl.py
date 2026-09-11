@@ -727,78 +727,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `render_agreement_block`, which #123 and #125 both touch: `FR-CONSOLE-10`'s scoped rendering
     # and `FR-CONSOLE-24`'s honest absence are two invariants on one renderer, and a shared target
     # would fire #125's rows at #123.
-    "#115": (
-        "symbol",
-        f"{STATS_MODULE}:build_stats",
-        (
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_a_contaminated_population_in_a_real_store_is_excluded",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[deterministic_mcq]",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[operational]",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[saw_system_output]",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_each_contaminated_label_class_is_excluded[whole_grade_sample]",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_no_function_in_the_module_computes_agreement_over_another_population",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_the_admissibility_filter_exists_once_in_the_source",
-            "tests/contract/stats/test_admissible_labels_only.py"
-            "::test_tc_stats_c01_the_predicate_is_a_conjunction_and_admits_only_the_blind_judged_label",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c15_no_statement_in_the_source_writes_a_score_grade_or_package_row",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c18_reads_only_tier_d_and_the_current_cohorts_labels",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[backend_profile]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[n]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[panel_build_ref]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[population_scope_id]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed[scoring_model]",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_every_emitted_figure_is_chance_corrected",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_function_merges_them",
-            "tests/contract/stats/test_ct_stats_figures_and_keying.py"
-            "::test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_a_genuine_programming_error_still_raises",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[agreement]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c17_statistics_over_accumulated_labels_compute_within_the_budget",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_figure",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_degeneracy",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_blind_labels]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_data_for_backend]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found[no_data_for_population]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitute[agreement]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_blind_labels]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_data_for_backend]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason[no_data_for_population]",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_is_not_numerically_coercible_by_any_route",
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_refuses_a_reason_outside_the_declared_literal",
-        ),
-    ),
+    # The `"#115"` entry that stood here is gone because #115 landed: `aeh.stats` ships
+    # `build_stats` -- with `agreement`, `AgreementFigure`, `NoValidationData` and the single
+    # admissibility filter (NFR-STATS-04) -- so its registered cases run in the gate unmarked.
+    # The c16 sweep's six non-agreement rows keep their markers, still registered under
+    # #116/#117/#118; only the sweep's own function-level marker came off, its per-row
+    # keying (MEMBER_ISSUE) now carried in the marks themselves. The `open_stats` rung-2
+    # cases needed `record_label`'s durable collection route (`data_dir=, label=,
+    # cohort_id=`), which landed with #115 in `aeh.review`.
     "#116": (
         "symbol",
         f"{STATS_MODULE}:run_mvvp",
@@ -935,20 +871,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_console]",
         ),
     ),
-    # The `"#125 stats"` entry that stood here split when #125 landed: `-C05`'s console
-    # message needs only `render_agreement_block`, which exists now, so that row runs in
-    # the gate unmarked. `-C03`'s absence rendering also needs `NoValidationData`
-    # (`M-STATS`, #115), and `aeh.stats` does not exist yet -- so it rides the
-    # conjunction of the two symbols it actually requires, and fires for whoever of
-    # #115 and #125 lands last.
-    "#125 stats": (
-        "symbols",
-        f"{CONSOLE_MODULE}:render_agreement_block,{STATS_MODULE}:NoValidationData",
-        (
-            "tests/contract/stats/test_no_validation_data_type.py"
-            "::test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank",
-        ),
-    ),
+    # The `"#125 stats"` entry that stood here split when #125 landed, and the `-C03`
+    # half that rode the conjunction of `render_agreement_block` and `NoValidationData`
+    # is gone too because #115 landed the second symbol: the absence-rendering case
+    # runs in the gate unmarked.
     # The `"#126 stats"` entry that stood here is gone because #126 landed: `aeh.console`
     # ships `render_preflight`, so `TC-STATS-C12`'s drift consumer runs in the gate reading
     # the real S6 ladder rather than a stand-in.
@@ -1080,20 +1006,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Recorded in the sweep's docstring. The CT-REVIEW-10 absence case stays red
     # for #115, as the keying above intended; the CT-REVIEW-09 transport step was
     # #124's and unmarked with it.
-    "#115 review": (
-        "symbol",
-        f"{STATS_MODULE}:build_stats",
-        (
-            "tests/contract/review/test_ct_review_labels_and_edits.py"
-            "::test_tc_review_c07_both_bands_are_present_and_agreement_is_computed_over_them_not_points",
-            "tests/contract/review/test_ct_review_limits_and_config.py"
-            "::test_tc_review_c17_m_stats_achievable_precision_moves_with_the_knobs",
-            "tests/contract/review/test_ct_review_sampling_and_staleness.py"
-            "::test_tc_review_c10_the_absence_is_reported_rather_than_papered_over",
-            "tests/contract/review/test_saw_system_output.py"
-            "::test_tc_review_c08_m_stats_excludes_an_operational_label_from_agreement_and_says_how_many",
-        ),
-    ),
+    # The `"#115 review"` entry that stood here is gone because #115 landed: the four
+    # review cases that read M-STATS' figures (c07's bands-not-points, c17's achievable
+    # precision, c10's absence reporting, c08's exclusion-with-a-count) run in the gate
+    # unmarked.
     # The `"#124 review"` and `"#124 transport review"` entries stood here (`aeh.console:
     # render_review_queue` and `aeh.console:blind_flow_requests` for CT-REVIEW-04's rendering
     # half, CT-REVIEW-19/-20's consumer-language sweeps and CT-REVIEW-09 step 3). #124 landed

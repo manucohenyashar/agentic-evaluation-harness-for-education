@@ -546,6 +546,21 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "AND submission_id NOT IN "
         "(SELECT submission_id FROM criterion_score WHERE routing <> 'auto')"
     ),
+    # #115's collection route: the same 19 columns `insert_label` carries,
+    # written as an upsert so a caller collecting the same label into a second
+    # administration's cohort re-keys the row rather than failing on a
+    # conflicting id. One statement, keyword-parameterized like its sibling —
+    # never assembled at runtime (SEC-15).
+    "upsert_label": Statement(
+        "INSERT OR REPLACE INTO label (label_id, run_id, student_ref, "
+        "criterion_id, label_type, band, evaluation_mode, saw_system_output, "
+        "routing, origin, review_seconds, system_band, teacher_band, actor, "
+        "timestamp, score_id, review_queue_action, new_points, cohort_id) "
+        "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
+        ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
+        ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
+        ":score_id, :review_queue_action, :new_points, :cohort_id)"
+    ),
 }
 
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_006,)
@@ -2758,9 +2773,9 @@ _LABEL_STORE_COUNTER = itertools.count(1)
 
 def record_label(
     *,
-    run_id: str,
-    score_id: str,
-    label_type: str,
+    run_id: str | None = None,
+    score_id: str | None = None,
+    label_type: str | None = None,
     teacher_band: str | None = None,
     system_band: str | None = None,
     saw_system_output: int | None = None,
@@ -2772,6 +2787,9 @@ def record_label(
     actor: str = "teacher",
     timestamp: str | None = None,
     review_queue_action: str | None = None,
+    data_dir: Path | str | None = None,
+    label: Any = None,
+    cohort_id: str | None = None,
 ) -> str:
     """Write one label into the process-level store and return its id
     (`FR-REVIEW-09`): the direct route for a label that does not ride an
@@ -2788,14 +2806,51 @@ def record_label(
     choice (`FR-REVIEW-10`), and points enter only as the *derived* value a
     service label carries — the mapping is never handed a caller's number.
 
-    This is the in-memory surface, deliberate at #110: the durable
-    per-label write outside a service session is #115's collection route,
-    and the stats cases written ahead of both stories call a planned
-    ``record_label(data_dir=..., label=...)`` shape against it — at #115's
-    landing those calls reconcile to whichever surface that story ships
-    (this one, or its durable extension); the `require(..., issue="#115")`
-    blocker ahead of every such call keeps them outside the gate until then.
+    Two routes, one signature (`#115`'s collection route completes the shape
+    this docstring anticipated at #110):
+
+    * **The in-memory route** — ``run_id=``, ``score_id=``, ``label_type=``
+      (the original #110 surface). The label lives in the process-level store
+      and dies with the process; this is the vocabulary the C07/C08 contract
+      reads.
+    * **The durable collection route** — ``label=`` with ``data_dir=`` (and an
+      optional ``cohort_id=``): the label object is written straight to Tier
+      D's ``label`` table through ``upsert_label``, the store being cached per
+      data directory so a collection loop pays the open once. The statistics
+      cases (`TC-STATS-C01` rung 2, `TC-STATS-C17`, `TC-STATS-C18`) collect
+      through this route, and `M-STATS` reads the same rows back.
+
+    The two are mutually exclusive by signature — a call carrying both is
+    refused rather than guessed at, and a call carrying neither route's
+    required arguments is a programming error, not a silent default.
     """
+    if label is not None:
+        if run_id is not None or score_id is not None or label_type is not None:
+            raise TypeError(
+                "record_label() mixes its two routes: the durable collection route "
+                "takes data_dir=, label= and optional cohort_id=, while the "
+                "in-memory route takes run_id=, score_id= and label_type= — a call "
+                "carrying both is ambiguous about where the label should land"
+            )
+        if data_dir is None:
+            raise TypeError(
+                "record_label(label=...) is the durable collection route and needs "
+                "data_dir= — the directory the label store lives in"
+            )
+        return _write_collected_label(
+            label=label, data_dir=data_dir, cohort_id=cohort_id
+        )
+    if data_dir is not None or cohort_id is not None:
+        raise TypeError(
+            "record_label() got data_dir=/cohort_id= without label= — those name "
+            "the durable collection route, which writes a collected label object"
+        )
+    if run_id is None or score_id is None or label_type is None:
+        raise TypeError(
+            "record_label() needs either label= with data_dir= (the durable "
+            "collection route) or run_id=, score_id= and label_type= (the "
+            "in-memory route); this call carries neither"
+        )
     if label_type not in _LABEL_TYPES:
         raise ValueError(f"{label_type!r} is not a label type; one of {_LABEL_TYPES}")
     if saw_system_output is None:
@@ -2833,6 +2888,116 @@ def labels_for(*, run_id: str) -> tuple[LabelRecord, ...]:
     (`CT-REVIEW-07`'s read back), in write order. A tuple, so a caller cannot
     reorder the store's history in place."""
     return tuple(_LABEL_STORE.get(run_id, ()))
+
+
+#: One open store per data directory, for the collection route. Opening a
+#: store is the expensive half of a write (the migration-chain check, the WAL
+#: recovery) and a collection loop writes hundreds of labels into one, so the
+#: handle is cached per resolved directory for the life of the process — the
+#: same shape `ReviewService` holds its own store with, at module scope
+#: because the collection route has no service instance to hold it.
+_COLLECTED_STORES: dict[str, Any] = {}
+
+
+def _collection_store(data_dir: Path | str) -> Any:
+    """The open store behind the collection route, cached per data directory.
+
+    The tier migration chains are concatenated at import time by the modules
+    that own the schema they add (CLAUDE.md): the first open in a process must
+    not happen with the chain short. These ten plus *this module* — which owns
+    Durable's label-store columns — make the complete chain; importing
+    aeh.review from inside aeh.review is a no-op, so the ten it does not own
+    are imported here, mirroring ``open_review``'s block."""
+    import aeh.agg  # noqa: F401
+    import aeh.det  # noqa: F401
+    import aeh.extract  # noqa: F401
+    import aeh.grade  # noqa: F401
+    import aeh.ingest  # noqa: F401
+    import aeh.integ  # noqa: F401
+    import aeh.judge  # noqa: F401
+    import aeh.orch  # noqa: F401
+    import aeh.pkg  # noqa: F401
+    import aeh.synth  # noqa: F401
+
+    from aeh.store import open_store
+
+    key = str(Path(data_dir))
+    store = _COLLECTED_STORES.get(key)
+    if store is None:
+        store = open_store(data_dir)
+        _COLLECTED_STORES[key] = store
+    return store
+
+
+def _write_collected_label(
+    *, label: Any, data_dir: Path | str, cohort_id: str | None
+) -> str:
+    """One collected label, durable (`#115`): the label object a caller holds
+    — the collection-side shape, not a service's ``LabelRecord`` — written to
+    Tier D through ``upsert_label`` and returned as its id.
+
+    The column mapping reads whatever the label carries and refuses what the
+    table cannot: a label with no id is a programming error, and a label with
+    no teacher band — or no evaluation mode, which the table's check admits
+    as 'judged' or 'deterministic' only — is refused the way ``_persist_label``
+    refuses the band, named at the route rather than dying as a raw
+    constraint error. Columns the
+    collection route has no opinion on (the score link, the queue action, the
+    derived points) are written NULL rather than defaulted, so a reader can
+    tell "not collected" from "collected as empty". The store is left open —
+    ``_collection_store`` caches it, and closing it per label would reopen the
+    migration chain on the next call."""
+    label_id = getattr(label, "label_id", None)
+    if not label_id:
+        raise TypeError(
+            f"record_label(label={label!r}) carries no label_id — the durable "
+            "row's identity is the label's own id, and a collection without one "
+            "cannot be read back"
+        )
+    teacher_band = getattr(label, "teacher_band", None)
+    if teacher_band is None:
+        raise ReviewError(
+            f"label {label_id!r} records no band; Tier D's label table carries "
+            "a band for every label, so a collection without one is refused"
+        )
+    evaluation_mode = getattr(label, "evaluation_mode", None)
+    if not evaluation_mode:
+        raise ReviewError(
+            f"label {label_id!r} records no evaluation mode; the label table "
+            "admits 'judged' or 'deterministic' only (`CT-DET-06`), so a "
+            "collection without one is refused rather than dying as a raw "
+            "constraint error"
+        )
+    store = _collection_store(data_dir)
+    handle = store.durable()
+    with handle.transaction() as tx:
+        tx.execute(
+            REVIEW_STATEMENTS["upsert_label"],
+            label_id=label_id,
+            run_id="",
+            # The collected label carries no student identity either (#108's
+            # mapping records the same absence): the submission reference is
+            # what the row can honestly carry in Phase 1.
+            student_ref=getattr(label, "submission_id", None) or "",
+            criterion_id=getattr(label, "criterion_id", None) or "",
+            label_type=getattr(label, "label_type", None) or "",
+            band=teacher_band,
+            evaluation_mode=getattr(label, "evaluation_mode", None) or "",
+            saw_system_output=int(bool(getattr(label, "saw_system_output", 0))),
+            routing=getattr(label, "routing", None) or "queued",
+            origin=getattr(label, "origin", None) or "direct",
+            review_seconds=getattr(label, "review_seconds", None) or 0,
+            system_band=getattr(label, "system_band", None)
+            or getattr(label, "band", None),
+            teacher_band=teacher_band,
+            actor=getattr(label, "actor", None) or "",
+            timestamp=getattr(label, "timestamp", None),
+            score_id=None,
+            review_queue_action=None,
+            new_points=None,
+            cohort_id=cohort_id,
+        )
+    return str(label_id)
 
 
 def blind_sample_skipped(service: Any, run_id: str = "run-1") -> BlindSampleSkipReport:

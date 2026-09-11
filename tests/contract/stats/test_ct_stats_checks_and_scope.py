@@ -277,7 +277,6 @@ def test_tc_stats_c15_the_validation_record_is_written_through_m_pkg(tmp_data_di
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c15_no_statement_in_the_source_writes_a_score_grade_or_package_row(repo_root):
     """*"Asserted statically so it covers unexercised paths."*
 
@@ -305,7 +304,6 @@ def test_tc_stats_c15_no_statement_in_the_source_writes_a_score_grade_or_package
 # --- CT-STATS-18 — the read boundary --------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_stats_c18_reads_only_tier_d_and_the_current_cohorts_labels(tmp_data_dir):
     """*"Asserted over its actual queries, so a convenience join to Tier C fails."*
