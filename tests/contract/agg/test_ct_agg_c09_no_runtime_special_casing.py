@@ -89,9 +89,13 @@ _REVIEW_SANCTIONED = (
 #: keys every statistic with the scoring model it is a claim about), the
 #: criterion-declared default that reads what the package classified
 #: (`CT-SETUP-05`), the echo into the figure's own fields, the declaration
-#: pass-through that stores the package's mapping, and its two signatures.
+#: pass-through that stores the package's mapping, its two signatures, and
+#: the same pass-through re-applied when a sub-surface is built over a
+#: narrowed population (`#116`'s step 4 — the per-assignment-type figures are
+#: built on a sub-``ValidationStats`` carrying the same stored declaration).
 #: Reconciled at #115's landing — the figure first carried the model there,
-#: and `NFR-STATS-02` makes the carry mandatory. Anything else — a per-model
+#: and `NFR-STATS-02` makes the carry mandatory; re-pinned at #116's for the
+#: sub-surface pass-through. Anything else — a per-model
 #: branch, a second mapping, a multiplier — is the run-time special case the
 #: clause bans, and lands here as an unsanctioned site.
 _STATS_SANCTIONED = (
@@ -102,6 +106,7 @@ _STATS_SANCTIONED = (
     "scoring_models: Mapping[str, str] | None = None,",
     "self._scoring_models = dict(scoring_models or {})",
     "scoring_models=scoring_models,",
+    "scoring_models=stats._scoring_models,",
 )
 
 _COHORT = ORCH_COHORT_ID

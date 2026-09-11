@@ -64,10 +64,13 @@ EXPORT_WALL_CLOCK_TOLERANCE = float(os.environ.get("HARNESS_STATS_EXPORT_TOLERAN
         pytest.param(
             member,
             id=member,
-            # The agreement row is #115's and runs in the gate unmarked; the other
-            # six rows are the other stories' members and keep their marker -- the
-            # sweep's own per-row keying (MEMBER_ISSUE), now carried in the marks.
-            marks=pytest.mark.writtenahead if member != "agreement" else [],
+            # The agreement row is #115's and the run_mvvp row is #116's; both
+            # landed and run in the gate unmarked. The other five rows are the
+            # other stories' members and keep their marker -- the sweep's own
+            # per-row keying (MEMBER_ISSUE), now carried in the marks.
+            marks=pytest.mark.writtenahead
+            if member not in ("agreement", "run_mvvp")
+            else [],
         )
         for member in sorted(vocab.PROTOCOL_MEMBERS)
     ],
