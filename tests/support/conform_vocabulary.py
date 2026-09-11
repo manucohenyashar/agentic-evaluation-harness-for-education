@@ -27,6 +27,7 @@ checkable by reading rather than by trusting.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 
@@ -697,6 +698,116 @@ def module_sources(module: Any) -> str:
         for directory in paths
         for source_file in sorted(pathlib.Path(directory).rglob("*.py"))
     )
+
+
+# --- TS-46 (#135), §5.18's eight TC-CONFORM cases -----------------------------------------------
+#
+# The clause suite above (TS-75) is the fourteen `CT-*` clauses of §6.11.18; §5.18 carries the
+# case-level suite over the same module, and it needs three surfaces the clause suite never
+# named. They are **invented** by the same rule that invented `classify_divergence` and
+# `recorded_provider_for_fixture_set`: design §3.18's Interfaces block declares `run`/`compare`
+# and nothing else, so whoever implements #134 either adopts these names or renames them here
+# and in the one test file that uses each. Centralised here rather than per-file so the naming
+# bet is stated once, with the requirement each name came from.
+
+#: `TC-CONFORM-04` — *"No stubs anywhere, including ingestion — asserted by confirming the
+#: fixture provider is not bound and that the real transcription stage ran."* The per-backend
+#: result field that names what the transcription stage actually dispatched through. A live
+#: conformance run measures the backend, so the dispatch must resolve to the backend's own
+#: transcriber (`RunConfig`'s, `M-CONF` #42-era) and must never be the recorded fixture double —
+#: a run that dispatched through `RecordedFixtureProvider` would compare the two backends on a
+#: transcript neither of them produced, which is the stub the clause forbids anywhere.
+TRANSCRIPTION_DISPATCH_FIELD = "transcription_dispatch"
+
+#: The dispatch identity a run through the double reports. `recorded_provider_for_fixture_set`
+#: (the fast tier's entry, invented by `TC-CONFORM-C08`'s behavioural half) is what a fast-tier
+#: suite binds; a **live** run's per-backend dispatch must not read back as this identity.
+RECORDED_FIXTURE_DISPATCH = "recorded_fixture"
+
+#: `TC-CONFORM-12` — *"Each fixture judgment repeated and self-agreement computed; the figure is
+#: reported per backend and never merged. Statistical with stated n."* The per-backend result
+#: field carrying the figure, and the repeats field the figure must state: a self-agreement
+#: figure with no `n` is a number nobody can weigh, and `n` below two means nothing was
+#: repeated, which is the measurement the case exists to require.
+SELF_AGREEMENT_FIELD = "self_agreement"
+SELF_AGREEMENT_REPEATS_FIELD = "n"
+MIN_SELF_AGREEMENT_REPEATS = 2
+
+#: `TC-CONFORM-04` — *"Per-criterion score distributions, chance-corrected agreement with the
+#: fixture labels, confidence and escalation rate, evidence-integrity failure rate and
+#: self-agreement over repeated runs are **all compared**."* The comparison needs somewhere for
+#: each backend's own measurement to live, and the divergence report alone is not it: a report
+#: whose five divergence values are non-None but whose per-backend figures are absent is a
+#: differential with the operands missing. The per-backend result carries its figures keyed by
+#: the dimension names (`DIVERGENCE_DIMENSIONS`); the divergence dimension's value is what
+#: `compare` computes over the two backends' entries.
+PER_BACKEND_FIGURES_FIELD = "figures"
+
+#: `TC-CONFORM-13` — *"Per-dimension divergence, fixture set version and both backends' resolved
+#: builds are emitted; both alerts fire."* Design §3.18's Observability line names the three
+#: emitted fields (`OBSERVABILITY_FIELDS` above) but no alert surface, so the alert read is
+#: this suite's invention — named after `aeh.orch:evaluate_alerts` and `aeh.grade`'s evaluate_
+#: grade_alerts, the two shipped alert readers. Each fired alert carries a `kind`.
+CONFORMANCE_ALERT_SURFACE = "evaluate_conformance_alerts"
+
+#: The two alerts the case names, as kinds: the §7.4 gate that crossed (the evidence-integrity
+#: gate — the one computable one, `LIVE_GATE_DIMENSION`) and the frozen-fixture score shift
+#: `FR-CONFORM-08` reports as build substitution.
+ALERT_DIVERGENCE_GATE_CROSSED = "divergence_gate_crossed"
+ALERT_BUILD_SUBSTITUTION_DETECTED = "build_substitution_detected"
+
+#: The env knob (seam 3) that says this box has the live backends a `live`-marked conformance
+#: case needs: a comma-separated list of the backend profiles to run (`edge-local`,
+#: `cloud-hosted`). Unset on a box without them — the same arrangement gap `TC-PROV-19`'s E3
+#: and `TC-CONFORM-03`'s F-HAND sit behind — and the case skips naming the prerequisite rather
+#: than failing on a socket it could never have opened.
+HARNESS_CONFORM_LIVE_BACKENDS_ENV = "HARNESS_CONFORM_LIVE_BACKENDS"
+
+
+def live_conformance_backends() -> list[dict[str, Any]]:
+    """The `RunConfig`s for the profiles the live-backend env knob declares, or a skip naming the gap.
+
+    Shared by the three `live`-marked conformance cases (`TC-CONFORM-04`, `TC-CONFORM-08`, and
+    the budget-threshold test in `TC-CONFORM-11`'s file) so the gate is one mechanism rather
+    than three that drift. Unset means no live backend is
+    declared on this box and the case skips naming that prerequisite — the same arrangement gap
+    `TC-PROV-19`'s E3 and `TC-CONFORM-03`'s F-HAND sit behind. Runs **exactly** what was
+    declared, so the knob chooses the transport rather than decorating a fixed pair; a
+    differential needs two backends, so fewer than two declared is the same skip.
+
+    Three-judge panels: a per-backend assertion over `panel[:1]` is indistinguishable from a
+    correct one when the panel has one member — the blind spot `conf_builders` documents.
+    """
+    import pytest
+
+    from tests.support.conf_builders import EDGE_PANEL_3, HOSTED_PANEL_3, edge_cfg, hosted_cfg
+
+    builders: dict[str, Any] = {
+        "edge-local": lambda: edge_cfg(panel=EDGE_PANEL_3),
+        "cloud-hosted": lambda: hosted_cfg(panel=HOSTED_PANEL_3),
+    }
+    declared = os.environ.get(HARNESS_CONFORM_LIVE_BACKENDS_ENV, "")
+    if not declared.strip():
+        pytest.skip(
+            f"{HARNESS_CONFORM_LIVE_BACKENDS_ENV} is unset, so no live backend is declared on "
+            f"this box. The live conformance cases (TC-CONFORM-04, TC-CONFORM-08, and "
+            f"TC-CONFORM-11's budget threshold) run the frozen "
+            f"fixture set through the full pipeline on real backends. Set "
+            f"{HARNESS_CONFORM_LIVE_BACKENDS_ENV} to a comma-separated profile list "
+            f"(edge-local, cloud-hosted) to run them."
+        )
+    profiles = [p.strip() for p in declared.split(",") if p.strip()]
+    unknown = [p for p in profiles if p not in builders]
+    assert not unknown, (
+        f"{HARNESS_CONFORM_LIVE_BACKENDS_ENV} declares {unknown}, which have no RunConfig "
+        f"builder in tests/support/conf_builders.py; the known profiles are {sorted(builders)}"
+    )
+    if len(profiles) < 2:
+        pytest.skip(
+            f"{HARNESS_CONFORM_LIVE_BACKENDS_ENV} declares {profiles}; the differential cases "
+            f"compare backends, and a run against one is a measurement, not a comparison."
+        )
+    return [builders[p]() for p in profiles]
 
 
 # --- CT-CONFORM-12's attribution, exercised without an implementation --------------------------
