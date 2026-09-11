@@ -20,11 +20,16 @@ Disposition, disclosed:
   readers, no module references `scoring_model` at all — `aeh.agg` (the policy the
   distinction is), `aeh.pkg`/`aeh.setup` (the package side that classifies and stores
   it, `CT-SETUP-05`'s home), `aeh.orch`, whose single reference is the declared
-  `FR-SETUP-08` base-depth map, and `aeh.review`, whose references are a closed
+  `FR-SETUP-08` base-depth map, `aeh.review`, whose references are a closed
   declared set — the `FR-AGG-06` tie-break at both of the ranking's shapes plus the
   wire field that carries the row's package-declared value (`CT-AGG-09`'s own ranking
   mandate; reconciled at #108's landing, when the queue first read the model — the
-  ban is on deriving a second distinction, not on the declared read).
+  ban is on deriving a second distinction, not on the declared read) — and
+  `aeh.stats`, whose references are likewise a closed declared set: the wire field
+  that keys every agreement figure with the model it is a claim about
+  (`FR-STATS-02`/`NFR-STATS-02`), the criterion-declared default and the pass-through
+  that stores the package's declaration (`CT-SETUP-05` again — reconciled at #115's
+  landing, when the figure first carried the model).
 
 Isolation: rung 0 for the scan; rung 3 (real driven run) for the ranking limb; the
 socket guard is autouse.
@@ -79,6 +84,25 @@ _REVIEW_SANCTIONED = (
     'self.scoring_model = "atomic"',
     '``expected_value`` and ``scoring_model``',
 )
+#: The agreement figure's sanctioned scoring-model reads, each its clause: the
+#: wire field that carries the row's package-declared value (`FR-STATS-02`
+#: keys every statistic with the scoring model it is a claim about), the
+#: criterion-declared default that reads what the package classified
+#: (`CT-SETUP-05`), the echo into the figure's own fields, the declaration
+#: pass-through that stores the package's mapping, and its two signatures.
+#: Reconciled at #115's landing — the figure first carried the model there,
+#: and `NFR-STATS-02` makes the carry mandatory. Anything else — a per-model
+#: branch, a second mapping, a multiplier — is the run-time special case the
+#: clause bans, and lands here as an unsanctioned site.
+_STATS_SANCTIONED = (
+    "scoring_model: str",
+    "if scoring_model is None:",
+    'scoring_model = self._scoring_models.get(criterion_id or "")',
+    "scoring_model=scoring_model,",
+    "scoring_models: Mapping[str, str] | None = None,",
+    "self._scoring_models = dict(scoring_models or {})",
+    "scoring_models=scoring_models,",
+)
 
 _COHORT = ORCH_COHORT_ID
 _SUBMISSION = "SYN-C09"
@@ -115,6 +139,7 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
     offenders: dict[str, list[str]] = {}
     orch_sites: list[str] = []
     review_sites: list[str] = []
+    stats_sites: list[str] = []
     for path in sorted(src.glob("*.py")):
         name = path.stem
         if name in _PACKAGE_SIDE:
@@ -125,6 +150,9 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
             continue
         if name == "review":
             review_sites = sites
+            continue
+        if name == "stats":
+            stats_sites = sites
             continue
         if sites:
             offenders[name] = sites
@@ -154,6 +182,21 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
         "`FR-AGG-06` mandates (holistic first at equal expected value) and the "
         "wire field that carries the package-declared value; anything else is "
         "a run-time special case drifting from the package (CT-AGG-09, RISK-27)"
+    )
+    # The figure's sites are the closed declared set (see `_STATS_SANCTIONED`):
+    # a new reference — a per-model branch, a second mapping, a multiplier —
+    # lands here and fails.
+    unsanctioned_stats = [
+        site for site in stats_sites
+        if not any(shape in site for shape in _STATS_SANCTIONED)
+    ]
+    assert unsanctioned_stats == [], (
+        f"aeh.stats reads the scoring model outside its declared sites "
+        f"{unsanctioned_stats!r} — the figure's sanctioned reading is the wire "
+        "field that keys every statistic with the model it is a claim about "
+        "(`FR-STATS-02`) and the pass-through that stores the package's "
+        "declaration (`CT-SETUP-05`); anything else is a run-time special case "
+        "drifting from the package (CT-AGG-09, RISK-27)"
     )
 
 

@@ -31,7 +31,6 @@ pytestmark = pytest.mark.contract
 # --- step 1: a distinct type, carrying one of three reasons ------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("reason", vocab.NO_VALIDATION_DATA_REASONS)
 def test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason(reason):
     """Step 1 — *"not a null, not a zero, not a sentinel float"*, swept over all three reasons.
@@ -57,7 +56,6 @@ def test_tc_stats_c03_is_a_distinct_type_carrying_each_declared_reason(reason):
     assert value.reason == reason
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c03_refuses_a_reason_outside_the_declared_literal():
     """The `Literal` is part of the type, so a reason outside it is not representable.
 
@@ -73,7 +71,6 @@ def test_tc_stats_c03_refuses_a_reason_outside_the_declared_literal():
 # --- step 2: not numerically coercible ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c03_is_not_numerically_coercible_by_any_route():
     """Step 2 — `float()`, arithmetic, comparison and format-as-percentage must **each** raise.
 
@@ -98,7 +95,6 @@ def test_tc_stats_c03_is_not_numerically_coercible_by_any_route():
 # --- step 3: every path that can lack data returns it ----------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "member", sorted(vocab.FIGURE_MEMBERS), ids=sorted(vocab.FIGURE_MEMBERS)
 )
@@ -135,7 +131,6 @@ def test_tc_stats_c03_every_entry_point_returns_the_value_rather_than_a_substitu
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("reason", vocab.NO_VALIDATION_DATA_REASONS)
 def test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found(reason):
     """Step 3's other half: the three reasons are **reachable**, not merely declarable.
@@ -176,7 +171,6 @@ def test_tc_stats_c03_agreement_reports_which_kind_of_absence_it_found(reason):
 # --- step 4: the rendering, at rung 3 ----------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c03_the_console_renders_the_absence_and_never_a_zero_or_a_blank():
     """Step 4 at **rung 3** — *"never as `0.00` and never as a blank"*.
 

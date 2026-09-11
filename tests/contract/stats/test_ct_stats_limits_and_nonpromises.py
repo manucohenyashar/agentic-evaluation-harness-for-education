@@ -58,8 +58,20 @@ EXPORT_WALL_CLOCK_TOLERANCE = float(os.environ.get("HARNESS_STATS_EXPORT_TOLERAN
 # --- CT-STATS-16 — insufficient data is a value ------------------------------------------------
 
 
-@pytest.mark.writtenahead
-@pytest.mark.parametrize("member", sorted(vocab.PROTOCOL_MEMBERS), ids=sorted(vocab.PROTOCOL_MEMBERS))
+@pytest.mark.parametrize(
+    "member",
+    [
+        pytest.param(
+            member,
+            id=member,
+            # The agreement row is #115's and runs in the gate unmarked; the other
+            # six rows are the other stories' members and keep their marker -- the
+            # sweep's own per-row keying (MEMBER_ISSUE), now carried in the marks.
+            marks=pytest.mark.writtenahead if member != "agreement" else [],
+        )
+        for member in sorted(vocab.PROTOCOL_MEMBERS)
+    ],
+)
 def test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data(member):
     """*"Sweep every entry point with an empty or tiny label set."* All seven, `promote` included.
 
@@ -88,7 +100,6 @@ def test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data(mem
             )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c16_a_genuine_programming_error_still_raises():
     """The other side of the clause, and the one that keeps the first side honest.
 
@@ -126,7 +137,6 @@ def test_tc_stats_c16_a_genuine_programming_error_still_raises():
 # --- CT-STATS-17 — the cost, at accumulated scale ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 @pytest.mark.slow
 def test_tc_stats_c17_statistics_over_accumulated_labels_compute_within_the_budget(tmp_data_dir):
@@ -337,7 +347,6 @@ def test_tc_stats_c20_no_consumer_renders_or_exports_a_single_headline_figure(
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_figure():
     """*"Assert no threshold is declared here (`NFR-SYS-08`)"* — read as `NFR-SYS-08` reads it.
 
@@ -382,7 +391,6 @@ def test_tc_stats_c20_the_module_declares_no_pass_fail_threshold_over_a_quality_
 # --- CT-STATS-21 — α and κ are degenerate on two-band criteria ----------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_degeneracy():
     """*"The case asserts the degeneracy is **detected and disclosed**, not that a value is
     correct."*

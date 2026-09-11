@@ -53,7 +53,6 @@ def test_tc_review_c10_skipping_the_blind_sample_leaves_grades_delivered_and_fin
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_review_c10_the_absence_is_reported_rather_than_papered_over():
     """The honesty half, and the discriminating negative.
 

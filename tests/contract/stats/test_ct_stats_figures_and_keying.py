@@ -36,7 +36,6 @@ def _figure(stats, **overrides):
 # --- CT-STATS-02 — the figure carries its own scope ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names():
     """Field-set **equality** against §3.16's dataclass, not containment.
 
@@ -79,7 +78,6 @@ def test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names():
     )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("omitted", vocab.REQUIRED_FIGURE_FIELDS)
 def test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed(omitted):
     """*"No figure is representable without them; the return type enforces it rather than the call
@@ -118,7 +116,6 @@ def test_tc_stats_c02_a_figure_without_its_scope_or_its_n_cannot_be_constructed(
         AgreementFigure(**complete)
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c02_every_emitted_figure_is_chance_corrected():
     """*"Every figure is chance-corrected"* (`FR-STATS-02`), asserted on what the module emits.
 
@@ -148,7 +145,6 @@ def test_tc_stats_c02_every_emitted_figure_is_chance_corrected():
 # --- CT-STATS-04 — keying, and the two prohibitions ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for():
     """*"Every emitted statistic is keyed by population scope, backend profile, panel build ref,
     and scoring model."*
@@ -185,7 +181,6 @@ def test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for(
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c04_atomic_and_holistic_are_reported_separately_and_no_function_merges_them():
     """The first prohibition, *"asserted over the module's surface, not by observing outputs"*.
 
