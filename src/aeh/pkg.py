@@ -221,6 +221,14 @@ class SchemaLockViolation(PackageError):
 
     retryable = False
 
+    #: Where the refusal is raised. Every raise site is the catalog's `_guard` — the one
+    #: check every mutation funnels through (`NFR-PKG-03`) — so the value is a constant
+    #: rather than a per-instance field. `M-CALIB` routes its edits through this surface
+    #: precisely so it needs no lock check of its own (`FR-CALIB-07`, `CT-CALIB-06`: a
+    #: second implementation of one rule is what drifts), and the attribute lets a caller
+    #: verify the refusal came from the lock instead of from a caller-side copy of it.
+    raised_by = "catalog"
+
 
 class PublishedVersionImmutableError(PackageError):
     """An update was attempted on a published (`locked = 1`) `package_version`, or on any
@@ -314,6 +322,26 @@ SCHEMA_LOCK_FIELDS: tuple[tuple[str, str], ...] = (
     ("criterion_dependency", "remove"),
     ("criterion_dependency", "alter"),
 )
+
+#: The HLD §6.2 vocabulary for the lockable fields whose guard string differs from the
+#: HLD's own name (`FR-PKG-03` states the lock in the HLD's words: a criterion's
+#: `criterion_count` — "adding or removing a criterion" — and its `criterion_band` rows,
+#: while the guard's strings are the SQL-shaped `"criterion.add"` / `"band.label"`). A
+#: refusal that names only the guard string does not name the field the way the design
+#: states it, and `M-CALIB`'s sweep (`CT-CALIB-06`) asserts the refusal in the HLD's
+#: vocabulary — so the message carries both. **A message-vocabulary map only**: it names
+#: fields in refusals, it never gates them — membership is `SCHEMA_LOCK_FIELDS`'s alone,
+#: and this dict deliberately carries no second copy of that list (`NFR-PKG-03`). The
+#: keys are the guard strings, not `(table, field)` tuples, for the same single-definition
+#: reason: the tuple literals belong to the list above and nowhere else.
+_LOCKED_FIELD_HLD_NAMES: dict[str, str] = {
+    "criterion.add": "criterion_count",
+    "criterion.remove": "criterion_count",
+    "band.label": "criterion_band",
+    "band.ordinal": "criterion_band",
+    "band.descriptor": "criterion_band",
+    "band.points": "criterion_band",
+}
 
 
 # --- the grade policy: a structured object from a closed vocabulary (FR-PKG-14/-15/-19) ---------
@@ -2106,6 +2134,10 @@ class PackageCatalog:
             return
         if field in {f"{table}.{name}" for table, name in SCHEMA_LOCK_FIELDS}:
             SCHEMA_LOCK_VIOLATIONS.increment()
+            # The HLD's own name for the field, where the guard string and the HLD
+            # vocabulary differ (`_LOCKED_FIELD_HLD_NAMES`): the refusal names the field
+            # the way the design states it as well as the way the SQL layer spells it.
+            hld_name = _LOCKED_FIELD_HLD_NAMES.get(field)
             LOGGER.warning(
                 "schema lock violation: the %r edit on package version %r is refused "
                 "(FR-PKG-03) — a rising rate means a caller is attempting something "
@@ -2114,8 +2146,9 @@ class PackageCatalog:
             raise SchemaLockViolation(
                 f"the {field!r} edit on package version {v!r} is refused by the §6.2 "
                 f"schema lock (FR-PKG-03): changing what is measured invalidates every "
-                f"accumulated validation record. The sanctioned vehicle is a new version "
-                f"(create_version(parent={v!r}))."
+                f"accumulated validation record."
+                + (f" The HLD names the locked field {hld_name!r}." if hld_name else "")
+                + f" The sanctioned vehicle is a new version (create_version(parent={v!r}))."
             )
         raise PublishedVersionImmutableError(
             f"package version {v!r} is published (locked = 1) and immutable (FR-PKG-01)."

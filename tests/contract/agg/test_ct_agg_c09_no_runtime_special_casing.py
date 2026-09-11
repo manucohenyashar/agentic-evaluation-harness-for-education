@@ -108,6 +108,22 @@ _STATS_SANCTIONED = (
     "scoring_models=scoring_models,",
     "scoring_models=stats._scoring_models,",
 )
+#: M-CALIB's sanctioned scoring-model references, each its clause: the §6.2 vocabulary
+#: entry naming the locked field (the HLD's own name for it, the same name
+#: `SCHEMA_LOCK_FIELDS` carries in `aeh.pkg`), and the forced-edit door's routing to the
+#: catalog call whose guard covers that field. Reconciled at #138's landing — CT-CALIB-06
+#: sweeps EVERY locked field from M-CALIB's side by routing the edit through the catalog
+#: and watching the catalog's own guard refuse it, so the module must be able to name the
+#: field and offer the edit. The ban is on deriving a second distinction, not on the
+#: declared read (the same reading that sanctioned review's wire field): calib never
+#: branches on the model's VALUE — no per-model threshold, multiplier, or second mapping —
+#: it hands the locked-field edit to `M-PKG`'s guard. Anything else lands here as an
+#: unsanctioned site.
+_CALIB_SANCTIONED = (
+    '"scoring_model",',
+    'elif field == "scoring_model":',
+    'catalog.update_criterion_field(base, criterion, "scoring_model", "atomic")',
+)
 
 _COHORT = ORCH_COHORT_ID
 _SUBMISSION = "SYN-C09"
@@ -145,6 +161,7 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
     orch_sites: list[str] = []
     review_sites: list[str] = []
     stats_sites: list[str] = []
+    calib_sites: list[str] = []
     for path in sorted(src.glob("*.py")):
         name = path.stem
         if name in _PACKAGE_SIDE:
@@ -158,6 +175,9 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
             continue
         if name == "stats":
             stats_sites = sites
+            continue
+        if name == "calib":
+            calib_sites = sites
             continue
         if sites:
             offenders[name] = sites
@@ -202,6 +222,21 @@ def test_tc_agg_c09_no_consumer_special_cases_the_scoring_model_at_run_time():
         "(`FR-STATS-02`) and the pass-through that stores the package's "
         "declaration (`CT-SETUP-05`); anything else is a run-time special case "
         "drifting from the package (CT-AGG-09, RISK-27)"
+    )
+    # M-CALIB's sites are the closed declared set (see `_CALIB_SANCTIONED`): a
+    # new reference — a per-model branch, a second mapping, a multiplier —
+    # lands here and fails.
+    unsanctioned_calib = [
+        site for site in calib_sites
+        if not any(shape in site for shape in _CALIB_SANCTIONED)
+    ]
+    assert unsanctioned_calib == [], (
+        f"aeh.calib reads the scoring model outside its declared sites "
+        f"{unsanctioned_calib!r} — its sanctioned references are the §6.2 "
+        "vocabulary naming the locked field and the forced-edit door's routing "
+        "of that edit through the catalog's guard (`CT-CALIB-06`); anything "
+        "else is a run-time special case drifting from the package "
+        "(CT-AGG-09, RISK-27)"
     )
 
 

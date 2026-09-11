@@ -16,9 +16,12 @@ the **pipeline**, not a calibration story — keyed on `M-CONSOLE` (#122), the l
 makes phasing itself contractual, and splits: the dependency refusal is `M-CALIB`'s, the
 present-and-unavailable rendering is `M-CONSOLE`'s.
 
-**All of these are red, and the issue's `Written ahead of implementation: yes` is accurate** —
-`aeh.calib` does not exist, nor do three of its consumers. See the module docstring in
-`test_ct_calib_vocabulary.py` for what *is* green and why it is not coverage.
+Green now: CT-CALIB-01's differential (its blocker was the pipeline, and the consumers
+landed), CT-CALIB-15's console rendering half (keyed on #122, which landed), and
+CT-CALIB-15's dependency refusal, which landed with #138. Still writtenahead:
+CT-CALIB-02's eight-failure-mode sweep, whose mechanism is #139's. See the module
+docstring in `test_ct_calib_vocabulary.py` for what was green before any of this landed
+and why it is not coverage.
 """
 
 from __future__ import annotations
@@ -169,7 +172,6 @@ def test_tc_calib_c02_every_failure_mode_ends_at_r0(failure_mode):
 # --- CT-CALIB-15 — phasing is part of the contract ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c15_an_edit_against_a_package_predating_the_lock_is_refused():
     """`CT-CALIB-15`, first half — the **dependency direction**, asserted rather than assumed.
 
