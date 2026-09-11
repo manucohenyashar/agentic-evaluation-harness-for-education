@@ -1291,6 +1291,30 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier",
         ),
     ),
+    # Issue #119, TC-STATS-01's variant: *"a label whose `saw_system_output` is
+    # null — must be treated as inadmissible, not as blind."* The landed
+    # predicate (`_is_admissible`) reads `not getattr(label,
+    # "saw_system_output", 0)`, so a None flag reads as a 0 — inadmissible —
+    # while a *false* 0 reads the same way; the two are indistinguishable at
+    # this predicate, and every shipped producer writes the column
+    # (`record_label` validates it to 0/1 and `_write_collected_label` writes
+    # `int(bool(...))` into a NOT NULL column), so the store cannot even hold
+    # a null. The variant is a *consumer-side* treatment the predicate
+    # currently cannot express, so it is unreachable today: the test below is
+    # red by design. Keyed on an invented constant the treatment must name —
+    # the `#148 judge_signals` invented-and-used-together pattern, with the
+    # invention recorded here rather than left for whoever closes the
+    # behaviour to rediscover: the landing either defines that name (or its
+    # own spelling of the distinction) in the stats module's namespace or
+    # re-keys this entry.
+    "#119 null saw_system_output (consumer-side treatment)": (
+        "symbol",
+        f"{STATS_MODULE}:SAW_SYSTEM_OUTPUT_NULL_IS_INADMISSIBLE",
+        (
+            "tests/artifact/test_admissible_labels.py"
+            "::test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind",
+        ),
+    ),
 }
 
 
