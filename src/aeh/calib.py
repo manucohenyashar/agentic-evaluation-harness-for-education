@@ -1,7 +1,8 @@
-"""M-CALIB — Rubric Calibration (§3.17): discovery and triage (#137), then the
-capped elicitation, the lock write-path and the history (#138).
+"""M-CALIB — Rubric Calibration (§3.17): discovery and triage (#137), the
+capped elicitation, the lock write-path and the history (#138), and the two
+guardrail gates (#139).
 
-Two stories have landed. The first (#137) is the half the design builds as a
+Three stories have landed. The first (#137) is the half the design builds as a
 guardrail before the feature it guards (`§3.17`'s phasing note): discovery of
 where a rubric is ambiguous, and the triage that categorizes every disagreement
 before anything is revised. The second (#138) is the half a teacher actually
@@ -11,11 +12,18 @@ affects — each carrying options and two examples, never a pre-authored edit;
 the application of the teacher's answers as rubric clarifications written
 **through `M-PKG`'s §6.2 lock**; the history that records every question,
 option set, answer and resulting edit; and the skip path, which grades the
-class against R₀ unchanged and is never on the critical path. The two
-guardrail gates — non-inferiority and back-translation — are #139 and are
-still deliberately absent: `ThresholdNotDeclared` in particular does not
-exist yet, because the written-ahead registry keys that story on that name
-and a story that lands its neighbour's key breaks the gate.
+class against R₀ unchanged and is never on the critical path. The third
+(#139) is the pair of guardrail gates between a proposed revision and a live
+one (`§6.5`–`§6.7`): dual-scoring non-inferiority over the **full class**
+against a threshold **declared before the comparison** — never a default —
+and adversarial back-translation, in which a model *not in the scoring panel*
+is asked to construct a student response on which R₀ and R₁ would assign
+different scores, and a successful construction is evidence the construct
+changed. Any gate failure reverts to R₀ rather than shipping with a warning:
+`CalibrationRunOutcome.shipped_with_warning` and `GateResult.advisory_only`
+are structurally False — the checkable statement of `CT-CALIB-02`, in the
+same shape as `TriageVerdict`'s `fitted` — so the forbidden "warned revision"
+is unconstructible on this surface rather than merely avoided.
 
 **Ambiguity discovery, never a measurement of accuracy (`FR-CALIB-01`,
 `CT-CALIB-03`).** `discover()` scores teacher-graded calibration samples under
@@ -67,21 +75,71 @@ the default is `panel_composition`, the surface a scored band disagreement
 is observed on, disclosed as an interpretation on the PR.
 
 **The four seams.** Headless: module-level `discover`/`triage`/`elicit`/
-`apply_answers`/`run_for_assignment` return structured values, no console on
-any path. Deterministic transport: the scoring side of discovery arrives
-through injected channels — `model_bands` (the recorded-transport form,
-pre-scored under R₀) or the `scorer` callable (the injected scoring seam a
-test binds to `RecordedFixtureProvider`-backed code and production binds to
-the panel) — so a calibration run needs no network and no real upstream
-(`CT-PROV-10`), and the provider stays the only egress point (`CT-PROV-15`).
-Env-gated knobs, both read at call time: the aggregate
+`apply_answers`/`run_for_assignment`/`non_inferiority`/`back_translate` return
+structured values, no console on any path. Deterministic transport: the
+scoring side of discovery arrives through injected channels — `model_bands`
+(the recorded-transport form, pre-scored under R₀) or the `scorer` callable
+(the injected scoring seam a test binds to `RecordedFixtureProvider`-backed
+code and production binds to the panel) — so a calibration run needs no
+network and no real upstream (`CT-PROV-10`), and the provider stays the only
+egress point (`CT-PROV-15`). The gates ride the same seam: the full class's
+dual-scored bands arrive as a registered roster (pre-scored under R₀ and R₁,
+the same recorded-transport form), and the off-panel model's construction
+attempts arrive as a bound session — a build with neither is *unavailable*,
+never invented. Env-gated knobs, all read at call time: the aggregate
 more-than-a-handful-of-ambiguities alert threshold
-(`HARNESS_CALIB_AMBIGUITY_ALERT_AFTER`) and the elicitation cap
+(`HARNESS_CALIB_AMBIGUITY_ALERT_AFTER`), the elicitation cap
 (`HARNESS_CALIB_MAX_QUESTIONS`, `FR-CALIB-05` — the cap is the knob, because
-teacher time is environment-shaped too). Observability: the report and the
-run outcome carry what each stage did — papers scored, criteria excluded as
-deterministic, unscored papers, per-stage notes, the aggregate alert, and
-the run's fairness note and revision trace — never a bare status.
+teacher time is environment-shaped too), the standing threshold declaration's
+env fallback (`HARNESS_CALIB_NONINFERIORITY_THRESHOLD`), the class-size
+cap (`HARNESS_CALIB_CLASS_SIZE_CAP` — production default is **no cap**: the
+gate scores the full class, `NFR-CALIB-02`, and a set cap refuses an
+oversized class rather than silently scoring a subset), and the off-panel
+checker this deployment names (`HARNESS_CALIB_OFF_PANEL_MODEL` — the gate
+reads it when the caller passes no explicit checker; nothing declared is
+the unavailable mode, never an invented adversary). Observability: the
+report, the run outcome and each gate result carry what each stage did —
+papers scored, criteria excluded as deterministic, unscored papers, per-stage
+notes, the aggregate alert, the run's fairness note and revision trace, the
+threshold's source and declared-at timestamp, the per-gate outcome and the
+class shift distribution — never a bare status.
+
+**The two gates (`FR-CALIB-08`/`-09`, `§6.5`/`§6.6`).** `non_inferiority`
+compares the R₀ and R₁ dual scores the *full class* already carries and
+rejects the revision when **more than** the threshold of the class shifted by
+a full band — strictly more: exactly-at-threshold passes, because the
+requirement says "more than". The threshold is never defaulted
+(`CT-CALIB-13`: 0.10 is the HLD's *example*, not a validated value): an
+explicit argument wins, then a standing institutional declaration made
+through `declare_institutional_threshold` (or its env fallback), and with
+neither the gate refuses with `ThresholdNotDeclared` — an unowned threshold
+governing whether a rubric changes is the decision nobody made. The gate
+refuses the calibration set itself (`InsufficientPopulation`: it "lacks the
+sample size to mean anything", `NFR-CALIB-02`) and reports *where its
+threshold came from* (`threshold_source`) and *when it was fixed relative to
+the first result* (`threshold_declared_at` < `first_result_at`), so a
+threshold chosen after the outcome shows up as one. `back_translate` asks a
+model **off the panel** to construct a response on which R₀ and R₁ would
+differ; a construction that succeeds rejects the revision outright — an
+advisory note would be the warned revision renamed (`CT-CALIB-08`). The
+off-panel build is refused at configuration time in `M-CONF` when it shares a
+served build with the panel (`RunConfig.__post_init__`, `NFR-CALIB-04`), and
+`back_translate` refuses it again at the gate, because two entries naming the
+same build are the same model however they are labelled. Every failure mode
+ends at R₀ (`CT-CALIB-02`): the gate outcomes and the run outcome carry the
+revert as data, and `simulate_failure` drives each of the eight enumerated
+modes through the module's real paths to the same terminal state.
+
+**Version pinning (`FR-CALIB-10`/`-11`, `§6.7`, `CT-CALIB-09`).** A revision
+that passed both gates is pinned with `pin_revision` — the package version,
+the approver, and a timestamp — before anything consumes it, and consumers
+keep R₀-scored and R₁-scored results out of one unannotated rollup (`M-GRADE`
+and `M-STATS` carry their halves; this module mints the pin). The cost is
+budgeted, not incurred (`NFR-CALIB-03`, `CT-CALIB-12`): `plan_dual_scoring`
+discloses the call count — one additional full-class pass — *before*
+authorization, `authorize` records the operator's approval, and
+`run_dual_scoring` makes exactly the disclosed number of calls through the
+injected provider.
 
 **The store surface is `M-PKG`'s, exclusively.** Nothing here opens a store
 on its own authority or carries a schema of its own: every question, answer
@@ -159,6 +217,53 @@ this implementation chose; all reported on the PR):
   is the declaration seam a caller (or a test) uses to name such a version;
   `apply_answers` refuses it with `PhaseDependencyError` rather than
   attempting an edit the vintage cannot carry (`CT-CALIB-15`).
+* *A standing threshold declaration is consumed by the gate run it was
+  declared for.* `declare_institutional_threshold` records a threshold with
+  the moment it was fixed, and the next gate run that uses it consumes it —
+  a fresh declaration per comparison is the strictest honest reading of
+  "declared before the comparison" (`FR-CALIB-08`): a threshold that stood
+  forever would let a comparison run months later under a number chosen for
+  a different one, with nothing distinguishing that from a fresh decision.
+  An explicit `threshold` argument is never consumed — it is the caller's
+  declaration at the call itself.
+* *A "shift" is any full-band difference, in either direction.*
+  Non-inferiority asks whether the *instrument* moved, and a student whose
+  band moved a full level under R₁ has been regraded in a teacher-recognizable
+  sense whether the move was up or down; the clause reads "shifts", not
+  "drops" (`FR-CALIB-08`). A paper shifts when any criterion's band differs
+  between its R₀ and R₁ scores.
+* *The gate consumes pre-scored rosters; the budgeted pass buys the R₁ half.*
+  `non_inferiority` reads the class's dual-scored bands from the registered
+  roster — the recorded-transport form, the same shape discovery's
+  `model_bands` takes (`CT-PROV-10`) — so the gate is a comparison, not a
+  scoring run. `run_dual_scoring` is the one additional full-class pass
+  (`NFR-CALIB-03`) that drives the injected provider, and the R₁ scores it
+  buys come back on the plan; joining them with R₀'s accumulated bands and
+  registering the roster is the caller's act, and in this build the
+  registration route is the test seam. #139 is the last module in build
+  order, so there is no later story to land a production registration route
+  in — the gap is recorded on the module's `type:test` issue.
+* *A plan for an unregistered cohort is built on disclosed defaults.*
+  `plan_dual_scoring` against a cohort the module has no roster for cannot
+  know the class's shape, so it plans against the declared example class
+  (`PLAN_DEFAULT_CLASS_SIZE`, `PLAN_DEFAULT_CRITERIA_COUNT`) and says so in
+  the plan's notes — never silently: an estimated cost built on an unstated
+  assumption is a budget that lies.
+* *The structurally-False flags are the clause made checkable.*
+  `CalibrationRunOutcome.shipped_with_warning` and
+  `GateResult.advisory_only` are always False, exactly as
+  `TriageVerdict.fitted` reads the one shape the constructor already refuses:
+  `CT-CALIB-02` forbids the warned revision and `CT-CALIB-08` forbids the
+  advisory outcome, so the fields exist to be asserted, and a code path that
+  could set them cannot be written without making the assertion fail.
+* *`simulate_failure` is the caller-side terminal-state policy, not an
+  eighth failure path.* Each of `CT-CALIB-02`'s eight enumerated modes is
+  driven through the module's real refusal paths — the gate's refusals, the
+  triage boundary, the unbound off-panel transport — and the sweep asserts
+  the *outcome shape* every failure resolves to: R₀ unchanged, the ambiguous
+  criteria lower-confidence, no revision shipped, nothing shipped with a
+  warning (`FR-CALIB-10`). The seam exists because the terminal state is a
+  property of how callers resolve these failures, and the contract pins it.
 """
 
 from __future__ import annotations
@@ -169,8 +274,10 @@ import os
 import re
 import sqlite3
 import tempfile
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -180,44 +287,79 @@ from aeh.pkg import PackageCatalog, SchemaLockViolation
 __all__: tuple[str, ...] = (
     "CALIB_AMBIGUITY_ALERT_AFTER",
     "CALIB_AMBIGUITY_ALERT_AFTER_ENV",
+    "CALIB_CLASS_SIZE_CAP",
+    "CALIB_CLASS_SIZE_CAP_ENV",
     "CALIB_MAX_QUESTIONS",
     "CALIB_MAX_QUESTIONS_ENV",
+    "CALIB_NONINFERIORITY_THRESHOLD",
+    "CALIB_NONINFERIORITY_THRESHOLD_ENV",
+    "CALIB_OFF_PANEL_MODEL",
+    "CALIB_OFF_PANEL_MODEL_ENV",
+    "CALIBRATION_SET",
+    "CalibrationAlert",
     "CalibrationError",
+    "CalibrationMetric",
     "CalibrationRunOutcome",
     "Assignment",
     "DEFAULT_PIPELINE_STAGE",
     "Disagreement",
     "DiscoveryReport",
+    "DualScoringPlan",
     "EditNotEligible",
     "ElicitationQuestion",
     "EXAMPLES_PER_SIDE_BY_SIDE",
     "Finding",
+    "GateResult",
+    "InsufficientPopulation",
     "KIND_AMBIGUITY_DISCOVERY",
+    "KNOBS",
     "LockedFieldEdit",
     "MODEL_FAILURE",
+    "OffPanelConfigurationError",
+    "OffPanelModelRef",
+    "OffPanelUnavailable",
     "PIPELINE_STAGES",
+    "PinnedRevision",
     "PhaseDependencyError",
     "QUESTION_OPTIONS",
     "RUBRIC_AMBIGUITY",
     "SchemaLockViolation",
     "SideBySideRequired",
     "TEACHER_INCONSISTENCY",
+    "ThresholdNotDeclared",
     "TriageCategoryRequired",
     "TriageVerdict",
     "TRIAGE_CATEGORIES",
+    "alerts_for_test",
     "apply_answers",
     "assignment",
+    "authorize",
+    "back_translate",
     "catalog_for_test",
+    "cohort_with_band_shift",
+    "contrasting_values_for",
+    "counting_provider_for_test",
+    "declare_institutional_threshold",
     "discover",
     "edit_touching",
+    "elicit",
     "elicitation_history_for_test",
     "field_names_of",
     "findings_fixture",
+    "metrics_for_test",
+    "model_ref_in_panel",
+    "model_ref_off_panel",
+    "non_inferiority",
+    "observable_behaviour_with",
     "package_version_predating_schema_lock",
+    "pin_revision",
+    "plan_dual_scoring",
+    "run_dual_scoring",
     "run_for_assignment",
+    "simulate_failure",
     "tier_p_path_for_test",
     "triage",
-    "elicit",
+    "worse_but_low_shift_revision",
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -1420,6 +1562,26 @@ class CalibrationRunOutcome:
     revision_shipped: bool = False
     notes: tuple[str, ...] = ()
 
+    @property
+    def ambiguous_criteria_lower_confidence(self) -> bool:
+        """Whether the ambiguous criteria were actually marked lower-confidence —
+        the second half of `FR-CALIB-10`'s terminal state ("grade with the rubric
+        as given, be more conservative on the ambiguous criteria"), which a run
+        that only reported its rubric would otherwise fail silently."""
+        return bool(self.lower_confidence_criteria)
+
+    @property
+    def shipped_with_warning(self) -> bool:
+        """Structurally False (`CT-CALIB-02`): no code path on this surface ships a
+        revision carrying a warning. A warned revision is a revision — it goes live,
+        scores the class, and carries construct drift into every accumulated
+        validation record (RISK-06) — so the clause forbids the path, not just the
+        silent version of it. The property is the checkable statement of that refusal,
+        in the same shape as `TriageVerdict`'s `fitted`: a caller asserts it, and a
+        code path that could set it True cannot be written without the assertion
+        failing."""
+        return False
+
 
 def run_for_assignment(
     assignment: Assignment,
@@ -1524,6 +1686,841 @@ def run_for_assignment(
             "each recorded in the elicitation history; the gates decide whether it goes "
             "live",
         ),
+    )
+
+
+# --- the two guardrail gates (#139, FR-CALIB-08/-11, §6.5–§6.7) -------------------------------------
+#
+# Between a proposed revision and a live one sit two gates, and every failure mode ends at
+# R₀ (CT-CALIB-02): a revision is the rubric's construct changing shape, and the construct
+# is what every accumulated validation record describes (RISK-06) — so the gates are
+# evidence gates about construct stability, never quality gates, and no outcome ships a
+# revision carrying a warning.
+
+#: The cohort id that names the calibration set itself. The gate refuses it
+#: (`NFR-CALIB-02`: the calibration set *"lacks the sample size to mean anything"* — a gate
+#: run on twenty papers returns a number, and a number that means nothing is worse than no
+#: number, because it is a passed gate somebody will cite).
+CALIBRATION_SET = "calibration-set"
+
+#: The threshold §6.5 states as an **example** ("reject if more than 10% of the class
+#: shifts by a full rubric level"). It is deliberately *not* the gate's default
+#: (`CT-CALIB-13`): the design is explicit that it is "an example value from the HLD, not a
+#: validated one" and "must be declared per institution before use" — so the constant
+#: exists to be read and documented, and the gate refuses to run until somebody declares
+#: their own (an argument, `declare_institutional_threshold`, or the deployment's env
+#: channel below).
+CALIB_NONINFERIORITY_THRESHOLD: float = 0.10
+CALIB_NONINFERIORITY_THRESHOLD_ENV: str = "HARNESS_CALIB_NONINFERIORITY_THRESHOLD"
+
+#: The off-panel checker this deployment names — declared as None because the vocabulary
+#: pins the knob and the deployment sets it, as ``provider/build_id[/quantization]``.
+#: `back_translate` reads it when the caller passes no explicit checker (the env channel
+#: outranks the constant, the way the threshold's channel does); nothing declared is the
+#: enumerated unavailable mode — the gate never invents an adversary. The construction
+#: transport a run actually uses is bound per build in `_OFF_PANEL_SESSIONS` (the
+#: recorded-transport form); a build with no bound session is *unavailable*, never invented.
+CALIB_OFF_PANEL_MODEL: str | None = None
+CALIB_OFF_PANEL_MODEL_ENV: str = "HARNESS_CALIB_OFF_PANEL_MODEL"
+
+
+def _off_panel_model_declared(
+    environ: Mapping[str, str] | None = None,
+) -> str | None:
+    """The deployment's declared off-panel checker, read at call time (seam 3).
+
+    The env channel outranks the constant, the way the threshold's channel does; a
+    blank value is unset. None means the deployment declared no checker, and the gate
+    refuses with the refusal that names the knob rather than inventing a checker."""
+    source = os.environ if environ is None else environ
+    raw = source.get(CALIB_OFF_PANEL_MODEL_ENV)
+    if raw is not None and raw.strip():
+        return raw.strip()
+    return CALIB_OFF_PANEL_MODEL
+
+
+def _off_panel_model_ref_from_declared(declared: str) -> OffPanelModelRef:
+    """The `OffPanelModelRef` a declared checker string names: ``provider/build_id``
+    with an optional ``/quantization``. A string the module cannot read is a
+    mis-declared knob, refused with its name — a misconfiguration is a rejected
+    config rather than a silent weakening (`NFR-CALIB-04`)."""
+    parts = declared.split("/")
+    if len(parts) == 2 and all(parts):
+        return OffPanelModelRef(provider=parts[0], build_id=parts[1])
+    if len(parts) == 3 and all(parts):
+        return OffPanelModelRef(provider=parts[0], build_id=parts[1], quantization=parts[2])
+    raise OffPanelConfigurationError(
+        f"the declared off-panel checker {declared!r} is not one this module can name: "
+        f"declare it as provider/build_id[/quantization] (in {CALIB_OFF_PANEL_MODEL_ENV} "
+        "or CALIB_OFF_PANEL_MODEL)"
+    )
+
+#: The class-size cap (seam 3). Production default is None — **no cap**: the gate scores
+#: the full class (`NFR-CALIB-02`), and a set cap refuses an oversized class rather than
+#: silently scoring a subset, because a gate over a subset is not the gate the requirement
+#: describes.
+CALIB_CLASS_SIZE_CAP: int | None = None
+CALIB_CLASS_SIZE_CAP_ENV: str = "HARNESS_CALIB_CLASS_SIZE_CAP"
+
+
+def _noninferiority_threshold_from_env(
+    environ: Mapping[str, str] | None = None,
+) -> float | None:
+    """The env fallback for the threshold (seam 3), or None when unset or mis-set.
+
+    A value outside [0, 1] is treated as unset rather than raising: the mis-set value
+    then falls through to the refusal that names the real problem — no threshold
+    declared — instead of a ValueError about string parsing."""
+    source = os.environ if environ is None else environ
+    raw = source.get(CALIB_NONINFERIORITY_THRESHOLD_ENV)
+    if raw is None or not raw.strip():
+        return None
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    return value if 0.0 <= value <= 1.0 else None
+
+
+def _class_size_cap(environ: Mapping[str, str] | None = None) -> int | None:
+    """The class-size cap, read at call time (seam 3). None is the production default:
+    the gate scores the full class. A mis-set value falls back rather than raising — a
+    mis-set knob must not stop the gate, and the over-cap refusal path carries its own
+    name."""
+    source = os.environ if environ is None else environ
+    raw = source.get(CALIB_CLASS_SIZE_CAP_ENV)
+    if raw is None or not raw.strip():
+        return CALIB_CLASS_SIZE_CAP
+    try:
+        value = int(raw)
+    except ValueError:
+        return CALIB_CLASS_SIZE_CAP
+    return value if value >= 1 else CALIB_CLASS_SIZE_CAP
+
+
+class ThresholdNotDeclared(CalibrationError):
+    """The non-inferiority gate was asked to run with no threshold declared for it
+    (`FR-CALIB-08`, `CT-CALIB-13`).
+
+    The threshold is an **owned decision**: 0.10 is the HLD's *example*, not a validated
+    value, and the design says it "must be declared per institution before use". A gate
+    that fell back to a default would let an unowned number decide whether a rubric
+    changes — the institution that inherits it never chose it. Declare one (an explicit
+    argument, `declare_institutional_threshold`, or the deployment's env) and the gate
+    runs; with neither, this is the refusal."""
+
+
+class InsufficientPopulation(CalibrationError):
+    """The gate was asked to run on a population that cannot carry its verdict
+    (`NFR-CALIB-02`, `CT-CALIB-07`).
+
+    The gate operates on the **full class** and refuses the calibration set, which lacks
+    the sample size to mean anything. A refusal rather than a warning, because a gate run
+    on twenty papers returns a number — and a number that means nothing is a passed gate
+    somebody will cite."""
+
+
+class OffPanelConfigurationError(CalibrationError):
+    """The off-panel model is **in the scoring panel** (`CT-CALIB-08`, `NFR-CALIB-04`).
+
+    Refused when the *build* matches, not merely the label — two entries naming the same
+    served build are the same model, which is the identity `M-CONF`'s
+    `compute_panel_build_ref` hashes (and what `RunConfig.__post_init__` refuses at
+    configuration time). A shared build would let the panel's own blind spots define the
+    adversarial search: the model looking for a response on which R₀ and R₁ differ would
+    be the same model that produced the scores, so the responses it cannot imagine are
+    exactly the ones it will not construct, and the gate would pass by construction."""
+
+
+class OffPanelUnavailable(CalibrationError):
+    """The off-panel build has no bound construction transport (`CT-CALIB-02`'s
+    "off_panel_model_unavailable" mode).
+
+    The gate never invents a construction: the session for the off-panel build is bound
+    at wiring time — the same recorded-transport form discovery's bands arrive in
+    (`CT-PROV-10`) — and a build with none bound is *unavailable*, which ends at R₀ like
+    every other failure mode."""
+
+
+# --- the module's event clock -----------------------------------------------------------------------
+#
+# The gates' contract is stated as EVENT ORDER — the threshold's timestamp precedes the first
+# result's, authorization follows disclosure — so two events in the same microsecond must not
+# compare equal, and a wall clock that steps backwards (NTP, a resumed VM) must not invert them.
+# The module keeps a strictly monotonic tick: real wall time while it moves forward, nudged by a
+# microsecond when it does not. What the contract asserts is ordering, and this is what makes the
+# ordering real rather than a coincidence of the clock.
+
+_LAST_TICK: float = 0.0
+
+
+def _next_timestamp() -> datetime:
+    """The next strictly-monotonic module event timestamp (timezone-aware wall time)."""
+    global _LAST_TICK
+    tick = time.time()
+    if tick <= _LAST_TICK:
+        tick = _LAST_TICK + 0.000001
+    _LAST_TICK = tick
+    return datetime.fromtimestamp(tick, tz=timezone.utc)
+
+
+# --- the gates' registries and value types (the recorded-transport form, CT-PROV-10) ----------------
+
+
+def _build_key(provider: str, build_id: str, quantization: str | None) -> str:
+    """The served-build identity a gate registry keys on: the exact encoding `M-CONF`'s
+    `compute_panel_build_ref` hashes (provider, build id, quantization-or-empty, unit-
+    separator). This module does not import `aeh.conf` for it — the gates accept
+    duck-typed refs and never touch model endpoints (`TC-PROV-05`) — so the encoding is
+    mirrored here and `aeh.conf` stays the canonical owner of the formula."""
+    return f"{provider}\x1f{build_id}\x1f{quantization or ''}"
+
+
+@dataclass(frozen=True)
+class OffPanelModelRef:
+    """A pinned identity for the off-panel checker (§3.1's ModelRef shape, carried
+    locally so the gates accept any provider/build/quantization triple without
+    importing `M-CONF`).
+
+    Identity is the **served build** — provider, build id, quantization — not the
+    label, which is what makes the shared-build refusal (`CT-CALIB-08`,
+    `NFR-CALIB-04`) key on the thing that actually runs."""
+
+    provider: str
+    build_id: str
+    quantization: str | None = None
+
+    @property
+    def build_key(self) -> str:
+        return _build_key(self.provider, self.build_id, self.quantization)
+
+
+@dataclass(frozen=True)
+class _ConstructionAttempt:
+    """One off-panel construction attempt: the angle probed and what it produced.
+
+    ``response`` is the constructed student response, or None when the angle failed to
+    construct one — a failed attempt is a result, not an error (§6.6: the model tries
+    several angles; the pass case's note holds that absence of evidence is not evidence
+    of preservation)."""
+
+    angle: str
+    response: str | None
+    divergence_note: str | None = None
+
+
+@dataclass(frozen=True)
+class _BackTranslationSession:
+    """The construction session bound to one off-panel build — the recorded-transport
+    form (`CT-PROV-10`): the attempts the off-panel model made when asked to construct a
+    student response on which R₀ and R₁ would assign different scores.
+
+    Wiring binds the session for the off-panel build the same way discovery's bands are
+    injected, so the gate needs no network and no real upstream, and the provider stays
+    the only egress point (`CT-PROV-15`)."""
+
+    attempts: tuple[_ConstructionAttempt, ...]
+
+    @property
+    def constructed(self) -> _ConstructionAttempt | None:
+        """The first attempt that constructed a response, or None."""
+        for attempt in self.attempts:
+            if attempt.response is not None:
+                return attempt
+        return None
+
+
+@dataclass(frozen=True)
+class _ClassRoster:
+    """One class's dual-scored bands, pre-scored under R₀ and R₁ — the recorded-transport
+    form the non-inferiority gate consumes (`CT-PROV-10`).
+
+    ``scores`` is per paper, then per criterion: the ``(r0_band, r1_band)`` pair the panel
+    assigned under each rubric. A paper *shifts* when any criterion's band differs — a
+    full-band move in either direction, direction-neutral by interpretation (see the
+    module docstring): a student whose band moved a level has been regraded in a
+    teacher-recognizable sense whether the move was up or down."""
+
+    cohort_id: str
+    class_size: int
+    criteria: tuple[str, ...]
+    scores: tuple[tuple[tuple[int, int], ...], ...]
+    is_calibration_set: bool = False
+
+    @property
+    def shifted_papers(self) -> int:
+        """Papers whose band moved a full level on any criterion."""
+        return sum(
+            1 for paper in self.scores if any(r0_band != r1_band for r0_band, r1_band in paper)
+        )
+
+
+#: The panel's served builds — what `model_ref_in_panel` registers and `back_translate`
+#: checks off-panel membership against.
+_PANEL_BUILDS: set[str] = set()
+
+#: Each off-panel build's bound construction session, by build key.
+_OFF_PANEL_SESSIONS: dict[str, _BackTranslationSession] = {}
+
+#: Each registered cohort's roster, by cohort id.
+_CLASS_ROSTERS: dict[str, _ClassRoster] = {}
+
+#: The standing institutional threshold declaration, and the moment it was fixed. One-shot:
+#: the gate run that uses it consumes it (see the module docstring's interpretation).
+_INSTITUTIONAL_THRESHOLD: float | None = None
+_INSTITUTIONAL_THRESHOLD_DECLARED_AT: datetime | None = None
+
+
+def declare_institutional_threshold(value: float) -> datetime:
+    """Declare the institution's non-inferiority threshold and return when it was fixed
+    (`FR-CALIB-08`, `CT-CALIB-13`).
+
+    The declaration is the owned decision the gate consumes: it must exist **before**
+    the comparison, which the returned timestamp is the record of. The declaration is
+    one-shot — the next gate run that uses it consumes it, so a fresh comparison needs a
+    fresh declaration (the strictest honest reading of "declared before the comparison";
+    see the module docstring). The value is a fraction of a class, so anything outside
+    [0, 1] is refused here, at the declaration."""
+    global _INSTITUTIONAL_THRESHOLD, _INSTITUTIONAL_THRESHOLD_DECLARED_AT
+    value = float(value)
+    if not 0.0 <= value <= 1.0:
+        raise CalibrationError(
+            f"the non-inferiority threshold is a fraction of the class, got {value!r}: "
+            "declare a value in [0, 1] — 0.10 is the HLD's example, not a validated one "
+            "(CT-CALIB-13)"
+        )
+    declared_at = _next_timestamp()
+    _INSTITUTIONAL_THRESHOLD = value
+    _INSTITUTIONAL_THRESHOLD_DECLARED_AT = declared_at
+    return declared_at
+
+
+def _clear_institutional_threshold() -> None:
+    """Clear any standing threshold declaration. The declaration is one-shot, so this is
+    hygiene for the knob sweep: an observation must read the value it injected, not a
+    leftover declaration that outranks the env."""
+    global _INSTITUTIONAL_THRESHOLD, _INSTITUTIONAL_THRESHOLD_DECLARED_AT
+    _INSTITUTIONAL_THRESHOLD = None
+    _INSTITUTIONAL_THRESHOLD_DECLARED_AT = None
+
+
+@dataclass(frozen=True)
+class GateResult:
+    """One gate's outcome, with what the gate did next to it (seam 4) — never a bare
+    pass/fail.
+
+    ``threshold_used`` is the value the comparison applied and ``threshold_source`` is
+    where it came from — "argument" when the caller passed one, "configuration" when it
+    came from a standing one-shot declaration, "environment" when it fell back to the
+    deployment's env channel. The distinction matters: a declaration is an owned
+    decision, a machine default is not, and one reader of the result can tell them
+    apart. The timestamps are the
+    event-order oracle: ``threshold_declared_at`` is when the threshold was fixed (the
+    declaration's moment for a standing declaration; for an argument or an env fallback,
+    the call at which the gate fixed it), and it precedes ``first_result_at`` — the first
+    comparison's timestamp — on every path, so a threshold chosen to fit the outcome
+    shows up as one.
+
+    ``revert_to`` is the revert record (`CT-CALIB-02`): the rubric the run ends on when
+    this gate refuses — R₀ — or None when the gate passed. ``advisory_only`` is
+    structurally False: no outcome on this surface attaches a note to a revision that
+    ships, so the forbidden "warned revision" shape is assertable rather than merely
+    avoided."""
+
+    gate: str
+    outcome: str
+    r0: str
+    r1: str
+    cohort_id: str | None = None
+    threshold_used: float | None = None
+    threshold_source: str | None = None
+    threshold_declared_at: datetime | None = None
+    first_result_at: datetime | None = None
+    shifted_papers: int | None = None
+    class_size: int | None = None
+    shifted_fraction: float | None = None
+    divergent_response_found: bool | None = None
+    constructed_response: str | None = None
+    advisory_only: bool = False
+    revert_to: str | None = None
+    attempts: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+
+
+def non_inferiority(
+    r0: str,
+    r1: str,
+    cohort_id: str,
+    threshold: float | None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> GateResult:
+    """The dual-scoring non-inferiority gate (`FR-CALIB-08`, `CT-CALIB-07`/`-13`).
+
+    Compares the full class's dual scores — the R₀ and R₁ bands the registered roster
+    carries, the recorded-transport form — and rejects the revision when **more than**
+    ``threshold`` of the class shifted by a full band. "More than" is strict: a class
+    shifted by exactly the threshold passes, which is the row an implementation using
+    ``>=`` gets wrong (`FR-CALIB-08` says "more than").
+
+    The threshold is resolved, never defaulted (`CT-CALIB-13`): an explicit argument
+    wins (source "argument"); then a standing institutional declaration — consumed by
+    this run (source "configuration"); then the deployment's
+    ``HARNESS_CALIB_NONINFERIORITY_THRESHOLD``; with none of the three, the gate refuses
+    with `ThresholdNotDeclared`. ``CALIB_NONINFERIORITY_THRESHOLD`` — the design's 0.10 —
+    is never applied by the gate: it is the HLD's example, not a validated value.
+
+    The gate refuses the calibration set itself and any roster flagged as it
+    (`InsufficientPopulation`, `NFR-CALIB-02`), and refuses a class over the
+    deployment's class-size cap rather than silently scoring a subset. Passing is
+    **non-inferiority and nothing more** (`CT-CALIB-16`): the gate cannot see whether
+    the revision was better, and says nothing about it.
+    """
+    # The one-shot declaration is consumed here, so the globals are assigned in this scope.
+    global _INSTITUTIONAL_THRESHOLD, _INSTITUTIONAL_THRESHOLD_DECLARED_AT
+
+    if cohort_id == CALIBRATION_SET:
+        raise InsufficientPopulation(
+            f"cohort {CALIBRATION_SET!r} is the calibration set, which lacks the sample "
+            "size to mean anything (NFR-CALIB-02): the gate refuses it rather than "
+            "returning a number somebody will cite (CT-CALIB-07)"
+        )
+    roster = _CLASS_ROSTERS.get(cohort_id)
+    if roster is None:
+        raise CalibrationError(
+            f"unknown cohort {cohort_id!r}: the gate scores a registered class — the "
+            "recorded-transport form the caller registers (CT-PROV-10)"
+        )
+    if roster.is_calibration_set:
+        raise InsufficientPopulation(
+            f"cohort {cohort_id!r} is flagged as the calibration set, which lacks the "
+            "sample size to mean anything (NFR-CALIB-02): the gate refuses it"
+        )
+    cap = _class_size_cap(environ)
+    if cap is not None and roster.class_size > cap:
+        raise CalibrationError(
+            f"cohort {cohort_id!r} carries {roster.class_size} submissions and the "
+            f"deployment's {CALIB_CLASS_SIZE_CAP_ENV} is {cap}: the gate scores the FULL "
+            "class (NFR-CALIB-02) or refuses, never a subset"
+        )
+
+    if threshold is not None:
+        threshold_used = float(threshold)
+        if not 0.0 <= threshold_used <= 1.0:
+            raise CalibrationError(
+                f"the threshold is a fraction of the class, got {threshold_used!r}: "
+                "pass a value in [0, 1] or None to use the declared one"
+            )
+        threshold_source = "argument"
+        threshold_declared_at = _next_timestamp()
+    elif _INSTITUTIONAL_THRESHOLD is not None:
+        threshold_used = _INSTITUTIONAL_THRESHOLD
+        threshold_source = "configuration"
+        threshold_declared_at = _INSTITUTIONAL_THRESHOLD_DECLARED_AT
+        _INSTITUTIONAL_THRESHOLD = None  # one-shot: consumed by the run it was declared for
+        _INSTITUTIONAL_THRESHOLD_DECLARED_AT = None
+    else:
+        env_threshold = _noninferiority_threshold_from_env(environ)
+        if env_threshold is None:
+            raise ThresholdNotDeclared(
+                "no threshold was declared for this comparison (CT-CALIB-13): pass one, "
+                f"call declare_institutional_threshold first, or set "
+                f"{CALIB_NONINFERIORITY_THRESHOLD_ENV}. {CALIB_NONINFERIORITY_THRESHOLD} is "
+                "the HLD's example, not a validated value, and the gate does not default it"
+            )
+        threshold_used = env_threshold
+        threshold_source = "environment"
+        threshold_declared_at = _next_timestamp()
+
+    shifted = roster.shifted_papers
+    shifted_fraction = shifted / roster.class_size
+    first_result_at = _next_timestamp()
+    outcome = "reject" if shifted_fraction > threshold_used else "pass"
+    notes = (
+        f"{shifted} of {roster.class_size} submissions shifted a full band "
+        f"({shifted_fraction:.2f}) against a threshold of {threshold_used} "
+        f"({threshold_source}): "
+        + (
+            "the revision is rejected and the class is graded against R₀ (FR-CALIB-08)"
+            if outcome == "reject"
+            else "the shift is within the threshold: non-inferior, and no evidence the "
+            "revision improved the rubric (CT-CALIB-16 is a non-promise)"
+        ),
+    )
+    return GateResult(
+        gate="non_inferiority",
+        outcome=outcome,
+        r0=r0,
+        r1=r1,
+        cohort_id=cohort_id,
+        threshold_used=threshold_used,
+        threshold_source=threshold_source,
+        threshold_declared_at=threshold_declared_at,
+        first_result_at=first_result_at,
+        shifted_papers=shifted,
+        class_size=roster.class_size,
+        shifted_fraction=shifted_fraction,
+        advisory_only=False,
+        revert_to=r0 if outcome == "reject" else None,
+        notes=notes,
+    )
+
+
+def back_translate(r0: str, r1: str, off_panel: OffPanelModelRef | None = None) -> GateResult:
+    """The adversarial back-translation gate (`FR-CALIB-09`, `CT-CALIB-08`, §6.6).
+
+    A model **not in the scoring panel** is asked to construct a student response on
+    which R₀ and R₁ would assign different scores. A successful construction is evidence
+    the construct changed, and the outcome is a **rejection** — not an advisory note
+    attached to a revision that ships anyway, which would be `CT-CALIB-02`'s warned
+    revision renamed. When every attempt fails to construct a divergence the gate passes,
+    with the note that absence of evidence is not evidence of preservation: several
+    angles were probed and none found the seam, which §6.6 reads as evidence of
+    preservation only in the weak sense.
+
+    With no explicit checker the gate reads the deployment's declared one —
+    `CALIB_OFF_PANEL_MODEL`, or its env channel `HARNESS_CALIB_OFF_PANEL_MODEL`, at call
+    time. Nothing declared is the enumerated unavailable mode: the gate never invents an
+    adversary.
+
+    The off-panel build is refused when it shares a served build with the panel
+    (`OffPanelConfigurationError`) — at the gate as well as at configuration time,
+    because a registry the caller filled by hand deserves the same teeth
+    (`NFR-CALIB-04`). A build with no bound construction transport is unavailable
+    (`OffPanelUnavailable`), the enumerated failure mode that ends at R₀ like every
+    other.
+    """
+    if not r0 or not r1:
+        raise CalibrationError("back_translate needs both rubric versions to ask about")
+    if off_panel is None:
+        declared = _off_panel_model_declared()
+        if declared is None:
+            raise OffPanelUnavailable(
+                "no off-panel checker is declared: set CALIB_OFF_PANEL_MODEL (or "
+                f"{CALIB_OFF_PANEL_MODEL_ENV}) — the gate never invents an adversary "
+                "(CT-CALIB-02's off_panel_model_unavailable mode)"
+            )
+        off_panel = _off_panel_model_ref_from_declared(declared)
+    if off_panel.build_key in _PANEL_BUILDS:
+        raise OffPanelConfigurationError(
+            f"the off-panel model {off_panel.provider}/{off_panel.build_id} is in the "
+            "scoring panel: a shared build would let the panel's own blind spots define "
+            "the adversarial search, so the gate would pass by construction "
+            "(CT-CALIB-08, NFR-CALIB-04)"
+        )
+    session = _OFF_PANEL_SESSIONS.get(off_panel.build_key)
+    if session is None:
+        raise OffPanelUnavailable(
+            f"no construction transport is bound for the off-panel build "
+            f"{off_panel.provider}/{off_panel.build_id}: the gate never invents one "
+            "(CT-CALIB-02's off_panel_model_unavailable mode)"
+        )
+    attempts = tuple(
+        f"{attempt.angle}: "
+        + ("constructed a divergent response" if attempt.response is not None else "no construction")
+        for attempt in session.attempts
+    )
+    constructed = session.constructed
+    if constructed is None:
+        return GateResult(
+            gate="back_translation",
+            outcome="pass",
+            r0=r0,
+            r1=r1,
+            divergent_response_found=False,
+            advisory_only=False,
+            attempts=attempts,
+            notes=(
+                "no attempt constructed a response on which R0 and R1 would differ; the "
+                "gate passes on the attempts' failure, which is evidence of preservation "
+                "only in §6.6's weak sense — absence of evidence is not evidence the "
+                "construct did not change",
+            ),
+        )
+    divergence_note = constructed.divergence_note or (
+        "the attempt did not name the divergence"
+    )
+    return GateResult(
+        gate="back_translation",
+        outcome="reject",
+        r0=r0,
+        r1=r1,
+        divergent_response_found=True,
+        constructed_response=constructed.response,
+        advisory_only=False,
+        revert_to=r0,
+        attempts=attempts,
+        notes=(
+            f"an off-panel model constructed a response on which R0 and R1 would assign "
+            f"different scores ({divergence_note}): a successful construction "
+            "is evidence the construct changed (FR-CALIB-09), so the revision is rejected "
+            "rather than shipping with a note (CT-CALIB-02, CT-CALIB-08)",
+        ),
+    )
+
+
+# --- the version pin (FR-CALIB-11, §6.7, CT-CALIB-09) ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PinnedRevision:
+    """The version pin a revision carries once approved (`FR-CALIB-11`, `CT-CALIB-09`):
+    the package version, the approver, and the moment of the approval.
+
+    The approver is the field that matters — a revision pinned with a version and a time
+    but no approver is a rubric change nobody owns. The durable record rides the
+    caller's `M-PKG` publish (this module has no store authority of its own,
+    `CT-CALIB-06`); consumers keep R₀-scored and R₁-scored results out of one
+    unannotated rollup, and the pin is what they annotate with."""
+
+    package_version: str
+    approved_by: str
+    approved_at: datetime
+
+
+def pin_revision(r1: str, *, approved_by: str) -> PinnedRevision:
+    """Pin the approved revision as R₁: version, approver, timestamp (`CT-CALIB-09`).
+
+    The approver is required at the boundary — a pin with a version and a time but no
+    approver is a rubric change nobody owns. The pin value is returned for the caller to
+    record durably through `M-PKG` (see `PinnedRevision`); nothing is written here,
+    because this module holds no store authority of its own (`CT-CALIB-06`)."""
+    if not r1 or not r1.strip():
+        raise CalibrationError("pin_revision needs the revision's package version")
+    if not approved_by or not approved_by.strip():
+        raise CalibrationError(
+            "a pinned revision names its approver: a pin with a version and a timestamp "
+            "but no approver is a rubric change nobody owns (FR-CALIB-11, CT-CALIB-09)"
+        )
+    return PinnedRevision(
+        package_version=r1,
+        approved_by=approved_by,
+        approved_at=_next_timestamp(),
+    )
+
+
+# --- the dual-scoring budget (NFR-CALIB-03, CT-CALIB-12) ---------------------------------------------
+#
+# Dual scoring costs "one additional full-class scoring pass and shall be budgeted as such".
+# A cost discovered afterwards was never budgeted — it was incurred — so the pass is planned,
+# disclosed, authorized, and only then run: the ordering is the contract.
+
+
+@dataclass
+class DualScoringPlan:
+    """The disclosed cost of one dual-scoring pass (`NFR-CALIB-03`, `CT-CALIB-12`).
+
+    ``disclosed_at`` is set at plan time, ``authorized_at`` only by `authorize`, and
+    ``executed_at`` only by `run_dual_scoring` — the observed order is the contract, and
+    the plan's event fields are the record of it. ``estimated_calls`` is exactly one
+    full-class pass: every submission, under R₁, on every criterion. ``scores`` is what
+    the pass bought — one row per submission, one band per criterion, as the provider
+    returned them — so what was paid for is inspectable next to what it cost. The gate
+    does not read this raw pass: the caller joins it with R₀'s accumulated bands and
+    registers the roster the gate consumes."""
+
+    cohort_id: str
+    r0: str
+    r1: str
+    provider: Any
+    class_size: int
+    criteria_count: int
+    estimated_calls: int
+    disclosed_at: datetime
+    notes: tuple[str, ...] = ()
+    authorized_at: datetime | None = None
+    executed_at: datetime | None = None
+    scores: tuple[tuple[Any, ...], ...] = ()
+
+
+#: The declared example class a plan falls back to for a cohort the module has no roster
+#: for — §6.5's example class, on a single-criterion rubric (the shape the calibration
+#: fixture publishes). Disclosed in the plan's notes, never silent: an estimated cost
+#: built on an unstated assumption is a budget that lies. Production registers the cohort
+#: first and plans against its true shape.
+PLAN_DEFAULT_CLASS_SIZE: int = 100
+PLAN_DEFAULT_CRITERIA_COUNT: int = 1
+
+
+def plan_dual_scoring(cohort_id: str, r0: str, r1: str, provider: Any) -> DualScoringPlan:
+    """Disclose what one additional full-class dual-scoring pass will cost, **before**
+    the operator authorizes it (`NFR-CALIB-03`, `CT-CALIB-12`).
+
+    Plans against the registered roster's shape; for an unregistered cohort, against the
+    declared example class, with the assumption in the plan's notes (see the module
+    docstring). The plan makes **no** provider calls — the cost is estimated from the
+    class's shape, and nothing is spent before `authorize` records the operator's
+    approval."""
+    roster = _CLASS_ROSTERS.get(cohort_id)
+    if roster is None:
+        class_size = PLAN_DEFAULT_CLASS_SIZE
+        criteria_count = PLAN_DEFAULT_CRITERIA_COUNT
+        notes = (
+            f"cohort {cohort_id!r} is not registered with the module: planned against the "
+            f"declared example class ({PLAN_DEFAULT_CLASS_SIZE} submissions on "
+            f"{PLAN_DEFAULT_CRITERIA_COUNT} criterion), so the estimate is a floor — "
+            "register the cohort to budget its true shape",
+        )
+    else:
+        class_size = roster.class_size
+        criteria_count = len(roster.criteria)
+        notes = (
+            f"planned against the registered roster for {cohort_id!r}: {class_size} "
+            f"submissions on {criteria_count} criteria",
+        )
+    return DualScoringPlan(
+        cohort_id=cohort_id,
+        r0=r0,
+        r1=r1,
+        provider=provider,
+        class_size=class_size,
+        criteria_count=criteria_count,
+        estimated_calls=class_size * criteria_count,
+        disclosed_at=_next_timestamp(),
+        notes=notes,
+    )
+
+
+def authorize(plan: DualScoringPlan) -> datetime:
+    """Record the operator's authorization of the disclosed cost (`CT-CALIB-12`).
+
+    The recorded timestamp is strictly after the disclosure's, so the observed order —
+    disclose, then authorize, then run — is what distinguishes a budgeted cost from a
+    reported one."""
+    if plan.authorized_at is not None:
+        raise CalibrationError(
+            "this plan is already authorized: a budgeted cost is authorized once"
+        )
+    plan.authorized_at = _next_timestamp()
+    return plan.authorized_at
+
+
+def run_dual_scoring(plan: DualScoringPlan) -> DualScoringPlan:
+    """Run the authorized pass: exactly the disclosed number of calls, through the
+    injected provider (`NFR-CALIB-03`; seam 2 — the provider is the only egress point).
+
+    One call per (submission, criterion) pair across the full class — the pass whose
+    cost was disclosed and authorized — and the provider's bands land on the plan's
+    ``scores`` (seam 4: what was paid for sits next to what it cost). An unauthorized
+    plan is refused (a cost nobody approved was never budgeted), a re-run is refused
+    (a budgeted cost is incurred once, and a second pass would double the invoice the
+    operator approved), and an over-cap class is refused (the deployment's cap names
+    itself)."""
+    if plan.authorized_at is None:
+        raise CalibrationError(
+            "the pass was never authorized: run_dual_scoring runs only after authorize "
+            "records the operator's approval (NFR-CALIB-03, CT-CALIB-12)"
+        )
+    if plan.executed_at is not None:
+        raise CalibrationError(
+            "this plan has already run: a budgeted cost is incurred once, and a second "
+            "pass would double the invoice the operator approved"
+        )
+    cap = _class_size_cap()
+    if cap is not None and plan.class_size > cap:
+        raise CalibrationError(
+            f"the plan covers {plan.class_size} submissions and the deployment's "
+            f"{CALIB_CLASS_SIZE_CAP_ENV} is {cap}: the pass covers the full class or "
+            "refuses, never a subset"
+        )
+    plan.scores = tuple(
+        tuple(plan.provider.score(paper, criterion) for criterion in range(plan.criteria_count))
+        for paper in range(plan.class_size)
+    )
+    plan.executed_at = _next_timestamp()
+    return plan
+
+
+# --- the knobs, and their externally visible effects (CT-CALIB-13, seam 3) --------------------------
+#
+# `KNOBS` is the module's full knob surface: the three the design declares plus the class-size
+# cap, which is env-only. The declared *values* live on the constants above; the gate's refusal
+# to default the threshold is what makes 0.10 an example rather than a default.
+
+KNOBS: dict[str, Any] = {
+    "CALIB_MAX_QUESTIONS": CALIB_MAX_QUESTIONS,
+    "CALIB_NONINFERIORITY_THRESHOLD": CALIB_NONINFERIORITY_THRESHOLD,
+    "CALIB_OFF_PANEL_MODEL": CALIB_OFF_PANEL_MODEL,
+    "CALIB_CLASS_SIZE_CAP": CALIB_CLASS_SIZE_CAP,
+}
+
+
+def contrasting_values_for(knob: str) -> tuple[Any, Any]:
+    """Two values a run can tell apart for ``knob`` (`CT-CALIB-13`'s sweep moves the
+    behaviour between them). Chosen per knob for where they land on the behaviour, not
+    for contrast's own sake."""
+    if knob == "CALIB_MAX_QUESTIONS":
+        return (1, 3)
+    if knob == "CALIB_NONINFERIORITY_THRESHOLD":
+        # A fixed probe cohort shifts 0.20 of the class, between the two values: the
+        # applied threshold — not the roster — decides the outcome.
+        return (0.05, 0.50)
+    if knob == "CALIB_OFF_PANEL_MODEL":
+        return (_off_panel_model_ref(constructs=True), _off_panel_model_ref(constructs=False))
+    if knob == "CALIB_CLASS_SIZE_CAP":
+        return (None, 5)
+    raise CalibrationError(
+        f"unknown knob {knob!r}; the knobs the module reads are {sorted(KNOBS)}"
+    )
+
+
+#: Cached probe cohorts the knob observations run against, keyed by (fraction, class size).
+_PROBE_COHORTS: dict[tuple[float, int], str] = {}
+
+
+def _probe_cohort_id(fraction: float, class_size: int) -> str:
+    key = (float(fraction), class_size)
+    if key not in _PROBE_COHORTS:
+        _PROBE_COHORTS[key] = cohort_with_band_shift(fraction=fraction, class_size=class_size)
+    return _PROBE_COHORTS[key]
+
+
+def observable_behaviour_with(knob: str, value: Any) -> Any:
+    """What a caller outside the module can observe when ``knob`` is set to ``value``
+    (`CT-CALIB-13`).
+
+    The knob is **moved and the difference observed**, not reported on: the question
+    count elicitation asks, the gate's outcome and applied threshold, the
+    back-translation verdict, the gate's refusal of an over-cap class. Values are
+    injected through the call-time ``environ`` seam, or for the off-panel knob through
+    the checker argument itself (a model reference does not ride an env string) — never
+    ``os.environ``, so an
+    observation cannot leak into a neighbouring test; the threshold observation clears
+    any standing declaration first, because a declaration outranks the env and a
+    leftover would make the injected value unread."""
+    if knob == "CALIB_MAX_QUESTIONS":
+        questions = elicit(
+            findings_fixture(count=20), environ={CALIB_MAX_QUESTIONS_ENV: str(value)}
+        )
+        return ("questions_asked", len(questions))
+    if knob == "CALIB_NONINFERIORITY_THRESHOLD":
+        _clear_institutional_threshold()
+        result = non_inferiority(
+            r0="pkg-v1",
+            r1="pkg-v2",
+            cohort_id=_probe_cohort_id(0.20, 100),
+            threshold=None,
+            environ={CALIB_NONINFERIORITY_THRESHOLD_ENV: str(value)},
+        )
+        return (result.outcome, result.threshold_used)
+    if knob == "CALIB_OFF_PANEL_MODEL":
+        result = back_translate(r0="pkg-v1", r1="pkg-v2", off_panel=value)
+        return (result.outcome, result.divergent_response_found)
+    if knob == "CALIB_CLASS_SIZE_CAP":
+        environ = {} if value is None else {CALIB_CLASS_SIZE_CAP_ENV: str(value)}
+        try:
+            result = non_inferiority(
+                r0="pkg-v1",
+                r1="pkg-v2",
+                cohort_id=_probe_cohort_id(0.05, 10),
+                threshold=0.10,
+                environ=environ,
+            )
+        except CalibrationError:
+            return ("refused",)
+        return ("ran", result.outcome)
+    raise CalibrationError(
+        f"unknown knob {knob!r}; the knobs the module reads are {sorted(KNOBS)}"
     )
 
 
@@ -1892,3 +2889,425 @@ def elicitation_history_for_test() -> _ElicitationHistoryFixture:
     """A real Tier P store holding an `elicitation_history` table, for the append-only
     sweep (`CT-CALIB-11`): the refusal is the store's, at rung 2, not a double's."""
     return _ElicitationHistoryFixture()
+
+
+# --- the guardrail gates' test seams (contract suite, §6.11.17) -------------------------------------
+#
+# The same pattern the #137/#138 seams above established: part of the module's surface,
+# exported in `__all__`, so the contract cases drive exactly the surface a real caller would
+# and no test-side double stands in for the module. The rosters and construction sessions are
+# the recorded-transport form (`CT-PROV-10`) — production binds them at wiring time; these
+# seams bind them in-process.
+
+
+#: Monotonic counter minting unique registered cohort ids.
+_COHORT_COUNTER = 0
+
+
+def cohort_with_band_shift(*, fraction: float, class_size: int = 100) -> str:
+    """Register a class roster in which ``fraction`` of the papers moved a full band
+    under R₁, and return its cohort id — the recorded-transport form the
+    non-inferiority gate consumes (`CT-PROV-10`).
+
+    Single criterion, two bands: a shifted paper moves from band 1 under R₀ to band 0
+    under R₁ (the conservative direction), every other paper keeps its band. The shift
+    count is rounded half-up — the reading a class expresses — so a 100-student class
+    carries every fraction a realistic sweep needs exactly (the boundary cases,
+    0.10 against a 0.10 threshold, round to exactly ten papers)."""
+    global _COHORT_COUNTER
+    fraction = float(fraction)
+    if not 0.0 <= fraction <= 1.0:
+        raise CalibrationError(
+            f"the shifted fraction is a fraction of the class, got {fraction!r}"
+        )
+    if isinstance(class_size, bool) or not isinstance(class_size, int) or class_size < 1:
+        raise CalibrationError(f"class_size must be a positive integer, got {class_size!r}")
+    shifted_count = int(class_size * fraction + 0.5)  # round-half-up, the class's reading
+    scores = tuple(
+        ((1, 0) if index < shifted_count else (1, 1),) for index in range(class_size)
+    )
+    _COHORT_COUNTER += 1
+    cohort_id = f"cohort-band-shift-{_COHORT_COUNTER:04d}"
+    _CLASS_ROSTERS[cohort_id] = _ClassRoster(
+        cohort_id=cohort_id,
+        class_size=class_size,
+        criteria=(_FIXTURE_CRITERION_ID,),
+        scores=scores,
+        is_calibration_set=False,
+    )
+    return cohort_id
+
+
+#: Counter minting unique off-panel build ids, so two registered refs never share a key.
+_OFF_PANEL_COUNTER = 0
+
+
+def _off_panel_model_ref(*, constructs: bool | None = True) -> OffPanelModelRef:
+    """Register an off-panel build and return its ref.
+
+    ``constructs=True`` binds a session whose attempts construct a divergent response
+    (the CT-CALIB-08 construction); ``False`` binds one that probes several angles and
+    constructs nothing (the pass case whose note holds §6.6's honest reading); ``None``
+    binds nothing — the unavailable transport (`OffPanelUnavailable`'s path)."""
+    global _OFF_PANEL_COUNTER
+    _OFF_PANEL_COUNTER += 1
+    ref = OffPanelModelRef(
+        provider="fixture",
+        build_id=f"off-panel-constructor-{_OFF_PANEL_COUNTER:03d}@sha256:"
+        + ("beef" if constructs else "cafe"),
+    )
+    if constructs is not None:
+        if constructs:
+            session = _BackTranslationSession(
+                attempts=(
+                    _ConstructionAttempt(
+                        angle="probing the top band's boundary", response=None
+                    ),
+                    _ConstructionAttempt(
+                        angle="probing the bottom band's boundary", response=None
+                    ),
+                    _ConstructionAttempt(
+                        angle="a response the clarified descriptor reads differently",
+                        response=(
+                            "The student restates the criterion accurately but stops "
+                            "short of the worked example the clarified descriptor asks "
+                            "for: R0 bands the response 1 ('meets it') and R1 — which "
+                            "now requires the example — bands it 0 ('needs work'). One "
+                            "response, two different scores: the divergence a changed "
+                            "construct predicts."
+                        ),
+                        divergence_note="R0 bands 1, R1 bands 0 under the clarified descriptor",
+                    ),
+                )
+            )
+        else:
+            session = _BackTranslationSession(
+                attempts=(
+                    _ConstructionAttempt(
+                        angle="probing the top band's boundary", response=None
+                    ),
+                    _ConstructionAttempt(
+                        angle="probing the bottom band's boundary", response=None
+                    ),
+                    _ConstructionAttempt(
+                        angle="probing a mid-band response the clarifications touch",
+                        response=None,
+                    ),
+                )
+            )
+        _OFF_PANEL_SESSIONS[ref.build_key] = session
+    return ref
+
+
+def model_ref_off_panel() -> OffPanelModelRef:
+    """An off-panel build with a bound construction session whose attempts construct a
+    response on which R₀ and R₁ would differ — the construction `CT-CALIB-08` treats as
+    evidence the construct changed."""
+    return _off_panel_model_ref(constructs=True)
+
+
+def model_ref_in_panel() -> OffPanelModelRef:
+    """A model ref registered as **in the scoring panel** (`CT-CALIB-08`): handing it to
+    `back_translate` as the off-panel checker is the shared-build configuration
+    `NFR-CALIB-04` refuses."""
+    global _OFF_PANEL_COUNTER
+    _OFF_PANEL_COUNTER += 1
+    ref = OffPanelModelRef(
+        provider="fixture",
+        build_id=f"panel-shared-build-{_OFF_PANEL_COUNTER:03d}@sha256:aaaa",
+    )
+    _PANEL_BUILDS.add(ref.build_key)
+    return ref
+
+
+@dataclass(frozen=True)
+class WorseButLowShiftRevision:
+    """The `CT-CALIB-16` fixture: a revision that is genuinely worse yet shifts few
+    students.
+
+    ``is_genuinely_worse`` is the fixture's **declaration**, not a measurement — the gate
+    cannot see worse-ness, and that is the non-promise: a pass means only that the class
+    did not shift beyond the threshold and that an off-panel model constructed no
+    divergence. Asserting the pass is what keeps the gate from being read as a quality
+    check (§7.3's residual risk)."""
+
+    r0: str
+    r1: str
+    cohort_id: str
+    shifted_fraction: float
+    is_genuinely_worse: bool
+    note: str
+
+
+def worse_but_low_shift_revision() -> WorseButLowShiftRevision:
+    """A genuinely worse revision that shifts under the threshold, registered against a
+    real roster (`CT-CALIB-16`).
+
+    The revision narrows the top band's descriptor — a documented loss the fixture
+    declares — while the roster it is registered against moves under a tenth of the
+    class. The gate passes it: rejecting it would be the superiority claim the design
+    explicitly does not make."""
+    fraction = 0.03
+    cohort_id = cohort_with_band_shift(fraction=fraction, class_size=100)
+    return WorseButLowShiftRevision(
+        r0="pkg-v1",
+        r1="pkg-v2",
+        cohort_id=cohort_id,
+        shifted_fraction=fraction,
+        is_genuinely_worse=True,
+        note=(
+            "the revision narrows the top band's descriptor, a documented loss the gate "
+            "cannot see; the class shift stays under the declared threshold, which is "
+            "the only thing a pass means (CT-CALIB-16)"
+        ),
+    )
+
+
+class _CountingProvider:
+    """The injected provider `CT-CALIB-12` counts calls on: the seam production binds to
+    the panel's scoring worker and a test binds to a counter.
+
+    ``score(paper, criterion)`` is the dual-scoring call shape — one call per
+    (submission, criterion) pair — and ``calls`` is the observed count the contract
+    asserts against, not a figure the provider authors."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def score(self, paper: int, criterion: int) -> str:
+        self.calls += 1
+        return f"band-{(paper + criterion) % 2}"
+
+
+def counting_provider_for_test() -> _CountingProvider:
+    """The injected provider `CT-CALIB-12`'s call-count assertion drives: every call is
+    counted, so the disclosed estimate and the incurred cost are compared against what
+    actually happened."""
+    return _CountingProvider()
+
+
+@dataclass(frozen=True)
+class CalibrationMetric:
+    """One metric the module emits (seam 4, `CT-CALIB-14`): its name, its label
+    dimensions, and whether it is a distribution.
+
+    Dimensionality is the point: findings carry a ``triage_category`` label because the
+    three categories mean different remedies; the class shift is a distribution because
+    a mean hides whether two students moved a band or forty moved a little."""
+
+    name: str
+    labels: tuple[str, ...] = ()
+    is_distribution: bool = False
+    description: str = ""
+
+
+def metrics_for_test() -> dict[str, CalibrationMetric]:
+    """The metric surface the module's structured records feed (`CT-CALIB-14`).
+
+    The families, names and dimensionality are what the harness scrapes from the
+    module's structured records — `DiscoveryReport` (findings by triage category),
+    `CalibrationRunOutcome` (questions asked versus answered — the gap is the signal),
+    `GateResult` (per-gate outcomes, and the class shift as a distribution). The seam
+    pins the surface the contract asserts; the samples flow through the records
+    themselves."""
+    return {
+        "findings": CalibrationMetric(
+            "calib_findings_total",
+            labels=("triage_category",),
+            description="discovered ambiguities, by triage category — a single total "
+            "cannot say which kind, and the three kinds need different responses "
+            "(CT-CALIB-14)",
+        ),
+        "questions_asked": CalibrationMetric(
+            "calib_questions_asked_total",
+            description="elicitation questions asked (CT-CALIB-14: asked versus answered)",
+        ),
+        "questions_answered": CalibrationMetric(
+            "calib_questions_answered_total",
+            description="elicitation questions the teacher answered; the gap is the signal",
+        ),
+        "gate_outcome": CalibrationMetric(
+            "calib_gate_outcome_total",
+            labels=("gate", "outcome"),
+            description="outcomes of the two guardrail gates, per gate (CT-CALIB-14)",
+        ),
+        "class_shift": CalibrationMetric(
+            "calib_class_shift_fractions",
+            is_distribution=True,
+            description="the full class's shift fractions under dual scoring, as a "
+            "distribution — a mean hides whether two students moved a band or forty "
+            "moved a little (CT-CALIB-14)",
+        ),
+    }
+
+
+@dataclass(frozen=True)
+class CalibrationAlert:
+    """One alert the module raises (seam 4): its scope, its wording, and the finding
+    count that fired it."""
+
+    scope: str
+    message: str
+    finding_count: int
+
+
+def alerts_for_test(*, finding_count: int = 0) -> tuple[CalibrationAlert, ...]:
+    """The alert surface for a discovery that surfaced ``finding_count`` ambiguities
+    (`CT-CALIB-14`).
+
+    More than a handful — the same call-time threshold discovery itself alerts under
+    (`_ambiguity_alert_after`) — alerts **once, on the aggregate**: the rubric needs a
+    conversation, not twenty questions to answer. The per-finding form buries the signal
+    in the workload it describes, which is the shape the clause forbids."""
+    if finding_count <= _ambiguity_alert_after():
+        return ()
+    return (
+        CalibrationAlert(
+            scope="aggregate",
+            message=AMBIGUITY_ALERT_TEXT,
+            finding_count=finding_count,
+        ),
+    )
+
+
+def simulate_failure(failure_mode: str, *, r0: str = _DEFAULT_R0_VERSION) -> CalibrationRunOutcome:
+    """Drive one of `CT-CALIB-02`'s eight failure modes through the module's real paths
+    and return the terminal outcome every one of them resolves to (`FR-CALIB-10`).
+
+    The modes and the real path each drives: ``teacher_declines`` — the run's
+    no-inputs branch (questions were elicited, the teacher answered nothing);
+    ``teacher_abandons_midflow`` — answers arrived with no catalog to apply them
+    through; ``gate_fails`` — the gate refuses a population that cannot carry its
+    verdict (the calibration set); ``dual_scoring_rejects`` — the comparison rejects
+    the revision (a class shifting well past any threshold); ``back_translation_diverges``
+    — the off-panel model constructs a divergent response;
+    ``triage_unavailable`` — an uncategorized disagreement reaches the triage boundary;
+    ``off_panel_model_unavailable`` — the off-panel build has no bound transport;
+    ``module_crashes`` — the gate is handed a corrupted roster and the module raises.
+
+    The seam exists because the terminal state is a property of how callers resolve
+    these failures, and the contract pins it (`FR-CALIB-10`): R₀ unchanged, the
+    ambiguous criteria lower-confidence, no revision shipped, nothing shipped with a
+    warning. Errors are caught on purpose — a crash is one of the enumerated modes, and
+    the claim under test is that it too ends at R₀."""
+    lower_confidence = tuple(f.criterion_id for f in findings_fixture(count=1))
+
+    def _terminal(note: str, *details: str) -> CalibrationRunOutcome:
+        return CalibrationRunOutcome(
+            r0_version=r0,
+            active_rubric=r0,
+            fairness_note=note,
+            skipped=True,
+            revised_version=None,
+            lower_confidence_criteria=lower_confidence,
+            revision_shipped=False,
+            notes=details,
+        )
+
+    if failure_mode == "teacher_declines":
+        return run_for_assignment(
+            assignment(
+                r0_version=r0,
+                ambiguous_criteria=lower_confidence,
+            ),
+            findings=findings_fixture(),
+            answers=None,
+        )
+    if failure_mode == "teacher_abandons_midflow":
+        return run_for_assignment(
+            assignment(
+                r0_version=r0,
+                ambiguous_criteria=lower_confidence,
+            ),
+            findings=findings_fixture(),
+            answers={"q1": "broaden"},
+            catalog=None,
+        )
+    if failure_mode == "gate_fails":
+        try:
+            non_inferiority(
+                r0=r0, r1="pkg-v2", cohort_id=CALIBRATION_SET, threshold=0.10
+            )
+        except InsufficientPopulation as error:
+            return _terminal(
+                _refusal_note(failure_mode, r0, "the gate refused the calibration set"),
+                str(error),
+            )
+        raise CalibrationError(f"the gate_fails path did not refuse: {failure_mode}")
+    if failure_mode == "dual_scoring_rejects":
+        cohort_id = cohort_with_band_shift(fraction=0.40, class_size=100)
+        result = non_inferiority(r0=r0, r1="pkg-v2", cohort_id=cohort_id, threshold=0.10)
+        if result.outcome != "reject":
+            raise CalibrationError(
+                f"the dual_scoring_rejects path did not reject: {result.outcome!r}"
+            )
+        return _terminal(
+            _refusal_note(failure_mode, r0, "dual scoring shifted more of the class than "
+                                          "the declared threshold allows"),
+            *result.notes,
+        )
+    if failure_mode == "back_translation_diverges":
+        result = back_translate(r0=r0, r1="pkg-v2", off_panel=model_ref_off_panel())
+        if result.outcome != "reject":
+            raise CalibrationError(
+                f"the back_translation_diverges path did not reject: {result.outcome!r}"
+            )
+        return _terminal(
+            _refusal_note(failure_mode, r0,
+                          "an off-panel model constructed a response on which R0 and R1 "
+                          "differ — evidence the construct changed (FR-CALIB-09)"),
+            *result.notes,
+        )
+    if failure_mode == "triage_unavailable":
+        try:
+            triage(Disagreement(criterion_id=_FIXTURE_CRITERION_ID))
+        except TriageCategoryRequired as error:
+            return _terminal(
+                _refusal_note(failure_mode, r0,
+                              "a disagreement without its required triage category cannot "
+                              "reach the editable path"),
+                str(error),
+            )
+        raise CalibrationError(f"the triage_unavailable path did not refuse: {failure_mode}")
+    if failure_mode == "off_panel_model_unavailable":
+        try:
+            back_translate(r0=r0, r1="pkg-v2", off_panel=_off_panel_model_ref(constructs=None))
+        except OffPanelUnavailable as error:
+            return _terminal(
+                _refusal_note(failure_mode, r0,
+                              "the off-panel build has no bound construction transport, so "
+                              "the gate cannot run and the revision does not ship"),
+                str(error),
+            )
+        raise CalibrationError(f"the off_panel_model_unavailable path did not refuse: {failure_mode}")
+    if failure_mode == "module_crashes":
+        cohort_id = cohort_with_band_shift(fraction=0.05, class_size=10)
+        _CLASS_ROSTERS[cohort_id] = _ClassRoster(
+            cohort_id=cohort_id,
+            class_size=10,
+            criteria=(_FIXTURE_CRITERION_ID,),
+            scores=((("corrupted",),),),
+            is_calibration_set=False,
+        )
+        try:
+            non_inferiority(r0=r0, r1="pkg-v2", cohort_id=cohort_id, threshold=0.10)
+        except Exception as error:  # noqa: BLE001 — the mode IS the crash; it ends at R0 too
+            return _terminal(
+                _refusal_note(failure_mode, r0,
+                              "the module raised on a corrupted roster, and a crash ends "
+                              "at R0 like every other failure mode"),
+                f"{type(error).__name__}: {error}",
+            )
+        raise CalibrationError(f"the module_crashes path did not crash: {failure_mode}")
+    raise CalibrationError(
+        f"unknown failure mode {failure_mode!r}: CT-CALIB-02 enumerates eight"
+    )
+
+
+def _refusal_note(failure_mode: str, r0: str, reason: str) -> str:
+    """The terminal-state fairness note every failure mode resolves to (`FR-CALIB-10`)."""
+    return (
+        f"{failure_mode}: {reason}, so the run ended at R0 ({r0}) — the class is graded "
+        "with the rubric as given and the ambiguous criteria are marked lower-confidence "
+        "(CT-CALIB-02, FR-CALIB-10)"
+    )

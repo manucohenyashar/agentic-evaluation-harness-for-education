@@ -739,6 +739,27 @@ class RunConfig:
         if self.off_panel_checker is not None:
             _check_resolved(self.off_panel_checker, "off_panel_checker", self.backend_profile)
 
+        # CT-CALIB-08 / NFR-CALIB-04: the off-panel checker is **not in the scoring panel**, and
+        # a shared build is refused at configuration time — the moment the check can refuse,
+        # before any calibration run reaches for it. A shared build would let the panel's own
+        # blind spots define the adversarial search: the model looking for a response on which
+        # R₀ and R₁ differ would be the same model that produced the scores, so the responses it
+        # cannot imagine are exactly the ones it will not construct, and the back-translation
+        # gate would pass by construction. Identity is the **build**, not the label — keyed on
+        # the same encoding `compute_panel_build_ref` hashes, because two entries naming the
+        # same served build are the same model however they are labelled.
+        if self.off_panel_checker is not None:
+            checker_identity = _build_identity(self.off_panel_checker)
+            for position, member in enumerate(self.panel):
+                if _build_identity(member) == checker_identity:
+                    raise ConfigurationError(
+                        f"off_panel_checker shares its served build with panel[{position}] "
+                        f"({self.off_panel_checker.provider}/{self.off_panel_checker.build_id}"
+                        f"{'/' + self.off_panel_checker.quantization if self.off_panel_checker.quantization else ''})"
+                        " — the adversarial back-translation checker must not be one of the "
+                        "models it checks (CT-CALIB-08, NFR-CALIB-04)."
+                    )
+
         # CT-CONF-07: the ref must be the hash **of this panel**. Without this, a replace that
         # reorders the panel keeps the old ref, and two distinct ordered panels share one key —
         # verbatim the regression `TC-CONF-C07` exists to catch, and `CT-CONF-07` licenses
@@ -966,6 +987,16 @@ _PANEL_BUILD_REF_PREFIX = "pbr:"
 _PANEL_BUILD_REF_LENGTH = 32
 
 
+def _build_identity(ref: ModelRef) -> str:
+    """The canonical identity of one served build: the exact encoding
+    `compute_panel_build_ref` hashes. Two refs with the same identity are the
+    same model however they are labelled — which is why the off-panel share
+    check (`RunConfig.__post_init__`, CT-CALIB-08) keys on this and not on the
+    provider or the friendly name. Declared here, next to the panel hash it is
+    factored out of, so the encoding lives in exactly one place."""
+    return f"{ref.provider}{_FIELD_SEP}{ref.build_id}{_FIELD_SEP}{ref.quantization or ''}"
+
+
 def compute_panel_build_ref(panel: Sequence[ModelRef]) -> str:
     """A stable hash over the **ordered** panel (`FR-CONF-05`, `CT-CONF-07`).
 
@@ -982,10 +1013,7 @@ def compute_panel_build_ref(panel: Sequence[ModelRef]) -> str:
     reference hash. It is computed here because `CT-CONF-C02` pins `RunConfig` to twelve fields,
     so the field cannot be deferred, and #5 depends on #4.
     """
-    payload = _REF_SEP.join(
-        f"{ref.provider}{_FIELD_SEP}{ref.build_id}{_FIELD_SEP}{ref.quantization or ''}"
-        for ref in panel
-    )
+    payload = _REF_SEP.join(_build_identity(ref) for ref in panel)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return _PANEL_BUILD_REF_PREFIX + digest[:_PANEL_BUILD_REF_LENGTH]
 
