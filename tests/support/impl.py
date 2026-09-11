@@ -1266,6 +1266,31 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run_start",
         ),
     ),
+    # --- TS-42 (#119), the TC-STATS admissible-label and hand-reference suite ---------------
+    #
+    # #119 is a TEST issue over the landed M-STATS surface, and most of its cases run
+    # green against the shipped module. Two probe surfaces the module has not got, and
+    # those are plan-literal red tests carrying the marker:
+    #
+    # * `TC-STATS-04` row 7's console half: below `STATS_MIN_N_FOR_HEADLINE` the rendered
+    #   headline carries "too few to draw conclusions from" — HLD §11.5's S12 mock renders
+    #   exactly that at n = 15. `render_agreement_block` renders the number, the size, the
+    #   scope and the degeneracy disclosure today and no qualifier: the knob is declared
+    #   (`aeh.stats:STATS_MIN_N_FOR_HEADLINE`, pinned by `TC-STATS-C20`), the vocabulary
+    #   declares the exact string (`TOO_FEW_QUALIFIER`), and the rendering itself is the
+    #   unlanded half. Keyed on the constant the rendering must carry, because the gap is a
+    #   behaviour, not a missing symbol: the landing either imports that name into the
+    #   console's own namespace or re-keys this entry — the `#148 judge_signals`
+    #   invented-and-used-together pattern, with the invention recorded here rather than
+    #   left for whoever closes the behaviour to rediscover.
+    "#119 too-few headline qualifier (HLD §11.5 S12)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:TOO_FEW_QUALIFIER",
+        (
+            "tests/unit/stats/test_agreement_references.py"
+            "::test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier",
+        ),
+    ),
 }
 
 
