@@ -36,6 +36,7 @@ replays the same example set.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 
 import pytest
 from hypothesis import given, settings
@@ -230,17 +231,18 @@ def test_tc_review_04_ranking_reads_only_the_declared_signals(rows):
     )
 
 
-@settings(max_examples=FUZZ_EXAMPLES, deadline=None)
-@given(permutation=st.permutations(range(6)))
-def test_tc_review_04_full_ties_rank_in_input_order_for_every_permutation(permutation):
-    """The declared deterministic tie-break, asserted exhaustively over input orders.
+def test_tc_review_04_full_ties_rank_in_input_order_for_every_permutation():
+    """The declared deterministic tie-break, asserted over all 720 input orders.
 
     Six rows whose every ranking input is identical (and whose distinct criteria keep the
     grouping signature from collapsing them) have one expected value between them, so the
     ranking carries no information that could distinguish them — the plan's tie-break clause is
     the sort's stability, and stability means the output order is the input order, whatever the
     input order is. A sort that breaks ties by anything undeclared (score id, dictionary
-    insertion order, points) reorders at least one permutation of this set.
+    insertion order, points) reorders at least one permutation of this set. The permutation
+    space is finite (6! = 720), so this case enumerates it exhaustively rather than sampling
+    it: "for every permutation" is then literal, and no hypothesis profile's example budget
+    can leave a permutation unexercised. Six-row builds at rung 0 keep the sweep cheap.
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
 
@@ -253,21 +255,22 @@ def test_tc_review_04_full_ties_rank_in_input_order_for_every_permutation(permut
         grade_boundary_delta=0.0,
         est_seconds=60,
     )
-    population = [
-        broken.ScoreRow(
-            score_id=f"tie-{position}",
-            criterion_id=f"C-{position + 1:02d}",
-            submission_id=f"tie-sub-{position}",
-            **tie_value,
-        )
-        for position in permutation
-    ]
-    service = build_review(scores=population)
+    for permutation in itertools.permutations(range(6)):
+        population = [
+            broken.ScoreRow(
+                score_id=f"tie-{position}",
+                criterion_id=f"C-{position + 1:02d}",
+                submission_id=f"tie-sub-{position}",
+                **tie_value,
+            )
+            for position in permutation
+        ]
+        service = build_review(scores=population)
 
-    ranked = [item.score_id for item in service.rank_queue_items(run_id="run-1")]
-    expected = [f"tie-{position}" for position in permutation]
-    assert ranked == expected, (
-        f"identical-value rows ranked {ranked} against input order {expected}. The declared "
-        "tie-break is input order at full ties — stable sort — and a tie-break by anything "
-        "undeclared makes the order a function of something no stored signal states."
-    )
+        ranked = [item.score_id for item in service.rank_queue_items(run_id="run-1")]
+        expected = [f"tie-{position}" for position in permutation]
+        assert ranked == expected, (
+            f"identical-value rows ranked {ranked} against input order {expected}. The declared "
+            "tie-break is input order at full ties — stable sort — and a tie-break by anything "
+            "undeclared makes the order a function of something no stored signal states."
+        )

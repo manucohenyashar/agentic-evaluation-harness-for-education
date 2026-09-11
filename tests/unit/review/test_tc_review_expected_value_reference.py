@@ -101,8 +101,16 @@ def test_tc_review_02_the_impact_inputs_move_expected_value_by_the_exact_ratios(
     limbs no shipped test varies — criterion_weight, grade_boundary_delta and the est_seconds
     divisor. Every pair is identical except the one input, so the declared formula pins the
     ratio exactly: doubling the weight doubles EV, delta 0 vs 10 at half-width 10 halves the
-    impact term (2:1), and halving the estimate doubles EV.
+    impact term (2:1), and halving the estimate doubles EV. The ratios are asserted on the
+    queue's own `expected_value` figures — a rank direction alone would also be satisfied by
+    a module that got both numbers wrong, which is the gap a self-referential ratio leaves.
+
+    The rows carry distinct `criterion_id`s because the Phase-1 grouping signature includes
+    the criterion: two rows identical on every signature component collapse into one
+    `ReviewGroup`, which carries no per-item expected value to compare.
     """
+    build_review = require(REVIEW_MODULE, "build_review", issue="#108")
+
     # One explicit row per pair — `flagged_population` varies every field per index, so a
     # population row as base would drag six other inputs into the ratio.
     base = broken.ScoreRow(
@@ -121,28 +129,35 @@ def test_tc_review_02_the_impact_inputs_move_expected_value_by_the_exact_ratios(
         (
             "criterion_weight",
             base,
-            dataclasses.replace(base, score_id="heavy", criterion_weight=0.4),
+            dataclasses.replace(base, score_id="heavy", criterion_id="C-02", criterion_weight=0.4),
         ),
         (
             "grade_boundary_delta",
-            dataclasses.replace(base, score_id="delta-10", grade_boundary_delta=10.0),
-            dataclasses.replace(base, score_id="delta-0", grade_boundary_delta=0.0),
+            dataclasses.replace(base, score_id="delta-10", criterion_id="C-03", grade_boundary_delta=10.0),
+            dataclasses.replace(base, score_id="delta-0", criterion_id="C-04", grade_boundary_delta=0.0),
         ),
         (
             "est_seconds",
-            base,
-            dataclasses.replace(base, score_id="quick", est_seconds=30),
+            dataclasses.replace(base, score_id="est-60", criterion_id="C-05"),
+            dataclasses.replace(base, score_id="quick", criterion_id="C-06", est_seconds=30),
         ),
     ]
 
+    rows = [row for _name, slower, faster in pairs for row in (slower, faster)]
+    service = build_review(scores=rows)
+    queue = service.build_queue(run_id="run-1", budget_minutes=30)
+    values = {item.score_id: item.expected_value for item in items_of(queue)}
+
     for name, slower, faster in pairs:
-        slower_value = _expected_value(slower)
-        faster_value = _expected_value(faster)
-        assert faster_value == pytest.approx(2.0 * slower_value), (
-            f"{name}: the declared formula predicts an exact 2:1 ratio but the hand reference "
-            f"gives {faster_value!r} vs {slower_value!r}. TC-REVIEW-02: each input moves "
-            "expected_value by the arithmetic FR-REVIEW-03 declares, so the reference pins the "
-            "ratio rather than a direction."
+        assert {slower.score_id, faster.score_id} <= set(values), (
+            f"the {name} pair did not both appear as items in the queue, so the ratio "
+            "cannot be compared"
+        )
+        assert values[faster.score_id] == pytest.approx(2.0 * values[slower.score_id]), (
+            f"{name}: the declared formula predicts an exact 2:1 ratio but the queue's own "
+            f"expected values give {values[faster.score_id]!r} vs {values[slower.score_id]!r}. "
+            "TC-REVIEW-02: each input moves expected_value by the arithmetic FR-REVIEW-03 "
+            "declares, not merely in some direction."
         )
 
 
