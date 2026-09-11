@@ -1,6 +1,6 @@
 """`TC-CALIB-08` — the non-inferiority gate resolves its threshold, never defaults it.
 
-Test plan §5.17, `TC-CALIB-08` (FR-CALIB-08 / CT-CALIB-13, Integration / rung 2).
+Test plan §5.17, `TC-CALIB-08` (FR-CALIB-08 / CT-CALIB-13, Integration / rung 3).
 
 The contract suite carries the boundary (`TC-CALIB-C07`: the strict "more than" sweep,
 including exactly-at-threshold), the calibration-set refusal, the event-order oracle over a

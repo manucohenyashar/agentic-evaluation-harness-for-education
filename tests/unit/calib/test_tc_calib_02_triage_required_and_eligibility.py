@@ -1,6 +1,6 @@
 """`TC-CALIB-02` — triage refuses to proceed without a category, and the set stays closed.
 
-Test plan §5.17, `TC-CALIB-02` (FR-CALIB-02, Integration / rung 2).
+Test plan §5.17, `TC-CALIB-02` (FR-CALIB-02, Unit / rung 0).
 
 The contract suite carries the refusal (`TC-CALIB-C04`: `triage()` raises
 `TriageCategoryRequired` for a `category=None` disagreement, and the three-category
@@ -48,7 +48,7 @@ def test_tc_calib_02_a_blank_category_and_an_out_of_set_category_are_different_r
     calib = require(CALIB_MODULE, issue="#140")
     require(
         CALIB_MODULE, "triage", "TriageVerdict", "Disagreement",
-        "TriageCategoryRequired", "EditNotEligible", "SideBySideRequired",
+        "TriageCategoryRequired", "EditNotEligible",
         issue="#140",
     )
 

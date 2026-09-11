@@ -163,8 +163,12 @@ def test_tc_calib_11_the_resolver_refuses_a_shared_build_the_same_way():
 
     `resolve_run_config` builds the same `RunConfig` from the caller's mapping, so a shared
     build arriving as configuration input cannot reach a resolved config by choosing the other
-    entry point. Asserted once, on the shared-build literal, so the two entries are the same
-    check and not a resolver that skips the type's invariant.
+    entry point. The shared build goes in the **checker slot**, against a proper judge panel:
+    put it in the panel instead and the resolver's panel-role validation refuses first, for a
+    different reason — the review that caught this draft got `panel[0] must carry role
+    'judge', got 'off_panel'` out of a bare `pytest.raises` and the test could not tell which
+    check had fired. The message is pinned to the same words the type-level tests pin, so the
+    refusal this test witnesses is the shared-build invariant and nothing else.
     """
     conf = require(CONF_MODULE, issue="#140")
     require(
@@ -173,15 +177,24 @@ def test_tc_calib_11_the_resolver_refuses_a_shared_build_the_same_way():
     )
 
     shared = dataclasses.replace(EDGE_JUDGE, role="off_panel")
-    with pytest.raises(conf.ConfigurationError):
+    with pytest.raises(conf.ConfigurationError) as exc:
         conf.resolve_run_config(
             {
                 "HARNESS_PROFILE": "edge-local",
                 "HARNESS_HARDWARE_PROFILE": "unified-large",
-                "panel": (shared,),
+                "panel": (EDGE_JUDGE,),
                 "transcriber": EDGE_TRANSCRIBER,
-                "off_panel_checker": EDGE_OFF_PANEL,
+                "off_panel_checker": shared,
                 "prompt_template_v": PROMPT_TEMPLATE_V,
             },
             SYNTHETIC_COHORT,
         )
+    message = str(exc.value)
+    assert "shares its served build with panel[0]" in message, (
+        f"the resolver's refusal reads {message!r}; a refusal that fires on any earlier "
+        "validation would leave the shared-build invariant untested through this entry point"
+    )
+    assert "CT-CALIB-08" in message and "NFR-CALIB-04" in message, (
+        "the resolver's refusal does not name its clauses; the two entry points must be the "
+        "same check, not a resolver that enforces a weaker rule than the type does"
+    )
