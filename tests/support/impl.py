@@ -516,6 +516,28 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             # rest of #134's surface.
             "tests/contract/judge/test_nonpromise_reproducibility.py"
             "::test_tc_judge_c17_m_conform_measures_repetition_and_requires_no_reproducibility",
+            # TS-46 (#135), §5.18's seven behavioural cases, joined here. All seven drive the
+            # same surface this entry proxies: `run()`'s report, the divergence machinery, the
+            # substitution seam, and — for `TC-CONFORM-13` — the alert reader over all of it,
+            # so there is one story's landing between each of them and green, exactly as for
+            # the C-suite files above. The three `live`-marked files (TC-CONFORM-04, -08, and
+            # the budget-threshold test in TC-CONFORM-11's file) are additionally env-gated on
+            # `HARNESS_CONFORM_LIVE_BACKENDS` (the shared gate lives in `conform_vocabulary.py`),
+            # so on a box without declared backends they skip naming that prerequisite; the
+            # marker still keys them here, because the blocker is #134's machinery and only
+            # looks like hardware. TC-CONFORM-06's plan-level
+            # gap half and TC-CONFORM-07's CI half are green in `tests/artifact/` and carry
+            # no marker — not listed here. The invented surfaces these files call beyond
+            # `detect_build_substitution` (`evaluate_conformance_alerts`, the per-backend
+            # figure and dispatch fields) are centralised in `conform_vocabulary.py`'s TS-46
+            # section with the same adopt-or-rename rule.
+            "tests/integration/conform/test_tc_conform_04_full_pipeline_differential.py",
+            "tests/integration/conform/test_tc_conform_05_backend_scoped_records.py",
+            "tests/integration/conform/test_tc_conform_06_divergence_gate_and_gap.py",
+            "tests/integration/conform/test_tc_conform_08_build_substitution.py",
+            "tests/integration/conform/test_tc_conform_11_run_budget.py",
+            "tests/integration/conform/test_tc_conform_12_self_agreement.py",
+            "tests/integration/conform/test_tc_conform_13_observability_alerts.py",
         ),
     ),
     # --- TS-02 (#3), the behavioural half of `TC-CONFORM-09` ---------------------------------
