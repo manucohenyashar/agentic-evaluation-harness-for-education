@@ -10,7 +10,10 @@ would make the model an assessor, a disagreement that skipped triage would let t
 failures rewrite the rubric, and an elicitation that presented a pre-authored edit would turn the
 teacher into an approver. Each is a small drift in the same direction.
 
-All five are red. See `test_ct_calib_vocabulary.py` for what is green and why it is not coverage.
+Three of the five run green as of #137 — C03's type half and both C04 halves. The elicitation
+and history clauses (C05, C11, C12) remain writtenahead behind #138/#139. See
+`test_ct_calib_vocabulary.py` for what was green before any of this landed and why it is not
+coverage.
 """
 
 from __future__ import annotations
@@ -35,7 +38,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CALIB-03 — discovery is not a measurement of accuracy -------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c03_the_discovery_report_carries_no_accuracy_figure():
     """`CT-CALIB-03` — discovery output is **ambiguity discovery, never a measurement of accuracy**.
 
@@ -119,7 +121,6 @@ def test_tc_calib_c03_the_console_renders_no_accuracy_language():
 # --- CT-CALIB-04 — the triage category is required, and only one is editable ----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c04_a_disagreement_without_a_triage_category_is_refused():
     """`CT-CALIB-04` — the category is a **required** output field.
 
@@ -135,7 +136,6 @@ def test_tc_calib_c04_a_disagreement_without_a_triage_category_is_refused():
         triage(calib.Disagreement(criterion_id="c1", category=None))
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("category", sorted(TRIAGE_CATEGORIES))
 def test_tc_calib_c04_only_rubric_ambiguity_can_produce_a_proposed_edit(category):
     """`CT-CALIB-04`'s eligibility rule, one row per category — a **domain sweep**.

@@ -379,6 +379,19 @@ def test_blocker_is_resolved_symbols_requires_every_listed_name(repo_root):
     assert blocker_is_resolved("symbols", landed, repo_root) is True
     assert blocker_is_resolved("symbols", f" {landed} , {absent} ", repo_root) is False
 
+    # A **bare module path** is a legal limb: the #56 C15 sweep conjoined three consumer
+    # MODULES with #51's read-back symbol. An empty dotted part must read as "the module
+    # landed" — `"".split(".")` is `[""]` and `getattr(module, "")` is None, which made
+    # such a limb read unresolved forever even after everything it waits on had landed,
+    # and the gate never told anyone to unmark (the silent direction this registry exists
+    # to prevent). Regression: #137's landing left the c15 tests green-but-marked because
+    # of exactly this.
+    assert blocker_is_resolved("symbols", f"{landed},{IMPLEMENTATION_PACKAGE}.calib", repo_root) is True
+    assert (
+        blocker_is_resolved("symbols", f"{landed},{IMPLEMENTATION_PACKAGE}.does_not_exist", repo_root)
+        is False
+    )
+
 
 def test_blocker_is_resolved_refuses_an_unknown_kind(repo_root):
     """A `kind` with no branch must raise, not read as unresolved.
