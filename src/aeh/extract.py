@@ -66,6 +66,7 @@ reading):
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import os
 import re
@@ -465,6 +466,53 @@ def _current_document(store: Any, submission_id: str) -> Any:
     )
 
 
+def document_bytes(store: Any, head: Any) -> bytes:
+    """The canonical document's bytes — the basis `FR-EXTRACT-01`'s byte offsets
+    address: "`document.markdown` of the submission's canonical artifact".
+
+    The head row's `markdown` column is the canonical artifact — `FR-INGEST-04`
+    inserts the `document` row carrying the Markdown its `content_hash` was hashed
+    over, and the blob store's declared inventory (`FR-STORE-06`) is source PDFs,
+    page rasters and image crops, not document text. The content-addressed blob
+    named by `content_hash` remains the fallback — the seeded world's form
+    (`tests/support/orch_run.py`'s `seed_document` puts the bytes and stores only
+    the hash) — so a row whose column is empty still resolves. The hash must equal
+    the bytes actually read either way (`CT-INGEST-02`'s
+    immutability from the consumer's side; `M-INTEG`'s `_document_bytes`
+    established the rule), and a row that satisfies neither source raises
+    `ValueError` — an unaddressable transcript, never a silent empty one.
+    """
+    stored_hash = head["content_hash"] if hasattr(head, "__getitem__") else None
+    raw: "bytes | None" = None
+    markdown = head["markdown"] if hasattr(head, "__getitem__") else None
+    if isinstance(markdown, str) and markdown:
+        raw = markdown.encode("utf-8")
+    elif isinstance(stored_hash, str) and stored_hash and store is not None:
+        try:
+            data = store.blobs().get(stored_hash)
+        except KeyError as error:
+            raise ValueError(
+                f"document {head['document_id']} resolves neither a markdown "
+                f"column nor a blob for its content_hash — the transcript cannot "
+                f"be addressed"
+            ) from error
+        if isinstance(data, (bytes, bytearray)):
+            raw = bytes(data)
+    if not isinstance(raw, bytes):
+        raise ValueError(
+            f"document {head['document_id']} carries no markdown and no readable "
+            f"blob — the transcript cannot be addressed"
+        )
+    if not isinstance(stored_hash, str) or (
+            hashlib.sha256(raw).hexdigest() != stored_hash):
+        raise ValueError(
+            f"document {head['document_id']}'s content_hash does not match the "
+            f"bytes read — a superseded or stale pairing, never a stale acceptance "
+            f"(CT-INGEST-02)"
+        )
+    return raw
+
+
 def assemble_request(
     unit: Any,
     *,
@@ -505,7 +553,7 @@ def assemble_request(
                 f"the submission's current document) or a resolved unit."
             )
         head = _current_document(store, submission_id)
-        transcript = store.blobs().get(head["content_hash"]).decode("utf-8")
+        transcript = document_bytes(store, head).decode("utf-8")
     return ExtractionRequest(
         work_id=work_id,
         criterion=Criterion(criterion_id=criterion_id, text="", evidence_type=""),
@@ -831,7 +879,7 @@ class ExtractionWorker:
                 f"re-queues it."
             )
         head = _current_document(self._store, unit.submission_id)
-        md_bytes = self._store.blobs().get(head["content_hash"])
+        md_bytes = document_bytes(self._store, head)
         request = assemble_request(
             dataclasses.replace(unit, submission_text=md_bytes.decode("utf-8"))
         )

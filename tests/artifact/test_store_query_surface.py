@@ -358,9 +358,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `ExtractionWorker.process` — the guarded done-marking, its changes() read, and
     # the evidence row that commits together with it (CT-STORE-03's commit-together;
     # every statement a declared constant in `EXTRACT_STATEMENTS`/`ORCH_STATEMENTS`).
-    "aeh.extract:891",
-    "aeh.extract:896",
-    "aeh.extract:898",
+    # (#144's re-pin: the module-level `document_bytes` resolver — the canonical-
+    # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
+    # sites; the statements are the same three. Re-read from the walker, never
+    # hand-unioned.)
+    "aeh.extract:939",
+    "aeh.extract:944",
+    "aeh.extract:946",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
@@ -376,28 +380,34 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # evidence_sufficient, uncited), still one declared statement. Re-pinned from the
     # walker's own output: the statements are verified unchanged against the prior
     # baseline, the tripwire diff being the line move alone.
-    "aeh.judge:1825",
-    "aeh.judge:1830",
-    "aeh.judge:1840",
+    # (#144's re-pin: the `from aeh.extract import document_bytes` reuse of the
+    # canonical-artifact resolver added the import line above the sites; the
+    # statements are the same three. Re-read from the walker, never hand-unioned.)
+    "aeh.judge:1828",
+    "aeh.judge:1833",
+    "aeh.judge:1843",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
     # the line move alone).
-    "aeh.ingest:2792",
-    "aeh.ingest:2803",
-    "aeh.ingest:2825",
-    "aeh.ingest:3386",
-    "aeh.ingest:3421",
-    "aeh.ingest:3453",
-    "aeh.ingest:3528",
-    "aeh.ingest:3531",
+    # (#144's re-pin: `select_document_head` gained its `markdown` column, one
+    # statement line grown to two above every site; the statements are the same
+    # fifteen. Re-read from the walker, never hand-unioned.)
+    "aeh.ingest:2793",
+    "aeh.ingest:2804",
+    "aeh.ingest:2826",
+    "aeh.ingest:3387",
+    "aeh.ingest:3422",
+    "aeh.ingest:3454",
+    "aeh.ingest:3529",
     "aeh.ingest:3532",
-    "aeh.ingest:3642",
-    "aeh.ingest:3870",
-    "aeh.ingest:3882",
-    "aeh.ingest:4418",
-    "aeh.ingest:4441",
-    "aeh.ingest:3399",
+    "aeh.ingest:3533",
+    "aeh.ingest:3643",
+    "aeh.ingest:3871",
+    "aeh.ingest:3883",
+    "aeh.ingest:4419",
+    "aeh.ingest:4442",
+    "aeh.ingest:3400",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level

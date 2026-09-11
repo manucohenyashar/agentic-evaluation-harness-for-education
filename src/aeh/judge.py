@@ -204,6 +204,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from aeh.extract import document_bytes
 from aeh.ingest import UNTRUSTED_CLOSE, UNTRUSTED_OPEN
 from aeh.ingest import STATEMENTS as INGEST_STATEMENTS
 from aeh.integ import verify_span
@@ -1115,10 +1116,12 @@ def _current_document(store: Any, submission_id: str) -> Any:
 
 def _canonical_document_bytes(store: Any, submission_id: str) -> "bytes | None":
     """The submission's canonical document BYTES, resolved through the store's own
-    doors — the head document row (`_current_document`) and its blob by content hash.
+    doors — the head document row (`_current_document`) and its canonical text by
+    `aeh.extract.document_bytes`' rule (the `markdown` column the gateway wrote,
+    the blob fallback, the hash checked against the bytes read).
 
     Returns `None` on EVERY unresolvable shape — no store bound, no document row, a
-    hash the blob store does not hold, a read that raises — because the citation gate's
+    pairing that satisfies neither source, a read that raises — because the citation gate's
     reading of `None` is fail-closed (`FR-INTEG-01`): an unverifiable citation is
     indistinguishable from a forged one and both are refused. This resolves the
     CANONICAL document, never `request.submission_text` (§3.2's assembly pseudonymizes
@@ -1129,7 +1132,7 @@ def _canonical_document_bytes(store: Any, submission_id: str) -> "bytes | None":
         return None
     try:
         head = _current_document(store, submission_id)
-        return store.blobs().get(head["content_hash"])
+        return document_bytes(store, head)
     except Exception:
         return None
 
@@ -1318,7 +1321,7 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
         cohort = _find_cohort(store, work_id)
         if transcript is None:
             head = _current_document(store, submission_id)
-            transcript = store.blobs().get(head["content_hash"]).decode("utf-8")
+            transcript = document_bytes(store, head).decode("utf-8")
         if run_id is None:
             run_id = cohort.query(
                 JUDGE_STATEMENTS["select_work_unit"], work_id=work_id

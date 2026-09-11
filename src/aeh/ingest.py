@@ -1743,7 +1743,8 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     ),
     "select_document_head": Statement(
         "SELECT document_id, submission_id, content_hash, transcriber_ref, kind, "
-        "parent_doc_id, created_at FROM document WHERE submission_id = :submission_id "
+        "parent_doc_id, created_at, markdown FROM document "
+        "WHERE submission_id = :submission_id "
         "ORDER BY created_at, document_id"
     ),
     # -- the run-level aggregate emitter (#222, F3/G4; CT-INGEST-19/OBS-01) ----------------------------
