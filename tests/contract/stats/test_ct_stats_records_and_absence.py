@@ -391,7 +391,6 @@ def test_tc_stats_c09_both_consumers_rank_no_data_differently_from_a_genuine_zer
 # --- CT-STATS-12 — the advisory drift check ----------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("available", [19, 31])
 def test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range(available):
     """`FR-STATS-09`'s *"20–30 submission sample"*, asserted at both boundaries — as a **range**.
@@ -433,7 +432,6 @@ def test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range(available
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c12_the_drift_check_covers_judged_criteria_only():
     """*"Runs over **judged** criteria only."*
 

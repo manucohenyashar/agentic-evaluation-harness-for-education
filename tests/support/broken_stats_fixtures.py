@@ -371,10 +371,14 @@ class Label:
     teacher_band: int = 3
     origin: str = "blind_sample"
 
-    #: `CT-REVIEW-07`'s `routing` column: which side of the routing policy produced the judgment
-    #: this label scores. `FR-STATS-08` compares the two arms and names them; `CT-ORCH-15` is why
-    #: they stay separable at all, since the random arm carries its own `origin` and is never
-    #: suppressed. `None` for a label not produced under the policy.
+    #: `CT-REVIEW-07`'s `routing` column: the queue's admission routing, copied onto the label for
+    #: traceability — `CT-AGG-06`'s closed set (`auto`/`queued`/`provisional`/`reviewed`/`triage`)
+    #: on rows that come through the store. `FR-STATS-08` reads it through `aeh.stats`'s
+    #: `ROUTING_POLICY_ARM_SOURCES`, so a fixture may carry either the queue's values (`reviewed`
+    #: for the escalated-and-reviewed arm, `auto` for the auto-accepted one) or the comparison
+    #: protocol's arm names directly. `CT-ORCH-15` is why the arms stay separable at all, since the
+    #: random arm carries its own `origin` and is never suppressed. `None` for a label not produced
+    #: under the policy.
     routing: str | None = None
 
 
