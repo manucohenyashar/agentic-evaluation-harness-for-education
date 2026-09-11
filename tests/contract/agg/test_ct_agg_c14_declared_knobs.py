@@ -16,8 +16,8 @@ Three limbs:
   exactly on the knob's boundary, so a knob that stopped feeding the routing
   decision (dead or mis-wired) fails. "Moving each changes routing volume" — the
   differential is the case's oracle, not the constants' existence;
-- **the honesty text** (rung 3, writtenahead on `aeh.console:render_setup_step`,
-  #123): the consumer's rendered text for these knobs must not dress them in
+- **the honesty text** (rung 3, landed at #123 over `aeh.console:render_setup_step`):
+  the consumer's rendered text for these knobs must not dress them in
   empirical justification — no "calibrated", no "validated", no "tuned" — because
   nothing has calibrated them at Phase 1 (`FR-STATS-08`'s validation has not run).
   The declared-assumption shape (the `test_random_arm.py` precedent) is reconciled
@@ -172,10 +172,9 @@ def test_tc_agg_c14_moving_each_knob_changes_the_routing_volume():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified():
     """`TC-AGG-C14` (`CT-AGG-14` × `FR-STATS-08`, contract / rung 3, consumer text
-    assertion, P1, writtenahead on `aeh.console:render_setup_step`, #123) — the
+    assertion, P1, landed at #123 over `aeh.console:render_setup_step`) — the
     rendered text presenting these knobs carries no empirical justification: no
     "calibrated", no "validated", no "tuned", no measured-accuracy claim. Until
     FR-STATS-08's routing-policy validation exists, the numbers are declared

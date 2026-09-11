@@ -264,14 +264,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # gone because #126 landed: `aeh.console:build_console` exists, the c07
     # `[m_console]` param runs unmarked inside the gate (its `require` now resolves),
     # and the entry would only re-mark a running case.
-    "#96 c14 the knobs' honesty text (M-CONSOLE)": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_setup_step",
-        (
-            "tests/contract/agg/test_ct_agg_c14_declared_knobs.py"
-            "::test_tc_agg_c14_no_consumer_presents_the_knobs_as_empirically_justified",
-        ),
-    ),
+    # The `"#96 c14 the knobs' honesty text (M-CONSOLE)"` entry that stood here is
+    # gone because #123 landed: `aeh.console:render_setup_step` exists (the step's
+    # declared-constants copy is rendered verbatim, with no accuracy framing), the
+    # c14 consumer case runs unmarked inside the gate (its `require` now resolves),
+    # and the entry would only re-mark a running case.
     # The `"#96 c16 M-CONSOLE renders no probability"` entry that stood here is gone
     # because #124 landed `aeh.console:render_review_queue`, which the registry had
     # keyed on: the c16 `[m_console]` param ran against an invented
@@ -664,42 +661,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#122 serve_console"` entry that stood here is gone because #122 landed:
     # `aeh.console:serve_console` exists, so the kill test and both `-C05` binding cases run
     # in the gate.
-    # #123 owns HLD §11.6's invariants 1-7, which is where `-C07` through `-C12`'s separation half
-    # and `-C10`/`-C11`(a) live. `render_setup_step` is invented and absent from both design
-    # documents and the HLD.
-    #
-    # One limitation, stated rather than discovered: no registry kind can express *"the story is
-    # finished"*, only *"this symbol exists"* -- the sixth time this suite has hit it. So a symbol
-    # landing on #123's first commit would tell a reader to unmark all eleven of these while the
-    # rest of #123 is still being written. `render_setup_step` is chosen because invariant 1 is
-    # #123's first acceptance criterion and nothing in #122 could provide it, which makes the
-    # window as narrow as the mechanism allows.
-    "#123": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_setup_step",
-        (
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c07_"
-            "exactly_two_screens_block_and_they_are_s3_and_s4",
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c07_"
-            "every_skippable_prompt_renders_the_skip_and_its_cost_in_one_view",
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c08_"
-            "no_route_anywhere_offers_a_numeric_score_entry_field",
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c09_"
-            "no_route_or_payload_carries_a_per_student_progress_figure",
-            "tests/contract/console/test_ct_console_screens_and_fields.py::test_tc_console_c09_"
-            "progress_renders_at_the_three_dimensions_and_derives_nothing_more",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c10_"
-            "every_route_that_displays_a_grade_displays_its_provenance",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_"
-            "c11a_any_agreement_statistic_renders_corrected_scoped_and_unmerged",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
-            "quarantine_and_the_review_queue_have_separate_routes_and_counts",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
-            "no_quarantine_item_is_reachable_from_the_review_queue",
-            "tests/contract/console/test_ct_console_provenance_and_queues.py::test_tc_console_c12_"
-            "no_deterministic_blind_or_random_arm_item_is_rendered_in_the_queue",
-        ),
-    ),
+    # The `"#123"` entry that stood here is gone because #123 landed: `aeh.console`
+    # carries the two blocking screens (S3 inventory, S4 answer keys), every other
+    # prompt renders a skip control beside its cost, no route takes a numeric score
+    # entry, progress renders at (stage, criterion, judge) with no per-student figure,
+    # every grade view carries its provenance footer, the agreement block renders
+    # chance-corrected and scoped, and the two queues hold separate routes and counts
+    # (the standing shapes answer on the write-audit double, where reads return
+    # nothing). All ten `-C07`..`-C12` rows run unmarked inside the gate.
     # #126 builds S1 Packages, S2 Upload, S6 Preflight and S8 Quarantine, and it depends only on
     # #122 -- so it is a **sibling** of #123 and #125 rather than downstream of them. That is
     # exactly why `TC-CONSOLE-C11`(c) has its own key: `FR-CONSOLE-26` is S1's rule and no amount
@@ -708,10 +677,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #126 landed: `aeh.console` exists with `render_package_catalog` and `render_preflight`, so
     # `TC-CONSOLE-C11`(c) runs in the gate, and the eight module-keyed consumer rows -- the
     # conf step-3 rebinding check, the four TS-74 calibration consumer cases, TS-75's conform
-    # C14 console half -- all run too. `render_setup_step`, `amend_finalized_grade` and
-    # `render_submission_text` stay absent: #123, #125 and #127 are still open, and those
-    # are the keys their rows ride on. (`render_review_queue` was #124's and landed, so
-    # the row that keyed on it -- the c16 `[m_console]` sweep -- runs too.)
+    # C14 console half -- all run too. `render_setup_step` landed at #123, so the rows
+    # keyed on it (the `-C07`..`-C12` group and the CT-STATS `m_console` sweeps) run too;
+    # `amend_finalized_grade` and `render_submission_text` stay absent: #125 and #127 are
+    # still open, and those are the keys their rows ride on. (`render_review_queue` was
+    # #124's and landed, so the row that keyed on it -- the c16 `[m_console]` sweep -- runs
+    # too.)
     # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
     #
     # `M-STATS` is four stories -- #115 (the admissible-label filter, the figure, the scoped
@@ -760,12 +731,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # one registered case runs in the gate unmarked.
     # `"#31 stats"` is gone because #31 landed: `export_package` answers the validation
     # payload (`weakest_per_population` beside the per-population headline, never an
-    # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked. The
-    # `m_console` param keeps its marker — #123 has not landed.
+    # aggregate), and the `m_pkg_export` param of the CT-STATS-20 sweep runs unmarked.
     #
     # `"#91 stats"` is gone because #91 landed: `aeh.agg:describe_agreement` is the
     # module's own disclosure of the figure it produces (CT-STATS-21's M-AGG limb),
-    # and the sweep's `m_agg` param runs unmarked while `m_console` stays #123's.
+    # and the sweep's `m_agg` param runs unmarked.
     #
     # `"#93 stats"` is gone because #93 landed: `aeh.agg:rank_criteria_for_escalation`
     # ranks no-data first and a measured zero by its rate (CT-STATS-09's consumer
@@ -776,16 +746,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # then override rate descending — the mirror of `aeh.agg`), so the sweep's
     # `m_review` param runs unmarked too and both consumers answer c09 the same
     # way.
-    "#123 stats": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_setup_step",
-        (
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c20_no_consumer_renders_or_exports_a_single_headline_figure[m_console]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c21_no_consumer_presents_binary_agreement_as_equivalent_to_multi_band[m_console]",
-        ),
-    ),
+    # `"#123 stats"` is gone because #123 landed: `render_agreement_block` renders one
+    # scoped figure — population and backend named on the line, the band count beside
+    # the statistic, the degenerate two-band shape disclosed — so the sweep's
+    # `m_console` params run unmarked beside `m_pkg_export` and `m_agg`.
+    #
     # The `"#125 stats"` entry that stood here split when #125 landed, and the `-C03`
     # half that rode the conjunction of `render_agreement_block` and `NoValidationData`
     # is gone too because #115 landed the second symbol: the absence-rendering case

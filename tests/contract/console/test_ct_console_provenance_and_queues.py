@@ -49,7 +49,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-10 — a grade is never displayed without its provenance ---------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c10_every_route_that_displays_a_grade_displays_its_provenance():
     """`CT-CONSOLE-10` / `FR-CONSOLE-09` — swept over **every** grade-displaying route.
 
@@ -92,7 +91,6 @@ def test_tc_console_c10_every_route_that_displays_a_grade_displays_its_provenanc
 # --- CT-CONSOLE-11 — three renderings, three tests ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c11a_any_agreement_statistic_renders_corrected_scoped_and_unmerged():
     """`FR-CONSOLE-10` — four requirements in one sentence, and each has a way of being lost.
 
@@ -215,7 +213,6 @@ def test_tc_console_c11c_a_package_never_administered_here_renders_no_borrowed_f
 # --- CT-CONSOLE-12 — two queues, and nothing crosses ---------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c12_quarantine_and_the_review_queue_have_separate_routes_and_counts():
     """`FR-CONSOLE-11` / invariant 6, and HLD §11.3 says merging them is *"a design defect"*.
 
@@ -260,7 +257,6 @@ def test_tc_console_c12_quarantine_and_the_review_queue_have_separate_routes_and
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c12_no_quarantine_item_is_reachable_from_the_review_queue():
     """The reachability half, asserted over the queue's **queries** — §6.11.19's own instrument.
 
@@ -288,7 +284,6 @@ def test_tc_console_c12_no_quarantine_item_is_reachable_from_the_review_queue():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c12_no_deterministic_blind_or_random_arm_item_is_rendered_in_the_queue():
     """`FR-CONSOLE-12` and `-19` — three kinds, and each is kept out for a different reason.
 
