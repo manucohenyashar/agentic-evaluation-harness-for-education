@@ -14,10 +14,10 @@ asserted in `tests/artifact/test_tc_conform_09_adversarial_corpora.py` and are g
 them this file would be green-by-meaninglessness rather than green: comparing a submission to
 itself produces three clean equalities and measures nothing.
 
-**Written ahead of implementation** (§8.2). Correctly red: `aeh.conform` does not exist. The
-blocker is #134 and the symbol is `run_adversarial_tier` — the name this suite calls **first**, so
-`require()` reports the blocker the registry is keyed on rather than whichever dependency happened
-to resolve earliest. Remove the marker — never the test — when #134 closes.
+**Landed at #134** (unmarked there): `aeh.conform.run_adversarial_tier` is the symbol this
+suite calls **first**, and it ships with the closing PR — the tier derives `F-ADV-INJ`'s
+differential outcomes from the declared references and drives the real ingest ladder for
+`F-ADV-PDF`.
 
 **How this differs from TS-75's `TC-CONFORM-C09`.** That case drives
 `aeh.conform.load_fixture_set("v1")` and asserts over `M-CONFORM`'s own fixture set. This one runs
@@ -40,7 +40,7 @@ from tests.support import corpora
 from tests.support.conform_vocabulary import QUARANTINE_GATE, CountingProvider
 from tests.support.impl import CONFORM_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#134"
 CASE = "TC-CONFORM-09"

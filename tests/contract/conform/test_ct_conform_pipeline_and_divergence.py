@@ -16,9 +16,10 @@ Test plan §6.11.18, TS-75 (issue #136). Where the corpus clauses ask *what is m
   where `BuildChangedError` does not fire"*.
 * `-13` — **resolved** builds, both of them.
 
-Every case here is written ahead of #134 and every one is correctly red. See
-`test_ct_conform_corpus.py`'s docstring for why the names are invented, and
-`test_ct_conform_vocabulary.py` for what runs green today and why it is not coverage.
+Every case here was written ahead of #134 and **landed with it** (unmarked there): the
+invented names were adopted as declared. See `test_ct_conform_corpus.py`'s docstring for why
+the names are invented, and `test_ct_conform_vocabulary.py` for the scaffolding rules and why
+they are not coverage.
 """
 
 from __future__ import annotations
@@ -80,7 +81,6 @@ def _requested_builds(cfg):
 # --- CT-CONFORM-03 — the identical set, the full pipeline -------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c03_every_stage_runs_for_every_fixture_on_every_backend():
     """`CT-CONFORM-03` — *"the **full** pipeline on each backend, with **no stubs for ingestion**"*.
 
@@ -113,7 +113,6 @@ def test_tc_conform_c03_every_stage_runs_for_every_fixture_on_every_backend():
             )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c03_both_backends_consumed_the_same_input_set_by_content_hash():
     """`CT-CONFORM-03`'s identity claim, asserted over what each backend **consumed**.
 
@@ -146,7 +145,6 @@ def test_tc_conform_c03_both_backends_consumed_the_same_input_set_by_content_has
 # --- CT-CONFORM-04 — five dimensions, and no headline ------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c04_the_divergence_report_covers_exactly_the_five_dimensions():
     """`CT-CONFORM-04` — set equality, in both directions.
 
@@ -174,7 +172,6 @@ def test_tc_conform_c04_the_divergence_report_covers_exactly_the_five_dimensions
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c04_no_surface_carries_a_single_combined_conformance_figure():
     """`CT-CONFORM-04`'s prohibition — *"there is no single conformance score"*.
 
@@ -203,7 +200,6 @@ def test_tc_conform_c04_no_surface_carries_a_single_combined_conformance_figure(
 # --- CT-CONFORM-05 — two gates, three findings --------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c05_an_evidence_integrity_divergence_blocks_rather_than_being_noted():
     """`CT-CONFORM-05`'s **live** gate — the one that is computable and does fire.
 
@@ -228,7 +224,6 @@ def test_tc_conform_c05_an_evidence_integrity_divergence_blocks_rather_than_bein
     assert LIVE_GATE_DIMENSION in outcome.blocking_dimensions
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("dimension", sorted(INFORMATIONAL_DIMENSIONS))
 def test_tc_conform_c05_the_three_remaining_dimensions_are_findings_not_failures(dimension):
     """`CT-CONFORM-05`'s default — *"divergence is a **finding, not a failure**"*.
@@ -256,7 +251,6 @@ def test_tc_conform_c05_the_three_remaining_dimensions_are_findings_not_failures
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c05_the_score_distribution_gate_is_reported_unavailable_not_passing():
     """`CT-CONFORM-05`'s first gate, read together with `CT-CONFORM-14`.
 
@@ -297,7 +291,6 @@ def test_tc_conform_c05_the_score_distribution_gate_is_reported_unavailable_not_
 # --- CT-CONFORM-07 — build substitution ----------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c07_a_silent_build_substitution_is_attributed_to_the_provider():
     """`CT-CONFORM-07` — *"the detection path for the failure `M-PROV`'s `BuildChangedError` cannot
     see"*.
@@ -344,7 +337,6 @@ def test_tc_conform_c07_a_silent_build_substitution_is_attributed_to_the_provide
 # --- CT-CONFORM-13 — resolved, not requested ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conform_c13_the_report_names_both_backends_resolved_builds_not_the_requested_ones():
     """`CT-CONFORM-13` — *"the resolved builds are what make a divergence attributable"*.
 
