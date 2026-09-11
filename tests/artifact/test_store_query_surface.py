@@ -628,8 +628,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # bootstrap insert the security suite's fixture surface makes before its
     # ingests (`tests/security/ingest/test_active_content.py`), now riding the
     # submission's declared consent class. (Re-pinned from the walker on any
-    # line move.)
-    "aeh.conform:471",
+    # line move.) (#134's re-pin: the conformance module's divergence-gate
+    # machinery grew the module above the ephemeral store open.)
+    "aeh.conform:796",
     # The review site is #110's: the label store's one durable write, a single
     # `tx.execute` inside `_persist_label`'s transaction body, passing
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
