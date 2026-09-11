@@ -201,16 +201,6 @@ CONFORMANCE_BUDGET_SECONDS = 3600
 #: the recorded derivation.
 LIVE_BACKENDS_ENV = "HARNESS_CONFORM_LIVE_BACKENDS"
 
-#: The provider names with a shipped HTTP transport (`aeh.prov`), mapped to the env each
-#: needs. Any other provider name in a backend config dispatches through the recorded
-#: derivation, which is the deterministic transport for the corpus's own declared answers.
-_LIVE_TRANSPORTS: Mapping[str, str] = {
-    "local-server": "LOCAL_INFERENCE_BASE_URL",
-    "ollama": "LOCAL_INFERENCE_BASE_URL",
-    "vllm-mlx": "LOCAL_INFERENCE_BASE_URL",
-    "openrouter": "OPENROUTER_API_KEY",
-}
-
 
 class ConformanceError(Exception):
     """A misuse of the conformance surface (a missing provider, an unknown fixture id)."""
