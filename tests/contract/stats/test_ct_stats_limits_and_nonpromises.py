@@ -316,10 +316,10 @@ def test_tc_stats_c19_each_contract_alert_exists_and_fires(alert, issue):
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        # The M-CONSOLE half is still blocked on #123 (no console exists), so its param
-        # carries the marker; the M-PKG half landed with #31's export seam.
-        pytest.param("M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123",
-                     marks=pytest.mark.writtenahead),
+        # The M-CONSOLE half landed with #123: the agreement block renders one figure,
+        # scoped, with its population and backend named on the same line; the M-PKG half
+        # landed with #31's export seam.
+        pytest.param("M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123"),
         pytest.param("M-PKG", PKG_MODULE, "export_package", "#31"),
     ],
     ids=["m_console", "m_pkg_export"],
@@ -433,12 +433,12 @@ def test_tc_stats_c21_a_two_band_criterion_returns_its_number_and_discloses_the_
 @pytest.mark.parametrize(
     "consumer, module, entry, issue",
     [
-        # Per-param markers, the sweep's own per-row keying: `M-AGG`'s
+        # Per-param keying, the sweep's own per-row keying: `M-AGG`'s
         # `describe_agreement` landed at #91 and runs unmarked; the console row
-        # keeps its marker — #123 has not landed.
+        # landed with #123 — the block discloses the band count beside the
+        # statistic and never merges the binary shape into the multi-band scale.
         pytest.param(
             "M-CONSOLE", CONSOLE_MODULE, "render_agreement_block", "#123",
-            marks=pytest.mark.writtenahead,
         ),
         pytest.param(
             "M-AGG", AGG_MODULE, "describe_agreement", "#91",

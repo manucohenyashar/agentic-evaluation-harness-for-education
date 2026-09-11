@@ -673,14 +673,20 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # probes for the version row before inserting — and the per-cohort run ids
     # moved the driver's six again; the statements are the same eight. Re-read
     # from the walker, never hand-unioned.)
-    "aeh.console:1718",
-    "aeh.console:1795",
-    "aeh.console:3459",
-    "aeh.console:3464",
-    "aeh.console:3487",
-    "aeh.console:3495",
-    "aeh.console:3503",
-    "aeh.console:3516",
+    # #123's re-pin: the invariants 1-7 work — the progress section in the
+    # monitor, the skip controls and prompt sections, the standing queue shapes
+    # and the agreement block's scoped rendering — was inserted above the two
+    # quarantine-resolution sites and the driver's six again (re-shifted once by
+    # the reviewer's standing-shape gating); the statements are the same eight.
+    # Re-read from the walker, never hand-unioned.)
+    "aeh.console:1950",
+    "aeh.console:2027",
+    "aeh.console:3772",
+    "aeh.console:3777",
+    "aeh.console:3800",
+    "aeh.console:3808",
+    "aeh.console:3816",
+    "aeh.console:3829",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the

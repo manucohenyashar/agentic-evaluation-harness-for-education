@@ -43,7 +43,6 @@ pytestmark = pytest.mark.contract
 # --- CT-CONSOLE-07 — two screens block, and every other prompt states its cost -------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c07_exactly_two_screens_block_and_they_are_s3_and_s4():
     """`CT-CONSOLE-07` / `FR-CONSOLE-06` — a count **and** an identity.
 
@@ -75,7 +74,6 @@ def test_tc_console_c07_exactly_two_screens_block_and_they_are_s3_and_s4():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c07_every_skippable_prompt_renders_the_skip_and_its_cost_in_one_view():
     """The half that is easy to half-implement, and §6.11.19 says so.
 
@@ -134,7 +132,6 @@ def test_tc_console_c07_every_skippable_prompt_renders_the_skip_and_its_cost_in_
 # --- CT-CONSOLE-08 — no numeric score field, and no grade that cannot be changed -----------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c08_no_route_anywhere_offers_a_numeric_score_entry_field():
     """`CT-CONSOLE-08` / `FR-CONSOLE-07` — *anywhere*, so the sweep is every route.
 
@@ -214,7 +211,6 @@ def test_tc_console_c08_every_route_that_shows_a_grade_shows_it_as_an_editable_b
 # --- CT-CONSOLE-09 — no per-student progress, rendered or merely available -----------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c09_no_route_or_payload_carries_a_per_student_progress_figure():
     """`CT-CONSOLE-09` / `FR-CONSOLE-08` — swept over **payloads** as well as routes.
 
@@ -252,7 +248,6 @@ def test_tc_console_c09_no_route_or_payload_carries_a_per_student_progress_figur
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_console_c09_progress_renders_at_the_three_dimensions_and_derives_nothing_more():
     """*"Exactly what `M-ORCH` exposes and nothing more"* — so the ceiling is asserted, not only
     the floor.
