@@ -64,13 +64,12 @@ EXPORT_WALL_CLOCK_TOLERANCE = float(os.environ.get("HARNESS_STATS_EXPORT_TOLERAN
         pytest.param(
             member,
             id=member,
-            # The agreement row is #115's and the run_mvvp row is #116's; both
-            # landed and run in the gate unmarked. The other five rows are the
-            # other stories' members and keep their marker -- the sweep's own
-            # per-row keying (MEMBER_ISSUE), now carried in the marks.
-            marks=pytest.mark.writtenahead
-            if member not in ("agreement", "run_mvvp")
-            else [],
+            # The agreement row is #115's, the run_mvvp row is #116's, and the
+            # four comparison rows are #117's -- all six landed and run in the
+            # gate unmarked. The promote row is #118's and keeps its marker;
+            # the sweep's own per-row keying (MEMBER_ISSUE) is carried in the
+            # marks.
+            marks=pytest.mark.writtenahead if member == "promote" else [],
         )
         for member in sorted(vocab.PROTOCOL_MEMBERS)
     ],
@@ -265,12 +264,18 @@ def test_tc_stats_c19_emits_the_declared_counters():
     assert missing == [], f"§3.16's Observability paragraph declares {missing}, and they are absent"
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "alert, issue",
     [
-        (vocab.CONTRACT_ALERTS[0], "#118"),
-        (vocab.CONTRACT_ALERTS[1], "#117"),
+        # The blind-skip alert is the validation record's (#118): its
+        # administrations channel does not exist yet, so its row keeps the
+        # marker. The surface-proxy flag is this story's (#117) and runs.
+        pytest.param(
+            vocab.CONTRACT_ALERTS[0],
+            "#118",
+            marks=pytest.mark.writtenahead,
+        ),
+        pytest.param(vocab.CONTRACT_ALERTS[1], "#117"),
     ],
     ids=["blind_sample_skipped", "surface_proxy_flag"],
 )

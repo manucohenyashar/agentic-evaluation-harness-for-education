@@ -733,43 +733,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The `"#116"` entry is gone too: `aeh.stats` ships `run_mvvp` (the MVVP as six
     # separately-reported steps, CT-STATS-07/-08), so its ten registered cases -- the five
     # CT-STATS-07/-08 cases, the c16 sweep's [run_mvvp] row and the C17 M-STATS limb --
-    # run in the gate unmarked. The c16 sweep's five remaining non-agreement rows keep
-    # their markers, still registered under #117/#118; the per-row keying (MEMBER_ISSUE)
-    # stays carried in the marks themselves. The `open_stats` rung-2
+    # run in the gate unmarked. The `"#117"` entry is gone too: `aeh.stats` ships the four
+    # comparisons -- `compression_check`, `surface_proxies`, `routing_policy_validity` and
+    # `drift_check` -- plus the `alerts` surface and the subgroup knob, so its thirteen
+    # registered cases run in the gate unmarked. The still-marked rows in these files -- the
+    # c16 sweep's `promote` row and the c19 blind-sample alert -- are #118's and stay
+    # registered under it; the per-row keying (MEMBER_ISSUE) is carried in the marks
+    # themselves. The `open_stats` rung-2
     # cases needed `record_label`'s durable collection route (`data_dir=, label=,
     # cohort_id=`), which landed with #115 in `aeh.review`.
-    "#117": (
-        "symbol",
-        f"{STATS_MODULE}:compression_check",
-        (
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c10_compares_panel_against_gold_bands_on_hand_computed_constants",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c10_states_its_co_compression_blind_spot_inside_the_return_value",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c11_compares_both_arms_using_blind_labels_only",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c11_similar_error_rates_in_both_arms_are_reported_as_failing",
-            "tests/contract/stats/test_ct_stats_checks_and_scope.py"
-            "::test_tc_stats_c18_subgroup_analysis_is_off_by_default_and_refuses_when_disabled",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[compression_check]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[drift_check]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[routing_policy_validity]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c16_no_entry_point_raises_because_there_is_too_little_data[surface_proxies]",
-            "tests/contract/stats/test_ct_stats_limits_and_nonpromises.py"
-            "::test_tc_stats_c19_each_contract_alert_exists_and_fires[surface_proxy_flag]",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range[19]",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_the_check_stays_inside_the_declared_sample_range[31]",
-            "tests/contract/stats/test_ct_stats_records_and_absence.py"
-            "::test_tc_stats_c12_the_drift_check_covers_judged_criteria_only",
-        ),
-    ),
     "#118 stats": (
         "symbol",
         f"{STATS_MODULE}:promote",

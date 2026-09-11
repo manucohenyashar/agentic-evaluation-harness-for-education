@@ -103,17 +103,81 @@ assignment type and the four trigger dimensions, and no durable result is
 kept to reuse, show or merge (`CT-STATS-15` writes nothing), so a changed
 dimension is a different result by construction.
 
+**The four checks that read the same population differently (#117).**
+``compression_check``, ``surface_proxies``, ``routing_policy_validity`` and
+``drift_check`` complete the protocol surface (`FR-STATS-06`..`FR-STATS-09`).
+Each is a *comparison* rather than a quality number, and each carries the
+interpretation its clause fixes inside the value it returns:
+
+* *Compression is relative, and its blind spot is part of the value*
+  (`CT-STATS-10`). The check compares the panel's band shape against the blind
+  gold labels' using ``band_entropy`` and ``interior_rate`` and reports
+  ``panel_narrower`` — the only direction it can see. A panel and a teacher
+  compressing **together** produce a clean result, so the report carries the
+  co-compression limitation as a field, including in its empty case, where
+  "no distribution" and "no compression found" must not be confusable.
+* *The surface-proxy regression is a measured channel.* The regression's
+  inputs — assigned scores beside response length, vocabulary complexity, OCR
+  quality, handwriting legibility where captured, formatting regularity — are
+  the pipeline's score rows, which this module does not hold; the caller that
+  measured the per-criterion correlations declares them through
+  ``build_stats(surface_correlations=...)`` exactly as #116's MVVP declares
+  its measured channels. What this module owns is the interpretation: a
+  feature whose ``|r|`` reaches the threshold is a surface-proxy flag, the
+  alert ``surface_proxy_flag_on_criterion`` fires on it (`CT-STATS-19`), and
+  the per-criterion payload is the ``ProxyReport.surface_proxy_flags`` the
+  validation record's writer (#118's ``promote``, through `M-PKG`) stores.
+* *Subgroup analysis is a two-key gate* (`NFR-STATS-05`, `CT-STATS-18`).
+  ``STATS_SUBGROUP_ANALYSIS_ENABLED`` defaults to false — the declared
+  Configuration value, carried as a module constant so the default is
+  inspectable — and the environment knob may enable it only where an
+  installation has declared the analysis locally lawful, which is a decision
+  this module cannot make. Even enabled, the breakdown runs only on an
+  explicit ``subgroup=`` request; and a request while the gate is closed is a
+  refusal, not an empty result.
+* *Similar routing rates are failing, not uninformative* (`CT-STATS-11`,
+  HLD R22). The policy is working when the escalated-and-reviewed arm shows
+  the larger error rate against blind teachers (the HLD's 8%-versus-1% gap);
+  rates within the tolerance mean the policy escalates the wrong things, and
+  the verdict is ``failing`` — the finding about `M-AGG`'s constants, not an
+  absence of one. The arms are read off the label's ``routing`` column through
+  ``ROUTING_POLICY_ARM_SOURCES``: the column carries the queue's admission
+  routing (`CT-AGG-06`'s closed set), so the escalated-and-reviewed arm is the
+  ``reviewed`` rows — the one value `aeh.agg` never assigns, because it names
+  a review that has happened — and the auto-accepted arm is the ``auto`` rows;
+  still-queued, triage and provisional rows join neither. The tolerance is an
+  environment knob whose default is the declared 0.05, and arms without a
+  computable rate return ``no_data`` as a value (`CT-STATS-16`), never an
+  exception.
+* *Drift is advisory, and the report says what would make it binding*
+  (`CT-STATS-12`). The sample is 20–30 submissions (`FR-STATS-09`), taken as a
+  deterministic even spread that spans the sample end to end — no randomness,
+  and no truncation to its head; a sample below the floor is the absence
+  value, not a verdict computed on too little. The comparison runs over judged
+  criteria only (`CT-DET-02`'s exclusion), against a baseline the caller
+  declares from `M-PKG`'s records. ``binding_threshold`` is ``None`` **by
+  design**: there is no distance, severity or sample size at which this check
+  starts blocking a run — HLD R11 forbids gating a school's grading on an
+  advisory comparison of at most 30 submissions, and `NFR-SYS-08` declares no
+  threshold here — so the field states the absence rather than leaving it
+  implied.
+
 The four seams (CLAUDE.md): the constructor pair is the headless driver —
 ``build_stats``/``open_stats`` return structured values with no console in the
 loop; the deterministic transport for every external dependency is `aeh.store`
 itself, the deterministic local store this module's reads ride (no egress of
-its own); the one environment-sensitive constant this contract lets the module
-declare, ``STATS_MIN_N_FOR_HEADLINE``, is pinned by ``TC-STATS-C20`` to the
-declared default — the seam it gets is the test tier's own
-``HARNESS_STATS_ACCUMULATED_SECONDS`` knob, which gates the cost bound without
-a code change; and every figure is stage-level observability by construction —
-n, the excluded count, the interval and the degeneracy disclosure travel with
-the number, next to it, not in a footnote.
+its own); the environment-sensitive constants are env-gated knobs read at
+call time with the declared production value as the default —
+``STATS_SUBGROUP_ANALYSIS_ENABLED`` (pinned by `TC-STATS-C18`'s case) and the
+three detector sensitivities #117 adds for the surface-proxy flag, the
+routing tolerance and the drift distance — so a slower box or a lawful
+installation adjusts without a code change. (``STATS_MIN_N_FOR_HEADLINE``,
+pinned by `TC-STATS-C20`, is a declared constant from #115 and deliberately
+not an environment knob: the display-qualifier boundary is a contract value,
+not an environment-sensitive one.) And every figure is stage-level
+observability by construction — n, the excluded count, the stated limitation,
+the verdict's stated interpretation and the advisory statement travel with the
+number, next to it, not in a footnote.
 """
 
 from __future__ import annotations
@@ -121,6 +185,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -131,23 +196,47 @@ from aeh.store import Statement
 
 __all__ = [
     "AgreementFigure",
+    "BandShape",
     "CompressionOutcome",
+    "CompressionReport",
     "CrossValidationOutcome",
+    "DRIFT_SAMPLE_RANGE",
+    "DriftReport",
     "MVVPReport",
     "MVVPStep",
     "NoValidationData",
     "PositionBiasResult",
+    "ProxyReport",
+    "ROUTING_POLICY_ARM_SOURCES",
+    "ROUTING_POLICY_ARMS",
+    "ROUTING_POLICY_DISCRIMINATING_VERDICT",
+    "ROUTING_POLICY_FAILING_VERDICT",
+    "ROUTING_POLICY_NO_DATA_VERDICT",
     "ReplicationResult",
     "SCORING_MODELS",
+    "SURFACE_FEATURES",
+    "SURFACE_PROXY_ALERT",
     "SelfAgreementPairing",
     "STATS_MIN_N_FOR_HEADLINE",
     "STATS_STATEMENTS",
+    "STATS_SUBGROUP_ANALYSIS_ENABLED",
+    "STATS_SURFACE_PROXY_CORRELATION_THRESHOLD",
+    "STATS_ROUTING_POLICY_TOLERANCE",
+    "STATS_DRIFT_TOLERANCE",
+    "StatsAlert",
+    "RoutingArm",
+    "RoutingPolicyReport",
     "ValidationStats",
     "agreement",
+    "alerts",
     "build_stats",
+    "compression_check",
+    "drift_check",
     "latest_mvvp",
     "open_stats",
+    "routing_policy_validity",
     "run_mvvp",
+    "surface_proxies",
 ]
 
 #: A criterion's scoring-model values (`FR-STATS-17`). ``atomic`` and
@@ -178,6 +267,130 @@ _INTERVAL_Z_95 = 1.96
 #: The worst-case band variance when no statistic is computable: the binomial
 #'s maximum variance at p = 0.5, the widest claim an ``n`` can honestly make.
 _WORST_CASE_VARIANCE = 0.25
+
+
+# --- the #117 constants (FR-STATS-06..09, CT-STATS-10/11/12/18/19) ---------------------------------
+#
+# The declared values are the defaults; the three detector sensitivities are
+# env-gated knobs read at call time (seam 3) — an installation adjusts without
+# a code change. ``STATS_SUBGROUP_ANALYSIS_ENABLED`` is the Configuration
+# block's own knob and is *not* env-defaulted here: the module constant is the
+# declared default (``TC-STATS-C18`` pins it), and the environment override is
+# read at call time by the one function that implements the gate.
+
+#: The two populations `FR-STATS-08` compares. The names are the comparison
+#: protocol's; the values a label actually carries in its ``routing`` column
+#: are the queue's admission routing (`CT-AGG-06`'s closed set), copied onto
+#: the label for traceability (`CT-REVIEW-07`) — so ``routing_policy_validity``
+#: reads the column through ``ROUTING_POLICY_ARM_SOURCES``, which maps each
+#: arm onto the routing values that name it.
+ROUTING_POLICY_ARMS: tuple[str, ...] = ("escalated_and_reviewed", "auto_accepted")
+
+#: Which ``routing`` values put a label in which arm. The label's ``routing``
+#: column carries the queue's admission routing — `CT-AGG-06`'s closed set
+#: ``{auto, queued, provisional, reviewed, triage}`` — recorded on the label
+#: for traceability (`CT-REVIEW-07`), and the two arms of `FR-STATS-08`'s
+#: comparison are read off it: ``reviewed`` — the one value `aeh.agg` never
+#: assigns, because it names a review that has happened — is the
+#: escalated-and-reviewed arm; ``auto`` — the confidence met the scoring
+#: model's threshold — is the auto-accepted arm. Each arm also accepts its own
+#: protocol name, which is what an in-memory construction of the comparison
+#: uses. The other three values join **neither** arm on purpose: ``queued`` and
+#: ``triage`` are judgments still awaiting review — escalated, but the review
+#: the arm names has not happened — and ``provisional`` names a single-judge
+#: band or a tripped breaker that was never auto-accepted, so it belongs to no
+#: population the policy created. Rows predating the column read ``None`` and
+#: join neither arm rather than being guessed into one.
+ROUTING_POLICY_ARM_SOURCES: Mapping[str, tuple[str, ...]] = {
+    "escalated_and_reviewed": ("escalated_and_reviewed", "reviewed"),
+    "auto_accepted": ("auto_accepted", "auto"),
+}
+
+#: The verdict vocabulary `CT-STATS-11` fixes. ``failing`` is what similar
+#: rates in both arms mean — the policy escalates the wrong judgments, which is
+#: a finding about `M-AGG`'s declared constants (R22), not an absence of one;
+#: ``uninformative`` is the reading the clause forbids and the module never
+#: returns it. ``discriminating`` is the healthy direction (the escalated arm's
+#: error rate against blind teachers exceeds the auto-accepted one's by at
+#: least the tolerance — the HLD's 8%-versus-1% gap). ``no_data`` is the
+#: insufficient-data value (`CT-STATS-16`), not a verdict.
+ROUTING_POLICY_FAILING_VERDICT = "failing"
+ROUTING_POLICY_DISCRIMINATING_VERDICT = "discriminating"
+ROUTING_POLICY_NO_DATA_VERDICT = "no_data"
+
+#: The tolerance below which the two arms' error rates count as "similar" —
+#: env-gated at call time under this same name, production default declared
+#: here. A detector sensitivity, not a quality threshold: it decides when the
+#: comparison cannot tell the arms apart, never whether the system is good.
+STATS_ROUTING_POLICY_TOLERANCE = 0.05
+
+#: The ``|r|`` at which a surface feature becomes a surface-proxy flag —
+#: env-gated at call time under this same name. A detector sensitivity, not a
+#: quality threshold (`CT-STATS-20`'s non-promise is about verdicts on
+#: agreement figures; this decides when the alert `CT-STATS-19` declares fires).
+STATS_SURFACE_PROXY_CORRELATION_THRESHOLD = 0.7
+
+#: The total-variation distance at which a criterion's sample distribution
+#: counts as drifted from the baseline — env-gated at call time. The check is
+#: advisory regardless (`CT-STATS-12`); this only decides which distances the
+#: report names, and no threshold makes the check binding.
+STATS_DRIFT_TOLERANCE = 0.1
+
+#: `NFR-STATS-05`'s gate, as the Configuration block declares it. **False is
+#: the contract**: a subgroup analysis running by default is a regulatory
+#: exposure nobody chose. The module constant is the declared default; the
+#: environment knob of the same name may enable it where an installation has
+#: declared the analysis locally lawful — a decision this module cannot make —
+#: and even then the breakdown runs only on an explicit ``subgroup=`` request.
+STATS_SUBGROUP_ANALYSIS_ENABLED = False
+
+#: `FR-STATS-09`'s declared sample window, inclusive at both ends. A sample
+#: below the low end is the absence value (`TC-STATS-C12` asserts both
+#: boundaries); above the high end the check takes an even spread of the
+#: declared size and reports how many it used.
+DRIFT_SAMPLE_RANGE: tuple[int, int] = (20, 30)
+
+#: `FR-STATS-07`'s surface features that *ought to be irrelevant* to a score.
+#: ``subgroup`` is deliberately absent here — it is not a regression input on
+#: this surface but the gated analysis behind ``surface_proxies(subgroup=)``
+#: (`NFR-STATS-05`); ``handwriting_legibility_band`` is reported as captured
+#: only where the declared correlations carry it.
+SURFACE_FEATURES: tuple[str, ...] = (
+    "response_length_tokens",
+    "vocabulary_complexity",
+    "ocr_quality_score",
+    "handwriting_legibility_band",
+    "formatting_regularity",
+)
+
+#: The alert name `CT-STATS-19` declares contract — the only detector for a
+#: criterion with an excellent κ and no validity. A length or OCR correlation
+#: means that criterion is measuring something other than what it claims,
+#: **whatever its agreement statistic says**.
+SURFACE_PROXY_ALERT = "surface_proxy_flag_on_criterion"
+
+#: The stated interpretation `CT-STATS-11` fixes, carried in the report itself
+#: (the same discipline as `CT-STATS-10`'s limitation): the verdict vocabulary
+#: travels with the reading that justifies it.
+_ROUTING_POLICY_INTERPRETATION = (
+    "similar error rates in both arms are failing, not uninformative: a policy "
+    "whose escalated arm shows no more teacher disagreement than its "
+    "auto-accepted arm is escalating the wrong judgments, which is a finding "
+    "about the escalation constants, not an absence of one (CT-STATS-11, HLD R22)"
+)
+
+#: The advisory statement the drift report carries (`CT-STATS-12`). It is part
+#: of the value, like the compression check's limitation: the field answers
+#: the reader's next question — what would make this binding — instead of
+#: leaving the answer in a docstring.
+_DRIFT_ADVISORY_STATEMENT = (
+    "advisory, never a gate: no distance, severity or sample size makes this "
+    "check binding. A binding threshold would stop a school's grading on an "
+    "advisory comparison of at most 30 submissions against a baseline (HLD "
+    "R11, CT-STATS-12), and NFR-SYS-08 declares no threshold here — so there "
+    "is no binding threshold, by design, and the consumer decides what to do "
+    "with the distances; the check only reports them."
+)
 
 
 # --- the admissibility filter (NFR-STATS-04) ------------------------------------------------------
@@ -556,7 +769,10 @@ class _StoredLabel:
     names mapped onto the label vocabulary. ``band`` is the effective band the
     label stands for (`FR-REVIEW-09`) and ``teacher_band`` rides beside it —
     ``M-REVIEW`` writes both from the teacher's band, so the row's teacher
-    side falls back to ``band`` when the explicit column is NULL."""
+    side falls back to ``band`` when the explicit column is NULL. ``routing``
+    is `CT-REVIEW-07`'s column (`FR-STATS-08`'s arms read it); rows predating
+    the column read as ``None``, which `routing_policy_validity` keeps out of
+    both arms rather than guessing an arm for them."""
 
     def __init__(self, mapping: Mapping[str, Any]) -> None:
         self.label_id = mapping.get("label_id")
@@ -570,6 +786,7 @@ class _StoredLabel:
             if mapping.get("teacher_band") is not None
             else mapping.get("band")
         )
+        self.routing = mapping.get("routing")
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
@@ -1450,13 +1667,784 @@ def latest_mvvp(
     )
 
 
+# --- the four comparisons (#117, FR-STATS-06..09) --------------------------------------------------
+#
+# Four checks over the same admissible population that the agreement figure
+# reads, each a comparison rather than a quality number and each carrying its
+# fixed interpretation inside its own value. Like ``agreement`` above, each is
+# defined at module level and bound into ``ValidationStats``, so the surface
+# ``require(STATS_MODULE, ...)`` names and the method the instance carries are
+# the same function — and each routes its population through the single
+# filter's application (``admissible_labels()``, `NFR-STATS-04`): no figure on
+# this surface is computed over any other population.
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    """One boolean environment knob, read at call time (seam 3).
+
+    The declared production value is the default; the knob exists so an
+    installation adjusts without a code change. An unset or empty variable
+    falls through to the default, a recognised boolean spelling is honoured,
+    and anything else is refused with the knob's name — a mis-spelled
+    ``STATS_SUBGROUP_ANALYSIS_ENABLED=tru`` must fail loudly, not silently run
+    the gate closed.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    lowered = raw.strip().lower()
+    if lowered in ("1", "true", "yes", "on"):
+        return True
+    if lowered in ("0", "false", "no", "off"):
+        return False
+    raise ValueError(
+        f"environment knob {name}={raw!r} is not a boolean; use 1/true/yes/on "
+        "or 0/false/no/off."
+    )
+
+
+def _env_float(name: str, default: float) -> float:
+    """One numeric environment knob, read at call time (seam 3).
+
+    Non-finite values are refused along with unparseable ones: a threshold of
+    ``nan`` or ``inf`` would silently disable the detector it calibrates — a
+    mis-spelled value must fail loudly, the same refusal ``_env_flag`` makes.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"environment knob {name}={raw!r} is not a number."
+        ) from error
+    if not math.isfinite(value):
+        raise ValueError(
+            f"environment knob {name}={raw!r} is not a finite number; a "
+            "non-finite sensitivity would silently disable the detector it "
+            "calibrates."
+        )
+    return value
+
+
+def _subgroup_analysis_enabled() -> bool:
+    """The subgroup gate's effective state: the declared default, overridden by
+    the environment knob of the same name where an installation declares the
+    analysis locally lawful (`NFR-STATS-05`)."""
+    return _env_flag("STATS_SUBGROUP_ANALYSIS_ENABLED", STATS_SUBGROUP_ANALYSIS_ENABLED)
+
+
+def _surface_proxy_threshold() -> float:
+    return _env_float(
+        "STATS_SURFACE_PROXY_CORRELATION_THRESHOLD",
+        STATS_SURFACE_PROXY_CORRELATION_THRESHOLD,
+    )
+
+
+def _routing_policy_tolerance() -> float:
+    return _env_float(
+        "STATS_ROUTING_POLICY_TOLERANCE", STATS_ROUTING_POLICY_TOLERANCE
+    )
+
+
+def _drift_tolerance() -> float:
+    return _env_float("STATS_DRIFT_TOLERANCE", STATS_DRIFT_TOLERANCE)
+
+
+def _require_str_or_none(member: str, **named: Any) -> None:
+    """A population key is a string or ``None``; anything else is a programming
+    error, and `CT-STATS-16` raises on programming errors."""
+    for name, value in named.items():
+        if value is not None and not isinstance(value, str):
+            raise TypeError(
+                f"{member}() got {name}={value!r}; a population key is a "
+                "string or None, and anything else is a programming error "
+                "(CT-STATS-16 raises on programming errors)"
+            )
+
+
+def _refuse_foreign_cohort(
+    self: "ValidationStats", cohort_id: str | None, member: str
+) -> None:
+    """Refuse a report that would name a cohort the instance does not hold.
+
+    The constructor pair binds the instance to one population — ``open_stats``
+    reads one cohort's rows when it is given a cohort — and a report naming a
+    cohort it was not computed over is the mislabeled claim `CT-STATS-02`'s
+    discipline exists to prevent, applied to the report's own label. Where the
+    instance never declared a cohort (``build_stats``, or an unbound
+    ``open_stats`` over every cohort), nothing is checked and the report
+    carries the cohort the caller named."""
+    held = getattr(self, "_cohort_id", None)
+    if cohort_id is not None and held is not None and cohort_id != held:
+        raise ValueError(
+            f"{member}() was asked for cohort {cohort_id!r} but the instance "
+            f"holds {held!r}'s labels; a report naming a cohort it was not "
+            "computed over is the mislabeled claim this module exists to "
+            "prevent (CT-STATS-02's discipline, on the report's own label)"
+        )
+
+
+def _paired_sides(population: Sequence[Any]) -> list[tuple[Any, Any]]:
+    """Both sides of each label's band pair, dropping the genuinely one-sided.
+
+    The same extraction ``agreement`` makes: the label's system side
+    (``_system_side``) and its teacher side, kept only where both exist. A
+    blind label whose system column is NULL stays in the population counts and
+    drops out of the paired statistic — borrowing the teacher's side would
+    manufacture the very comparison the label cannot support."""
+    return [
+        (system, teacher)
+        for system, teacher in (
+            (_system_side(label), getattr(label, "teacher_band", None))
+            for label in population
+        )
+        if system is not None and teacher is not None
+    ]
+
+
+def _flagged_features(
+    correlations: Mapping[str, float], threshold: float
+) -> tuple[str, ...]:
+    """The features whose ``|r|`` reaches the flag threshold, in a stable order.
+
+    Sorted so the alert's detail line and the report's flags are deterministic
+    — the same measured correlations produce the same output on two runs,
+    which is what makes the alert comparable across administrations."""
+    return tuple(
+        sorted(
+            feature
+            for feature, value in correlations.items()
+            if abs(value) >= threshold
+        )
+    )
+
+
+def _distribution_counts(values: Sequence[Any]) -> dict[Any, int]:
+    counts: dict[Any, int] = {}
+    for value in values:
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
+
+def _total_variation(
+    first: Mapping[Any, int], second: Mapping[Any, int]
+) -> float:
+    """The total-variation distance between two band distributions.
+
+    The drift check's per-criterion measure: half the L1 distance between the
+    two normalized distributions, in ``[0, 1]`` — 0.0 for identical shapes and
+    1.0 for disjoint support. Chosen over an entropy difference because the
+    baseline and the sample can disagree in either direction, and a signed
+    measure would bury the direction the reader needs next to the magnitude.
+    """
+    total_first = sum(first.values())
+    total_second = sum(second.values())
+    keys = set(first) | set(second)
+    return 0.5 * sum(
+        abs(first.get(key, 0) / total_first - second.get(key, 0) / total_second)
+        for key in keys
+    )
+
+
+@dataclass(frozen=True)
+class BandShape:
+    """One side's band-distribution shape, as the compression check reads it.
+
+    The two statistics `FR-STATS-06` names, plus the ``n`` they were computed
+    over — the same discipline as the agreement figure's sample size
+    (`NFR-STATS-02`): a shape without its population is not representable.
+    ``None`` statistics are the explicit not-measured value: no distribution,
+    no entropy, and a band count below three has no interior to measure."""
+    band_entropy: float | None
+    interior_rate: float | None
+    n: int
+
+
+@dataclass(frozen=True)
+class CompressionReport:
+    """`compression_check`'s return value (`FR-STATS-06`, `CT-STATS-10`).
+
+    ``panel_narrower`` is the check's finding — **relative** compression, the
+    only direction the comparison can see — and ``stated_limitation`` is part
+    of the value, not a footnote beside it (`CT-STATS-10`): the check compares
+    the panel against the teacher, so a panel and a teacher compressing
+    together produce a clean result, and the report says so wherever it goes.
+    The empty population carries the same limitation with no distribution, so
+    "no compression found" and "nothing measured" cannot be confused."""
+    cohort_id: str | None
+    criterion_id: str | None
+    gold: BandShape
+    panel: BandShape
+    panel_narrower: bool | None
+    stated_limitation: str
+    n: int
+    excluded_count: int
+
+
+@dataclass(frozen=True)
+class ProxyReport:
+    """`surface_proxies`' return value (`FR-STATS-07`).
+
+    ``correlations`` is the declared measured channel — what the caller
+    measured, per criterion and per surface feature — and
+    ``surface_proxy_flags`` is the per-criterion payload `FR-STATS-07` stores
+    in the validation record: the features whose ``|r|`` reached the
+    threshold, with their correlations. The durable write of that payload is
+    the validation record writer's (#118's ``promote``, through `M-PKG`,
+    `CT-STATS-15`) — this report carries the payload, and the report is the
+    seam it hands over. ``captured_features`` discloses which of
+    `FR-STATS-07`'s features the channel actually supplied — the
+    handwriting-legibility band is a regression input *where captured*, and a
+    feature absent here was not measured, not measured at zero.
+
+    ``subgroup_breakdowns`` is ``None`` unless the subgroup gate is open and
+    the caller asked — the two-key gate of `NFR-STATS-05`."""
+    cohort_id: str | None
+    criterion_id: str | None
+    correlations: Mapping[str, Mapping[str, float]]
+    surface_proxy_flags: Mapping[str, Mapping[str, float]]
+    captured_features: tuple[str, ...]
+    n: int
+    subgroup_breakdowns: Mapping[str, Mapping[str, float]] | None = None
+
+
+@dataclass(frozen=True)
+class RoutingArm:
+    """One arm of the routing-policy comparison (`FR-STATS-08`).
+
+    ``n`` is the arm's admissible population — the population the claim is
+    about (`TC-STATS-C11`'s oracle reads it); ``error_rate`` is computed over
+    the paired subset and is ``None`` where the arm carries no paired labels,
+    which is what makes ``no_data`` reachable as a value."""
+    n: int
+    paired: int
+    errors: int
+    error_rate: float | None
+
+
+@dataclass(frozen=True)
+class RoutingPolicyReport:
+    """`routing_policy_validity`'s return value (`FR-STATS-08`, `CT-STATS-11`).
+
+    ``verdict`` uses the vocabulary the clause fixes: ``failing`` when the two
+    arms' error rates are similar (or inverted), ``discriminating`` when the
+    escalated arm shows the larger rate by at least the tolerance, and
+    ``no_data`` where an arm has no computable rate (`CT-STATS-16`'s value,
+    not an exception). ``stated_interpretation`` carries the reading the
+    verdict vocabulary rests on — similar rates are a finding about
+    `M-AGG`'s constants, never ``uninformative``."""
+    cohort_id: str | None
+    verdict: str
+    label_population: Mapping[str, RoutingArm]
+    tolerance: float
+    stated_interpretation: str
+    n: int
+
+
+@dataclass(frozen=True)
+class StatsAlert:
+    """One contract alert (`CT-STATS-19`): the declared name, beside the
+    criterion and the correlation that provoked it."""
+    name: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class DriftReport:
+    """`drift_check`'s return value (`FR-STATS-09`, `CT-STATS-12`).
+
+    ``sample_size`` is what the check actually used — inside
+    ``DRIFT_SAMPLE_RANGE``, an even spread of what was available — and
+    ``sample_source`` discloses where the distributions came from: the
+    caller's ``current=`` channel, or the instance's admissible population,
+    in which case ``sample_size`` still describes the caller's submission
+    sample while the distributions cover that whole population. ``criteria_
+    covered`` names the criteria the check covered, judged criteria
+    only (`CT-DET-02`'s exclusion makes the exclusion real rather than
+    declarative). ``distances`` compares each criterion's sample distribution
+    against the baseline the caller declared from `M-PKG`'s records; a
+    criterion absent from ``distances`` had no comparable baseline, which
+    ``baseline_distributions`` discloses rather than hides.
+
+    ``advisory`` is always true and ``binding_threshold`` is always ``None``:
+    `CT-STATS-12`'s *"advisory, never a gate"* is a property of the check, not
+    a mode the caller selects, and ``why_not_binding`` states what the
+    absence means — no threshold would make it binding, by design."""
+    package_version: str | None
+    sample_size: int
+    sample_ids: tuple[Any, ...]
+    sample_source: str
+    criteria_covered: tuple[str, ...]
+    distributions: Mapping[str, Mapping[Any, int]]
+    baseline_distributions: Mapping[str, Mapping[Any, int]] | None
+    distances: Mapping[str, float]
+    drifted: tuple[str, ...]
+    severity: float | None
+    advisory: bool
+    binding_threshold: None
+    why_not_binding: str
+
+
+def compression_check(
+    self: "ValidationStats",
+    cohort_id: str | None = None,
+    criterion_id: str | None = None,
+) -> CompressionReport:
+    """The compression check for one criterion (`FR-STATS-06`, `CT-STATS-10`):
+    the panel's band shape against the blind gold labels' shape, measured by
+    ``band_entropy`` and ``interior_rate``, with the finding
+    (``panel_narrower``) and the co-compression limitation in the same value.
+
+    The population is the admissible one, always — the filter exists once and
+    this call routes through it — narrowed to ``criterion_id`` where one is
+    named. "Gold" is the **teacher side** of the blind labels: comparing the
+    panel against operational teacher bands would compare it against teachers
+    who saw its own output, and the finding would disappear. Both shapes are
+    measured against the same band count — the larger of the criterion's
+    declared count and the inferred one, exactly as the MVVP's step-6 outcome
+    takes it — so ``panel_narrower`` is a fair comparison and the interior
+    rates are computed on the same scale.
+
+    Raises on programming errors only (`CT-STATS-16`): a malformed argument
+    propagates, and a cohort the instance does not hold is refused. An empty
+    paired population is a value — a report whose shapes carry no distribution
+    and whose limitation is still stated."""
+    _require_str_or_none(
+        "compression_check", cohort_id=cohort_id, criterion_id=criterion_id
+    )
+    _refuse_foreign_cohort(self, cohort_id, "compression_check")
+    admissible = self.admissible_labels()
+    population = [
+        label
+        for label in admissible
+        if criterion_id is None or getattr(label, "criterion_id", "") == criterion_id
+    ]
+    excluded_count = len(self._labels) - len(admissible)
+    pairs = _paired_sides(population)
+    if not pairs:
+        empty = BandShape(band_entropy=None, interior_rate=None, n=0)
+        return CompressionReport(
+            cohort_id=cohort_id,
+            criterion_id=criterion_id,
+            gold=empty,
+            panel=empty,
+            panel_narrower=None,
+            stated_limitation=_CO_COMPRESSION_LIMITATION,
+            n=0,
+            excluded_count=excluded_count,
+        )
+    ordinals, inferred_band_count = _band_ordinals(pairs)
+    if criterion_id is None:
+        declared_band_count = max(self._band_counts.values(), default=0)
+    else:
+        declared_band_count = self._band_counts.get(criterion_id) or 0
+    band_count = max(declared_band_count, inferred_band_count)
+    panel_bands = [system for system, _ in ordinals]
+    gold_bands = [teacher for _, teacher in ordinals]
+    gold_entropy = _band_entropy(gold_bands)
+    panel_entropy = _band_entropy(panel_bands)
+    panel_narrower = (
+        panel_entropy < gold_entropy
+        if panel_entropy is not None and gold_entropy is not None
+        else None
+    )
+    return CompressionReport(
+        cohort_id=cohort_id,
+        criterion_id=criterion_id,
+        gold=BandShape(
+            band_entropy=gold_entropy,
+            interior_rate=_interior_rate(gold_bands, band_count),
+            n=len(gold_bands),
+        ),
+        panel=BandShape(
+            band_entropy=panel_entropy,
+            interior_rate=_interior_rate(panel_bands, band_count),
+            n=len(panel_bands),
+        ),
+        panel_narrower=panel_narrower,
+        stated_limitation=_CO_COMPRESSION_LIMITATION,
+        n=len(pairs),
+        excluded_count=excluded_count,
+    )
+
+
+def surface_proxies(
+    self: "ValidationStats",
+    cohort_id: str | None = None,
+    criterion_id: str | None = None,
+    *,
+    subgroup: str | None = None,
+) -> ProxyReport:
+    """The surface-proxy report for one criterion (`FR-STATS-07`): the
+    per-criterion correlations the caller measured between assigned scores and
+    the surface features that ought to be irrelevant, and the flags where a
+    feature's ``|r|`` reaches the threshold.
+
+    The regression's inputs are the pipeline's score rows, which this module
+    does not hold — the correlations arrive through the declared
+    ``surface_correlations`` channel exactly as #116's MVVP declares its
+    measured channels, and what this module owns is the interpretation: the
+    threshold decision, the per-criterion payload
+    (``surface_proxy_flags``, the shape the validation record stores), and the
+    alert (`CT-STATS-19`) that fires on a flag. ``captured_features``
+    discloses what the channel measured — a feature not captured is absent
+    from the disclosure, not measured at zero.
+
+    The subgroup gate (`NFR-STATS-05`, `CT-STATS-18`): the breakdown runs only
+    where the knob says the analysis is locally lawful **and** the caller asks
+    for it by name; a request while the gate is closed is a refusal, not an
+    empty result — a knob nothing reads is a comment, and an empty result
+    would read as "no subgroup differences found".
+
+    Raises on programming errors and on the closed-gate refusal; an empty
+    population or an empty channel returns the empty report as a value
+    (`CT-STATS-16`)."""
+    _require_str_or_none(
+        "surface_proxies",
+        cohort_id=cohort_id,
+        criterion_id=criterion_id,
+        subgroup=subgroup,
+    )
+    _refuse_foreign_cohort(self, cohort_id, "surface_proxies")
+    if subgroup:
+        if not _subgroup_analysis_enabled():
+            raise ValueError(
+                "surface_proxies() refuses the subgroup breakdown: NFR-STATS-05 "
+                "gates subgroup analysis on local lawfulness and "
+                "STATS_SUBGROUP_ANALYSIS_ENABLED is false — a subgroup analysis "
+                "running by default is a regulatory exposure nobody chose. "
+                "Enable the knob where the analysis is locally lawful, then ask "
+                "again."
+            )
+    correlations = self._surface_correlations
+    if criterion_id is not None:
+        correlations = {
+            name: feats
+            for name, feats in correlations.items()
+            if name == criterion_id
+        }
+    threshold = _surface_proxy_threshold()
+    flags = {
+        name: {
+            feature: value
+            for feature, value in feats.items()
+            if abs(value) >= threshold
+        }
+        for name, feats in correlations.items()
+    }
+    flags = {name: flagged for name, flagged in flags.items() if flagged}
+    admissible = self.admissible_labels()
+    population = [
+        label
+        for label in admissible
+        if criterion_id is None or getattr(label, "criterion_id", "") == criterion_id
+    ]
+    captured = tuple(
+        feature
+        for feature in SURFACE_FEATURES
+        if any(feature in feats for feats in correlations.values())
+    )
+    subgroup_breakdowns = None
+    if subgroup:
+        scoped = self._subgroup_correlations
+        if criterion_id is not None:
+            scoped = {
+                name: feats
+                for name, feats in scoped.items()
+                if name == criterion_id
+            }
+        subgroup_breakdowns = {name: dict(feats) for name, feats in scoped.items()}
+    return ProxyReport(
+        cohort_id=cohort_id,
+        criterion_id=criterion_id,
+        correlations={name: dict(feats) for name, feats in correlations.items()},
+        surface_proxy_flags=flags,
+        captured_features=captured,
+        n=len(population),
+        subgroup_breakdowns=subgroup_breakdowns,
+    )
+
+
+def routing_policy_validity(
+    self: "ValidationStats",
+    cohort_id: str | None = None,
+) -> RoutingPolicyReport:
+    """The routing-policy validity report for one cohort (`FR-STATS-08`,
+    `CT-STATS-11`): the error rate among escalated-and-reviewed judgments
+    against the error rate among auto-accepted ones, both populations drawn
+    from the admissible labels by their ``routing`` column read through
+    ``ROUTING_POLICY_ARM_SOURCES`` — the column carries the queue's admission
+    routing (`CT-AGG-06`'s closed set, recorded for traceability), and a label
+    joins an arm when its routing names that arm or is the queue value the arm
+    corresponds to: ``reviewed`` for escalated-and-reviewed, ``auto`` for
+    auto-accepted.
+
+    Both arms read the same filter's population — an operational label on
+    either side would compare the review with itself, and the escalated arm's
+    error rate would go to zero precisely where the policy does the most work.
+    The error is the judgment's band disagreeing with the blind teacher's,
+    over the labels that carry both sides of the pair; ``n`` counts the arm's
+    whole admissible population, the population the claim is about.
+
+    The verdict's reading is the clause's, and it travels in the report:
+    similar rates in both arms are ``failing`` — the policy escalates the
+    wrong judgments, a finding about `M-AGG`'s declared constants, and never
+    ``uninformative``; the escalated arm above the auto-accepted one by at
+    least the tolerance is ``discriminating`` (the HLD's 8%-versus-1% gap);
+    the inverted direction is also ``failing``, because a policy routing the
+    wrong way is worse than one routing nothing. Arms without a computable
+    rate return ``no_data`` as a value (`CT-STATS-16`), never an exception.
+
+    Raises on programming errors only."""
+    _require_str_or_none("routing_policy_validity", cohort_id=cohort_id)
+    _refuse_foreign_cohort(self, cohort_id, "routing_policy_validity")
+    admissible = self.admissible_labels()
+    tolerance = _routing_policy_tolerance()
+    arms: dict[str, RoutingArm] = {}
+    for arm in ROUTING_POLICY_ARMS:
+        sources = ROUTING_POLICY_ARM_SOURCES[arm]
+        population = [
+            label
+            for label in admissible
+            if getattr(label, "routing", None) in sources
+        ]
+        paired = _paired_sides(population)
+        errors = sum(1 for system, teacher in paired if system != teacher)
+        arms[arm] = RoutingArm(
+            n=len(population),
+            paired=len(paired),
+            errors=errors,
+            error_rate=errors / len(paired) if paired else None,
+        )
+    rates = [arms[arm].error_rate for arm in ROUTING_POLICY_ARMS]
+    if any(rate is None for rate in rates):
+        verdict = ROUTING_POLICY_NO_DATA_VERDICT
+    else:
+        escalated_rate, auto_rate = rates
+        if abs(escalated_rate - auto_rate) < tolerance:
+            verdict = ROUTING_POLICY_FAILING_VERDICT
+        elif escalated_rate > auto_rate:
+            verdict = ROUTING_POLICY_DISCRIMINATING_VERDICT
+        else:
+            # Inverted: the auto-accepted arm shows the larger rate, so the
+            # policy is routing the wrong way — worse than similar, and
+            # failing for the same reason.
+            verdict = ROUTING_POLICY_FAILING_VERDICT
+    return RoutingPolicyReport(
+        cohort_id=cohort_id,
+        verdict=verdict,
+        label_population=arms,
+        tolerance=tolerance,
+        stated_interpretation=_ROUTING_POLICY_INTERPRETATION,
+        n=len(admissible),
+    )
+
+
+def drift_check(
+    self: "ValidationStats | None" = None,
+    package_version: str | None = None,
+    sample: Sequence[Any] = (),
+    *,
+    baseline: Mapping[str, Sequence[Any]] | None = None,
+    current: Mapping[str, Sequence[Any]] | None = None,
+) -> "DriftReport | NoValidationData":
+    """The advisory drift check for one package (`FR-STATS-09`, `CT-STATS-12`).
+
+    The sample is 20–30 submissions (`DRIFT_SAMPLE_RANGE`, inclusive at both
+    ends). Above the high end the check takes an even spread of the declared
+    size and reports how many it used; below the low end there is no valid
+    sample and the answer is the absence value with ``n`` as context — a drift
+    verdict computed on nineteen submissions is exactly the substitute figure
+    `CT-STATS-16` forbids. The spread is deterministic on purpose: the sample
+    must span the caller's list end to end, first and last submission
+    included, and no randomness may enter a claim's evidence.
+
+    The comparison runs over **judged** criteria only: a criterion the
+    constructor declares deterministic is excluded from
+    ``criteria_covered``, because a deterministic result carries no verdicts
+    and there is no distribution to compare (`CT-DET-02`). The sample's
+    distributions come from the declared ``current=`` channel when the caller
+    supplies one, otherwise from the constructor's admissible population —
+    the current administration's judged distribution — and
+    ``sample_source`` names which. With the constructor population as the
+    source, ``sample_size`` still describes the caller's submission sample
+    while the per-criterion distributions cover the instance's whole
+    admissible population — the disclosure is in ``sample_source`` precisely
+    so the two are never confused. The baseline comes from the caller's
+    declared ``baseline=`` channel (`M-PKG`'s records; this module writes
+    nothing and owns no baseline of its own), and ``distances`` compares the
+    two where both sides exist — the total-variation distance, with the
+    drifted criteria named at the tolerance.
+
+    ``advisory`` is always true and ``binding_threshold`` is always ``None``
+    (`CT-STATS-12`): the statement in the value says what would make it
+    binding and why none exists. Raises on programming errors only; a sample
+    below the floor is the absence value, not a raise."""
+    if package_version is not None and not isinstance(package_version, str):
+        raise TypeError(
+            f"drift_check() got package_version={package_version!r}; a package "
+            "version is a string or None, and anything else is a programming "
+            "error (CT-STATS-16 raises on programming errors)"
+        )
+    if isinstance(sample, (str, bytes)):
+        raise TypeError(
+            "drift_check() got a string where a submission sample belongs; a "
+            "sample is a sequence of submission identities, and anything else "
+            "is a programming error (CT-STATS-16 raises on programming errors)"
+        )
+    submissions = tuple(sample)
+    available = len(submissions)
+    low, high = DRIFT_SAMPLE_RANGE
+    if available < low:
+        # Below the floor there is no sample of the kind the check consumes —
+        # the judged submissions the blind flow produces — which is the
+        # no-data condition the absence type carries, with what *was* given as
+        # context. A verdict on too small a sample is the substitute figure
+        # CT-STATS-16 forbids.
+        return NoValidationData(reason="no_blind_labels", n=available)
+    size = min(available, high)
+    if size == available:
+        chosen = submissions
+    else:
+        # The even spread: strictly increasing indices scaled across the
+        # sample's full length, so the first and the last submission are both
+        # represented — a 31-submission administration is sampled end to end,
+        # not by its first thirty. (Scaling by ``(available - 1) / (size -
+        # 1)`` rather than ``available / size`` is what reaches the tail: the
+        # latter's largest index never gets past the second-to-last element,
+        # and at the minimal overflow it is exactly the sample's head.)
+        chosen = tuple(
+            submissions[index * (available - 1) // (size - 1)]
+            for index in range(size)
+        )
+    evaluation_modes = getattr(self, "_evaluation_modes", {}) or {}
+    declared_deterministic = {
+        criterion
+        for criterion, mode in evaluation_modes.items()
+        if mode == "deterministic"
+    }
+    judged_declared = {
+        criterion for criterion, mode in evaluation_modes.items() if mode == "judged"
+    }
+    if current is not None:
+        sample_source = "declared_current_channel"
+        current_counts = {
+            criterion: _distribution_counts(tuple(values))
+            for criterion, values in current.items()
+        }
+    elif self is not None:
+        sample_source = "constructor_population"
+        buckets: dict[str, list[Any]] = {}
+        for label in self.admissible_labels():
+            band = _system_side(label)
+            if band is not None:
+                buckets.setdefault(
+                    getattr(label, "criterion_id", "") or "", []
+                ).append(band)
+        current_counts = {
+            criterion: _distribution_counts(values)
+            for criterion, values in buckets.items()
+        }
+    else:
+        sample_source = "none"
+        current_counts = {}
+    covered = sorted(
+        (set(current_counts) | judged_declared) - declared_deterministic
+    )
+    baseline_counts = {
+        criterion: _distribution_counts(tuple(values))
+        for criterion, values in (baseline or {}).items()
+    }
+    distributions = {
+        criterion: current_counts[criterion]
+        for criterion in covered
+        if criterion in current_counts
+    }
+    tolerance = _drift_tolerance()
+    distances = {
+        criterion: _total_variation(
+            distributions[criterion], baseline_counts[criterion]
+        )
+        for criterion in covered
+        if criterion in distributions
+        and criterion in baseline_counts
+        and distributions[criterion]
+        and baseline_counts[criterion]
+    }
+    drifted = tuple(
+        sorted(
+            criterion
+            for criterion, distance in distances.items()
+            if distance >= tolerance
+        )
+    )
+    severity = max(distances.values()) if distances else None
+    return DriftReport(
+        package_version=package_version,
+        sample_size=size,
+        sample_ids=chosen,
+        sample_source=sample_source,
+        criteria_covered=tuple(covered),
+        distributions=distributions,
+        baseline_distributions=baseline_counts or None,
+        distances=distances,
+        drifted=drifted,
+        severity=severity,
+        advisory=True,
+        binding_threshold=None,
+        why_not_binding=_DRIFT_ADVISORY_STATEMENT,
+    )
+
+
+def alerts(self: "ValidationStats") -> tuple["StatsAlert", ...]:
+    """The contract alerts the instance's declared channels provoke
+    (`CT-STATS-19`). The surface-proxy alert is the only detector for a
+    criterion with an excellent κ and no validity: a length or OCR
+    correlation means that criterion is measuring something other than what
+    it claims, **whatever its agreement statistic says** — no other view in
+    the system can see it, because every other view is downstream of the
+    score. The blind-sample alert is the validation record's (#118), whose
+    writer owns the administrations channel this alert reads.
+
+    Deterministic: criteria and features in sorted order, so the same
+    declared correlations produce the same alerts on every call."""
+    threshold = _surface_proxy_threshold()
+    fired: list["StatsAlert"] = []
+    for criterion in sorted(self._surface_correlations):
+        correlations = self._surface_correlations[criterion]
+        flagged = _flagged_features(correlations, threshold)
+        if flagged:
+            detail = ", ".join(
+                f"{feature} r={correlations[feature]:+.2f}" for feature in flagged
+            )
+            fired.append(
+                StatsAlert(
+                    name=SURFACE_PROXY_ALERT,
+                    detail=f"{criterion}: {detail}",
+                )
+            )
+    return tuple(fired)
+
+
 class ValidationStats:
     """The protocol surface §3.16's Interfaces block declares, over one label
-    population. ``agreement`` (#115) and ``run_mvvp`` (#116) are the members
-    this file delivers; the other five arrive with their stories (#117/#118)
-    — the constructor holds what they will need and nothing else
-    (`TC-STATS-C16` holds every entry point to the no-raise-on-little-data
-    discipline).
+    population. ``agreement`` (#115), ``run_mvvp`` (#116), and the four
+    comparisons (#117) are the members this file delivers; ``promote``
+    (#118) — the validation record's writer — is the one that arrives with
+    its story. The constructor holds what the delivered members read and
+    nothing else (`TC-STATS-C16` holds every entry point to the
+    no-raise-on-little-data discipline).
+
+    Beyond #115/#116's constructor state, #117's members read three more
+    declared channels: ``cohort_id``, the cohort ``open_stats`` read the
+    labels for (so a report cannot name a cohort the instance does not
+    hold); ``evaluation_modes``, the criterion-to-mode declaration whose
+    ``deterministic`` entries `CT-DET-02` puts outside a verdict
+    distribution; and ``surface_correlations``/``subgroup_correlations``,
+    the measured channels #116's precedent fixed — the correlations are
+    the pipeline's measurement, and this module owns their interpretation.
 
     All state is underscore-prefixed: the instance's public surface is the
     methods, which is what the surface scans (`TC-STATS-C04`'s merge refusal)
@@ -1471,6 +2459,10 @@ class ValidationStats:
         backend_profiles: Sequence[str] | None = None,
         band_counts: Mapping[str, int] | None = None,
         administration_id: str | None = None,
+        cohort_id: str | None = None,
+        evaluation_modes: Mapping[str, str] | None = None,
+        surface_correlations: Mapping[str, Mapping[str, float]] | None = None,
+        subgroup_correlations: Mapping[str, Mapping[str, float]] | None = None,
     ) -> None:
         self._labels = list(labels)
         self._scoring_models = dict(scoring_models or {})
@@ -1478,6 +2470,16 @@ class ValidationStats:
         self._backend_profiles = list(backend_profiles or [])
         self._band_counts = dict(band_counts or {})
         self._administration_id = administration_id
+        self._cohort_id = cohort_id
+        self._evaluation_modes = dict(evaluation_modes or {})
+        self._surface_correlations = {
+            criterion: dict(features)
+            for criterion, features in (surface_correlations or {}).items()
+        }
+        self._subgroup_correlations = {
+            criterion: dict(features)
+            for criterion, features in (subgroup_correlations or {}).items()
+        }
 
     def admissible_labels(self) -> list[Any]:
         """The admissible population — the single filter's application
@@ -1495,6 +2497,16 @@ class ValidationStats:
     #: ``run_mvvp`` above.
     run_mvvp = run_mvvp
 
+    #: The four comparisons and the alert surface (#117), defined at module
+    #: level and bound here — see each above. The same require-name reaches
+    #: the same function whether the caller goes through the module or the
+    #: instance, which is what the contract vocabulary's ``require`` binds.
+    compression_check = compression_check
+    surface_proxies = surface_proxies
+    routing_policy_validity = routing_policy_validity
+    drift_check = drift_check
+    alerts = alerts
+
     def __repr__(self) -> str:
         return f"ValidationStats(labels={len(self._labels)})"
 
@@ -1507,6 +2519,10 @@ def build_stats(
     backend_profiles: Sequence[str] | None = None,
     band_counts: Mapping[str, int] | None = None,
     administration_id: str | None = None,
+    cohort_id: str | None = None,
+    evaluation_modes: Mapping[str, str] | None = None,
+    surface_correlations: Mapping[str, Mapping[str, float]] | None = None,
+    subgroup_correlations: Mapping[str, Mapping[str, float]] | None = None,
 ) -> ValidationStats:
     """The rung-0/1 constructor: the protocol over an in-memory label
     population (§3.16's Interfaces block names the members; the constructor is
@@ -1520,7 +2536,15 @@ def build_stats(
     `TC-STATS-C03`'s step 3), ``band_counts=`` declares the band count a
     criterion's table carries (`TC-STATS-C21`'s disclosure), and
     ``administration_id=`` names the administration the figures speak for
-    (`CT-REVIEW-10`'s keying)."""
+    (`CT-REVIEW-10`'s keying).
+
+    #117's members read three more: ``cohort_id=`` declares the cohort the
+    labels belong to (so a report naming a different cohort is refused),
+    ``evaluation_modes=`` declares each criterion's mode — the declaration
+    `CT-DET-02` makes binding for a verdict distribution — and
+    ``surface_correlations=``/``subgroup_correlations=`` are the measured
+    channels the proxy interpretation reads, declared by the caller exactly
+    as the MVVP's channels are (#116's pattern)."""
     return ValidationStats(
         labels,
         scoring_models=scoring_models,
@@ -1528,6 +2552,10 @@ def build_stats(
         backend_profiles=backend_profiles,
         band_counts=band_counts,
         administration_id=administration_id,
+        cohort_id=cohort_id,
+        evaluation_modes=evaluation_modes,
+        surface_correlations=surface_correlations,
+        subgroup_correlations=subgroup_correlations,
     )
 
 
@@ -1580,4 +2608,8 @@ def open_stats(
         store.close()
         raise
     store.close()
-    return ValidationStats(labels)
+    # The cohort binding travels with the labels: an instance that read one
+    # cohort's rows must refuse a report naming any other (CT-STATS-C18's
+    # boundary, enforced at the report rather than by convention). Where no
+    # cohort was named the instance holds every cohort's rows and binds none.
+    return ValidationStats(labels, cohort_id=cohort_id)

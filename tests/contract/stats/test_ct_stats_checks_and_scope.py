@@ -76,7 +76,6 @@ def sql_trace():
 # --- CT-STATS-10 — compression, and the blind spot it must declare ---------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c10_compares_panel_against_gold_bands_on_hand_computed_constants():
     """The Oracle the plan names: *"hand-computed constants"*, not a plausibility range.
 
@@ -109,7 +108,6 @@ def test_tc_stats_c10_compares_panel_against_gold_bands_on_hand_computed_constan
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c10_states_its_co_compression_blind_spot_inside_the_return_value():
     """*"The stated limitation is part of the return value, not a footnote."*
 
@@ -137,7 +135,6 @@ def test_tc_stats_c10_states_its_co_compression_blind_spot_inside_the_return_val
 # --- CT-STATS-11 — routing-policy validity ---------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c11_compares_both_arms_using_blind_labels_only():
     """*"Asserted on the label population, since using operational labels on either side would
     compare the review to itself."*
@@ -175,7 +172,6 @@ def test_tc_stats_c11_compares_both_arms_using_blind_labels_only():
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c11_similar_error_rates_in_both_arms_are_reported_as_failing():
     """The interpretation the clause fixes, and it is not the natural one.
 
@@ -385,7 +381,6 @@ def test_tc_stats_c18_tier_d_holds_no_student_name_column_reachable_from_here(tm
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_c18_subgroup_analysis_is_off_by_default_and_refuses_when_disabled():
     """*"A default value plus a refusal when disabled."*
 
