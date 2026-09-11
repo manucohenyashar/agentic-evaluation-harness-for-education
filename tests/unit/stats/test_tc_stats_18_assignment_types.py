@@ -31,10 +31,11 @@ The two-type population is built on a `TypedLabel` — `broken.Label` plus the
 label table has no such column: the *declared* carrying of the dimension is
 the caller's, exactly as `agreement()`'s population scope keys are.
 
-`CT-STATS-C04` (`test_ct_stats_aggregate_and_refusals.py`'s
-`aggregate(across="assignment_type")` refusal) pins the behavioural refusal
-on the aggregate surface; this file pins step 4's own outcome — cross-
-referenced, not repeated.
+`CT-STATS-C04` (`test_ct_stats_figures_and_keying.py`'s
+`test_tc_stats_c04_an_aggregate_spanning_a_forbidden_dimension_is_refused`,
+which sweeps `assignment_type` among `NON_AGGREGABLE_DIMENSIONS`) pins the
+behavioural refusal on the aggregate surface; this file pins step 4's own
+outcome — cross-referenced, not repeated.
 
 Isolation: rung 0 — in-memory labels through `build_stats`. Interface: the
 landed `run_mvvp`/step-4 surface (#116).
@@ -160,7 +161,7 @@ def test_tc_stats_18_the_other_type_gets_its_own_figures_on_its_own_call():
     assert ext_outcome.figures[CRITERION].n == EXTENDED_N
     assert short_outcome.spanning_refused is True
     # The disagreement shapes differ, hand-planted: the extended population
-    # is unanimous (band 3 vs teacher 3, with two band-1 dissenters at
+    # is unanimous (band 3 vs teacher 3, with three band-1 dissenters at
     # i % 4 == 0), the short one carries 2 disagreements. A pooled κ would
     # blend them; the two n's above already refuse that — this pins that the
     # populations are the *types'* by their own agreement behaviour, not by

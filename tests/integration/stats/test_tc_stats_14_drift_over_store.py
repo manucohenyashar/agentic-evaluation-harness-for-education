@@ -16,9 +16,10 @@ precisely so the sample's size and the population's are never confused):
 
 - three criteria with hand-computed total-variation distances against the
   declared baseline: one undrifted (0.0), one planted-drifted (0.4, the
-  panel's shape moved half the way), one at the boundary (exactly the 0.1
-  tolerance, which is drifted — the drift test is `>=`, the same strictness
-  `CT-STATS-12`'s boundary discipline uses elsewhere);
+  panel's shape moved half the way), one at the boundary (a TV of exactly
+  the declared tolerance — the knob is set to 0.125, the value binary
+  arithmetic can represent, and it is drifted — the drift test is `>=`, the
+  same strictness `CT-STATS-12`'s boundary discipline uses elsewhere);
 - the report's advisory fields are exact values: `advisory` True,
   `binding_threshold` None, and the `why_not_binding` statement in the
   value — the advisory presentation is a property of the value, not of the

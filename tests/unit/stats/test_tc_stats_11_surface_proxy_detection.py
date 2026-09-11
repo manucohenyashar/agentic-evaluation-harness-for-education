@@ -47,7 +47,6 @@ from __future__ import annotations
 import pytest
 
 from tests.support import broken_stats_fixtures as broken
-from tests.support import stats_vocabulary as vocab
 from tests.support.impl import STATS_MODULE, require
 
 pytestmark = pytest.mark.contract

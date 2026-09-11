@@ -37,9 +37,11 @@ change.
 
 Isolation: rung 2 — real store, real label rows through `record_label`,
 real `open_stats` read; no provider is reachable (`network_guard` is
-autouse and each case asserts it). Hand references shared with
-`TC-STATS-01`/`TC-STATS-25` (κ = 173/273) and `TC-STATS-C10` (the
-compression comparison's shape; its arithmetic is pinned there).
+autouse; every case asserts it except the `TC-STATS-21` sweep, which
+mutates no provider state and relies on the autouse guard). Hand
+references shared with `TC-STATS-01`/`TC-STATS-25` (κ = 173/273) and
+`TC-STATS-C10` (the compression comparison's shape; its arithmetic is
+pinned there).
 """
 
 from __future__ import annotations
@@ -174,14 +176,17 @@ def test_tc_stats_15_the_headless_steps_report_the_declared_not_measured_value(
     not-measured value with its declared reason.
 
     Nothing was measured here — no provider is reachable, and the measured
-    channel was not supplied. The honest step is the not-measured value with
+    channel was not supplied. The panel is **declared**, so each step carries
+    one row for its judge: the honest step is the not-measured value with
     its reason (`CT-STATS-03`), never a plausible number; and the backend's
     capability claim is the not-declared disclosure (`CT-PROV-04`'s claim is
     the backend's to declare, not the protocol's to guess). The live tier
     (`TC-STATS-16`/`TC-STATS-17`) supplies the channel; this pins that its
-    absence is the reason value, not a fabricated rate."""
+    absence is the reason value, not a fabricated rate. (With no panel and
+    no measured channel the report's step outcomes would be empty — nothing
+    to assert — so the declared panel is what makes the assertions bite.)"""
     _seed_store(tmp_data_dir)
-    report = _report(tmp_data_dir)
+    report = _report(tmp_data_dir, configuration={"panel_member": ("judge-a",)})
 
     for judge, result in report.steps[2].outcome.items():
         assert result.measured is False and result.band_change_rate is None, (
@@ -233,8 +238,8 @@ def test_tc_stats_15_step6_compares_the_store_panel_against_its_gold(tmp_data_di
     """Step 6 over the store's paired population: n = 20, and the panel's
     shape is the narrower one — hand-computed.
 
-    Panel bands over the plan's table: 6, 7, 7 across three bands →
-    H = 1.581 bits. Gold: 6, 7, 6, 1 across four → H = 1.788. The panel
+    Panel bands over the plan's table: 8, 7, 5 across three bands →
+    H ≈ 1.558 bits. Gold: 6, 7, 6, 1 across four → H = 1.788. The panel
     compressed toward the middle of a shape the gold never had: narrower,
     and the comparison says so against the blind gold's own distribution —
     with the stated limitation in the value (`CT-STATS-10`), always."""

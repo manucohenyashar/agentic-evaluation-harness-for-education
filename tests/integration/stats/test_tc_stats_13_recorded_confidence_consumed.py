@@ -68,7 +68,7 @@ STUDENTS = ("hana-w", "ivar-k", "noor-t", "bram-c")
 SCRIPTED_CONF = {"hana-w": 0.9, "ivar-k": 0.7, "noor-t": 0.5, "bram-c": 0.3}
 
 #: The planted assignment: each student's band tracks *their own* recorded
-#: confidence — affine in it (band = −5·conf + 8.5), so the tracking
+#: confidence — affine in it (band = 5·conf − 0.5), so the tracking
 #: correlation is exactly 1.0.
 TRACKING_BANDS = {"hana-w": 4, "ivar-k": 3, "noor-t": 2, "bram-c": 1}
 #: The scramble: each student's band paired with the *previous* student's
