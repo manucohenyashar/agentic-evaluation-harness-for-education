@@ -21,10 +21,14 @@ itself — which channel wins when several are set, and what each arrival report
   consume it, because it never used it;
 * an out-of-range argument is refused at the gate, naming `[0, 1]`.
 
-Hygiene: the standing declaration is module state, so every case clears it first and injects
-its own channels — an observation must read the value it set, not a leftover declaration that
-outranks the env (`_clear_institutional_threshold` is the module's own hygiene seam for exactly
-this, and the registries are the module's declared test seam).
+Hygiene: the standing declaration is module state, so every case starts from a cleared board
+and injects its own channels — an observation must read the value it set, not a leftover
+declaration that outranks the env. The autouse fixture below also clears **after** each case,
+because a case that sets a standing declaration deliberately (the argument-precedence row keeps
+it alive across two runs) must not leave it standing for a later case — the contract's no-channel
+refusal (`TC-CALIB-C13`) reads the same module state, and pytest-randomly may schedule it after
+this file (`_clear_institutional_threshold` is the module's own hygiene seam for exactly this,
+and the registries are the module's declared test seam).
 """
 
 from __future__ import annotations
@@ -36,8 +40,17 @@ from tests.support.impl import CALIB_MODULE, require
 ENV_THRESHOLD = "HARNESS_CALIB_NONINFERIORITY_THRESHOLD"
 
 
-def _clean(calib):
-    """Clear the standing declaration so an observation reads only injected channels."""
+@pytest.fixture(autouse=True)
+def _own_the_standing_declaration():
+    """Clear the module's standing declaration before **and** after every case.
+
+    Before: an observation must read only the channels the case injects. After: a case that
+    set a declaration must not leak it into the session — under random ordering the next
+    non-inferiority case (this file's or the contract suite's no-channel refusal) would
+    inherit a decision nobody made in front of it."""
+    calib = require(CALIB_MODULE, issue="#140")
+    calib._clear_institutional_threshold()
+    yield
     calib._clear_institutional_threshold()
 
 
@@ -54,7 +67,6 @@ def test_tc_calib_08_an_explicit_argument_beats_every_declared_channel():
     """
     calib = require(CALIB_MODULE, issue="#140")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#140")
-    calib._clear_institutional_threshold()
     calib.declare_institutional_threshold(0.10)
 
     cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
@@ -96,7 +108,6 @@ def test_tc_calib_08_a_standing_declaration_beats_the_environment():
     """
     calib = require(CALIB_MODULE, issue="#140")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#140")
-    calib._clear_institutional_threshold()
     calib.declare_institutional_threshold(0.10)
 
     cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
@@ -131,7 +142,6 @@ def test_tc_calib_08_the_environment_is_the_fallback_and_says_so():
     """
     calib = require(CALIB_MODULE, issue="#140")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#140")
-    calib._clear_institutional_threshold()
 
     cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
     result = non_inferiority(
@@ -173,7 +183,6 @@ def test_tc_calib_08_a_mis_set_env_value_is_unset_not_an_error(mis_set):
     """
     calib = require(CALIB_MODULE, issue="#140")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#140")
-    calib._clear_institutional_threshold()
 
     cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
     with pytest.raises(calib.ThresholdNotDeclared) as exc:
@@ -197,7 +206,6 @@ def test_tc_calib_08_an_out_of_range_argument_is_refused_at_the_gate():
     """
     calib = require(CALIB_MODULE, issue="#140")
     non_inferiority = require(CALIB_MODULE, "non_inferiority", issue="#140")
-    calib._clear_institutional_threshold()
 
     cohort = calib.cohort_with_band_shift(fraction=0.05, class_size=100)
     for bad in (1.5, -0.1):
