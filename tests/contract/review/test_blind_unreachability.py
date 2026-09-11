@@ -17,9 +17,17 @@ is a **weaker claim** — it asserts that no code in the module names the table,
 implementation reaching it through a store helper or a database view satisfies while violating
 the clause. The static scan is kept below as an *additional* assertion. The gap is a finding on
 the PR, not a silent substitution.
+
+**Reconciled at #113's landing**: the promised scan had shipped as prose only — this docstring
+said "below" and no test enforced it (the finding `#111` carried forward to its paired test
+story). `test_tc_review_c09_the_rendered_flow_is_built_from_the_session_alone` now carries it:
+a source-level scan of `render_blind_flow`, positive-controlled, asserting the render is built
+from the session alone.
 """
 
 from __future__ import annotations
+
+import inspect
 
 import pytest
 
@@ -222,4 +230,77 @@ def test_tc_review_c09_blind_labels_carry_saw_system_output_zero_legitimately():
     assert all(label.label_type == "blind" for label in labels), (
         "a blind submission wrote a label of another type, so M-STATS's admissibility filter — "
         "which reads label_type as well as this column — would not see these"
+    )
+
+
+# --- the source-level scan the module docstring promises ----------------------------------------
+
+
+#: What a second path from the flow to system output looks like in the render's source:
+#: the tables step 1 forbids (`criterion_score`, `verdict`, `narrative`,
+#: `submission_grade`), the fields the five-absence sweep sweeps (`confidence`,
+#: `routing`, `points`), and the service-internal reads a session-only projection has no
+#: business making — `_row_for_ref` is the service's own lookup of the score row, and
+#: `_rows`/`_scores`/`_store` are the richer objects a "rendering filter" reaches
+#: through. The scan is the *additional* assertion the docstring promises — weaker than
+#: step 1's set equality, which a store helper or a view satisfies a token scan and
+#: still violates the clause — so it never replaces the sweeps above; it is the artifact
+#: assertion that pins the render's declared shape: built from the session alone.
+_FLOW_RENDER_FORBIDDEN: tuple[str, ...] = (
+    "criterion_score",
+    "verdict",
+    "narrative",
+    "confidence",
+    "routing",
+    "points",
+    "submission_grade",
+    "_row_for_ref",
+    "_rows",
+    "_scores",
+    "_store",
+)
+
+
+def _flow_render_sites(source: str) -> list[str]:
+    """The lines of a render's source that name a path to system output — the detector
+    the scan runs over `render_blind_flow`, and over the positive control."""
+    return [
+        line.strip()
+        for line in source.splitlines()
+        if any(token in line for token in _FLOW_RENDER_FORBIDDEN)
+    ]
+
+
+def test_tc_review_c09_the_rendered_flow_is_built_from_the_session_alone():
+    """The source-level scan the module docstring promises — the artifact assertion the
+    finding `#111` carried forward (the docstring said "below" and nothing enforced it).
+    `render_blind_flow` is declared as a projection of the session alone; the scan pins
+    the declaration so a refactor that reaches through the service for "one small
+    lookup" — a confidence beside the band scale, the score row behind a ref — fails
+    here before it renders. Validated against a positive control first: a render that
+    interpolates the score row's confidence must be flagged, or the all-clear below
+    proves nothing."""
+    build_review = require(REVIEW_MODULE, "build_review", issue="#108")
+    service = build_review(scores=broken.flagged_population(5))
+    source = inspect.getsource(type(service).render_blind_flow)
+
+    # Positive control: the detector catches the defect it exists to catch.
+    leaky = '    lines.append(f"system says {row.confidence} for {row.proposed_band}")\n'
+    assert _flow_render_sites(leaky), (
+        "fixture bug: the source scan no longer detects a flow render that reads a "
+        "score field, so the all-clear below proves nothing"
+    )
+
+    sites = _flow_render_sites(source)
+    assert sites == [], (
+        f"render_blind_flow's source references {sites} — the render is declared as a "
+        "projection of the session alone (CT-REVIEW-09: unreachability is a property of "
+        "the type and the query, and a render that reads the service's score rows is a "
+        "second path to system output one template change from displaying it)"
+    )
+    # Non-vacuity: the render still projects the session's drawn refs. A render stripped
+    # of every read renders nothing, and a scan over it would be an all-clear over air.
+    assert "session.items" in source and "submission_id" in source, (
+        "the render no longer projects the session's drawn refs, so this scan would "
+        "pass over a render that has stopped rendering the flow at all"
     )

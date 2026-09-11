@@ -1132,6 +1132,99 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # TC-GRADE-24) are gone the same way: #103 landed `enforce_ledger_append_only`
     # and the `record_grade_signals`/`evaluate_grade_alerts` conjunction, and both
     # files unmarked and rejoined the gate green.
+    # --- TS-71 (#107), the M-GRADE contract suite's unlanded consumer surfaces ---------------
+    #
+    # The nineteen CT-GRADE clauses are nearly all green against the landed M-GRADE;
+    # the limbs below wait on consumer surfaces the clause NAMES but no module yet
+    # ships. Each key is an **invented-and-disclosed** name (the
+    # `aeh.orch:evaluate_alerts` precedent above): a name neither design document
+    # declares, that the test calls and the landing reconciles; a different name at
+    # the landing is one rename here and in the test module.
+    #
+    # C04/C05/C13/C19's console limbs: `CT-GRADE-04` requires consumers to render coverage
+    # alongside the grade, `CT-GRADE-05` requires no consumer to render a null
+    # grade as a blank that reads as "fine", `CT-GRADE-13` requires the rendered
+    # criterion figures to present a null as not-applicable rather than a zero
+    # reading as perfect agreement, and `CT-GRADE-19` requires the rendered
+    # boundary-risk language to read as "could cross", never "likely to cross" —
+    # the landed console module renders grades with no coverage record, no
+    # boundary-risk language and no criterion figures (its grade selection carries
+    # none), so all four limbs wait on the same disclosed render.
+    # C15's run-start limb: `CT-GRADE-15` requires a policy referencing a criterion
+    # that no longer exists to be refused AT RUN START, so grading is never reached
+    # in that state — the run-creation path validates nothing of the kind yet, so
+    # the disclosed `aeh.orch:validate_grade_policy` is that refusal's surface.
+    "#107 c04/c05/c13/c19 coverage, boundary-risk, criterion figures and over-flag language beside the console's grade render (M-CONSOLE)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:render_grade_coverage",
+        (
+            "tests/contract/grade/test_ct_grade_c04_coverage_and_rendering.py"
+            "::test_tc_grade_c04_the_console_renders_coverage_alongside_the_grade",
+            "tests/contract/grade/test_ct_grade_c05_boundary_risk.py"
+            "::test_tc_grade_c05_the_console_does_not_render_a_null_grade_as_fine",
+            "tests/contract/grade/test_ct_grade_c13_criterion_stats.py"
+            "::test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable",
+            "tests/contract/grade/test_ct_grade_c19_overflag_and_consumers.py"
+            "::test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely",
+        ),
+    ),
+    "#107 c15 a policy naming a nonexistent criterion is refused at run start (M-ORCH)": (
+        "symbol",
+        f"{ORCH_MODULE}:validate_grade_policy",
+        (
+            "tests/contract/grade/test_ct_grade_c15_error_discipline.py"
+            "::test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run_start",
+        ),
+    ),
+    # --- TS-42 (#119), the TC-STATS admissible-label and hand-reference suite ---------------
+    #
+    # #119 is a TEST issue over the landed M-STATS surface, and most of its cases run
+    # green against the shipped module. Two probe surfaces the module has not got, and
+    # those are plan-literal red tests carrying the marker:
+    #
+    # * `TC-STATS-04` row 7's console half: below `STATS_MIN_N_FOR_HEADLINE` the rendered
+    #   headline carries "too few to draw conclusions from" — HLD §11.5's S12 mock renders
+    #   exactly that at n = 15. `render_agreement_block` renders the number, the size, the
+    #   scope and the degeneracy disclosure today and no qualifier: the knob is declared
+    #   (`aeh.stats:STATS_MIN_N_FOR_HEADLINE`, pinned by `TC-STATS-C20`), the vocabulary
+    #   declares the exact string (`TOO_FEW_QUALIFIER`), and the rendering itself is the
+    #   unlanded half. Keyed on the constant the rendering must carry, because the gap is a
+    #   behaviour, not a missing symbol: the landing either imports that name into the
+    #   console's own namespace or re-keys this entry — the `#148 judge_signals`
+    #   invented-and-used-together pattern, with the invention recorded here rather than
+    #   left for whoever closes the behaviour to rediscover.
+    "#119 too-few headline qualifier (HLD §11.5 S12)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:TOO_FEW_QUALIFIER",
+        (
+            "tests/unit/stats/test_agreement_references.py"
+            "::test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier",
+        ),
+    ),
+    # Issue #119, TC-STATS-01's variant: *"a label whose `saw_system_output` is
+    # null — must be treated as inadmissible, not as blind."* The landed
+    # predicate (`_is_admissible`) reads `not getattr(label,
+    # "saw_system_output", 0)`, so a None flag reads as a 0 — inadmissible —
+    # while a *false* 0 reads the same way; the two are indistinguishable at
+    # this predicate, and every shipped producer writes the column
+    # (`record_label` validates it to 0/1 and `_write_collected_label` writes
+    # `int(bool(...))` into a NOT NULL column), so the store cannot even hold
+    # a null. The variant is a *consumer-side* treatment the predicate
+    # currently cannot express, so it is unreachable today: the test below is
+    # red by design. Keyed on an invented constant the treatment must name —
+    # the `#148 judge_signals` invented-and-used-together pattern, with the
+    # invention recorded here rather than left for whoever closes the
+    # behaviour to rediscover: the landing either defines that name (or its
+    # own spelling of the distinction) in the stats module's namespace or
+    # re-keys this entry.
+    "#119 null saw_system_output (consumer-side treatment)": (
+        "symbol",
+        f"{STATS_MODULE}:SAW_SYSTEM_OUTPUT_NULL_IS_INADMISSIBLE",
+        (
+            "tests/artifact/test_admissible_labels.py"
+            "::test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind",
+        ),
+    ),
 }
 
 
