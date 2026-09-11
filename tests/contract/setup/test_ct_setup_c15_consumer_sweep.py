@@ -1,16 +1,11 @@
 """`CT-SETUP-15` — NON-PROMISE: nothing in the read back is a rubric
 improvement (`TC-SETUP-C15`).
 
-Case of test plan §6.11.6; issue #56 (TS-63). **WRITTEN AHEAD** — the sweep
-needs #51's read back to produce corrections, and the three consumers it sweeps
-(`M-CALIB`, `M-STATS`, `M-CONSOLE`) do not exist yet (their own contract suites
-sit writtenahead behind the same `require` blocks this file uses). The file
-carries `writtenahead` and a `WRITTEN_AHEAD_BLOCKERS` entry ("#56 C15 consumer
-sweep") keyed on the conjunction of everything its body drives: #51's
-`read_back_rubric` plus the three consumer MODULES. It fails ONLY via
-`NotImplementedYet` until the last of those lands. (#52/#53 are deliberately
-NOT in the conjunction: nothing in this file drives their surfaces — the
-sweep is over consumers of the READ-BACK result.)
+Case of test plan §6.11.6; issue #56 (TS-63). Written ahead of its consumers
+and unmarked once the last of them landed (#137, which completed the
+conjunction — #51's `read_back_rubric` plus the `M-CALIB`, `M-STATS` and
+`M-CONSOLE` modules; #52/#53 were deliberately never in it, since nothing in
+this file drives their surfaces).
 
 The clause: the read back is a TRANSCRIPTION step. Make the unpromised thing
 vary — run it over a rubric and get real criteria out (the read back's own
@@ -39,8 +34,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 import aeh.setup as aeh_setup  # not `setup_module`: pytest reads that name as the xunit hook
 from aeh.setup import SetupService
 from tests.contract.setup._doubles import ingest_document, stage_chain
@@ -51,8 +44,6 @@ from tests.support.impl import (
     require,
     require_attr,
 )
-
-pytestmark = pytest.mark.writtenahead
 
 #: The validity-source vocabulary: if a consumer's surface names the setup read
 #: back under one of these shapes, the transcription step is being re-read as

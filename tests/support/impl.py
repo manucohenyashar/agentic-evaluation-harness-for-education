@@ -135,10 +135,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # this dict fails the gate test by design.
     # --- TS-74 (#142), the sixteen CT-CALIB clause cases ------------------------------------
     #
-    # `M-CALIB` is Phase 3/4 and three stories away: #137 (triage) -> #138 (elicitation, lock,
-    # history) -> #139 (the two gates). The `Calibration` protocol declares six members and #137
-    # will very likely stub all six at once, so keying a later story on a protocol member fires at
-    # #137.
+    # `M-CALIB` is Phase 3/4 and two stories remain: #138 (elicitation, lock,
+    # history) -> #139 (the two gates); #137 (triage) landed `discover` and
+    # `triage` and deliberately nothing else. The `Calibration` protocol declares
+    # six members and a story may stub several at once, so keying a later story
+    # on a protocol member fires at the first story that touches the module —
+    # #137's forecast ("will very likely stub all six") resolved to two, which
+    # is why #138 and #139 are keyed on the non-protocol names below instead.
     #
     # An earlier draft concluded the only alternative was an invented name that might never appear
     # — leaving a P0 case outside the gate forever, which is strictly worse — and keyed #138 and
@@ -147,16 +150,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # none can exist before an implementation does. They are invented, but the tests invent and use
     # them together, which is what makes them self-consistent — the same reasoning as `open_store`
     # and `compute_work_id` in TS-56, and `record_run_start` in #164.
-    "#137": (
-        "symbol",
-        f"{CALIB_MODULE}:TriageCategoryRequired",
-        ("tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
-         "::test_tc_calib_c03_the_discovery_report_carries_no_accuracy_figure",
-         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
-         "::test_tc_calib_c04_a_disagreement_without_a_triage_category_is_refused",
-         "tests/contract/calib/test_ct_calib_discovery_and_elicitation.py"
-         "::test_tc_calib_c04_only_rubric_ambiguity_can_produce_a_proposed_edit"),
-    ),
+    # The `"#137"` entry that stood here — `symbol`, `aeh.calib:TriageCategoryRequired` — is gone
+    # because #137 landed it: `TriageCategoryRequired` is the module's own refusal type, and the
+    # three cases it keyed (C03's type half and both C04 halves) are unmarked and inside TEST_CMD.
     "#138": (
         "symbol",
         f"{CALIB_MODULE}:PhaseDependencyError",
@@ -1059,19 +1055,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # entry gone.
     # "#56 C13 confirmation cap" left with #52: the classifier and the cap constant
     # landed and the file runs green against them — marker and entry gone.
-    "#56 C15 consumer sweep": (
-        # TC-SETUP-C15: the read back produces the corrections (#51) and the sweep runs
-        # over the three consumer modules' surfaces. #52/#53 are deliberately absent —
-        # nothing in the file drives their surfaces.
-        "symbols",
-        (
-            f"{SETUP_MODULE}:SetupService.read_back_rubric,"
-            f"{CALIB_MODULE},"
-            f"{STATS_MODULE},"
-            f"{CONSOLE_MODULE}"
-        ),
-        ("tests/contract/setup/test_ct_setup_c15_consumer_sweep.py",),
-    ),
+    # "#56 C15 consumer sweep" left with #137: the last of its conjunction landed (aeh.calib
+    # completed `read_back_rubric` + the three consumer modules), and the sweep runs green
+    # against all of them — marker and entry gone. Note the entry also exposed a gate defect,
+    # fixed here: a bare module path as a `symbols` limb (no `:`) never resolved, because
+    # `"".split(".")` is `[""]` and `getattr(module, "")` is None — the conjunction could
+    # not have fired its own gate even once every limb landed.
     # --- TS-22 (issue #63), the M-ORCH cases written ahead of their stories ---------------
     #
     # #57 shipped the ledger slice (work units, `compute_work_id`, enumeration), so these
@@ -1269,7 +1258,12 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
             obj: Any = importlib.import_module(module_path)
         except ModuleNotFoundError:
             return False
-        for attribute in dotted.split("."):
+        # A bare module path (no `:`) is a legal limb inside a `symbols` conjunction —
+        # the #56 C15 sweep conjoined three consumer MODULES with #51's read-back
+        # symbol. An empty `dotted` must read as "the module landed": `"".split(".")`
+        # is `[""]`, and `getattr(module, "")` is None, which made such a limb read
+        # unresolved forever — the silent direction this registry exists to prevent.
+        for attribute in (dotted.split(".") if dotted else ()):
             obj = getattr(obj, attribute, None)
             if obj is None:
                 return False
