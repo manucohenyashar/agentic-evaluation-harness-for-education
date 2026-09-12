@@ -126,9 +126,11 @@ def test_tc_calib_06_the_answer_is_what_brings_the_edit_into_existence():
         "not carry the broadening the teacher chose"
     )
     # The edit path's own record: one new version, the descriptor edit on it, and the
-    # conversation appended — in that order, on the new version's copy, never on the base.
-    assert catalog.writes[:3] == ["create_version", "update_band_field",
-                                  "append_elicitation"], (
+    # conversation appended — exactly those, in that order, on the new version's copy,
+    # never on the base. One answer, so there is nothing else for the path to write.
+    assert catalog.writes == ["create_version", "update_band_field",
+                              "append_elicitation"], (
         f"the edit path wrote {catalog.writes}; the answer generates the edit as a new "
-        "version (FR-PKG-04's revision flow), edits the copy, and records the conversation"
+        "version (FR-PKG-04's revision flow), edits the copy, and records the conversation "
+        "— exactly one write of each, and nothing more"
     )

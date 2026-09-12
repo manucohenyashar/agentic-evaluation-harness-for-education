@@ -157,4 +157,13 @@ def test_tc_calib_05_a_tie_at_the_cut_boundary_is_broken_by_criterion_id():
         "the deterministic tie-break keeps the smaller id, so which ambiguity goes unseen "
         "is not an accident of sorting stability."
     )
-    assert "CRIT-009" not in kept_criteria
+    assert "CRIT-099" not in kept_criteria, (
+        f"both tied candidates survived the cap: kept {kept_criteria}. Only one of the "
+        "12-submission pair belongs in the asked set — an implementation that keeps both "
+        "must have dropped a more-affected candidate to make room"
+    )
+    more_affected = "CRIT-005"  # the fixture's 18-submission candidate, ranked 6th
+    assert more_affected in kept_criteria, (
+        f"the more-affected candidate ({more_affected}, 18 submissions) was dropped while "
+        "the tied pair was being resolved — the cap cut by discovery order, not by rank"
+    )

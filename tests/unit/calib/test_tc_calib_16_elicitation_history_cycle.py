@@ -97,7 +97,7 @@ def _run_cycle(calib, elicit, apply_answers, catalog):
     return questions, base, revised
 
 
-def _fresh_store(data_dir: Path, package_id: str):
+def _fresh_store(data_dir: Path):
     """Open the cycle's Tier P file fresh, with the full migration chain imported.
 
     The chain rule (`CLAUDE.md`) binds the first open in a process — the cycle's own
@@ -140,7 +140,7 @@ def test_tc_calib_16_the_cycle_leaves_a_complete_trail_a_fresh_open_can_reconstr
         "cycle's edit landed somewhere the revision flow cannot see"
     )
 
-    store = _fresh_store(tier_p_path.parent.parent, tier_p_path.name.removesuffix(".pkg.sqlite"))
+    store = _fresh_store(tier_p_path.parent.parent)
     try:
         handle = store.package(tier_p_path.name.removesuffix(".pkg.sqlite"))
         rows = handle.query(
@@ -203,7 +203,7 @@ def test_tc_calib_16_the_trail_refuses_update_and_delete_on_its_own_rows():
     catalog = calib.catalog_for_test(tier_p_path=tier_p_path)
     _run_cycle(calib, elicit, apply_answers, catalog)
 
-    store = _fresh_store(tier_p_path.parent.parent, package_id)
+    store = _fresh_store(tier_p_path.parent.parent)
     try:
         handle = store.package(package_id)
         rows = handle.query(
