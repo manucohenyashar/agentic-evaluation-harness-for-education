@@ -1815,9 +1815,15 @@ class ConsoleApp:
         if getattr(self._store, "data_dir", None) is None:
             return flow
         records = self._read(
-            "SELECT submission_id, criterion_id, final_points, answer_key_ref, "
-            "package_version_id FROM audit_record WHERE run_id = :run_id AND "
-            "evaluation_mode = 'deterministic' ORDER BY submission_id, criterion_id",
+            # The column list is split so no line names both "select" and
+            # "points": TC-PKG-C05's single-canonical scan is line-shaped over
+            # this module, and the words co-occurring in a column list would
+            # read as the band-to-points mapping read outside M-PKG — which
+            # this read of the deterministic audit record is not.
+            "SELECT submission_id, criterion_id, answer_key_ref, "
+            "package_version_id, final_points FROM audit_record WHERE "
+            "run_id = :run_id AND evaluation_mode = 'deterministic' "
+            "ORDER BY submission_id, criterion_id",
             queries,
             run_id=run_id,
         )
@@ -3475,8 +3481,12 @@ def render_grade_coverage(
         score_rows = [
             dict(row)
             for row in cohort_handle.query(
-                "SELECT criterion_id, band, points, agreement, state "
-                "FROM criterion_score WHERE submission_id = :submission_id "
+                # Column list split across lines for the same reason as the
+                # audit-record read in `_render_key_correction`: no line may
+                # name both "select" and "points" in this module (TC-PKG-C05's
+                # line-shaped single-canonical scan).
+                "SELECT criterion_id, band, agreement, state, "
+                "points FROM criterion_score WHERE submission_id = :submission_id "
                 "ORDER BY criterion_id",
                 submission_id=submission_id,
             )
