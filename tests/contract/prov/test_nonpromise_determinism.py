@@ -112,6 +112,15 @@ NON_GOLDEN_BASELINE_ARTIFACTS = {
     # package owner", grounds a schema-version bump or a declared setup-mapping change,
     # never "the model changed its mind" — and no regenerate helper exists.
     "TC-E2E-01/published-manifest.json",
+    # TC-E2E-02's overnight-run baseline result set — an expectation, and its
+    # producing tier is the journey's own RecordedFixtureProvider (request-keyed,
+    # per the constructive exemption above), so no live backend's wording can move
+    # it; the aggregation, synthesis and finalization legs behind it are
+    # deterministic code over the same recorded calls. Governed inline in the
+    # journey module like TC-E2E-01's manifest: reviewer "the overnight run's
+    # owner", grounds a package-corpus bump or a declared world-shape change,
+    # never "the model changed its mind" — and no regenerate helper exists.
+    "TC-E2E-02/result-set.json",
 }
 
 

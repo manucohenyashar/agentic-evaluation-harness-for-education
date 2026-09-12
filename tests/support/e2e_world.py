@@ -101,7 +101,9 @@ from aeh.integ import IntegrityGate
 from aeh.judge import ScoringWorker
 from aeh.judge import prompt_fields as judge_prompt_fields
 from aeh.orch import (
+    CRITERION_BREAKER_MIN_N_ENV,
     CRITERION_BREAKER_RATE_ENV,
+    DECISION_HALTED_BY_BREAKER,
     ESCALATION_BUDGET_ENV,
     LEASE_SECONDS_ENV,
     STAGE_DETERMINISTIC,
@@ -110,7 +112,7 @@ from aeh.orch import (
     SWEEP1_ADMITTED_INGEST_STATUSES,
     Orchestrator,
 )
-from aeh.pkg import PackageCatalog
+from aeh.pkg import GradePolicy, PackageCatalog
 from aeh.prov import (
     Completion,
     FixtureMissingError,
@@ -563,6 +565,7 @@ class SynthWorld:
         monkeypatch: Any = None,
         quarantine_indices: tuple[int, ...] = QUARANTINE_INDICES,
         panel_size: int = 3,
+        review_window_hours: int | None = None,
     ) -> None:
         for name, value in WORLD_ENV.items():
             if monkeypatch is not None:
@@ -578,6 +581,7 @@ class SynthWorld:
         self.quarantine_indices = tuple(
             index for index in quarantine_indices if index <= n_submissions
         )
+        self.review_window_hours = review_window_hours
         self.store = open_store(data_dir)
         self.provider = JourneyProvider(fixture_dir)
         self.blobs = self.store.blobs()
@@ -660,6 +664,14 @@ class SynthWorld:
                 self.catalog.set_answer_key(version, criterion.criterion_id,
                                             criterion.answer_key)
         self.catalog.set_boundaries(version, list(GRADE_BOUNDARIES))
+        # The review window is per-package data (`ADR-3`), and a published
+        # version is immutable (`FR-PKG-01`) - so a journey that needs a window
+        # attaches its policy HERE, before the lock, exactly as the package
+        # owner would. Default None stores no row, and `grade_policy()` answers
+        # the default (null window: completion settles) - journey 2's shape.
+        if self.review_window_hours is not None:
+            self.catalog.set_grade_policy(
+                version, GradePolicy(review_window_hours=self.review_window_hours))
         self.catalog.publish(version, approved_by="The package owner")
 
     def _build_cohort(self) -> None:
@@ -843,10 +855,13 @@ class SynthWorld:
         for unit in batch:
             self.orchestrator.complete(unit.work_id)
 
-    def drive_extract(self) -> None:
+    def drive_extract(self, *, limit: int | None = None) -> int:
         """The extraction leg: lease in batches, record the reply under the exact
         request key for BOTH families (every open criterion is on the high-risk
-        register), then drive the real worker."""
+        register), then drive the real worker. With `limit`, the drive stops after
+        that many units with the rest of the last batch still LEASED - the exact
+        state a SIGKILLed worker leaves (the kill variant's injury), which only the
+        lease sweeper requeues."""
         ref = ModelRef(role="extractor", provider="local", build_id=EXTRACT_BUILD,
                        quantization="q4")
         second = ModelRef(role="extractor", provider="local",
@@ -855,12 +870,17 @@ class SynthWorld:
             self.store, self.provider, ref,
             second_family_model=second, high_risk_criteria=self.open_ids,
         )
+        processed = 0
         while True:
             batch = self.orchestrator.lease("w-e2e-extract", STAGE_EXTRACT, 32)
             if not batch:
                 break
             for unit in batch:
+                if limit is not None and processed >= limit:
+                    return processed
                 self._drive_extract_unit(unit, worker, ref, second)
+                processed += 1
+        return processed
 
     def _drive_extract_unit(self, unit: Any, worker: ExtractionWorker,
                             ref: Any, second: Any) -> None:
@@ -877,20 +897,28 @@ class SynthWorld:
         )
         worker.process(unit)
 
-    def drive_score(self, *, include_escalations: bool = False) -> None:
+    def drive_score(self, *, include_escalations: bool = False,
+                    limit: int | None = None) -> int:
         """The scoring leg: lease in batches and drive each unit through the scoring
         worker named by its judge. With `include_escalations`, the extension arms
         (`escalation-arm-4/5`, the ladder's derived identities) drive too - the
-        base leg passes them by until the escalation walk enqueues them."""
+        base leg passes them by until the escalation walk enqueues them. With
+        `limit`, the drive stops after that many units with the rest of the last
+        batch still LEASED - the SIGKILL variant's injury, requeued by the sweep."""
         refs = dict(self.judge_refs)
         if include_escalations:
             refs.update(self.escalation_refs)
+        processed = 0
         while True:
             batch = self.orchestrator.lease("w-e2e-judge", STAGE_SCORE, 32)
             if not batch:
                 break
             for unit in batch:
+                if limit is not None and processed >= limit:
+                    return processed
                 self._drive_score_unit(unit, refs)
+                processed += 1
+        return processed
 
     def _drive_score_unit(self, unit: Any, refs: dict[str, Any]) -> None:
         self.ensure_available()
@@ -944,14 +972,42 @@ class SynthWorld:
 
     # -- the aggregation walk --------------------------------------------------------------------
 
-    def aggregate_walk(self, *, monkeypatch: Any = None) -> int:
+    def aggregate_walk(
+        self,
+        *,
+        monkeypatch: Any = None,
+        breaker_rate: str | None = None,
+        breaker_min_n: str | None = None,
+        agg_config_kwargs: dict | None = None,
+    ) -> int:
         """The M-AGG walk over the judged cells: aggregate each cell's stored
         verdicts against the run's declared bands and the captured integrity
         signals, decide the escalation policy, and write the triggering row and the
         widening it triggers in ONE transaction - the caller's (`CT-ORCH-08`).
-        Returns the number of escalation reports the walk enqueued."""
+        Returns the number of escalation units the walk enqueued.
+
+        With `breaker_rate`/`breaker_min_n` the walk hands the criterion breaker
+        its knobs at call time (the env seam - the enqueue path reads them there),
+        and a cell whose enqueue reports `halted_by_breaker` is re-aggregated with
+        `breaker_tripped=True` in the SAME transaction: the mark on the criterion's
+        RESULT is M-AGG's artifact to write - the ledger's breaker row and the
+        report's decision are what tell it to (`FR-ORCH-13`, `CT-ORCH-16`). The
+        marked cells are recorded on `breaker_marked` for the journey's oracle.
+
+        With `agg_config_kwargs` the walk injects the aggregation configuration the
+        caller states (Q-04: the tests inject the cap table and thresholds; the
+        assertions are stated against the injection, never against the literals) -
+        journey 3's auto-accepted population is engineered exactly so, by lowering
+        the holistic auto threshold below the unanimous-panel figure the world's
+        judges produce. The default (no kwargs) is the design's Assumption numbers,
+        which is what journey 2's baseline pins.
+        """
         _set_env(monkeypatch, ESCALATION_BUDGET_ENV, "1.0")
-        _set_env(monkeypatch, CRITERION_BREAKER_RATE_ENV, "1.0")
+        _set_env(monkeypatch, CRITERION_BREAKER_RATE_ENV, breaker_rate or "1.0")
+        if breaker_min_n is not None:
+            _set_env(monkeypatch, CRITERION_BREAKER_MIN_N_ENV, breaker_min_n)
+        config = agg_config(**(agg_config_kwargs or {}))
+        self.breaker_marked = []
         catalog = PackageCatalog(self.store.package(PKG_ID), package_id=PKG_ID)
         bands = {cid: catalog.bands(cid) for cid in self.open_ids}
         enqueued = 0
@@ -969,13 +1025,28 @@ class SynthWorld:
                     described_evidence=captured.described_evidence,
                     extractor_disagreement=captured.extractor_disagreement,
                 )
-                score = aggregate(rows, crit, sig, config=agg_config())
+                score = aggregate(rows, crit, sig, config=config)
                 decision = should_escalate(
                     score=score, criterion=crit,
                     history=criterion_history(override_rate=0.0),
-                    baseline=expected_distribution(), config=agg_config(),
+                    baseline=expected_distribution(), config=config,
                 )
                 with self.handle.transaction() as tx:
+                    if decision.escalate:
+                        reports = self.orchestrator.enqueue_escalation(tx, (sid, cid))
+                        enqueued += sum(
+                            report.units_inserted for report in reports)
+                        if any(report.decision == DECISION_HALTED_BY_BREAKER
+                               for report in reports):
+                            # The breaker's mark on the RESULT (FR-ORCH-13): the
+                            # refused widening leaves the panel's own figure
+                            # standing, routed provisional, state
+                            # ungradeable_by_panel (FR-AGG-11's precedence).
+                            score = aggregate(
+                                rows, crit, sig, config=config,
+                                breaker_tripped=True,
+                            )
+                            self.breaker_marked.append((sid, cid))
                     tx.execute(
                         _SCORE_UPSERT,
                         sid=sid, cid=cid, band=score.band, points=score.points,
@@ -988,10 +1059,6 @@ class SynthWorld:
                         sufficiency_flag=score.sufficiency_flag,
                         ocr_overlap_risk=score.ocr_overlap_risk,
                     )
-                    if decision.escalate:
-                        reports = self.orchestrator.enqueue_escalation(tx, (sid, cid))
-                        enqueued += sum(
-                            report.units_inserted for report in reports)
         return enqueued
 
     def stored_verdicts(self, sid: str, cid: str) -> list[SimpleNamespace]:
