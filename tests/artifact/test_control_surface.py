@@ -73,12 +73,14 @@ class ImportEdges:
     """Every import edge out of one module's source, sorted by the shape of the edge.
 
     The distinction between the first two fields is load-bearing for `TC-CONSOLE-03`: a bare
-    `import aeh.judge` (the migration-chain completeness duty) binds **no symbol** and gives
-    the console nothing to call, while `from aeh.judge import assemble_prompt` binds the
-    assembly surface itself. A walker that recorded only module names would have to ban the
-    chain import to keep the oracle honest — and would then fail the shipped console, whose
-    store opens require it. The edge shape, not the module name, is what the invariant
-    constrains.
+    `import aeh.judge` is the migration-chain completeness duty the store's open requires
+    (#234) — the case's declared exception. It still binds the module object, so
+    `aeh.judge.assemble_prompt(...` remains a runtime call this static oracle cannot see;
+    what guards that door is C04's write-set sweep, which is why the case pairs the two
+    oracles. The symbol-level field is the half the invariant-14 import ban constrains: a
+    walker that recorded only module names would have to ban the chain import too, fail the
+    shipped console, and prove nothing about symbol-pulling. The edge shape, not the module
+    name, is what the invariant constrains.
     """
 
     #: `import aeh.judge` — the module edge only, no symbol pulled.
@@ -108,10 +110,6 @@ def _dynamic_import_aliases(tree: ast.AST) -> set[str]:
             for alias in node.names:
                 if alias.name == "import_module" and alias.asname:
                     aliases.add(alias.asname)
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "importlib" and alias.asname:
-                    aliases.add(f"{alias.asname}.import_module")
     return aliases
 
 
@@ -137,6 +135,14 @@ def _import_edges(source: str) -> ImportEdges:
         elif isinstance(node, ast.ImportFrom):
             if node.level > 0:
                 relative.append(node.module or "")
+            elif node.module == "aeh":
+                # `from aeh import judge` binds the module object exactly as
+                # `from aeh.judge import assemble_prompt` binds a symbol — recorded at the
+                # imported name, not the parent, or the assembly surface reachable through
+                # this spelling is invisible to the invariant-14 oracle. A re-exported
+                # non-module name records the same way and is an undeclared symbol edge
+                # either way; failing on it is the conservative direction for this oracle.
+                symbols.extend(f"aeh.{alias.name}" for alias in node.names)
             elif node.module:
                 symbols.append(node.module)
         elif isinstance(node, ast.Call):
@@ -274,7 +280,8 @@ def test_tc_console_03_console_imports_no_surface_that_assembles_a_scoring_promp
         f"TC-CONSOLE-03's oracle is the import graph because the runtime write-set sweep "
         f"cannot see a payload written through a borrowed service — the console must have no "
         f"path to prompt construction at all (invariant 14). The bare `import aeh.judge` the "
-        f"migration chain requires binds no symbol and is not a violation."
+        f"migration chain requires is the case's declared exception; what its runtime abuse "
+        f"would write is C04's write-set sweep to catch, not this oracle."
     )
     assert not edges.relative_modules, (
         f"console.py carries relative imports ({edges.relative_modules}); every edge this "
@@ -291,6 +298,12 @@ def test_tc_console_03_console_imports_no_surface_that_assembles_a_scoring_promp
     ), (
         "the import-edge reader no longer detects a symbol-level import of aeh.judge — this "
         "case's real assertion is passing on a scanner that cannot see the violation"
+    )
+    parent_control = _import_edges("from aeh import judge\n")
+    assert "aeh.judge" in parent_control.symbol_modules, (
+        "the import-edge reader records `from aeh import judge` at the parent package — the "
+        "module object is reachable through that spelling too, so the real assertion above "
+        "would pass with that door open"
     )
 
 
@@ -384,7 +397,7 @@ def test_tc_console_36_console_dependency_edges_are_frozen_and_egress_free(repo_
         name.startswith("aeh.") and name not in _CONSOLE_BARE_MIGRATION_IMPORTS
         and name not in _CONSOLE_SYMBOL_IMPORT_MODULES
         for name in (*drifting.bare_modules, *drifting.symbol_modules)
-    ), "the edge reader cannot see a bare import — the root freeze below would pass vacuously"
+    ), "the edge reader cannot see a bare import — the root freeze above would pass vacuously"
     egress_control = scan_module(
         "aeh.console",
         "import litellm\n",
