@@ -77,6 +77,7 @@ the variant pins.
 from __future__ import annotations
 
 import json
+import os
 import random
 from decimal import Decimal
 from pathlib import Path
@@ -158,6 +159,19 @@ def _assert_matches_baseline(repo_root: Path, result_set: dict) -> None:
     """Compare the journey's result set against its committed baseline, with §6.9's
     governance in the failure message — journey-1's manifest shape."""
     baseline_path = repo_root / "fixtures" / "baselines" / "TC-E2E-02" / "result-set.json"
+    if os.environ.get("AEH_E2E_CAPTURE_BASELINE"):
+        # The deliberate-freeze act itself, env-guarded so an ordinary run can
+        # never rewrite the baseline as a side effect: the capture run's output
+        # is inspected and committed with the reviewer before it becomes the
+        # journey's oracle, and the env var is unset in every other context.
+        dest = baseline_path
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(
+            json.dumps(result_set, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"\nTC-E2E-02 BASELINE CAPTURED -> {dest}")
+        return
     assert baseline_path.exists(), (
         "TC-E2E-02: no committed baseline at fixtures/baselines/TC-E2E-02/result-set.json. "
         "The 350-submission result set is the journey's whole output; freezing it is a "
