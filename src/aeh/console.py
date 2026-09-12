@@ -180,7 +180,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, NamedTuple
 
 from aeh.conf import CohortRef, ModelRef, resolve_run_config
-from aeh.grade import GradingService
+from aeh.grade import GradingService, rollup_findings
 from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
 from aeh.review import (
@@ -1737,9 +1737,114 @@ class ConsoleApp:
             + '<section data-role="agreement"><p>'
             + escape(agreement)
             + "</p></section>"
+            + self._render_rubric_findings(run_id, queries)
             + _section("finalization", audit or "Nothing has been finalized for this run yet.")
+            + self._render_key_correction(run_id, queries)
             + _section("provenance", _PROVENANCE_FOOTER)
             + _band_section(run_id)
+        )
+
+    def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
+        """S12's findings block (§3.19): the criteria the panel could not apply, read
+        through M-GRADE's `rollup_findings` — the escalation breaker's
+        `ungradeable_by_panel` criteria and the ones whose review-queue rows exhausted
+        the review budget, each with its affected-student count. A run that carries no
+        such criterion renders the absence sentence, which is itself the record: an
+        empty findings block that looked like data would be a finding nobody could
+        tell apart from a clean run.
+
+        A real store only — a render never creates a ledger to read from (the same
+        rule `_tier` states), so the storeless and audit-double paths render the
+        honest absence instead, and a read failure degrades to the same absence a
+        page render never escalates past."""
+        if getattr(self._store, "data_dir", None) is None:
+            return _section(
+                "rubric-findings",
+                "No rubric findings: the console holds no ledger to read findings from.",
+            )
+        findings: tuple[Any, ...] = ()
+        try:
+            findings = rollup_findings(run_id, self._store)
+        except Exception:  # noqa: BLE001 — a read view reports empties, never crashes a page
+            findings = ()
+        queries.append("aeh.grade:rollup_findings")
+        if not findings:
+            return _section(
+                "rubric-findings",
+                "No rubric findings for this run: no criterion was left ungradeable "
+                "by the panel and none exhausted the review budget.",
+            )
+        lines = "".join(
+            "<p>"
+            + escape(
+                f"{finding.criterion_id}: {finding.reason} — "
+                f"{finding.student_count} student"
+                + ("s" if finding.student_count != 1 else "")
+            )
+            + "</p>"
+            for finding in findings
+        )
+        return (
+            '<section data-role="rubric-findings">'
+            "<p>Criteria the system could not apply (FR-GRADE-16) — the escalation "
+            "breaker's refusals and the review budget's exhaustions, with the "
+            "students each touched:</p>"
+            + lines
+            + "</section>"
+        )
+
+    def _render_key_correction(self, run_id: str, queries: list[str]) -> str:
+        """S12's correction half as a screen element (§3.19, `FR-CONSOLE-30`): the
+        section names what the correction does — a new key version, the affected
+        deterministic scores re-derived by lookup, the grade policy re-run, and no
+        panel judgment enqueued — and, on a real store, renders the run's
+        deterministic audit records, each naming `answer_key_ref`, so the page a
+        teacher reads afterwards says which key version produced which grade
+        (acceptance criterion 2's console face; the records themselves are
+        M-DET's, written at derivation time)."""
+        flow = _section(
+            "key-correction",
+            "Correct an answer key after a run: the console writes a new key version "
+            "for the criterion, re-derives the affected deterministic scores by "
+            "lookup against the corrected key, re-runs the grade policy over the "
+            "run, and enqueues no panel judgment — a key correction re-answers a "
+            "fixed answer, it does not ask a panel to re-judge it. The submission's "
+            "text is read on its own screen, which renders English and left-to-right "
+            "only (NFR-CONSOLE-07).",
+        )
+        if getattr(self._store, "data_dir", None) is None:
+            return flow
+        records = self._read(
+            "SELECT submission_id, criterion_id, final_points, answer_key_ref, "
+            "package_version_id FROM audit_record WHERE run_id = :run_id AND "
+            "evaluation_mode = 'deterministic' ORDER BY submission_id, criterion_id",
+            queries,
+            run_id=run_id,
+        )
+        lines = "".join(
+            "<p>"
+            + escape(
+                f"{_row_get(row, 'submission_id')} · {_row_get(row, 'criterion_id')}: "
+                f"points {_label_value(_row_get(row, 'final_points'))}, key "
+                f"{_label_value(_row_get(row, 'answer_key_ref'))}"
+            )
+            + "</p>"
+            for row in records
+        )
+        if lines:
+            return flow + (
+                '<section data-role="deterministic-audit">'
+                "<p>Which key version produced which grade — the deterministic "
+                "audit records for this run, each with its answer_key_ref "
+                "(package version : answer key):</p>"
+                + lines
+                + "</section>"
+            )
+        return flow + _section(
+            "deterministic-audit",
+            "No deterministic audit records for this run yet: the records are "
+            "written when deterministic scores are derived, and none has been "
+            "written for this run.",
         )
 
     def _render_student(self, ref: str, queries: list[str]) -> str:
