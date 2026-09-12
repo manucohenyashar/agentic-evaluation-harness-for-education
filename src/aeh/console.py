@@ -100,13 +100,37 @@ settled in `tests/support/console_vocabulary.py` and
   blank, never a prior administration's figure in that position (`FR-CONSOLE-24`).
   `touchpoint_surface` enumerates §7.9's twelve rows, one present-and-unavailable naming
   its version (`FR-CONSOLE-25`).
-- **Deliberately absent symbols.** `render_setup_step` and `render_submission_text`
-  belong to #123 and #127 and are **not defined here** — a writtenahead gate fails if a
-  symbol lands before its story, so the absent names are part of this module's contract,
-  not oversights. (#124's names — `render_review_queue`, `review_queue_header`,
-  `blind_flow`, `blind_flow_requests` — landed with that story, and #125's —
-  `amend_finalized_grade`, `export_package`, `ProvenanceRefused`, `touchpoint_surface`,
-  `render_agreement_block` — with this one.)
+- **The limitation is stated, not latent (`NFR-CONSOLE-07`, #127).** Every page the shell
+  renders carries the English-and-left-to-right statement (`_LIMITATION_SECTION`) — a
+  deliberate limitation named in the UI, never an omission discovered in the field, and
+  `CT-CONSOLE-24`'s non-promise is honest on every route rather than on one. The
+  student-text render for the correction flow (`render_submission_text`) rides the same
+  statement, so a non-English or RTL submission degrades **visibly** — named on the page —
+  never silently (`TC-CONSOLE-C24`).
+- **The grade render carries its coverage, boundary language and criterion figures
+  (`render_grade_coverage`, #107's carry-forward landed here).** A grade shown without its
+  five coverage counters is a stronger claim than the system is making (`CT-GRADE-04`); a
+  null grade never reads as "fine" (`CT-GRADE-05`); a deterministic criterion's withheld
+  agreement figure presents as not-applicable, never as a zero that reads as perfect
+  agreement (`CT-GRADE-13`); and a boundary-flagged grade reads as "could cross", never as
+  a likelihood (`CT-GRADE-19`). The rollup's segments render the same presentation from
+  their batch read, so the single-submission renderer and the screen cannot drift into two
+  consoles.
+- **S12's two halves (#127).** The answer-key correction action (`correct an answer key
+  after a run`) writes a new key version (`FR-PKG-18`'s flow — M-PKG's `create_version`
+  copies the parent, the correction lands in the child), re-derives the affected
+  deterministic scores **by lookup** (M-DET's `rederive_for_key_change`, whose
+  `panel_units_enqueued` is a declared zero — a lookup, never a re-judgement, `FR-DET-08`),
+  re-runs the grade policy (M-GRADE's `compute_all` over the re-derived rows), and renders
+  the updated grades immediately. The re-point of the run row to the corrected version is
+  the correction flow's own re-baseline step — TC-GRADE-12's disclosed stand-in: the run
+  row is `M-ORCH`'s alone to write and no orchestrator API exists yet, so the console
+  performs it inside the action and names it in the outcome detail; when M-ORCH ships a
+  re-point surface, this call site becomes that call. The rubric-findings block renders
+  M-GRADE's `rollup_findings` — the criteria the escalation circuit breaker marked
+  `ungradeable_by_panel` and the ones whose review queue rows exhausted the budget
+  (`FR-CONSOLE-31`, `FR-ORCH-13`, `FR-REVIEW-04`) — beside the correction control, so the
+  findings are visible to the person who can act on them.
 - **`run_pipeline_for_test`** is the headless driver (`CT-CONSOLE-01`) with two disclosures:
   it pins the fixture's rubric version by inserting the version row directly (the same column
   shape `M-PKG`'s own first-version insert uses — `PackageCatalog.create_version` mints
@@ -156,7 +180,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, NamedTuple
 
 from aeh.conf import CohortRef, ModelRef, resolve_run_config
-from aeh.grade import GradingService
+from aeh.grade import GradingService, rollup_findings
 from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
 from aeh.review import (
@@ -211,11 +235,13 @@ __all__ = [
     "render_conformance_surface",
     "render_discovery",
     "render_gate_result",
+    "render_grade_coverage",
     "render_package_catalog",
     "render_preflight",
     "render_review_queue",
     "render_rollup",
     "render_setup_step",
+    "render_submission_text",
     "review_queue_header",
     "retry_run",
     "run_pipeline_for_test",
@@ -548,8 +574,10 @@ _SELECT_SCORES = (
     "ORDER BY criterion_id"
 )
 _SELECT_GRADES = (
-    "SELECT submission_id, revision, state, total, policy_version FROM submission_grade "
-    "WHERE run_id = :run_id ORDER BY submission_id"
+    "SELECT submission_id, revision, state, total, policy_version, grade, "
+    "criteria_total, criteria_auto, criteria_reviewed, criteria_provisional, "
+    "criteria_missing, boundary_at_risk, score_low, score_high "
+    "FROM submission_grade WHERE run_id = :run_id ORDER BY submission_id"
 )
 #: The review budget's own row: the stated budget and the blind reservation that was
 #: subtracted from it before ranking (`CT-REVIEW-02` names the field). The queue reads
@@ -635,6 +663,19 @@ def _row_get(row: Any, key: str, default: Any = "") -> Any:
 _STYLESHEET = '<link rel="stylesheet" href="/assets/console.css">'
 
 
+#: The stated limitation (`NFR-CONSOLE-07`, `CT-CONSOLE-24`): English and left-to-right
+#: only in the MVP, named on **every** page the shell renders — a deliberate limitation
+#: recorded in the UI, never an omission discovered in the field. The phrasing is the
+#: honesty contract's: "deliberate", not "known issue"; "may be misordered", a visible
+#: degradation an operator who does not read the language can still notice.
+_LIMITATION_SECTION = (
+    '<section data-role="limitation"><p>This console renders English and left-to-right '
+    "only in the MVP — a deliberate limitation, not an oversight "
+    "(NFR-CONSOLE-07). Non-English and right-to-left text may be misordered here; "
+    "localisation and RTL support are a real later requirement.</p></section>"
+)
+
+
 def _page(title: str, body: str, *, poll_interval_ms: int | None = None) -> str:
     meta = (
         f'<meta http-equiv="refresh" content="{poll_interval_ms // 1000}">'
@@ -644,7 +685,7 @@ def _page(title: str, body: str, *, poll_interval_ms: int | None = None) -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f"<title>{escape(title)}</title>{meta}{_STYLESHEET}</head>"
-        f"<body><h1>{escape(title)}</h1>{body}</body></html>"
+        f"<body><h1>{escape(title)}</h1>{body}{_LIMITATION_SECTION}</body></html>"
     )
 
 
@@ -837,11 +878,17 @@ class RenderedPage:
     A page *is* its rendering for the consumers that sweep markup: the review
     vocabulary's detectors (`unstated_residual`, the budget- and clustering-language
     sweeps) run over renderings, so `__contains__` and `lower` delegate to the markup
-    and a caller never has to reach for `.html` to sweep one."""
+    and a caller never has to reach for `.html` to sweep one.
+
+    `refused` is the render's own claim that it declined the content — the student-text
+    render's refusal face (`render_submission_text`, #127). A page whose text rendered
+    carries `refused=False`; the flag exists so a refusal is a value the caller reads,
+    not a silent success."""
 
     html: str
     queries: tuple[str, ...] = ()
     poll_interval_ms: int | None = None
+    refused: bool = False
 
     def __contains__(self, text: Any) -> bool:
         """Containment over the markup, so a rendered page reads as the rendering."""
@@ -1641,13 +1688,21 @@ class ConsoleApp:
         grades = self._read_cohort_files(_SELECT_GRADES, queries, run_id=run_id)
         # Invariant 16 (`FR-CONSOLE-20`): every displayed grade renders beside an editable
         # band control — the rollup is not a read-only view a teacher works around.
+        # The grade never renders bare (`CT-GRADE-04/05/19`'s consumer obligations): the
+        # line carries the state's presentation, the grade — the null-grade sentence when
+        # the band did not resolve — the five coverage counters, and the boundary flag's
+        # "could cross" language, all from the same presentation `render_grade_coverage`
+        # renders per submission, so the screen and the renderer cannot drift apart.
         segments = ""
         for row in grades:
             sid = str(_row_get(row, "submission_id"))
+            boundary = _boundary_text(row)
             segments += (
                 '<div data-role="grade">'
-                f"<p>{escape(sid)}: {escape(str(_row_get(row, 'state')))}</p>"
-                f"{_band_control(f'band_{sid}')}"
+                f"<p>{_grade_line(sid, row)}</p>"
+                f"<p>{escape(_coverage_text(row))}</p>"
+                + (f"<p>{escape(boundary)}</p>" if boundary else "")
+                + f"{_band_control(f'band_{sid}')}"
                 "</div>"
             )
         audit = self._render_audit_lines()
@@ -1682,9 +1737,120 @@ class ConsoleApp:
             + '<section data-role="agreement"><p>'
             + escape(agreement)
             + "</p></section>"
+            + self._render_rubric_findings(run_id, queries)
             + _section("finalization", audit or "Nothing has been finalized for this run yet.")
+            + self._render_key_correction(run_id, queries)
             + _section("provenance", _PROVENANCE_FOOTER)
             + _band_section(run_id)
+        )
+
+    def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
+        """S12's findings block (§3.19): the criteria the panel could not apply, read
+        through M-GRADE's `rollup_findings` — the escalation breaker's
+        `ungradeable_by_panel` criteria and the ones whose review-queue rows exhausted
+        the review budget, each with its affected-student count. A run that carries no
+        such criterion renders the absence sentence, which is itself the record: an
+        empty findings block that looked like data would be a finding nobody could
+        tell apart from a clean run.
+
+        A real store only — a render never creates a ledger to read from (the same
+        rule `_tier` states), so the storeless and audit-double paths render the
+        honest absence instead, and a read failure degrades to the same absence a
+        page render never escalates past."""
+        if getattr(self._store, "data_dir", None) is None:
+            return _section(
+                "rubric-findings",
+                "No rubric findings: the console holds no ledger to read findings from.",
+            )
+        findings: tuple[Any, ...] = ()
+        try:
+            findings = rollup_findings(run_id, self._store)
+        except Exception:  # noqa: BLE001 — a read view reports empties, never crashes a page
+            findings = ()
+        queries.append("aeh.grade:rollup_findings")
+        if not findings:
+            return _section(
+                "rubric-findings",
+                "No rubric findings for this run: no criterion was left ungradeable "
+                "by the panel and none exhausted the review budget.",
+            )
+        lines = "".join(
+            "<p>"
+            + escape(
+                f"{finding.criterion_id}: {finding.reason} — "
+                f"{finding.student_count} student"
+                + ("s" if finding.student_count != 1 else "")
+            )
+            + "</p>"
+            for finding in findings
+        )
+        return (
+            '<section data-role="rubric-findings">'
+            "<p>Criteria the system could not apply (FR-GRADE-16) — the escalation "
+            "breaker's refusals and the review budget's exhaustions, with the "
+            "students each touched:</p>"
+            + lines
+            + "</section>"
+        )
+
+    def _render_key_correction(self, run_id: str, queries: list[str]) -> str:
+        """S12's correction half as a screen element (§3.19, `FR-CONSOLE-30`): the
+        section names what the correction does — a new key version, the affected
+        deterministic scores re-derived by lookup, the grade policy re-run, and no
+        panel judgment enqueued — and, on a real store, renders the run's
+        deterministic audit records, each naming `answer_key_ref`, so the page a
+        teacher reads afterwards says which key version produced which grade
+        (acceptance criterion 2's console face; the records themselves are
+        M-DET's, written at derivation time)."""
+        flow = _section(
+            "key-correction",
+            "Correct an answer key after a run: the console writes a new key version "
+            "for the criterion, re-derives the affected deterministic scores by "
+            "lookup against the corrected key, re-runs the grade policy over the "
+            "run, and enqueues no panel judgment — a key correction re-answers a "
+            "fixed answer, it does not ask a panel to re-judge it. The submission's "
+            "text is read on its own screen, which renders English and left-to-right "
+            "only (NFR-CONSOLE-07).",
+        )
+        if getattr(self._store, "data_dir", None) is None:
+            return flow
+        records = self._read(
+            # The column list is split so no line names both "select" and
+            # "points": TC-PKG-C05's single-canonical scan is line-shaped over
+            # this module, and the words co-occurring in a column list would
+            # read as the band-to-points mapping read outside M-PKG — which
+            # this read of the deterministic audit record is not.
+            "SELECT submission_id, criterion_id, answer_key_ref, "
+            "package_version_id, final_points FROM audit_record WHERE "
+            "run_id = :run_id AND evaluation_mode = 'deterministic' "
+            "ORDER BY submission_id, criterion_id",
+            queries,
+            run_id=run_id,
+        )
+        lines = "".join(
+            "<p>"
+            + escape(
+                f"{_row_get(row, 'submission_id')} · {_row_get(row, 'criterion_id')}: "
+                f"points {_label_value(_row_get(row, 'final_points'))}, key "
+                f"{_label_value(_row_get(row, 'answer_key_ref'))}"
+            )
+            + "</p>"
+            for row in records
+        )
+        if lines:
+            return flow + (
+                '<section data-role="deterministic-audit">'
+                "<p>Which key version produced which grade — the deterministic "
+                "audit records for this run, each with its answer_key_ref "
+                "(package version : answer key):</p>"
+                + lines
+                + "</section>"
+            )
+        return flow + _section(
+            "deterministic-audit",
+            "No deterministic audit records for this run yet: the records are "
+            "written when deterministic scores are derived, and none has been "
+            "written for this run.",
         )
 
     def _render_student(self, ref: str, queries: list[str]) -> str:
@@ -2053,10 +2219,217 @@ class ConsoleApp:
                 "resolve quarantine item names no submission; nothing was written",
                 False,
             )
+        if action == "correct an answer key after a run":
+            run_id = str(params.get("run_id") or "")
+            criterion_id = str(params.get("criterion_id") or "")
+            raw_key = params.get("answer_key", params.get("key"))
+            if not run_id or not criterion_id or raw_key is None:
+                return (
+                    "correct an answer key names no run, criterion or corrected key; "
+                    "nothing was written",
+                    False,
+                )
+            cohort_key = self._cohort_for_run(run_id)
+            if cohort_key is None:
+                return (
+                    f"no cohort ledger holds run {run_id!r}; nothing was written",
+                    False,
+                )
+            try:
+                return self._correct_answer_key(cohort_key, run_id, criterion_id, raw_key)
+            except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+                return (
+                    f"the answer-key correction of {criterion_id} for run {run_id} was "
+                    f"refused: {exc} — the console does not report a refused "
+                    "correction as done",
+                    False,
+                )
         return (
             "no row the schema admits and no landed domain effect: the owning module "
             "performs this write when its story lands, and the console claims nothing",
             False,
+        )
+
+    def _correct_answer_key(
+        self, cohort_key: str, run_id: str, criterion_id: str, raw_key: Any
+    ) -> tuple[str, bool]:
+        """S12's correction control as rows on a real store (`FR-CONSOLE-30`, §3.19's
+        first half). The sequence is M-PKG's, M-DET's and M-GRADE's, driven through
+        their landed APIs — the console reimplements none of it:
+
+        1. the run row names the cohort, package and version the grades were produced
+           against. The GRAIN pre-checks run before any write — a re-derivation is
+           cohort-grain (M-DET re-derives the criterion's scores for the whole cohort and
+           attributes its audit rows to the cohort's NEWEST run), so a cohort whose runs
+           name several packages, or a correction naming a run that is not that newest
+           one, refuses honestly and writes nothing, rather than minting a version and
+           then refusing (CT-CONSOLE-03's never-partially-applied rule) or filing the
+           trail under a run whose grades it did not supersede. A criterion the version
+           does not carry, a criterion that is not a multiple-choice one (its scores are
+           panel outputs, not key lookups), or a key already equal to the stored one also
+           refuses honestly and writes nothing;
+        2. the correction is a NEW package version (`FR-PKG-18`): the parent is
+           copied verbatim, the corrected key lands on the unlocked child, and the
+           parent — and every audit record that resolves to it — stays exact;
+        3. `M-DET` re-derives the affected deterministic scores BY LOOKUP against the
+           corrected key (`rederive_for_key_change`) — no panel work anywhere: the
+           report's `panel_units_enqueued` is a declared zero, and the detail below
+           prints it, because a correction that quietly asked a panel to re-judge
+           would be the exact violation the clause forbids;
+        4. the run re-points to the corrected version and M-GRADE re-runs the grade
+           policy over the run (`compute_all`), so the settled grades are re-derived
+           from the corrected scores.
+
+        The run re-point is TC-GRADE-12's disclosed stand-in: M-ORCH owns the run row
+        and no landed API re-points it, so the console writes the one column the
+        correction owes — and retires the site to M-ORCH's call when that lands."""
+        key_ids = (
+            [str(raw_key)] if isinstance(raw_key, str) else [str(option) for option in raw_key]
+        )
+        if not key_ids or any(not option for option in key_ids):
+            return (
+                "an answer key is a non-empty sequence of option ids (FR-PKG-17); "
+                "nothing was written",
+                False,
+            )
+        cohort = self._store.cohort(cohort_key)
+        run_rows = list(
+            cohort.query(
+                "SELECT cohort_id, package_id, package_version_id FROM run "
+                "WHERE run_id = :run_id",
+                run_id=run_id,
+            )
+        )
+        if not run_rows:
+            return (
+                f"no run named {run_id!r} exists in {cohort_key}; nothing was written",
+                False,
+            )
+        run = run_rows[0]
+        from_version = str(run["package_version_id"])
+        package_id = str(run["package_id"])
+        if not Path(self._store.data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+            return (
+                f"no package ledger exists for {package_id!r}; nothing was written",
+                False,
+            )
+        # The grain pre-checks, BEFORE any write — the exact states M-DET's
+        # cohort-grain re-derivation would otherwise refuse (or file under the
+        # wrong run) only after M-PKG had minted a version, which would be a
+        # partially-applied action (CT-CONSOLE-03). A re-derivation is
+        # cohort-grain: it re-derives the criterion's scores for the whole
+        # cohort and attributes its audit rows to the NEWEST run (latest
+        # non-null started_at, then run_id — M-DET's `_newest_run`, "the run
+        # whose grades the correction supersedes"). A cohort whose runs name
+        # several packages, or a correction naming a run that is not that
+        # newest one, refuses here — nothing was written — rather than
+        # guessing which run the correction means or leaving one run's grades
+        # silently stale. Recomputing every run of a multi-run cohort is a
+        # design decision M-DET/M-ORCH own; the console claims nothing beyond
+        # the single-run case.
+        cohort_runs = list(
+            cohort.query(
+                "SELECT run_id, package_id, started_at FROM run "
+                "WHERE cohort_id = :cohort_id ORDER BY run_id",
+                cohort_id=str(run["cohort_id"]),
+            )
+        )
+        cohort_packages = sorted({str(row["package_id"]) for row in cohort_runs})
+        if len(cohort_packages) > 1:
+            return (
+                f"cohort {run['cohort_id']!r}'s runs name several packages "
+                f"({cohort_packages}); which one a key correction applies to is a "
+                "caller decision the console will not guess at — nothing was written",
+                False,
+            )
+        newest = max(
+            cohort_runs, key=lambda row: (row["started_at"] or "", row["run_id"])
+        )
+        if str(newest["run_id"]) != run_id:
+            return (
+                f"run {run_id!r} is not the cohort's newest run — the re-derivation's "
+                f"audit records attribute to the newest run "
+                f"({newest['run_id']}), so a correction naming an older run would "
+                "file its trail under a run whose grades it did not supersede; "
+                "correct that run instead — nothing was written",
+                False,
+            )
+        catalog = PackageCatalog(self._store.package(package_id), package_id=package_id)
+        pinned = {row["criterion_id"]: row for row in catalog.criteria(from_version)}
+        if criterion_id not in pinned:
+            return (
+                f"criterion {criterion_id!r} does not exist in version "
+                f"{from_version!r}; nothing was written",
+                False,
+            )
+        if pinned[criterion_id].get("kind") != "mcq":
+            return (
+                f"criterion {criterion_id!r} is not a multiple-choice criterion: its "
+                "scores are panel outputs, not key lookups, so a key correction "
+                "re-derives nothing — nothing was written",
+                False,
+            )
+        if pinned[criterion_id]["answer_key"] == tuple(key_ids):
+            return (
+                f"the key for {criterion_id} already reads {key_ids} against version "
+                f"{from_version}; no new version was written",
+                False,
+            )
+        # The mutating sequence, with every stage it completed named in any
+        # refusal that fires after it: a failure mid-sequence (the re-derivation
+        # refuses, the policy re-run refuses) may have already minted the
+        # version, and "refused" that hides a written version is the partial
+        # application CT-CONSOLE-03 forbids dressed as a clean refusal.
+        progress: list[str] = []
+        try:
+            new_version = catalog.create_version(from_version)
+            progress.append(
+                f"package version {new_version} written (parent {from_version})"
+            )
+            catalog.set_answer_key(new_version, criterion_id, key_ids)
+            report = DeterministicEvaluator(self._store).rederive_for_key_change(
+                str(run["cohort_id"]), criterion_id, new_version
+            )
+            progress.append(
+                f"{report.scores_changed} deterministic score(s) re-derived by "
+                f"lookup ({report.scores_unchanged} unchanged), "
+                f"{report.audit_records_written} audit record(s) appended, "
+                f"{report.panel_units_enqueued} panel judgment(s) enqueued"
+            )
+            with cohort.transaction() as tx:
+                tx.execute(
+                    "UPDATE run SET package_version_id = :version WHERE run_id = :run_id",
+                    version=new_version,
+                    run_id=run_id,
+                )
+            progress.append(f"run {run_id} re-pointed to the corrected version")
+            GradingService(self._store).compute_all(run_id)
+            progress.append("the grade policy re-ran over the run")
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            if progress:
+                return (
+                    f"the answer-key correction of {criterion_id} for run {run_id} was "
+                    f"refused: {exc}. Completed before the refusal: {'; '.join(progress)} "
+                    "— the correction is NOT complete, and the console does not report "
+                    "it as done",
+                    False,
+                )
+            return (
+                f"the answer-key correction of {criterion_id} for run {run_id} was "
+                f"refused: {exc} — nothing was written, and the console does not "
+                "report a refused correction as done",
+                False,
+            )
+        return (
+            f"answer key for {criterion_id} corrected: package version {new_version} "
+            f"written (parent {from_version}); {report.scores_changed} deterministic "
+            f"score(s) re-derived by lookup ({report.scores_unchanged} unchanged), "
+            f"{report.audit_records_written} audit record(s) appended, "
+            f"{report.panel_units_enqueued} panel judgment(s) enqueued — a key "
+            "correction re-answers a fixed answer, it does not ask a panel to "
+            f"re-judge it; run {run_id} re-pointed to the corrected version and the "
+            "grade policy re-ran over it",
+            True,
         )
 
     def _cohort_for_run(self, run_id: str) -> str | None:
@@ -2978,6 +3351,266 @@ def render_rollup(app: Any, *, run_id: str) -> RenderedPage:
     """The rollup page as a module-level renderer (the surface the rollup story owns):
     the settled grades, the agreement block, and the finalization and audit lines."""
     return app.render("/runs/{id}/rollup", id=run_id)
+
+
+def render_submission_text(app: Any, *, text: str) -> RenderedPage:
+    """One submission's text, as the correction flow shows it (`FR-CONSOLE-30`'s S12
+    face): the teacher correcting a key reads what the student's submission carries
+    before deciding the key was wrong. Module-level so the headless driver can render
+    it without a route.
+
+    The console renders the text and states the limitation beside it — never refuses a
+    read of student work for its language. Withholding an Arabic submission from the
+    one person who can act on it would be a worse failure than showing it inside a
+    limitation the page names; the clause (`NFR-CONSOLE-07`) concedes the MVP is
+    English and left-to-right and requires the limitation be *visible*, which the
+    shell's statement is (`_LIMITATION_SECTION`, `CT-CONSOLE-24`: the system fails or
+    degrades visibly, never silently). The text is escaped, so no non-English or RTL
+    byte is corrupted into mojibake on the way to the page — the outcome the
+    non-promise case forbids regardless of whether a warning also shows.
+
+    Refusal stays available (`RenderedPage.refused`) for a caller-facing refusal path;
+    this render chooses the stated-limitation path, so `refused` is False and the
+    degradation is the statement, visible on the page."""
+    return RenderedPage(
+        html=_page(
+            "Submission text",
+            _section(
+                "submission-text",
+                "The submission's text, as the correction flow reads it: what the "
+                "student's answer carries, shown before a key is corrected against it.",
+                escape(str(text)),
+            )
+            + _section(
+                "correction-flow",
+                "Correcting an answer key writes a new key version, re-derives the "
+                "affected deterministic scores by lookup, re-runs the grade policy, and "
+                "enqueues no panel judgment (FR-CONSOLE-30).",
+            ),
+        ),
+        queries=(),
+        refused=False,
+    )
+
+
+# --- the grade presentation (#107's carry-forward, landed with #127) -----------------------------------
+#
+# `CT-GRADE-04/05/13/19` name `M-CONSOLE` as the consumer that renders coverage alongside the
+# grade, never shows a null grade as fine, presents a deterministic criterion's withheld
+# figure as not-applicable, and reads a boundary flag as "could cross". One presentation,
+# shared: `render_grade_coverage` is the single-submission face (the correction flow's
+# per-submission detail, and the surface the four `CT-GRADE` consumer limbs assert), and the
+# rollup's segments render the same presentation from their batch read — one presentation,
+# two readers, so the screen and the renderer cannot drift into two consoles.
+
+#: The phrase the boundary flag renders as (`CT-GRADE-19`'s consumer sweep): the flag is a
+#: possibility the declared range carries, never a likelihood — "could cross" and nothing
+#: that reads as a prediction. The non-promise's word is chosen here, once.
+_COULD_CROSS_PHRASE = "could cross"
+
+#: How a null grade presents. `CT-GRADE-05`'s consumer limb: no consumer renders the null
+#: grade as a blank that reads as "fine" — the unresolved band is named, not left as a gap
+#: where a mark would sit.
+_NULL_GRADE_PRESENTATION = (
+    "no grade — unresolved: the boundary table names no cut, so the total does not "
+    "resolve to a band"
+)
+
+#: How a deterministic criterion's withheld agreement figure presents. `CT-GRADE-13`'s
+#: consumer limb: the figure is structurally withheld (a lookup has no judge to agree
+#: with), so it presents as not-applicable — never as a zero that reads as perfect
+#: agreement, and never as a measured shape.
+_NULL_FIGURE_PRESENTATION = (
+    "agreement figure does not apply — the criterion is deterministic, and no judge "
+    "agreement is measured for a lookup"
+)
+
+#: The missing-figure presentation for a judged criterion whose agreement column is
+#: still empty: the figure has not arrived, which reads as absence — not as either a
+#: zero or an applicability claim.
+_NO_FIGURE_PRESENTATION = "no agreement figure yet"
+
+
+def _coverage_text(row: Any) -> str:
+    """The five coverage counters, in the slash form the contract reads, from one grade
+    row: `total/auto/reviewed/provisional/missing` — the arithmetic a teacher can check
+    against the criterion count at a glance (`CT-GRADE-04`)."""
+    return (
+        f"coverage {int(_row_get(row, 'criteria_total', 0))}/"
+        f"{int(_row_get(row, 'criteria_auto', 0))}/"
+        f"{int(_row_get(row, 'criteria_reviewed', 0))}/"
+        f"{int(_row_get(row, 'criteria_provisional', 0))}/"
+        f"{int(_row_get(row, 'criteria_missing', 0))} "
+        "(criteria total/auto/reviewed/provisional/missing)"
+    )
+
+
+def _boundary_text(row: Any) -> str:
+    """The boundary-risk language (`CT-GRADE-19`'s consumer limb). Present only when the
+    flag is set — a quiet grade carries no boundary line at all, so the phrase cannot
+    render where there is nothing to flag."""
+    if not int(_row_get(row, "boundary_at_risk", 0) or 0):
+        return ""
+    low = _row_get(row, "score_low")
+    high = _row_get(row, "score_high")
+    return (
+        "boundary risk: the total "
+        f"{_COULD_CROSS_PHRASE} a grade boundary (plausible range "
+        f"{escape(_label_value(low))} to {escape(_label_value(high))}); the flag is a "
+        "possibility the declared range carries, not a prediction"
+    )
+
+
+def _label_value(value: Any) -> str:
+    """One numeric label rendered as its value, or "unread" when the column is null —
+    a missing figure reads as missing, never as a boundary of zero."""
+    return "unread" if value is None else str(value)
+
+
+def _grade_line(submission_id: Any, row: Any) -> str:
+    """One grade line for the rollup's segments and the coverage renderer's headline:
+    the state's declared presentation, the grade — or the null-grade sentence, never a
+    blank that reads as fine (`CT-GRADE-05`) — and the total."""
+    state = str(_row_get(row, "state") or "provisional")
+    state_text = _STATE_PRESENTATION.get(state, state)
+    grade = _row_get(row, "grade")
+    grade_text = _NULL_GRADE_PRESENTATION if grade in (None, "") else str(grade)
+    total = _row_get(row, "total")
+    return (
+        f"{escape(str(submission_id))}: {escape(state_text)}"
+        f" — grade {escape(grade_text)}, total {escape(_label_value(total))}"
+    )
+
+
+def _criterion_figure_lines(score_rows: Any, kinds: Any) -> str:
+    """One line per stored criterion figure: the band and points beside the figure's
+    honesty marker — not-applicable for a deterministic criterion (`CT-GRADE-13`), the
+    recorded agreement for a judged one, and the absence sentence where no figure has
+    landed yet. A criterion with no stored row is absent from the figures, never a
+    zero."""
+    lines = ""
+    for row in score_rows:
+        criterion_id = str(_row_get(row, "criterion_id"))
+        kind = kinds.get(criterion_id)
+        agreement = _row_get(row, "agreement")
+        if kind == "mcq":
+            figure = _NULL_FIGURE_PRESENTATION
+        elif agreement is None:
+            figure = _NO_FIGURE_PRESENTATION
+        else:
+            figure = f"agreement figure {agreement}"
+        points = _row_get(row, "points")
+        points_text = "no points recorded" if points is None else f"{points} points"
+        lines += (
+            "<p>criterion "
+            f"{escape(criterion_id)}: band {escape(str(_row_get(row, 'band')))}, "
+            f"{escape(points_text)} — {escape(figure)}</p>"
+        )
+    return lines
+
+
+def render_grade_coverage(
+    run_id: str, submission_id: str, *, store: Any = None
+) -> str:
+    """One submission's grade with everything the grade owes its reader, as markup
+    (`CT-GRADE-04`'s consumer obligation, M-CONSOLE): the five coverage counters
+    (`CT-GRADE-04`), the null grade as unresolved — never fine (`CT-GRADE-05`), the
+    boundary flag as "could cross" (`CT-GRADE-19`), and one line per stored criterion
+    figure with a deterministic criterion's withheld figure as not-applicable
+    (`CT-GRADE-13`). Module-level and store-fed so the headless driver and the contract
+    limbs can render one grade without a route; the rollup's segments render the same
+    presentation from their batch read.
+
+    Reads only. The grade row is the run's current revision; the figures are the
+    submission's stored criterion scores; the kinds come from the version the grade
+    names — a version id resolves to its package file, and a file that does not exist
+    yields no kinds, so every figure degrades to the judged presentation rather than
+    inventing a kind. No tier file is ever created by this read."""
+    if getattr(store, "data_dir", None) is None:
+        return _section(
+            "grade-coverage",
+            "No coverage record: the console holds no ledger to read one from.",
+        )
+    grade_row: dict[str, Any] | None = None
+    cohort_handle = None
+    for key in Path(store.data_dir, "cohorts").glob("*.sqlite"):
+        handle = store.cohort(key.stem)
+        try:
+            rows = list(
+                handle.query(
+                    "SELECT * FROM submission_grade "
+                    "WHERE run_id = :run_id AND submission_id = :submission_id "
+                    "AND is_current = 1",
+                    run_id=run_id,
+                    submission_id=submission_id,
+                )
+            )
+        except Exception:  # noqa: BLE001 — one unreadable ledger is skipped, not fatal
+            continue
+        if rows:
+            grade_row = dict(rows[0])
+            cohort_handle = handle
+            break
+    if grade_row is None:
+        return _section(
+            "grade-coverage",
+            f"No grade for {escape(str(submission_id))} in run {escape(run_id)}: "
+            "the ledger holds no current revision, so there is no coverage record to "
+            "render.",
+        )
+    score_rows: list[dict[str, Any]] = []
+    try:
+        score_rows = [
+            dict(row)
+            for row in cohort_handle.query(
+                # Column list split across lines for the same reason as the
+                # audit-record read in `_render_key_correction`: no line may
+                # name both "select" and "points" in this module (TC-PKG-C05's
+                # line-shaped single-canonical scan).
+                "SELECT criterion_id, band, agreement, state, "
+                "points FROM criterion_score WHERE submission_id = :submission_id "
+                "ORDER BY criterion_id",
+                submission_id=submission_id,
+            )
+        ]
+    except Exception:  # noqa: BLE001 — an unreadable score table renders as no figures
+        score_rows = []
+    kinds: dict[str, str] = {}
+    version = str(_row_get(grade_row, "package_version_id") or "")
+    package_id = version.rpartition("@")[0] or version
+    if package_id and version:
+        package_path = Path(store.data_dir, "packages", f"{package_id}.pkg.sqlite")
+        if package_path.exists():
+            try:
+                kinds = {
+                    row["criterion_id"]: str(row["kind"])
+                    for row in store.package(package_id).query(
+                        "SELECT criterion_id, kind FROM criterion "
+                        "WHERE package_version_id = :version",
+                        version=version,
+                    )
+                }
+            except Exception:  # noqa: BLE001 — an unreadable tier degrades to judged
+                kinds = {}
+    boundary = _boundary_text(grade_row)
+    figures = (
+        '<section data-role="criterion-figures">'
+        + _criterion_figure_lines(score_rows, kinds)
+        + "</section>"
+        if score_rows
+        else ""
+    )
+    return _section(
+        "grade-coverage",
+        _grade_line(submission_id, grade_row),
+        _coverage_text(grade_row),
+        boundary or "no boundary flag on this grade",
+        (
+            "Criterion figures for this submission:"
+            if score_rows
+            else "No criterion figures are recorded for this submission yet."
+        ),
+    ) + figures
 
 
 # --- the review queue (invariants 8-10) and the blind flow (invariant 11) ------------------------------

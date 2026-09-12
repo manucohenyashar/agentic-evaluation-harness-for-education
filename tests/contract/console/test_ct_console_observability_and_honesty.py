@@ -177,7 +177,6 @@ def test_tc_console_c23_no_audit_surface_presents_an_actor_string_as_an_identity
 # --- CT-CONSOLE-24 — the non-promise ---------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     "probe, label",
     [(RTL_PROBE, "right-to-left"), (NON_ENGLISH_LTR_PROBE, "non-English left-to-right")],

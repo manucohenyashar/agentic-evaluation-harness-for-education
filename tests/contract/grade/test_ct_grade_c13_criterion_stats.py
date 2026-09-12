@@ -24,12 +24,11 @@ The limbs, in the row's order:
   consumer distinguishes the same two claims on its own figures — a single-band
   population's entropy is a real 0.0 (perfect agreement, measured), an empty
   population's is the explicit `None` (not measured, does not apply).
-- **the M-CONSOLE half** (`[m_console]`, writtenahead): the rendered figures must
+- **the M-CONSOLE half** (`[m_console]`, green): the rendered figures must
   present the null as not-applicable, never as a zero reading as perfect
-  agreement — the §2.1 error the clause names. The landed console renders no
-  criterion figures at all, so this waits on the disclosed
-  `aeh.console:render_grade_coverage` (#107), the same render the C04/C05 limbs
-  key on.
+  agreement — the §2.1 error the clause names. Landed at #127 on
+  `aeh.console:render_grade_coverage` (#107), the same render the C04/C05/C19
+  limbs key on.
 
 Isolation: rung 2 for the pure seam; rung 3 for the chain and the M-STATS
 differential. The socket guard is autouse; `criterion_score` rows are the
@@ -244,7 +243,6 @@ def test_tc_grade_c13_m_stats_distinguishes_null_from_zero():
     assert unmeasured.n == 0, "fixture bug: the empty population is zero pairs"
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable(
     tmp_data_dir,
 ):
@@ -253,9 +251,9 @@ def test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable(
     criterion's withheld entropy must present as not-applicable, never as a zero
     that reads as perfect agreement.
 
-    Writtenahead on the disclosed `aeh.console:render_grade_coverage` (#107) — the
-    same render the C04/C05 limbs key on: the landed console renders no criterion
-    figures, so the consumer obligation waits on that landing."""
+    Landed at #127 on the disclosed `aeh.console:render_grade_coverage` — the
+    same render the C04/C05 limbs key on: a deterministic criterion's figure renders
+    as "does not apply", and the standing assertion below keeps it that way."""
     require(GRADE_MODULE, "separated_rollup", issue="#104")
     render_grade_coverage = require(
         CONSOLE_MODULE, "render_grade_coverage", issue="#107"

@@ -25,10 +25,10 @@ The limbs, in the plan's order:
 - **the null discipline** (rung 3/4): where the package declares no boundary table,
   the resolved grade is null — never an invented band — and the module's own export
   renders that null as an honest absence, not a blank that reads as "fine".
-- **the console limb** (`[m_console]`, writtenahead): the clause's consumer
-  obligation — no consumer renders the null grade as fine. The landed console
-  module renders grades with no boundary-risk language at all, so this waits on
-  the disclosed `aeh.console:render_grade_coverage` (#107).
+- **the console limb** (`[m_console]`, green): the clause's consumer
+  obligation — no consumer renders the null grade as fine. Landed at #127 on
+  `aeh.console:render_grade_coverage` (#107), the same render the C04/C13/C19
+  limbs key on.
 
 Isolation: rung 0 for the pure seam; rung 3 for the service limbs; rung 4 for the
 export. The socket guard is autouse; `criterion_score` rows are the vocabulary's
@@ -284,17 +284,15 @@ def test_tc_grade_c05_a_null_grade_is_rendered_as_an_honest_absence(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c05_the_console_does_not_render_a_null_grade_as_fine(tmp_data_dir):
     """`TC-GRADE-C05`'s console limb (`CT-GRADE-05`, rung 3, `[m_console]`) — no
     consumer renders the null grade as a blank that reads as "fine": the console's
     grade presentation must mark the unresolved band as absent/unresolved, not
     leave a gap where a mark would sit.
 
-    Writtenahead on the same disclosed surface as C04's console limb
-    (`aeh.console:render_grade_coverage`, #107): the landed console module renders
-    grades with no boundary-risk language and no null-band presentation, so the
-    clause's consumer obligation waits on that landing."""
+    Landed at #127 on the disclosed surface as C04's console limb
+    (`aeh.console:render_grade_coverage`): a null grade renders as "no grade —
+    unresolved", and the standing assertion below keeps it that way."""
     require(GRADE_MODULE, "open_grade", issue="#101")
     render_grade_coverage = require(
         CONSOLE_MODULE, "render_grade_coverage", issue="#107"

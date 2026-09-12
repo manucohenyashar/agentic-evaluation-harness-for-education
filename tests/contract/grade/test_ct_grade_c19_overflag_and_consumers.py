@@ -26,11 +26,10 @@ The limbs, in the row's order:
   sits far from the floor) ranks BELOW the genuinely near-boundary one, at equal
   weight and equal error signals. A likelihood ranker would do the reverse (the
   wider the range, the "more likely" the crossing) and mis-rank the queue.
-- **the M-CONSOLE language half** (`[m_console]`, writtenahead): the rendered
+- **the M-CONSOLE language half** (`[m_console]`, green): the rendered
   language must read "could cross", never "likely to cross" — a teacher reading a
-  likelihood where the design promises a possibility is misled. The landed
-  console renders no boundary-risk language at all, so this waits on the
-  disclosed `aeh.console:render_grade_coverage` (#107), the same render the
+  likelihood where the design promises a possibility is misled. Landed at #127
+  on `aeh.console:render_grade_coverage` (#107), the same render the
   C04/C05/C13 limbs key on.
 
 Isolation: rung 0 for the pure seam; rung 3 for the review ranking (the queue's
@@ -147,7 +146,6 @@ def test_tc_grade_c19_the_review_queue_ranks_proximity_not_likelihood():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely(tmp_data_dir):
     """`TC-GRADE-C19`'s M-CONSOLE limb (`CT-GRADE-19`, `[m_console]`, rung 3) — the
     rendered language reads the flagged grade as "could cross", never "likely to
@@ -155,10 +153,10 @@ def test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely(tmp_data_di
     the design promises, and a console that said "likely" would mislead the
     teacher the clause protects.
 
-    Writtenahead on the disclosed `aeh.console:render_grade_coverage` (#107) — the
-    same render the C04/C05/C13 limbs key on: the landed console renders no
-    boundary-risk language at all, so the consumer obligation waits on that
-    landing."""
+    Landed at #127 on the disclosed `aeh.console:render_grade_coverage` — the
+    same render the C04/C05/C13 limbs key on: a flagged grade renders "could cross",
+    and the standing assertion below keeps the language on the possibility, never
+    the likelihood."""
     require(GRADE_MODULE, "open_grade", issue="#101")
     render_grade_coverage = require(
         CONSOLE_MODULE, "render_grade_coverage", issue="#107"

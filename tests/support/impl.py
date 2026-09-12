@@ -525,9 +525,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # audit surface) and TS-76's `TC-CONSOLE-C01`/`-C02`/`-C03` seven. The `"#124"` entry
     # is gone the same way: `aeh.console:render_review_queue` and `aeh.console:blind_flow`
     # exist and drive TS-77's CT-CONSOLE-13/-14 file plus TS-76's `TC-CONSOLE-C04`/`-C06`
-    # five. `#125` and `#127` stay: their symbols (`amend_finalized_grade`,
-    # `render_submission_text`) are still deliberately absent from the module, and the
-    # node-ID discipline above is what kept them out of #122's sweep.
+    # five. `#125`'s and `#127`'s symbols have landed since (`amend_finalized_grade`
+    # with #125, `render_submission_text` with #127), and the node-ID discipline
+    # above is what kept those symbols out of #122's sweep while they were absent.
     # #125 owns invariants 15-21, which is `FR-CONSOLE-21` (amendment), `-22` (review window),
     # `-23` (the export gate) and `-25` (the touchpoint sweep).
     #
@@ -548,12 +548,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `render_rollup` had already landed with the console process, so the case's last
     # unmet `require` was the queue and it unmarked with #124. The node ID that stood
     # here is gone.
-    "#127": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_submission_text",
-        ("tests/contract/console/test_ct_console_observability_and_honesty.py"
-         "::test_tc_console_c24_non_english_and_rtl_content_fails_or_degrades_visibly",),
-    ),
+    # The `"#127"` entry that stood here is gone because #127 landed: `aeh.console`
+    # ships `render_submission_text`, and the page shell carries the English-and-
+    # left-to-right statement on every route (`NFR-CONSOLE-07`/`CT-CONSOLE-24`) — the
+    # student-text render degrades visibly by naming the limitation, never by refusing
+    # a read of student work, and the shell's statement is what makes the non-promise
+    # honest console-wide rather than per-render.
     # --- TS-76 (#131), the twelve CT-CONSOLE security, isolation and prohibition cases ----------
     #
     # Keyed per **rendering**, not per case. `TC-CONSOLE-C11` carries three separate renderings
@@ -591,8 +591,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # conf step-3 rebinding check, the four TS-74 calibration consumer cases, TS-75's conform
     # C14 console half -- all run too. `render_setup_step` landed at #123, so the rows
     # keyed on it (the `-C07`..`-C12` group and the CT-STATS `m_console` sweeps) run too;
-    # `amend_finalized_grade` and `render_submission_text` stay absent: #125 and #127 are
-    # still open, and those are the keys their rows ride on. (`render_review_queue` was
+    # `amend_finalized_grade` landed at #125 and `render_submission_text` at #127, so the
+    # rows keyed on those landings run too. (`render_review_queue` was
     # #124's and landed, so the row that keyed on it -- the c16 `[m_console]` sweep -- runs
     # too.)
     # --- TS-73 (#121), the twenty-one CT-STATS clause cases -----------------------------------
@@ -1146,28 +1146,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # grade as a blank that reads as "fine", `CT-GRADE-13` requires the rendered
     # criterion figures to present a null as not-applicable rather than a zero
     # reading as perfect agreement, and `CT-GRADE-19` requires the rendered
-    # boundary-risk language to read as "could cross", never "likely to cross" —
-    # the landed console module renders grades with no coverage record, no
-    # boundary-risk language and no criterion figures (its grade selection carries
-    # none), so all four limbs wait on the same disclosed render.
+    # boundary-risk language to read as "could cross", never "likely to cross".
+    # Landed at #127: `aeh.console:render_grade_coverage` ships the single-submission
+    # render — grade line, the five coverage counters, the boundary flag's "could
+    # cross" sentence, and per-criterion figures with a deterministic criterion's
+    # null figure presented as not-applicable — and the rollup screen's grade rows
+    # render through the same presentation helpers, so all four limbs run unmarked
+    # and this entry is gone. C15's run-start limb remains (M-ORCH's refusal).
     # C15's run-start limb: `CT-GRADE-15` requires a policy referencing a criterion
     # that no longer exists to be refused AT RUN START, so grading is never reached
     # in that state — the run-creation path validates nothing of the kind yet, so
     # the disclosed `aeh.orch:validate_grade_policy` is that refusal's surface.
-    "#107 c04/c05/c13/c19 coverage, boundary-risk, criterion figures and over-flag language beside the console's grade render (M-CONSOLE)": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_grade_coverage",
-        (
-            "tests/contract/grade/test_ct_grade_c04_coverage_and_rendering.py"
-            "::test_tc_grade_c04_the_console_renders_coverage_alongside_the_grade",
-            "tests/contract/grade/test_ct_grade_c05_boundary_risk.py"
-            "::test_tc_grade_c05_the_console_does_not_render_a_null_grade_as_fine",
-            "tests/contract/grade/test_ct_grade_c13_criterion_stats.py"
-            "::test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable",
-            "tests/contract/grade/test_ct_grade_c19_overflag_and_consumers.py"
-            "::test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely",
-        ),
-    ),
     "#107 c15 a policy naming a nonexistent criterion is refused at run start (M-ORCH)": (
         "symbol",
         f"{ORCH_MODULE}:validate_grade_policy",

@@ -681,14 +681,28 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # quarantine-resolution sites and the driver's six again (re-shifted once by
     # the reviewer's standing-shape gating); the statements are the same eight.
     # Re-read from the walker, never hand-unioned.)
-    "aeh.console:1950",
-    "aeh.console:2027",
-    "aeh.console:3772",
-    "aeh.console:3777",
-    "aeh.console:3800",
-    "aeh.console:3808",
-    "aeh.console:3816",
-    "aeh.console:3829",
+    # #127's re-pin: S12's answer-key correction landed as the console's ninth
+    # site — the run re-point (`UPDATE run SET package_version_id`) inside the
+    # correction's sequence, keyword-parameterized, the disclosed TC-GRADE-12
+    # stand-in for M-ORCH's run-row ownership (retire it to M-ORCH's call when
+    # that API lands). The correction block's insertion above the driver's six
+    # moved them and the two write-path sites once more; the statements are the
+    # same eight plus the re-point. Re-read from the walker, never hand-unioned.
+    # (Second re-pin, still #127's: the audit-record and criterion-score reads'
+    # column lists were split so no line names both "select" and "points" —
+    # TC-PKG-C05's line-shaped scan — moving all nine again; same statements.)
+    # (Third re-pin, still #127's: review fixes added the correction's grain
+    # pre-checks and its completed-before-refusal progress disclosure above the
+    # tail sites — moving the seven tail sites down again; same statements.)
+    "aeh.console:2116",
+    "aeh.console:2193",
+    "aeh.console:2400",
+    "aeh.console:4405",
+    "aeh.console:4410",
+    "aeh.console:4433",
+    "aeh.console:4441",
+    "aeh.console:4449",
+    "aeh.console:4462",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the
