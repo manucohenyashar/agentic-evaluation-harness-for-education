@@ -16,13 +16,11 @@ Three limbs:
 - **the module's own export** (rung 4, green): `M-GRADE`'s CSV renders the five
   counters on every grade row, matching the row — a coverage record that exists in
   the ledger but not on the page has satisfied the letter and lost the point.
-- **the console's grade render** (rung 3, `[m_console]`, writtenahead): the clause
+- **the console's grade render** (rung 3, `[m_console]`, green): the clause
   names `M-CONSOLE` as the consumer that must render coverage alongside the grade.
-  The landed console module renders grades without a coverage record (its grade
-  selection carries no coverage columns), so this limb is red-by-design, keyed in
-  `WRITTEN_AHEAD_BLOCKERS` on the disclosed surface `aeh.console:render_grade_coverage`
-  (issue #107) — the render that shows a grade WITH its coverage, which no consumer
-  surface yet ships.
+  Landed at #127: the render is `aeh.console:render_grade_coverage` (#107's
+  disclosed surface), the one that shows a grade WITH its coverage record, and
+  the limb below keys on it.
 
 Isolation: rung 3 (real store, real package, real service); rung 4 for the export.
 The socket guard is autouse; `criterion_score` rows are the vocabulary's disclosed
@@ -156,12 +154,10 @@ def test_tc_grade_c04_the_console_renders_coverage_alongside_the_grade(tmp_data_
     `M-CONSOLE` renders the coverage record alongside the grade, because a grade
     shown without its coverage is a stronger claim than the system is making.
 
-    Writtenahead: the landed console module renders grades with no coverage record
-    (its grade selection carries no coverage columns and its rendered grade text
-    names no counter), so the surface the clause requires — disclosed as
-    `aeh.console:render_grade_coverage` in `WRITTEN_AHEAD_BLOCKERS` (#107) — does
-    not exist yet. When a console story lands it, this test loses the marker and
-    becomes the standing assertion that the five counters ride with the grade."""
+    Landed at #127: `aeh.console:render_grade_coverage` (the #107-disclosed render) is
+    the standing assertion that the five counters ride with the grade — and the rollup's
+    grade rows render through the same presentation helpers, so the screen cannot
+    quietly drop them."""
     require(GRADE_MODULE, "open_grade", issue="#101")
     render_grade_coverage = require(
         CONSOLE_MODULE, "render_grade_coverage", issue="#107"
