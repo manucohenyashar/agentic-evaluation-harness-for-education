@@ -105,7 +105,6 @@ from aeh.orch import (
     CRITERION_BREAKER_RATE_ENV,
     DECISION_HALTED_BY_BREAKER,
     ESCALATION_BUDGET_ENV,
-    LEASE_SECONDS_ENV,
     STAGE_DETERMINISTIC,
     STAGE_EXTRACT,
     STAGE_SCORE,
@@ -786,7 +785,8 @@ class SynthWorld:
     def quarantined_ids(self) -> list[str]:
         return [
             self.sid_by_index[index] for index in sorted(self.sid_by_index)
-            if self.ingest_reports[self.sid_by_index[index]].quarantined
+            if self.ingest_reports[self.sid_by_index[index]].ingest_status
+            not in SWEEP1_ADMITTED_INGEST_STATUSES
         ]
 
     def refresh_stored_markdown(self) -> None:
@@ -803,11 +803,11 @@ class SynthWorld:
             self.stored_markdown[sid] = head[0]["markdown"]
 
     def sweep(self) -> Any:
-        """Requeue the units a killed drive left leased: the sweeper reclaims leases
-        older than `HARNESS_ORCH_LEASE_SECONDS`, pinned 0 at the call so every
-        outstanding lease reads expired - the recovery the resume variants run
-        before continuing the drive."""
-        _set_env(self.monkeypatch, LEASE_SECONDS_ENV, "0")
+        """Requeue the units a killed drive left leased: the reattached
+        orchestrator's restored lease counter sits at or past every expiry ever
+        issued (`LeaseClock`'s restart rule - what is persisted is the furthest
+        expiry ever issued), so the sweeper reclaims every outstanding lease -
+        the recovery the resume variants run before continuing the drive."""
         return self.orchestrator.sweep_expired_leases()
 
     def reattach(self) -> None:
@@ -849,11 +849,14 @@ class SynthWorld:
     def drive_deterministic(self) -> None:
         """The deterministic leg: `M-DET`'s cohort pass over EVERY submission (the
         enumeration admits none - det scores the mcq criteria of quarantines too),
-        then the stage's units complete."""
+        then the stage's units complete, leased in batches until the stage drains."""
         DeterministicEvaluator(self.store).evaluate_cohort(self.run_id)
-        batch = self.orchestrator.lease("w-e2e-det", STAGE_DETERMINISTIC, 512)
-        for unit in batch:
-            self.orchestrator.complete(unit.work_id)
+        while True:
+            batch = self.orchestrator.lease("w-e2e-det", STAGE_DETERMINISTIC, 512)
+            if not batch:
+                break
+            for unit in batch:
+                self.orchestrator.complete(unit.work_id)
 
     def drive_extract(self, *, limit: int | None = None) -> int:
         """The extraction leg: lease in batches, record the reply under the exact
