@@ -1,0 +1,356 @@
+{
+  "package_id": "pkg-e2e-setup",
+  "version_prefix": "pkg-e2e-setup",
+  "locked": true,
+  "questions": [
+    {
+      "question_id": "Q1",
+      "question_type": "open",
+      "max_points": 4.0
+    },
+    {
+      "question_id": "Q2",
+      "question_type": "open",
+      "max_points": 5.0
+    },
+    {
+      "question_id": "Q3",
+      "question_type": "open",
+      "max_points": 6.0
+    },
+    {
+      "question_id": "Q4",
+      "question_type": "mcq",
+      "max_points": 2.0
+    },
+    {
+      "question_id": "Q5",
+      "question_type": "mcq",
+      "max_points": 2.0
+    },
+    {
+      "question_id": "Q6",
+      "question_type": "mixed",
+      "max_points": 3.0
+    }
+  ],
+  "criteria": [
+    {
+      "criterion_id": "CRIT-IMP",
+      "question_id": "Q1",
+      "kind": "open",
+      "scoring_model": "holistic",
+      "max_points": 4.0,
+      "evidence_type": "quoted_definition",
+      "band_justification": null,
+      "bands": [
+        {
+          "band": "not met",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "the response does not do what the criterion describes (the response defines impulse as force acting over contact time)"
+        },
+        {
+          "band": "met",
+          "ordinal": 1,
+          "points": 4.0,
+          "descriptor": "the response defines impulse as force acting over contact time"
+        }
+      ]
+    },
+    {
+      "criterion_id": "CRIT-Q4",
+      "question_id": "Q4",
+      "kind": "mcq",
+      "scoring_model": "atomic",
+      "max_points": 2.0,
+      "evidence_type": null,
+      "band_justification": null,
+      "bands": [
+        {
+          "band": "incorrect",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "the response marks only options the answer key does not accept"
+        },
+        {
+          "band": "correct",
+          "ordinal": 1,
+          "points": 2.0,
+          "descriptor": "the response marks an option the answer key accepts"
+        }
+      ],
+      "answer_key": [
+        "A"
+      ],
+      "options": [
+        {
+          "option_id": "A",
+          "label": "9.8"
+        },
+        {
+          "option_id": "B",
+          "label": "1.6"
+        },
+        {
+          "option_id": "C",
+          "label": "3.7"
+        },
+        {
+          "option_id": "D",
+          "label": "0"
+        }
+      ]
+    },
+    {
+      "criterion_id": "CRIT-Q5",
+      "question_id": "Q5",
+      "kind": "mcq",
+      "scoring_model": "atomic",
+      "max_points": 2.0,
+      "evidence_type": null,
+      "band_justification": null,
+      "bands": [
+        {
+          "band": "incorrect",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "the response marks only options the answer key does not accept"
+        },
+        {
+          "band": "correct",
+          "ordinal": 1,
+          "points": 2.0,
+          "descriptor": "the response marks an option the answer key accepts"
+        }
+      ],
+      "answer_key": [
+        "B"
+      ],
+      "options": [
+        {
+          "option_id": "A",
+          "label": "rises"
+        },
+        {
+          "option_id": "B",
+          "label": "falls"
+        },
+        {
+          "option_id": "C",
+          "label": "stays"
+        }
+      ]
+    },
+    {
+      "criterion_id": "CRIT-Q6",
+      "question_id": "Q6",
+      "kind": "mcq",
+      "scoring_model": "atomic",
+      "max_points": 3.0,
+      "evidence_type": null,
+      "band_justification": null,
+      "bands": [
+        {
+          "band": "incorrect",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "the response marks only options the answer key does not accept"
+        },
+        {
+          "band": "correct",
+          "ordinal": 1,
+          "points": 3.0,
+          "descriptor": "the response marks an option the answer key accepts"
+        }
+      ],
+      "answer_key": [
+        "A"
+      ],
+      "options": [
+        {
+          "option_id": "A",
+          "label": "yes"
+        },
+        {
+          "option_id": "B",
+          "label": "no"
+        }
+      ]
+    },
+    {
+      "criterion_id": "CRIT-STEPS",
+      "question_id": "Q3",
+      "kind": "open",
+      "scoring_model": "holistic",
+      "max_points": 6.0,
+      "evidence_type": "textual_span",
+      "band_justification": "partial credit: the derivation earns points for each correct step even when the final result is wrong",
+      "bands": [
+        {
+          "band": "none",
+          "ordinal": 0,
+          "points": 0.0,
+          "descriptor": "the response states no relation and shows no derivation"
+        },
+        {
+          "band": "partial",
+          "ordinal": 1,
+          "points": 2.0,
+          "descriptor": "the response identifies the governing relation but stops before an intermediate step"
+        },
+        {
+          "band": "partial",
+          "ordinal": 2,
+          "points": 4.0,
+          "descriptor": "the response sets up the derivation correctly and completes at least one intermediate step"
+        },
+        {
+          "band": "full",
+          "ordinal": 3,
+          "points": 6.0,
+          "descriptor": "the response derives the relation, states each step, and arrives at the stated result"
+        }
+      ]
+    }
+  ],
+  "dependencies": {
+    "CRIT-IMP": [],
+    "CRIT-Q4": [],
+    "CRIT-Q5": [],
+    "CRIT-Q6": [],
+    "CRIT-STEPS": []
+  },
+  "grade_policy": {
+    "is_default": true,
+    "policy": {
+      "combination": "weighted_sum",
+      "weights": [],
+      "k": null,
+      "drop": null,
+      "gate": null,
+      "scale": null,
+      "rounding": null,
+      "decimals": null
+    }
+  },
+  "prefix_budget": {
+    "over_budget": false,
+    "dropped_exemplars": []
+  },
+  "steps": {
+    "inventory": null,
+    "answer_keys": {
+      "status": "criteria_staged",
+      "payload": {
+        "reason": "the confirmed inventory carries deterministic questions; their criteria are staged for the teacher's keys (FR-SETUP-03)",
+        "staged_criterion_ids": [
+          "CRIT-Q4",
+          "CRIT-Q5",
+          "CRIT-Q6"
+        ]
+      }
+    },
+    "rubric_readback": null,
+    "decomposability": {
+      "status": "dependencies_approved",
+      "payload": {
+        "approved": [],
+        "confirmed": {
+          "CRIT-IMP": "atomic",
+          "CRIT-STEPS": "atomic"
+        },
+        "edge_count": 0,
+        "proposals": [
+          {
+            "criterion_id": "CRIT-STEPS",
+            "depends_on": "CRIT-IMP",
+            "reason": "error carried forward: the derivation is graded on work that presupposes the impulse definition",
+            "rendered": "When grading CRIT-STEPS, the grader will also see the work you credited under CRIT-IMP, because error carried forward: the derivation is graded on work that presupposes the impulse definition."
+          }
+        ],
+        "teacher_confirmed_count": 2,
+        "template_version": "setup-dependencies-v1"
+      }
+    },
+    "grade_policy": {
+      "status": "default_taken",
+      "payload": {
+        "policy": {
+          "combination": "weighted_sum",
+          "decimals": null,
+          "drop": null,
+          "gate": null,
+          "k": null,
+          "rounding": null,
+          "scale": null,
+          "weights": []
+        },
+        "source": "default"
+      }
+    },
+    "prefix_budget": {
+      "status": "within_budget",
+      "payload": {
+        "dropped_exemplars": [],
+        "estimate": "chars/4 (TC-SETUP-14's exact seam deferred)",
+        "pairs": [
+          {
+            "assembled_tokens": 69,
+            "criterion_id": "CRIT-IMP",
+            "dropped": [],
+            "exemplars_after": 0,
+            "exemplars_before": 0,
+            "over_by_tokens": 0,
+            "question_id": "Q1"
+          },
+          {
+            "assembled_tokens": 39,
+            "criterion_id": "CRIT-Q4",
+            "dropped": [],
+            "exemplars_after": 0,
+            "exemplars_before": 0,
+            "over_by_tokens": 0,
+            "question_id": "Q4"
+          },
+          {
+            "assembled_tokens": 39,
+            "criterion_id": "CRIT-Q5",
+            "dropped": [],
+            "exemplars_after": 0,
+            "exemplars_before": 0,
+            "over_by_tokens": 0,
+            "question_id": "Q5"
+          },
+          {
+            "assembled_tokens": 43,
+            "criterion_id": "CRIT-Q6",
+            "dropped": [],
+            "exemplars_after": 0,
+            "exemplars_before": 0,
+            "over_by_tokens": 0,
+            "question_id": "Q6"
+          },
+          {
+            "assembled_tokens": 105,
+            "criterion_id": "CRIT-STEPS",
+            "dropped": [],
+            "exemplars_after": 0,
+            "exemplars_before": 0,
+            "over_by_tokens": 0,
+            "question_id": "Q3"
+          }
+        ],
+        "residual_tokens": 0
+      }
+    },
+    "calibration_papers": {
+      "status": "stored_not_used",
+      "payload": {
+        "document_ids": "<2 documents, ids are per-run>",
+        "note": "no ambiguity discovery ran and none can claim to until M-CALIB ships (FR-SETUP-15)",
+        "used": false
+      }
+    }
+  }
+}

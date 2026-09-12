@@ -93,15 +93,34 @@ GOLDEN_MATCH_HELPERS = ("assert_matches_golden",)
 
 
 #: On-disk baseline artifacts the registry deliberately does not list as goldens, with the
-#: reason each is not one. Bounded like `KNOWN_UNIMPORTABLE` in `test_import_graph.py`: a
-#: new entry here is a decision made on a PR, not a growing category — and no generated-text
-#: golden may hide in it, because its one member is an inputs manifest, not an expectation.
+#: reason each is not one — or, where the artifact IS an expectation, why C16's concern
+#: (live-tier wording dependence) cannot reach it. Bounded like `KNOWN_UNIMPORTABLE` in
+#: `test_import_graph.py`: a new entry here is a decision made on a PR, not a growing
+#: category — and a generated-text golden must not hide in it: every entry states the tier
+#: its content is produced at and who reviews a diff to it.
 NON_GOLDEN_BASELINE_ARTIFACTS = {
     # TC-REG-06's reference INPUT tuples (the nine FR-ORCH-01 fields). The golden over them
     # (`work-id-reference.json`) is blocked on #57; the inputs ship ahead of it because they
     # are the run's inputs, not an expectation of any output — the exact distinction
     # CT-PROV-16 step 5 turns on.
     "TC-REG-06/work-id-reference.inputs.json",
+    # TC-E2E-01's published-package manifest — an expectation, not an input, but its
+    # producing tier is the journey's own RecordedFixtureProvider (request-keyed, per the
+    # constructive exemption below), so no live backend's wording can move it. §6.9's
+    # registry is the plan's six `TC-REG-*` producer rows and is closed by its drift test,
+    # so the manifest is governed inline in the journey module instead: reviewer "The
+    # package owner", grounds a schema-version bump or a declared setup-mapping change,
+    # never "the model changed its mind" — and no regenerate helper exists.
+    "TC-E2E-01/published-manifest.json",
+    # TC-E2E-02's overnight-run baseline result set — an expectation, and its
+    # producing tier is the journey's own RecordedFixtureProvider (request-keyed,
+    # per the constructive exemption above), so no live backend's wording can move
+    # it; the aggregation, synthesis and finalization legs behind it are
+    # deterministic code over the same recorded calls. Governed inline in the
+    # journey module like TC-E2E-01's manifest: reviewer "the overnight run's
+    # owner", grounds a package-corpus bump or a declared world-shape change,
+    # never "the model changed its mind" — and no regenerate helper exists.
+    "TC-E2E-02/result-set.json",
 }
 
 
