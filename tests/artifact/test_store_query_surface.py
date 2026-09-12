@@ -681,14 +681,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # quarantine-resolution sites and the driver's six again (re-shifted once by
     # the reviewer's standing-shape gating); the statements are the same eight.
     # Re-read from the walker, never hand-unioned.)
-    "aeh.console:1950",
-    "aeh.console:2027",
-    "aeh.console:3772",
-    "aeh.console:3777",
-    "aeh.console:3800",
-    "aeh.console:3808",
-    "aeh.console:3816",
-    "aeh.console:3829",
+    # #127's re-pin: S12's answer-key correction landed as the console's ninth
+    # site — the run re-point (`UPDATE run SET package_version_id`) inside the
+    # correction's sequence, keyword-parameterized, the disclosed TC-GRADE-12
+    # stand-in for M-ORCH's run-row ownership (retire it to M-ORCH's call when
+    # that API lands). The correction block's insertion above the driver's six
+    # moved them and the two write-path sites once more; the statements are the
+    # same eight plus the re-point. Re-read from the walker, never hand-unioned.
+    "aeh.console:2110",
+    "aeh.console:2187",
+    "aeh.console:2330",
+    "aeh.console:4313",
+    "aeh.console:4318",
+    "aeh.console:4341",
+    "aeh.console:4349",
+    "aeh.console:4357",
+    "aeh.console:4370",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the

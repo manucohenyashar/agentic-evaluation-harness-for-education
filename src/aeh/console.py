@@ -2213,10 +2213,135 @@ class ConsoleApp:
                 "resolve quarantine item names no submission; nothing was written",
                 False,
             )
+        if action == "correct an answer key after a run":
+            run_id = str(params.get("run_id") or "")
+            criterion_id = str(params.get("criterion_id") or "")
+            raw_key = params.get("answer_key", params.get("key"))
+            if not run_id or not criterion_id or raw_key is None:
+                return (
+                    "correct an answer key names no run, criterion or corrected key; "
+                    "nothing was written",
+                    False,
+                )
+            cohort_key = self._cohort_for_run(run_id)
+            if cohort_key is None:
+                return (
+                    f"no cohort ledger holds run {run_id!r}; nothing was written",
+                    False,
+                )
+            try:
+                return self._correct_answer_key(cohort_key, run_id, criterion_id, raw_key)
+            except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+                return (
+                    f"the answer-key correction of {criterion_id} for run {run_id} was "
+                    f"refused: {exc} — the console does not report a refused "
+                    "correction as done",
+                    False,
+                )
         return (
             "no row the schema admits and no landed domain effect: the owning module "
             "performs this write when its story lands, and the console claims nothing",
             False,
+        )
+
+    def _correct_answer_key(
+        self, cohort_key: str, run_id: str, criterion_id: str, raw_key: Any
+    ) -> tuple[str, bool]:
+        """S12's correction control as rows on a real store (`FR-CONSOLE-30`, §3.19's
+        first half). The sequence is M-PKG's, M-DET's and M-GRADE's, driven through
+        their landed APIs — the console reimplements none of it:
+
+        1. the run row names the cohort, package and version the grades were produced
+           against; a criterion the version does not carry, a criterion that is not a
+           multiple-choice one (its scores are panel outputs, not key lookups), or a
+           key already equal to the stored one refuses honestly and writes nothing;
+        2. the correction is a NEW package version (`FR-PKG-18`): the parent is
+           copied verbatim, the corrected key lands on the unlocked child, and the
+           parent — and every audit record that resolves to it — stays exact;
+        3. `M-DET` re-derives the affected deterministic scores BY LOOKUP against the
+           corrected key (`rederive_for_key_change`) — no panel work anywhere: the
+           report's `panel_units_enqueued` is a declared zero, and the detail below
+           prints it, because a correction that quietly asked a panel to re-judge
+           would be the exact violation the clause forbids;
+        4. the run re-points to the corrected version and M-GRADE re-runs the grade
+           policy over the run (`compute_all`), so the settled grades are re-derived
+           from the corrected scores.
+
+        The run re-point is TC-GRADE-12's disclosed stand-in: M-ORCH owns the run row
+        and no landed API re-points it, so the console writes the one column the
+        correction owes — and retires the site to M-ORCH's call when that lands."""
+        key_ids = (
+            [str(raw_key)] if isinstance(raw_key, str) else [str(option) for option in raw_key]
+        )
+        if not key_ids or any(not option for option in key_ids):
+            return (
+                "an answer key is a non-empty sequence of option ids (FR-PKG-17); "
+                "nothing was written",
+                False,
+            )
+        cohort = self._store.cohort(cohort_key)
+        run_rows = list(
+            cohort.query(
+                "SELECT cohort_id, package_id, package_version_id FROM run "
+                "WHERE run_id = :run_id",
+                run_id=run_id,
+            )
+        )
+        if not run_rows:
+            return (
+                f"no run named {run_id!r} exists in {cohort_key}; nothing was written",
+                False,
+            )
+        run = run_rows[0]
+        from_version = str(run["package_version_id"])
+        package_id = str(run["package_id"])
+        if not Path(self._store.data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+            return (
+                f"no package ledger exists for {package_id!r}; nothing was written",
+                False,
+            )
+        catalog = PackageCatalog(self._store.package(package_id), package_id=package_id)
+        pinned = {row["criterion_id"]: row for row in catalog.criteria(from_version)}
+        if criterion_id not in pinned:
+            return (
+                f"criterion {criterion_id!r} does not exist in version "
+                f"{from_version!r}; nothing was written",
+                False,
+            )
+        if pinned[criterion_id].get("kind") != "mcq":
+            return (
+                f"criterion {criterion_id!r} is not a multiple-choice criterion: its "
+                "scores are panel outputs, not key lookups, so a key correction "
+                "re-derives nothing — nothing was written",
+                False,
+            )
+        if pinned[criterion_id]["answer_key"] == tuple(key_ids):
+            return (
+                f"the key for {criterion_id} already reads {key_ids} against version "
+                f"{from_version}; no new version was written",
+                False,
+            )
+        new_version = catalog.create_version(from_version)
+        catalog.set_answer_key(new_version, criterion_id, key_ids)
+        report = DeterministicEvaluator(self._store).rederive_for_key_change(
+            str(run["cohort_id"]), criterion_id, new_version
+        )
+        with cohort.transaction() as tx:
+            tx.execute(
+                "UPDATE run SET package_version_id = :version WHERE run_id = :run_id",
+                version=new_version,
+                run_id=run_id,
+            )
+        GradingService(self._store).compute_all(run_id)
+        return (
+            f"answer key for {criterion_id} corrected: package version {new_version} "
+            f"written (parent {from_version}); {report.scores_changed} deterministic "
+            f"score(s) re-derived by lookup ({report.scores_unchanged} unchanged), "
+            f"{report.audit_records_written} audit record(s) appended, "
+            f"{report.panel_units_enqueued} panel judgment(s) enqueued — a key "
+            "correction re-answers a fixed answer, it does not ask a panel to "
+            "re-judge it; the grade policy re-ran over the run",
+            True,
         )
 
     def _cohort_for_run(self, run_id: str) -> str | None:
