@@ -244,7 +244,6 @@ def test_tc_grade_c13_m_stats_distinguishes_null_from_zero():
     assert unmeasured.n == 0, "fixture bug: the empty population is zero pairs"
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable(
     tmp_data_dir,
 ):

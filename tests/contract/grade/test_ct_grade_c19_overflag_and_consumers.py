@@ -147,7 +147,6 @@ def test_tc_grade_c19_the_review_queue_ranks_proximity_not_likelihood():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely(tmp_data_dir):
     """`TC-GRADE-C19`'s M-CONSOLE limb (`CT-GRADE-19`, `[m_console]`, rung 3) — the
     rendered language reads the flagged grade as "could cross", never "likely to

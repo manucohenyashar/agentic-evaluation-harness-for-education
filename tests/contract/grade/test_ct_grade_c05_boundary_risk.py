@@ -284,7 +284,6 @@ def test_tc_grade_c05_a_null_grade_is_rendered_as_an_honest_absence(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c05_the_console_does_not_render_a_null_grade_as_fine(tmp_data_dir):
     """`TC-GRADE-C05`'s console limb (`CT-GRADE-05`, rung 3, `[m_console]`) — no
     consumer renders the null grade as a blank that reads as "fine": the console's

@@ -151,7 +151,6 @@ def test_tc_grade_c04_the_module_export_renders_coverage_alongside_the_grade(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c04_the_console_renders_coverage_alongside_the_grade(tmp_data_dir):
     """`TC-GRADE-C04`'s console limb (`CT-GRADE-04`, rung 3, `[m_console]`) —
     `M-CONSOLE` renders the coverage record alongside the grade, because a grade

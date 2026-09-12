@@ -235,6 +235,7 @@ __all__ = [
     "render_conformance_surface",
     "render_discovery",
     "render_gate_result",
+    "render_grade_coverage",
     "render_package_catalog",
     "render_preflight",
     "render_review_queue",
@@ -573,8 +574,10 @@ _SELECT_SCORES = (
     "ORDER BY criterion_id"
 )
 _SELECT_GRADES = (
-    "SELECT submission_id, revision, state, total, policy_version FROM submission_grade "
-    "WHERE run_id = :run_id ORDER BY submission_id"
+    "SELECT submission_id, revision, state, total, policy_version, grade, "
+    "criteria_total, criteria_auto, criteria_reviewed, criteria_provisional, "
+    "criteria_missing, boundary_at_risk, score_low, score_high "
+    "FROM submission_grade WHERE run_id = :run_id ORDER BY submission_id"
 )
 #: The review budget's own row: the stated budget and the blind reservation that was
 #: subtracted from it before ranking (`CT-REVIEW-02` names the field). The queue reads
@@ -1685,13 +1688,21 @@ class ConsoleApp:
         grades = self._read_cohort_files(_SELECT_GRADES, queries, run_id=run_id)
         # Invariant 16 (`FR-CONSOLE-20`): every displayed grade renders beside an editable
         # band control — the rollup is not a read-only view a teacher works around.
+        # The grade never renders bare (`CT-GRADE-04/05/19`'s consumer obligations): the
+        # line carries the state's presentation, the grade — the null-grade sentence when
+        # the band did not resolve — the five coverage counters, and the boundary flag's
+        # "could cross" language, all from the same presentation `render_grade_coverage`
+        # renders per submission, so the screen and the renderer cannot drift apart.
         segments = ""
         for row in grades:
             sid = str(_row_get(row, "submission_id"))
+            boundary = _boundary_text(row)
             segments += (
                 '<div data-role="grade">'
-                f"<p>{escape(sid)}: {escape(str(_row_get(row, 'state')))}</p>"
-                f"{_band_control(f'band_{sid}')}"
+                f"<p>{_grade_line(sid, row)}</p>"
+                f"<p>{escape(_coverage_text(row))}</p>"
+                + (f"<p>{escape(boundary)}</p>" if boundary else "")
+                + f"{_band_control(f'band_{sid}')}"
                 "</div>"
             )
         audit = self._render_audit_lines()
@@ -3062,6 +3073,222 @@ def render_submission_text(app: Any, *, text: str) -> RenderedPage:
         queries=(),
         refused=False,
     )
+
+
+# --- the grade presentation (#107's carry-forward, landed with #127) -----------------------------------
+#
+# `CT-GRADE-04/05/13/19` name `M-CONSOLE` as the consumer that renders coverage alongside the
+# grade, never shows a null grade as fine, presents a deterministic criterion's withheld
+# figure as not-applicable, and reads a boundary flag as "could cross". One presentation,
+# shared: `render_grade_coverage` is the single-submission face (the correction flow's
+# per-submission detail, and the surface the four `CT-GRADE` consumer limbs assert), and the
+# rollup's segments render the same presentation from their batch read — one presentation,
+# two readers, so the screen and the renderer cannot drift into two consoles.
+
+#: The phrase the boundary flag renders as (`CT-GRADE-19`'s consumer sweep): the flag is a
+#: possibility the declared range carries, never a likelihood — "could cross" and nothing
+#: that reads as a prediction. The non-promise's word is chosen here, once.
+_COULD_CROSS_PHRASE = "could cross"
+
+#: How a null grade presents. `CT-GRADE-05`'s consumer limb: no consumer renders the null
+#: grade as a blank that reads as "fine" — the unresolved band is named, not left as a gap
+#: where a mark would sit.
+_NULL_GRADE_PRESENTATION = (
+    "no grade — unresolved: the boundary table names no cut, so the total does not "
+    "resolve to a band"
+)
+
+#: How a deterministic criterion's withheld agreement figure presents. `CT-GRADE-13`'s
+#: consumer limb: the figure is structurally withheld (a lookup has no judge to agree
+#: with), so it presents as not-applicable — never as a zero that reads as perfect
+#: agreement, and never as a measured shape.
+_NULL_FIGURE_PRESENTATION = (
+    "agreement figure does not apply — the criterion is deterministic, and no judge "
+    "agreement is measured for a lookup"
+)
+
+#: The missing-figure presentation for a judged criterion whose agreement column is
+#: still empty: the figure has not arrived, which reads as absence — not as either a
+#: zero or an applicability claim.
+_NO_FIGURE_PRESENTATION = "no agreement figure yet"
+
+
+def _coverage_text(row: Any) -> str:
+    """The five coverage counters, in the slash form the contract reads, from one grade
+    row: `total/auto/reviewed/provisional/missing` — the arithmetic a teacher can check
+    against the criterion count at a glance (`CT-GRADE-04`)."""
+    return (
+        f"coverage {int(_row_get(row, 'criteria_total', 0))}/"
+        f"{int(_row_get(row, 'criteria_auto', 0))}/"
+        f"{int(_row_get(row, 'criteria_reviewed', 0))}/"
+        f"{int(_row_get(row, 'criteria_provisional', 0))}/"
+        f"{int(_row_get(row, 'criteria_missing', 0))} "
+        "(criteria total/auto/reviewed/provisional/missing)"
+    )
+
+
+def _boundary_text(row: Any) -> str:
+    """The boundary-risk language (`CT-GRADE-19`'s consumer limb). Present only when the
+    flag is set — a quiet grade carries no boundary line at all, so the phrase cannot
+    render where there is nothing to flag."""
+    if not int(_row_get(row, "boundary_at_risk", 0) or 0):
+        return ""
+    low = _row_get(row, "score_low")
+    high = _row_get(row, "score_high")
+    return (
+        "boundary risk: the total "
+        f"{_COULD_CROSS_PHRASE} a grade boundary (plausible range "
+        f"{_label_value(low)} to {_label_value(high)}); the flag is a possibility the "
+        "declared range carries, not a prediction"
+    )
+
+
+def _label_value(value: Any) -> str:
+    """One numeric label rendered as its value, or "unread" when the column is null —
+    a missing figure reads as missing, never as a boundary of zero."""
+    return "unread" if value is None else str(value)
+
+
+def _grade_line(submission_id: Any, row: Any) -> str:
+    """One grade line for the rollup's segments and the coverage renderer's headline:
+    the state's declared presentation, the grade — or the null-grade sentence, never a
+    blank that reads as fine (`CT-GRADE-05`) — and the total."""
+    state = str(_row_get(row, "state") or "provisional")
+    state_text = _STATE_PRESENTATION.get(state, state)
+    grade = _row_get(row, "grade")
+    grade_text = _NULL_GRADE_PRESENTATION if grade in (None, "") else str(grade)
+    total = _row_get(row, "total")
+    return (
+        f"{escape(str(submission_id))}: {escape(state_text)}"
+        f" — grade {escape(grade_text)}, total {_label_value(_row_get(row, 'total'))}"
+    )
+
+
+def _criterion_figure_lines(score_rows: Any, kinds: Any) -> str:
+    """One line per stored criterion figure: the band and points beside the figure's
+    honesty marker — not-applicable for a deterministic criterion (`CT-GRADE-13`), the
+    recorded agreement for a judged one, and the absence sentence where no figure has
+    landed yet. A criterion with no stored row is absent from the figures, never a
+    zero."""
+    lines = ""
+    for row in score_rows:
+        criterion_id = str(_row_get(row, "criterion_id"))
+        kind = kinds.get(criterion_id)
+        agreement = _row_get(row, "agreement")
+        if kind == "mcq":
+            figure = _NULL_FIGURE_PRESENTATION
+        elif agreement is None:
+            figure = _NO_FIGURE_PRESENTATION
+        else:
+            figure = f"agreement figure {agreement}"
+        points = _row_get(row, "points")
+        points_text = "no points recorded" if points is None else f"{points} points"
+        lines += (
+            "<p>criterion "
+            f"{escape(criterion_id)}: band {escape(str(_row_get(row, 'band')))}, "
+            f"{escape(points_text)} — {escape(figure)}</p>"
+        )
+    return lines
+
+
+def render_grade_coverage(
+    run_id: str, submission_id: str, *, store: Any = None
+) -> str:
+    """One submission's grade with everything the grade owes its reader, as markup
+    (`CT-GRADE-04`'s consumer obligation, M-CONSOLE): the five coverage counters
+    (`CT-GRADE-04`), the null grade as unresolved — never fine (`CT-GRADE-05`), the
+    boundary flag as "could cross" (`CT-GRADE-19`), and one line per stored criterion
+    figure with a deterministic criterion's withheld figure as not-applicable
+    (`CT-GRADE-13`). Module-level and store-fed so the headless driver and the contract
+    limbs can render one grade without a route; the rollup's segments render the same
+    presentation from their batch read.
+
+    Reads only. The grade row is the run's current revision; the figures are the
+    submission's stored criterion scores; the kinds come from the version the grade
+    names — a version id resolves to its package file, and a file that does not exist
+    yields no kinds, so every figure degrades to the judged presentation rather than
+    inventing a kind. No tier file is ever created by this read."""
+    if getattr(store, "data_dir", None) is None:
+        return _section(
+            "grade-coverage",
+            "No coverage record: the console holds no ledger to read one from.",
+        )
+    grade_row: dict[str, Any] | None = None
+    cohort_handle = None
+    for key in Path(store.data_dir, "cohorts").glob("*.sqlite"):
+        handle = store.cohort(key.stem)
+        try:
+            rows = list(
+                handle.query(
+                    "SELECT * FROM submission_grade "
+                    "WHERE run_id = :run_id AND submission_id = :submission_id "
+                    "AND is_current = 1",
+                    run_id=run_id,
+                    submission_id=submission_id,
+                )
+            )
+        except Exception:  # noqa: BLE001 — one unreadable ledger is skipped, not fatal
+            continue
+        if rows:
+            grade_row = dict(rows[0])
+            cohort_handle = handle
+            break
+    if grade_row is None:
+        return _section(
+            "grade-coverage",
+            f"No grade for {escape(str(submission_id))} in run {escape(run_id)}: "
+            "the ledger holds no current revision, so there is no coverage record to "
+            "render.",
+        )
+    score_rows: list[dict[str, Any]] = []
+    try:
+        score_rows = [
+            dict(row)
+            for row in cohort_handle.query(
+                "SELECT criterion_id, band, points, agreement, state "
+                "FROM criterion_score WHERE submission_id = :submission_id "
+                "ORDER BY criterion_id",
+                submission_id=submission_id,
+            )
+        ]
+    except Exception:  # noqa: BLE001 — an unreadable score table renders as no figures
+        score_rows = []
+    kinds: dict[str, str] = {}
+    version = str(_row_get(grade_row, "package_version_id") or "")
+    package_id = version.rpartition("@")[0] or version
+    if package_id and version:
+        package_path = Path(store.data_dir, "packages", f"{package_id}.pkg.sqlite")
+        if package_path.exists():
+            try:
+                kinds = {
+                    row["criterion_id"]: str(row["kind"])
+                    for row in store.package(package_id).query(
+                        "SELECT criterion_id, kind FROM criterion "
+                        "WHERE package_version_id = :version",
+                        version=version,
+                    )
+                }
+            except Exception:  # noqa: BLE001 — an unreadable tier degrades to judged
+                kinds = {}
+    boundary = _boundary_text(grade_row)
+    figures = (
+        '<section data-role="criterion-figures">'
+        + _criterion_figure_lines(score_rows, kinds)
+        + "</section>"
+        if score_rows
+        else ""
+    )
+    return _section(
+        "grade-coverage",
+        _grade_line(submission_id, grade_row),
+        _coverage_text(grade_row),
+        boundary or "no boundary flag on this grade",
+        (
+            "Criterion figures for this submission:"
+            if score_rows
+            else "No criterion figures are recorded for this submission yet."
+        ),
+    ) + figures
 
 
 # --- the review queue (invariants 8-10) and the blind flow (invariant 11) ------------------------------

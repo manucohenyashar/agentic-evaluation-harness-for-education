@@ -1146,28 +1146,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # grade as a blank that reads as "fine", `CT-GRADE-13` requires the rendered
     # criterion figures to present a null as not-applicable rather than a zero
     # reading as perfect agreement, and `CT-GRADE-19` requires the rendered
-    # boundary-risk language to read as "could cross", never "likely to cross" —
-    # the landed console module renders grades with no coverage record, no
-    # boundary-risk language and no criterion figures (its grade selection carries
-    # none), so all four limbs wait on the same disclosed render.
+    # boundary-risk language to read as "could cross", never "likely to cross".
+    # Landed at #127: `aeh.console:render_grade_coverage` ships the single-submission
+    # render — grade line, the five coverage counters, the boundary flag's "could
+    # cross" sentence, and per-criterion figures with a deterministic criterion's
+    # null figure presented as not-applicable — and the rollup screen's grade rows
+    # render through the same presentation helpers, so all four limbs run unmarked
+    # and this entry is gone. C15's run-start limb remains (M-ORCH's refusal).
     # C15's run-start limb: `CT-GRADE-15` requires a policy referencing a criterion
     # that no longer exists to be refused AT RUN START, so grading is never reached
     # in that state — the run-creation path validates nothing of the kind yet, so
     # the disclosed `aeh.orch:validate_grade_policy` is that refusal's surface.
-    "#107 c04/c05/c13/c19 coverage, boundary-risk, criterion figures and over-flag language beside the console's grade render (M-CONSOLE)": (
-        "symbol",
-        f"{CONSOLE_MODULE}:render_grade_coverage",
-        (
-            "tests/contract/grade/test_ct_grade_c04_coverage_and_rendering.py"
-            "::test_tc_grade_c04_the_console_renders_coverage_alongside_the_grade",
-            "tests/contract/grade/test_ct_grade_c05_boundary_risk.py"
-            "::test_tc_grade_c05_the_console_does_not_render_a_null_grade_as_fine",
-            "tests/contract/grade/test_ct_grade_c13_criterion_stats.py"
-            "::test_tc_grade_c13_the_console_presents_a_null_figure_as_not_applicable",
-            "tests/contract/grade/test_ct_grade_c19_overflag_and_consumers.py"
-            "::test_tc_grade_c19_the_console_reads_it_as_could_cross_not_likely",
-        ),
-    ),
     "#107 c15 a policy naming a nonexistent criterion is refused at run start (M-ORCH)": (
         "symbol",
         f"{ORCH_MODULE}:validate_grade_policy",
