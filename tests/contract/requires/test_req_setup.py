@@ -92,8 +92,9 @@ def test_tc_req_88_the_blocking_set_is_setups_and_setup_holds_its_own_state(tmp_
        data.
     4. **Setup survives a console kill.** A fresh `SetupService` over the reopened store, with no
        in-memory session, reports the same step state.
-    5. **The confirmation cap is setup's.** M-SETUP enforces `SETUP_MAX_CONFIRMATIONS` in a
-       process that never imports the console."""
+    5. **The confirmation cap is setup's.** M-SETUP owns `SETUP_MAX_CONFIRMATIONS` and loads it
+       in a process that never imports the console. That the cap is applied is `TC-SETUP-10`'s
+       case, so this clause checks only where the cap lives."""
     import aeh.console as console
     from tests.contract.setup._doubles import stage_chain as fresh_chain
 
