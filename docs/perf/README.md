@@ -21,7 +21,15 @@ that each runbook here still matches its row.
 | PERF-08 — queue and rollup render | E1 | `TC-REVIEW-18` (queue build and render), `TC-CONSOLE-33` (queue and rollup over a real store) |
 | PERF-09 — 40,000-unit ledger and footprint | E1 | `TC-ORCH-33` |
 
-`PERF-10`, the release gate, belongs to TS-54 (#147), not to this folder.
+## Release-time runbooks (TS-54)
+
+| Scenario | Env | How it is held |
+|---|---|---|
+| PERF-10 — the `NFR-SYS-05` acceptance gate | E4 | [Runbook](PERF-10-release-gate.md): the ten-row HLD §8.5 gate table, one mid-run kill |
+| RES-17 — no network interface | E5 | [Runbook](RES-17-air-gapped-run.md): the E2E tier and a live local run with networking off at the host |
+| RES-18 — restart after an uncontrolled kill | E1, then E4 | `tests/resilience/test_res_18_restart_rpo_rto.py` on E1; confirmed on E4 in PERF-10's step 5 |
+
+`tests/perf/test_release_gate_runbooks.py` checks these three against test plan §6.4 and §6.8.
 
 ## Running an E4 runbook
 
