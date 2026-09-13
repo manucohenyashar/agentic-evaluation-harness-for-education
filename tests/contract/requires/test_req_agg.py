@@ -67,6 +67,7 @@ def test_tc_req_17_the_escalation_decision_is_pure_and_commits_with_its_result(
                  for _ in range(2)]
     monkeypatch.undo()
     assert decisions[0] == decisions[1], "should_escalate is not a pure function of its inputs"
+    assert decisions[0].escalate, f"fixture: the split panel did not decide to escalate: {decisions[0]}"
     assert not writes, f"should_escalate wrote to the store: {writes}"
 
     store = open_store(tmp_data_dir)
@@ -180,9 +181,10 @@ def test_tc_req_49_grading_sums_stored_points_and_maps_no_band(tmp_data_dir, mon
 
 def test_tc_req_54_review_ranks_on_stored_confidence_and_calls_it_no_probability():
     """`TC-REQ-54` (`M-REVIEW` → `M-AGG`, CT-AGG-05/06/09/10/16): M-REVIEW builds its queue from
-    stored rows whose confidence M-AGG already derived. Building the queue calls none of M-AGG's
-    confidence functions, and neither the queue structure nor the rendered queue page presents a
-    confidence as a probability or a percentage."""
+    stored rows whose confidence M-AGG already derived. It re-derives none: building the queue calls
+    none of M-AGG's confidence functions, and M-REVIEW imports none. It presents none: a queue item
+    carries no confidence field at all (CT-REVIEW-07), and the rendered queue page states no
+    probability or percentage. Ranking reads its own expected-value inputs, not a confidence."""
     import aeh.agg as agg
     import aeh.console as console
     from aeh.review import build_review
@@ -208,6 +210,11 @@ def test_tc_req_54_review_ranks_on_stored_confidence_and_calls_it_no_probability
     assert confidence_functions, "control: M-AGG exposes no confidence function to watch"
     assert not imported, f"M-REVIEW imports M-AGG's confidence derivation: {imported}"
     assert shown, "fixture: the queue shows nothing"
+    import dataclasses as _dc
+
+    item_fields = [f.name for f in _dc.fields(type(shown[0]))]
+    assert not [f for f in item_fields if "confidence" in f.lower() or "probab" in f.lower()], (
+        f"a queue item carries a confidence or probability field: {item_fields}")
     assert not called, f"building the queue re-derived confidence through M-AGG: {called}"
     lowered = re.sub(r"<[^>]+>", " ", page).lower()
     assert "probability" not in lowered, "the queue page presents confidence as a probability"

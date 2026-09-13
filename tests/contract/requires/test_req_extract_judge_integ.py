@@ -41,7 +41,8 @@ def test_tc_req_23_integrity_tolerates_the_span_properties_extraction_disclaims(
     """`TC-REQ-23` (`M-INTEG` → `M-EXTRACT`, CT-EXTRACT-01/03/09/10/15): the spans real extraction
     wrote for a cell are handed to the real `IntegrityGate` three ways: as written, reversed with
     a duplicate, and with an overlapping sub-span added. CT-EXTRACT-15 disclaims ordering and
-    non-overlap, and the gate's six signals are identical in all three. The evidence table has no
+    non-overlap, and the gate's span-dependent signals (verification, evidence presence, OCR
+    overlap, described evidence) are identical in all three. The evidence table has no
     judge column, so one verification covers the whole panel."""
     from aeh.integ import IntegrityGate
     from aeh.judge import _evidence_spans
@@ -86,7 +87,7 @@ def test_tc_req_29_a_quarantined_extraction_is_not_an_empty_one_at_the_judge(tmp
     out. A failure therefore cannot arrive looking like a blank answer."""
     from aeh.extract import ExtractionWorker, assemble_request, prompt_fields
     from aeh.judge import ScoringWorker
-    from aeh.orch import STAGE_EXTRACT, WorkError
+    from aeh.orch import STAGE_EXTRACT
     from tests.support.extract_vocabulary import extractor_ref, sampling_params, span_completion
 
     store = open_store(tmp_data_dir)
@@ -104,26 +105,39 @@ def test_tc_req_29_a_quarantined_extraction_is_not_an_empty_one_at_the_judge(tmp
                                     sampling_params(), span_completion([], build_id="build-req-29"))
                     worker.process(unit)
                 else:
-                    orchestrator.fail(unit.work_id, WorkError(message="injected extraction failure"))
+                    # No recorded reply: the provider raises, and the worker strikes its own unit.
+                    worker.process(unit)
         statuses = {r["submission_id"]: r["status"] for r in store.cohort(ORCH_COHORT_ID).query(
             "SELECT submission_id, status FROM work_unit WHERE stage = 'extract'")}
         score_units = _drive.lease_score_units(orchestrator)
         refs = {r.build_id: r for r in _drive.PANEL_REFS}
         empty_requests = [ScoringWorker(store, provider, refs[u.judge]).assemble(u)
                           for u in score_units if u.submission_id == "SYN-001"]
+        failed_evidence = store.cohort(ORCH_COHORT_ID).query(
+            "SELECT COUNT(*) AS n FROM evidence e JOIN work_unit w ON w.work_id = e.work_id "
+            "WHERE w.submission_id = 'SYN-002'")[0]["n"]
     finally:
         store.close()
     assert statuses == {"SYN-001": "done", "SYN-002": "quarantined"}, f"fixture: extract statuses {statuses}"
     assert {u.submission_id for u in score_units} == {"SYN-001"}, (
         f"a quarantined extraction's cell reached M-JUDGE: {sorted({u.submission_id for u in score_units})}")
     assert empty_requests, "the empty extraction's cell never reached M-JUDGE"
+    assert failed_evidence == 0, f"a failed extraction wrote {failed_evidence} evidence row(s)"
+    evidence_fields = [v for r in empty_requests for k, v in vars(r).items() if "evidence" in k]
+    assert all(not v for v in evidence_fields), (
+        f"the empty extraction's request carries evidence: {evidence_fields}")
 
 
 def test_tc_req_46_synthesis_cites_the_bytes_the_panel_received(tmp_data_dir):
-    """`TC-REQ-46` (`M-SYNTH` → `M-EXTRACT`, CT-EXTRACT-01/03): for each scored criterion of a
-    five-question submission, the evidence text M-JUDGE reads for the cell (`_evidence_spans`,
-    the panel's view) appears byte for byte in the prompt M-SYNTH dispatches for that question.
-    A narrative therefore cites what the panel saw."""
+    """`TC-REQ-46` (`M-SYNTH` → `M-EXTRACT`, CT-EXTRACT-01/03): each evidence row carries
+    M-EXTRACT's persisted payload, byte-offset spans into the canonical document, which is the
+    evidence the panel's requests are built from. The span text appears byte for byte in the prompt
+    M-SYNTH dispatches for that question. Each question's prompt carries only its own spans, so
+    synthesis reads the persisted spans and not the whole document. A narrative therefore cites
+    what the panel saw.
+
+    Disclosed seeding: the synthesis fixture writes payload-less evidence, so the payloads are
+    written here in M-EXTRACT's shape."""
     from aeh.synth import SynthesisWorker
     from tests.support.orch_run import seed_run
     from tests.support.synth_vocabulary import (
@@ -156,6 +170,7 @@ def test_tc_req_46_synthesis_cites_the_bytes_the_panel_received(tmp_data_dir):
                 question = row["criterion_id"][:2]
                 needle = f"the student's own work for question {question}".encode("utf-8")
                 at = raw.find(needle)
+                assert at >= 0, f"fixture: {needle!r} is not in the document"
                 span = {"start": at, "end": at + len(needle), "text": needle.decode("utf-8")}
                 tx.execute("UPDATE evidence SET payload = :p WHERE evidence_id = :e",
                            p=json.dumps({"spans": [span]}).encode("utf-8"), e=row["evidence_id"])

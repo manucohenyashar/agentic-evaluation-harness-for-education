@@ -47,9 +47,10 @@ def _det_world(store, selections=("B", "C", None)):
 def test_tc_req_38_deterministic_scores_arrive_complete_and_aggregation_has_nothing_to_do(tmp_data_dir):
     """`TC-REQ-38` (`M-AGG` → `M-DET`, CT-DET-01/02/03): after M-DET's cohort pass, the resolved
     answers are complete `criterion_score` rows with `judge_count = 0` and points set. The ambiguous
-    mark is routed to `triage` with no points: it is not scored. M-AGG cannot re-aggregate either
-    kind, because there is no verdict to aggregate (`aggregate` over an empty set refuses), and no
-    score unit exists for the deterministic criterion."""
+    mark is routed to `triage` with no points: it is not scored. Each stored row passed through
+    M-AGG's deterministic entry (`aggregate(..., deterministic_score=row)`) comes back with the
+    same band, points, judge count and routing: not re-aggregated and not scored. Without a
+    deterministic score, an empty panel is refused, and no score unit exists for the criterion."""
     from aeh.agg import EmptyVerdictsError, aggregate
     from aeh.det import DeterministicEvaluator
     from aeh.orch import Orchestrator
@@ -71,17 +72,28 @@ def test_tc_req_38_deterministic_scores_arrive_complete_and_aggregation_has_noth
     assert all(rows[s]["judge_count"] == 0 and rows[s]["points"] is not None for s in ("S001", "S002")), rows
     assert rows["S003"]["routing"] == "triage" and rows["S003"]["points"] is None, rows["S003"]
     assert score_units == 0, f"{score_units} score unit(s) exist for a deterministic criterion"
+    crit = criterion([band("incorrect", 0, 0.0), band("correct", 1, 1.0)], criterion_id="M1")
+    for submission in ("S001", "S002", "S003"):
+        stored = rows[submission]
+        row = type("Row", (), {**stored, "criterion_id": "M1"})()
+        passed = aggregate([], crit, signals(), deterministic_score=row)
+        got = (passed.band, passed.points, passed.judge_count, passed.routing)
+        want = (stored["band"], stored["points"], stored["judge_count"], stored["routing"])
+        assert got == want, f"M-AGG changed a deterministic score for {submission}: {got} != {want}"
     with pytest.raises(EmptyVerdictsError):
-        aggregate([], criterion([band("incorrect", 0, 0.0), band("correct", 1, 1.0)],
-                                criterion_id="M1"), signals())
+        aggregate([], crit, signals())
 
 
 def test_tc_req_50_the_rollup_separation_follows_the_declared_mode_not_band_names(tmp_data_dir):
     """`TC-REQ-50` (`M-GRADE` → `M-DET`, CT-DET-02/03/06/07, CT-GRADE-12): a judged criterion whose
     rubric names its bands `correct`/`incorrect` (M-DET's names) is placed in the judged block, and
-    the deterministic criterion in the deterministic block. The separation follows the package's
-    declared kind, the column M-DET's `evaluation_mode` mirrors, not a band-name convention. No
-    field of the separated rollup combines the two."""
+    the deterministic criterion in the deterministic block. The criterion IDs are neutral, so the
+    separation follows the package's declared kind (`kind = 'mcq'`), not band names or ID
+    conventions. No field of the separated rollup combines the two.
+
+    Disclosed mismatch: the row asks for a separation "driven by the column" (`evaluation_mode`),
+    but `grade.py` records that no shipped schema carries that column on criteria, and classifies
+    by `kind`, the declared equivalent. This case asserts that equivalent."""
     from aeh.grade import separated_rollup
     from aeh.pkg import GradePolicy, PackageCatalog
     from tests.support.grade_vocabulary import write_criterion_scores
@@ -90,13 +102,13 @@ def test_tc_req_50_the_rollup_separation_follows_the_declared_mode_not_band_name
     store = open_store(tmp_data_dir)
     try:
         _orch, run_id, version = seed_run(store, submissions=submissions, criteria=(
-            {"criterion_id": "J1", "kind": "open", "scoring_model": "atomic"},
-            {"criterion_id": "M1", "kind": "mcq", "scoring_model": "deterministic"}))
+            {"criterion_id": "CA", "kind": "open", "scoring_model": "atomic"},
+            {"criterion_id": "CB", "kind": "mcq", "scoring_model": "deterministic"}))
         PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch").set_grade_policy(
             version, GradePolicy(combination="weighted_sum"))
         cohort = store.cohort(ORCH_COHORT_ID)
-        write_criterion_scores(cohort, [(s, "J1", "correct", 1.0, "auto") for s in submissions]
-                               + [(s, "M1", "incorrect", 0.0, "auto") for s in submissions])
+        write_criterion_scores(cohort, [(s, "CA", "correct", 1.0, "auto") for s in submissions]
+                               + [(s, "CB", "incorrect", 0.0, "auto") for s in submissions])
         import aeh.grade as grade
 
         grade.open_grade(store).compute_all(run_id)
@@ -105,7 +117,7 @@ def test_tc_req_50_the_rollup_separation_follows_the_declared_mode_not_band_name
         store.close()
     judged = {c.criterion_id for c in rollup.judged.criteria}
     deterministic = {c.criterion_id for c in rollup.deterministic.criteria}
-    assert judged == {"J1"} and deterministic == {"M1"}, (
+    assert judged == {"CA"} and deterministic == {"CB"}, (
         f"the separation did not follow the declared kind: judged {judged}, deterministic {deterministic}")
     combined = [f.name for f in dataclasses.fields(rollup) if f.name not in ("judged", "deterministic")
                 and re.search(r"total|combined|overall|mean", f.name)]
@@ -154,8 +166,11 @@ def test_tc_req_62_a_deterministic_label_is_excluded_by_its_evaluation_mode_colu
 def test_tc_req_85_grading_completes_with_synthesis_wholly_absent(tmp_data_dir):
     """`TC-REQ-85` (`M-GRADE` → `M-SYNTH`, CT-SYNTH-05/07/08, CT-GRADE-01): no statement in M-SYNTH
     writes `submission_grade`. For a run where synthesis never ran (no narrative exists for any
-    question), `compute_all` grades every submission and `finalize` settles them: nothing in
-    grading waits on or fails for synthesis."""
+    question, and a synthesis attempt against an unavailable backend failed), `compute_all` grades
+    every submission and `finalize` settles them: nothing in grading waits on or fails for
+    synthesis. A submission missing a criterion, which also has no narrative, reads `incomplete`
+    for the missing input; the fully scored ones do not, so an absent narrative is never read as
+    incompleteness."""
     import aeh.synth as synth
     from aeh.grade import open_grade
     from aeh.pkg import GradePolicy, PackageCatalog
@@ -169,10 +184,23 @@ def test_tc_req_85_grading_completes_with_synthesis_wholly_absent(tmp_data_dir):
     try:
         _orch, run_id, version = seed_run(store, submissions=submissions, criteria=(
             {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
+        from tests.support.synth_vocabulary import synth_ref
+
+        class Down:
+            def complete(self, prompt, model_ref, params):
+                from aeh.prov import ProviderUnavailableError
+
+                raise ProviderUnavailableError("synthesis backend down")
+
+        synth_failed = None
+        try:
+            synth.SynthesisWorker(store, Down(), synth_ref()).synthesize_submission(run_id, "S001")
+        except Exception as error:
+            synth_failed = error
         PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch").set_grade_policy(
             version, GradePolicy(combination="weighted_sum"))
         cohort = store.cohort(ORCH_COHORT_ID)
-        write_criterion_scores(cohort, [(s, "C1", "B2", 2.0, "auto") for s in submissions])
+        write_criterion_scores(cohort, [(s, "C1", "B2", 2.0, "auto") for s in submissions[:2]])
         narratives = cohort.query("SELECT COUNT(*) AS n FROM narrative")[0]["n"]
         service = open_grade(store)
         report = service.compute_all(run_id)
@@ -185,8 +213,15 @@ def test_tc_req_85_grading_completes_with_synthesis_wholly_absent(tmp_data_dir):
     finally:
         store.close()
     assert narratives == 0, "fixture: narratives exist"
+    by_sub = {r["submission_id"]: r for r in rows}
     assert report.computed == 3 and len(rows) == 3, f"grading did not complete without synthesis: {report}"
-    assert all(r.get("finalized_at") for r in rows), f"finalization did not settle every grade: {rows}"
+    assert all(r.get("finalized_at") for r in rows if r["state"] != "incomplete"), (
+        f"finalization did not settle every complete grade: {rows}")
+    assert by_sub["S003"]["state"] == "incomplete", (
+        f"a submission with a missing criterion and no narrative reads {by_sub['S003']['state']!r}, "
+        f"not incomplete")
+    assert all(by_sub[s]["state"] != "incomplete" for s in ("S001", "S002")), (
+        "absent narratives made a fully scored submission incomplete")
 
 
 def test_tc_req_86_review_carries_no_number_from_synthesis_and_honours_the_flag():
@@ -202,7 +237,10 @@ def test_tc_req_86_review_carries_no_number_from_synthesis_and_honours_the_flag(
                if f.type in (int, float, "int", "float", "int | None", "float | None")]
     base = broken.flagged_population(2, criteria=2)
     flagged_text = "The response explains the mechanism clearly."
-    unflagged_text = "The response names 3 forces."
+    unflagged_text = "The response scored 4 out of 5 on reasoning."
+    from aeh.synth import has_score_claim
+
+    assert has_score_claim(unflagged_text), "fixture: the unflagged text must match the score-claim patterns"
     rows = [dataclasses.replace(base[0]), dataclasses.replace(base[1])]
     extended = []
     for row, text, flag in ((rows[0], flagged_text, 1), (rows[1], unflagged_text, 0)):
@@ -217,9 +255,9 @@ def test_tc_req_86_review_carries_no_number_from_synthesis_and_honours_the_flag(
         problems.append(f"SynthesisResult carries numeric fields: {numeric}")
     if flagged_item.narrative == flagged_text:
         problems.append("M-REVIEW shows a narrative M-SYNTH flagged and suppressed. [When written: "
-                        "review.py's item builder copies row.narrative verbatim and never reads "
-                        "score_claim_flag. No store path supplies narratives to the queue yet "
-                        "(M-REVIEW issues no narrative read), so the gap is latent until one does.]")
+                        "M-REVIEW has no narrative read at all; review.py's item builder copies "
+                        "row.narrative verbatim and never reads score_claim_flag. The fix is a read "
+                        "of the narrative together with its flag, suppressing on the flag.]")
     if unflagged_item.narrative != unflagged_text:
         problems.append(f"M-REVIEW altered an unflagged narrative (a second check): {unflagged_item.narrative!r}")
     assert not problems, "\n".join(problems)
