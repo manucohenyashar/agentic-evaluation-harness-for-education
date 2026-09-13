@@ -94,7 +94,10 @@ def network_guard(request: pytest.FixtureRequest):
     Tests that assert "no model call is made" take this fixture explicitly and call
     `network_guard.assert_no_network()` — see `TC-PROV-13`.
     """
-    if request.node.get_closest_marker("live"):
+    # `browser` (E6, TS-49) stands the guard down too, as `tests/support/guards.py`'s docstring
+    # has always said it would: the Playwright driver's event loop needs a loopback socket pair
+    # in this interpreter, and those cases' network oracle is the browser's own request log.
+    if request.node.get_closest_marker("live") or request.node.get_closest_marker("browser"):
         yield None
         return
 
