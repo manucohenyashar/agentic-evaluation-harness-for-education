@@ -61,6 +61,10 @@ class _TxLog:
     def __init__(self, monkeypatch):
         self.in_tx: list[tuple[int, str]] = []
         self.outside: list[tuple[str, dict]] = []
+        # Every Tx stays referenced, so no two transactions can share an id(); an id reused
+        # after a transaction is freed would merge two transactions into one.
+        self._alive: list = []
+        self.events: list[tuple[str, str, dict]] = []
         original_execute = Tx.execute
         from aeh.store import SqliteTierHandle
 
@@ -68,11 +72,15 @@ class _TxLog:
         log = self
 
         def execute(tx, statement, **params):
+            if not any(kept is tx for kept in log._alive):
+                log._alive.append(tx)
             log.in_tx.append((id(tx), str(statement)))
+            log.events.append(("tx", str(statement), dict(params)))
             return original_execute(tx, statement, **params)
 
         def query(handle, statement, **params):
             log.outside.append((str(statement), dict(params)))
+            log.events.append(("read", str(statement), dict(params)))
             return original_query(handle, statement, **params)
 
         monkeypatch.setattr(Tx, "execute", execute)
@@ -195,6 +203,12 @@ def test_tc_req_12_ledger_transitions_are_transactional_and_backpressure_and_clo
         assert status(leased[0].work_id) == "done"
         assert log.in_tx and any("UPDATE work_unit" in sql for _tx, sql in log.in_tx), (
             "complete() moved the ledger outside a transaction")
+        wid = leased[0].work_id
+        written_at = next(i for i, (kind, sql, params) in enumerate(log.events)
+                          if kind == "tx" and "UPDATE work_unit" in sql)
+        readbacks = [sql for kind, sql, params in log.events[written_at + 1:]
+                     if kind == "read" and "work_unit" in sql and wid in {str(v) for v in params.values()}]
+        assert not readbacks, f"complete() read its own transition back outside a transaction: {readbacks}"
 
         fresh = None
     finally:
@@ -242,23 +256,30 @@ def test_tc_req_12_ledger_transitions_are_transactional_and_backpressure_and_clo
     assert _Seam.calls > 0, "under backpressure the dispatch loop stopped instead of reducing"
     assert report.concurrency >= 1, f"backpressure clamped concurrency to {report.concurrency}"
 
-    # 3. A backwards wall clock does not expire a fresh lease.
+    # 3. A lease past its expiry is reclaimed even with the wall clock stepped back a day: expiry
+    #    runs on the store's monotonic lease ticks, so a backwards clock cannot make an expired
+    #    lease look live (CT-STORE-14). A one-second TTL (the call-time knob) and a short wait
+    #    put the lease past `lease_expires_ticks`; the wait is the lease's own clock, not a
+    #    synchronization point.
     store = open_store(tmp_data_dir)
     try:
+        monkeypatch.setenv(orch_module.LEASE_SECONDS_ENV, "1")
         orchestrator = orch_module.Orchestrator(store)
         cohort = store.cohort(ORCH_COHORT_ID)
         status = lambda wid: cohort.query(  # noqa: E731
             "SELECT status FROM work_unit WHERE work_id = :w", w=wid)[0]["status"]
-        fresh = orchestrator.lease("w-req-12", STAGE_EXTRACT, 1)
+        stale = orchestrator.lease("w-req-12", "extract", 1)
+        assert stale and status(stale[0].work_id) == "leased", "fixture: nothing was leased"
+        time.sleep(1.5)
         real_time = time.time
         monkeypatch.setattr(time, "time", lambda: real_time() - 86_400)
         report = orchestrator.sweep_expired_leases()
         monkeypatch.undo()
-        still = [status(unit.work_id) for unit in fresh]
+        after = status(stale[0].work_id)
     finally:
         store.close()
-    assert still == ["leased"] * len(fresh), (
-        f"a backwards wall clock expired a fresh lease: {still} ({report})")
+    assert after == "pending", (
+        f"an expired lease survived a backwards wall clock: {after} ({report})")
 
 
 # -- TC-REQ-22 / TC-REQ-32 ----------------------------------------------------------------------
@@ -465,9 +486,9 @@ def test_tc_req_26_integrity_signals_and_their_score_row_are_one_atomic_write(tm
     `sufficiency_flag`, `ocr_overlap_risk`), written in one statement by the aggregation walk. A
     process killed inside that transaction leaves neither the score nor its signals.
 
-    Disclosed shape: `IntegrityGate` itself persists routing rows (units, review items, rates),
-    not the signals. The signals commit through the score write, which is the statement the walk
-    in `tests/support/e2e_world.py` issues."""
+    The row's assumption also needs a writer: some shipped module must issue that
+    signals-bearing score write. The case scans `src/aeh` for a `criterion_score` write that
+    carries the signal columns."""
     store = open_store(tmp_data_dir)
     try:
         seed_run(store, submissions=("S001",), criteria=_OPEN)
@@ -486,6 +507,20 @@ def test_tc_req_26_integrity_signals_and_their_score_row_are_one_atomic_write(tm
     finally:
         store.close()
     assert left == 0, "a killed score-with-signals write left a row behind"
+
+    import re as _re
+
+    writers = []
+    for module in sorted((REPO_ROOT / "src" / "aeh").glob("*.py")):
+        text = module.read_text(encoding="utf-8")
+        for match in _re.finditer(r"INSERT(?:\s+OR\s+\w+)?\s+INTO\s+criterion_score\s*\(([^)]*)\)", text):
+            if "spans_verified" in match.group(1):
+                writers.append(module.name)
+    assert writers, (
+        "no shipped module writes a criterion_score row carrying the integrity signals, so "
+        "nothing in src makes the signals and their score one write. [When written: the only "
+        "src writer of criterion_score is det.py (deterministic rows, no signal columns); the "
+        "aggregation walk that writes signals with the score lives in tests/support/e2e_world.py.]")
 
 
 # -- TC-REQ-35 ----------------------------------------------------------------------------------
@@ -609,7 +644,9 @@ def test_tc_req_58_the_review_queue_reads_by_key_and_never_by_text_search():
     search = [q for q in sql if re.search(r"\b(LIKE|GLOB|MATCH|REGEXP|fts\d)\b|instr\s*\(", q, re.I)]
     reads = [q for q in sql if re.match(r"(SELECT|WITH)\b", q, re.I)
              and re.search(r"\bFROM\s+(criterion_score|review_queue|label)\b", q, re.I)]
-    unkeyed = [q for q in reads if not re.search(r"\bWHERE\b.*(=|<>|\bIN\b)", q, re.I)]
+    keyed = (r"\bWHERE\b.*\b(submission_id|criterion_id|run_id|routing|score_id|label_id|"
+             r"cohort_id|queue_id)\b\s*(=|<>|\bIN\b)")
+    unkeyed = [q for q in reads if not re.search(keyed, q, re.I)]
     surface = [name for cls in (SqliteStore, SqliteTierHandle) for name in dir(cls)
                if re.search(r"search|find|fulltext", name, re.I)]
     assert reads, "control: no queue-population read was found in M-REVIEW's source"
@@ -633,13 +670,22 @@ def test_tc_req_64_statistics_remain_computable_after_the_cohort_purge(tmp_data_
     try:
         _seed_cohort(store, cohort_id, with_sentinel=False)
         _promote(store, cohort_id)
+        # Admissible labels (blind, judged, no system output seen): the population a figure uses.
+        with sqlite3.connect(store.durable_path()) as raw:
+            for i, (band, teacher) in enumerate((("b1", "b1"), ("b2", "b2"), ("b1", "b2"))):
+                raw.execute(
+                    "INSERT INTO label (label_id, run_id, student_ref, criterion_id, label_type, "
+                    "band, cohort_id, evaluation_mode, saw_system_output) "
+                    "VALUES (?, 'run-1', ?, 'CRIT-1', 'blind', ?, ?, 'judged', 0)",
+                    (f"blind-{i}", f"ref-{i}", band, cohort_id))
     finally:
         store.close()
 
     def figures():
         stats = open_stats(tmp_data_dir, cohort_id=cohort_id)
-        return (len(stats._labels), repr(stats.admissible_labels()),
-                repr(stats.agreement(criterion_id="CRIT-1")))
+        admissible = sorted(sorted((k, str(v)) for k, v in vars(label).items())
+                            for label in stats.admissible_labels())
+        return (len(stats._labels), admissible, repr(stats.agreement(criterion_id="CRIT-1")))
 
     before = figures()
     store = open_store(tmp_data_dir)
@@ -650,6 +696,7 @@ def test_tc_req_64_statistics_remain_computable_after_the_cohort_purge(tmp_data_
         store.close()
     after = figures()
     assert before[0] > 0, "fixture: open_stats read no label before the purge"
+    assert len(before[1]) == 3, f"fixture: {len(before[1])} admissible labels before the purge, not 3"
     assert emptied == 0, "fixture: the purge did not empty the cohort file"
     assert after == before, f"statistics changed across the purge: {before} -> {after}"
 
@@ -757,6 +804,5 @@ def test_tc_req_76_a_monitor_poll_does_not_slow_the_writer_and_views_state_their
     if pages[0] != pages[1]:
         problems.append("the quarantine screen renders differently when the same submissions are "
                         "stored in a different physical order, so the view depends on incidental "
-                        "order (CT-STORE-18). [When written: console.py's _SELECT_COHORT_QUARANTINE carries no "
-                        "ORDER BY.]")
+                        "order (CT-STORE-18).")
     assert not problems, "\n".join(problems) + f"\ntimings: {timings}"

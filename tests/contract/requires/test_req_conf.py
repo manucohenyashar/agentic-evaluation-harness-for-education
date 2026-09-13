@@ -251,6 +251,32 @@ def test_tc_req_13_the_persisted_run_rehydrates_and_refuses_a_perturbed_configur
             problems.append("a resume against a cloud-hosted configuration did not raise")
         except BackendMismatchError:
             pass
+    # The row's own form: a resume with a perturbed environment must refuse.
+    from aeh.orch import Orchestrator
+
+    store = open_store(tmp_data_dir)
+    try:
+        import os as _os
+
+        perturbed = {"HARNESS_PROFILE": "cloud-hosted", "HARNESS_COST_CEILING": "12.50",
+                     "HARNESS_COST_CURRENCY": "USD"}
+        saved = {k: _os.environ.get(k) for k in perturbed}
+        _os.environ.update(perturbed)
+        try:
+            Orchestrator(store).resume(run_id)
+            problems.append("Orchestrator.resume ran against a cloud-hosted environment without "
+                            "refusing: nothing on the resume path compares the frozen run with "
+                            "current configuration (CT-CONF-06 is never called by M-ORCH)")
+        except BackendMismatchError:
+            pass
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    _os.environ.pop(k, None)
+                else:
+                    _os.environ[k] = v
+    finally:
+        store.close()
     assert not problems, "\n".join(problems)
 
 

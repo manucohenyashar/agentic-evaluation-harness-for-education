@@ -118,10 +118,20 @@ def test_tc_req_21_the_extraction_request_is_stable_and_pinned_to_the_run_versio
         catalog.update_criterion_field(draft, "C1", "construct_tag", "a different construct")
         catalog.update_band_field(draft, "C1", 0, "descriptor", "a rewritten descriptor")
         third = assemble_request(unit, store=store)
+        with store.cohort(ORCH_COHORT_ID).transaction() as tx:
+            tx.execute("UPDATE run SET package_version_id = :v WHERE run_id = :r", v=draft, r=run_id)
+        against_draft = assemble_request(unit, store=store)
     finally:
         store.close()
     assert first == second, "two reads of the same package version assembled different requests"
     assert first == third, "a later draft version changed a running unit's assembled request"
+    assert first.criterion.text and first.criterion.evidence_type and against_draft != first, (
+        f"M-EXTRACT's request does not carry the package's criterion: text="
+        f"{first.criterion.text!r}, evidence_type={first.criterion.evidence_type!r}, and "
+        f"repointing the run at an edited version changes nothing, so extraction is not "
+        f"anchored to the version the run pinned (CT-PKG-01/06). [When written: "
+        f"extract.assemble_request builds Criterion(text='', evidence_type='') and reads no "
+        f"catalog.]")
 
 
 # -- TC-REQ-28 ----------------------------------------------------------------------------------
@@ -226,13 +236,16 @@ def test_tc_req_61_no_validation_data_survives_the_catalog_round_trip_as_one_typ
         import inspect
 
         params = inspect.signature(catalog.store_validation).parameters
-        record = {name: value for name, value in dict(key, agreement=0.71, n=40, v=version).items()
-                  if name in params}
-        catalog.store_validation(**record)
+        wanted = dict(key, agreement=0.71, n=40, v=version)
+        dropped = [part for part in key if part not in params]
+        assert not dropped, f"store_validation does not accept key part(s) {dropped}"
+        catalog.store_validation(**{name: value for name, value in wanted.items() if name in params})
         hit = catalog.validation_for(version, **key)
+        other_version = catalog.create_version(version)
         misses = [catalog.validation_for(version, **dict(key, **{part: "other"}))
                   for part in ("population_scope_id", "backend_profile", "panel_build_ref",
                                "scoring_model", "criterion_id")]
+        misses.append(catalog.validation_for(other_version, **key))
     finally:
         store.close()
     problems = []
@@ -575,7 +588,7 @@ def test_tc_req_56_an_edits_points_come_from_the_pinned_mapping(tmp_data_dir, mo
         monkeypatch.undo()
         labels = [label for label in getattr(service, "labels", lambda: ())()
                   ] if callable(getattr(service, "labels", None)) else list(service._labels)
-        with pytest.raises(Exception):
+        with pytest.raises(pkg.PackageError):
             service.act(queue.shown[1], "edit", new_band="B9")
     finally:
         store.close()

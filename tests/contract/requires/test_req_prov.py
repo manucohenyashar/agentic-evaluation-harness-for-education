@@ -428,13 +428,20 @@ def test_tc_req_67_an_unavailable_off_panel_model_raises_rather_than_falling_bac
         calib.back_translate("pkg-v1", "pkg-v2", off_panel=unbound)
     assert not calls, f"an unavailable off-panel gate still called a provider: {calls}"
 
-    source = inspect.getsource(calib)
-    assert ".complete(" in source or "InferenceProvider" in source, (
-        "M-CALIB never reaches its off-panel model through M-PROV's interface. [When written: "
-        "back_translate reads a registry of scripted construction sessions "
-        "(_OFF_PANEL_SESSIONS) and makes no provider call, so CT-PROV-01's 'reachable through "
-        "the same interface' and CT-PROV-08's no-fallback guarantee are never exercised on this "
-        "path.]")
+    # Positive half: a checker whose provider is unavailable must surface as OffPanelUnavailable
+    # through M-PROV, which requires M-CALIB to dispatch its construction through `complete()`.
+    import ast as _ast
+
+    tree = _ast.parse(inspect.getsource(calib))
+    dispatches = [node for node in _ast.walk(tree)
+                  if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute)
+                  and node.func.attr == "complete"]
+    assert dispatches, (
+        "M-CALIB never calls an InferenceProvider's complete(): its off-panel model is not "
+        "reachable through M-PROV's interface, so an unavailable provider cannot surface as "
+        "OffPanelUnavailable and CT-PROV-08's no-fallback guarantee is never exercised on this "
+        "path. [When written: back_translate reads scripted construction sessions from "
+        "_OFF_PANEL_SESSIONS.]")
 
 
 # -- TC-REQ-71 ----------------------------------------------------------------------------------
