@@ -34,3 +34,9 @@ pypdf>=6.0
 # (TC-INGEST-01 sweeps for that).
 pypdfium2>=4.0
 Pillow>=10.0
+
+# TS-49 / issue #130: test plan §4.5's E6 — "Playwright or equivalent against the loopback
+# console" — for the three browser-level console facts (TC-CONSOLE-40/41, SEC-12). The driver
+# launches an installed Edge or Chrome by channel (`tests/support/console_browser.py`), so no
+# browser download is needed; without one the `browser` cases skip, naming what is missing.
+playwright>=1.40
