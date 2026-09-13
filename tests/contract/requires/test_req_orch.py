@@ -236,6 +236,22 @@ def test_tc_req_43_a_redelivered_synthesis_unit_inserts_no_second_narrative(tmp_
     assert first, "fixture: synthesis wrote no narrative"
     assert second == first, "a redelivered synthesis unit changed the narrative rows"
     assert calls == 0, f"the redelivery dispatched {calls} model call(s) for stored narratives"
+    # CT-SYNTH-06's key is what makes a redelivery safe even past the worker's skip: a duplicate
+    # of a stored narrative, inserted through M-SYNTH's own statement, is a conflict.
+    import sqlite3
+
+    from aeh.synth import SYNTH_STATEMENTS
+
+    row = dict(zip([k for k, _v in first[0]], [v for _k, v in first[0]]))
+    statement = SYNTH_STATEMENTS["insert_narrative"]
+    names = set(__import__("re").findall(r":(\w+)", str(statement)))
+    store = open_store(tmp_data_dir)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            with store.cohort(COHORT_ID).transaction() as tx:
+                tx.execute(statement, **{n: row.get(n, "") for n in names})
+    finally:
+        store.close()
 
 
 # -- TC-REQ-66 / TC-REQ-70 ----------------------------------------------------------------------
@@ -298,9 +314,11 @@ def test_tc_req_66_two_enumerations_of_one_run_match_unit_for_unit(tmp_data_dir)
         try:
             orchestrator = Orchestrator(store)
             first = orchestrator.enumerate_units(run_id).units_enumerated
+            before_again = _units(store, run_id)
             again = orchestrator.enumerate_units(run_id)
-            enumerated.append((first, _units(store, run_id)))
-            assert _units(store, run_id) == enumerated[-1][1], "re-enumeration changed the ledger"
+            assert again.units_enumerated == 0 or getattr(again, "status", "no-op") == "no-op", again
+            assert _units(store, run_id) == before_again, "re-enumeration changed the ledger"
+            enumerated.append((first, before_again))
         finally:
             store.close()
     assert enumerated[0][1], "fixture: nothing enumerated"
@@ -379,7 +397,7 @@ def test_tc_req_75_progress_carries_no_per_student_field_so_the_console_cannot_r
         page = app.render(SCREENS["S7"], id=run_id).html
         app.perform("pause/resume", run_id=run_id, state="paused")
         app.perform("pause/resume", run_id=run_id, state="paused")
-        Orchestrator(store).lease("w-req-75", STAGE_EXTRACT, 1)
+        handed = Orchestrator(store).lease("w-req-75", STAGE_EXTRACT, 1)
         paused = store.cohort(ORCH_COHORT_ID).query(
             "SELECT status FROM run WHERE run_id = :r", r=run_id)[0]["status"]
     finally:
@@ -388,6 +406,7 @@ def test_tc_req_75_progress_carries_no_per_student_field_so_the_console_cannot_r
     assert not any(s in values for s in sentinels), "a ProgressReport value names a submission"
     assert not any(s in page for s in sentinels), "the run monitor renders per-student progress"
     assert paused == "paused", f"two pause requests did not leave the run paused once: {paused}"
+    assert not handed, f"a paused run handed out {len(handed)} unit(s)"
 
 
 # -- TC-REQ-84 ----------------------------------------------------------------------------------
@@ -437,7 +456,7 @@ def test_tc_req_84_one_null_judge_deterministic_unit_and_redelivery_is_harmless(
         catalog = PackageCatalog(store.package("pkg-det"), package_id="pkg-det")
         v2 = catalog.create_version(parent=v1)
         catalog.set_answer_key(v2, "M1", ("C",))
-        evaluator.rederive_for_key_change(cohort_id, "M1", v2)
+        first_rederive = evaluator.rederive_for_key_change(cohort_id, "M1", v2)
         after_rederive = snapshot()
         second = evaluator.rederive_for_key_change(cohort_id, "M1", v2)
         after_second_rederive = snapshot()
@@ -446,6 +465,12 @@ def test_tc_req_84_one_null_judge_deterministic_unit_and_redelivery_is_harmless(
     stages = sorted(u["stage"] for u in units)
     assert stages == ["deterministic"] * len(submissions), f"M1 enumerated {stages}"
     assert all(u["judge"] in (None, "") for u in units), f"a deterministic unit names a judge: {units}"
+    assert after_first[0] == [("S001", "correct", 1.0), ("S002", "incorrect", 0.0),
+                              ("S003", "correct", 1.0)], f"the first pass wrote {after_first[0]}"
+    assert after_first[1], "the first pass wrote no mcq_item_stats"
+    assert first_rederive.scores_changed == 3 and after_rederive[2] > after_first[2], (
+        f"the first re-derivation did not move the scores and append audit records: "
+        f"{first_rederive.scores_changed}, audit {after_first[2]} -> {after_rederive[2]}")
     assert after_redelivery[:2] == after_first[:2], "a redelivered cohort pass changed scores or item stats"
     assert second.scores_changed == 0, f"a repeated re-derivation changed {second.scores_changed} score(s)"
     assert after_second_rederive == after_rederive, (
