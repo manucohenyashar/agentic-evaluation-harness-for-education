@@ -393,21 +393,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest:2793",
-    "aeh.ingest:2804",
-    "aeh.ingest:2826",
-    "aeh.ingest:3387",
-    "aeh.ingest:3422",
-    "aeh.ingest:3454",
-    "aeh.ingest:3529",
-    "aeh.ingest:3532",
-    "aeh.ingest:3533",
-    "aeh.ingest:3643",
-    "aeh.ingest:3871",
-    "aeh.ingest:3883",
-    "aeh.ingest:4419",
-    "aeh.ingest:4442",
-    "aeh.ingest:3400",
+    "aeh.ingest:2998",
+    "aeh.ingest:3009",
+    "aeh.ingest:3031",
+    "aeh.ingest:3695",
+    "aeh.ingest:3740",
+    "aeh.ingest:3772",
+    "aeh.ingest:3847",
+    "aeh.ingest:3850",
+    "aeh.ingest:3851",
+    "aeh.ingest:3961",
+    "aeh.ingest:4197",
+    "aeh.ingest:4209",
+    "aeh.ingest:4750",
+    "aeh.ingest:4773",
+    "aeh.ingest:3718",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
