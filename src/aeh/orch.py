@@ -240,10 +240,14 @@ class UnitProvenance:
     no `student_ref`, `student_name` or text — so reading provenance widens nothing the
     ledger exposes; the pseudonymization boundary stays at assembly (`M-JUDGE`).
 
-    `document_id` is the submission's **current** document (the head of `M-INGEST`'s
-    ordering, the row extraction reads); `document_ids` lists every document of the
-    submission, oldest first. `hops` is the join as it was followed, one entry per table,
-    so the trace shows the path and not just its endpoint.
+    `document_id` is the document the unit's text **came from**. Once the unit has been
+    extracted, that is the document its evidence rows name (`read_from_evidence` is True),
+    even if the submission was re-transcribed since. Before extraction it is the
+    submission's current document, the row extraction will read. `current_document_id` is
+    always the head of `M-INGEST`'s ordering; the two differ exactly when a re-transcription
+    superseded the text a finished unit read. `document_ids` lists every document of the
+    submission, oldest first. `hops` is the join as it was followed, one entry per table
+    (with an `evidence:` hop when the evidence decided), so the trace shows the path.
     """
 
     work_id: str
@@ -252,6 +256,8 @@ class UnitProvenance:
     submission_id: str
     document_id: str
     content_hash: str
+    current_document_id: str
+    read_from_evidence: bool
     document_ids: tuple[str, ...]
     hops: tuple[str, ...]
 
@@ -704,6 +710,12 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "LEFT JOIN document d ON d.submission_id = s.submission_id "
         "WHERE w.work_id = :work_id "
         "ORDER BY d.created_at, d.document_id"
+    ),
+    # The document a unit's text was actually READ from, once extraction has run: the
+    # evidence rows it wrote carry the document_id of the head at that moment.
+    "select_unit_evidence_documents": Statement(
+        "SELECT DISTINCT document_id FROM evidence "
+        "WHERE work_id = :work_id AND document_id IS NOT NULL ORDER BY document_id"
     ),
     # The one-row existence probe behind lease()'s enumerate-on-empty gate: a run whose
     # ledger holds *any* row was enumerated (or partially so, which is a crash
@@ -4442,7 +4454,8 @@ class Orchestrator:
         """Follow one unit to its source document: work_unit -> submission -> document.
 
         Raises `BrokenLineageError` naming the broken hop when the unit has no submission,
-        its submission is absent from the cohort, or the submission has no document — no
+        its submission is absent from the cohort, the submission has no document, or the
+        unit's evidence names a document that is ambiguous or not the submission's — no
         imputation, never a NULL `document_id` (#223). Raises `WorkLedgerError` for a
         work id no cohort holds, as `_find_unit` does.
         """
@@ -4467,19 +4480,39 @@ class Orchestrator:
                 "which has no document row; its lineage is broken at the document hop."
             )
         head = documents[-1]
+        by_id = {row["document_id"]: row for row in documents}
+        read = [
+            row["document_id"]
+            for row in cohort.query(
+                ORCH_STATEMENTS["select_unit_evidence_documents"], work_id=work_id
+            )
+        ]
+        if len(read) > 1:
+            raise BrokenLineageError(
+                f"work unit {short}…'s evidence names {len(read)} documents ({read}); one "
+                "unit reads one document, so its source is ambiguous and is not guessed."
+            )
+        if read and read[0] not in by_id:
+            raise BrokenLineageError(
+                f"work unit {short}…'s evidence names document {read[0]!r}, which is not a "
+                f"document of submission {first['submission_id']!r}."
+            )
+        source = by_id[read[0]] if read else head
+        hops = [f"work_unit:{work_id}", f"submission:{first['submission_id']}"]
+        if read:
+            hops.append(f"evidence:{work_id}")
+        hops.append(f"document:{source['document_id']}")
         return UnitProvenance(
             work_id=work_id,
             run_id=first["run_id"],
             stage=first["stage"],
             submission_id=first["submission_id"],
-            document_id=head["document_id"],
-            content_hash=head["content_hash"],
+            document_id=source["document_id"],
+            content_hash=source["content_hash"],
+            current_document_id=head["document_id"],
+            read_from_evidence=bool(read),
             document_ids=tuple(row["document_id"] for row in documents),
-            hops=(
-                f"work_unit:{work_id}",
-                f"submission:{first['submission_id']}",
-                f"document:{head['document_id']}",
-            ),
+            hops=tuple(hops),
         )
 
     def _find_unit(self, work_id: str) -> tuple[Any, Any]:

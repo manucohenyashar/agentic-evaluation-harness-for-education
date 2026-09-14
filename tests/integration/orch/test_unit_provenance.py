@@ -59,15 +59,34 @@ def test_tc_orch_37_a_leased_unit_resolves_to_its_current_document(tmp_data_dir)
 
         target = next(u for u in units if u.submission_id == "S001")
         handle, _row = orchestrator._find_unit(target.work_id)
+        # Ordering is by created_at first: the re-transcription's id sorts FIRST but its
+        # timestamp is later, so an id-only or insertion-blind order picks the wrong head.
         with handle.transaction() as tx:
+            tx.execute("UPDATE document SET created_at = '2026-01-01T00:00:00' "
+                       "WHERE document_id = 'doc-S001'")
             tx.execute(
-                "INSERT INTO document (document_id, submission_id, content_hash) "
-                "VALUES ('doc-S001-zz-retranscribed', 'S001', :h)",
+                "INSERT INTO document (document_id, submission_id, content_hash, created_at) "
+                "VALUES ('doc-A-retranscribed', 'S001', :h, '2026-02-01T00:00:00')",
                 h=store.blobs().put(b"re-transcribed answer"))
         moved = orchestrator.provenance(target.work_id)
-        assert moved.document_ids == ("doc-S001", "doc-S001-zz-retranscribed")
-        assert moved.document_id == "doc-S001-zz-retranscribed", (
-            "TC-ORCH-37: the head must follow M-INGEST's document ordering")
+        assert moved.document_ids == ("doc-S001", "doc-A-retranscribed")
+        assert (moved.document_id, moved.current_document_id, moved.read_from_evidence) == (
+            "doc-A-retranscribed", "doc-A-retranscribed", False), (
+            "TC-ORCH-37: before extraction the source is the head of M-INGEST's ordering")
+
+        # A finished unit: its evidence names the document it READ. The trace must keep
+        # naming that document after the re-transcription, not the newer head.
+        with handle.transaction() as tx:
+            tx.execute(
+                "INSERT INTO evidence (evidence_id, work_id, document_id) "
+                "VALUES ('ev-prov-1', :w, 'doc-S001')", w=target.work_id)
+        done = orchestrator.provenance(target.work_id)
+        assert (done.document_id, done.current_document_id, done.read_from_evidence) == (
+            "doc-S001", "doc-A-retranscribed", True), (
+            f"TC-ORCH-37: a finished unit was traced to {done.document_id!r}, not the "
+            "document its evidence was extracted from")
+        assert done.hops == (f"work_unit:{target.work_id}", "submission:S001",
+                             f"evidence:{target.work_id}", "document:doc-S001"), done.hops
     finally:
         store.close()
 
