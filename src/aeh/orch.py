@@ -2147,6 +2147,9 @@ class Orchestrator:
         the HLD's "provider, per-judge model ref, retention setting in force, concurrency
         cap, cost ceiling", every field the audit may one day ask the run to account for.
 
+        The run start is logged here too: exactly one `run_start` line through
+        `aeh.conf.log_run_start`, whose returned summary is the one the audit record stores.
+
         The audit record is written here, on the durable tier, by `record_run_start` —
         the run's configuration is frozen the moment the row exists, and the audit trail
         should not depend on a later story landing. The two writes are two transactions
@@ -2203,7 +2206,15 @@ class Orchestrator:
                 "Either the cohort does not exist (create it with ingest first) or the "
                 "run id is already taken by an earlier run."
             ) from error
-        record_run_start(self._store, cfg, run_id=run_id)
+        # The run start is this moment, and only this caller knows it (`log_run_start`'s own
+        # docstring): the one structured line is emitted here, once per run, and the audit
+        # record stores the very summary the line carried (`FR-CONF-09`, `CT-CONF-13`,
+        # `NFR-SYS-11`, OBS-10). Resolution never logs, so a console that resolved on the
+        # request path does not produce a second line.
+        from aeh.conf import log_run_start
+
+        summary = log_run_start(cfg)
+        record_run_start(self._store, cfg, run_id=run_id, summary=summary)
         return run_id
 
     def _invalidate_order_cache(self, run_id: str) -> None:
@@ -5125,7 +5136,9 @@ class Orchestrator:
 # --- the audit record (TC-CONF-17's producer) ---------------------------------------------------
 
 
-def record_run_start(store: Any, config: Any, *, run_id: str | None = None) -> str:
+def record_run_start(
+    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None
+) -> str:
     """Write the run-start audit record: the orchestrator's write of what graded this run.
 
     **Invented here** — the name appears in no Interfaces block (checked: zero occurrences
@@ -5141,8 +5154,14 @@ def record_run_start(store: Any, config: Any, *, run_id: str | None = None) -> s
     `run_id` is minted when the caller has none (an audit row's id needs uniqueness, not
     determinism); `create_run` passes the run's own id so the record names the run it
     belongs to. Returns the run id written.
+
+    `summary` is the `ProfileSummary` `log_run_start` returned, when the caller logged the
+    run start (`Orchestrator.create_run` does): storing that object rather than computing a
+    second one makes the stored record literally the logged one. Omitted, the summary is
+    computed here, as the repair path in `create_run`'s docstring needs.
     """
-    summary = config.profile_summary()
+    if summary is None:
+        summary = config.profile_summary()
     resolved_run_id = run_id if run_id is not None else f"run-{uuid.uuid4().hex}"
     durable = store.durable()
     with durable.transaction() as tx:
