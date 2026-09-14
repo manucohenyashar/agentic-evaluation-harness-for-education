@@ -2165,8 +2165,19 @@ class Orchestrator:
         if run_id is None:
             run_id = f"run-{uuid.uuid4().hex}"
         panel_config = panel_config_json(cfg.panel)
+        # A `cloud-hosted` run starts only once zero-retention routing is confirmed for every
+        # panel member (`FR-PROV-14`, `NFR-SYS-03`, `SEC-03`): verified here, before the run
+        # row exists, so a refusal leaves nothing behind.
+        retention = self._verify_retention_at_start(cfg)
+        provider_fields: dict[str, Any] = {}
+        if retention is not None:
+            # "Recorded per run": the confirmed build ids, in the run's frozen snapshot.
+            provider_fields["retention_verified"] = sorted(
+                ref.build_id for ref in retention.confirmed
+            )
         provider_config = json.dumps(
             {
+                **provider_fields,
                 "backend_profile": cfg.backend_profile,
                 "panel_build_ref": cfg.panel_build_ref,
                 "panel": [ref.build_id for ref in cfg.panel],
@@ -2216,6 +2227,38 @@ class Orchestrator:
         summary = log_run_start(cfg)
         record_run_start(self._store, cfg, run_id=run_id, summary=summary)
         return run_id
+
+    def _verify_retention_at_start(self, cfg: Any) -> Any:
+        """`FR-PROV-14` at run start, fail-closed.
+
+        `None` for a profile that sends nothing off the machine. For `cloud-hosted`, the
+        provider seam's `RetentionReport`, confirmed for every panel member. A missing seam,
+        a seam without `verify_retention`, or a report that leaves any member unconfirmed
+        raises `RetentionPolicyError` — the gate is never skipped, because a skipped check
+        reads as a kept privacy promise.
+        """
+        if cfg.backend_profile != "cloud-hosted":
+            return None
+        from aeh.prov import RetentionPolicyError
+
+        verify = getattr(self._provider, "verify_retention", None)
+        if verify is None:
+            raise RetentionPolicyError(
+                "a cloud-hosted run cannot start: the orchestrator was given no provider "
+                "able to verify zero-retention routing (FR-PROV-14), so retention for the "
+                f"{len(cfg.panel)} panel members is unconfirmed and nothing was created."
+            )
+        report = verify(tuple(cfg.panel))
+        confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
+        unconfirmed = [ref for ref in cfg.panel if ref.build_id not in confirmed]
+        unconfirmed += list(getattr(report, "unconfirmed", ()) or ())
+        if unconfirmed:
+            names = "; ".join(f"{ref.provider}:{ref.build_id}" for ref in unconfirmed)
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for panel members: {names}. A "
+                "cloud-hosted run does not start until every member is confirmed."
+            )
+        return report
 
     def _invalidate_order_cache(self, run_id: str) -> None:
         """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).

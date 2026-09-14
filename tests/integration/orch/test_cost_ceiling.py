@@ -80,6 +80,12 @@ class _FlatProvider:
         self.calls += 1
         return _UNIT_COST
 
+    def verify_retention(self, model_refs):
+        """A `cloud-hosted` run starts only after retention is confirmed (`FR-PROV-14`)."""
+        from aeh.prov import RetentionReport
+
+        return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
+
 
 def _run_row(store, run_id: str) -> dict:
     rows = store.cohort(ORCH_COHORT_ID).query(

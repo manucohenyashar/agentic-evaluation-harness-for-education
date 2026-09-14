@@ -166,6 +166,21 @@ def seed_documents(
         seed_document(store, submission_id, text, cohort_id)
 
 
+class RetentionConfirmingProvider:
+    """The provider seam's run-start half for a `cloud-hosted` fixture run: confirms
+    zero-retention for every panel member, as `RecordedFixtureProvider` does (replay sends
+    nothing anywhere). `create_run` refuses a `cloud-hosted` run without one (`FR-PROV-14`).
+    `estimate_cost` answers "not billed" (`None`), so the seam contributes no cost figure."""
+
+    def verify_retention(self, model_refs: Any) -> Any:
+        from aeh.prov import RetentionReport
+
+        return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
+
+    def estimate_cost(self, unit: Any) -> None:
+        return None
+
+
 def seed_run(
     store: Any,
     *,
@@ -186,13 +201,20 @@ def seed_run(
     deterministic across processes — the knob the arm-enumeration cases pin.
     `transport` binds the dispatch loop's model-call seam (`Orchestrator(store,
     transport=...)`, #62); the default `None` leaves the orchestrator report-only.
+    A `cloud-hosted` config gets a `RetentionConfirmingProvider`, since `create_run`
+    verifies zero-retention routing before a hosted run can exist.
     """
     from aeh.orch import Orchestrator
 
     cohort_id = seed_cohort(store, submissions)
     version = seed_package(store, criteria, package_id=package_id)
     resolved = cfg if cfg is not None else orch_cfg(profile, panel=panel)
-    orchestrator = Orchestrator(store, transport=transport)
+    provider = (
+        RetentionConfirmingProvider()
+        if getattr(resolved, "backend_profile", None) == "cloud-hosted"
+        else None
+    )
+    orchestrator = Orchestrator(store, transport=transport, provider=provider)
     run_id = orchestrator.create_run(cohort_id, version, resolved, run_id=run_id)
     return orchestrator, run_id, version
 
