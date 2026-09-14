@@ -393,6 +393,13 @@ def test_blocker_is_resolved_symbols_requires_every_listed_name(repo_root):
     )
 
 
+def test_blocker_is_resolved_command_reads_the_exit_code(repo_root):
+    """The `command` kind, for a blocker that is a defect in existing tooling (#155's gate
+    script) rather than a name waiting to land: resolved exactly when the command exits 0."""
+    assert blocker_is_resolved("command", 'python -c "import sys; sys.exit(0)"', repo_root) is True
+    assert blocker_is_resolved("command", 'python -c "import sys; sys.exit(1)"', repo_root) is False
+
+
 def test_blocker_is_resolved_refuses_an_unknown_kind(repo_root):
     """A `kind` with no branch must raise, not read as unresolved.
 
