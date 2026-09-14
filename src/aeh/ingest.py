@@ -481,7 +481,10 @@ def description_disagreement(primary: str | None, secondary: str | None) -> dict
     multisets, the facts only one side states, and the similarity. Never resolves
     which description is right — that is `M-INTEG`'s and the human's."""
     left, right = load_bearing_facts(primary), load_bearing_facts(secondary)
-    similarity = _v4_lexical_affinity(primary or "", secondary or "")
+    left_words = set(re.findall(r"[a-z]+", (primary or "").lower())) - _V4_STOPWORDS
+    right_words = set(re.findall(r"[a-z]+", (secondary or "").lower())) - _V4_STOPWORDS
+    similarity = (len(left_words & right_words) / len(left_words | right_words)
+                  if left_words and right_words else 0.0)
     floor = _second_description_min_similarity()
     reasons = []
     if left != right:
@@ -531,36 +534,48 @@ def description_integrity_signals(handle: Any, document_id: str
     texts. A disagreement is reported, never swallowed or resolved."""
     rows = handle.query(INGEST_STATEMENTS["select_document_second_described_regions"],
                         document_id=document_id)
-    signals = [
-        DescriptionIntegritySignal(
-            region_id=row["region_id"], document_id=document_id,
-            element_kind=row["element_kind"], crop_ref=row["crop_ref"],
-            description=row["description"],
-            description_secondary=row["description_secondary"],
-            disagreement=description_disagreement(row["description"],
-                                                  row["description_secondary"]),
-        )
-        for row in rows if row["description_secondary"] is not None
-    ]
-    # A high-risk region whose second description FAILED is a signal too: recorded in
-    # the document's provenance at ingest, reported here with `status='failed'` and no
-    # comparison, so it can never read as agreement (or as "not high-risk").
-    failed = {}
+    record = second_description_pass(handle, document_id, rows=rows) or {}
+    outcomes = {entry["region_id"]: entry for entry in record.get("regions", [])}
+    signals = []
     for row in rows:
-        if row["source_blobs"]:
-            for entry in json.loads(row["source_blobs"]).get("second_descriptions", []):
-                if entry.get("status") == "failed":
-                    failed[entry["region_id"]] = entry
-            break
-    for row in rows:
-        entry = failed.get(row["region_id"])
-        if entry is not None and row["description_secondary"] is None:
+        entry = outcomes.get(row["region_id"])
+        if row["description_secondary"] is not None:
+            # The verdict frozen at ingest wins; a row written before verdicts were
+            # stored is compared now.
+            verdict = (entry or {}).get("disagreement") or description_disagreement(
+                row["description"], row["description_secondary"])
+            signals.append(DescriptionIntegritySignal(
+                region_id=row["region_id"], document_id=document_id,
+                element_kind=row["element_kind"], crop_ref=row["crop_ref"],
+                description=row["description"],
+                description_secondary=row["description_secondary"],
+                disagreement=verdict))
+        elif entry is not None and entry.get("status") == "failed":
+            # A failed second description is a signal too, with no comparison, so it
+            # can never read as agreement (or as "not high-risk").
             signals.append(DescriptionIntegritySignal(
                 region_id=row["region_id"], document_id=document_id,
                 element_kind=row["element_kind"], crop_ref=row["crop_ref"],
                 description=row["description"], description_secondary=None,
                 disagreement=None, status="failed", error=entry.get("error")))
     return tuple(signals)
+
+
+def second_description_pass(handle: Any, document_id: str, *, rows: Any = None
+                            ) -> dict | None:
+    """The FR-INGEST-14 pass record stored with the document: `status` `ran` (with
+    the declared criteria, matched and failed counts and per-region outcomes) or
+    `not_run` (a revision), or `None` when no high-risk register was injected. Lets
+    `M-INTEG` tell "not high-risk" from "the pass did not run"."""
+    if rows is None:
+        rows = handle.query(
+            INGEST_STATEMENTS["select_document_second_described_regions"],
+            document_id=document_id)
+    for row in rows:
+        if row["source_blobs"]:
+            return json.loads(row["source_blobs"]).get("second_description_pass")
+        return None
+    return None
 
 
 def _jaccard_similarity(a: str, b: str) -> float:
@@ -2601,6 +2616,10 @@ class Ingestor:
             raise IngestError(
                 "second_model_ref repeats the transcriber's provider and build: a second "
                 "call to the same build is not a second description (FR-INGEST-14).")
+        if high_risk:
+            # A malformed floor is a configuration mistake: refused here, not later
+            # as a quarantine that would blame the scan.
+            _second_description_min_similarity()
         self._high_risk: tuple[str, ...] = high_risk
         self._second_model_ref: ModelRef | None = second_model_ref
         # The cohort whose file this handle opens — the clustering's scope is the
@@ -2943,21 +2962,29 @@ class Ingestor:
                 region["crop_png"] = crop_png
         # FR-INGEST-14: the second description of each high-risk crop, before the rows
         # are written so `description_secondary` lands with its region.
-        second_trace = self._second_describe(
+        second_pass = self._second_describe(
             all_regions,
             self._high_risk if high_risk_question_ids is None
-            else tuple(high_risk_question_ids))
-        if report_detail is not None and second_trace:
-            report_detail["second_descriptions"] = second_trace
+            else tuple(high_risk_question_ids),
+            transcriber_ref=transcriber_ref)
+        if report_detail is not None and second_pass is not None:
+            report_detail["second_descriptions"] = second_pass["regions"]
+            report_detail["second_description_pass"] = {
+                key: value for key, value in second_pass.items() if key != "regions"}
         # The Markdown is assembled from the FINAL transcripts (B3).
         markdown = self._assemble([record["transcript"] for record in ordered])
         content_hash = hashlib.sha256(markdown.encode("utf-8")).hexdigest()
         provenance = {
-            **({"second_descriptions": [
-                {key: entry.get(key) for key in (
-                    "region_id", "question_id", "status", "error", "second_model",
-                    "resolved_build")}
-                for entry in second_trace]} if second_trace else {}),
+            # FR-INGEST-14: the pass's summary and each region's outcome, frozen at
+            # ingest (the verdict included), so M-INTEG reads what ingest decided.
+            **({"second_description_pass": {
+                **{key: value for key, value in second_pass.items() if key != "regions"},
+                "regions": [
+                    {key: entry.get(key) for key in (
+                        "region_id", "question_id", "status", "error", "second_model",
+                        "resolved_build", "disagreement")}
+                    for entry in second_pass["regions"]],
+            }} if second_pass is not None else {}),
             "order_source": order_source,
             "pages": [
                 {"blob_hash": record["blob_hash"], "page_no": record["page_no"],
@@ -3058,65 +3085,107 @@ class Ingestor:
         return self._blobs.put(page.png)
 
     def _second_describe(self, regions: list[dict],
-                         high_risk_questions: Sequence[str]) -> list[dict]:
+                         high_risk_questions: Sequence[str], *,
+                         transcriber_ref: str | None = None) -> dict | None:
         """FR-INGEST-14: describe each high-risk described graphic's crop a second
-        time with the different-family model; return the per-region stage trace.
+        time with the different-family model. Returns the pass record — `None` only
+        when no high-risk register was injected — so "register given, nothing
+        matched" is never silent: the record names the declared questions, how many
+        graphics the document holds, how many matched, and each region's outcome.
 
-        A region is high-risk when its `question_id` is in `high_risk_questions`
-        (`ingest_submission` maps the injected criterion ids to their questions
-        through the bound package; with no package the ids are matched against the
-        region's question id directly). Every other region gets exactly one
-        description. A second-model failure leaves `description_secondary` NULL and
-        is recorded as `failed` in the trace — never read as agreement."""
-        if not high_risk_questions or self._second_model_ref is None:
-            return []
+        **Which question a graphic belongs to.** The pinned transcription prompt tags
+        a graphic by `element_kind`, not by question, so a graphic belongs to the
+        question whose region precedes it in document order (an explicit
+        `question_id` on the graphic's own marker wins). A graphic before any
+        question region belongs to none and is counted as unassigned.
+
+        Every other region gets exactly one description. A failed second call — an
+        exception, an empty or evaluative reply, or an answer resolved to the
+        transcriber's own build — leaves `description_secondary` NULL and is recorded
+        as `failed`, never read as agreement. The second call holds the residency
+        slot under its own role, like the transcription it follows."""
+        if not self._high_risk or self._second_model_ref is None:
+            return None
         wanted = set(high_risk_questions)
-        trace: list[dict] = []
+        entries: list[dict] = []
+        graphics = unassigned = 0
+        current_question: str | None = None
         params = SamplingParams(temperature=0.0, max_tokens=_configured_max_tokens())
+        second_ref = self._second_model_ref
+        candidates = []
         for region in regions:
-            if (region["region_kind"] != "described_graphic"
-                    or region.get("question_id") not in wanted
-                    or region.get("crop_png") is None):
+            if region["region_kind"] != "described_graphic":
+                if region.get("question_id"):
+                    current_question = region["question_id"]
                 continue
-            payload = PromptPayload(fields=(
-                ("instruction", SECOND_DESCRIPTION_PROMPT),
-                ("prompt_template_version", SECOND_DESCRIPTION_PROMPT_VERSION),
-                ("crop_ref", str(region["crop_ref"])),
-                ("image_png_base64",
-                 base64.b64encode(region["crop_png"]).decode("ascii")),
-            ))
-            entry: dict[str, Any] = {
-                "region_id": region["region_id"],
-                "question_id": region["question_id"],
-                "crop_ref": region["crop_ref"],
-                "description": region["description"],
-                "second_model": {"provider": self._second_model_ref.provider,
-                                 "build_id": self._second_model_ref.build_id},
-            }
-            try:
-                completion = self._provider.complete(
-                    payload, self._second_model_ref, params)
-                text = (completion.text or "").strip()
-                if not text:
-                    raise IngestError("the second model returned an empty description")
-                if _evaluative_offences(text):
-                    raise IngestError(
-                        "the second description contains evaluative vocabulary "
-                        "(FR-INGEST-11)")
-            except Exception as error:  # noqa: BLE001 -- recorded, never agreement
-                entry.update(status="failed", error=str(error),
-                             description_secondary=None, disagreement=None)
-                LOGGER.warning("second description failed for region %s: %s",
-                               region["region_id"], error)
-            else:
-                region["description_secondary"] = text
-                entry.update(
-                    status="described",
-                    resolved_build=getattr(completion, "resolved_build", None),
-                    description_secondary=text,
-                    disagreement=description_disagreement(region["description"], text))
-            trace.append(entry)
-        return trace
+            graphics += 1
+            question = region.get("question_id") or current_question
+            if question is None:
+                unassigned += 1
+                continue
+            if question in wanted and region.get("crop_png") is not None:
+                candidates.append((region, question))
+        if candidates and self._residency is not None:
+            self._residency.acquire("second_describer")
+        try:
+            for region, question in candidates:
+                payload = PromptPayload(fields=(
+                    ("instruction", SECOND_DESCRIPTION_PROMPT),
+                    ("prompt_template_version", SECOND_DESCRIPTION_PROMPT_VERSION),
+                    ("crop_ref", str(region["crop_ref"])),
+                    ("image_png_base64",
+                     base64.b64encode(region["crop_png"]).decode("ascii")),
+                ))
+                entry: dict[str, Any] = {
+                    "region_id": region["region_id"],
+                    "question_id": question,
+                    "crop_ref": region["crop_ref"],
+                    "description": region["description"],
+                    "second_model": {"provider": second_ref.provider,
+                                     "build_id": second_ref.build_id},
+                }
+                try:
+                    completion = self._provider.complete(payload, second_ref, params)
+                    text = (completion.text or "").strip()
+                    resolved = getattr(completion, "resolved_build", None)
+                    entry["resolved_build"] = resolved
+                    if transcriber_ref is not None and resolved == transcriber_ref:
+                        raise IngestError(
+                            f"the second description resolved to the transcriber's own "
+                            f"build {resolved!r}: not a second family (FR-INGEST-14)")
+                    if not text:
+                        raise IngestError("the second model returned an empty description")
+                    if _evaluative_offences(text):
+                        raise IngestError(
+                            "the second description contains evaluative vocabulary "
+                            "(FR-INGEST-11)")
+                except Exception as error:  # noqa: BLE001 -- recorded, never agreement
+                    entry.update(status="failed", error=str(error),
+                                 description_secondary=None, disagreement=None)
+                    LOGGER.warning("second description failed for region %s: %s",
+                                   region["region_id"], error)
+                else:
+                    region["description_secondary"] = text
+                    entry.update(
+                        status="described", error=None, description_secondary=text,
+                        disagreement=description_disagreement(region["description"], text))
+                entries.append(entry)
+        finally:
+            if candidates and self._residency is not None:
+                self._residency.release("second_describer")
+        return {
+            "status": "ran",
+            "declared_criteria": list(self._high_risk),
+            "high_risk_questions": sorted(wanted),
+            "graphics": graphics,
+            "unassigned_graphics": unassigned,
+            "matched": len(candidates),
+            "described": sum(1 for e in entries if e["status"] == "described"),
+            "failed": sum(1 for e in entries if e["status"] == "failed"),
+            "disagreements": sum(1 for e in entries
+                                 if e.get("disagreement") and e["disagreement"]["disagrees"]),
+            "regions": entries,
+        }
 
     def _retain_crops(self, regions: list[dict],
                       sanitized_of: dict[str, bytes],
@@ -3631,7 +3700,17 @@ class Ingestor:
                        kind=row["kind"], parent_doc_id=document_id,
                        source_blobs=json.dumps(
                            {"order_source": order_source,
-                            "pages": new_provenance_pages}, sort_keys=True),
+                            "pages": new_provenance_pages,
+                            # FR-INGEST-14: a revision does not re-run the second
+                            # description; with a register injected that is stated,
+                            # so the revised head never reads as "not high-risk".
+                            **({"second_description_pass": {
+                                "status": "not_run",
+                                "reason": "revise_document does not run the "
+                                          "FR-INGEST-14 pass; re-ingest the "
+                                          "submission to describe its graphics again",
+                                "declared_criteria": list(self._high_risk)}}
+                               if self._high_risk else {})}, sort_keys=True),
                        pages_with_text_layer=pages_with_layer or None,
                        text_layer_divergence=divergence,
                        created_at=self._now())
@@ -4153,7 +4232,8 @@ class Ingestor:
                   "transcription_attempts": raster_detail.get(
                       "transcription_attempts", []),
                   # FR-INGEST-14: both descriptions and their comparison, per region.
-                  "second_descriptions": raster_detail.get("second_descriptions", [])}
+                  "second_descriptions": raster_detail.get("second_descriptions", []),
+                  "second_description_pass": raster_detail.get("second_description_pass")}
         if self._residency is not None:
             # The F11 seam (#222): a slot on a result is never bare — the
             # report carries the slot's stage detail (holder, waiter count)
@@ -4198,10 +4278,12 @@ class Ingestor:
           quarantined row names exactly one failing gate). A quarantined row
           that names none counts under `unattributed` — surfaced, never
           folded away.
-        - `second_pass_disagreement_rate`: second-passed regions whose
-          secondary description differs from the primary, over second-passed
-          regions; None when the column carries no second pass — the pass is
-          not implemented (C19: never simulated), so a zero would lie."""
+        - `second_pass_disagreement_rate`: second-described regions whose two
+          descriptions disagree on a load-bearing fact or fall under the content
+          floor (`description_disagreement`, FR-INGEST-14), over second-described
+          regions; None when no region carries a second description, so a zero
+          would lie. Failed second calls carry no second description and are not
+          in this rate — they are in each document's `second_description_pass`."""
         gate_rows = self._handle.query(
             INGEST_STATEMENTS["select_cohort_gate_rows"], cohort_id=cohort_id)
         documents = self._handle.query(
