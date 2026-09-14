@@ -5,25 +5,31 @@ the real `aeh.stats` (rung 3).
 | Case | Consumer | Assumption checked here |
 |---|---|---|
 | TC-REQ-41 | `M-AGG` | M-STATS' override history, fed to escalation, routes no data differently from a genuine zero |
-| TC-REQ-57 | `M-REVIEW` | the same history, fed to ranking, ranks no data differently from a genuine zero |
-| TC-REQ-68 | `M-CALIB` | "no evidence" and "no disagreement" are different values, and the compression check states its limitation |
+| TC-REQ-57 | `M-REVIEW` | the same history ranks no data apart from a zero, and reaches the P(error) input of a stored queue row |
+| TC-REQ-68 | `M-CALIB` | "no evidence" and "no disagreement" are different values, more labels narrow the interval, and the compression check returns its limitation |
 | TC-REQ-73 | `M-CONFORM` | an agreement figure is scoped to one backend and never pools two |
-| TC-REQ-79 | `M-CONSOLE` | a figure cannot exist without `n` and scope, and the console renders the absence type as absence |
-| TC-REQ-83 | `M-PKG` | the catalog stores what `promote` computed, with no coercion, and blind counts stay apart from operational ones |
+| TC-REQ-79 | `M-CONSOLE` | a figure cannot reach the console without `n` and scope, and the console renders the absence type as absence |
+| TC-REQ-83 | `M-PKG` | the record stores what `promote` computed, with no coercion, and blind counts stay apart from operational ones |
 
 Labels are built in `M-REVIEW`'s label shape (`label_type`, `saw_system_output`,
 `evaluation_mode`, both bands) so M-STATS' own admissibility filter applies to them.
+
+Disclosed consumer gaps: `aeh.calib` and `aeh.conform` make no M-STATS call today, so TC-REQ-68 and
+TC-REQ-73 check the provider's side of the assumption only, and CT-STATS-08 (a build change
+invalidates an MVVP result) has no conformance path to exercise.
 
 Markers: `contract` and `integration` (§4.7).
 """
 
 from __future__ import annotations
 
-import dataclasses
+import sqlite3
 from types import SimpleNamespace
 
 import pytest
 
+import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch  # noqa: E401,F401
+import aeh.pkg, aeh.review, aeh.synth  # noqa: E401,F401
 import aeh.stats as stats
 from aeh.stats import NoValidationData, ValidationStats
 
@@ -46,96 +52,123 @@ def _histories():
     return s.criterion_override_history("C-NEVER"), s.criterion_override_history("C-ZERO")
 
 
-def test_tc_req_41_escalation_routes_no_override_data_differently_from_a_zero(tmp_path):
+def test_tc_req_41_escalation_routes_no_override_data_differently_from_a_zero():
     """`TC-REQ-41` (`M-AGG` → `M-STATS`, CT-STATS-09): M-STATS returns `NoValidationData` for a
-    never-reviewed criterion and a zero-rate history for one reviewed without overrides. Handed to
-    M-AGG's escalation decision as the history for the same score, the two must not decide
-    identically. A criterion nobody has looked at carries unmeasured risk, and reading it as a
-    zero makes it the safest."""
+    never-reviewed criterion and a zero-rate history for one reviewed without overrides. The score
+    is set up so the history decides: its interior band position alone contributes 1.0 of concern,
+    and the threshold is set to 1.5, so only the no-data weight (0.5) can tip it. Handed each
+    history, `should_escalate` must escalate on no data and not on the measured zero.
+
+    Positive control: M-AGG's own no-data channel (`override_rate=None`) does flip the decision."""
     from aeh.agg import aggregate, should_escalate
-    from tests.support.agg_vocabulary import (
-        agg_config,
-        band,
-        criterion,
-        expected_distribution,
-        panel,
-        signals,
-    )
+    from tests.support.agg_vocabulary import agg_config, band, criterion, expected_distribution, panel, signals
 
     never, zero = _histories()
     assert isinstance(never, NoValidationData), f"fixture: {never!r}"
     assert getattr(zero, "override_rate", None) == 0.0, f"fixture: {zero!r}"
     crit = criterion([band("a", 0, 0.0), band("b", 1, 1.0), band("c", 2, 2.0), band("d", 3, 3.0)],
                      scoring_model="holistic", criterion_id="C1")
-    score = aggregate(panel(("b", 1), ("c", 2), ("c", 2)), crit, signals(), config=agg_config())
+    config = agg_config()
+    score = aggregate(panel(("b", 1), ("c", 2), ("c", 2)), crit, signals(), config=config)
+    config.escalation_threshold = 1.5
 
-    def decide(history):
-        decision = should_escalate(score=score, criterion=crit, history=history,
-                                   baseline=expected_distribution(), config=agg_config())
-        return (decision.escalate, tuple(getattr(decision, "reasons", ()) or ()))
+    def escalates(history):
+        return should_escalate(score=score, criterion=crit, history=history,
+                               baseline=expected_distribution(), config=config).escalate
 
-    control = decide(SimpleNamespace(override_rate=None))
-    assert control != decide(zero), (
-        f"control: M-AGG's own no-data channel (override_rate=None) decides like a zero: {control}")
-    assert decide(never) != decide(zero), (
-        f"escalation reads M-STATS' no-data history exactly like a zero override rate: {decide(never)}. "
-        f"[When written: NoValidationData carries no override_rate, so M-AGG's history read finds the "
-        f"field absent and skips it; the no-data weight applies only to override_rate=None, and no src "
-        f"code maps M-STATS' absence value into that channel.]")
+    assert escalates(zero) is False, "fixture: the measured zero must leave the score below threshold"
+    assert escalates(SimpleNamespace(override_rate=None)) is True, (
+        "control: M-AGG's own no-data channel does not tip the score, so the case cannot discriminate")
+    assert escalates(never) is True, (
+        "escalation routes M-STATS' no-data history exactly like a measured zero override rate. "
+        "[When written: should_escalate reads _row_field(history, 'override_rate'); NoValidationData "
+        "carries no such field, so the read returns the absent marker and the no-data weight, which "
+        "applies only to override_rate=None, is skipped. rank_criteria_for_escalation handles the "
+        "absence value; the per-score escalation decision does not.]")
 
 
-def test_tc_req_57_review_ranking_distinguishes_no_override_data_from_a_zero():
-    """`TC-REQ-57` (`M-REVIEW` → `M-STATS`, CT-STATS-09): the same two histories feed M-REVIEW's
-    `historical_override_rate` for two otherwise identical queue rows. The rows' expected values
-    must differ, and building the queue must not fail on the absence value M-STATS hands over."""
-    from aeh.review import build_review
-    from tests.support import broken_review_fixtures as broken
+def test_tc_req_57_review_ranking_and_p_error_input_distinguish_no_data_from_a_zero(tmp_data_dir):
+    """`TC-REQ-57` (`M-REVIEW` → `M-STATS`, CT-STATS-09). Two halves over the same two histories:
+
+    - **The criteria ranking** (`rank_queue_items(criteria=)`) takes M-STATS' values as given,
+      ranks the never-reviewed criterion first, and marks it `no_data`.
+    - **The P(error) input.** Over a real store, C-ZERO has four admissible blind labels and no
+      override; C-NEVER has none. The store-backed review service's rows must carry
+      `historical_override_rate` 0.0 for C-ZERO and no data for C-NEVER. A measured zero that
+      reaches ranking as "no data" makes the reviewed criterion look unmeasured."""
+    from aeh.review import open_review, rank_queue_items, record_label
+    from aeh.store import open_store
+    from tests.support import broken_stats_fixtures as broken
+    from tests.support.grade_vocabulary import write_criterion_scores
+    from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
     never, zero = _histories()
-    base = broken.flagged_population(1, criteria=1)[0]
-    rows = [dataclasses.replace(base, score_id="score-never", criterion_id="C-NEVER",
-                                historical_override_rate=never),
-            dataclasses.replace(base, score_id="score-zero", criterion_id="C-ZERO",
-                                historical_override_rate=zero.override_rate)]
-    control_rows = [dataclasses.replace(rows[0], historical_override_rate=None), rows[1]]
-    control = build_review(scores=control_rows).build_queue(run_id="run-1", budget_minutes=600)
-    control_values = {item.score_id: item.expected_value for item in control.shown}
-    assert control_values["score-never"] != control_values["score-zero"], (
-        f"control: M-REVIEW's own no-data channel (None) ranks like a zero: {control_values}")
-    problems = []
+    ranked = rank_queue_items(criteria={"C-ZERO": zero, "C-NEVER": never})
+    assert [(r.criterion_id, r.no_data) for r in ranked] == [("C-NEVER", True), ("C-ZERO", False)], ranked
+
+    store = open_store(tmp_data_dir)
     try:
-        queue = build_review(scores=rows).build_queue(run_id="run-1", budget_minutes=600)
-        values = {item.score_id: item.expected_value for item in queue.shown}
-        if values.get("score-never") == values.get("score-zero"):
-            problems.append(f"ranking reads no data as a zero: {values}")
-    except Exception as error:
-        problems.append(
-            f"M-REVIEW cannot rank on M-STATS' absence value: {type(error).__name__}: {error}. [When "
-            f"written: review.py reads historical_override_rate as a float or None; no src code maps "
-            f"NoValidationData into None, so the value M-STATS returns for a never-reviewed "
-            f"criterion does not reach the ranking's no-data default.]")
-    assert not problems, "\n".join(problems)
+        seed_run(store, submissions=("S1",), criteria=(
+            {"criterion_id": "C-NEVER", "kind": "open", "scoring_model": "atomic"},
+            {"criterion_id": "C-ZERO", "kind": "open", "scoring_model": "atomic"}))
+        write_criterion_scores(store.cohort(ORCH_COHORT_ID), [("S1", "C-NEVER", "B2", 25.0, "provisional"),
+                                                              ("S1", "C-ZERO", "B3", 50.0, "provisional")])
+    finally:
+        store.close()
+    for i in range(4):
+        record_label(data_dir=tmp_data_dir, label=broken.Label(label_id=f"z{i}", criterion_id="C-ZERO",
+                                                              band=2, teacher_band=2, origin="blind_sample"))
+    measured = stats.open_stats(data_dir=tmp_data_dir).criterion_override_history("C-ZERO")
+    assert getattr(measured, "override_rate", None) == 0.0, f"fixture: M-STATS over the store reads {measured!r}"
+
+    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    try:
+        rates = {row.criterion_id: row.historical_override_rate for row in service.scores(ORCH_COHORT_ID)}
+    finally:
+        service.close()
+    assert rates.get("C-ZERO") == 0.0 and rates.get("C-NEVER") is None, (
+        f"the stored queue rows' P(error) input reads {rates}: M-STATS measured C-ZERO's override rate as "
+        f"0.0, but the row carries no data, so a reviewed criterion ranks as an unmeasured one. [When "
+        f"written: the store-backed review row reads historical_override_rate from the criterion_score "
+        f"mapping, which has no such column, and no src code fills it from "
+        f"M-STATS' criterion_override_history.]")
 
 
 def test_tc_req_68_no_evidence_and_no_disagreement_are_different_values():
-    """`TC-REQ-68` (`M-CALIB` → `M-STATS`, CT-STATS-01/03/10): over no blind labels, `agreement`
-    returns `NoValidationData`. Over perfectly agreeing blind labels, it returns an `AgreementFigure`
-    with its `n`. The two are different types, so a consumer cannot read absence as agreement by
-    comparing numbers. The compression check carries a statement of its own limitation.
+    """`TC-REQ-68` (`M-CALIB` → `M-STATS`, CT-STATS-01/03/10):
 
-    Disclosed gap: no code in `aeh.calib` reads M-STATS today, so M-CALIB's side of this row
+    - Over no blind labels, `agreement` returns `NoValidationData`. Over perfectly agreeing blind
+      labels, it returns an `AgreementFigure` carrying `n`. The two are different types.
+    - Accumulating labels makes the figure safer to act on: the achievable-precision interval
+      over 80 labels agreeing three times in four is strictly narrower than over 8.
+    - The compression check returns its limitation as a non-empty `stated_limitation` on the
+      result, for an empty and a measured population alike.
+
+    Disclosed gap: no code in `aeh.calib` reads M-STATS today, so M-CALIB's half of this row
     ("never reads absence as agreement") holds only because there is no read to get wrong."""
-    agreeing = ValidationStats([label("C1", "b1", "b1", i=i) for i in range(6)]
-                               + [label("C1", "b2", "b2", i=10 + i) for i in range(6)])
-    empty = ValidationStats([])
-    none = empty.agreement(criterion_id="C1")
-    full = agreeing.agreement(criterion_id="C1")
-    assert isinstance(none, NoValidationData), f"no labels gave {none!r}"
-    assert isinstance(full, stats.AgreementFigure) and full.n == 12, f"agreeing labels gave {full!r}"
-    import inspect
 
-    compression_doc = inspect.getdoc(stats.compression_check) or ""
-    assert "limit" in compression_doc.lower(), "the compression check states no limitation"
+    def agreeing(n):
+        """Perfect agreement, and a population agreeing on three pairs in four (so its interval has width)."""
+        return ValidationStats([label("C1", b, b, i=i) for i, b in enumerate(["b1", "b2"] * (n // 2))])
+
+    def mostly(n):
+        pairs = [("b1", "b1"), ("b2", "b2"), ("b1", "b1"), ("b1", "b2")] * (n // 4)
+        return ValidationStats([label("C1", s_, t, i=i) for i, (s_, t) in enumerate(pairs)])
+
+    none = ValidationStats([]).agreement(criterion_id="C1")
+    small, large = mostly(8).agreement(criterion_id="C1"), mostly(80).agreement(criterion_id="C1")
+    perfect = agreeing(6).agreement(criterion_id="C1")
+    assert isinstance(perfect, stats.AgreementFigure) and perfect.n == 6, f"agreeing labels gave {perfect!r}"
+    assert isinstance(none, NoValidationData), f"no labels gave {none!r}"
+    assert not isinstance(none, stats.AgreementFigure)
+    assert isinstance(small, stats.AgreementFigure) and small.n == 8, small
+    assert isinstance(large, stats.AgreementFigure) and large.n == 80, large
+    assert (large.interval_high - large.interval_low) < (small.interval_high - small.interval_low), (
+        f"80 labels are no safer than 8: ({small.interval_low}, {small.interval_high}) vs "
+        f"({large.interval_low}, {large.interval_high})")
+    for population in (ValidationStats([]), agreeing(6)):
+        limitation = population.compression_check().stated_limitation
+        assert isinstance(limitation, str) and limitation.strip(), "the compression check returns no limitation"
 
 
 def test_tc_req_73_an_agreement_figure_never_pools_two_backends():
@@ -158,47 +191,60 @@ def test_tc_req_73_an_agreement_figure_never_pools_two_backends():
         f"backend_profile column, so stored labels could not be split by backend either.]")
 
 
-def test_tc_req_79_a_figure_cannot_exist_without_its_scope_and_the_console_renders_absence(tmp_data_dir):
-    """`TC-REQ-79` (`M-CONSOLE` → `M-STATS`, CT-STATS-02/03/20, CT-CONSOLE-11): `AgreementFigure`
-    refuses construction without `n` and its scope fields, so a scopeless figure cannot reach the
-    console. The console renders its S1 absence sentence for a package with no validation record,
-    and never a number in that position."""
-    from aeh.console import NO_VALIDATION_FOR_POPULATION, SCREENS, build_console
-    from aeh.store import open_store
-    from tests.support.orch_run import seed_run
+def test_tc_req_79_a_scopeless_figure_cannot_reach_the_console_as_a_scoped_one():
+    """`TC-REQ-79` (`M-CONSOLE` → `M-STATS`, CT-STATS-02/03/20, CT-CONSOLE-11):
+
+    - `AgreementFigure` refuses construction without `n` and its scope fields.
+    - The absence value M-STATS returns renders as the console's absence sentence, never a number.
+    - A figure whose scope fields are all `None` is scopeless. The console's agreement block must
+      not render it as a population- and backend-scoped figure; either the type or the renderer
+      has to stop it.
+
+    Positive control: the fully scoped figure M-STATS computes renders its kappa and `n`."""
+    from aeh.console import NO_NEW_VALIDATION_EVIDENCE, render_agreement_block
 
     with pytest.raises(TypeError):
         stats.AgreementFigure(kappa=0.8, qwk=0.8, ordinal_alpha=0.8)  # no n, no scope
-    required = {f.name for f in dataclasses.fields(stats.AgreementFigure)
-                if f.default is dataclasses.MISSING and f.default_factory is dataclasses.MISSING}
-    assert {"n", "population_scope_id", "backend_profile", "panel_build_ref"} <= required, required
 
-    store = open_store(tmp_data_dir)
-    try:
-        seed_run(store, submissions=("S001",), criteria=(
-            {"criterion_id": "C01", "kind": "open", "scoring_model": "holistic"},))
-        page = build_console(store=store).render(SCREENS["S1"]).html
-    finally:
-        store.close()
-    assert NO_VALIDATION_FOR_POPULATION in page, "S1 does not render the absence sentence"
-    assert "κ" not in page and "kappa" not in page.lower(), "S1 renders a figure where there is none"
+    absent = ValidationStats([]).agreement(criterion_id="C1")
+    absence_text = render_agreement_block(figure=absent)
+    assert NO_NEW_VALIDATION_EVIDENCE in absence_text and "kappa" not in absence_text.lower(), absence_text
+
+    scoped_stats = ValidationStats([label("C1", b, b, i=i) for i, b in enumerate(["b1", "b2"] * 3)],
+                                   population_scopes=["pop-7B"], backend_profiles=["edge-local"])
+    scoped = scoped_stats.agreement(criterion_id="C1", scope="pop-7B", backend_profile="edge-local",
+                                    panel_build_ref="pbr:1", scoring_model="holistic")
+    scoped_text = render_agreement_block(figure=scoped)
+    assert "kappa" in scoped_text.lower() and "n = 6" in scoped_text, f"control: {scoped_text}"
+
+    scopeless = stats.AgreementFigure(kappa=0.8, qwk=0.8, ordinal_alpha=0.8, n=5, scoring_model=None,
+                                      population_scope_id=None, backend_profile=None, panel_build_ref=None,
+                                      degenerate_band_shape=False)
+    text = render_agreement_block(figure=scopeless)
+    assert "scoped to" not in text.lower() and "0.8" not in text, (
+        f"the console rendered a figure with no population, backend or panel build as a scoped figure: "
+        f"{text!r}. [When written: AgreementFigure declares the scope fields without defaults but "
+        f"accepts None for each, and render_agreement_block renders any figure with a kappa using "
+        f"fixed 'scoped to this population and backend' wording, whatever the figure carries.]")
 
 
-def test_tc_req_83_the_catalog_stores_what_promote_computed_without_coercion(tmp_data_dir):
-    """`TC-REQ-83` (`M-PKG` → `M-STATS`, CT-STATS-02/03/06, CT-PKG-07): M-REVIEW records three blind
-    labels and one operational label for one criterion, and M-STATS' `promote` records the
-    administration. The counters stay separate (3 blind, 1 operational), the figure's `n` is the
-    blind count and not 4, and the durable record row written through `aeh.pkg.record_promotion`
-    holds exactly the values `promote` returned. For a key with no record, M-PKG's catalog returns
-    `NoValidationData`, a type distinct from any figure, never a zero."""
-    import sqlite3
+def test_tc_req_83_the_record_stores_what_promote_computed_without_coercion(tmp_data_dir):
+    """`TC-REQ-83` (`M-PKG` → `M-STATS`, CT-STATS-02/03/06, CT-PKG-07, RISK-08):
 
-    import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch  # noqa: E401,F401
-    import aeh.pkg, aeh.review, aeh.synth  # noqa: E401,F401
+    - **Counts stay separate.** M-REVIEW records three blind labels and one operational label for
+      one criterion, and `promote` reports 3 blind, 1 operational and a figure over `n` = 3.
+    - **No coercion on the record.** The durable record row written through
+      `aeh.pkg.record_promotion` holds exactly the values `promote` returned.
+    - **Absence is not a zero.** A second administration with only operational labels records
+      its `agreement_kappa` as NULL, not 0.
+    - **The catalog's absence is M-STATS' absence.** For a key with no record, M-PKG's catalog
+      returns a value that is neither a number nor a mapping, and is M-STATS' own
+      `NoValidationData` type, so a consumer's single type check covers both."""
     from aeh.pkg import PackageCatalog
     from aeh.review import record_label
     from aeh.store import open_store
     from tests.support import broken_stats_fixtures as broken
+    from tests.support.orch_run import seed_package
 
     blind = [broken.Label(label_id=f"b{i}", criterion_id="C-01", band=s, teacher_band=t)
              for i, (s, t) in enumerate([(1, 1), (2, 2), (1, 2)])]
@@ -210,28 +256,35 @@ def test_tc_req_83_the_catalog_stores_what_promote_computed_without_coercion(tmp
     assert (update.blind_count, update.operational_count, update.n) == (3, 1, 3), (
         f"promote mixed operational labels into the blind figure: {update}")
 
+    record_label(data_dir=tmp_data_dir, label=broken.Label(
+        label_id="op-2", label_type="accept", origin="accept", criterion_id="C-01", saw_system_output=True))
+    empty_update = stats.open_stats(data_dir=tmp_data_dir).promote(cohort_id="coh-83b")
+
     with sqlite3.connect(tmp_data_dir / "durable.sqlite") as raw:
         raw.row_factory = sqlite3.Row
-        records = [dict(r) for r in raw.execute("SELECT * FROM package_validation WHERE cohort_id = 'coh-83'")]
-    assert len(records) == 1, f"expected one record row for the administration, got {records}"
-    record = records[0]
+        records = {r["cohort_id"]: dict(r) for r in raw.execute("SELECT * FROM package_validation")}
+    assert set(records) >= {"coh-83", "coh-83b"}, f"record rows: {records}"
     for field in ("blind_count", "operational_count", "cohorts_used", "n", "agreement_kappa"):
-        assert record[field] == getattr(update, field), (
-            f"the stored record's {field} is {record[field]!r}, not the {getattr(update, field)!r} "
-            f"promote computed: the write path coerced a figure")
+        assert records["coh-83"][field] == getattr(update, field), (
+            f"the stored record's {field} is {records['coh-83'][field]!r}, not the "
+            f"{getattr(update, field)!r} promote computed: the write path coerced a figure")
+    assert empty_update.agreement_kappa is None and records["coh-83b"]["agreement_kappa"] is None, (
+        f"an administration with no blind labels recorded agreement as "
+        f"{records['coh-83b']['agreement_kappa']!r}: an absence was coerced into a figure")
 
     store = open_store(tmp_data_dir)
     try:
-        from tests.support.orch_run import seed_package
-
         version = seed_package(store, ({"criterion_id": "C-01", "kind": "open", "scoring_model": "holistic"},))
         catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
         missing = catalog.validation_for(version, "pop-never", "edge-local", "pbr:none")
     finally:
         store.close()
+    assert not isinstance(missing, (int, float, dict)) and missing is not None, (
+        f"the catalog answered an unrecorded key with a value a figure could be: {missing!r}")
     assert isinstance(missing, NoValidationData), (
         f"the catalog answered an unrecorded key with {type(missing).__module__}.{type(missing).__name__}, "
-        f"not M-STATS' absence type: M-PKG invents its own absence value instead of carrying M-STATS'. "
-        f"[When written: aeh.pkg defines a second NoValidationData class, the TC-REQ-61 finding on #341; "
-        f"a consumer's isinstance check against aeh.stats.NoValidationData misses the catalog's.]")
-    assert not isinstance(missing, (int, float, dict)), "the absence arrived as a value a figure could be"
+        f"not M-STATS' absence type, so the catalog invents its own absence value rather than carrying "
+        f"M-STATS'. CT-PKG-07 asks only for 'a NoValidationData of a distinct type'; this case's wording "
+        f"('without the catalog inventing either') and TC-REQ-61 read it as the same type. This needs a "
+        f"design ruling. [When written: aeh.pkg defines a second NoValidationData class (pkg.py ~656), "
+        f"the TC-REQ-61 finding on #341.]")

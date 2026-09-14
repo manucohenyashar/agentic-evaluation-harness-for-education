@@ -150,9 +150,11 @@ def test_tc_req_55_grade_boundary_risk_reaches_the_review_ranking(tmp_data_dir):
     assert "S-NEAR:C2" in values, f"the at-risk item was left out of the queue: {values}"
     assert values["S-NEAR:C2"] > values.get("S-FAR:C2", float("-inf")), (
         f"the queue ranks the grade M-GRADE flagged at risk no higher than the safe one: {values}. "
-        f"[When written: the store-backed review row reads grade_boundary_delta from the "
-        f"criterion_score row, which has no such column; no src code maps submission_grade's "
-        f"boundary_at_risk/score_low/score_high into it, so every stored row ranks at delta 0.0.]")
+        f"[When written: impact is criterion_weight x boundary proximity (review.py ~1050). The "
+        f"store-backed row reads both criterion_weight and grade_boundary_delta from the criterion_score "
+        f"mapping, which carries neither column, so weight reads as 0 and every stored item's expected "
+        f"value is 0.0. No src code maps submission_grade's boundary_at_risk/score_low/score_high, or the "
+        f"package's criterion weight, into the row; wiring only the delta leaves this red.]")
 
 
 def test_tc_req_59_labels_from_the_real_flows_carry_the_columns_admissibility_reads(tmp_data_dir):
@@ -200,8 +202,13 @@ def test_tc_req_59_labels_from_the_real_flows_carry_the_columns_admissibility_re
 
     one_sided = [r["label_id"] for r in labels if r["system_band"] is None or r["teacher_band"] is None]
     figure = open_stats(data_dir=tmp_data_dir).agreement(criterion_id="C1")
-    assert not one_sided and isinstance(figure, AgreementFigure), (
-        f"labels {one_sided} were stored without both bands, so the admitted blind population "
+    problems = []
+    if one_sided:
+        problems.append(f"labels {one_sided} were stored without both bands")
+    if not isinstance(figure, AgreementFigure):
+        problems.append(f"the admitted blind population yields {figure!r}, not an agreement figure")
+    assert not problems, (
+        f"{'; '.join(problems)}. Labels {one_sided} were stored without both bands, so the admitted blind population "
         f"yields {figure!r} instead of an agreement figure (CT-REVIEW-07: every label carries both "
         f"system_band and teacher_band). [When written: submit_blind writes system_band = NULL on "
         f"every blind label and nothing joins the score's band in after submission, so M-STATS' "
@@ -262,7 +269,15 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     - M-REVIEW's blind session reads `submission` and `criterion` only and holds no band.
 
     Positive control: the same spy, around M-REVIEW's queue build over the same store, does capture
-    a `criterion_score` read."""
+    a `criterion_score` read. The blind session is drawn before the console renders, so the screen
+    is rendered with a live draw.
+
+    Disclosed: the console's S11 renders fixed text today and lists none of the drawn refs, so the
+    SQL and band checks on it hold because it reads nothing. The load-bearing checks are the
+    declared flow plan and M-REVIEW's session boundary. CT-REVIEW-01/04 (the queue is
+    minute-budgeted and states its residual) are not asserted here: the console's S9 header reads
+    "Flagged for review: 0" over a store with two provisional scores, so it does not render
+    M-REVIEW's figures at all. That is recorded as a finding in the PR."""
     from aeh.console import SCREENS, blind_flow, build_console
 
     store = open_store(tmp_data_dir)
@@ -289,6 +304,8 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     control.close()
     assert any("criterion_score" in s.lower() for s in seen), "control: the spy captured no score read"
 
+    review = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, seed=3)
+    session = review.blind_sample(run_id=ORCH_COHORT_ID, n=15)
     seen.clear()
     store = open_store(tmp_data_dir)
     try:
@@ -302,11 +319,7 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
         assert not re.search(r"\bB[245]\b", page), "the blind screen carries a system band"
     plan = blind_flow(run_id=run_id, submission_ref="S01")
     assert plan.queries and not any(t in str(q).lower() for q in plan.queries for t in forbidden), plan.queries
-    review = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, seed=3)
-    try:
-        session = review.blind_sample(run_id=ORCH_COHORT_ID, n=15)
-    finally:
-        review.close()
+    review.close()
     assert session.items, "fixture: the blind draw is empty"
     assert session.readable_tables() == frozenset({"submission", "criterion"})
     assert not re.search(r"\bB[245]\b", json.dumps(session.available_data(), default=str))
@@ -380,7 +393,7 @@ def test_tc_req_78_grades_finalize_export_and_amend_with_the_console_killed(tmp_
 _RENDER_WITHOUT_CALIB = textwrap.dedent("""
     import json, sys
     data_dir, mode = sys.argv[1], sys.argv[2]
-    if mode == "absent":
+    if mode in ("absent", "control"):
         sys.modules["aeh.calib"] = None
     else:
         import aeh.calib
@@ -392,6 +405,8 @@ _RENDER_WITHOUT_CALIB = textwrap.dedent("""
                 setattr(aeh.calib, name, _broken)
     import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch
     import aeh.pkg, aeh.review, aeh.synth
+    if mode == "control":
+        import aeh.calib  # proves the block is live: this must raise
     from pathlib import Path
     from aeh.store import open_store
     from tests.support.orch_run import seed_run
@@ -424,24 +439,45 @@ def test_tc_req_89_the_console_works_without_calibration_and_offers_no_rubric_ch
       and S5 renders that version.
     - M-CALIB's own elicitation value has no edit field to approve.
 
-    Disclosed: `aeh.calib` declares no phase constant, so the version named is the console's own
+    Negative control: the child script with `import aeh.calib` added under the block fails.
+
+    Disclosed: no module in `src/aeh` imports `aeh.calib` today, so both modes hold by
+    construction; the test keeps it that way. `aeh.calib` declares no phase constant, so the version named is the console's own
     `CALIBRATION_ARRIVES_IN`, not one read from M-CALIB."""
     import dataclasses
 
     from aeh.calib import ElicitationQuestion
 
-    result = subprocess.run([sys.executable, "-c", _RENDER_WITHOUT_CALIB, str(tmp_path), mode], cwd=REPO,
-                            env=_child_env(), capture_output=True, text=True, timeout=300)
+    def child(run_mode):
+        target = tmp_path / run_mode
+        target.mkdir()
+        return subprocess.run([sys.executable, "-c", _RENDER_WITHOUT_CALIB, str(target), run_mode], cwd=REPO,
+                              env=_child_env(), capture_output=True, text=True, timeout=300)
+
+    if mode == "absent":
+        control = child("control")
+        assert control.returncode != 0 and "aeh.calib" in control.stderr, (
+            f"control: importing the blocked M-CALIB did not fail: {control.stderr[-600:]}")
+    result = child(mode)
     assert result.returncode == 0, f"the console failed with M-CALIB {mode}:\n{result.stderr[-2000:]}"
     out = json.loads(result.stdout.strip().splitlines()[-1])
-    assert len(out["pages"]) == 14 and all(len(html) > 200 for html in out["pages"].values())
-    approve_change = re.compile(r"approve[^<]{0,60}\b(rubric|prompt)s?\b[^<]{0,20}\b(change|edit|revision)", re.I)
-    assert approve_change.search("<button>Approve this rubric change</button>"), "control: the pattern is dead"
-    offenders = {name: m.group(0) for name, html in out["pages"].items() if (m := approve_change.search(html))}
+    assert len(out["pages"]) == 14 and all("<h1>" in html for html in out["pages"].values())
+    verb = r"(approve|accept|apply|confirm)"
+    change = r"(rubric|prompt)s?\b[^<]{0,30}\b(change|edit|revision)s?|suggested (rubric|prompt)"
+    near = re.compile(rf"\b{verb}\b[^<]{{0,80}}\b({change})|\b({change})[^<]{{0,80}}\b{verb}\b", re.I)
+    control_html = ["<button>Approve this rubric change</button>", "<p>Accept this prompt revision</p>",
+                    "<a>Apply suggested rubric edit</a>", "<p>Rubric change proposed: approve?</p>"]
+    assert all(near.search(html) for html in control_html), "control: the pattern misses a known offender"
+    assert not near.search("<h2>Approve how the rubric was understood</h2>"), "control: M-SETUP's read-back matched"
+    controls = re.compile(r"<(button|input|form)\b[^>]*>[^<]*", re.I)
+    offenders = {name: m.group(0) for name, html in out["pages"].items() if (m := near.search(html))}
+    offenders.update({f"{name} control": c.group(0) for name, html in out["pages"].items()
+                      for c in controls.finditer(html) if re.search(verb, c.group(0), re.I)})
     assert not offenders, f"a console surface offers a rubric-change approval: {offenders}"
     elicitation = [v for k, v in out["touch"].items() if "elicitation" in k.lower()]
     assert elicitation == [[True, False, out["arrives"]]], f"elicitation touchpoint: {out['touch']}"
     assert re.search(r"version \d", out["arrives"]), out["arrives"]
-    assert re.search(r"version \d", out["pages"]["S5"]), "S5 does not name the version calibration arrives in"
+    assert "version 2" in out["arrives"] and "version 2" in out["pages"]["S5"] and "Phase 4" in out["pages"]["S5"], (
+        f"S5 does not name the version calibration arrives in ({out['arrives']!r})")
     fields = {f.name for f in dataclasses.fields(ElicitationQuestion)}
     assert not {"proposed_edit", "edit", "diff", "patch"} & fields, fields
