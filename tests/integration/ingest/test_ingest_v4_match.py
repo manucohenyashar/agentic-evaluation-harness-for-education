@@ -401,7 +401,8 @@ def test_tc_ingest_39_the_proposal_is_a_record_never_an_assignment(tmp_data_dir)
         "TC-INGEST-39: the resolution columns are the human's — the ladder never "
         "writes them (FR-INGEST-26).")
     candidates = json.loads(proposal["candidates"])
-    assert candidates, "TC-INGEST-39: the proposal carries ranked candidates."
+    assert len(candidates) == 1, (
+        f"TC-INGEST-39: one lineage yields exactly one candidate, got {candidates!r}.")
     scores = [candidate["score"] for candidate in candidates]
     assert scores == sorted(scores, reverse=True), (
         "TC-INGEST-39: the candidates are RANKED by score.")
@@ -441,6 +442,9 @@ def test_tc_ingest_39_a_second_lineage_builds_no_proposal(tmp_data_dir):
     report = fx.submit(source)
     signals = fx.signals_of(report.submission_id)
     assert signals["semantic"]["signal"] == "absent", signals["semantic"]
+    assert "2 assessment lineages" in json.dumps(signals["semantic"]), (
+        f"TC-INGEST-39: the semantic signal must be absent BECAUSE two lineages are "
+        f"stored, got {signals['semantic']!r}.")
     assert report.gates["v4"] == "uncertain", report.gates["v4"]
     assert fx.proposals() == [], (
         "TC-INGEST-39: an uncertain outcome builds no proposal (FR-INGEST-26).")
