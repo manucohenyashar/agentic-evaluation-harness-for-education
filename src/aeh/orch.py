@@ -231,6 +231,31 @@ class WorkUnit:
     attempt: int = 0
 
 
+@dataclass(frozen=True)
+class UnitProvenance:
+    """Where one work unit's text came from: unit -> submission -> document (#223).
+
+    Design §3.7's `WorkUnit` field list is closed, so the join is a lookup over the
+    submission row rather than a field on the unit. The record carries identifiers only —
+    no `student_ref`, `student_name` or text — so reading provenance widens nothing the
+    ledger exposes; the pseudonymization boundary stays at assembly (`M-JUDGE`).
+
+    `document_id` is the submission's **current** document (the head of `M-INGEST`'s
+    ordering, the row extraction reads); `document_ids` lists every document of the
+    submission, oldest first. `hops` is the join as it was followed, one entry per table,
+    so the trace shows the path and not just its endpoint.
+    """
+
+    work_id: str
+    run_id: str
+    stage: str
+    submission_id: str
+    document_id: str
+    content_hash: str
+    document_ids: tuple[str, ...]
+    hops: tuple[str, ...]
+
+
 # --- the work-ID scheme (FR-ORCH-01) -----------------------------------------------------------
 
 
@@ -334,6 +359,15 @@ class WorkLedgerError(Exception):
     Distinct from `store.StoreError`: the store reports persistence mechanics; this module
     owns the ledger's meaning and its callers distinguish the two.
     """
+
+
+class BrokenLineageError(WorkLedgerError):
+    """A work unit's provenance does not reach a source document (#223, `FR-INGEST-01`).
+
+    Raised by `Orchestrator.provenance` when the unit carries no submission, names a
+    submission the cohort does not hold, or its submission has no document row. The join
+    is refused rather than returned with a NULL `document_id`: a unit that cannot say
+    which text it came from must not look traceable."""
 
 
 class RunNotFoundError(WorkLedgerError):
@@ -657,6 +691,19 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     ),
     "select_work_unit": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
+    ),
+    # The provenance join (#223, FR-INGEST-01): unit -> submission -> document, LEFT-joined
+    # so a broken hop reads as NULL here and is refused by `provenance()`, never imputed.
+    # One row per document of the submission, oldest first; the head is the last row, the
+    # same ordering `M-INGEST`'s `select_document_head` defines.
+    "select_unit_provenance": Statement(
+        "SELECT w.work_id, w.run_id, w.stage, w.submission_id, "
+        "s.submission_id AS joined_submission_id, d.document_id, d.content_hash "
+        "FROM work_unit w "
+        "LEFT JOIN submission s ON s.submission_id = w.submission_id "
+        "LEFT JOIN document d ON d.submission_id = s.submission_id "
+        "WHERE w.work_id = :work_id "
+        "ORDER BY d.created_at, d.document_id"
     ),
     # The one-row existence probe behind lease()'s enumerate-on-empty gate: a run whose
     # ledger holds *any* row was enumerated (or partially so, which is a crash
@@ -4389,6 +4436,50 @@ class Orchestrator:
             submission_text=None,
             judge=row["judge_id"],
             attempt=int(row["attempt"] if "attempt" in keys else row["attempts"]),
+        )
+
+    def provenance(self, work_id: str) -> UnitProvenance:
+        """Follow one unit to its source document: work_unit -> submission -> document.
+
+        Raises `BrokenLineageError` naming the broken hop when the unit has no submission,
+        its submission is absent from the cohort, or the submission has no document — no
+        imputation, never a NULL `document_id` (#223). Raises `WorkLedgerError` for a
+        work id no cohort holds, as `_find_unit` does.
+        """
+        cohort, _row = self._find_unit(work_id)
+        rows = cohort.query(ORCH_STATEMENTS["select_unit_provenance"], work_id=work_id)
+        first = rows[0]
+        short = work_id[:12]
+        if first["submission_id"] is None:
+            raise BrokenLineageError(
+                f"work unit {short}… carries no submission_id, so it cannot be traced to a "
+                "source document; the unit is refused rather than joined to NULL."
+            )
+        if first["joined_submission_id"] is None:
+            raise BrokenLineageError(
+                f"work unit {short}… names submission {first['submission_id']!r}, which "
+                "this cohort does not hold; its lineage is broken at the submission hop."
+            )
+        documents = [row for row in rows if row["document_id"] is not None]
+        if not documents:
+            raise BrokenLineageError(
+                f"work unit {short}… belongs to submission {first['submission_id']!r}, "
+                "which has no document row; its lineage is broken at the document hop."
+            )
+        head = documents[-1]
+        return UnitProvenance(
+            work_id=work_id,
+            run_id=first["run_id"],
+            stage=first["stage"],
+            submission_id=first["submission_id"],
+            document_id=head["document_id"],
+            content_hash=head["content_hash"],
+            document_ids=tuple(row["document_id"] for row in documents),
+            hops=(
+                f"work_unit:{work_id}",
+                f"submission:{first['submission_id']}",
+                f"document:{head['document_id']}",
+            ),
         )
 
     def _find_unit(self, work_id: str) -> tuple[Any, Any]:
