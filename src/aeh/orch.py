@@ -231,6 +231,37 @@ class WorkUnit:
     attempt: int = 0
 
 
+@dataclass(frozen=True)
+class UnitProvenance:
+    """Where one work unit's text came from: unit -> submission -> document (#223).
+
+    Design §3.7's `WorkUnit` field list is closed, so the join is a lookup over the
+    submission row rather than a field on the unit. The record carries identifiers only —
+    no `student_ref`, `student_name` or text — so reading provenance widens nothing the
+    ledger exposes; the pseudonymization boundary stays at assembly (`M-JUDGE`).
+
+    `document_id` is the document the unit's text **came from**. Once the unit has been
+    extracted, that is the document its evidence rows name (`read_from_evidence` is True),
+    even if the submission was re-transcribed since. Before extraction it is the
+    submission's current document, the row extraction will read. `current_document_id` is
+    always the head of `M-INGEST`'s ordering; the two differ exactly when a re-transcription
+    superseded the text a finished unit read. `document_ids` lists every document of the
+    submission, oldest first. `hops` is the join as it was followed, one entry per table
+    (with an `evidence:` hop when the evidence decided), so the trace shows the path.
+    """
+
+    work_id: str
+    run_id: str
+    stage: str
+    submission_id: str
+    document_id: str
+    content_hash: str
+    current_document_id: str
+    read_from_evidence: bool
+    document_ids: tuple[str, ...]
+    hops: tuple[str, ...]
+
+
 # --- the work-ID scheme (FR-ORCH-01) -----------------------------------------------------------
 
 
@@ -334,6 +365,15 @@ class WorkLedgerError(Exception):
     Distinct from `store.StoreError`: the store reports persistence mechanics; this module
     owns the ledger's meaning and its callers distinguish the two.
     """
+
+
+class BrokenLineageError(WorkLedgerError):
+    """A work unit's provenance does not reach a source document (#223, `FR-INGEST-01`).
+
+    Raised by `Orchestrator.provenance` when the unit carries no submission, names a
+    submission the cohort does not hold, or its submission has no document row. The join
+    is refused rather than returned with a NULL `document_id`: a unit that cannot say
+    which text it came from must not look traceable."""
 
 
 class RunNotFoundError(WorkLedgerError):
@@ -657,6 +697,25 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     ),
     "select_work_unit": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
+    ),
+    # The provenance join (#223, FR-INGEST-01): unit -> submission -> document, LEFT-joined
+    # so a broken hop reads as NULL here and is refused by `provenance()`, never imputed.
+    # One row per document of the submission, oldest first; the head is the last row, the
+    # same ordering `M-INGEST`'s `select_document_head` defines.
+    "select_unit_provenance": Statement(
+        "SELECT w.work_id, w.run_id, w.stage, w.submission_id, "
+        "s.submission_id AS joined_submission_id, d.document_id, d.content_hash "
+        "FROM work_unit w "
+        "LEFT JOIN submission s ON s.submission_id = w.submission_id "
+        "LEFT JOIN document d ON d.submission_id = s.submission_id "
+        "WHERE w.work_id = :work_id "
+        "ORDER BY d.created_at, d.document_id"
+    ),
+    # The document a unit's text was actually READ from, once extraction has run: the
+    # evidence rows it wrote carry the document_id of the head at that moment.
+    "select_unit_evidence_documents": Statement(
+        "SELECT DISTINCT document_id FROM evidence "
+        "WHERE work_id = :work_id AND document_id IS NOT NULL ORDER BY document_id"
     ),
     # The one-row existence probe behind lease()'s enumerate-on-empty gate: a run whose
     # ledger holds *any* row was enumerated (or partially so, which is a crash
@@ -2147,6 +2206,9 @@ class Orchestrator:
         the HLD's "provider, per-judge model ref, retention setting in force, concurrency
         cap, cost ceiling", every field the audit may one day ask the run to account for.
 
+        The run start is logged here too: exactly one `run_start` line through
+        `aeh.conf.log_run_start`, whose returned summary is the one the audit record stores.
+
         The audit record is written here, on the durable tier, by `record_run_start` —
         the run's configuration is frozen the moment the row exists, and the audit trail
         should not depend on a later story landing. The two writes are two transactions
@@ -2162,8 +2224,19 @@ class Orchestrator:
         if run_id is None:
             run_id = f"run-{uuid.uuid4().hex}"
         panel_config = panel_config_json(cfg.panel)
+        # A `cloud-hosted` run starts only once zero-retention routing is confirmed for every
+        # panel member (`FR-PROV-14`, `NFR-SYS-03`, `SEC-03`): verified here, before the run
+        # row exists, so a refusal leaves nothing behind.
+        retention = self._verify_retention_at_start(cfg)
+        provider_fields: dict[str, Any] = {}
+        if retention is not None:
+            # "Recorded per run": the confirmed build ids, in the run's frozen snapshot.
+            provider_fields["retention_verified"] = sorted(
+                ref.build_id for ref in retention.confirmed
+            )
         provider_config = json.dumps(
             {
+                **provider_fields,
                 "backend_profile": cfg.backend_profile,
                 "panel_build_ref": cfg.panel_build_ref,
                 "panel": [ref.build_id for ref in cfg.panel],
@@ -2203,8 +2276,48 @@ class Orchestrator:
                 "Either the cohort does not exist (create it with ingest first) or the "
                 "run id is already taken by an earlier run."
             ) from error
-        record_run_start(self._store, cfg, run_id=run_id)
+        # The run start is this moment, and only this caller knows it (`log_run_start`'s own
+        # docstring): the one structured line is emitted here, once per run, and the audit
+        # record stores the very summary the line carried (`FR-CONF-09`, `CT-CONF-13`,
+        # `NFR-SYS-11`, OBS-10). Resolution never logs, so a console that resolved on the
+        # request path does not produce a second line.
+        from aeh.conf import log_run_start
+
+        summary = log_run_start(cfg)
+        record_run_start(self._store, cfg, run_id=run_id, summary=summary)
         return run_id
+
+    def _verify_retention_at_start(self, cfg: Any) -> Any:
+        """`FR-PROV-14` at run start, fail-closed.
+
+        `None` for a profile that sends nothing off the machine. For `cloud-hosted`, the
+        provider seam's `RetentionReport`, confirmed for every panel member. A missing seam,
+        a seam without `verify_retention`, or a report that leaves any member unconfirmed
+        raises `RetentionPolicyError` — the gate is never skipped, because a skipped check
+        reads as a kept privacy promise.
+        """
+        if cfg.backend_profile != "cloud-hosted":
+            return None
+        from aeh.prov import RetentionPolicyError
+
+        verify = getattr(self._provider, "verify_retention", None)
+        if verify is None:
+            raise RetentionPolicyError(
+                "a cloud-hosted run cannot start: the orchestrator was given no provider "
+                "able to verify zero-retention routing (FR-PROV-14), so retention for the "
+                f"{len(cfg.panel)} panel members is unconfirmed and nothing was created."
+            )
+        report = verify(tuple(cfg.panel))
+        confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
+        unconfirmed = [ref for ref in cfg.panel if ref.build_id not in confirmed]
+        unconfirmed += list(getattr(report, "unconfirmed", ()) or ())
+        if unconfirmed:
+            names = "; ".join(f"{ref.provider}:{ref.build_id}" for ref in unconfirmed)
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for panel members: {names}. A "
+                "cloud-hosted run does not start until every member is confirmed."
+            )
+        return report
 
     def _invalidate_order_cache(self, run_id: str) -> None:
         """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).
@@ -4337,6 +4450,71 @@ class Orchestrator:
             attempt=int(row["attempt"] if "attempt" in keys else row["attempts"]),
         )
 
+    def provenance(self, work_id: str) -> UnitProvenance:
+        """Follow one unit to its source document: work_unit -> submission -> document.
+
+        Raises `BrokenLineageError` naming the broken hop when the unit has no submission,
+        its submission is absent from the cohort, the submission has no document, or the
+        unit's evidence names a document that is ambiguous or not the submission's — no
+        imputation, never a NULL `document_id` (#223). Raises `WorkLedgerError` for a
+        work id no cohort holds, as `_find_unit` does.
+        """
+        cohort, _row = self._find_unit(work_id)
+        rows = cohort.query(ORCH_STATEMENTS["select_unit_provenance"], work_id=work_id)
+        first = rows[0]
+        short = work_id[:12]
+        if first["submission_id"] is None:
+            raise BrokenLineageError(
+                f"work unit {short}… carries no submission_id, so it cannot be traced to a "
+                "source document; the unit is refused rather than joined to NULL."
+            )
+        if first["joined_submission_id"] is None:
+            raise BrokenLineageError(
+                f"work unit {short}… names submission {first['submission_id']!r}, which "
+                "this cohort does not hold; its lineage is broken at the submission hop."
+            )
+        documents = [row for row in rows if row["document_id"] is not None]
+        if not documents:
+            raise BrokenLineageError(
+                f"work unit {short}… belongs to submission {first['submission_id']!r}, "
+                "which has no document row; its lineage is broken at the document hop."
+            )
+        head = documents[-1]
+        by_id = {row["document_id"]: row for row in documents}
+        read = [
+            row["document_id"]
+            for row in cohort.query(
+                ORCH_STATEMENTS["select_unit_evidence_documents"], work_id=work_id
+            )
+        ]
+        if len(read) > 1:
+            raise BrokenLineageError(
+                f"work unit {short}…'s evidence names {len(read)} documents ({read}); one "
+                "unit reads one document, so its source is ambiguous and is not guessed."
+            )
+        if read and read[0] not in by_id:
+            raise BrokenLineageError(
+                f"work unit {short}…'s evidence names document {read[0]!r}, which is not a "
+                f"document of submission {first['submission_id']!r}."
+            )
+        source = by_id[read[0]] if read else head
+        hops = [f"work_unit:{work_id}", f"submission:{first['submission_id']}"]
+        if read:
+            hops.append(f"evidence:{work_id}")
+        hops.append(f"document:{source['document_id']}")
+        return UnitProvenance(
+            work_id=work_id,
+            run_id=first["run_id"],
+            stage=first["stage"],
+            submission_id=first["submission_id"],
+            document_id=source["document_id"],
+            content_hash=source["content_hash"],
+            current_document_id=head["document_id"],
+            read_from_evidence=bool(read),
+            document_ids=tuple(row["document_id"] for row in documents),
+            hops=tuple(hops),
+        )
+
     def _find_unit(self, work_id: str) -> tuple[Any, Any]:
         """(cohort handle, ledger row) for one work unit, by walking the cohort files.
 
@@ -5125,7 +5303,9 @@ class Orchestrator:
 # --- the audit record (TC-CONF-17's producer) ---------------------------------------------------
 
 
-def record_run_start(store: Any, config: Any, *, run_id: str | None = None) -> str:
+def record_run_start(
+    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None
+) -> str:
     """Write the run-start audit record: the orchestrator's write of what graded this run.
 
     **Invented here** — the name appears in no Interfaces block (checked: zero occurrences
@@ -5141,8 +5321,14 @@ def record_run_start(store: Any, config: Any, *, run_id: str | None = None) -> s
     `run_id` is minted when the caller has none (an audit row's id needs uniqueness, not
     determinism); `create_run` passes the run's own id so the record names the run it
     belongs to. Returns the run id written.
+
+    `summary` is the `ProfileSummary` `log_run_start` returned, when the caller logged the
+    run start (`Orchestrator.create_run` does): storing that object rather than computing a
+    second one makes the stored record literally the logged one. Omitted, the summary is
+    computed here, as the repair path in `create_run`'s docstring needs.
     """
-    summary = config.profile_summary()
+    if summary is None:
+        summary = config.profile_summary()
     resolved_run_id = run_id if run_id is not None else f"run-{uuid.uuid4().hex}"
     durable = store.durable()
     with durable.transaction() as tx:

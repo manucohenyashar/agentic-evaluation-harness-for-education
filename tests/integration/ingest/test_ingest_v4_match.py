@@ -24,11 +24,11 @@ whenever the store holds two assessment lineages (the module refuses to guess
 between two papers), which caps the outcome at `uncertain`, which builds no
 proposal. Probe: two stored assessments; a submission printing the second's
 identifier with a three-question shape → outcome `uncertain`, zero proposal rows.
-`TC-INGEST-39`'s "two plausible candidates" fixture is therefore unimplementable as
-specified; the proposal row, its ranking, and the schema distinction from an
-assignment are pinned with the one reachable candidate, and the two-candidate half
-waits on the design's answer (a semantic signal that discriminates between
-lineages, or a proposal path from `uncertain`).
+`TC-INGEST-39`'s "two plausible candidates" fixture was therefore unimplementable as
+first specified; #228 reconciled it by revising the plan to the reachable form (the
+design adds no lineage-discriminating signal), so the proposal row, its ranking, the
+recorded signals and the schema distinction from an assignment are pinned with the
+one reachable candidate.
 
 One fixture-order note the development itself surfaced: the store's tier migrations
 are contributed per module at import time, so a Tier P file opened before
@@ -374,18 +374,23 @@ def test_tc_ingest_39_the_proposal_is_a_record_never_an_assignment(tmp_data_dir)
     applies it. The row's resolution columns stay empty for the human, the
     submission keeps its own `mismatch`, and the module exposes no assignment path.
 
-    The plan's fixture asks for **two** plausible candidates; this module
-    docstring's F6 says why that cannot exist yet: a second assessment lineage
+    The plan's case is the reachable form since #228: a second assessment lineage
     makes the semantic signal `absent`, the outcome `uncertain`, and no proposal is
-    built at all, so the ranked-candidates promise cannot list more than the one
-    reachable candidate. Pinned here with one; the two-candidate half needs the
-    design's answer."""
+    built at all (this module docstring's F6), so the ranking holds the one
+    reachable candidate, and `v4_signals` records the three signals that fired."""
     fx = _V4(tmp_data_dir, "proposal")
     assessment_id = fx.put_assessment()
     source = fx.put_submission("History Final", {"Q1": MISMATCH_ANSWER_1},
                                tag="proposal")
     report = fx.submit(source)
     assert report.gates["v4"] == "mismatch"
+    signals = fx.signals_of(report.submission_id)
+    fired = {name: signals[name]["signal"]
+             for name in ("identifier", "structural", "semantic")}
+    assert fired == {"identifier": "mismatch", "structural": "mismatch",
+                     "semantic": "mismatch"}, (
+        f"TC-INGEST-39: v4_signals must record the three decisive signals that "
+        f"built the proposal, got {fired!r}.")
 
     proposals = fx.proposals()
     assert len(proposals) == 1, (
@@ -396,7 +401,8 @@ def test_tc_ingest_39_the_proposal_is_a_record_never_an_assignment(tmp_data_dir)
         "TC-INGEST-39: the resolution columns are the human's — the ladder never "
         "writes them (FR-INGEST-26).")
     candidates = json.loads(proposal["candidates"])
-    assert candidates, "TC-INGEST-39: the proposal carries ranked candidates."
+    assert len(candidates) == 1, (
+        f"TC-INGEST-39: one lineage yields exactly one candidate, got {candidates!r}.")
     scores = [candidate["score"] for candidate in candidates]
     assert scores == sorted(scores, reverse=True), (
         "TC-INGEST-39: the candidates are RANKED by score.")
@@ -419,6 +425,29 @@ def test_tc_ingest_39_the_proposal_is_a_record_never_an_assignment(tmp_data_dir)
                                        "apply", "adopt", "promote"))]
     assert reassigning == [], (
         f"TC-INGEST-39: no method reassigns a submission — found {reassigning!r}.")
+    fx.close()
+
+
+def test_tc_ingest_39_a_second_lineage_builds_no_proposal(tmp_data_dir):
+    """`TC-INGEST-39`'s revision (#228), pinned: the same mismatched paper against a
+    store holding TWO assessment lineages leaves the semantic signal `absent`, caps the
+    outcome at `uncertain`, and writes no proposal row. This is why the plan's case
+    holds one candidate; if a lineage-discriminating signal ever lands, this fails and
+    the two-candidate form becomes reachable."""
+    fx = _V4(tmp_data_dir, "proposal-two")
+    fx.put_assessment()
+    fx.put_assessment("Assessment Beta")
+    source = fx.put_submission("History Final", {"Q1": MISMATCH_ANSWER_1},
+                               tag="proposal-two")
+    report = fx.submit(source)
+    signals = fx.signals_of(report.submission_id)
+    assert signals["semantic"]["signal"] == "absent", signals["semantic"]
+    assert "2 assessment lineages" in json.dumps(signals["semantic"]), (
+        f"TC-INGEST-39: the semantic signal must be absent BECAUSE two lineages are "
+        f"stored, got {signals['semantic']!r}.")
+    assert report.gates["v4"] == "uncertain", report.gates["v4"]
+    assert fx.proposals() == [], (
+        "TC-INGEST-39: an uncertain outcome builds no proposal (FR-INGEST-26).")
     fx.close()
 
 

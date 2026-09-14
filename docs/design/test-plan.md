@@ -1291,7 +1291,7 @@ escalation into a model call; assert the escalation happens only in the `uncerta
 | TC-INGEST-36 | FR-INGEST-35 | Artifact assertion / 2 | An ingested `reference` and `rubric` artifact | These are **not** marked untrusted — the marker discriminates rather than blanket-applying, otherwise the delimited block would contain the answer key | Exact value | P0 |
 | TC-INGEST-37 | FR-INGEST-33, FR-INGEST-34 | Property / 2 | Generated malformed PDFs from a structure-aware generator | No unhandled exception outside the declared taxonomy; no hang past the wall-clock ceiling; every outcome is either a successful ingest or a quarantine | Invariant, see `FUZZ-01` | P1 |
 | TC-INGEST-38 | FR-INGEST-14 | Integration / 2 | A criterion on the injected Phase 1 high-risk list, with a described graphic | A second description is produced with a different model family; disagreement on a load-bearing fact is recorded as an integrity signal available to `M-INTEG`. Q-12 notes the register contents are `TBD`, so the list is injected | Exact value | P1, Phase 2 |
-| TC-INGEST-39 | FR-INGEST-26 | Integration / 2 | A mismatched submission with two plausible candidate assessments | Ranked candidates recorded as a proposal row; no assignment applied; the proposal is distinguishable in the schema from an assignment | Schema plus exact value | P0 |
+| TC-INGEST-39 | FR-INGEST-26 | Integration / 2 | A mismatched submission (identifier, structural and semantic signals all `mismatch`) against the one stored assessment lineage | Ranked candidates recorded as a proposal row — with one lineage the ranking holds exactly the one reachable candidate, so the ordering itself is not exercised; `v4_signals` records the three signals that fired; no assignment applied; the proposal is distinguishable in the schema from an assignment. *Revised (#228):* a second lineage makes the semantic signal `absent` and caps the outcome at `uncertain`, which builds no proposal, so a two-candidate fixture is unreachable under the V4 signal set and the design adds no lineage-discriminating signal | Schema plus exact value | P0 |
 | TC-INGEST-40 | NFR-INGEST-02 | Resilience / 1 | A page whose transcription fails three times | That submission quarantines; ingestion of the remaining cohort continues to completion | Exact value plus cohort completion | P0 |
 | TC-INGEST-41 | NFR-INGEST-05 | Artifact assertion / 2 | An ingested document | The transcription prompt template version is recorded on the `document` row; changing the template changes the recorded version | Exact value | P1 |
 | TC-INGEST-42 | NFR-INGEST-04 | Security / 2 | Page rasters and crops after ingest | Written to the content-addressed blob store under owner-only permissions; removed by `purge_cohort` along with Tier C | Exact mode plus post-purge absence | P0 |
@@ -1480,6 +1480,7 @@ assertion HLD §12 says protects against the first thing sacrificed under perfor
 | TC-ORCH-34 | FR-ORCH-01, NFR-ORCH-05 | Property / 0 | Generated (cohort, package, config) triples | Enumeration is deterministic and total: the same input always yields the same `work_id` set, and every (submission, criterion) pair that should have a unit has exactly one | Invariant | P0 |
 | TC-ORCH-35 | FR-ORCH-18, FR-ORCH-13 | Observability / 2 | A run with quarantines, escalations and a tripped breaker | `run_metrics` carries total and escalated units, quarantined units, wall clock, tokens, `cache_hit_rate`, peak concurrency, retries, rate-limit counters, estimated and actual cost, resolved builds, and model swap count and duration | Exact signal presence, see `OBS-03` | P1 |
 | TC-ORCH-36 | FR-ORCH-15, FR-ORCH-17 | Observability / 1 | Synthetic breaches of each alert condition | Alerts fire for escalation rate above budget, a tripped criterion breaker, cost within 10% of ceiling, `cache_hit_rate` collapse, and any pause | Alert-rule assertion, see `OBS-05` | P1 |
+| TC-ORCH-37 | FR-INGEST-01 | Integration / 2, negative | A leased work unit whose submission has one document, then a re-transcription; the same unit with its document removed or its `submission_id` nulled | `Orchestrator.provenance` follows work_unit -> submission -> document and names every hop: before extraction the head by `created_at`, after it the document the unit's evidence was read from, even once re-transcribed; a broken hop raises `BrokenLineageError`, never a NULL `document_id`; the record carries no identity or text | Exact value plus refusal | P1 |
 
 ### 5.8 Module: Evidence Extraction — Sweep 1 (`M-EXTRACT`)
 
@@ -4537,7 +4538,7 @@ python .claude/skills/create-test-plan/scripts/check_traceability.py --design do
 | NFR-PKG-03 | TC-PKG-03 | Art | P0 |
 | NFR-PKG-04 | TC-PKG-25 — partial, see §7.4 (Q-07) | Integration | P2 |
 | NFR-PKG-05 | TC-PKG-26 | Performance | P1 |
-| FR-INGEST-01 | TC-INGEST-01 | Art | P0 |
+| FR-INGEST-01 | TC-INGEST-01, TC-ORCH-37 | Art, Integration | P0 |
 | FR-INGEST-02 | TC-INGEST-02, TC-SMOKE-08 | Integration, Smoke | P0 |
 | FR-INGEST-03 | TC-INGEST-03, TC-INGEST-04 | Integration | P0 |
 | FR-INGEST-04 | TC-INGEST-05, TC-INGEST-48, TC-REG-01 | Integration, Regression | P0 |
