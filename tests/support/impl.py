@@ -1214,6 +1214,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind",
         ),
     ),
+    # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
+    #
+    # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
+    # backlog builds it yet. All three TC-BLAST cases key on it: 01 calls it, 02 reads its
+    # exemption list, and 03's CI-invocation half is the same CI rule. 03 is ALSO red on two
+    # defects in the existing check_traceability.py (a removed clause case still reads as
+    # traced; --contracts-only fails the real pair on orphans), so this module landing is the
+    # notice to re-run 03, not evidence that 03's script defects are fixed.
+    "#155 harness.blast_radius (TS-82, no implementing story yet)": (
+        "module",
+        "harness.blast_radius",
+        ("tests/contract/blast/test_tc_blast_rule.py",),
+    ),
 }
 
 
