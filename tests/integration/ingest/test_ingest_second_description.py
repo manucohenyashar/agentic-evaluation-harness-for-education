@@ -7,8 +7,9 @@ register's contents TBD, so the list is injected (`high_risk_criterion_ids=`).
 
 Rung 2: a real store and blob directory; both models answer through one scripted provider
 double that keys on the requested `ModelRef` and pins `resolved_build` to what it was asked
-for (the deterministic-transport discipline, FR-PROV-04), so the second call's attribution
-is the recorded build and nothing reaches the network.
+for the transcriber and to a distinct served build for the second model (FR-PROV-04: the
+record names what answered, not what was asked for), so attribution is checked against a
+value only the completion carries, and nothing reaches the network.
 
 The page follows the pinned transcription prompt's tagging: a question's text region, then
 its graphic tagged by `element_kind` only. #233's recorded reading makes the graphic belong
@@ -50,6 +51,10 @@ TRANSCRIBER = ModelRef(role="transcriber", provider="local",
 SECOND = ModelRef(role="transcriber", provider="fixture-b",
                   build_id="/models/qwen-vl.gguf@sha256:bbbb", quantization="q4")
 
+#: What the double reports as having answered for SECOND: a pinned build DIFFERENT from the
+#: one requested, so recording the requested build instead of `resolved_build` is caught.
+SECOND_RESOLVED = "/models/qwen-vl.gguf@sha256:bbbb-served"
+
 INCLINE = "A block on a 30 degree incline with a 5 N applied force arrow"
 PULLEY = "A pulley with two masses of 2 kg and 3 kg"
 
@@ -58,10 +63,12 @@ def _page(*questions: tuple[str, str]) -> str:
     """One transcript: per (question_id, graphic description), a text region naming the
     question and then a graphic tagged the pinned prompt's way (no question_id)."""
     parts = []
-    for question_id, graphic in questions:
+    for index, (question_id, graphic) in enumerate(questions):
         parts.append(f"<!-- region: kind=transcribed_text question_id={question_id} "
                      f"state=present -->\nAnswer to {question_id}.\n<!-- /region -->")
-        parts.append("<!-- region: kind=described_graphic element_kind=free_body_diagram -->"
+        # Each graphic has its own box, so each crop's bytes (and ref) differ.
+        parts.append("<!-- region: kind=described_graphic element_kind=free_body_diagram "
+                     f"crop=10,{100 + 400 * index},500,300 -->"
                      f"\n{graphic}\n<!-- /region -->")
     return "\n".join(parts)
 
@@ -98,7 +105,7 @@ class _TwoModels:
         if model_ref.build_id == SECOND.build_id:
             if isinstance(self.second, Exception):
                 raise self.second
-            text, resolved = self.second, self.second_resolves_to or model_ref.build_id
+            text, resolved = self.second, self.second_resolves_to or SECOND_RESOLVED
         else:
             text, resolved = self.page, model_ref.build_id
         return Completion(text=text, tokens_in=1, tokens_out=1, latency_ms=1,
@@ -159,6 +166,8 @@ def test_tc_ingest_38_the_listed_graphic_is_described_again_and_disagreement_is_
         report, graphics = world.ingest()
         incline, pulley = graphics
         assert (incline["description"], pulley["description"]) == (INCLINE, PULLEY)
+        assert incline["crop_ref"] != pulley["crop_ref"], (
+            "fixture: the two graphics must have different crops for the same-crop check")
 
         # Exactly one second call — for the listed graphic only, on its own crop.
         second = provider.second_calls()
@@ -181,7 +190,8 @@ def test_tc_ingest_38_the_listed_graphic_is_described_again_and_disagreement_is_
             "status": "ran", "declared_criteria": ["C1"], "high_risk_questions": ["Q1"],
             "graphics": 2, "matched": 1, "described": 1, "failed": 0, "disagreements": 1}
         (entry,) = report.detail["second_descriptions"]
-        assert entry["resolved_build"] == SECOND.build_id
+        assert entry["resolved_build"] == SECOND_RESOLVED, (
+            "TC-INGEST-38: the second call is attributed to the build that answered")
         assert entry["second_model"] == {"provider": SECOND.provider,
                                          "build_id": SECOND.build_id}
         verdict = entry["disagreement"]
@@ -197,6 +207,7 @@ def test_tc_ingest_38_the_listed_graphic_is_described_again_and_disagreement_is_
             "TC-INGEST-38: the stored signal must carry the verdict ingest decided")
         stored = second_description_pass(world.handle, report.document_id)
         assert stored["disagreements"] == 1 and stored["regions"][0]["status"] == "described"
+        assert stored["regions"][0]["resolved_build"] == SECOND_RESOLVED
     finally:
         world.close()
 
@@ -225,9 +236,17 @@ def test_tc_ingest_38_an_unlisted_criterion_gets_exactly_one_description(tmp_dat
     try:
         report, graphics = world.ingest()
         assert provider.second_calls() == []
+        described = [fields for _build, fields, _holder in provider.calls
+                     if "crop_ref" in fields or "page_no" in fields]
+        assert [("page_no" in fields) for fields in described] == [True], (
+            "TC-INGEST-38: one description means the page transcription alone — no call "
+            f"on any model describes a crop, got {len(described)} describing calls")
         assert [g["description_secondary"] for g in graphics] == [None]
         record = report.detail["second_description_pass"]
         assert (record["status"], record["graphics"], record["matched"]) == ("ran", 1, 0)
+        stored = second_description_pass(world.handle, report.document_id)
+        assert (stored["status"], stored["matched"], stored["regions"]) == ("ran", 0, []), (
+            "TC-INGEST-38: the stored record must say the pass ran and matched nothing")
         assert description_integrity_signals(world.handle, report.document_id) == ()
     finally:
         world.close()
@@ -290,8 +309,9 @@ def test_tc_ingest_38_a_register_without_a_second_family_is_refused(tmp_data_dir
 
 
 def test_tc_ingest_38_no_register_records_no_pass(tmp_data_dir):
-    """Without an injected register the pass does not run and says nothing: the record
-    is absent (None), distinguishable from a pass that ran and matched nothing."""
+    """Without an injected register the pass does not run and says nothing, even with a
+    second model configured: the record is absent (None), distinguishable from a pass that
+    ran and matched nothing."""
     provider = _TwoModels(_page(("Q1", INCLINE)), "unused")
     store = open_store(tmp_data_dir)
     try:
@@ -300,7 +320,8 @@ def test_tc_ingest_38_no_register_records_no_pass(tmp_data_dir):
             tx.execute("INSERT INTO cohort (cohort_id, consent_class, created_at) "
                        "VALUES (:c, 'synthetic', '2026-01-01')", c=COHORT)
         ingestor = Ingestor(handle, store.blobs(), provider, TRANSCRIBER,
-                            SamplingParams(temperature=0.0), _Rasterizer(), sanitizer=_Through())
+                            SamplingParams(temperature=0.0), _Rasterizer(), sanitizer=_Through(),
+                            second_model_ref=SECOND)
         source = store.blobs().put(b"scan-238")
         document_id = ingestor.ingest_document([source], kind="submission",
                                                filenames={source: "scan-01.md"},
