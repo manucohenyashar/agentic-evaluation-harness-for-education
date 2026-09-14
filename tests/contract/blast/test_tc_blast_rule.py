@@ -11,13 +11,14 @@ cases.
 | TC-BLAST-03 | `check_traceability.py --contracts-only` fails a build that loses a clause case, passes the real pair, and CI invokes it | 0 |
 
 **Written ahead.** `harness.blast_radius` does not exist, and no story in the backlog builds it.
-All three cases carry `writtenahead` and one `WRITTEN_AHEAD_BLOCKERS` entry keyed on that module.
-TC-BLAST-03's red is also a defect in the existing gate script, not only the missing CI wiring
-(see its docstring), so the module landing is the notice to re-check it, not proof it is fixed.
+TC-BLAST-01 and TC-BLAST-02 carry `writtenahead` under a `WRITTEN_AHEAD_BLOCKERS` entry keyed
+on that module. TC-BLAST-03 is red on the existing gate script, not on a missing module, so its
+entry is keyed on the script's own exit code (the `command` kind).
 
 **Interfaces assumed, because the design declares none.**
 - The harness prints the selection as text naming every resolved case ID (`TC-*`) and every
-  consumer module re-verified (`M-*`).
+  consumer module re-verified (`M-*`). §6.12's row has both columns, so both are in the oracle; a
+  harness that prints only pytest node IDs would need this parse changed, not the oracle.
 - It accepts `--design <path>`, so the §4.7 table can be read from a fixture copy.
 - Exemptions for doubles live at `harness.blast_radius:DOUBLE_EXEMPTIONS`, a mapping from the
   double's dotted class name to its stated consequence.
@@ -139,6 +140,22 @@ def test_tc_blast_01_the_selection_for_each_module_equals_its_section_6_12_row(m
         f"{module}'s clause suite declares {declared} cases, the plan defines {len(clause_cases)}")
     expected = clause_cases | req_cases | plan_consumers
 
+    widened_with = sorted(all_modules - design_consumers - {module})[0]
+    fixture = tmp_path / "detailed-design.md"
+    lines = design_text.splitlines(keepends=True)
+    register = _section(design_text, "### 4.7 Contract register and change classification")
+    target = next(line for line in register.splitlines() if line.startswith(f"| `{module}` |"))
+    # The whole cell is replaced by an explicit list, so neither "every module except …" nor
+    # "(no module)" prose can make the widening ambiguous.
+    cells = target.rstrip().strip("|").split("|")
+    cells[-1] = " " + ", ".join(f"`{m}`" for m in sorted(design_consumers | {widened_with})) + " "
+    widened = "|" + "|".join(cells) + "|"
+    assert _consumers(cells[-1].strip(), module, all_modules) == design_consumers | {widened_with}, (
+        "fixture: the widened cell does not parse to the widened set")
+    fixture.write_text("".join(widened + "\n" if line.rstrip("\r\n") == target else line for line in lines),
+                       encoding="utf-8")
+    assert widened in fixture.read_text(encoding="utf-8"), "fixture: the widened row was not written"
+
     require(BLAST_MODULE, issue="#155 (no implementing story yet)")
 
     def selection(*extra: str) -> set[str]:
@@ -153,15 +170,6 @@ def test_tc_blast_01_the_selection_for_each_module_equals_its_section_6_12_row(m
         f"the selection for {module} differs from §6.12's row. Missing: {sorted(expected - emitted)}; "
         f"extra: {sorted(emitted - expected)}")
 
-    widened_with = sorted(all_modules - design_consumers - {module})[0]
-    fixture = tmp_path / "detailed-design.md"
-    lines = design_text.splitlines(keepends=True)
-    register = _section(design_text, "### 4.7 Contract register and change classification")
-    target = next(line for line in register.splitlines() if line.startswith(f"| `{module}` |"))
-    widened = target.rstrip().rstrip("|").rstrip() + f", `{widened_with}` |"
-    fixture.write_text("".join(widened + "\n" if line.rstrip("\r\n") == target else line for line in lines),
-                       encoding="utf-8")
-    assert widened in fixture.read_text(encoding="utf-8"), "fixture: the widened row was not written"
     after = selection("--design", str(fixture))
     assert widened_with in after and after - {widened_with} >= emitted - {widened_with}, (
         f"widening {module}'s §4.7 row with {widened_with} did not widen the selection: {sorted(after)}")
@@ -177,6 +185,7 @@ _ENUMERATE_DOUBLES = textwrap.dedent('''
 
     code = pytest.main(["--collect-only", "-q", "-p", "no:randomly", "-p", "no:cacheprovider", "tests"],
                        plugins=[Quiet()])
+    import ast
     import os
     tests_dir = os.path.abspath("tests") + os.sep
     classes = {}
@@ -190,6 +199,23 @@ _ENUMERATE_DOUBLES = textwrap.dedent('''
                                   for m, v in vars(klass).items()
                                   if not m.startswith("_") and (callable(v) or isinstance(v, property))})
                 classes[f"{name}.{value.__qualname__}"] = members
+        # Classes defined inside functions never reach the module namespace; the source does.
+        def walk(node, prefix):
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    walk(child, f"{prefix}{child.name}.<locals>.")
+                elif isinstance(child, ast.ClassDef):
+                    qualname = f"{prefix}{child.name}"
+                    if "<locals>" in qualname:
+                        methods = sorted(n.name for n in child.body
+                                         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                                         and not n.name.startswith("_"))
+                        classes.setdefault(f"{name}.{qualname}", methods)
+                    walk(child, f"{qualname}.")
+        try:
+            walk(ast.parse(open(path, encoding="utf-8").read()), "")
+        except (OSError, SyntaxError):
+            pass
     print("JSON:" + json.dumps({"collect_exit": int(code), "classes": classes}))
 ''')
 
@@ -199,8 +225,10 @@ _RECORD_SUITE_CONSTRUCTIONS = textwrap.dedent('''
 
     doubles = json.load(open(sys.argv[1], encoding="utf-8"))
     suites = sys.argv[2:]
-    current = {"suite": None}
+    current = {"suite": None, "parametrized": False}
     seen = {}
+    wanted = set(doubles)
+    import builtins
 
     def wrap(dotted):
         module_name, _, qualname = dotted.rpartition(".")
@@ -218,10 +246,14 @@ _RECORD_SUITE_CONSTRUCTIONS = textwrap.dedent('''
             cls = getattr(cls, part, None)
             if cls is None:
                 return
+        instrument(cls, dotted)
+
+    def instrument(cls, dotted):
         original = cls.__init__
 
         def __init__(self, *args, __original=original, __name=dotted, **kwargs):
-            if current["suite"] and type(self).__module__ + "." + type(self).__qualname__ == __name:
+            if current["suite"] and current["parametrized"] and (
+                    type(self).__module__ + "." + type(self).__qualname__ == __name):
                 seen.setdefault(current["suite"], set()).add(__name)
             __original(self, *args, **kwargs)
 
@@ -229,6 +261,17 @@ _RECORD_SUITE_CONSTRUCTIONS = textwrap.dedent('''
             cls.__init__ = __init__
         except (TypeError, AttributeError):
             pass
+
+    real_build_class = builtins.__build_class__
+
+    def build_class(func, name, *bases, **kwargs):
+        cls = real_build_class(func, name, *bases, **kwargs)
+        dotted = f"{cls.__module__}.{cls.__qualname__}"
+        if dotted in wanted:
+            instrument(cls, dotted)
+        return cls
+
+    builtins.__build_class__ = build_class
 
     class Tracker:
         def pytest_collection_finish(self, session):
@@ -239,8 +282,17 @@ _RECORD_SUITE_CONSTRUCTIONS = textwrap.dedent('''
         def pytest_runtest_protocol(self, item, nextitem):
             path = item.nodeid
             current["suite"] = path.split("/")[2] if path.startswith("tests/contract/") else None
+            callspec = getattr(item, "callspec", None)
+            current["parametrized"] = callspec is not None
+            if current["suite"] and callspec is not None:
+                for value in callspec.params.values():
+                    kind = value if isinstance(value, type) else type(value)
+                    dotted = f"{kind.__module__}.{kind.__qualname__}"
+                    if dotted in wanted:
+                        seen.setdefault(current["suite"], set()).add(dotted)
             yield
             current["suite"] = None
+            current["parametrized"] = False
 
     code = pytest.main([*[f"tests/contract/{s}" for s in suites], "-q", "-p", "no:randomly", "-p",
                         "no:cacheprovider", "-m", "not live and not slow and not writtenahead", "--no-header"],
@@ -268,6 +320,7 @@ def _stand_in_rules():
         ("M-STORE", surface(store.TierHandle), 2),
         ("M-STORE", surface(store.BlobStore), 3),
         ("M-PKG", (surface(pkg.PackageCatalog) | surface(orch.PackageCatalogProtocol)) - {"package_id"}, 3),
+        ("M-PKG", surface(orch.PackageCatalogProtocol), len(surface(orch.PackageCatalogProtocol))),
     ]
 
 
@@ -289,22 +342,34 @@ def test_tc_blast_02_every_double_for_a_contracted_module_runs_its_clause_suite(
     registry or a naming pattern.
 
     1. A child process collects the whole `tests/` tree and lists every class defined in any
-       module under `tests/` that the collection imported, whatever name it was imported under.
+       module under `tests/` that the collection imported, whatever name it was imported under,
+       including classes defined inside test functions (read from the source).
     2. Each class is resolved to the contracted module whose declared surface it implements, by
        its members and never by its name.
-    3. A second child runs the §6.11 suites of the modules resolved to (fast-tier cells), with
-       each double's constructor wrapped, and records which doubles are constructed while a test
-       in each suite runs.
+    3. A second child runs the §6.11 suites of the modules resolved to (fast-tier cells). Every
+       double's constructor is wrapped, including classes created while tests run. The child
+       records which doubles are passed as a parameter to, or constructed inside, a
+       **parametrized** cell of each suite. That is §4.10's "one parametrized fixture per
+       contract"; an incidental construction in an unparametrized test does not count.
 
-    A double is held when it is constructed inside its module's suite, or when it is on the
+    A double is held when it is recorded in its module's suite, or when it is on the
     harness's exemption list with a non-empty stated consequence. Every other double is a
     failure.
 
     Controls:
     - A class with a provider's `complete` and a neutral name resolves to M-PROV. A class with
       only a transport's `send` resolves to nothing.
-    - The session walk finds `tests.contract.ingest._doubles.ScriptedProvider` and resolves it
-      to M-PROV.
+    - The session walk finds `tests.contract.ingest._doubles.ScriptedProvider`, a double defined
+      in a test file, and one defined inside a test function, and resolves them.
+
+    Disclosed limits:
+    - Resolution matches the declared surfaces of M-PROV, M-STORE and M-PKG, the only
+      contracted modules that declare one. Doubles for the other sixteen modules, including
+      §4.10's stub panels for M-JUDGE and M-EXTRACT, are not enumerated.
+    - A class that implements `complete` only to wrap and pass calls through to a real provider
+      counts as a stand-in, so the list can overstate the true stand-ins.
+    - §4.10 forbids in-memory store fakes as contract stand-ins, so those can only be held by
+      exemption.
     - The recorder sees `aeh.prov.RecordedFixtureProvider` constructed inside the M-PROV suite,
       which §4.10 says is where it is held."""
     rules = _stand_in_rules()
@@ -314,10 +379,17 @@ def test_tc_blast_02_every_double_for_a_contracted_module_runs_its_clause_suite(
     env = _child_env(repo_root)
     listed = subprocess.run([sys.executable, "-c", _ENUMERATE_DOUBLES], cwd=repo_root, env=env,
                             capture_output=True, text=True, timeout=900)
-    classes = _json_line(listed.stdout)["classes"]
+    enumerated = _json_line(listed.stdout)
+    assert enumerated["collect_exit"] == 0, (
+        f"collecting the session failed (exit {enumerated['collect_exit']}), so doubles in a broken module "
+        f"would go uncounted:\n{listed.stdout[-1500:]}")
+    classes = enumerated["classes"]
     doubles = {name: module for name, members in classes.items() if (module := _resolve(members, rules))}
     in_test_file = [n for n in doubles if ".test_" in n or n.startswith("test_")]
     assert in_test_file, f"control: no double defined inside a test file was found: {sorted(doubles)}"
+    local = [n for n in doubles if "<locals>" in n]
+    assert any(n.endswith("test_req_ingest.<locals>.CountingProvider") or ".<locals>.CountingProvider" in n
+               for n in local), f"control: no double defined inside a test function was found: {sorted(local)}"
     assert doubles.get("tests.contract.ingest._doubles.ScriptedProvider") == "M-PROV", (
         f"control: the session walk did not find a known provider double ({len(doubles)} doubles found)")
     doubles["aeh.prov.RecordedFixtureProvider"] = "M-PROV"  # §4.10's named double, shipped in src
@@ -327,7 +399,9 @@ def test_tc_blast_02_every_double_for_a_contracted_module_runs_its_clause_suite(
     listing.write_text(json.dumps(sorted(doubles)), encoding="utf-8")
     ran = subprocess.run([sys.executable, "-c", _RECORD_SUITE_CONSTRUCTIONS, str(listing), *suites], cwd=repo_root,
                          env=env, capture_output=True, text=True, timeout=1800)
-    seen = _json_line(ran.stdout)["seen"]
+    recorded = _json_line(ran.stdout)
+    assert recorded["exit"] in (0, 5), f"the clause suites did not run clean:\n{ran.stdout[-1500:]}"
+    seen = recorded["seen"]
     assert "aeh.prov.RecordedFixtureProvider" in seen.get("prov", ()), (
         f"control: the recorder did not see RecordedFixtureProvider constructed in the M-PROV suite: {seen.get('prov')}")
 

@@ -1217,15 +1217,25 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
-    # backlog builds it yet. All three TC-BLAST cases key on it: 01 calls it, 02 reads its
-    # exemption list, and 03's CI-invocation half is the same CI rule. 03 is ALSO red on two
-    # defects in the existing check_traceability.py (a removed clause case still reads as
-    # traced; --contracts-only fails the real pair on orphans), so this module landing is the
-    # notice to re-run 03, not evidence that 03's script defects are fixed.
+    # backlog builds it yet. TC-BLAST-01 calls it and TC-BLAST-02 reads its exemption list.
     "#155 harness.blast_radius (TS-82, no implementing story yet)": (
         "module",
         "harness.blast_radius",
-        ("tests/contract/blast/test_tc_blast_rule.py",),
+        (
+            "tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_01_the_selection_for_each_module_equals_its_section_6_12_row",
+            "tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_02_every_double_for_a_contracted_module_runs_its_clause_suite",
+        ),
+    ),
+    # TC-BLAST-03 waits on no module: it is red on the gate script itself. Keyed on the script's
+    # own behaviour, so the notice fires when `--contracts-only` passes the real pair, the first
+    # of its three halves to need a script change. The other two halves (a removed case row
+    # still reading as traced, and CI wiring) are re-checked at that moment, not proven then.
+    "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
+        "command",
+        "python .claude/skills/create-test-plan/scripts/check_traceability.py "
+        "--design docs/design/detailed-design.md --plan docs/design/test-plan.md "
+        "--contracts-only --quiet",
+        ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
 }
 
@@ -1281,6 +1291,19 @@ def blocker_is_resolved(kind: str, target: str, repo_root: Any) -> bool:
         )
     if kind == "path":
         return (repo_root / target).exists()
+    if kind == "command":
+        # Resolved when the command exits 0 from the repo root. For a blocker that is a defect
+        # in existing tooling rather than a missing name: the tool's own behaviour is the only
+        # honest signal. A leading `python` runs under this interpreter.
+        import shlex
+        import subprocess
+        import sys
+
+        argv = shlex.split(target)
+        if argv and argv[0] == "python":
+            argv[0] = sys.executable
+        completed = subprocess.run(argv, cwd=repo_root, capture_output=True, timeout=300)
+        return completed.returncode == 0
     raise ValueError(
         f"unknown written-ahead blocker kind {kind!r}. Add a branch here when adding a kind, "
         f"or the gate reads it as unresolved and never fires."
