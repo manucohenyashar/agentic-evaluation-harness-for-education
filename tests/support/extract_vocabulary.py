@@ -216,12 +216,19 @@ SPAN_FIELDS = ("start", "end", "text", "region_kind")
 #: emitter over the store returning the named signals — and the names are the plan's words in
 #: snake case. `empty_result_rate` is keyed **per criterion** (the clause's stated reading is
 #: per-criterion; the aggregate cannot support it).
+#:
+#: **Superseded by the gap-fix delta** (design 1.5.1, `CT-EXTRACT-17`, issue #381): the names
+#: are now contract and fixed — five, not four, latency split into p50/p95 — and every metric is
+#: a per-criterion mapping (`FR-EXTRACT-12`: "per criterion"). The earlier single
+#: `extraction_latency` spelling was this file's invention and is retired here, in the test PR,
+#: so the case the delta un-marks (`TC-EXTRACT-C14`) and `TC-EXTRACT-17` read one surface.
 METRICS_ACCESSOR = "extraction_metrics"
 EXTRACT_METRIC_NAMES = (
     "spans_per_unit",
     "empty_result_rate",
     "second_family_disagreement_rate",
-    "extraction_latency",
+    "extraction_latency_p50_ms",
+    "extraction_latency_p95_ms",
 )
 
 #: The TS-65 conjunction: every `aeh.extract` symbol the contract suite resolves. Built here

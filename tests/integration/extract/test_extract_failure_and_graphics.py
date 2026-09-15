@@ -212,6 +212,66 @@ def test_tc_extract_08_three_failures_quarantine_and_write_no_evidence_row(
         store.close()
 
 
+@pytest.mark.writtenahead
+def test_tc_extract_08_variant_rate_limits_then_success_write_one_row_and_no_strike(
+    tmp_data_dir,
+):
+    """`TC-EXTRACT-08`, the variant the gap-fix plan adds (§4.9 re-specification, `FR-EXTRACT-11`,
+    issue #381): three `RateLimitedError`s followed by one success produce **one** evidence row,
+    `attempts = 0`, and no quarantine.
+
+    Under `CT-EXTRACT-16` a rate limit propagates out of `process` rather than striking, so the
+    caller — here standing in for the dispatch pass, which re-offers the unit — calls `process`
+    again after each one. Written ahead of #353: today the three 429s are three strikes inside
+    one `process` call and the unit quarantines with no row.
+    """
+    from aeh.prov import Completion, RateLimitedError
+
+    Worker, _Result = require(EXTRACT_MODULE, WORKER, RESULT_TYPE, issue="#353")
+    store = open_store(tmp_data_dir)
+    try:
+        version = _seed_world(store, _DIAGRAM_MARKDOWN)
+        orchestrator = Orchestrator(store)
+        orchestrator.create_run(ORCH_COHORT_ID, version, _resolved())
+        (unit,) = orchestrator.lease("w-extract", STAGE_EXTRACT, 1)
+
+        span = _byte_span(_DIAGRAM_MARKDOWN, _TRANSCRIBED_SPAN_TEXT, "transcribed_text")
+        success: Completion = span_completion([span], build_id="extractor-build-08v")
+        script = [RateLimitedError("429 #1"), RateLimitedError("429 #2"),
+                  RateLimitedError("429 #3"), success]
+
+        class _ScriptedProvider:
+            calls = 0
+
+            def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+                step = script[self.calls]
+                self.calls += 1
+                if isinstance(step, BaseException):
+                    raise step
+                return step
+
+        provider = _ScriptedProvider()
+        worker = Worker(store, provider, extractor_ref())
+        for _offer in range(len(script)):
+            try:
+                worker.process(unit)
+                break
+            except RateLimitedError:
+                continue
+
+        assert provider.calls == 4, f"expected 3 rate limits and one success, saw {provider.calls}"
+        assert _evidence_count(store, unit.work_id) == 1, (
+            "three rate limits then a success must write exactly one evidence row"
+        )
+        attempts = store.cohort(ORCH_COHORT_ID).query(
+            "SELECT attempts FROM work_unit WHERE work_id = :w", w=unit.work_id
+        )[0]["attempts"]
+        assert attempts == 0, f"rate limits consumed {attempts} strike(s) (CT-EXTRACT-16)"
+        assert _unit_status(store, unit.work_id) != "quarantined"
+    finally:
+        store.close()
+
+
 def test_tc_extract_09_described_graphic_spans_are_citable_and_marked(
     tmp_data_dir, make_fixture_provider
 ):

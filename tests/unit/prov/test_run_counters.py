@@ -45,6 +45,28 @@ above, because a correct implementation can disagree with them and still satisfy
 | A 429-provoked retry increments `transport_retries` **as well as** `rate_limited_calls` | `FR-PROV-06` classifies 429 as one of the retryable transport-class failures, so every attempt beyond the first is a transport retry; `rate_limited_calls` then answers a different question — *how many calls were throttled* — rather than partitioning the same total | #20 may reasonably count only non-429 retries there, giving 15 rather than 35. If it does, this expectation moves and the case does not |
 | `cache_hit_rate` is token-weighted: `cached_prefix_tokens / tokens_in` | `NFR-JUDGE-01` and `TC-JUDGE-21` both state it against token counts (about 1,500 of roughly 1,800), and `TC-PROV-C14` requires a rate in `[0,1]` | A call-weighted rate (calls that hit the cache / calls) would also be a rate in `[0,1]`, and would read 1.0 here |
 
+Re-derived under `CT-EXTRACT-16` (gap-fix test plan §4.9, issue #381)
+----------------------------------------------------------------------
+The gap-fix delta changes strike semantics: a rate limit, an outage or a build change no longer
+consumes a unit's attempt (`FR-EXTRACT-11`, `FR-JUDGE-19`). The plan asks for this case's
+expected values to be hand-counted again under the new rule, **before** the new code runs. The
+count, from the programme above:
+
+* `rate_limited_calls` — calls answered 429 at least once: the first 20. **20** (unchanged).
+* `transport_retries` — attempts beyond the first, whatever provoked them: 20 (429) + 15
+  (transport) = **35** (unchanged). A 429 increments this counter as well as
+  `rate_limited_calls`; that reading is the table above and the new rule does not touch it.
+* `rate_limit_wait_s` — 20 × `Retry-After: 2` = **40**; `tokens_in` 200 × 1,800 = **360,000**;
+  `tokens_out` 200 × 12 = **2,400**; `cache_hit_rate` 1,500 / 1,800 (unchanged).
+* **unit `attempts`** — the half the new rule governs — is **0 for every unit**: every one of the
+  200 calls succeeds after the provider's own retry, so no error surfaces to a worker, and under
+  the new rule even a surfaced 429 would not strike. The counters are provider-level and carry no
+  unit, so that figure is asserted where a unit exists: `TC-EXTRACT-16`/`TC-JUDGE-26` (a surfaced
+  taxonomy error leaves `attempts` at 0) and `TC-EXTRACT-08`'s variant (three 429s then a success:
+  one evidence row, `attempts = 0`).
+
+So every expected constant below stands as derived; none was edited to match an output.
+
 The transport seam is a gap in the plan, not a choice
 ------------------------------------------------------
 `TC-PROV-18`'s precondition is *"a 200-call synthetic run with programmed 429s and retries"*.
