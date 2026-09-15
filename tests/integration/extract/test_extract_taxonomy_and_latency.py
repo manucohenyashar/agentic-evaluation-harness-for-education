@@ -15,9 +15,9 @@ Gap-fix test plan §5:
   failed attempt wrote no row. Oracle: exact value.
 
 **Which arms are red.** The contrasts pass today — a generic failure has always been a strike —
-and stay in `TEST_CMD` as the green arms the plan requires. The taxonomy arms are
-`writtenahead` on #353, which makes the three errors propagate. `TC-EXTRACT-18` is `writtenahead`
-on #361, which adds the `evidence.latency_ms` column.
+and stay green as the arms the plan requires. The taxonomy arms were written ahead of #353, which
+makes the three errors propagate, and were unmarked when it landed. `TC-EXTRACT-18` is
+`writtenahead` on #361, which adds the `evidence.latency_ms` column.
 
 **Two witnesses for "the wall time of the successful attempt".** The design does not say whether
 the worker times the call itself or reads the provider-reported `Completion.latency_ms`. The case
@@ -123,7 +123,6 @@ def _spy_fail(monkeypatch) -> list[tuple[str, str]]:
 # --- TC-EXTRACT-16 — the taxonomy three propagate, strike nothing, write nothing ---------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("error_class", TAXONOMY_THREE, ids=lambda cls: cls.__name__)
 def test_tc_extract_16_a_taxonomy_error_propagates_without_a_strike(
     tmp_data_dir, monkeypatch, error_class

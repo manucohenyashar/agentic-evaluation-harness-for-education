@@ -212,7 +212,6 @@ def test_tc_extract_08_three_failures_quarantine_and_write_no_evidence_row(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_08_variant_rate_limits_then_success_write_one_row_and_no_strike(
     tmp_data_dir,
 ):
@@ -222,8 +221,8 @@ def test_tc_extract_08_variant_rate_limits_then_success_write_one_row_and_no_str
 
     Under `CT-EXTRACT-16` a rate limit propagates out of `process` rather than striking, so the
     caller — here standing in for the dispatch pass, which re-offers the unit — calls `process`
-    again after each one. Written ahead of #353: today the three 429s are three strikes inside
-    one `process` call and the unit quarantines with no row.
+    again after each one. Written ahead of #353 (the three 429s were three strikes inside one
+    `process` call, quarantining the unit); unmarked when #353 landed.
     """
     from aeh.prov import Completion, RateLimitedError
 

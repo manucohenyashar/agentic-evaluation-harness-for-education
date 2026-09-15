@@ -92,7 +92,12 @@ from aeh.orch import (
 )
 from aeh.orch import _cohort_keys_on_filesystem
 from aeh.prov import PromptPayload, SamplingParams
-from aeh.prov import ProviderError
+from aeh.prov import (
+    BuildChangedError,
+    ProviderError,
+    ProviderUnavailableError,
+    RateLimitedError,
+)
 from aeh.store import Migration, Statement, Tier, TIER_MIGRATIONS
 from aeh.store import lease_clock
 
@@ -896,6 +901,12 @@ class ExtractionWorker:
                 )
                 spans = parse_spans(completion.text, md_bytes)
                 break
+            except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
+                # `FR-EXTRACT-11` / `CT-EXTRACT-16`: the provider taxonomy is not the unit's
+                # fault. A rate limit waits, an outage or a build change pauses the run
+                # (`FR-PROV-07`, `FR-ORCH-16/17`) — none consumes a strike, none writes
+                # evidence, and the caller decides what the error means.
+                raise
             except (ProviderError, ValueError) as error:
                 error_text = f"extraction attempt {attempt}/{budget}: {error}"
                 self._orchestrator.fail(unit.work_id, error_text)
@@ -988,6 +999,11 @@ class ExtractionWorker:
                     "resolved_build": completion.resolved_build,
                     "spans": [dataclasses.asdict(span) for span in spans],
                 }
+            except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
+                # The same taxonomy rule as the primary pass (`FR-EXTRACT-11`): an outage on
+                # the second family is the run's condition, not a family that failed — it
+                # propagates before the primary's evidence is written.
+                raise
             except (ProviderError, ValueError) as error:
                 last_error = error
         return {

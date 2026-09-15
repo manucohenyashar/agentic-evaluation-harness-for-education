@@ -362,9 +362,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
     # sites; the statements are the same three. Re-read from the walker, never
     # hand-unioned.)
-    "aeh.extract:939",
-    "aeh.extract:944",
-    "aeh.extract:946",
+    "aeh.extract:950",
+    "aeh.extract:955",
+    "aeh.extract:957",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
@@ -383,9 +383,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: the `from aeh.extract import document_bytes` reuse of the
     # canonical-artifact resolver added the import line above the sites; the
     # statements are the same three. Re-read from the walker, never hand-unioned.)
-    "aeh.judge:1828",
-    "aeh.judge:1833",
-    "aeh.judge:1843",
+    "aeh.judge:1836",
+    "aeh.judge:1841",
+    "aeh.judge:1851",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
