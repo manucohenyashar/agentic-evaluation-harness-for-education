@@ -118,7 +118,6 @@ def _latency(metrics: Any, criterion: str) -> tuple[Any, Any]:
             metrics.extraction_latency_p95_ms[criterion])
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_17_extraction_metrics_match_the_hand_computed_values(tmp_data_dir):
     """`TC-EXTRACT-17` — every figure hand-computed; RB contributes nothing."""
     store = open_store(tmp_data_dir)

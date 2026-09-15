@@ -494,11 +494,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # The stats module is
     # the Requires tables' own word; a symbol key releases on the name's landing
     # regardless of which story carries it.
-    "#148 judge_signals": (
-        "symbol",
-        f"{STATS_MODULE}:judge_signals",
-        ("tests/contract/judge/test_ct_judge_c16_signal_dimensionality.py",),
-    ),
     # `"#29"` is gone because #31 landed: `aeh.pkg:record_validation` now exists as the
     # write side the design never named (catalog-backed for the in-memory catalog,
     # registry-backed for the export summary), so the `M-PKG` half of `TC-CONFORM-C14`'s
@@ -883,14 +878,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # rejoin TEST_CMD. The three consumer-keyed entries below left at the #73/#74
     # landing (`aeh.integ`): their markers came off in the same change, and nothing
     # rung-3 remains keyed in this section.
-    "#68 extraction contract metrics (TS-65)": (
-        # C14, the whole file: the suite's names plus #68's own `extraction_metrics`
-        # emitter — the one case that reads the metrics, hence its own conjunction, so
-        # the suite entry above never names a symbol its tests do not use.
-        "symbols",
-        ",".join(f"{EXTRACT_MODULE}:{name}" for name in TS65_EXTRACT_SYMBOLS),
-        ("tests/contract/extract/test_ct_extract_c14_extraction_metrics.py",),
-    ),
     # The "#69 extraction contract second family (TS-65)" entry stood here: its
     # conjunction resolved with the same landing, and C10 lost its marker in the
     # same change.
@@ -1320,24 +1307,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#361 TS-87 ..." (four pieces: verdicts_for, the verdict assessment/latency columns, the
     # evidence latency column, the violation rows) left with #361 — TC-JUDGE-25/27/28 and
     # TC-EXTRACT-18 run green, markers gone.
-    "#371 TS-87 extraction_metrics over hand-built evidence (TC-EXTRACT-17)": (
-        "symbol",
-        "aeh.extract:extraction_metrics",
-        (
-            "tests/integration/extract/test_tc_extract_17_extraction_metrics.py"
-            "::test_tc_extract_17_extraction_metrics_match_the_hand_computed_values",
-        ),
-    ),
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
-    "#371 TS-88 aggregation_signals (TC-AGG-23)": (
-        "symbol",
-        "aeh.agg:aggregation_signals",
-        (
-            "tests/integration/agg/test_tc_agg_23_aggregation_signals.py"
-            "::test_tc_agg_23_aggregation_signals_match_the_hand_computed_values",
-        ),
-    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the

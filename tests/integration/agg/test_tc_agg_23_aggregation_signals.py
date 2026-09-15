@@ -121,7 +121,6 @@ def _str_keys(mapping) -> dict[str, int]:
     return {str(k): int(v) for k, v in dict(mapping).items()}
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_23_aggregation_signals_match_the_hand_computed_values(tmp_data_dir):
     """`TC-AGG-23` — every C1 figure hand-computed from four rows; RB contributes nothing."""
     aggregation_signals = require(AGG_MODULE, "aggregation_signals", issue=ISSUE)

@@ -248,6 +248,14 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 from aeh.store import Statement
 
 __all__ = [
+    "JUDGE_SIGNAL_FIELDS",
+    "JUDGE_VIOLATION_ALERT",
+    "JudgeSignals",
+    "STATS_VIOLATION_CONCENTRATION",
+    "STATS_VIOLATION_CONCENTRATION_ENV",
+    "STATS_VIOLATION_MINIMUM",
+    "STATS_VIOLATION_MINIMUM_ENV",
+    "judge_signals",
     "AgreementFigure",
     "BandShape",
     "BLIND_SAMPLE_SKIPPED_ALERT",
@@ -950,6 +958,27 @@ STATS_STATEMENTS: dict[str, Statement] = {
     # exactly the figure the record wrote.
     "select_criterion_stats": Statement(
         "SELECT * FROM criterion_stats WHERE cohort_id = :cohort_id"
+    ),
+    # --- FR-STATS-20: the judge signals' reads -----------------------------------
+    # The run's judged cells and their verdict rows (M-JUDGE's columns, #361's two
+    # added), plus the durable violation counts `dispatch` records. Reads only
+    # (`CT-STATS-15`), and every one names the run.
+    "select_run_score_units": Statement(
+        "SELECT DISTINCT criterion_id, judge_id FROM work_unit "
+        "WHERE run_id = :run_id AND stage = 'score' AND judge_id IS NOT NULL "
+        "ORDER BY criterion_id, judge_id"
+    ),
+    "select_run_verdicts": Statement(
+        "SELECT w.criterion_id, v.judge_id, v.band, v.uncited, v.evidence_sufficient, "
+        "v.latency_ms FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
+        "WHERE w.run_id = :run_id ORDER BY w.criterion_id, v.judge_id, v.work_id"
+    ),
+    "select_run_violation_counts": Statement(
+        "SELECT criterion_id, judge_id, value FROM run_metrics "
+        "WHERE run_id = :run_id AND metric = 'judge_contract_violations'"
+    ),
+    "select_run_cache_hit_rate": Statement(
+        "SELECT value FROM run_metrics WHERE run_id = :run_id AND metric = 'cache_hit_rate'"
     ),
 }
 
@@ -1873,6 +1902,204 @@ def latest_mvvp(
 # the same function — and each routes its population through the single
 # filter's application (``admissible_labels()``, `NFR-STATS-04`): no figure on
 # this surface is computed over any other population.
+
+
+# --- the judge signals (FR-STATS-20, CT-JUDGE-16) ----------------------------------------------
+
+#: The concentration alert's two Assumption-class knobs (`FR-STATS-20`): a judge holding
+#: STRICTLY more than this share of a criterion's contract violations, with at least
+#: `STATS_VIOLATION_MINIMUM` of them in the criterion, is named. Read at call time (seam 3).
+STATS_VIOLATION_CONCENTRATION: float = 0.5
+STATS_VIOLATION_CONCENTRATION_ENV = "HARNESS_STATS_VIOLATION_CONCENTRATION"
+STATS_VIOLATION_MINIMUM: int = 5
+STATS_VIOLATION_MINIMUM_ENV = "HARNESS_STATS_VIOLATION_MINIMUM"
+
+#: `CT-JUDGE-16`'s six declared signal names, in the clause's order. The names are the
+#: contract: a consumer reads a cell by name, so a renamed field is a broken contract.
+JUDGE_SIGNAL_FIELDS: tuple[str, ...] = (
+    "uncited_verdict_rate",
+    "evidence_sufficient_false_rate",
+    "band_histogram",
+    "contract_violation_rate",
+    "latency",
+    "prefix_cache_hit_rate",
+)
+
+
+def _percentile(values: Sequence[float], q: float) -> float | None:
+    """The value at rank `q·(n−1)` over the sorted sample, linearly interpolated between
+    closest ranks (NumPy's default; `statistics.quantiles(..., method="inclusive")`). `None`
+    for an empty sample — a percentile of nothing is absent, never zero."""
+    ordered = sorted(float(value) for value in values)
+    if not ordered:
+        return None
+    if len(ordered) == 1:
+        return ordered[0]
+    rank = q * (len(ordered) - 1)
+    low = int(rank)
+    high = min(low + 1, len(ordered) - 1)
+    return ordered[low] + (rank - low) * (ordered[high] - ordered[low])
+
+
+@dataclass(frozen=True)
+class JudgeSignals:
+    """One run's per-(criterion, judge) judge signals and the concentration alert.
+
+    `cells` maps `(criterion_id, judge_id)` to a mapping carrying exactly
+    `JUDGE_SIGNAL_FIELDS`. The object iterates and indexes as that mapping does — `dict(signals)`
+    is the cells — so a consumer reading the contract's shape never reaches past it; `alerts`
+    rides beside it.
+
+    `latency` is a mapping of `p50_ms`/`p95_ms` over the cell's stored verdict latencies
+    (`FR-JUDGE-20`).
+
+    `prefix_cache_hit_rate` is the RUN's recorded `cache_hit_rate` metric (`M-ORCH` accrues the
+    provider's `cached_prefix_tokens` and writes the row), repeated in every cell — the figure
+    is not dimensioned by judge anywhere in the store, so this is the run-level rate read
+    honestly rather than a per-judge one invented. `0.0` only when the run recorded no such
+    row. That un-dimensioned half is this emitter's disclosed residual.
+    """
+
+    cells: Mapping[tuple[str, str], Mapping[str, Any]]
+    alerts: tuple[str, ...] = ()
+
+    def __iter__(self):
+        return iter(self.cells)
+
+    def __getitem__(self, key: tuple[str, str]) -> Mapping[str, Any]:
+        return self.cells[key]
+
+    def __len__(self) -> int:
+        return len(self.cells)
+
+    def keys(self):
+        return self.cells.keys()
+
+    def items(self):
+        return self.cells.items()
+
+    def values(self):
+        return self.cells.values()
+
+
+#: The alert `FR-STATS-20` names, emitted per criterion whose violations concentrate.
+JUDGE_VIOLATION_ALERT = "judge_contract_violations_concentrated"
+
+
+def _cohort_handle_for_run(source: Any, run_id: str, durable: Any) -> tuple[Any, Any]:
+    """The cohort handle holding `run_id` and the durable handle, from a store or a handle.
+
+    `FR-STATS-20` names a handle; `CT-JUDGE-16` drives the emitter with the store. Both are
+    accepted — a store resolves its own cohort by walking the tier's files (the no-side-index
+    discovery `M-JUDGE` and `M-EXTRACT` use), and a handle is used as given. A handle carries
+    no route to Tier D, where the violation counts live, so one must arrive as `durable=`:
+    without it the contract-violation rate would read `0.0` for every cell and the
+    concentration alert could never fire — a declared signal quietly measuring nothing.
+
+    A run no cohort holds is a refusal, never a new handle: `store.cohort(key)` CREATES the
+    tier file, so a miss that fell through to one would leave a stray database in the layout
+    every cohort walk in the system then enumerates.
+    """
+    if not hasattr(source, "cohort"):
+        if durable is None:
+            raise ValueError(
+                "judge_signals needs Tier D to read the judge_contract_violations rows "
+                "(FR-JUDGE-21): pass the store, or the durable handle as `durable=`. A "
+                "cohort handle alone would report a zero violation rate for every judge."
+            )
+        return source, durable
+    data_dir = getattr(source, "data_dir", None)
+    if data_dir is None:
+        raise ValueError(
+            "judge_signals was handed something that is neither a store (no data_dir) nor a "
+            f"tier handle: {type(source).__name__}"
+        )
+    for path in sorted(Path(data_dir, "cohorts").glob("*.sqlite")):
+        handle = source.cohort(path.stem)
+        if handle.query(STATS_STATEMENTS["select_run_score_units"], run_id=run_id):
+            return handle, (durable if durable is not None else source.durable())
+    raise ValueError(
+        f"no cohort ledger in {data_dir} holds score units for run {run_id!r} — judge signals "
+        "are a run's, and a run the store does not hold has none"
+    )
+
+
+def judge_signals(source: Any, run_id: str, *, durable: Any = None) -> JudgeSignals:
+    """One run's judge signals, per (criterion, judge) (`FR-STATS-20`, `CT-JUDGE-16`).
+
+    The cells are exactly the (criterion, judge) pairs the run's ledger judged — the
+    dimensionality IS the contract, because "violations concentrated on one judge" is
+    locatable only from a per-judge keying. Each cell carries all six declared signals, read
+    from the verdict rows (`FR-JUDGE-20`) and the `judge_contract_violations` metric rows
+    (`FR-JUDGE-21`).
+
+    The alert: a criterion with at least `HARNESS_STATS_VIOLATION_MINIMUM` violations, one of
+    whose judges holds strictly more than `HARNESS_STATS_VIOLATION_CONCENTRATION` of them,
+    names that judge. Ties (an even split) are not a concentration.
+    """
+    handle, durable = _cohort_handle_for_run(source, run_id, durable)
+    pairs = [
+        (str(row["criterion_id"]), str(row["judge_id"]))
+        for row in handle.query(STATS_STATEMENTS["select_run_score_units"], run_id=run_id)
+    ]
+    verdicts: dict[tuple[str, str], list[Any]] = {pair: [] for pair in pairs}
+    for row in handle.query(STATS_STATEMENTS["select_run_verdicts"], run_id=run_id):
+        verdicts.setdefault((str(row["criterion_id"]), str(row["judge_id"])), []).append(row)
+
+    violations: dict[tuple[str, str], float] = {}
+    for row in durable.query(
+        STATS_STATEMENTS["select_run_violation_counts"], run_id=run_id
+    ):
+        key = (str(row["criterion_id"]), str(row["judge_id"]))
+        violations[key] = violations.get(key, 0.0) + float(row["value"])
+    cache_rows = durable.query(
+        STATS_STATEMENTS["select_run_cache_hit_rate"], run_id=run_id
+    )
+    # The run-level figure, repeated per cell: `M-ORCH` records one `cache_hit_rate` for the
+    # run, and no store column dimensions it by judge (see the class docstring).
+    cache_hit_rate = float(cache_rows[0]["value"]) if cache_rows else 0.0
+
+    cells: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for pair in sorted(set(pairs) | set(verdicts) | set(violations)):
+        rows = verdicts.get(pair, [])
+        landed = len(rows)
+        histogram: dict[str, int] = {}
+        for row in rows:
+            band_name = str(row["band"])
+            histogram[band_name] = histogram.get(band_name, 0) + 1
+        uncited = sum(1 for row in rows if row["uncited"])
+        insufficient = sum(
+            1 for row in rows if row["evidence_sufficient"] is not None
+            and not row["evidence_sufficient"]
+        )
+        latencies = [float(row["latency_ms"]) for row in rows if row["latency_ms"] is not None]
+        refused = violations.get(pair, 0.0)
+        responses = landed + refused
+        cells[pair] = {
+            "uncited_verdict_rate": (uncited / landed) if landed else 0.0,
+            "evidence_sufficient_false_rate": (insufficient / landed) if landed else 0.0,
+            "band_histogram": histogram,
+            # Violating responses over every response the judge returned for the cell: the
+            # rate a reviewer reads as "how often this judge breaks the contract".
+            "contract_violation_rate": (refused / responses) if responses else 0.0,
+            "latency": {"p50_ms": _percentile(latencies, 0.50),
+                        "p95_ms": _percentile(latencies, 0.95)},
+            "prefix_cache_hit_rate": cache_hit_rate,
+        }
+
+    concentration = _env_float(
+        STATS_VIOLATION_CONCENTRATION_ENV, STATS_VIOLATION_CONCENTRATION
+    )
+    minimum = _env_int(STATS_VIOLATION_MINIMUM_ENV, STATS_VIOLATION_MINIMUM)
+    by_criterion: dict[str, float] = {}
+    for (criterion_id, _judge), count in violations.items():
+        by_criterion[criterion_id] = by_criterion.get(criterion_id, 0.0) + count
+    alerts: list[str] = []
+    for (criterion_id, judge_id), count in sorted(violations.items()):
+        total = by_criterion.get(criterion_id, 0.0)
+        if total >= minimum and count > concentration * total:
+            alerts.append(f"{JUDGE_VIOLATION_ALERT}: {criterion_id} / {judge_id}")
+    return JudgeSignals(cells=cells, alerts=tuple(alerts))
 
 
 def _env_flag(name: str, default: bool) -> bool:

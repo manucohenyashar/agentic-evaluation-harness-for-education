@@ -58,7 +58,7 @@ from tests.support.impl import STATS_MODULE, require
 from tests.support.judge_vocabulary import JUDGE_SIGNAL_FIELDS
 from tests.support.orch_run import ORCH_COHORT_ID
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 
 def test_tc_judge_c16_the_six_signals_are_emitted_per_criterion_and_per_judge(

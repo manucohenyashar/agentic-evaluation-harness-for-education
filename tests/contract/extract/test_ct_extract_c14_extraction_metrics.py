@@ -64,7 +64,7 @@ from tests.contract.extract._doubles import (
     resolved_config,
 )
 
-pytestmark = [pytest.mark.contract, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.contract]
 
 _MARKDOWN = build_markdown("The equilibrium is stable for small perturbations.\n")
 _SPANS = [
@@ -102,7 +102,9 @@ def _run_two_criteria(world: Any, *, empty_second: bool) -> str:
         ("C2", [] if empty_second else _SPANS),
     ):
         world.provider.record(
-            PromptFields(AssembleRequest(by_criterion[criterion_id])),
+            # `store=` resolves the leased unit's transcript (the lease carries identities,
+            # the assembler the words) — the shape `ExtractionWorker.process` itself uses.
+            PromptFields(AssembleRequest(by_criterion[criterion_id], store=world.store)),
             model_ref, sampling_params(),
             span_completion(spans, build_id="ct-c14-build"),
         )

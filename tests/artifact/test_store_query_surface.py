@@ -235,7 +235,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # aeh.agg's one site (#360): `write_score`'s `tx.execute` of the declared
     # `AGG_STATEMENTS["upsert_criterion_score"]`, keyword-parameterized, in the
     # caller's transaction (FR-AGG-15, CT-AGG-19).
-    "aeh.agg:1090",
+    "aeh.agg:1208",
     # aeh.orch's sites: #57's four (the run-row insert, the ledger's batched
     # unit insert with the `SELECT changes()` read in that same
     # transaction — the insert is `OR IGNORE`, so the ledger's own count of what the
@@ -370,9 +370,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
     # sites; the statements are the same three. Re-read from the walker, never
     # hand-unioned.)
-    "aeh.extract:974",
-    "aeh.extract:969",
-    "aeh.extract:976",
+    "aeh.extract:983",
+    "aeh.extract:978",
+    "aeh.extract:985",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
@@ -544,12 +544,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # Every one a declared `STATS_STATEMENTS` statement with keyword
     # parameters (FR-STORE-08); the module's other reads go through tier
     # handles, which are not census sites. Pinned from the walker.
-    "aeh.stats:3026",
-    "aeh.stats:3033",
-    "aeh.stats:3038",
-    "aeh.stats:3042",
-    "aeh.stats:3082",
-    "aeh.stats:3453",
+    "aeh.stats:3253",
+    "aeh.stats:3260",
+    "aeh.stats:3265",
+    "aeh.stats:3269",
+    "aeh.stats:3309",
+    "aeh.stats:3680",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
