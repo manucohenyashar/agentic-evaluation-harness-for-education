@@ -84,6 +84,7 @@ def _http_get(port: int, path: str, timeout: float = 5.0) -> tuple[int | None, s
         connection.close()
 
 
+@pytest.mark.writtenahead
 def test_tc_console_34_the_console_starts_and_serves_its_pages_with_no_toolchain_or_network(
     tmp_data_dir, network_guard
 ):

@@ -107,6 +107,7 @@ def test_tc_console_05_the_console_binds_loopback_and_refuses_the_cloud_profile(
         store.close()
 
 
+@pytest.mark.writtenahead
 def test_tc_console_05_the_bind_and_profile_set_in_the_environment_are_honoured(
     tmp_data_dir, monkeypatch
 ):

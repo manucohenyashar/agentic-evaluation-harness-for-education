@@ -108,6 +108,7 @@ class StageClock:
         return sum(self.durations)
 
 
+@pytest.mark.writtenahead
 def test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run(
     tmp_data_dir, tmp_path, monkeypatch
 ):
