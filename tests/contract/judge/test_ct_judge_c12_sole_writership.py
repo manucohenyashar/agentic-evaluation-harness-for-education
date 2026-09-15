@@ -320,7 +320,13 @@ def test_tc_judge_c12_no_write_path_to_the_forbidden_tables_statically():
     # work_unit boundary is the shared `mark_done` from M-ORCH's registry,
     # referenced for nothing else write-shaped.
     declared_tables = set(_WRITE_TABLE_RE.findall(" ".join(judge_text.split())))
-    assert declared_tables == {"verdict"}, (
+    # `run_metrics` is the judge's other declared write since #361: `FR-JUDGE-21` makes
+    # `dispatch`'s strike path record the per-(criterion, judge) contract-violation count
+    # there, and `run_metrics_judged` is that migration's interim rebuild table (a
+    # migration statement, not a runtime write). Neither is student output — the clause's
+    # subject is the grade, the evidence, the narrative and the package row, each asserted
+    # by name above.
+    assert declared_tables == {"verdict", "run_metrics", "run_metrics_judged"}, (
         f"aeh.judge's text declares write statements against {sorted(declared_tables)} "
         "— the module's whole write surface is its own verdict INSERT plus the "
         "shared mark_done (asserted byte-for-byte at rung 3 in this file's audit "

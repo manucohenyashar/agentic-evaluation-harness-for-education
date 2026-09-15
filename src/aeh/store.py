@@ -1427,11 +1427,13 @@ def current_schema_version(tier: Tier) -> int:
 #: `grade_audit_record_append_only` moved Durable 6→7 — `aeh.grade` holds both tails.
 #: #118's `pkg_validation_record` moved Durable 7→8 and `aeh.pkg` joined the
 #: contributor lists the same way — Durable's tail is now `aeh.pkg`'s.
-#: #359's `agg_run_scoped_score` moved Cohort 19→20 — Cohort's tail is now `aeh.agg`'s.)
+#: #359's `agg_run_scoped_score` moved Cohort 19→20 — Cohort's tail is now `aeh.agg`'s.
+#: #361's `extract_latency` (21) and `judge_verdict_assessment` (22) moved Cohort 20→22 and its
+#: `judge_run_metrics_judge_dimension` moved Durable 8→9 — `aeh.judge` holds both tails.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 20,
-    Tier.DURABLE: 8,
+    Tier.COHORT: 22,
+    Tier.DURABLE: 9,
 }
 
 
@@ -2069,15 +2071,21 @@ def _open_tier(path: Path, tier: Tier, *, read_only: bool, busy_timeout_ms: int,
     """
     implemented = current_schema_version(tier)
     complete = COMPLETE_SCHEMA_VERSIONS[tier]
-    if implemented < complete:
+    # A chain is complete when every version up to the pin is registered, not merely the
+    # highest: a module that owns a middle migration (#359's `aeh.agg` at Cohort 20, under
+    # `aeh.judge`'s 22) is otherwise missed whenever a later owner was imported (#361).
+    registered = {migration.version for migration in TIER_MIGRATIONS[tier]}
+    if implemented < complete or not set(range(1, complete + 1)) <= registered:
+        missing = sorted(set(range(1, complete + 1)) - registered)
         raise IncompleteMigrationChainError(
             f"{tier.value!r} would open against a migration chain that ends at version "
-            f"{implemented}, but this binary implements {complete} for the tier once every "
+            f"{implemented} and is missing version(s) {missing}, but this binary implements "
+            f"1..{complete} for the tier once every "
             f"module that contributes migrations has been imported. The chains in "
             f"TIER_MIGRATIONS are concatenated at import time by the modules that own the "
             f"schema they add (Tier P: aeh.pkg and aeh.det; Cohort: aeh.ingest, aeh.det, "
             f"aeh.orch, aeh.extract, aeh.synth, aeh.judge, aeh.agg and aeh.grade; "
-            f"Tier D: aeh.det, aeh.integ, aeh.review and aeh.pkg), so this "
+            f"Tier D: aeh.det, aeh.integ, aeh.review, aeh.pkg and aeh.judge), so this "
             f"process has imported some "
             f"of them and not the rest. Import the owning modules before the first open — "
             f"`import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, "

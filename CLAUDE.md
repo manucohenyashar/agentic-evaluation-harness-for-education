@@ -115,12 +115,15 @@ The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time
 modules that own the schema they add. Before the first store open in any process, import all
 eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
 `import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it),
-`aeh.agg` owns Cohort's last migration (#359's `agg_run_scoped_score`, 20),
+`aeh.judge` owns Cohort's last migration (#361's `judge_verdict_assessment`, 22),
+`aeh.extract` the one before it (#361's `extract_latency`, 21),
+`aeh.agg` the one before it (#359's `agg_run_scoped_score`, 20),
 `aeh.grade` the one before it (#103's `grade_superseded_at_and_append_only`, 19;
 #101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.pkg` owns
-Durable's last migration (#118's `pkg_validation_record`, 8), `aeh.grade` the one
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.judge` owns
+Durable's last migration (#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
+before it (#118's `pkg_validation_record`, 8), `aeh.grade` the one
 before it (#103's `grade_audit_record_append_only`, 7; #110's
 `review_label_store_columns` was 6), `aeh.integ` the one
 before that (#73's `integ_rate_dimensions`, 5), `aeh.synth` the one before

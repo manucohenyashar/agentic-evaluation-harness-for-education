@@ -62,8 +62,12 @@ pytestmark = [pytest.mark.contract]
 ISSUE = "#78"
 
 #: The verdict table's declared columns, in DDL order — the equality target, read
-#: from the live schema and pinned here as the clause's declared shape. A tenth
-#: column (a points column among them) fails the build, not review.
+#: from the live schema and pinned here as the clause's declared shape. A column
+#: outside this list (a points column among them) fails the build, not review.
+#:
+#: `evidence_assessment` and `latency_ms` (#361, cohort migration 22) are here because
+#: `FR-JUDGE-20` mandates them — `judge_signals` (`FR-STATS-20`) reads both off the row.
+#: The guard's subject is unchanged: no points column, and nothing else unnamed.
 DECLARED_VERDICT_COLUMNS: tuple[str, ...] = (
     "verdict_id",
     "work_id",
@@ -74,6 +78,8 @@ DECLARED_VERDICT_COLUMNS: tuple[str, ...] = (
     "cited_spans",
     "evidence_sufficient",
     "uncited",
+    "evidence_assessment",
+    "latency_ms",
 )
 
 

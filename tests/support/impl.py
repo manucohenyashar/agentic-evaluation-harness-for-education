@@ -1317,31 +1317,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#353 TS-87 provider taxonomy errors are not strikes" left with #353: both workers
     # re-raise the three taxonomy classes before the strike path — TC-EXTRACT-16's and
     # TC-JUDGE-26's taxonomy arms and TC-EXTRACT-08's variant run green, markers gone.
-    # #361 lands four independent pieces — `verdicts_for`, the verdict
-    # `evidence_assessment`/`latency_ms` columns, the evidence `latency_ms` column and the
-    # violation rows — in any order within the story, so each case waits on its own piece.
-    # `verdicts_for` is a symbol; the other three have none, so each is a probe of the owning
-    # module's source for the migration statement or metric name it cannot land without.
-    "#361 TS-87 verdicts_for (TC-JUDGE-25)": (
-        "symbol",
-        "aeh.judge:verdicts_for",
-        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_25_verdicts_for_returns_the_named_runs_cell_in_work_id_order",),
-    ),
-    "#361 TS-87 verdict evidence_assessment and latency_ms columns (TC-JUDGE-27)": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.judge as m; src = inspect.getsource(m); sys.exit(0 if 'ADD COLUMN evidence_assessment' in src and 'ADD COLUMN latency_ms' in src else 1)\"",
-        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_27_persist_writes_evidence_assessment_and_latency_exactly",),
-    ),
-    "#361 TS-87 judge_contract_violations run_metrics rows (TC-JUDGE-28)": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.judge as m; src = inspect.getsource(m); sys.exit(0 if 'judge_contract_violations' in src else 1)\"",
-        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_28_contract_violations_are_recorded_per_criterion_and_judge",),
-    ),
-    "#361 TS-87 evidence latency_ms column (TC-EXTRACT-18)": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.extract as m; src = inspect.getsource(m); sys.exit(0 if 'ADD COLUMN latency_ms' in src else 1)\"",
-        ("tests/integration/extract/test_extract_taxonomy_and_latency.py::test_tc_extract_18_evidence_latency_is_the_successful_attempts_wall_time",),
-    ),
+    # "#361 TS-87 ..." (four pieces: verdicts_for, the verdict assessment/latency columns, the
+    # evidence latency column, the violation rows) left with #361 — TC-JUDGE-25/27/28 and
+    # TC-EXTRACT-18 run green, markers gone.
     "#371 TS-87 extraction_metrics over hand-built evidence (TC-EXTRACT-17)": (
         "symbol",
         "aeh.extract:extraction_metrics",
