@@ -1350,6 +1350,45 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_extract_17_extraction_metrics_match_the_hand_computed_values",
         ),
     ),
+    # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
+    #
+    # #359 adds the `agg_run_scoped_score` cohort migration and scopes every reader in the same
+    # PR; its one new name is the migration's, so the probe asks the registry for it (with the
+    # full chain imported — a partial import would hide a registered migration).
+    "#359 TS-88 criterion_score run-scoped rebuild and readers (TC-AGG-22, RES-21, TC-DET-15, TC-GRADE-25)": (
+        "command",
+        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth; from aeh.store import TIER_MIGRATIONS, Tier; sys.exit(0 if any(m.name == 'agg_run_scoped_score' for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
+        (
+            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_a_a_single_run_store_migrates_losslessly",
+            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_e_the_cohort_pin_is_the_head_and_a_chain_without_agg_refuses",
+            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_b_two_runs_with_rows_refuse_and_leave_the_file_untouched",
+            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_c_two_runs_without_rows_migrate_to_the_new_key",
+            "tests/integration/store/test_agg_run_scoped_migration.py::test_res_21_a_kill_mid_rebuild_leaves_either_the_old_or_the_new_table_whole",
+            "tests/integration/det/test_tc_det_15_run_scoped_rederive.py"
+            "::test_tc_det_15_rederiving_run_b_never_modifies_run_a",
+            "tests/integration/grade/test_tc_grade_25_run_scoped_reads.py::test_tc_grade_25_recomputing_run_a_after_run_b_lands_returns_a_unchanged",
+            "tests/integration/grade/test_tc_grade_25_run_scoped_reads.py::test_tc_grade_25_static_every_criterion_score_query_in_grade_has_a_run_predicate",
+        ),
+    ),
+    "#360 TS-88 write_score (TC-AGG-21, TC-AGG-24)": (
+        "symbol",
+        "aeh.agg:write_score",
+        (
+            "tests/integration/agg/test_write_score.py::test_tc_agg_21_write_score_stores_every_field_of_the_score_and_signals",
+            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_null_extractor_disagreement_stays_distinct_from_false",
+            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_a_binding_cap_is_named_in_caps_fired",
+            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_outside_a_transaction_raises_and_writes_nothing",
+            "tests/integration/agg/test_write_score.py::test_tc_agg_24_the_stored_row_alone_reconstructs_confidence_under_all_six_signals",
+        ),
+    ),
+    "#371 TS-88 aggregation_signals (TC-AGG-23)": (
+        "symbol",
+        "aeh.agg:aggregation_signals",
+        (
+            "tests/integration/agg/test_tc_agg_23_aggregation_signals.py"
+            "::test_tc_agg_23_aggregation_signals_match_the_hand_computed_values",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
