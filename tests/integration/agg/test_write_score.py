@@ -115,7 +115,6 @@ def _stored_flag(value):
 # --- TC-AGG-21 -----------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_21_write_score_stores_every_field_of_the_score_and_signals(tmp_data_dir):
     """`TC-AGG-21` — field-by-field equality, `caps_fired` `[]`, one row per key."""
     write_score = require(AGG_MODULE, "write_score", issue=ISSUE)
@@ -155,7 +154,6 @@ def test_tc_agg_21_write_score_stores_every_field_of_the_score_and_signals(tmp_d
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_21_variant_null_extractor_disagreement_stays_distinct_from_false(tmp_data_dir):
     """`extractor_disagreement=None` → NULL; `described_evidence=False` → 0."""
     write_score = require(AGG_MODULE, "write_score", issue=ISSUE)
@@ -173,7 +171,6 @@ def test_tc_agg_21_variant_null_extractor_disagreement_stays_distinct_from_false
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_21_variant_a_binding_cap_is_named_in_caps_fired(tmp_data_dir):
     """`caps_fired` names the cap that bound: `extractor_disagreement` caps 0.6 to 0.4."""
     write_score = require(AGG_MODULE, "write_score", issue=ISSUE)
@@ -194,7 +191,6 @@ def test_tc_agg_21_variant_a_binding_cap_is_named_in_caps_fired(tmp_data_dir):
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_21_variant_outside_a_transaction_raises_and_writes_nothing(tmp_data_dir):
     """"Outside a transaction → raises, nothing written", read through #360's own acceptance
     criterion and CT-AGG-19: handed something that is not a transaction (the handle itself),
@@ -246,7 +242,6 @@ _TC_AGG_24_SIGNALS = [
 ]
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("overrides", [o for _, o in _TC_AGG_24_SIGNALS],
                          ids=[name for name, _ in _TC_AGG_24_SIGNALS])
 def test_tc_agg_24_the_stored_row_alone_reconstructs_confidence_under_all_six_signals(

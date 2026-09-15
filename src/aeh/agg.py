@@ -107,6 +107,7 @@ write path to `narrative` and none to anything else.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Sequence
@@ -140,10 +141,12 @@ __all__ = [
     "EscalationDecision",
     "EvenPanelError",
     "aggregate",
+    "AGG_STATEMENTS",
     "describe_agreement",
     "ordinal_alpha",
     "rank_criteria_for_escalation",
     "recompute_confidence",
+    "write_score",
     "should_escalate",
 ]
 
@@ -232,18 +235,22 @@ _AGG_FAVOURABLE = MappingProxyType({
     "extractor_disagreement": False,
 })
 
-#: The four integrity inputs `FR-AGG-13` records on the score row — the inputs
-#: `recompute_confidence` can re-apply from stored data. `described_evidence`
-#: and `extractor_disagreement` are read at aggregation time but are NOT among
-#: FR-AGG-13's recorded fields, so a confidence they capped is not fully
-#: re-derivable from the row (the design's own four-field list; the residual is
-#: disclosed on `recompute_confidence`).
+#: The four integrity inputs recorded on every score row since cohort migration
+#: v16 — the inputs `recompute_confidence` re-applies from any stored row.
 _RECORDED_SIGNAL_FIELDS: tuple[str, ...] = (
     "spans_verified",
     "evidence_present",
     "sufficiency_flag",
     "ocr_overlap_risk",
 )
+
+#: `FR-AGG-13` amended (#360): the two signals `write_score` records beside the
+#: four, so the stored row carries all six. They are re-applied only from a row
+#: `write_score` wrote — one whose `caps_fired` is recorded — because an older
+#: row's `NULL` in these columns means "column did not exist", not "not
+#: measured", and reading it adverse would re-derive a figure lower than the one
+#: that was stored.
+_WRITTEN_SIGNAL_FIELDS: tuple[str, ...] = ("described_evidence", "extractor_disagreement")
 
 
 # --- #93: the escalation policy's declared constants (§3.12, §3.8) ----------------------------------
@@ -378,6 +385,14 @@ class CriterionScore:
     evidence_present: Any = None
     sufficiency_flag: Any = None
     ocr_overlap_risk: Any = None
+    #: #360 (`FR-AGG-13` amended): the remaining two signals, passed through as
+    #: received so `write_score` stores all six.
+    described_evidence: Any = None
+    extractor_disagreement: Any = None
+    #: #360 (`FR-AGG-15`): the caps that bound, named by their `AGG_CAP_TABLE`
+    #: key, in the table's order — an adverse signal whose cap sits below the
+    #: pre-cap base, so the cap lowered the figure. Empty when none did.
+    caps_fired: tuple[str, ...] = ()
 
 
 # --- the aggregation -------------------------------------------------------------------------------
@@ -786,6 +801,7 @@ def aggregate(
     # adverse signal's cap is a hard ceiling on the figure, taken in any order,
     # and unanimity cannot buy any of it back.
     confidence = confidence_base
+    caps_fired: list[str] = []
     for signal_name, favourable in _AGG_FAVOURABLE.items():
         if not _signal_adverse(getattr(signals, signal_name, None), favourable):
             continue
@@ -800,6 +816,8 @@ def aggregate(
         cap = cap_table.get(signal_name)
         if cap is not None:
             confidence = min(confidence, float(cap))
+            if float(cap) < confidence_base:
+                caps_fired.append(signal_name)
 
     # --- #93: routing and state, assigned per cause (FR-AGG-07, FR-AGG-11) -------------------
     # Precedence is the cause's, not the confidence's: the breaker mark and the
@@ -845,6 +863,9 @@ def aggregate(
         evidence_present=getattr(signals, "evidence_present", None),
         sufficiency_flag=getattr(signals, "sufficiency_flag", None),
         ocr_overlap_risk=getattr(signals, "ocr_overlap_risk", None),
+        described_evidence=getattr(signals, "described_evidence", None),
+        extractor_disagreement=getattr(signals, "extractor_disagreement", None),
+        caps_fired=tuple(caps_fired),
     )
 
 
@@ -920,6 +941,8 @@ def _passthrough_score(row: Any, criterion: Any) -> CriterionScore:
         evidence_present=_row_value(row, "evidence_present"),
         sufficiency_flag=_row_value(row, "sufficiency_flag"),
         ocr_overlap_risk=_row_value(row, "ocr_overlap_risk"),
+        described_evidence=_row_value(row, "described_evidence"),
+        extractor_disagreement=_row_value(row, "extractor_disagreement"),
     )
 
 
@@ -945,10 +968,12 @@ def recompute_confidence(row: Any, criterion: Any, *, config: Any = None) -> flo
     `None` is returned, never zero, when the row cannot support a re-derivation:
     no panel (a deterministic row's `judge_count` is 0), an even panel (a failed
     write), or no base derivable at all. The four recorded signals cap the
-    figure exactly as before; the two signals that are *not* recorded
-    (`described_evidence`, `extractor_disagreement`) and the multipliers' inputs
-    (the uncited mark) are the disclosed residual — a row whose stored
-    confidence they capped or shaped re-derives higher than it was stored.
+    figure exactly as before. A row `write_score` wrote (#360: its `caps_fired`
+    is recorded) carries `described_evidence` and `extractor_disagreement` too,
+    and their caps are re-applied the same way, so the residual `TC-AGG-C15`
+    disclosed closes for such rows; an older row without them re-derives from
+    the four. The multipliers' inputs (the uncited mark) ride `confidence_base`,
+    which already has them applied.
     `config` carries an injected cap table the same way `aggregate`'s does.
     """
     caps = getattr(config, "caps", None) if config is not None else None
@@ -979,7 +1004,10 @@ def recompute_confidence(row: Any, criterion: Any, *, config: Any = None) -> flo
         return None
 
     confidence = float(base)
-    for field in _RECORDED_SIGNAL_FIELDS:
+    fields = _RECORDED_SIGNAL_FIELDS
+    if _row_value(row, "caps_fired") is not None:
+        fields = fields + _WRITTEN_SIGNAL_FIELDS
+    for field in fields:
         if not _signal_adverse(_row_value(row, field), _AGG_FAVOURABLE[field]):
             continue
         # The same conditional cap the aggregator applied (§3.12): the row's
@@ -993,6 +1021,97 @@ def recompute_confidence(row: Any, criterion: Any, *, config: Any = None) -> flo
         if cap is not None:
             confidence = min(confidence, float(cap))
     return confidence
+
+
+# --- the writer: the score row in the caller's transaction (FR-AGG-15, #360) ----------------------
+#
+# `aggregate` stays pure (`CT-AGG-01`); persisting its result is this one declared
+# upsert, run in the transaction the caller opened (`CT-AGG-19`) so a score and
+# whatever the caller writes beside it — the escalation it enqueues — land or
+# vanish together. Keyed on the run-scoped key (#359), so a second write of the
+# same (run, submission, criterion) updates the one row.
+
+AGG_STATEMENTS: dict[str, Statement] = {
+    "upsert_criterion_score": Statement(
+        "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
+        "modal_band, band_spread, points, judge_count, agreement, confidence, "
+        "confidence_base, spans_verified, evidence_present, sufficiency_flag, "
+        "ocr_overlap_risk, described_evidence, extractor_disagreement, caps_fired, "
+        "routing, state) VALUES (:run_id, :submission_id, :criterion_id, :band, "
+        ":modal_band, :band_spread, :points, :judge_count, :agreement, :confidence, "
+        ":confidence_base, :spans_verified, :evidence_present, :sufficiency_flag, "
+        ":ocr_overlap_risk, :described_evidence, :extractor_disagreement, :caps_fired, "
+        ":routing, :state) "
+        "ON CONFLICT (run_id, submission_id, criterion_id) DO UPDATE SET "
+        "band = excluded.band, modal_band = excluded.modal_band, "
+        "band_spread = excluded.band_spread, points = excluded.points, "
+        "judge_count = excluded.judge_count, agreement = excluded.agreement, "
+        "confidence = excluded.confidence, confidence_base = excluded.confidence_base, "
+        "spans_verified = excluded.spans_verified, "
+        "evidence_present = excluded.evidence_present, "
+        "sufficiency_flag = excluded.sufficiency_flag, "
+        "ocr_overlap_risk = excluded.ocr_overlap_risk, "
+        "described_evidence = excluded.described_evidence, "
+        "extractor_disagreement = excluded.extractor_disagreement, "
+        "caps_fired = excluded.caps_fired, routing = excluded.routing, "
+        "state = excluded.state"
+    ),
+}
+
+
+def _stored_signal(value: Any) -> int | None:
+    """One integrity signal as the row stores it: 0/1, or `NULL` for "not measured"."""
+    return None if value is None else int(bool(value))
+
+
+def write_score(
+    tx: Any, run_id: str, submission_id: str, score: CriterionScore, signals: Any
+) -> None:
+    """Persist one aggregated score in the caller's transaction (`FR-AGG-15`, `CT-AGG-18/19`).
+
+    Upserts the row keyed `(run_id, submission_id, criterion_id)` with every field
+    of `score` and all six integrity signals from `signals` (`FR-AGG-13`
+    amended): each stored 0/1, `None` stored `NULL` — "not measured" stays
+    distinguishable from a measured `False`. `caps_fired` is the JSON list of the
+    caps that bound (`[]` when none). Idempotent: an identical second call
+    leaves one unchanged row; a changed score updates it.
+
+    `tx` must be a transaction the caller opened (`with handle.transaction() as
+    tx`): this function never opens, commits or rolls one back, so a caller's
+    rollback removes the row. Anything that is not a transaction — a tier
+    handle, which has no `execute` — is refused with `TypeError` before any
+    write.
+    """
+    if not callable(getattr(tx, "execute", None)):
+        raise TypeError(
+            f"write_score needs the caller's open transaction (CT-AGG-19), got "
+            f"{type(tx).__name__}: open one with `with handle.transaction() as tx`."
+        )
+    tx.execute(
+        AGG_STATEMENTS["upsert_criterion_score"],
+        run_id=run_id,
+        submission_id=submission_id,
+        criterion_id=score.criterion_id,
+        band=score.band,
+        modal_band=score.modal_band,
+        band_spread=score.band_spread,
+        points=score.points,
+        judge_count=score.judge_count,
+        agreement=score.agreement,
+        confidence=score.confidence,
+        confidence_base=score.confidence_base,
+        spans_verified=_stored_signal(getattr(signals, "spans_verified", None)),
+        evidence_present=_stored_signal(getattr(signals, "evidence_present", None)),
+        sufficiency_flag=_stored_signal(getattr(signals, "sufficiency_flag", None)),
+        ocr_overlap_risk=_stored_signal(getattr(signals, "ocr_overlap_risk", None)),
+        described_evidence=_stored_signal(getattr(signals, "described_evidence", None)),
+        extractor_disagreement=_stored_signal(
+            getattr(signals, "extractor_disagreement", None)
+        ),
+        caps_fired=json.dumps(list(score.caps_fired)),
+        routing=score.routing,
+        state=score.state,
+    )
 
 
 # --- the agreement figure's own description --------------------------------------------------------
