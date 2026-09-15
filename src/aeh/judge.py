@@ -220,9 +220,12 @@ from aeh.orch import (
 )
 from aeh.pkg import PackageCatalog
 from aeh.prov import (
+    BuildChangedError,
     MalformedResponseError,
     PromptPayload,
     ProviderError,
+    ProviderUnavailableError,
+    RateLimitedError,
     SamplingParams,
 )
 from aeh.setup import SETUP_MAGNITUDE_PHRASES
@@ -1751,6 +1754,11 @@ class ScoringWorker:
                 # the budget and never persisted (an obeying reply is routed out, not
                 # obeyed). Vacuous for an uncited reply.
                 _refuse_unverified_citations(verdict.cited_spans, request, self._store)
+            except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
+                # `FR-JUDGE-19` / `CT-JUDGE-19`: the provider taxonomy is not a refusal of the
+                # reply — no strike, no FR-JUDGE-10 amended re-request, nothing persisted. It
+                # propagates for the dispatch pass to wait or pause on.
+                raise
             except (ProviderError, ValueError) as error:
                 last_error = error
                 strikes.append(f"attempt {attempt}/{budget}: {error}")

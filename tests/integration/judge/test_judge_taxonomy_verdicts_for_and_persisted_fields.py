@@ -20,8 +20,8 @@ Gap-fix test plan §5:
   strike); J1 returns 1 → `run_metrics` rows `judge_contract_violations` with dimensions
   `(C1,J2) = 3` and `(C1,J1) = 1`; a successful response writes none.
 
-**Arms and blockers.** `TC-JUDGE-26`'s contrasts are green today and stay in `TEST_CMD`; its
-taxonomy arms are `writtenahead` on #353. `TC-JUDGE-25`, `-27` and `-28` are `writtenahead` on
+**Arms and blockers.** `TC-JUDGE-26`'s contrasts were green from the start; its taxonomy arms
+were written ahead of #353 and unmarked when it landed. `TC-JUDGE-25`, `-27` and `-28` are `writtenahead` on
 #361 (`verdicts_for`, the two verdict columns, the violation rows).
 
 **How `TC-EXTRACT-16` maps onto `dispatch`.** The scoring worker keeps its strikes in memory and
@@ -119,7 +119,6 @@ def _success(world, submission_id, build_id="judge-build-ts87", **kwargs):
 # --- TC-JUDGE-26 — taxonomy errors are not strikes ----------------------------------------------
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("error_class", TAXONOMY_THREE, ids=lambda cls: cls.__name__)
 def test_tc_judge_26_a_taxonomy_error_propagates_without_a_strike_or_re_request(
     tmp_data_dir, make_fixture_provider, monkeypatch, error_class

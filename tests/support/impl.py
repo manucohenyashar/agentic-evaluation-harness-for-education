@@ -1314,28 +1314,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-87 (#381), workers: taxonomy, verdicts_for, persisted latency and assessment ----
     #
-    # #353 is a behaviour change with no new symbol: both workers stop striking the three
-    # provider taxonomy errors. Keyed on a probe of the two methods' source naming the three
-    # classes — the handlers FR-EXTRACT-11/FR-JUDGE-19 require cannot exist without naming them
-    # (today both catch only `(ProviderError, ValueError)`). The probe puts `src` on the path
-    # itself, since the gate runs it as a subprocess from the repo root.
-    "#353 TS-87 provider taxonomy errors are not strikes (TC-EXTRACT-16/-08v, TC-JUDGE-26)": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); "
-        "import aeh.extract as e, aeh.judge as j; "
-        "names = ('RateLimitedError', 'ProviderUnavailableError', 'BuildChangedError'); "
-        "srcs = (inspect.getsource(e.ExtractionWorker.process), "
-        "inspect.getsource(j.ScoringWorker.dispatch)); "
-        "sys.exit(0 if all(n in s for n in names for s in srcs) else 1)\"",
-        (
-            "tests/integration/extract/test_extract_taxonomy_and_latency.py"
-            "::test_tc_extract_16_a_taxonomy_error_propagates_without_a_strike",
-            "tests/integration/extract/test_extract_failure_and_graphics.py"
-            "::test_tc_extract_08_variant_rate_limits_then_success_write_one_row_and_no_strike",
-            "tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py"
-            "::test_tc_judge_26_a_taxonomy_error_propagates_without_a_strike_or_re_request",
-        ),
-    ),
+    # "#353 TS-87 provider taxonomy errors are not strikes" left with #353: both workers
+    # re-raise the three taxonomy classes before the strike path — TC-EXTRACT-16's and
+    # TC-JUDGE-26's taxonomy arms and TC-EXTRACT-08's variant run green, markers gone.
     # #361 lands four independent pieces — `verdicts_for`, the verdict
     # `evidence_assessment`/`latency_ms` columns, the evidence `latency_ms` column and the
     # violation rows — in any order within the story, so each case waits on its own piece.
