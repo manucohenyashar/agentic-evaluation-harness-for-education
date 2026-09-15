@@ -1261,6 +1261,44 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run",
         ),
     ),
+    # --- TS-103 (#397), switching harness profiles by environment variable -----------------
+    #
+    # #352 landed the `M-CONF` helpers (`effective_config`, `select_profile_config`,
+    # `resume_profile_conflict`, the banner), so TC-CONF-20/21's rung-0 cases run in the gate
+    # unmarked. What stays red is every entry point that must call them: `recover` and
+    # `python -m aeh` (#365, which creates `aeh.pipeline`'s `recover`/`main`) and the served
+    # console (#366). Keyed on those stories, not on #352 — #352's symbols already resolve.
+    # A conjunction, since the run arms need `main` and the recover arms `recover`, both #365's.
+    "#365 TS-103 recover and python -m aeh honour a profile switch": (
+        "symbols",
+        "aeh.pipeline:recover, aeh.pipeline:main",
+        (
+            "tests/integration/conf/test_profile_switch_entry_points.py"
+            "::test_tc_conf_22_recover_leaves_the_switched_run_paused_and_recovers_the_other",
+            "tests/integration/conf/test_profile_switch_entry_points.py"
+            "::test_tc_conf_22_variant_the_matching_profile_resumes_the_run",
+            "tests/integration/conf/test_profile_switch_entry_points.py"
+            "::test_tc_conf_23_run_prints_the_profile_summary_and_its_source",
+            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
+            "::test_tc_conf_c15_run_resolves_through_effective_config_with_the_environment_winning",
+            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
+            "::test_tc_conf_c15_recover_resolves_through_effective_config_from_the_environment",
+            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
+            "::test_tc_conf_c16_recover_never_rebinds_a_run_to_the_switched_profile",
+        ),
+    ),
+    # Same target as the #366 entry above: the packaged stylesheet ships with the HTTP server
+    # FR-CONSOLE-33/36 introduce, and nothing before it can make a served console answer.
+    "#366 TS-103 the served console re-reads the environment per resolution": (
+        "path",
+        "src/aeh/console_assets/console.css",
+        (
+            "tests/integration/conf/test_profile_switch_entry_points.py"
+            "::test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested",
+            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
+            "::test_tc_conf_c15_serve_console_resolves_through_effective_config_exactly_once",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
