@@ -153,9 +153,9 @@ _COHORT = ORCH_COHORT_ID
 _SUBMISSION = "SYN-C09"
 
 _INSERT = (
-    "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
     "judge_count, agreement, state, routing) "
-    "VALUES (:sid, :cid, :band, :points, :jc, :ag, :state, :routing)"
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :jc, :ag, :state, :routing)"
 )
 
 

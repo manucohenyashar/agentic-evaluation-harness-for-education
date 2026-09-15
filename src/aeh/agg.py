@@ -114,6 +114,8 @@ from typing import Any, Sequence
 from aeh.pkg import PackageError, points_for_band
 from aeh.store import (
     Migration,
+    MigrationError,
+    MigrationPrecondition,
     Statement,
     Tier,
     TIER_MIGRATIONS,
@@ -1394,4 +1396,94 @@ _AGG_CONFIDENCE_COLUMNS = Migration(
 
 TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     TIER_MIGRATIONS[Tier.COHORT] + (_AGG_CONFIDENCE_COLUMNS,), key=lambda m: m.version
+))
+
+
+# --- #359: run-scoped criterion_score (FR-AGG-16, CT-AGG-20) ---------------------------------
+#
+# A second run of a cohort must never overwrite the first run's scores, so the score row is keyed
+# by the run: `(run_id, submission_id, criterion_id)`. SQLite cannot change a primary key in
+# place, so the table is rebuilt — the grade v18 precedent (`_GRADE_SUBMISSION_GRADE_KEY`):
+# create `criterion_score_new`, copy, drop, rename — inside the one migration transaction, so a
+# failure at any statement leaves the old table whole (`RES-21`).
+#
+# The surviving columns keep their declaration order and the new ones follow them — the grade
+# v18 precedent — so a positional reader of the table's leading columns (F-SCHEMA's fixture
+# builder) reads the same columns at every version; the key's order is the PRIMARY KEY clause's.
+#
+# `run_id` carries **no default**: the backfill names the run explicitly, and a writer that
+# forgets the run fails the NOT NULL rather than landing under a placeholder. It is not a foreign
+# key either — the cohort ledger's other run-scoped tables (`submission_grade`) do not declare
+# one, and the ledger's run rows are not the only producers of score rows under test.
+#
+# The backfill attributes existing rows to the cohort's only run. With rows present and any other
+# run count — two or more (ambiguous) or zero (no run to name) — the guard refuses with
+# `MigrationError` before a statement runs; with no rows there is nothing to attribute and the
+# rebuild proceeds whatever the run count. Migrated rows were single-verdict-band rows, so
+# `modal_band = band` and `band_spread = 0`. The three FR-AGG-15 columns #360's `write_score`
+# fills (`described_evidence`, `extractor_disagreement`, `caps_fired`) arrive NULL: not measured.
+
+def _refuse_unattributable_scores(rows: list[Any]) -> None:
+    """Refuse the rebuild when existing score rows cannot be attributed to exactly one run."""
+    present, runs = int(rows[0][0]), int(rows[0][1])
+    if present and runs != 1:
+        raise MigrationError(f"criterion_score rows cannot be attributed to a run: {runs} runs")
+
+
+_AGG_RUN_SCOPED_SCORE = Migration(
+    version=20,
+    name="agg_run_scoped_score",
+    statements=(
+        MigrationPrecondition(
+            "SELECT EXISTS (SELECT 1 FROM criterion_score) AS present, "
+            "(SELECT COUNT(*) FROM run) AS runs",
+            check=_refuse_unattributable_scores,
+        ),
+        Statement(
+            """
+            CREATE TABLE criterion_score_new (
+                submission_id          TEXT    NOT NULL REFERENCES submission(submission_id),
+                criterion_id           TEXT    NOT NULL,
+                band                   TEXT    NOT NULL,
+                points                 REAL,
+                judge_count            INTEGER NOT NULL DEFAULT 0
+                    CHECK (judge_count = 0 OR judge_count % 2 = 1),
+                agreement              REAL,
+                state                  TEXT    NOT NULL DEFAULT 'final'
+                    CHECK (state IN ('final', 'provisional_unreviewed', 'ungradeable_by_panel',
+                                     'unresolved_selection')),
+                routing                TEXT    NOT NULL DEFAULT 'auto'
+                    CHECK (routing IN ('auto', 'queued', 'reviewed', 'provisional', 'triage')),
+                confidence             REAL,
+                confidence_base        REAL,
+                spans_verified         INTEGER CHECK (spans_verified IN (0, 1)),
+                evidence_present       INTEGER CHECK (evidence_present IN (0, 1)),
+                sufficiency_flag       INTEGER CHECK (sufficiency_flag IN (0, 1)),
+                ocr_overlap_risk       INTEGER CHECK (ocr_overlap_risk IN (0, 1)),
+                run_id                 TEXT    NOT NULL,
+                modal_band             TEXT,
+                band_spread            INTEGER NOT NULL DEFAULT 0,
+                described_evidence     INTEGER,
+                extractor_disagreement INTEGER,
+                caps_fired             TEXT,
+                PRIMARY KEY (run_id, submission_id, criterion_id)
+            )
+            """
+        ),
+        Statement(
+            "INSERT INTO criterion_score_new (run_id, submission_id, criterion_id, band, "
+            "modal_band, band_spread, points, judge_count, agreement, state, routing, "
+            "confidence, confidence_base, spans_verified, evidence_present, sufficiency_flag, "
+            "ocr_overlap_risk) SELECT (SELECT run_id FROM run), submission_id, criterion_id, "
+            "band, band, 0, points, judge_count, agreement, state, routing, confidence, "
+            "confidence_base, spans_verified, evidence_present, sufficiency_flag, "
+            "ocr_overlap_risk FROM criterion_score"
+        ),
+        Statement("DROP TABLE criterion_score"),
+        Statement("ALTER TABLE criterion_score_new RENAME TO criterion_score"),
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_AGG_RUN_SCOPED_SCORE,), key=lambda m: m.version
 ))

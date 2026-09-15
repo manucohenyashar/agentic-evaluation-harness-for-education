@@ -777,7 +777,8 @@ GRADE_STATEMENTS: dict[str, Statement] = {
     "select_submission_scores": Statement(
         "SELECT"
         " submission_id, criterion_id, band, points, routing, state"
-        " FROM criterion_score WHERE submission_id = :submission_id"
+        " FROM criterion_score WHERE run_id = :run_id"
+        " AND submission_id = :submission_id"
         " ORDER BY criterion_id"
     ),
     # Tier R reads/writes — the grade ledger this module is the sole writer of
@@ -916,12 +917,12 @@ GRADE_STATEMENTS: dict[str, Statement] = {
         "WHERE run_id = :run_id AND is_current = 1 ORDER BY submission_id"
     ),
     # The separated rollup's block reads (FR-GRADE-15): the run's criterion-score
-    # bands, cohort-scoped the same way compute_all scopes the run's population —
-    # a run's population IS its cohort's submissions (the batch pass's own read).
+    # bands — the run's own rows (FR-GRADE-18: a second run of the cohort never
+    # enters this run's figures), over the cohort's submissions.
     "select_run_criterion_bands": Statement(
         "SELECT cs.criterion_id, cs.submission_id, cs.band FROM criterion_score cs "
         "JOIN submission s ON cs.submission_id = s.submission_id "
-        "WHERE s.cohort_id = :cohort_id "
+        "WHERE cs.run_id = :run_id AND s.cohort_id = :cohort_id "
         "ORDER BY cs.criterion_id, cs.submission_id"
     ),
     # The findings reads (FR-GRADE-16). The breaker's mark is the criterion-score
@@ -933,7 +934,8 @@ GRADE_STATEMENTS: dict[str, Statement] = {
     "select_ungradeable_by_panel": Statement(
         "SELECT cs.criterion_id, cs.submission_id FROM criterion_score cs "
         "JOIN submission s ON cs.submission_id = s.submission_id "
-        "WHERE s.cohort_id = :cohort_id AND cs.state = 'ungradeable_by_panel' "
+        "WHERE cs.run_id = :run_id AND s.cohort_id = :cohort_id "
+        "AND cs.state = 'ungradeable_by_panel' "
         "ORDER BY cs.criterion_id, cs.submission_id"
     ),
     "select_run_review_queue": Statement(
@@ -1402,7 +1404,8 @@ class GradingService:
         computed = 0
         for submission_id in submissions:
             rows = cohort.query(
-                GRADE_STATEMENTS["select_submission_scores"], submission_id=submission_id
+                GRADE_STATEMENTS["select_submission_scores"], run_id=run_id,
+                submission_id=submission_id,
             )
             current = currents.get(submission_id)
             # A prior amendment lives only on the grade row (`CT-GRADE-14`), so the
@@ -1550,7 +1553,8 @@ class GradingService:
         amendment replay as the batch pass — an unchanged re-run of an amended
         submission writes nothing rather than reverting the amendment."""
         rows = cohort.query(
-            GRADE_STATEMENTS["select_submission_scores"], submission_id=submission_id
+            GRADE_STATEMENTS["select_submission_scores"], run_id=run["run_id"],
+            submission_id=submission_id,
         )
         current_row = cohort.query(
             GRADE_STATEMENTS["select_current_grade"], run_id=run["run_id"],
@@ -1713,6 +1717,7 @@ class GradingService:
                 _row_value(score, "criterion_id")
                 for score in cohort.query(
                     GRADE_STATEMENTS["select_submission_scores"],
+                    run_id=run["run_id"],
                     submission_id=submission_id,
                 )
                 if _row_value(score, "points") is not None
@@ -1828,7 +1833,8 @@ class GradingService:
             )
         prior = dict(current_row[0])
         rows = cohort.query(
-            GRADE_STATEMENTS["select_submission_scores"], submission_id=submission_id
+            GRADE_STATEMENTS["select_submission_scores"], run_id=run_id,
+            submission_id=submission_id,
         )
         overrides = {criterion_id: float(points) for criterion_id, points in edits.items()}
         applicable = {
@@ -2351,7 +2357,8 @@ def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
     bands_by_criterion: dict[str, list[str]] = {}
     submissions_by_criterion: dict[str, set[str]] = {}
     for row in cohort.query(
-        GRADE_STATEMENTS["select_run_criterion_bands"], cohort_id=run["cohort_id"]
+        GRADE_STATEMENTS["select_run_criterion_bands"], run_id=run["run_id"],
+        cohort_id=run["cohort_id"],
     ):
         criterion_id = row["criterion_id"]
         bands_by_criterion.setdefault(criterion_id, []).append(row["band"])
@@ -2443,7 +2450,8 @@ def rollup_findings(run_id: str, store: Store) -> tuple[RollupFinding, ...]:
 
     breaker_students: dict[str, set[str]] = {}
     for row in cohort.query(
-        GRADE_STATEMENTS["select_ungradeable_by_panel"], cohort_id=cohort_id
+        GRADE_STATEMENTS["select_ungradeable_by_panel"], run_id=run["run_id"],
+        cohort_id=cohort_id,
     ):
         breaker_students.setdefault(row["criterion_id"], set()).add(
             row["submission_id"]

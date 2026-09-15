@@ -643,11 +643,13 @@ DET_STATEMENTS: dict[str, Statement] = {
         "WHERE document_id = :document_id ORDER BY position"
     ),
     "upsert_criterion_score": Statement(
-        "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
-        "judge_count, agreement, state, routing) VALUES (:submission_id, "
-        ":criterion_id, :band, :points, :judge_count, :agreement, :state, "
-        ":routing) ON CONFLICT (submission_id, criterion_id) DO UPDATE SET "
-        "band = excluded.band, points = excluded.points, "
+        "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
+        "modal_band, band_spread, points, judge_count, agreement, state, routing) "
+        "VALUES (:run_id, :submission_id, :criterion_id, :band, :band, 0, :points, "
+        ":judge_count, :agreement, :state, :routing) "
+        "ON CONFLICT (run_id, submission_id, criterion_id) DO UPDATE SET "
+        "band = excluded.band, modal_band = excluded.modal_band, band_spread = 0, "
+        "points = excluded.points, "
         "judge_count = excluded.judge_count, agreement = excluded.agreement, "
         "state = excluded.state, routing = excluded.routing"
     ),
@@ -679,17 +681,20 @@ DET_STATEMENTS: dict[str, Statement] = {
         # the alias keeps that net unambiguous about which column this reads.
         "SELECT submission_id, band,"
         " points AS prev_points, state, routing FROM criterion_score"
-        " WHERE criterion_id = :criterion_id ORDER BY submission_id"
+        " WHERE run_id = :run_id AND criterion_id = :criterion_id"
+        " ORDER BY submission_id"
     ),
     "upsert_rederived_score": Statement(
         # The same shape as upsert_criterion_score: a re-derivation is an
         # evaluation under the corrected key, and a re-run of the same
         # (submission, criterion) lands on the same row.
-        "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
-        "judge_count, agreement, state, routing) VALUES (:submission_id, "
-        ":criterion_id, :band, :points, :judge_count, :agreement, :state, "
-        ":routing) ON CONFLICT (submission_id, criterion_id) DO UPDATE SET "
-        "band = excluded.band, points = excluded.points, "
+        "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
+        "modal_band, band_spread, points, judge_count, agreement, state, routing) "
+        "VALUES (:run_id, :submission_id, :criterion_id, :band, :band, 0, :points, "
+        ":judge_count, :agreement, :state, :routing) "
+        "ON CONFLICT (run_id, submission_id, criterion_id) DO UPDATE SET "
+        "band = excluded.band, modal_band = excluded.modal_band, band_spread = 0, "
+        "points = excluded.points, "
         "judge_count = excluded.judge_count, agreement = excluded.agreement, "
         "state = excluded.state, routing = excluded.routing"
     ),
@@ -969,6 +974,7 @@ class DeterministicEvaluator:
         with cohort_handle.transaction() as tx:
             tx.execute(
                 DET_STATEMENTS["upsert_criterion_score"],
+                run_id=run_id,
                 submission_id=submission_id,
                 criterion_id=criterion_id,
                 band=outcome.band,
@@ -1085,6 +1091,7 @@ class DeterministicEvaluator:
             for submission_id, criterion, outcome, points in scored:
                 tx.execute(
                     DET_STATEMENTS["upsert_criterion_score"],
+                    run_id=run_id,
                     submission_id=submission_id,
                     criterion_id=criterion["criterion_id"],
                     band=outcome.band,
@@ -1155,7 +1162,8 @@ class DeterministicEvaluator:
     # -- the key-correction path and the read API (FR-DET-08 / FR-DET-07) ----
 
     def rederive_for_key_change(
-        self, cohort_id: str, criterion_id: str, new_version: str
+        self, cohort_id: str, criterion_id: str, new_version: str,
+        *, run_id: str | None = None,
     ) -> RederiveReport:
         """Re-derive one criterion's scores for one cohort under a corrected
         answer key (`FR-DET-08`, `CT-DET-07`). A correction is a new package
@@ -1226,10 +1234,24 @@ class DeterministicEvaluator:
                 DET_STATEMENTS["select_cohort_submissions"], cohort_id=cohort_id
             )
         ]
+        # FR-DET-11: only the named run's rows are re-derived — a correction for run B never
+        # touches run A's scores. Unnamed, the target is the cohort's newest run, the run the
+        # audit rows were already attributed to.
+        if run_id is None:
+            target_run = _newest_run(runs)
+        else:
+            named = [row for row in runs if row["run_id"] == run_id]
+            if not named:
+                raise DeterministicError(
+                    f"run {run_id!r} is not a run of cohort {cohort_id!r}; a key "
+                    "correction re-derives only a named run of the cohort (FR-DET-11)."
+                )
+            target_run = named[0]
         existing = {
             row["submission_id"]: row
             for row in cohort_handle.query(
-                DET_STATEMENTS["select_criterion_scores"], criterion_id=criterion_id
+                DET_STATEMENTS["select_criterion_scores"],
+                run_id=target_run["run_id"], criterion_id=criterion_id,
             )
         }
         changed: list[tuple[str, dict[str, Any], DetOutcome, float | None]] = []
@@ -1270,6 +1292,7 @@ class DeterministicEvaluator:
                 for submission_id, criterion_row, outcome, points in changed:
                     tx.execute(
                         DET_STATEMENTS["upsert_rederived_score"],
+                        run_id=target_run["run_id"],
                         submission_id=submission_id,
                         criterion_id=criterion_row["criterion_id"],
                         band=outcome.band,
@@ -1280,7 +1303,7 @@ class DeterministicEvaluator:
                         routing=outcome.routing,
                     )
             audit_records_written = self._append_audit_records(
-                _newest_run(runs), new_version, changed
+                target_run, new_version, changed
             )
         else:
             audit_records_written = 0

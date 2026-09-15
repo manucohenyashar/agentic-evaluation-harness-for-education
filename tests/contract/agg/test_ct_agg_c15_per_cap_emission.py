@@ -72,10 +72,10 @@ _SUBMISSION = "SYN-C15"
 _CRITERION = "C-CAPS"
 
 _INSERT = (
-    "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
     "judge_count, agreement, state, routing, confidence, confidence_base, "
     "spans_verified, evidence_present, sufficiency_flag, ocr_overlap_risk) "
-    "VALUES (:sid, :cid, :band, :points, :jc, :agreement, :state, :routing, "
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :jc, :agreement, :state, :routing, "
     ":confidence, :confidence_base, :spans, :evidence, :sufficiency, :ocr)"
 )
 

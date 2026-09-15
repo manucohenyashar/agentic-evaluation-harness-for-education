@@ -94,7 +94,6 @@ def _pk_columns(path: Path) -> list[str]:
 # --- TC-AGG-22 (a), (d), (e) -----------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_22_a_a_single_run_store_migrates_losslessly(tmp_data_dir):
     """(a) — 45 rows survive under the one run, checksum unchanged, spread 0, modal = band;
     (d) — the CHECK survives and the new key admits a second run's row."""
@@ -134,7 +133,6 @@ def test_tc_agg_22_a_a_single_run_store_migrates_losslessly(tmp_data_dir):
     assert count == 2, "two rows differing only in run_id must coexist"
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_22_e_the_cohort_pin_is_the_head_and_a_chain_without_agg_refuses(tmp_data_dir):
     """(e) — the Cohort pin equals the highest registered cohort migration, and a process that
     opens a store without importing `aeh.agg` refuses at the open.
@@ -171,7 +169,6 @@ def test_tc_agg_22_e_the_cohort_pin_is_the_head_and_a_chain_without_agg_refuses(
 # --- TC-AGG-22 (b), (c) ----------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_22_b_two_runs_with_rows_refuse_and_leave_the_file_untouched(tmp_data_dir):
     """(b) — ambiguous attribution: exact error, and the file is exactly as it was."""
     _require_migration()
@@ -193,7 +190,6 @@ def test_tc_agg_22_b_two_runs_with_rows_refuse_and_leave_the_file_untouched(tmp_
     assert "criterion_score_new" not in tables(path)
 
 
-@pytest.mark.writtenahead
 def test_tc_agg_22_c_two_runs_without_rows_migrate_to_the_new_key(tmp_data_dir):
     """(c) — nothing to attribute, so two runs are no obstacle."""
     _require_migration()
@@ -207,7 +203,6 @@ def test_tc_agg_22_c_two_runs_without_rows_migrate_to_the_new_key(tmp_data_dir):
 # --- RES-21 — killed mid-rebuild ------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_res_21_a_kill_mid_rebuild_leaves_either_the_old_or_the_new_table_whole(
     tmp_data_dir, monkeypatch
 ):

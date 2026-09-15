@@ -1036,7 +1036,8 @@ class SynthWorld:
                 )
                 with self.handle.transaction() as tx:
                     if decision.escalate:
-                        reports = self.orchestrator.enqueue_escalation(tx, (sid, cid))
+                        reports = self.orchestrator.enqueue_escalation(
+                            tx, (self.run_id, sid, cid))  # #359: run-scoped key
                         enqueued += sum(
                             report.units_inserted for report in reports)
                         if any(report.decision == DECISION_HALTED_BY_BREAKER
@@ -1172,12 +1173,13 @@ class SynthWorld:
 
 #: The re-aggregation write: `INSERT OR REPLACE` over the pair's primary key, so the
 #: escalated cells' rewritten panels collapse onto their first-walk rows instead of
-#: colliding (`criterion_score` PK is `(submission_id, criterion_id)`).
+#: colliding (`criterion_score` PK is `(run_id, submission_id, criterion_id)` since #359;
+#: the seed names the cohort's newest run).
 _SCORE_UPSERT = (
-    "INSERT OR REPLACE INTO criterion_score (submission_id, criterion_id, band, "
+    "INSERT OR REPLACE INTO criterion_score (run_id, submission_id, criterion_id, band, "
     "points, judge_count, agreement, state, routing, confidence, confidence_base, "
     "spans_verified, evidence_present, sufficiency_flag, ocr_overlap_risk) "
-    "VALUES (:sid, :cid, :band, :points, :judge_count, :agreement, :state, "
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :judge_count, :agreement, :state, "
     ":routing, :confidence, :confidence_base, :spans_verified, :evidence_present, "
     ":sufficiency_flag, :ocr_overlap_risk)"
 )

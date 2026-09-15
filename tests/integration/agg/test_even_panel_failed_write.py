@@ -75,8 +75,8 @@ def test_tc_agg_04_the_schema_itself_refuses_an_even_panel_as_a_failed_write(tmp
         for judge_count in _REJECTED:
             with pytest.raises(Exception) as refused:
                 tx.execute(
-                    "INSERT INTO criterion_score (submission_id, criterion_id, band, "
-                    "points, judge_count, agreement) VALUES ('s-agg-04', :cid, 'B1', "
+                    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
+                    "points, judge_count, agreement) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), 's-agg-04', :cid, 'B1', "
                     "1.0, :jc, 0.5)",
                     cid=f"C-EVEN-{judge_count}", jc=judge_count,
                 )
@@ -88,8 +88,8 @@ def test_tc_agg_04_the_schema_itself_refuses_an_even_panel_as_a_failed_write(tmp
 
         for judge_count in _ACCEPTED:
             tx.execute(
-                "INSERT INTO criterion_score (submission_id, criterion_id, band, "
-                "points, judge_count, agreement) VALUES ('s-agg-04', :cid, 'B1', "
+                "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
+                "points, judge_count, agreement) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), 's-agg-04', :cid, 'B1', "
                 "1.0, :jc, NULL)",
                 cid=f"C-ODD-{judge_count}", jc=judge_count,
             )

@@ -542,9 +542,23 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
     # filter their own rows instead.
     "select_auto_grades": Statement(
         "SELECT submission_id, criterion_id, band FROM criterion_score "
-        "WHERE routing = 'auto' "
+        "WHERE run_id = :run_id AND routing = 'auto' "
         "AND submission_id NOT IN "
-        "(SELECT submission_id FROM criterion_score WHERE routing <> 'auto')"
+        "(SELECT submission_id FROM criterion_score "
+        "WHERE run_id = :run_id AND routing <> 'auto')"
+    ),
+    # #359 (CT-AGG-20): every score read names its run. The store flow names the
+    # cohort, not a run, so the score reads resolve the cohort's newest run — the
+    # latest non-null `started_at`, then `run_id`, M-DET's own `_newest_run` order —
+    # and a second run of the cohort replaces the first run's queue rather than
+    # merging into it.
+    "select_newest_run": Statement(
+        "SELECT run_id FROM run "
+        "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1"
+    ),
+    "select_run_advisory_scores": Statement(
+        "SELECT * FROM criterion_score "
+        "WHERE run_id = :run_id AND routing IN ('queued', 'provisional')"
     ),
     # #115's collection route: the same 19 columns `insert_label` carries,
     # written as an upsert so a caller collecting the same label into a second
@@ -1990,8 +2004,11 @@ class ReviewService:
         if self._store is not None:
             triples: list[tuple[str, str, str]] = []
             for cohort_id in self._cohort_ids:
+                run_id = _newest_run_id(self._store, cohort_id)
+                if run_id is None:
+                    continue
                 for row in self._store.cohort(cohort_id).query(
-                    REVIEW_STATEMENTS["select_auto_grades"]
+                    REVIEW_STATEMENTS["select_auto_grades"], run_id=run_id
                 ):
                     mapping = _row_mapping(row)
                     submission_id = str(mapping.get("submission_id") or "")
@@ -2568,6 +2585,14 @@ def build_review(
     )
 
 
+def _newest_run_id(store: Any, cohort_id: str) -> str | None:
+    """The run a cohort's score reads are scoped to (#359, CT-AGG-20): the
+    cohort's newest run, or ``None`` for a cohort with no run — whose ledger then
+    holds no score row either, since every score row names its run."""
+    rows = store.cohort(cohort_id).query(REVIEW_STATEMENTS["select_newest_run"])
+    return str(_row_mapping(rows[0])["run_id"]) if rows else None
+
+
 def _store_cohort_ids(store: Any) -> list[str]:
     """The cohort ids a store carries, in stable id order — the same discovery
     the store's own surfaces use (`cohorts/<cohort_id>.sqlite`, one file per
@@ -2621,8 +2646,6 @@ def _service_from_store(
     import aeh.pkg  # noqa: F401
     import aeh.synth  # noqa: F401
 
-    from aeh.store import Statement
-
     if cohort_ids is None:
         cohort_ids = _store_cohort_ids(store)
     rows: list[Any] = []
@@ -2633,13 +2656,13 @@ def _service_from_store(
     # of the pair, as the plan's docstring says. The mode and origin halves of
     # the admission ride the predicate on the fetched rows.
     for cohort_id in cohort_ids:
+        run_id = _newest_run_id(store, cohort_id)
+        if run_id is None:
+            continue
         rows.extend(
             _row_mapping(row)
             for row in store.cohort(cohort_id).query(
-                Statement(
-                    "SELECT * FROM criterion_score "
-                    "WHERE routing IN ('queued', 'provisional')"
-                )
+                REVIEW_STATEMENTS["select_run_advisory_scores"], run_id=run_id
             )
         )
     knobs = _calibration_knobs()

@@ -135,7 +135,7 @@ def _drive(orch, store, run_id, *, probe=None):
         orch.complete(work_id)
     for submission_id in _SUBMISSIONS:
         with store.cohort(ORCH_COHORT_ID).transaction() as tx:
-            orch.enqueue_escalation(tx, (submission_id, "C1"))
+            orch.enqueue_escalation(tx, (run_id, submission_id, "C1"))  # #359: run-scoped key
     for work_id in _pending_work_ids(store, run_id, origin="escalation"):
         orch.complete(work_id)
 

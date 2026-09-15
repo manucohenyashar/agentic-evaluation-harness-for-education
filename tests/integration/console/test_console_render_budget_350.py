@@ -60,8 +60,8 @@ def test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_r
         with cohort.transaction() as tx:
             for submission_id, criterion_id in flagged:
                 tx.execute(
-                    "INSERT OR REPLACE INTO criterion_score (submission_id, criterion_id, band, "
-                    "points, judge_count, routing, state) VALUES (:s, :c, 'B2', 2.0, 3, 'queued', "
+                    "INSERT OR REPLACE INTO criterion_score (run_id, submission_id, criterion_id, band, "
+                    "points, judge_count, routing, state) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, :c, 'B2', 2.0, 3, 'queued', "
                     "'provisional_unreviewed')",
                     s=submission_id, c=criterion_id,
                 )

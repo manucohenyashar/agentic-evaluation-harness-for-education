@@ -432,8 +432,8 @@ def test_tc_console_39_stale_actions_are_idempotent_or_refused_and_never_partial
         target = world.submissions[0]
         with cohort.transaction() as tx:
             tx.execute(
-                "INSERT OR REPLACE INTO criterion_score (submission_id, criterion_id, band, points, "
-                "judge_count, routing, state) VALUES (:s, 'C-10', 'B2', 2.0, 3, 'queued', "
+                "INSERT OR REPLACE INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
+                "judge_count, routing, state) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, 'C-10', 'B2', 2.0, 3, 'queued', "
                 "'provisional_unreviewed')", s=target)
         stale_view = build_console(store=store)
         stale_view.render(SCREENS["S9"], id=world.run_id)

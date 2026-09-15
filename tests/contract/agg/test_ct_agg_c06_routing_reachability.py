@@ -76,9 +76,9 @@ _DET_UNRESOLVED = {
 }
 
 _INSERT = (
-    "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
     "judge_count, agreement, state, routing) "
-    "VALUES (:sid, :cid, :band, :points, :judge_count, :agreement, :state, :routing)"
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :judge_count, :agreement, :state, :routing)"
 )
 
 
@@ -241,9 +241,9 @@ def test_tc_agg_c06_the_closed_set_holds_at_the_real_store_boundary(tmp_data_dir
             for cid, score in (("C-DET", final_score), ("C-DEU", unresolved_score),
                                ("C-PANEL", split_score)):
                 tx.execute(
-                    "INSERT INTO criterion_score (submission_id, criterion_id, band, "
+                    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
                     "points, judge_count, agreement, state, routing) "
-                    "VALUES (:sid, :cid, :band, :points, :jc, :ag, :state, :routing)",
+                    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :jc, :ag, :state, :routing)",
                     sid=_SUBMISSION, cid=cid, band=score.band, points=score.points,
                     jc=score.judge_count, ag=score.agreement, state=score.state,
                     routing=score.routing,
@@ -252,24 +252,24 @@ def test_tc_agg_c06_the_closed_set_holds_at_the_real_store_boundary(tmp_data_dir
             # a value outside the set is refused by the CHECK itself.
             for index, routing in enumerate(ROUTING_SET):
                 tx.execute(
-                    "INSERT INTO criterion_score (submission_id, criterion_id, band, "
+                    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
                     "points, judge_count, agreement, state, routing) VALUES "
-                    "(:sid, :cid, 'correct', 1.0, 0, NULL, 'final', :routing)",
+                    "(COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, 'correct', 1.0, 0, NULL, 'final', :routing)",
                     sid=_SUBMISSION, cid=f"C-SET-{index}", routing=routing,
                 )
             for index, state in enumerate(STATE_SET):
                 tx.execute(
-                    "INSERT INTO criterion_score (submission_id, criterion_id, band, "
+                    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
                     "points, judge_count, agreement, state, routing) VALUES "
-                    "(:sid, :cid, 'correct', 1.0, 0, NULL, :state, 'auto')",
+                    "(COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, 'correct', 1.0, 0, NULL, :state, 'auto')",
                     sid=_SUBMISSION, cid=f"C-STATE-{index}", state=state,
                 )
             for column in ("routing", "state"):
                 with pytest.raises(Exception) as refused:
                     tx.execute(
-                        "INSERT INTO criterion_score (submission_id, criterion_id, "
+                        "INSERT INTO criterion_score (run_id, submission_id, criterion_id, "
                         "band, points, judge_count, agreement, state, routing) "
-                        "VALUES (:sid, :cid, 'correct', 1.0, 0, NULL, "
+                        "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, 'correct', 1.0, 0, NULL, "
                         ":state, :routing)",
                         sid=_SUBMISSION, cid=f"C-BOGUS-{column}",
                         state="bogus" if column == "state" else "final",

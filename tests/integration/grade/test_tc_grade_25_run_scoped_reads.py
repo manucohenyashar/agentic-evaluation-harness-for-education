@@ -70,7 +70,6 @@ def _current_grades(store, run_id):
     }
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_25_recomputing_run_a_after_run_b_lands_returns_a_unchanged(tmp_data_dir):
     """`TC-GRADE-25` — A's totals identical before and after B's scores land; A's rollup carries
     no B-derived finding."""
@@ -136,7 +135,6 @@ def _unscoped_criterion_score_queries(source: str) -> list[str]:
     return offending
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_25_static_every_criterion_score_query_in_grade_has_a_run_predicate():
     """`TC-GRADE-25`, static arm — no `criterion_score` read in `grade.py` without `run_id`."""
     source = (REPO_ROOT / "src" / "aeh" / "grade.py").read_text(encoding="utf-8")

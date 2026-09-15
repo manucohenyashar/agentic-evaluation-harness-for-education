@@ -64,6 +64,7 @@ import pytest
 from aeh.store import open_store
 from tests.support import broken_review_fixtures as broken
 from tests.support import review_vocabulary as vocab
+from tests.support.run_scoped import ensure_fixture_run
 from tests.support.impl import CONSOLE_MODULE, REVIEW_MODULE, require
 from tests.support.orch_run import seed_cohort, seed_document
 
@@ -88,10 +89,10 @@ _STUDENT_WORK = (
 #: points and routing reason are `broken.SYSTEM_OUTPUT_SENTINELS`'s own — so a probe
 #: that leaks the answer is caught by value, not by name.
 _INSERT_SCORE = (
-    "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
     "judge_count, agreement, state, routing, confidence, confidence_base, "
     "spans_verified, evidence_present, sufficiency_flag, ocr_overlap_risk) "
-    "VALUES (:sid, :cid, :band, :points, :judge_count, :agreement, :state, "
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :judge_count, :agreement, :state, "
     ":routing, :confidence, :confidence_base, :spans_verified, "
     ":evidence_present, :sufficiency_flag, :ocr_overlap_risk)"
 )
@@ -118,6 +119,7 @@ def _seed_output_bearing_store(tmp_data_dir):
     cohort = store.cohort(_COHORT)
     sentinels = broken.SYSTEM_OUTPUT_SENTINELS
     with cohort.transaction() as tx:
+        ensure_fixture_run(tx, _COHORT)  # #359: the score row names a run
         tx.execute(
             _INSERT_SCORE,
             sid=_SUBMISSION, cid=_CRITERION,

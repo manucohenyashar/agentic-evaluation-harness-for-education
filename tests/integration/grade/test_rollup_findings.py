@@ -87,8 +87,8 @@ def _seed_run_with_findings(store):
         for submission_id in ("S-F1", "S-F2"):
             tx.execute(
                 "INSERT OR REPLACE INTO criterion_score "
-                "(submission_id, criterion_id, band, points, routing, state) "
-                "VALUES (:s, 'C1', 'B2', 5.0, 'reviewed', 'ungradeable_by_panel')",
+                "(run_id, submission_id, criterion_id, band, points, routing, state) "
+                "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, 'C1', 'B2', 5.0, 'reviewed', 'ungradeable_by_panel')",
                 s=submission_id,
             )
         # C2's review budget exhausted for S-F3: the queue row stands in for the
