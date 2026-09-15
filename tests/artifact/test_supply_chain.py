@@ -67,6 +67,10 @@ REVIEWED_DEV_DEPENDENCIES: dict[str, str] = {
                  "runs the live path the acceptance run needs",
     "Pillow": "#226 — PdfBitmap.to_pil() needs it: the persisted page rasters "
               "and image crops decode their PNG bytes through it (FR-STORE-06)",
+    "playwright": "TS-49 (#130) — test plan §4.5's E6 headless browser for the browser-level "
+                  "console facts (TC-CONSOLE-40/41, SEC-12). Test-only: imported solely by "
+                  "tests/support/console_browser.py, launching an installed Edge/Chrome by "
+                  "channel, so no browser binary is downloaded",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

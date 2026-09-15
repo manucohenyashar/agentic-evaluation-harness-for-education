@@ -1214,6 +1214,53 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind",
         ),
     ),
+    # --- The seven cases red after landing TS-49/TS-53/TS-54 (#130, #146, #147) --------------
+    #
+    # Merging the stacked PRs #336, #338 and #339 onto main surfaced seven cases whose code
+    # gaps the design gap analysis recorded (GAP-05, GAP-22, GAP-23, GAP-24) and
+    # `docs/design/fix_gaps_detailed_design_plan.md` designs away. None needs a
+    # specification change (gap_fix_test_plan.md §5.0); each waits on one implementing story.
+    #
+    # #366 builds the real `ThreadingHTTPServer` and resolves profile and bind from the
+    # environment. Keyed on the packaged stylesheet FR-CONSOLE-33 names, which no file
+    # provides today and the served console cannot exist without.
+    "#366 console served over HTTP with environment-resolved profile and bind": (
+        "path",
+        "src/aeh/console_assets/console.css",
+        (
+            "tests/security/console/test_console_loopback_and_profile.py"
+            "::test_tc_console_05_the_bind_and_profile_set_in_the_environment_are_honoured",
+            "tests/integration/console/test_console_clean_machine.py"
+            "::test_tc_console_34_the_console_starts_and_serves_its_pages_with_no_toolchain_or_network",
+            "tests/browser/console/test_console_browser_session.py"
+            "::test_tc_console_40_a_browser_session_leaves_no_storage_worker_or_cache_behind",
+            "tests/browser/console/test_console_browser_session.py"
+            "::test_tc_console_41_sec_12_a_full_session_requests_nothing_from_another_origin",
+            "tests/browser/console/test_console_browser_session.py"
+            "::test_tc_console_37_the_running_console_is_loopback_storage_free_and_origin_closed",
+        ),
+    ),
+    # #367 moves the screens onto their services and stops swallowing schema errors; keyed on
+    # the error FR-CONSOLE-37 names.
+    "#367 service-backed console screens (TC-CONSOLE-33)": (
+        "symbol",
+        f"{CONSOLE_MODULE}:ConsoleReadError",
+        (
+            "tests/integration/console/test_console_render_budget_350.py"
+            "::test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_run",
+        ),
+    ),
+    # #363 adds the per-run document cache and read indexes that bring the integrity gate
+    # under 1% of run wall clock; keyed on the production view FR-INTEG-09 publishes in the
+    # same story.
+    "#363 integrity gate inside its 1% budget (PERF-06)": (
+        "symbol",
+        "aeh.integ:StoreExtractionView",
+        (
+            "tests/perf/test_perf_06_zero_model_stages_full_run.py"
+            "::test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
