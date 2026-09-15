@@ -1299,6 +1299,19 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_conf_c15_serve_console_resolves_through_effective_config_exactly_once",
         ),
     ),
+    # --- TS-100 (#394), the MVVP measurement drivers (Phase 2) ------------------------------
+    #
+    # A conjunction over both drivers: each case needs one, and #374 lands them together.
+    "#374 TS-100 measure_position_bias / measure_self_agreement (TC-STATS-28)": (
+        "symbols",
+        "aeh.stats:measure_position_bias, aeh.stats:measure_self_agreement",
+        (
+            "tests/integration/stats/test_tc_stats_28_mvvp_measurement_drivers.py"
+            "::test_tc_stats_28_position_bias_is_the_per_judge_band_change_rate",
+            "tests/integration/stats/test_tc_stats_28_mvvp_measurement_drivers.py"
+            "::test_tc_stats_28_self_agreement_replicates_at_least_three_times",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
