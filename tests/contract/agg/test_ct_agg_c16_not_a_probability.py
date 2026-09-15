@@ -221,9 +221,9 @@ def test_tc_agg_c16_no_consumer_renders_confidence_as_a_probability(
             cohort = store.cohort(_COHORT)
             with cohort.transaction() as tx:
                 tx.execute(
-                    "INSERT INTO criterion_score (submission_id, criterion_id, "
+                    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, "
                     "band, points, judge_count, agreement, state, routing) "
-                    "VALUES (:sid, :cid, :band, :points, :jc, :agreement, "
+                    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :jc, :agreement, "
                     ":state, :routing)",
                     sid=_SUBMISSION, cid=_CRITERION, band=score.band,
                     points=score.points, jc=score.judge_count,

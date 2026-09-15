@@ -98,6 +98,8 @@ __all__ = [
     "InsecureLocationError",
     "IncompleteMigrationChainError",
     "Migration",
+    "MigrationError",
+    "MigrationPrecondition",
     "PurgePreconditionError",
     "PurgeReport",
     "Row",
@@ -320,6 +322,17 @@ caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
     ahead of the binary; this one says the *process* is behind its own binary. `CT-STORE-11`'s
     exact-type oracles distinguish them, and a subclass relationship would let one pass for the
     other exactly when a reader is diagnosing which of the two went wrong.
+    """
+
+
+class MigrationError(StoreError):
+    """A migration refused to run because the file's data cannot be carried forward unambiguously.
+
+    Raised by a migration's `guard` inside the migration's own transaction, so the refusal rolls
+    back with everything else and the file stays at the last complete version — byte-identical
+    tables, no interim table, no version stamp (`FR-AGG-16`'s ambiguous-attribution refusal,
+    `TC-AGG-22` (b)). A sibling, not a subclass of `SchemaTooNewError`: the file is not ahead of
+    the binary, its *contents* are what the step cannot attribute.
     """
 
 
@@ -1291,6 +1304,26 @@ class Migration:
     statements: tuple[Statement, ...]
 
 
+class MigrationPrecondition(Statement):
+    """A declared read inside a migration whose rows decide whether the migration may proceed.
+
+    `_migrate` runs it like any other statement, in the migration's own transaction, and hands
+    the fetched rows to `check`, which raises `MigrationError` to refuse — the refusal rolls the
+    whole migration back. SQL alone cannot refuse with a message naming a count (`RAISE` is
+    trigger-only and takes a literal), which is why this exists (#359). A statement rather than
+    a `Migration` field: a migration stays version + name + statements (`TC-STORE-06`), and a
+    raw replay of a chain's statements (F-SCHEMA's fixture builders) runs the read harmlessly.
+    Constructed without a `check`, it is an ordinary statement.
+    """
+
+    def __new__(
+        cls, sql: str, check: Callable[[list[Any]], None] | None = None
+    ) -> "MigrationPrecondition":
+        declared = super().__new__(cls, sql)
+        declared.check = check
+        return declared
+
+
 #: Migration 2 for Tier D: the monotonic lease counter (`FR-STORE-11`), added by #12.
 #:
 #: **Tier D, and forward-only as a second numbered migration** rather than an edit to
@@ -1393,10 +1426,11 @@ def current_schema_version(tier: Tier) -> int:
 #: `grade_superseded_at_and_append_only` moved Cohort 18→19 and its
 #: `grade_audit_record_append_only` moved Durable 6→7 — `aeh.grade` holds both tails.
 #: #118's `pkg_validation_record` moved Durable 7→8 and `aeh.pkg` joined the
-#: contributor lists the same way — Durable's tail is now `aeh.pkg`'s.)
+#: contributor lists the same way — Durable's tail is now `aeh.pkg`'s.
+#: #359's `agg_run_scoped_score` moved Cohort 19→20 — Cohort's tail is now `aeh.agg`'s.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 19,
+    Tier.COHORT: 20,
     Tier.DURABLE: 8,
 }
 
@@ -1986,7 +2020,10 @@ def _migrate(connection: sqlite3.Connection, tier: Tier, already: frozenset[int]
         try:
             _run(connection, _SCHEMA_VERSION_TABLE, retries=retries)
             for statement in migration.statements:
-                _run(connection, statement, retries=retries)
+                cursor = _run(connection, statement, retries=retries)
+                check = getattr(statement, "check", None)
+                if isinstance(statement, MigrationPrecondition) and check is not None:
+                    check(cursor.fetchall())
             _run(
                 connection,
                 _INSERT_VERSION,

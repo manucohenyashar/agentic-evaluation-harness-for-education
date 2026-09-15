@@ -62,8 +62,8 @@ def _queue_teacher_items(store, cohort_id: str, submission_ids, criterion_ids) -
         for submission_id in submission_ids:
             for criterion_id in criterion_ids:
                 tx.execute(
-                    "INSERT OR REPLACE INTO criterion_score (submission_id, criterion_id, band, "
-                    "points, judge_count, routing, state) VALUES (:s, :c, 'B2', 2.0, 3, "
+                    "INSERT OR REPLACE INTO criterion_score (run_id, submission_id, criterion_id, band, "
+                    "points, judge_count, routing, state) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, :c, 'B2', 2.0, 3, "
                     "'queued', 'provisional_unreviewed')",
                     s=submission_id, c=criterion_id,
                 )

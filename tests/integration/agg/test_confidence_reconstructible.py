@@ -90,10 +90,10 @@ def test_tc_agg_15_the_confidence_is_recomputable_from_the_stored_row_alone(tmp_
     score = aggregate(_PANEL, _FOUR_BAND, _SIGNALS, config=agg_config())
     with cohort.transaction() as tx:
         tx.execute(
-            "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+            "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
             "judge_count, agreement, state, routing, confidence, confidence_base, "
             "spans_verified, evidence_present, sufficiency_flag, ocr_overlap_risk) "
-            "VALUES (:sid, :cid, :band, :points, :judge_count, :agreement, :state, "
+            "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :judge_count, :agreement, :state, "
             ":routing, :confidence, :confidence_base, :spans_verified, "
             ":evidence_present, :sufficiency_flag, :ocr_overlap_risk)",
             sid=_SUBMISSION, cid=_CRITERION_ID, band=score.band, points=score.points,

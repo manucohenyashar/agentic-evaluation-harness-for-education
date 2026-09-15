@@ -58,6 +58,7 @@ from tests.support.impl import (
     require,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort
+from tests.support.run_scoped import ensure_fixture_run
 
 pytestmark = [pytest.mark.contract]
 
@@ -76,9 +77,9 @@ _SUBMISSION = "SYN-C07"
 _CRITERION = "C-STATE"
 
 _INSERT = (
-    "INSERT INTO criterion_score (submission_id, criterion_id, band, points, "
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
     "judge_count, agreement, state, routing) "
-    "VALUES (:sid, :cid, :band, :points, :jc, :ag, :state, :routing)"
+    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :sid, :cid, :band, :points, :jc, :ag, :state, :routing)"
 )
 
 
@@ -169,6 +170,7 @@ def _stored(store, score):
     presentation reads."""
     cohort = store.cohort(_COHORT)
     with cohort.transaction() as tx:
+        ensure_fixture_run(tx, _COHORT)  # #359: the score row names a run
         tx.execute(
             _INSERT, sid=_SUBMISSION, cid=_CRITERION, band=score.band,
             points=score.points, jc=score.judge_count, ag=score.agreement,

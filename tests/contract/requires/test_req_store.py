@@ -357,8 +357,8 @@ def test_tc_req_42_an_even_panel_score_is_a_failed_write_at_the_database(tmp_dat
     """`TC-REQ-42` (`M-AGG` → `M-STORE`, CT-STORE-03/13, CT-AGG-03): the score row M-AGG's walk
     writes carries `judge_count`. An even count is refused by the database's CHECK, inside the
     transaction, and nothing lands. An odd count on the same row writes."""
-    upsert = ("INSERT OR REPLACE INTO criterion_score (submission_id, criterion_id, band, points, "
-              "judge_count, routing, state) VALUES (:s, 'C01', 'met', 1.0, :n, 'auto', 'final')")
+    upsert = ("INSERT OR REPLACE INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
+              "judge_count, routing, state) VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, 'C01', 'met', 1.0, :n, 'auto', 'final')")
     store = open_store(tmp_data_dir)
     try:
         seed_run(store, submissions=("S001",), criteria=_OPEN)

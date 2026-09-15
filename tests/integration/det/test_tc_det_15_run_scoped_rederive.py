@@ -59,7 +59,6 @@ def _row(store, cohort_id, run_id):
     return dict(rows[0])
 
 
-@pytest.mark.writtenahead
 def test_tc_det_15_rederiving_run_b_never_modifies_run_a(tmp_data_dir):
     """`TC-DET-15` — B's correction reaches B only; a call naming A reaches A only."""
     store = open_det_store(tmp_data_dir)

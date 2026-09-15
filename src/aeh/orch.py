@@ -869,14 +869,22 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "AND w.status = 'pending' "
         "GROUP BY w.submission_id, w.criterion_id, q.expected_value"
     ),
-    # The runs whose ledger holds the pair's panel — the enqueue's target set. The
-    # criterion score key is run-agnostic (`CT-ORCH-08`: it names the pair the way
-    # `criterion_score` does), so the enqueue resolves the runs that hold the panel
-    # from the ledger itself and widens each one.
+    # The deprecated two-element key's resolution (FR-ORCH-34, CT-ORCH-26): the runs
+    # whose ledger holds the pair's score panel, open runs flagged. Exactly one
+    # candidate resolves; two or more are ambiguous and refused — a key that names no
+    # run must not widen every run's panel.
     "select_pair_runs": Statement(
-        "SELECT DISTINCT run_id FROM work_unit "
-        "WHERE submission_id = :submission_id AND criterion_id = :criterion_id "
-        "AND stage = 'score' ORDER BY run_id"
+        "SELECT DISTINCT w.run_id, "
+        "r.status IN ('pending', 'running', 'paused') AS is_open "
+        "FROM work_unit w JOIN run r ON r.run_id = w.run_id "
+        "WHERE w.submission_id = :submission_id AND w.criterion_id = :criterion_id "
+        "AND w.stage = 'score' ORDER BY w.run_id"
+    ),
+    # The three-element key's check: the named run's ledger holds the pair's panel.
+    "select_run_pair_panel": Statement(
+        "SELECT 1 FROM work_unit WHERE run_id = :run_id "
+        "AND submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND stage = 'score' LIMIT 1"
     ),
     "admit_request": Statement(
         "UPDATE escalation_request SET admitted = 1, admitted_at = :admitted_at, "
@@ -3852,8 +3860,9 @@ class Orchestrator:
         """Widen one (submission, criterion) panel — the escalation path M-AGG walks
         when a verdict lands outside its band (`FR-ORCH-09/10`, §7.1), in the design's
         own form (`CT-ORCH-08`): **the caller's transaction first**, the criterion
-        score key second — the ``(submission_id, criterion_id)`` pair, the way
-        `criterion_score` names its rows — and the judges to ADD third. The shape is
+        score key second — the ``(run_id, submission_id, criterion_id)`` triple, the
+        way `criterion_score` names its rows (#359, `FR-ORCH-34`) — and the judges to
+        ADD third. The shape is
         the requirement, not a convenience: a run's score result for a criterion and
         the escalation that widens that criterion's panel are one logical step, *both
         present or both absent after any crash* is `CT-STORE-03`'s atomicity clause
@@ -3864,11 +3873,15 @@ class Orchestrator:
         call in `cohort.transaction()` — the same discipline every other ledger writer
         follows.
 
-        **The key is run-agnostic** (`CT-ORCH-08` pins the shape, not the run): the
-        runs whose ledger holds the pair's score units are resolved from the ledger
-        itself (`select_pair_runs`) and each one's panel widens — one report per run.
-        A key no run holds a panel for raises `EscalationPlanError` before anything is
-        written.
+        **The key names its run** (`FR-ORCH-34`, `CT-ORCH-26`): the escalation widens
+        that run's panel only, and the one-element tuple returned is that run's report.
+        The two-element ``(submission_id, criterion_id)`` form is **deprecated**: it
+        resolves the run from the ledger only when exactly one open run holds the
+        pair's score units, and raises `WorkLedgerError` — before anything is written
+        — when none or two or more do. A run whose base units all completed has
+        auto-completed (`_maybe_complete_run`), so a caller escalating it names the
+        run with the three-element key. A key no run holds a panel for raises
+        `EscalationPlanError` before anything is written.
 
         **The decision, in order** (each stage reported in `gates` — seam 4):
 
@@ -3919,28 +3932,49 @@ class Orchestrator:
         the method only reads the ledger and writes rows, and never contacts a judge
         (`NFR-ORCH-04`: the escalation policy is evaluable with no model call).
         """
-        if len(tuple(criterion_score_key)) != 2:
-            raise EscalationPlanError(
-                f"criterion_score_key must be the (submission_id, criterion_id) pair, "
-                f"got {tuple(criterion_score_key)!r} — the key names the escalation's "
-                "target the way the criterion_score table does (CT-ORCH-08)."
-            )
-        submission_id, criterion_id = (str(part) for part in criterion_score_key)
-        pair_runs = [
-            r["run_id"] for r in tx.execute(
+        key = tuple(str(part) for part in criterion_score_key)
+        if len(key) == 3:
+            run_id, submission_id, criterion_id = key
+            if not list(tx.execute(
+                ORCH_STATEMENTS["select_run_pair_panel"],
+                run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+            )):
+                raise EscalationPlanError(
+                    f"run {run_id!r}'s ledger holds no score panel for "
+                    f"({submission_id!r}, {criterion_id!r}): an escalation widens a panel "
+                    "that exists — enumerate the run first (a criterion with no units has "
+                    "no band to widen)."
+                )
+        elif len(key) == 2:
+            submission_id, criterion_id = key
+            holding = list(tx.execute(
                 ORCH_STATEMENTS["select_pair_runs"],
                 submission_id=submission_id,
                 criterion_id=criterion_id,
-            )
-        ]
-        if not pair_runs:
+            ))
+            pair_runs = [r["run_id"] for r in holding if r["is_open"]]
+            if not holding:
+                raise EscalationPlanError(
+                    f"no run's ledger holds a score panel for "
+                    f"({submission_id!r}, {criterion_id!r}): an escalation widens a panel "
+                    "that exists — enumerate the run first (a criterion with no units has "
+                    "no band to widen)."
+                )
+            if len(pair_runs) != 1:
+                raise WorkLedgerError(
+                    f"the deprecated (submission_id, criterion_id) escalation key "
+                    f"({submission_id!r}, {criterion_id!r}) is ambiguous: {len(pair_runs)} "
+                    f"open runs hold the pair ({', '.join(pair_runs)}) — name the run with "
+                    "the (run_id, submission_id, criterion_id) key (FR-ORCH-34)."
+                )
+            (run_id,) = pair_runs
+        else:
             raise EscalationPlanError(
-                f"no run's ledger holds a score panel for "
-                f"({submission_id!r}, {criterion_id!r}): an escalation widens a panel "
-                "that exists — enumerate the run first (a criterion with no units has "
-                "no band to widen)."
+                f"criterion_score_key must be the (run_id, submission_id, criterion_id) "
+                f"triple, got {key!r} — the key names the escalation's target the way the "
+                "criterion_score table does (CT-ORCH-08, FR-ORCH-34)."
             )
-        return tuple(
+        return (
             self._enqueue_escalation_locked(
                 tx,
                 self._run_row(run_id),
@@ -3948,8 +3982,7 @@ class Orchestrator:
                 criterion_id=criterion_id,
                 judges=judges,
                 expected_value=expected_value,
-            )
-            for run_id in pair_runs
+            ),
         )
 
     def _enqueue_escalation_locked(

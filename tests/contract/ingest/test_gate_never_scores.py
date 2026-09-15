@@ -187,8 +187,8 @@ def test_tc_ingest_c09_the_scan_detects_a_mutant_score_row(tmp_data_dir):
     # The mutant's shape: a gate failure producing a banded score row.
     with fx.handle.transaction() as tx:
         tx.execute(statement(
-            "INSERT INTO criterion_score (submission_id, criterion_id, band) "
-            "VALUES (:s, 'C1', 'zero')", issue=ISSUE),
+            "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band) "
+            "VALUES ('run-fixture', :s, 'C1', 'zero')", issue=ISSUE),
             s=quarantined.submission_id)
     rows = fx.table("criterion_score")
     assert rows != [], (

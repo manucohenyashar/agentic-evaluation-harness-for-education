@@ -158,6 +158,25 @@ def tables(path: Path) -> set[str]:
         connection.close()
 
 
+#: The run a seed attributes its `criterion_score` rows to when the world it seeds has no real run
+#: (#359: every score row names a run, and consumers read the cohort's newest run).
+FIXTURE_RUN_ID = "run-fixture"
+
+
+def ensure_fixture_run(tx: Any, cohort_id: str) -> None:
+    """Give a run-less seeded cohort the one run its hand-written score rows name.
+
+    A no-op when the cohort already has a run: the seeds' `run_id` subquery then names that run,
+    so the rows stay with the real run. `started_at` is NULL, so a real run always sorts newer."""
+    tx.execute(
+        "INSERT INTO run (run_id, cohort_id, package_version_id, package_id, panel_config, "
+        "backend_profile, provider_config, prompt_template_v, status) "
+        "SELECT :r, :c, 'pv-fixture', 'pkg-fixture', '{}', 'edge-local', '{}', 'p', 'complete' "
+        "WHERE NOT EXISTS (SELECT 1 FROM run WHERE cohort_id = :c)",
+        r=FIXTURE_RUN_ID, c=cohort_id,
+    )
+
+
 #: The design's migration name (FR-AGG-16), which the blockers probe for.
 RUN_SCOPED_MIGRATION = "agg_run_scoped_score"
 
@@ -173,6 +192,7 @@ def run_scoped_migration() -> Any:
 __all__ = [
     "CHECKSUM_COLUMNS",
     "CRITERIA",
+    "FIXTURE_RUN_ID",
     "PRE_DELTA_COHORT_VERSION",
     "RUN_SCOPED_MIGRATION",
     "SCHEMA_COHORT_ID",
@@ -180,6 +200,7 @@ __all__ = [
     "SUBMISSIONS",
     "build_pre_delta_cohort",
     "cohort_db_path",
+    "ensure_fixture_run",
     "run_scoped_migration",
     "schema_versions",
     "score_checksum",

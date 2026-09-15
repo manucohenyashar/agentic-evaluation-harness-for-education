@@ -89,8 +89,8 @@ def write_state_row(cohort: Any, submission_id: str, criterion_id: str,
     with cohort.transaction() as tx:
         tx.execute(
             "INSERT OR REPLACE INTO criterion_score "
-            "(submission_id, criterion_id, band, points, routing, state) "
-            "VALUES (:s, :c, :b, :p, :r, :st)",
+            "(run_id, submission_id, criterion_id, band, points, routing, state) "
+            "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, :c, :b, :p, :r, :st)",
             s=submission_id, c=criterion_id, b=band, p=points, r=routing, st=state,
         )
 

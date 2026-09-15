@@ -149,8 +149,8 @@ def write_criterion_scores(handle: Any, rows: Sequence[tuple]) -> None:
                 )
             tx.execute(
                 "INSERT OR REPLACE INTO criterion_score "
-                "(submission_id, criterion_id, band, points, routing, state) "
-                "VALUES (:s, :c, :b, :p, :r, :st)",
+                "(run_id, submission_id, criterion_id, band, points, routing, state) "
+                "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, :c, :b, :p, :r, :st)",
                 s=submission_id,
                 c=criterion_id,
                 b=band_name,

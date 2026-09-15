@@ -114,6 +114,11 @@ FIXTURE_ROWS: dict[Tier, dict[str, list[tuple]]] = {
     },
     Tier.COHORT: {
         "cohort": [("C-FIX", "consented", "2026-01-01T00:00:00Z")],
+        # #359: the cohort's one run, so `agg_run_scoped_score` can attribute the score row
+        # below (with rows present and any other run count it refuses by design). The run
+        # table arrives with cohort 7 — see `_LATER_TABLES`.
+        "run": [("RUN-FIX", "C-FIX", "PV-FIX", "PKG-FIX", "{}", "edge-local", "{}", "p",
+                 "complete")],
         "roster": [("C-FIX", "ref-1")],
         "submission": [("S-FIX", "C-FIX", "ref-1")],
         "document": [("D-FIX", "S-FIX", "hash-fix")],
@@ -142,6 +147,17 @@ FIXTURE_ROWS: dict[Tier, dict[str, list[tuple]]] = {
 FIXTURE_VERSION_STAMP = "2026-01-01T00:00:00Z"
 
 
+#: Fixture tables a later migration creates, seeded only at versions where they exist.
+_LATER_TABLES = {"run"}
+
+#: Named values for NOT NULL columns a later migration appended, set when the column exists at
+#: the fixture's version (the positional rows describe only the leading columns). #359's
+#: `run_id` is the fixture run's.
+_APPENDED_COLUMN_VALUES: dict[str, dict[str, object]] = {
+    "criterion_score": {"run_id": "RUN-FIX"},
+}
+
+
 def _fixture_database(db_path: Path, tier: Tier, at_version: int) -> None:
     """Build a database standing at schema version `at_version`, by hand.
 
@@ -163,17 +179,30 @@ def _fixture_database(db_path: Path, tier: Tier, at_version: int) -> None:
                 "INSERT INTO schema_version (version, name, applied_at) VALUES (?, ?, ?)",
                 (migration.version, migration.name, FIXTURE_VERSION_STAMP),
             )
+        present = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'")}
         for table, rows in FIXTURE_ROWS[tier].items():
+            if table in _LATER_TABLES and table not in present:
+                continue
+            if tier is Tier.COHORT and table == "criterion_score" and "run" not in present:
+                # A database from before the run ledger (cohort < 7) cannot hold a score a run
+                # produced, and #359's rebuild refuses unattributable rows — so the fixture
+                # carries no score row there. TC-AGG-22 (b) owns the refusal.
+                continue
             # The insert names its columns and takes the FIRST len(values) of the table's
             # declaration order: later additive migrations only append columns, so the
             # leading columns are exactly what migration 001 declared and what the
             # positional fixture rows describe — at every schema version.
             declared = [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
             named = declared[: len(rows[0])]
-            placeholders = ", ".join("?" for _ in rows[0])
+            extras = {c: v for c, v in _APPENDED_COLUMN_VALUES.get(table, {}).items()
+                      if c in declared}
+            named += list(extras)
+            full_rows = [tuple(row) + tuple(extras.values()) for row in rows]
+            placeholders = ", ".join("?" for _ in named)
             column_list = ", ".join(f'"{c}"' for c in named)
             connection.executemany(
-                f'INSERT INTO "{table}" ({column_list}) VALUES ({placeholders})', rows)
+                f'INSERT INTO "{table}" ({column_list}) VALUES ({placeholders})', full_rows)
         connection.commit()
         # The builder's connection runs with FKs off (SQLite's default), which is exactly
         # how a value-swapped row passed silently once: NOT NULL/CHECK/PK are enforced, FK

@@ -211,8 +211,8 @@ def test_tc_console_31_the_rubric_findings_block_reports_breaker_and_budget_crit
             for submission_id in (s1, s2):
                 tx.execute(
                     "INSERT OR REPLACE INTO criterion_score "
-                    "(submission_id, criterion_id, band, points, routing, state) "
-                    "VALUES (:s, 'C-10', 'unscored', NULL, 'provisional', "
+                    "(run_id, submission_id, criterion_id, band, points, routing, state) "
+                    "VALUES (COALESCE((SELECT run_id FROM run ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1), 'run-fixture'), :s, 'C-10', 'unscored', NULL, 'provisional', "
                     "'ungradeable_by_panel')",
                     s=submission_id,
                 )

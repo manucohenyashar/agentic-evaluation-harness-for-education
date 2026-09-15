@@ -1352,24 +1352,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
-    # #359 adds the `agg_run_scoped_score` cohort migration and scopes every reader in the same
-    # PR; its one new name is the migration's, so the probe asks the registry for it (with the
-    # full chain imported — a partial import would hide a registered migration).
-    "#359 TS-88 criterion_score run-scoped rebuild and readers (TC-AGG-22, RES-21, TC-DET-15, TC-GRADE-25)": (
-        "command",
-        "python -c \"import sys; sys.path.insert(0, 'src'); import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth; from aeh.store import TIER_MIGRATIONS, Tier; sys.exit(0 if any(m.name == 'agg_run_scoped_score' for m in TIER_MIGRATIONS[Tier.COHORT]) else 1)\"",
-        (
-            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_a_a_single_run_store_migrates_losslessly",
-            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_e_the_cohort_pin_is_the_head_and_a_chain_without_agg_refuses",
-            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_b_two_runs_with_rows_refuse_and_leave_the_file_untouched",
-            "tests/integration/store/test_agg_run_scoped_migration.py::test_tc_agg_22_c_two_runs_without_rows_migrate_to_the_new_key",
-            "tests/integration/store/test_agg_run_scoped_migration.py::test_res_21_a_kill_mid_rebuild_leaves_either_the_old_or_the_new_table_whole",
-            "tests/integration/det/test_tc_det_15_run_scoped_rederive.py"
-            "::test_tc_det_15_rederiving_run_b_never_modifies_run_a",
-            "tests/integration/grade/test_tc_grade_25_run_scoped_reads.py::test_tc_grade_25_recomputing_run_a_after_run_b_lands_returns_a_unchanged",
-            "tests/integration/grade/test_tc_grade_25_run_scoped_reads.py::test_tc_grade_25_static_every_criterion_score_query_in_grade_has_a_run_predicate",
-        ),
-    ),
     "#360 TS-88 write_score (TC-AGG-21, TC-AGG-24)": (
         "symbol",
         "aeh.agg:write_score",

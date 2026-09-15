@@ -568,9 +568,17 @@ _SELECT_COHORT_BREAKER = (
     "SELECT cohort_id, tripped_at, rate, flagged, ingested, finding "
     "FROM v4_cohort_breaker WHERE cohort_id = :cohort_id"
 )
+#: A submission's score rows as the student page and `render_scores` show them. Neither
+#: route names a run, so the read is scoped to each cohort ledger's newest run (latest
+#: non-null `started_at`, then `run_id` — M-DET's `_newest_run` order): every score read
+#: names its run (#359, CT-AGG-20), and a second run's rows replace the first run's on the
+#: page rather than rendering beside them.
 _SELECT_SCORES = (
     "SELECT criterion_id, band, judge_count, agreement, state, routing, "
-    "points FROM criterion_score WHERE submission_id = :submission_id "
+    "points FROM criterion_score WHERE run_id = "
+    "(SELECT run_id FROM run "
+    "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1) "
+    "AND submission_id = :submission_id "
     "ORDER BY criterion_id"
 )
 _SELECT_GRADES = (
@@ -2388,7 +2396,8 @@ class ConsoleApp:
             )
             catalog.set_answer_key(new_version, criterion_id, key_ids)
             report = DeterministicEvaluator(self._store).rederive_for_key_change(
-                str(run["cohort_id"]), criterion_id, new_version
+                str(run["cohort_id"]), criterion_id, new_version,
+                run_id=run_id,
             )
             progress.append(
                 f"{report.scores_changed} deterministic score(s) re-derived by "
@@ -3568,8 +3577,10 @@ def render_grade_coverage(
                 # name both "select" and "points" in this module (TC-PKG-C05's
                 # line-shaped single-canonical scan).
                 "SELECT criterion_id, band, agreement, state, "
-                "points FROM criterion_score WHERE submission_id = :submission_id "
+                "points FROM criterion_score WHERE run_id = :run_id "
+                "AND submission_id = :submission_id "
                 "ORDER BY criterion_id",
+                run_id=run_id,
                 submission_id=submission_id,
             )
         ]
@@ -4513,7 +4524,9 @@ def run_pipeline_for_test(
             )
             for row in cohort_handle.query(
                 "SELECT submission_id, criterion_id, band, state, "
-                "points FROM criterion_score ORDER BY submission_id, criterion_id"
+                "points FROM criterion_score WHERE run_id = :run_id "
+                "ORDER BY submission_id, criterion_id",
+                run_id=created_run_id,
             )
         )
         lower = tuple(
@@ -4522,7 +4535,8 @@ def run_pipeline_for_test(
                     str(_row_get(row, "criterion_id"))
                     for row in cohort_handle.query(
                         "SELECT DISTINCT criterion_id FROM criterion_score "
-                        "WHERE state = 'unresolved_selection'"
+                        "WHERE run_id = :run_id AND state = 'unresolved_selection'",
+                        run_id=created_run_id,
                     )
                 }
             )
