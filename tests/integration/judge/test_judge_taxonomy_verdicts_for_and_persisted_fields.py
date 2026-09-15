@@ -197,7 +197,6 @@ def test_tc_judge_26_contrast_a_generic_failure_is_still_a_strike(
 # --- TC-JUDGE-27 — evidence_assessment and latency_ms persist exactly ---------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_judge_27_persist_writes_evidence_assessment_and_latency_exactly(
     tmp_data_dir, make_fixture_provider
 ):
@@ -257,7 +256,6 @@ def test_tc_judge_27_persist_writes_evidence_assessment_and_latency_exactly(
 # --- TC-JUDGE-28 — contract violations counted per (criterion, judge) --------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_judge_28_contract_violations_are_recorded_per_criterion_and_judge(
     tmp_data_dir, make_fixture_provider
 ):
@@ -279,13 +277,19 @@ def test_tc_judge_28_contract_violations_are_recorded_per_criterion_and_judge(
             j1: [violation(), _success(world, "S1")],
             j3: [_success(world, "S1")],
         })
-        for unit in units:
-            worker = ScoringWorker(store, script, refs[unit.judge])
-            request = worker.assemble(unit)
-            try:
-                worker.persist(unit, worker.dispatch(request, refs[unit.judge]))
-            except JudgmentError:
-                pass
+        # The claim pass hands score units out one at a time (a unit's successor is claimable
+        # once it is done), so the panel is driven by leasing until the ledger is empty — the
+        # loop `judge_world`'s own judge leg runs.
+        pending = list(units)
+        while pending:
+            for unit in pending:
+                worker = ScoringWorker(store, script, refs[unit.judge])
+                request = worker.assemble(unit)
+                try:
+                    worker.persist(unit, worker.dispatch(request, refs[unit.judge]))
+                except JudgmentError:
+                    pass
+            pending = list(world["orchestrator"].lease("w-judge-ts87", STAGE_SCORE, 64))
 
         run_id = world["run_id"]
         rows = store.durable().query(
@@ -310,7 +314,6 @@ def test_tc_judge_28_contract_violations_are_recorded_per_criterion_and_judge(
 # --- TC-JUDGE-25 — verdicts_for: one run, one cell, work_id order -------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_judge_25_verdicts_for_returns_the_named_runs_cell_in_work_id_order(
     tmp_data_dir, make_fixture_provider
 ):

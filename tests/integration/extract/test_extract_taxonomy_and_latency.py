@@ -193,7 +193,6 @@ def test_tc_extract_16_contrast_a_generic_failure_is_still_a_strike(
 # --- TC-EXTRACT-18 — the evidence row carries the successful attempt's latency ------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_extract_18_evidence_latency_is_the_successful_attempts_wall_time(tmp_data_dir):
     """`TC-EXTRACT-18` — 900 ms failed attempt, then a 250 ms success: `latency_ms = 250`, one
     row, and the failed attempt left nothing behind."""

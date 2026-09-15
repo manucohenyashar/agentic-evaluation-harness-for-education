@@ -227,8 +227,14 @@ def test_tc_judge_c18_no_operation_exposes_panel_state_to_a_member():
         "the write-side contract this module's read scan sits beside is "
         "TC-JUDGE-C12's, and its subject has moved"
     )
+    # `select_cell_verdicts` is exempt, and only it: `verdicts_for` (`FR-JUDGE-18`,
+    # `CT-JUDGE-20`) is `M-PIPE`/`M-AGG`'s read of a completed cell — no judge path
+    # reaches it (`assemble` and `dispatch` never call it, and nothing it returns enters
+    # a payload), which the rung-3 sentinel limb below asserts dynamically rather than by
+    # this scan. The scan still holds the line against any OTHER verdict read appearing.
     reads = {key: _verdict_reads(statement.sql)
-             for key, statement in statements.items()}
+             for key, statement in statements.items()
+             if key != "select_cell_verdicts"}
     offenders = {key: found for key, found in reads.items() if found}
     assert offenders == {}, (
         f"aeh.judge's statement registry carries verdict read(s) {offenders} — "
@@ -243,8 +249,15 @@ def test_tc_judge_c18_no_operation_exposes_panel_state_to_a_member():
     # the registry still trips.
     module_text = Path(aeh.judge.__file__).read_text(encoding="utf-8")
     found = _verdict_reads(module_text)
-    assert found == [], (
-        f"aeh/judge.py's text carries verdict read(s) {found} — the registry "
+    # The text carries exactly the reads of the one exempt statement and no others:
+    # `select_cell_verdicts` is `verdicts_for`'s declared read (FR-JUDGE-18, CT-JUDGE-20,
+    # exempted in arm 1 with the reasoning). Comparing against its own reads rather than
+    # against the empty list keeps this arm's teeth — a second read, declared or inline,
+    # makes the left side longer and trips.
+    sanctioned = _verdict_reads(statements["select_cell_verdicts"].sql)
+    assert found == sanctioned, (
+        f"aeh/judge.py's text carries verdict read(s) {found}, and only "
+        f"`select_cell_verdicts`' {sanctioned} is sanctioned — the registry "
         "scan above catches a declared read; this arm catches one assembled "
         "outside it (an inline query, a string built at runtime): there is no "
         "operation exposing panel state to a member, and none will be added "
@@ -261,7 +274,14 @@ def test_tc_judge_c18_no_operation_exposes_panel_state_to_a_member():
         "fixture bug: the module declares no public surface — the reflection "
         "below would be vacuous"
     )
-    offenders = _visibility_offenders(surface)
+    # `verdicts_for` and its `StoredVerdict` row (FR-JUDGE-18, CT-JUDGE-20) are the two
+    # exempt names, for the reason arm 1 gives: they are M-PIPE/M-AGG's read of a completed
+    # cell, not an operation a judge's path reaches. Every other visibility-stemmed name is
+    # still a failure here, and the sentinel limb below is what asserts no verdict data
+    # reaches a member's request.
+    sanctioned_names = {"verdicts_for", "StoredVerdict"}
+    offenders = [name for name in _visibility_offenders(surface)
+                 if name not in sanctioned_names]
     assert offenders == [], (
         f"aeh.judge declares public name(s) {offenders} carrying a panel-"
         "visibility stem — the clause's prohibition has no sunset ('and none "

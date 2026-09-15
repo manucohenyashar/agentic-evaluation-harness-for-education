@@ -370,9 +370,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
     # sites; the statements are the same three. Re-read from the walker, never
     # hand-unioned.)
-    "aeh.extract:950",
-    "aeh.extract:955",
-    "aeh.extract:957",
+    "aeh.extract:974",
+    "aeh.extract:969",
+    "aeh.extract:976",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
@@ -391,9 +391,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: the `from aeh.extract import document_bytes` reuse of the
     # canonical-artifact resolver added the import line above the sites; the
     # statements are the same three. Re-read from the walker, never hand-unioned.)
-    "aeh.judge:1836",
-    "aeh.judge:1841",
-    "aeh.judge:1851",
+    # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
+    # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
+    "aeh.judge:1957",
+    "aeh.judge:1999",
+    "aeh.judge:2004",
+    "aeh.judge:2014",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
@@ -532,8 +535,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1929",
-    "aeh.store:2718",
+    "aeh.store:1931",
+    "aeh.store:2726",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write

@@ -288,6 +288,60 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     ), key=lambda m: m.version
 ))
 
+#: Tier C, migration 22 (#361, `FR-JUDGE-20`): the reply's `evidence_assessment` inventory and
+#: the successful call's `latency_ms` on the verdict row — inputs `judge_signals` reads
+#: (`FR-STATS-20`). Nullable and additive: `NULL` assessment is "none given", never `''`.
+_JUDGE_VERDICT_ASSESSMENT: tuple[Statement, ...] = (
+    Statement("ALTER TABLE verdict ADD COLUMN evidence_assessment TEXT"),
+    Statement("ALTER TABLE verdict ADD COLUMN latency_ms INTEGER"),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(
+            version=22, name="judge_verdict_assessment",
+            statements=_JUDGE_VERDICT_ASSESSMENT,
+        ),
+    ), key=lambda m: m.version
+))
+
+#: Tier D, migration 9 (#361, `FR-JUDGE-21`): `run_metrics` gains a `judge_id` dimension so
+#: `judge_contract_violations` can be counted per (criterion, judge). A key column cannot be
+#: added in place, so the table is rebuilt — integ's Durable 5 march. `judge_id` is appended
+#: after the existing columns (the F-SCHEMA fixture seeds leading columns positionally) and is
+#: `NOT NULL DEFAULT ''` for the reason Durable 5 gives its dimensions: every writer that omits
+#: it lands on the aggregate cell and still conflicts with itself on the key.
+_JUDGE_RUN_METRICS_JUDGE_DIMENSION: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE run_metrics_judged (
+            run_id        TEXT NOT NULL,
+            metric        TEXT NOT NULL,
+            value         REAL NOT NULL,
+            submission_id TEXT NOT NULL DEFAULT '',
+            criterion_id  TEXT NOT NULL DEFAULT '',
+            judge_id      TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (run_id, metric, submission_id, criterion_id, judge_id)
+        )
+        """
+    ),
+    Statement(
+        "INSERT INTO run_metrics_judged (run_id, metric, value, submission_id, criterion_id) "
+        "SELECT run_id, metric, value, submission_id, criterion_id FROM run_metrics"
+    ),
+    Statement("DROP TABLE run_metrics"),
+    Statement("ALTER TABLE run_metrics_judged RENAME TO run_metrics"),
+)
+
+TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.DURABLE] + (
+        Migration(
+            version=9, name="judge_run_metrics_judge_dimension",
+            statements=_JUDGE_RUN_METRICS_JUDGE_DIMENSION,
+        ),
+    ), key=lambda m: m.version
+))
+
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
 #
@@ -317,9 +371,27 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     ),
     "insert_verdict": Statement(
         "INSERT OR IGNORE INTO verdict (verdict_id, work_id, judge_id, band, "
-        "band_ordinal, self_confidence, cited_spans, evidence_sufficient, uncited) "
+        "band_ordinal, self_confidence, cited_spans, evidence_sufficient, uncited, "
+        "evidence_assessment, latency_ms) "
         "VALUES (:verdict_id, :work_id, :judge_id, :band, :band_ordinal, "
-        ":self_confidence, :cited_spans, :evidence_sufficient, :uncited)"
+        ":self_confidence, :cited_spans, :evidence_sufficient, :uncited, "
+        ":evidence_assessment, :latency_ms)"
+    ),
+    # FR-JUDGE-18 / CT-JUDGE-20: one run's verdicts for one cell, in work_id order.
+    "select_cell_verdicts": Statement(
+        "SELECT v.work_id, v.judge_id, v.band, v.band_ordinal, v.cited_spans, "
+        "v.evidence_sufficient, v.uncited FROM verdict v "
+        "JOIN work_unit w ON w.work_id = v.work_id "
+        "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
+        "AND w.criterion_id = :criterion_id ORDER BY v.work_id"
+    ),
+    # FR-JUDGE-21: dispatch's strike path counts contract violations per (criterion, judge)
+    # on the durable run_metrics row, accumulating across the run's units.
+    "add_contract_violations": Statement(
+        "INSERT INTO run_metrics (run_id, metric, value, submission_id, criterion_id, "
+        "judge_id) VALUES (:run_id, 'judge_contract_violations', :n, '', :criterion_id, "
+        ":judge_id) ON CONFLICT (run_id, metric, submission_id, criterion_id, judge_id) "
+        "DO UPDATE SET value = value + excluded.value"
     ),
 }
 
@@ -640,6 +712,58 @@ class ScoringResult:
     #: consumer branches a verdict away for carrying one (`FR-JUDGE-13`'s rule is about
     #: `self_confidence`, and the same "one weighted input" posture governs here).
     integrity_flags: tuple[str, ...] = ()
+    #: #361 (`FR-JUDGE-20`): the successful call's wall time, the provider's own
+    #: `Completion.latency_ms` — persisted on the verdict row. `None` only for a result
+    #: built without a call.
+    latency_ms: int | None = None
+
+
+@dataclass(frozen=True)
+class StoredVerdict:
+    """One persisted verdict as `aggregate` consumes it (`FR-JUDGE-18`): the band and its
+    ordinal, the cited-span inventory (a tuple of span documents, empty when uncited), the
+    sufficiency answer, the uncited mark and the judge. `agg._verdict_ordinal` reads
+    `band_ordinal` and `agg._verdict_cited` reads `uncited`, so the tuple feeds `aggregate`
+    with no adaptation."""
+
+    work_id: str
+    judge_id: str
+    band: str
+    band_ordinal: int
+    cited_spans: tuple[Any, ...]
+    evidence_sufficient: bool
+    uncited: bool
+
+    @property
+    def ordinal(self) -> int:
+        """The band ordinal under the name `aggregate` reads (`agg._verdict_ordinal`)."""
+        return self.band_ordinal
+
+
+def verdicts_for(
+    handle: Any, run_id: str, submission_id: str, criterion_id: str
+) -> tuple[StoredVerdict, ...]:
+    """The cell's verdicts for ONE run, in `work_id` order (`FR-JUDGE-18`, `CT-JUDGE-20`).
+
+    Reads through `handle` (the cohort tier handle) with the run filter, so a second run's
+    verdicts for the same (submission, criterion) never appear. A cell with no verdicts is
+    the empty tuple, never an error."""
+    rows = handle.query(
+        JUDGE_STATEMENTS["select_cell_verdicts"],
+        run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+    )
+    return tuple(
+        StoredVerdict(
+            work_id=row["work_id"],
+            judge_id=row["judge_id"],
+            band=row["band"],
+            band_ordinal=int(row["band_ordinal"]),
+            cited_spans=tuple(json.loads(row["cited_spans"])) if row["cited_spans"] else (),
+            evidence_sufficient=bool(row["evidence_sufficient"]),
+            uncited=bool(row["uncited"]),
+        )
+        for row in rows
+    )
 
 
 # --- request assembly ----------------------------------------------------------------------------
@@ -1742,6 +1866,7 @@ class ScoringWorker:
         strikes: list[str] = []
         integrity_flags: list[str] = []
         amendments_used = 0
+        violations = 0
         last_error: Exception | None = None
         for attempt in range(1, budget + 1):
             try:
@@ -1757,11 +1882,18 @@ class ScoringWorker:
             except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
                 # `FR-JUDGE-19` / `CT-JUDGE-19`: the provider taxonomy is not a refusal of the
                 # reply — no strike, no FR-JUDGE-10 amended re-request, nothing persisted. It
-                # propagates for the dispatch pass to wait or pause on.
+                # propagates for the dispatch pass to wait or pause on. Violations this
+                # dispatch already counted are still the judge's, so they are recorded before
+                # the error leaves: an outage after a malformed reply must not erase it.
+                self._record_contract_violations(request, judge, violations)
                 raise
             except (ProviderError, ValueError) as error:
                 last_error = error
                 strikes.append(f"attempt {attempt}/{budget}: {error}")
+                if isinstance(error, (MalformedResponseError, ValueError)):
+                    # A reply that broke the response contract (FR-JUDGE-21) — a transport
+                    # failure answered nothing and is not the judge's violation.
+                    violations += 1
                 if isinstance(error, ProseAssessmentError) and amendments_used < amendment_budget:
                     amendments_used += 1
                     payload = _amended_payload(payload)
@@ -1773,6 +1905,7 @@ class ScoringWorker:
                         f"({amendments_used}/{amendment_budget}, FR-JUDGE-10)"
                     )
                 continue
+            self._record_contract_violations(request, judge, violations)
             return ScoringResult(
                 work_id=request.work_id,
                 judge_id=_judge_id_of(judge),
@@ -1793,11 +1926,41 @@ class ScoringWorker:
                     len(value.encode("utf-8")) for _name, value in payload.fields
                 ),
                 integrity_flags=tuple(integrity_flags),
+                latency_ms=int(completion.latency_ms),
             )
+        self._record_contract_violations(request, judge, violations)
         raise JudgmentError(
             f"judgment for {request.work_id[:12]} refused after {budget} attempt(s); "
             f"last refusal: {last_error}. No fallback verdict exists (NFR-JUDGE-05)."
         )
+
+    def _record_contract_violations(
+        self, request: ScoringRequest, judge: Any, violations: int
+    ) -> None:
+        """Add this dispatch's contract violations to the run's per-(criterion, judge) count
+        (`FR-JUDGE-21`). A dispatch with none writes nothing; a worker with no store (the
+        rung-0 cases) has nowhere to count and records nothing.
+
+        The count is of violating **responses**, not of units: it accumulates on conflict, so
+        a redelivered unit's fresh provider calls add their own refusals rather than replacing
+        the earlier ones — the rate `judge_signals` reads is over what judges actually
+        returned. A `ProseAssessmentError` amended under `FR-JUDGE-10` is a refused reply like
+        any other and counts."""
+        if not violations or self._store is None:
+            return
+        try:
+            cohort = _find_cohort(self._store, request.work_id)
+        except ValueError:
+            return  # no ledger row to name the run by — nothing to attribute the count to
+        rows = cohort.query(JUDGE_STATEMENTS["select_work_unit"], work_id=request.work_id)
+        with self._store.durable().transaction() as tx:
+            tx.execute(
+                JUDGE_STATEMENTS["add_contract_violations"],
+                run_id=rows[0]["run_id"],
+                n=float(violations),
+                criterion_id=request.criterion.criterion_id,
+                judge_id=_judge_id_of(judge),
+            )
 
     def persist(self, unit: Any, result: ScoringResult) -> None:
         """One verdict row and the arm's done transition, in one guarded transaction —
@@ -1866,6 +2029,8 @@ class ScoringWorker:
                     ),
                     evidence_sufficient=int(bool(result.evidence_sufficient)),
                     uncited=int(bool(result.uncited)),
+                    evidence_assessment=result.evidence_assessment,
+                    latency_ms=result.latency_ms,
                 )
 
 
@@ -1888,10 +2053,12 @@ __all__ = [
     "ScoringRequest",
     "ScoringResult",
     "ScoringWorker",
+    "StoredVerdict",
     "SubmissionView",
     "WorkUnit",
     "assemble",
     "assemble_prompt",
     "assert_isolated",
     "prompt_fields",
+    "verdicts_for",
 ]

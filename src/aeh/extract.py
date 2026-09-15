@@ -121,6 +121,20 @@ TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
     ),
 )
 
+#: Tier C, migration 21 (#361, `FR-EXTRACT-13`): the evidence row's `latency_ms`, the wall time
+#: of the SUCCESSFUL provider attempt — the provider's own `Completion.latency_ms` for the call
+#: whose spans were persisted, so a failed attempt before it is never counted. Nullable: a row
+#: from before the column carries `NULL`, "not recorded".
+_EXTRACT_LATENCY: tuple[Statement, ...] = (
+    Statement("ALTER TABLE evidence ADD COLUMN latency_ms INTEGER"),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=21, name="extract_latency", statements=_EXTRACT_LATENCY),
+    ), key=lambda m: m.version
+))
+
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
 
 EXTRACT_STATEMENTS: dict[str, Statement] = {
@@ -134,8 +148,8 @@ EXTRACT_STATEMENTS: dict[str, Statement] = {
     ),
     "insert_evidence": Statement(
         "INSERT OR REPLACE INTO evidence (evidence_id, work_id, document_id, "
-        "payload, resolved_build) VALUES (:evidence_id, :work_id, :document_id, "
-        ":payload, :resolved_build)"
+        "payload, resolved_build, latency_ms) VALUES (:evidence_id, :work_id, "
+        ":document_id, :payload, :resolved_build, :latency_ms)"
     ),
 }
 
@@ -892,6 +906,10 @@ class ExtractionWorker:
         params = SamplingParams(temperature=0.0)
         budget = _env_int(MAX_ATTEMPTS_ENV, ORCH_MAX_ATTEMPTS)
         completion = None
+        # `FR-EXTRACT-13`: the latency persisted is the SUCCESSFUL attempt's, so it is set
+        # only once spans parsed — `completion` alone would carry a failed attempt's figure
+        # on a path where the transport answered and the reply would not parse.
+        success_latency: int | None = None
         spans: tuple[ExtractionSpan, ...] = ()
         error_text: str | None = None
         for attempt in range(1, budget + 1):
@@ -900,6 +918,7 @@ class ExtractionWorker:
                     payload, self._model_ref, params
                 )
                 spans = parse_spans(completion.text, md_bytes)
+                success_latency = int(completion.latency_ms)
                 break
             except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
                 # `FR-EXTRACT-11` / `CT-EXTRACT-16`: the provider taxonomy is not the unit's
@@ -961,6 +980,7 @@ class ExtractionWorker:
                     document_id=head["document_id"],
                     payload=spans_payload,
                     resolved_build=completion.resolved_build,
+                    latency_ms=success_latency,
                 )
         if not won:
             # Another worker's completion landed first (at-least-once leasing): its
