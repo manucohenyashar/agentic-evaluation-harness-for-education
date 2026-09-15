@@ -1352,17 +1352,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
-    "#360 TS-88 write_score (TC-AGG-21, TC-AGG-24)": (
-        "symbol",
-        "aeh.agg:write_score",
-        (
-            "tests/integration/agg/test_write_score.py::test_tc_agg_21_write_score_stores_every_field_of_the_score_and_signals",
-            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_null_extractor_disagreement_stays_distinct_from_false",
-            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_a_binding_cap_is_named_in_caps_fired",
-            "tests/integration/agg/test_write_score.py::test_tc_agg_21_variant_outside_a_transaction_raises_and_writes_nothing",
-            "tests/integration/agg/test_write_score.py::test_tc_agg_24_the_stored_row_alone_reconstructs_confidence_under_all_six_signals",
-        ),
-    ),
     "#371 TS-88 aggregation_signals (TC-AGG-23)": (
         "symbol",
         "aeh.agg:aggregation_signals",
