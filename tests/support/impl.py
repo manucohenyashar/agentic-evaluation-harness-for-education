@@ -1312,6 +1312,63 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_stats_28_self_agreement_replicates_at_least_three_times",
         ),
     ),
+    # --- TS-87 (#381), workers: taxonomy, verdicts_for, persisted latency and assessment ----
+    #
+    # #353 is a behaviour change with no new symbol: both workers stop striking the three
+    # provider taxonomy errors. Keyed on a probe of the two methods' source naming the three
+    # classes — the handlers FR-EXTRACT-11/FR-JUDGE-19 require cannot exist without naming them
+    # (today both catch only `(ProviderError, ValueError)`). The probe puts `src` on the path
+    # itself, since the gate runs it as a subprocess from the repo root.
+    "#353 TS-87 provider taxonomy errors are not strikes (TC-EXTRACT-16/-08v, TC-JUDGE-26)": (
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); "
+        "import aeh.extract as e, aeh.judge as j; "
+        "names = ('RateLimitedError', 'ProviderUnavailableError', 'BuildChangedError'); "
+        "srcs = (inspect.getsource(e.ExtractionWorker.process), "
+        "inspect.getsource(j.ScoringWorker.dispatch)); "
+        "sys.exit(0 if all(n in s for n in names for s in srcs) else 1)\"",
+        (
+            "tests/integration/extract/test_extract_taxonomy_and_latency.py"
+            "::test_tc_extract_16_a_taxonomy_error_propagates_without_a_strike",
+            "tests/integration/extract/test_extract_failure_and_graphics.py"
+            "::test_tc_extract_08_variant_rate_limits_then_success_write_one_row_and_no_strike",
+            "tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py"
+            "::test_tc_judge_26_a_taxonomy_error_propagates_without_a_strike_or_re_request",
+        ),
+    ),
+    # #361 lands four independent pieces — `verdicts_for`, the verdict
+    # `evidence_assessment`/`latency_ms` columns, the evidence `latency_ms` column and the
+    # violation rows — in any order within the story, so each case waits on its own piece.
+    # `verdicts_for` is a symbol; the other three have none, so each is a probe of the owning
+    # module's source for the migration statement or metric name it cannot land without.
+    "#361 TS-87 verdicts_for (TC-JUDGE-25)": (
+        "symbol",
+        "aeh.judge:verdicts_for",
+        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_25_verdicts_for_returns_the_named_runs_cell_in_work_id_order",),
+    ),
+    "#361 TS-87 verdict evidence_assessment and latency_ms columns (TC-JUDGE-27)": (
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.judge as m; src = inspect.getsource(m); sys.exit(0 if 'ADD COLUMN evidence_assessment' in src and 'ADD COLUMN latency_ms' in src else 1)\"",
+        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_27_persist_writes_evidence_assessment_and_latency_exactly",),
+    ),
+    "#361 TS-87 judge_contract_violations run_metrics rows (TC-JUDGE-28)": (
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.judge as m; src = inspect.getsource(m); sys.exit(0 if 'judge_contract_violations' in src else 1)\"",
+        ("tests/integration/judge/test_judge_taxonomy_verdicts_for_and_persisted_fields.py::test_tc_judge_28_contract_violations_are_recorded_per_criterion_and_judge",),
+    ),
+    "#361 TS-87 evidence latency_ms column (TC-EXTRACT-18)": (
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.extract as m; src = inspect.getsource(m); sys.exit(0 if 'ADD COLUMN latency_ms' in src else 1)\"",
+        ("tests/integration/extract/test_extract_taxonomy_and_latency.py::test_tc_extract_18_evidence_latency_is_the_successful_attempts_wall_time",),
+    ),
+    "#371 TS-87 extraction_metrics over hand-built evidence (TC-EXTRACT-17)": (
+        "symbol",
+        "aeh.extract:extraction_metrics",
+        (
+            "tests/integration/extract/test_tc_extract_17_extraction_metrics.py"
+            "::test_tc_extract_17_extraction_metrics_match_the_hand_computed_values",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the

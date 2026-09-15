@@ -142,14 +142,19 @@ def test_tc_extract_c14_the_four_metrics_are_emitted_under_their_names(
             "TC-EXTRACT-C14: the spans-per-unit distribution is empty for a run "
             "that extracted two units — the signal is not produced"
         )
-        assert metrics.second_family_disagreement_rate is None, (
-            f"TC-EXTRACT-C14: second_family_disagreement_rate is "
-            f"{metrics.second_family_disagreement_rate!r} but no second-family "
-            f"extraction ran — None is the honest absent; a zero would lie"
+        # Per criterion since the gap-fix delta (FR-EXTRACT-12, CT-EXTRACT-17; reconciled in
+        # #381 so this case and TC-EXTRACT-17 read one surface).
+        rates = metrics.second_family_disagreement_rate
+        assert set(rates) == {"C1", "C2"} and all(v is None for v in rates.values()), (
+            f"TC-EXTRACT-C14: second_family_disagreement_rate is {rates!r} but no "
+            f"second-family extraction ran — None per criterion is the honest absent; a "
+            f"zero would lie"
         )
-        assert metrics.extraction_latency is not None, (
-            "TC-EXTRACT-C14: extraction_latency was not emitted for a run that "
-            "extracted twice"
+        assert all(
+            metrics.extraction_latency_p50_ms.get(c) is not None for c in ("C1", "C2")
+        ), (
+            "TC-EXTRACT-C14: extraction latency was not emitted per criterion for a run "
+            "that extracted twice"
         )
     finally:
         world.close()
