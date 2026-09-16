@@ -3006,7 +3006,15 @@ def _write_collected_label(
             label_type=getattr(label, "label_type", None) or "",
             band=teacher_band,
             evaluation_mode=getattr(label, "evaluation_mode", None) or "",
-            saw_system_output=int(bool(getattr(label, "saw_system_output", 0))),
+            # #356 (`FR-STATS-22`, GAP-18): a label whose source shape never carried the
+            # flag is written as 1 — the honest worst case the Durable 6 migration's own
+            # default states ("they count as operational, not as validity evidence they
+            # never were"). Writing 0 would mint blind evidence nobody recorded, durably,
+            # where no later consumer-side reading can take it back.
+            saw_system_output=(
+                1 if getattr(label, "saw_system_output", None) is None
+                else int(bool(label.saw_system_output))
+            ),
             routing=getattr(label, "routing", None) or "queued",
             origin=getattr(label, "origin", None) or "direct",
             review_seconds=getattr(label, "review_seconds", None) or 0,
