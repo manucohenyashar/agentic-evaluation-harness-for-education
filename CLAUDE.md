@@ -125,8 +125,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.grade` the one before it (#103's `grade_superseded_at_and_append_only`, 19;
 #101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.judge` owns
-Durable's last migration (#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.review` owns
+Durable's last migration (#368's `review_label_columns`, 10), `aeh.judge` the one before it
+(#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
 before it (#118's `pkg_validation_record`, 8), `aeh.grade` the one
 before it (#103's `grade_audit_record_append_only`, 7; #110's
 `review_label_store_columns` was 6), `aeh.integ` the one

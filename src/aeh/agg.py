@@ -147,6 +147,7 @@ __all__ = [
     "describe_agreement",
     "ordinal_alpha",
     "rank_criteria_for_escalation",
+    "adverse_signal_count",
     "recompute_confidence",
     "write_score",
     "should_escalate",
@@ -551,6 +552,30 @@ def _signal_adverse(value: Any, favourable: bool) -> bool:
     if value is None:
         return True
     return bool(value) != favourable
+
+
+def adverse_signal_count(row: Any) -> int:
+    """How many of the row's stored integrity signals read adverse (`FR-REVIEW-18`).
+
+    M-REVIEW's ranking input, computed HERE because the polarity that makes a signal
+    adverse is declared here once (`_AGG_FAVOURABLE`) and a second copy in the ranker
+    could disagree with the confidence the same row already carries.
+
+    The field set follows `recompute_confidence`'s rule exactly: the four recorded since
+    cohort v16, plus the two `write_score` adds only when the row's `caps_fired` is
+    recorded. A `NULL` in `described_evidence` on a row without `caps_fired` means "this
+    column did not exist when the row was written", not "not measured", and counting it
+    adverse would rank an old row above a new one for having been written earlier.
+    Within the selected fields `None` IS adverse, fail-closed, as everywhere else.
+    """
+    fields = _RECORDED_SIGNAL_FIELDS
+    if _row_value(row, "caps_fired") is not None:
+        fields = fields + _WRITTEN_SIGNAL_FIELDS
+    return sum(
+        1
+        for field in fields
+        if _signal_adverse(_row_value(row, field), _AGG_FAVOURABLE[field])
+    )
 
 
 def _band_position_prior(ordinal: int, band_count: int) -> float:

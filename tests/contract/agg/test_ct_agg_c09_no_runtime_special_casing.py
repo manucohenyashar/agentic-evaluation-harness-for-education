@@ -86,8 +86,32 @@ _REVIEW_SANCTIONED = (
     '0 if getattr(ranked, "scoring_model", None) == "holistic" else 1',
     'scoring_model: str | None',
     'scoring_model=getattr(row, "scoring_model", None),',
-    'self.scoring_model = "atomic"',
     '``expected_value`` and ``scoring_model``',
+    # --- #368 (`FR-REVIEW-18`, `FR-REVIEW-19`) ------------------------------------------
+    # `self.scoring_model = "atomic"` left this list because `FR-REVIEW-18` DELETES that
+    # line: it was "the honest default for the stored rows the store cannot enrich", and
+    # the store can enrich them now — the run row carries the package version, so the
+    # queue reads the package's own declaration instead of assuming one. Every entry
+    # below carries the package-declared value or answers a mandated question about it;
+    # none of them branches on it.
+    #
+    # The per-model review estimate (45 s / 90 s) that arrived with the same requirement
+    # is deliberately NOT here: it is a declared map, `SCORING_MODEL_EST_SECONDS`, looked
+    # up by key — the same shape as `aeh.orch`'s sanctioned `SCORING_MODEL_BASE_DEPTH`,
+    # and the reason this sweep keeps its teeth. A per-model `if` would still fail.
+    #
+    # `FR-REVIEW-19`'s mandated public reader: "the criterion's stored scoring model for
+    # the service's run, and `ReviewError` for an unknown criterion".
+    'def scoring_model_for(self, criterion_id: str) -> str:',
+    # The package side the value comes FROM (`CT-SETUP-05`) — the criterion row's own
+    # column, read once per build and carried; this is the sanctioned source, not a
+    # consumer's opinion.
+    'entry["scoring_model"]',
+    # The wire field, read off a row and off a caller-supplied mapping, and assigned onto
+    # the row that carries it into the ranking. Three shapes of the same pass-through.
+    'carried = getattr(row, "scoring_model", None)',
+    'mapping, "scoring_model"',
+    'self.scoring_model = model',
 )
 #: The agreement figure's sanctioned scoring-model reads, each its clause: the
 #: wire field that carries the row's package-declared value (`FR-STATS-02`

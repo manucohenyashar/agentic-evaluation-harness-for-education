@@ -1436,7 +1436,7 @@ def current_schema_version(tier: Tier) -> int:
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
     Tier.COHORT: 26,
-    Tier.DURABLE: 9,
+    Tier.DURABLE: 10,
 }
 
 
