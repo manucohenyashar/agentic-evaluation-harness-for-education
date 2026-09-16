@@ -1168,11 +1168,15 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # specification change (gap_fix_test_plan.md §5.0); each waits on one implementing story.
     #
     # #366 builds the real `ThreadingHTTPServer` and resolves profile and bind from the
-    # environment. Keyed on the packaged stylesheet FR-CONSOLE-33 names, which no file
-    # provides today and the served console cannot exist without.
+    # environment. Keyed on the deletion of `_CHILD_SCRIPT` — FR-CONSOLE-33 names it in those
+    # words ("`_CHILD_SCRIPT` is deleted"), and it is the child-process console the real
+    # server replaces, so the probe passes exactly when the in-process server has landed.
+    # (It was keyed on `src/aeh/console_assets/console.css` until #358 packaged that file;
+    # the stylesheet is now present and no longer discriminates.)
     "#366 console served over HTTP with environment-resolved profile and bind": (
-        "path",
-        "src/aeh/console_assets/console.css",
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.console as m; "
+        "sys.exit(0 if '_CHILD_SCRIPT' not in inspect.getsource(m) else 1)\"",
         (
             "tests/security/console/test_console_loopback_and_profile.py"
             "::test_tc_console_05_the_bind_and_profile_set_in_the_environment_are_honoured",
@@ -1233,11 +1237,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_conf_c16_recover_never_rebinds_a_run_to_the_switched_profile",
         ),
     ),
-    # Same target as the #366 entry above: the packaged stylesheet ships with the HTTP server
-    # FR-CONSOLE-33/36 introduce, and nothing before it can make a served console answer.
+    # Same target as the #366 entry above, and re-keyed with it: nothing before the
+    # in-process server can make a served console answer.
     "#366 TS-103 the served console re-reads the environment per resolution": (
-        "path",
-        "src/aeh/console_assets/console.css",
+        "command",
+        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.console as m; "
+        "sys.exit(0 if '_CHILD_SCRIPT' not in inspect.getsource(m) else 1)\"",
         (
             "tests/integration/conf/test_profile_switch_entry_points.py"
             "::test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested",
