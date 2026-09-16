@@ -1432,10 +1432,10 @@ def current_schema_version(tier: Tier) -> int:
 #: `judge_run_metrics_judge_dimension` moved Durable 8→9 — `aeh.judge` holds both tails.
 #: #355's `ingest_selection_biconditional` moved Cohort 22→23 — Cohort's tail is `aeh.ingest`'s
 #: again, where it began. #362's `orch_cell_phase` moved Cohort 23→24, and `aeh.orch` holds the
-#: tail.)
+#: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 24,
+    Tier.COHORT: 25,
     Tier.DURABLE: 9,
 }
 

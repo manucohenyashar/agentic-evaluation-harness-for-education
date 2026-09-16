@@ -66,13 +66,24 @@ FORBIDDEN_SCORE_COLUMNS = frozenset({"band", "points", "confidence"})
 
 #: The non-signal columns the module's routing requests legitimately ride on — the
 #: work-ledger and run-metrics plumbing, plus the review queue's (the plan's declared
-#: destination for the empty-evidence route). Everything else the SQL writes must be one
-#: of the six signals (the reverse half of the set-equality assertion).
+#: destination for the empty-evidence route), plus `cell_phase`'s three since #363.
+#: Everything else the SQL writes must be one of the six signals (the reverse half of the
+#: set-equality assertion).
+#:
+#: `phase`/`units_consumed`/`recorded_at` are `FR-INTEG-10`'s idempotence key: `verify` is
+#: idempotent per (cell, route, panel state), and the state it routed on is recorded in
+#: `cell_phase`'s `integrity_post` row — the FR names that table and column in those words.
+#: Bookkeeping about the gate's own routing, never an output: no signal is stored there, and
+#: `DECLARED_WRITE_SET` above is still exactly what `verify` returns.
 INFRA_WRITE_COLUMNS = frozenset({
     "work_id", "submission_id", "criterion_id", "run_id",
     "stage", "status", "attempts", "origin",
     "metric", "name", "value",
     "queue_id", "reason",
+#: The state itself rides `panel_state`, a TEXT column migration 25 adds: `units_consumed`
+#: is `INTEGER NOT NULL` and `ready_cells` parses every phase's value with `int()`, so the
+#: FR's literal column could not hold a join of `work_id`s. Disclosed on #363.
+    "phase", "units_consumed", "panel_state", "recorded_at",
 })
 
 _INSERT_COLUMNS = re.compile(r"INSERT\s+INTO\s+\w+\s*\(([^)]*)\)", re.IGNORECASE)

@@ -72,13 +72,23 @@ INFRA_WRITE_COLUMNS = frozenset({
     "stage", "status", "attempts", "origin",
     "metric", "name", "value",
     "queue_id", "reason",
+    # #363 (`FR-INTEG-10`): the gate's idempotence key. `verify` is idempotent per (cell,
+    # route, panel state), and the state it routed on is recorded in `cell_phase`'s
+    # `integrity_post` row — the FR names that table and column in those words. It is
+    # bookkeeping about the gate's own routing, not an output: no signal is stored there, and
+    # the six booleans are still the whole of what `verify` returns.
+    # The state itself rides `panel_state`, a TEXT column migration 25 adds: `units_consumed`
+    # is `INTEGER NOT NULL` and `ready_cells` parses every phase's value with `int()`, so the
+    # FR's literal column could not hold a join of `work_id`s. Disclosed on #363.
+    "phase", "units_consumed", "panel_state", "recorded_at",
 })
 
-#: The tables the write audit may see touched: the work ledger (routing
-#: requests), the durable metrics, and the review queue (the routing
-#: destination). Everything else — the score-bearing tables first — must be
+#: The tables the write audit may see touched: the work ledger (routing requests), the durable
+#: metrics, the review queue (the routing destination), and — since #363 — `cell_phase`, where
+#: `FR-INTEG-10` records the panel state a routed call consumed so a repeat call on unchanged
+#: evidence routes nothing. Everything else — the score-bearing tables first — must be
 #: byte-identical across a verify().
-TOUCHABLE_TABLES = frozenset({"work_unit", "run_metrics", "review_queue"})
+TOUCHABLE_TABLES = frozenset({"work_unit", "run_metrics", "review_queue", "cell_phase"})
 UNTOUCHABLE_TABLES = frozenset({"criterion_score", "verdict", "document", "submission"})
 
 _INSERT_COLUMNS = re.compile(r"INSERT\s+INTO\s+\w+\s*\(([^)]*)\)", re.IGNORECASE)

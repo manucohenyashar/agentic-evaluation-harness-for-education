@@ -643,17 +643,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # threshold). All are INTEG_STATEMENTS with keyword parameters — the module writes
     # only the declared signals-plus-routing surface (CT-INTEG-04's audit); its reads
     # go through `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
-    "aeh.integ:831",
-    "aeh.integ:840",
-    "aeh.integ:856",
-    "aeh.integ:867",
-    "aeh.integ:913",
-    "aeh.integ:931",
-    "aeh.integ:945",
-    "aeh.integ:962",
-    "aeh.integ:979",
-    "aeh.integ:989",
-    "aeh.integ:999",
+    # #363 (FR-INTEG-10): `_record_routed`'s write of the panel state this cell was
+    # routed on, as `cell_phase`'s `integrity_post` row. It is what makes a repeat
+    # `verify` over unchanged evidence route nothing across a process restart.
+    "aeh.integ:1143",
+    "aeh.integ:1152",
+    "aeh.integ:1168",
+    "aeh.integ:1179",
+    "aeh.integ:1247",
+    "aeh.integ:1323",
+    "aeh.integ:1341",
+    "aeh.integ:1355",
+    "aeh.integ:1372",
+    "aeh.integ:1389",
+    "aeh.integ:1399",
+    "aeh.integ:1409",
     # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
     # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
     # bootstrap insert the security suite's fixture surface makes before its

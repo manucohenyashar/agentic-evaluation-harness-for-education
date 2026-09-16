@@ -96,9 +96,12 @@ to zero, which fires the alert rather than silencing it).
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import os
+from collections import OrderedDict
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -155,7 +158,107 @@ TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (
 
 # --- the declared statements (FR-STORE-08: one literal each, keyword parameters) ------------------
 
+#: Tier C, migration 25 (#363, `FR-INTEG-10`/`FR-INTEG-12`): the reads the gate makes on
+#: every cell, and the column its idempotence record lives in.
+#:
+#: `read_document` filters `document` by `submission_id` and no migration had ever indexed that
+#: column, so every `verify` scanned the table; the gate runs per cell, so the scan is per cell.
+#: The index carries `document_id` as its second column because the read orders by it — the
+#: seek and the order come from one structure rather than a scan plus a sort.
+#:
+#: `verdict.work_id` is the one that governs how the module SCALES. `count_verdicts` asks
+#: "has this cell been scored yet" on every `verify`, through `work_id IN (SELECT …)`, and with
+#: no index on the child column that is a scan of the whole `verdict` table per cell — so the
+#: gate's per-call cost grows with the cohort, which is exactly what PERF-06 measured when it
+#: was written (15.1 ms per verify at 350 submissions against 3.1 ms at 8, and the note it
+#: prints names this scan first). `read_panel_sufficiency`'s join reads it too.
+#:
+#: `document_region.document_id` is an unindexed foreign-key child column, and
+#: `StoreExtractionView.regions` reads it once per cell, so without the second index the view
+#: this story publishes would add a full scan of `document_region` per cell to a module held to
+#: 1% of run wall clock (`NFR-INTEG-01`). `position` rides along because the read orders by it.
+#:
+#: `panel_state` is `FR-INTEG-10`'s idempotence record. The requirement's words put it in
+#: `cell_phase.units_consumed`, but that column is `INTEGER NOT NULL` and `ready_cells` parses
+#: EVERY phase's value with `int()` — a panel state is a join of `work_id`s, so storing it
+#: there made a shipped reader raise on the gate's own row. It gets its own TEXT column and
+#: `units_consumed` keeps the meaning `FR-ORCH-28` gives it. Disclosed on the issue.
+#:
+#: `count_units` and `max_retry_attempts` are already served by `idx_wu_cell` (#362), which is
+#: why this migration indexes `document` and `document_region` rather than `work_unit`.
+_INTEG_READ_INDEXES: tuple[Statement, ...] = (
+    Statement(
+        "CREATE INDEX idx_document_submission ON document (submission_id, document_id)"
+    ),
+    Statement(
+        "CREATE INDEX idx_document_region_doc ON document_region (document_id, position)"
+    ),
+    Statement("CREATE INDEX idx_verdict_work ON verdict (work_id)"),
+    Statement("ALTER TABLE cell_phase ADD COLUMN panel_state TEXT"),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=25, name="integ_gate_reads_and_panel_state",
+                  statements=_INTEG_READ_INDEXES),
+    ), key=lambda m: m.version
+))
+
+
 INTEG_STATEMENTS: dict[str, Statement] = {
+    # --- #363 (FR-INTEG-09): `StoreExtractionView`'s five reads ------------------------------
+    "read_cell_evidence": Statement(
+        "SELECT e.payload FROM evidence e JOIN work_unit w ON w.work_id = e.work_id "
+        "WHERE w.submission_id = :submission_id AND w.criterion_id = :criterion_id "
+        "AND w.stage = 'extract' ORDER BY e.work_id"
+    ),
+    "read_cell_evidence_in_run": Statement(
+        "SELECT e.payload FROM evidence e JOIN work_unit w ON w.work_id = e.work_id "
+        "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
+        "AND w.criterion_id = :criterion_id AND w.stage = 'extract' ORDER BY e.work_id"
+    ),
+    "read_document_for_regions": Statement(
+        "SELECT document_id, markdown FROM document WHERE submission_id = :submission_id "
+        "ORDER BY document_id LIMIT 1"
+    ),
+    "read_document_regions": Statement(
+        "SELECT region_id, document_id, element_kind, region_kind, description, "
+        "retraction, content, ocr_conf, content_state, selection_state, selection, "
+        "crop_ref, "
+        "position FROM document_region WHERE document_id = :document_id ORDER BY position"
+    ),
+    "read_panel_sufficiency": Statement(
+        "SELECT v.evidence_sufficient FROM verdict v "
+        "JOIN work_unit w ON w.work_id = v.work_id "
+        "WHERE w.submission_id = :submission_id AND w.criterion_id = :criterion_id "
+        "AND w.stage = 'score' ORDER BY v.work_id"
+    ),
+    "read_panel_sufficiency_in_run": Statement(
+        "SELECT v.evidence_sufficient FROM verdict v "
+        "JOIN work_unit w ON w.work_id = v.work_id "
+        "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
+        "AND w.criterion_id = :criterion_id AND w.stage = 'score' ORDER BY v.work_id"
+    ),
+    # --- #363 (FR-INTEG-10): the idempotence key, and the phase it lives in -------------------
+    "read_cell_panel_state": Statement(
+        "SELECT work_id FROM work_unit WHERE run_id = :run_id "
+        "AND submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND stage IN ('extract', 'score') AND status IN ('done', 'quarantined') "
+        "ORDER BY work_id"
+    ),
+    "read_integrity_post": Statement(
+        "SELECT panel_state FROM cell_phase WHERE run_id = :run_id "
+        "AND submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND phase = 'integrity_post'"
+    ),
+    "write_integrity_post": Statement(
+        "INSERT INTO cell_phase (run_id, submission_id, criterion_id, phase, "
+        "units_consumed, panel_state, recorded_at) VALUES (:run_id, :submission_id, "
+        ":criterion_id, 'integrity_post', :units_consumed, :panel_state, :recorded_at) "
+        "ON CONFLICT (run_id, submission_id, criterion_id, phase) DO UPDATE SET "
+        "units_consumed = excluded.units_consumed, "
+        "panel_state = excluded.panel_state, recorded_at = excluded.recorded_at"
+    ),
     "database_list": Statement("PRAGMA database_list"),
     "read_document": Statement(
         "SELECT document_id, markdown, content_hash FROM document "
@@ -595,6 +698,182 @@ class IntegritySignals:
 # --- the gate ---------------------------------------------------------------------------------------
 
 
+#: `FR-INTEG-11`: how many verified documents one gate instance holds. 64 is a class's worth of
+#: submissions — the working set of a single run's pass — and the bound exists because the
+#: cache holds whole documents: an unbounded one on a large cohort is a memory leak with a
+#: helpful name. Read at call time (seam 3), and refused loudly when it is not a positive
+#: integer: a zero or a negative would silently disable the cache the requirement asks for.
+INTEG_DOCUMENT_CACHE_ENTRIES: int = 64
+INTEG_DOCUMENT_CACHE_ENTRIES_ENV = "HARNESS_INTEG_DOCUMENT_CACHE_ENTRIES"
+
+
+def _document_cache_entries() -> int:
+    """The document cache's bound, read at call time."""
+    raw = os.environ.get(INTEG_DOCUMENT_CACHE_ENTRIES_ENV)
+    if raw is None or raw.strip() == "":
+        return INTEG_DOCUMENT_CACHE_ENTRIES
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"environment knob {INTEG_DOCUMENT_CACHE_ENTRIES_ENV}={raw!r} is not an integer."
+        ) from error
+    if value < 1:
+        raise ValueError(
+            f"environment knob {INTEG_DOCUMENT_CACHE_ENTRIES_ENV}={raw!r} must be at least 1: "
+            "a zero or negative bound would disable the cache FR-INTEG-11 requires, silently."
+        )
+    return value
+
+
+class StoreExtractionView:
+    """The extraction view the gate reads in production (`FR-INTEG-09`).
+
+    `M-INTEG` publishes it because the five reads ARE this module's declared *Requires*
+    surface (`CT-INTEG-17`): `spans`, `second_family_spans`, `regions`, `panel_sufficiency` and
+    `criterion_requires_citation`. A test double that implements the same five is a double of
+    THIS, which is what keeps the doubles honest.
+
+    Constructed as `StoreExtractionView(handle, catalog, package_version_id)`: the cohort
+    handle the evidence and regions live on, the package catalog the criterion's citation
+    requirement is declared in, and the version that declaration belongs to.
+
+    **Every read raises on a fault** — it never substitutes an empty result. That is the whole
+    contract: the gate's fail-closed routing reads an exception as "adverse and unknown", and a
+    view that returned `[]` for a faulted evidence read would tell it "measured, and there is
+    nothing", which is the one lie the gate cannot detect (`NFR-INTEG-03`).
+    """
+
+    def __init__(self, handle: Any, catalog: Any, package_version_id: str,
+                 run_id: str = "") -> None:
+        self._handle = handle
+        self._catalog = catalog
+        self._package_version_id = package_version_id
+        self._run_id = run_id
+
+    def _cell_query(self, key: str, submission_id: str, criterion_id: str) -> list:
+        """One cell read, scoped to this view's run when it has one."""
+        if self._run_id:
+            return list(self._handle.query(
+                INTEG_STATEMENTS[f"{key}_in_run"], run_id=self._run_id,
+                submission_id=submission_id, criterion_id=criterion_id,
+            ))
+        return list(self._handle.query(
+            INTEG_STATEMENTS[key],
+            submission_id=submission_id, criterion_id=criterion_id,
+        ))
+
+    def _payloads(self, submission_id: str, criterion_id: str) -> list:
+        """Every extraction payload the cell carries, in `work_id` order.
+
+        A cell that was re-extracted has more than one, and the last is the current
+        one — reading only the first would hand the gate the rejected extraction
+        forever, which quarantines a cell whose re-extraction actually succeeded.
+        """
+        payloads = []
+        for row in self._cell_query("read_cell_evidence", submission_id, criterion_id):
+            payload = row["payload"]
+            if payload is None:
+                continue
+            if isinstance(payload, (bytes, bytearray)):
+                payload = bytes(payload).decode("utf-8")
+            payloads.append(json.loads(payload))
+        return payloads
+
+    def _payload(self, submission_id: str, criterion_id: str) -> dict:
+        """The cell's CURRENT extraction payload — the last one written."""
+        payloads = self._payloads(submission_id, criterion_id)
+        return payloads[-1] if payloads else {}
+
+    def spans(self, submission_id: str, criterion_id: str) -> list:
+        """The cell's extracted spans, as `M-EXTRACT` wrote them.
+
+        Every payload's spans, not just the current one's: a span the gate has already
+        verified stays verified, and a re-extraction that dropped it should not make the
+        cell read as though the evidence had never been found."""
+        spans: list = []
+        for payload in self._payloads(submission_id, criterion_id):
+            spans.extend(payload.get("spans") or ())
+        return spans
+
+    def second_family_spans(self, submission_id: str, criterion_id: str) -> "list | None":
+        """The second family's spans, or `None` where no second family ran — `None` is
+        "not measured" and the gate reads it as such, never as agreement."""
+        second = self._payload(submission_id, criterion_id).get("second_family")
+        if not isinstance(second, dict) or "spans" not in second:
+            return None
+        return list(second.get("spans") or ())
+
+    def regions(self, document_id: str) -> list:
+        """The document's stored regions, in position order, each carrying its extent.
+
+        The gate asks by its own `doc-<submission_id>` spelling; the store's document ids
+        are minted (`doc-<uuid12>`), so the request resolves through the submission foreign
+        key. `document_region` stores no byte extents, so each region's is located by
+        finding its stored content in the canonical Markdown — in BYTES, the units
+        `verify_span` compares in — with a cursor advancing in row order, so a document
+        that repeats a region's content addresses successive occurrences rather than
+        collapsing them onto the first.
+
+        A region whose content the canonical text no longer carries takes a zero-length
+        extent at the cursor: present and measured, overlapping nothing. It is not dropped,
+        because a dropped region is indistinguishable from a document that never had one.
+        """
+        submission_id = (
+            document_id[len("doc-"):] if document_id.startswith("doc-") else document_id
+        )
+        docs = self._handle.query(
+            INTEG_STATEMENTS["read_document_for_regions"], submission_id=submission_id
+        )
+        if not docs:
+            return []
+        markdown = docs[0]["markdown"] or ""
+        raw = markdown.encode("utf-8") if isinstance(markdown, str) else bytes(markdown)
+        items: list = []
+        cursor = 0
+        for row in self._handle.query(
+            INTEG_STATEMENTS["read_document_regions"], document_id=docs[0]["document_id"]
+        ):
+            region = dict(row)
+            content = region.get("content") or ""
+            needle = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+            start = raw.find(needle, cursor) if needle else cursor
+            if start < 0:
+                start = cursor
+                needle = b""
+            region["start"] = start
+            region["end"] = start + len(needle)
+            cursor = max(cursor, start)
+            items.append(region)
+        return items
+
+    def panel_sufficiency(self, submission_id: str, criterion_id: str) -> tuple:
+        """Each landed verdict's `evidence_sufficient` answer for the cell, in `work_id`
+        order — the panel's own flags, never a computed substitute."""
+        return tuple(
+            None if row["evidence_sufficient"] is None else bool(row["evidence_sufficient"])
+            for row in self._cell_query(
+                "read_panel_sufficiency", submission_id, criterion_id
+            )
+        )
+
+    def criterion_requires_citation(self, criterion_id: str) -> bool:
+        """Whether the criterion's declaration requires cited evidence (`M-PKG`'s own
+        reading, read through the catalog rather than re-derived here)."""
+        for row in self._catalog.criteria(self._package_version_id):
+            row_id = row["criterion_id"] if isinstance(row, dict) else row.get("criterion_id")
+            if str(row_id) == str(criterion_id):
+                value = (row.get("evidence_type") if isinstance(row, dict)
+                         else getattr(row, "evidence_type", None))
+                # Fail closed on NULL as well as on absence. `evidence_type` is nullable
+                # TEXT with no CHECK and one writer (`M-PKG`'s read-back), so NULL means
+                # "not declared", not "declared as needing nothing" — and reading it as the
+                # latter releases a zero-span cell as verified, which is the outcome
+                # `FR-INTEG-03` exists to prevent.
+                return value is None or str(value) != "none"
+        return True  # fail-closed: an undeclared criterion is read as requiring citation
+
+
 class IntegrityGate:
     """The verification-and-routing half of M-INTEG (design §3.9's Protocol).
 
@@ -614,17 +893,32 @@ class IntegrityGate:
         self._floor_override = ocr_conf_floor
         self._durable_store: Any = None
         self._durable: Any = None
+        #: `FR-INTEG-11`: the canonical document bytes, cached per (run, content_hash) for
+        #: this gate instance. The gate runs per CELL and a submission has many cells, so the
+        #: uncached path re-read and re-hashed the same document once per criterion — the
+        #: measurable part of the gate's share of run wall clock (`NFR-INTEG-01`, GAP-24).
+        #: The content-hash re-verification runs once per entry, on the way in: a cached entry
+        #: is one whose hash has already been checked against its own bytes.
+        self._document_cache: "OrderedDict[tuple[str, str], bytes]" = OrderedDict()
+        #: The cells this gate instance has already routed, with the panel state it routed on
+        #: (`FR-INTEG-10`). Read from `cell_phase` when this instance has not seen the cell.
+        self._routed_state: dict[tuple[str, str, str], str] = {}
 
     # -- reads ---------------------------------------------------------------------------------------
 
-    def _document_bytes(self, submission_id: str) -> "bytes | None":
+    def _document_bytes(self, submission_id: str, run_id: str = "") -> "bytes | None":
         """The submission's canonical document bytes, or None on any fault.
 
         The row's Markdown column is the canonical text when it carries one;
         otherwise the content-addressed blob named by `content_hash` is. The
         hash is re-verified against the bytes actually read either way — a
         superseded document is a read fault, never a stale acceptance
-        (CT-INGEST-02's immutability, from the consumer's side)."""
+        (CT-INGEST-02's immutability, from the consumer's side).
+
+        Cached per `(run, content_hash)` within this gate instance (`FR-INTEG-11`): the
+        document row is still read to learn the hash — that read is what notices a superseded
+        document — but the BYTES and their verification are paid once. The cache is an LRU
+        bounded by `HARNESS_INTEG_DOCUMENT_CACHE_ENTRIES` (default 64), read at call time."""
         try:
             rows = self._handle.query(
                 INTEG_STATEMENTS["read_document"], submission_id=submission_id
@@ -636,6 +930,14 @@ class IntegrityGate:
         row = rows[0]
         markdown = row["markdown"]
         stored_hash = row["content_hash"]
+        if isinstance(stored_hash, str) and stored_hash:
+            cached = self._document_cache.get((run_id, stored_hash))
+            if cached is not None:
+                # Already read, already hash-verified against these very bytes. Re-verifying
+                # would re-answer a question whose answer cannot have changed: the hash IS the
+                # identity, so a different document is a different key.
+                self._document_cache.move_to_end((run_id, stored_hash))
+                return cached
         raw: "bytes | None" = None
         if isinstance(markdown, str) and markdown:
             raw = markdown.encode("utf-8")
@@ -650,7 +952,17 @@ class IntegrityGate:
             return None
         if not isinstance(stored_hash, str) or hashlib.sha256(raw).hexdigest() != stored_hash:
             return None
+        self._cache_document(run_id, stored_hash, raw)
         return raw
+
+    def _cache_document(self, run_id: str, content_hash: str, raw: bytes) -> None:
+        """Hold one verified document, evicting the least recently used past the bound."""
+        limit = _document_cache_entries()
+        cache = self._document_cache
+        cache[(run_id, content_hash)] = raw
+        cache.move_to_end((run_id, content_hash))
+        while len(cache) > limit:
+            cache.popitem(last=False)
 
     def _spans(self, submission_id: str, criterion_id: str) -> "list[tuple[int, int, bytes]] | None":
         """The extraction's spans for the cell, or None when the read faults."""
@@ -874,6 +1186,78 @@ class IntegrityGate:
 
     # -- the verify ----------------------------------------------------------------------------------
 
+    def _panel_state(
+        self, run_id: str, submission_id: str, criterion_id: str
+    ) -> str | None:
+        """The cell's panel state (`FR-INTEG-10`): its terminal extract and score `work_id`s.
+
+        A string rather than a count, because the question is "has the evidence MOVED", and
+        two units finishing while two others were requeued is not the same panel. A faulted
+        read returns `None` — a sentinel, not a reserved string, because any string is a
+        panel state some cell's `work_id`s could join to — so a gate that cannot see the
+        ledger burns its retry rather than silently deciding it already had."""
+        try:
+            rows = self._handle.query(
+                INTEG_STATEMENTS["read_cell_panel_state"],
+                run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+            )
+        except Exception:
+            return None
+        return ",".join(str(row["work_id"]) for row in rows)
+
+    def _already_routed(
+        self, run_id: str, submission_id: str, criterion_id: str, panel_state: str | None
+    ) -> bool:
+        """Whether this cell was already routed on exactly this panel state."""
+        if panel_state is None:
+            return False
+        key = (run_id, submission_id, criterion_id)
+        seen = self._routed_state.get(key)
+        if seen is None:
+            try:
+                rows = self._handle.query(
+                    INTEG_STATEMENTS["read_integrity_post"],
+                    run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+                )
+            except Exception:
+                return False
+            if not rows:
+                return False
+            seen = "" if rows[0]["panel_state"] is None else str(rows[0]["panel_state"])
+            self._routed_state[key] = seen
+        # A cell with no terminal units yet has the EMPTY panel state, and two calls over that
+        # same emptiness are still the same call: comparing truthiness rather than equality
+        # would make the commonest case — a cell routed before any unit finished — dedupe
+        # never, which is exactly the retry-burning FR-INTEG-10 is about.
+        return seen == panel_state
+
+    def _record_routed(
+        self, run_id: str, submission_id: str, criterion_id: str, panel_state: str | None
+    ) -> None:
+        """Record the panel state this cell was routed on, in `cell_phase`.
+
+        Best-effort, deliberately: a gate that cannot write the phase keeps the record in
+        memory for this instance and re-routes after a restart. Re-routing costs a retry;
+        refusing to have routed would lose the route itself."""
+        if panel_state is None:
+            return
+        self._routed_state[(run_id, submission_id, criterion_id)] = panel_state
+        try:
+            with self._handle.transaction() as tx:
+                tx.execute(
+                    INTEG_STATEMENTS["write_integrity_post"],
+                    run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+                    # The count is what `FR-ORCH-28` declares the column to mean, and what
+                    # `ready_cells` parses; the identity rides its own TEXT column.
+                    units_consumed=len([w for w in panel_state.split(",") if w]),
+                    panel_state=panel_state,
+                    recorded_at=datetime.now(timezone.utc).isoformat(),
+                )
+        except Exception:
+            # The in-memory record still stands for this instance; a gate that could not
+            # write the phase is not a gate that should refuse to have routed.
+            return
+
     def verify(self, run_id: str, submission_id: str, criterion_id: str) -> IntegritySignals:
         """Re-derive the six signals for one cell, route on them, emit the rates.
 
@@ -881,7 +1265,7 @@ class IntegrityGate:
         payload, a missing document) and every fault lands on the adverse
         value; routing is exactly one route per call; the metrics surface
         always emits. Returns the six fields and nothing else."""
-        raw = self._document_bytes(submission_id)
+        raw = self._document_bytes(submission_id, run_id)
         span_items = self._spans(submission_id, criterion_id)
         citation = self._requires_citation(criterion_id)
 
@@ -907,8 +1291,34 @@ class IntegrityGate:
             self._second_family(submission_id, criterion_id), span_items,
         )
 
+        # -- idempotence (`FR-INTEG-10`) ------------------------------------------------------
+        # A repeat call on an UNCHANGED panel state routes nothing: no unit, no queue row, no
+        # metric, and — the case that bit — no `bump_retries`, which increments on every call
+        # and would otherwise burn a retry the cell never used. The key is the cell's terminal
+        # extract and score `work_id`s, recorded in `cell_phase`'s `integrity_post` row
+        # (`FR-ORCH-28`), so the answer survives the process that computed it: a composition
+        # layer that verifies, restarts, and verifies again must not re-route either.
+        #
+        # A CHANGED panel state may route again, which is the point of keying on state rather
+        # than on a boolean: an escalation's verdicts landing is exactly the new evidence the
+        # gate should look at.
+        #
+        # The check is asked HERE, at the first write, rather than at the top of `verify`: a
+        # call that routes nothing must not pay for two reads it has no use for
+        # (`NFR-INTEG-01`'s 1% budget is measured over exactly those calls).
+        panel_state = self._panel_state(run_id, submission_id, criterion_id)
+        repeat = self._already_routed(run_id, submission_id, criterion_id, panel_state)
+
         # -- routing: exactly one route per call, in the declared order ------------------------------
-        if verified is False:
+        # The repeat is the FIRST arm, and the one that routes nothing: suppressing the whole
+        # chain rather than only the bump is what the clause asks for. Suppressing only the
+        # bump was tried and measured — the sufficiency arm's repeat half reads the bumped
+        # `attempts` back and inserts two escalation units, so a bare repeat still wrote two
+        # `work_unit` rows against a clause whose words are "writes no additional `work_unit`,
+        # `review_queue` or `run_metrics` row".
+        if repeat:
+            pass
+        elif verified is False:
             with self._handle.transaction() as tx:
                 tx.execute(
                     INTEG_STATEMENTS["insert_unit"],
@@ -1011,6 +1421,11 @@ class IntegrityGate:
             sufficiency=sufficiency, disagreement=disagreement,
             failure_value=failure_value,
         )
+        # The cell routed on this panel state; a repeat call with the same state will not
+        # (`FR-INTEG-10`). Recorded AFTER the routing, so a route that raised is not recorded
+        # as having happened, and only when this call was the one that routed.
+        if not repeat:
+            self._record_routed(run_id, submission_id, criterion_id, panel_state)
         return IntegritySignals(
             spans_verified=verified,
             evidence_present=present,

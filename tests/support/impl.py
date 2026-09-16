@@ -1200,12 +1200,26 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_run",
         ),
     ),
-    # #363 adds the per-run document cache and read indexes that bring the integrity gate
-    # under 1% of run wall clock; keyed on the production view FR-INTEG-09 publishes in the
-    # same story.
+    # PERF-06 stays written-ahead, RE-KEYED. #363 shipped `StoreExtractionView`, the symbol
+    # this entry used to name — but PERF-06 drives the gate through `LedgerEvidenceView`, the
+    # test double (`test_perf_06_...:35-38`), so the view #363 published is not in this case's
+    # path at all and landing it could not have moved the measurement. The original key was
+    # simply wrong.
+    #
+    # Measured on #363's branch rather than assumed, at cohort 60: main 3.27% of run wall clock,
+    # branch 3.67% — both against a 1% budget, a ~3.7x gap. The profile says why, and it is not
+    # an index: ~27.5 `execute`s per `verify` at ~0.1 ms each, of which `_emit_metrics` is 0.694 s
+    # of the gate's 2.127 s. #363's `verdict.work_id` index is a real improvement (the double's
+    # verdict reads went 5.61 s -> 2.08 s) and still leaves the gap.
+    #
+    # So the blocker is the module's write surface — batching `verify`'s statements so a cell
+    # costs a few transactions rather than eight. That is a redesign touching `CT-INTEG-04`'s
+    # pinned write set, the SEC-15 census and `_record_routed`'s after-the-routing ordering, so
+    # it is its own story, and this entry is keyed on the symbol that work would introduce.
+    # Disclosed on #363.
     "#363 integrity gate inside its 1% budget (PERF-06)": (
         "symbol",
-        "aeh.integ:StoreExtractionView",
+        "aeh.integ:CellWriteBatch",
         (
             "tests/perf/test_perf_06_zero_model_stages_full_run.py"
             "::test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run",

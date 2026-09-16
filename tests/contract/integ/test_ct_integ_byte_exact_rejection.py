@@ -50,6 +50,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.store_api import statement
 from tests.support.span_strategies import expected_verify
 
 pytestmark = pytest.mark.contract
@@ -260,7 +261,25 @@ def test_tc_integ_c06_repeated_rejection_quarantines_and_nothing_scores(tmp_data
     exists to make impossible."""
     store, handle, run_id, doc, payload, gate = _scenario(
         tmp_data_dir, [Span(0, 6, "quorum")])
-    for _attempt in range(RETRY_LIMIT):
+    for attempt in range(RETRY_LIMIT):
+        if attempt:
+            # `FR-INTEG-10` (#363): a repeat `verify` over UNCHANGED evidence is the same
+            # round asked twice and routes nothing, so each rejection is driven the way a
+            # real one arrives — the re-extraction the previous round asked for lands,
+            # still carrying the rejected span. That is a terminal EXTRACT unit, which
+            # moves the cell's panel state and leaves this case's assertions (quarantine,
+            # no live retry, no score row, no `done` score unit) untouched.
+            with handle.transaction() as tx:
+                tx.execute(
+                    statement(
+                        "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, "
+                        "status, run_id, criterion_id) VALUES (:w, :s, 'extract', 'done', "
+                        ":r, :c)",
+                        issue="#363",
+                    ),
+                    w=f"w-reextract-{_SUBMISSION}-{_CRITERION}-{attempt}",
+                    s=_SUBMISSION, r=run_id, c=_CRITERION,
+                )
         gate.verify(run_id, _SUBMISSION, _CRITERION)
     extracted = _units(handle, run_id, "extract")
     assert [u for u in extracted if u["status"] == "quarantined"], (
