@@ -52,11 +52,13 @@ settled in `tests/support/console_vocabulary.py` and
 - **The refusal keys on the deployment profile, first.** `serve_console`/`start_console`
   refuse `cloud-hosted` before any bind is inspected, then refuse any non-loopback bind
   (`FR-CONSOLE-05`) — the order matters, because a routable bind must not be able to argue
-  with the profile refusal (`CT-CONSOLE-20`). A started server is a **two-socket** design and
-  says so: the parent holds a real loopback socket (the witness `getsockname()` reads), and a
-  real child process binds its own loopback port and serves pages; the child never touches the
-  store, so a killed console loses only its memory — the ledger keeps the queued rows
-  (`NFR-CONSOLE-03`).
+  with the profile refusal (`CT-CONSOLE-20`). A started server is ONE in-process
+  `ThreadingHTTPServer` on the configured loopback socket (ADR-17): `GET` renders through
+  `ConsoleApp.render`, `POST /actions/<slug>` performs a declared control action, `POST
+  /upload` hands the body to `upload_scans`, every unknown route is a 404, and every response
+  carries `Cache-Control: no-store`. There is no child process: runs execute in-process and
+  the ledger makes them resumable, so a killed console loses only its memory and `recover`
+  picks the run up (`NFR-CONSOLE-03`, `NFR-CONSOLE-08`).
 - **The upload never materialises the batch, and it is PDF-only.** `upload_scans` walks the
   declared size in chunks (`HARNESS_CONSOLE_UPLOAD_CHUNK_BYTES`, default 4 MiB), digests each
   chunk, and hands the digests to the blob store when one is present; nothing of the declared
@@ -175,11 +177,13 @@ import time
 import uuid
 from dataclasses import dataclass, fields as dataclass_fields
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html import escape
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from typing import Any, Callable, Iterator, NamedTuple
 
-from aeh.conf import CohortRef, ModelRef, resolve_run_config
+from aeh.conf import CohortRef, ModelRef, effective_config, resolve_run_config
 from aeh.grade import GradingService, rollup_findings
 from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
@@ -4186,30 +4190,266 @@ def _stage_chunk(chunk: bytes, app: Any) -> None:
         pass
 
 
-# --- serving: the two-socket design ---------------------------------------------------------------------
+# --- serving: one in-process HTTP server (ADR-17) ----------------------------------------------
 
-_CHILD_SCRIPT = """
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-s.listen(4)
-print(s.getsockname()[1], flush=True)
-while True:
-    conn, _ = s.accept()
-    try:
-        conn.recv(1024)
-        conn.sendall(b"HTTP/1.0 200 OK\\r\\nContent-Type: text/plain\\r\\n\\r\\nconsole page\\n")
-    finally:
-        conn.close()
-"""
+def _stylesheet_bytes() -> bytes:
+    """The packaged stylesheet's bytes (`aeh/console_assets/console.css`).
+
+    Read from the installed package rather than from a path relative to the source tree, so
+    an installed wheel serves the same bytes a checkout does (#358's packaging)."""
+    return (Path(__file__).resolve().parent / "console_assets" / "console.css").read_bytes()
+
+
+def _action_slug(action: str) -> str:
+    """One control action's URL spelling: lowercase, spaces and slashes to hyphens.
+
+    `CONTROL_SURFACE_ACTIONS` holds the actions verbatim, as prose — "start run",
+    "pause/resume", "approve exemplar paraphrases at export" — because `FR-CONSOLE-32` pins
+    that set to those words. None of them is a legal path segment: a space cannot appear in a
+    request line at all, and a slash would split into two segments. So the URL carries a slug
+    and the server maps it back, which is the form the cases pin
+    (`TC-CONSOLE-43`'s `finalize-batch`, `TC-CONF-21`'s `start-run`)."""
+    return action.lower().replace("/", "-").replace(" ", "-")
+
+
+#: slug -> action, for `POST /actions/<slug>`. Built from the declared set rather than written
+#: out, so a sixteenth action cannot be reachable over HTTP without appearing in
+#: `CONTROL_SURFACE_ACTIONS` first — the allow-list and the routing table are one object.
+CONTROL_ACTION_SLUGS: dict[str, str] = {
+    _action_slug(action): action for action in CONTROL_SURFACE_ACTIONS
+}
+if len(CONTROL_ACTION_SLUGS) != len(CONTROL_SURFACE_ACTIONS):  # pragma: no cover — import-time
+    raise AssertionError(
+        "two control actions share a URL slug, so one of them would be unreachable over HTTP: "
+        f"{sorted(CONTROL_SURFACE_ACTIONS)}"
+    )
+
+
+class _BoundedReader:
+    """Exactly `limit` bytes of `stream`, and not one more.
+
+    An upload reads from a keep-alive connection, where the bytes after the body are the NEXT
+    request. Reading to EOF would swallow it, so the body is bounded by its declared length and
+    `consumed` lets the caller refuse a short one rather than store a truncated document."""
+
+    def __init__(self, stream: Any, limit: int) -> None:
+        self._stream = stream
+        self._remaining = max(0, int(limit))
+        self.consumed = 0
+
+    def read(self, size: int = -1) -> bytes:
+        if self._remaining <= 0:
+            return b""
+        take = self._remaining if size is None or size < 0 else min(size, self._remaining)
+        chunk = self._stream.read(take)
+        self._remaining -= len(chunk)
+        self.consumed += len(chunk)
+        return chunk
+
+
+def _known_route(route: str) -> bool:
+    """Whether `route` is one of the declared screens.
+
+    `ConsoleApp._resolve` falls back to S1 for anything it does not recognise — the right
+    behaviour for a render, and the wrong one for a server, which owes an unknown path a 404
+    rather than somebody else's page (`FR-CONSOLE-33`). So the server asks this first, over the
+    same `SCREENS` table `_resolve` walks."""
+    for template in SCREENS.values():
+        if route == template:
+            return True
+        if re.fullmatch(re.sub(r"\{(\w+)\}", r"(?P<\1>[^/]+)", template), route):
+            return True
+    return route == "/"
+
+
+class _ConsoleRequestHandler(BaseHTTPRequestHandler):
+    """The routes `FR-CONSOLE-33` declares, and nothing else.
+
+    Every response carries `Cache-Control: no-store`: the console renders student records, and
+    a cached page is a record sitting in a browser's disk cache after the run it belongs to is
+    over. That header is set in one place (`_respond`) so a route cannot forget it.
+    """
+
+    server_version = "aeh-console"
+    protocol_version = "HTTP/1.1"
+
+    @property
+    def _console(self) -> "ConsoleServer":
+        return self.server.console  # type: ignore[attr-defined]
+
+    def log_message(self, fmt: str, *args: Any) -> None:  # noqa: A003
+        """Silent by default: the console's own observability is its pages and the ledger,
+        and an access log on stderr would interleave with the harness's output."""
+
+    def _respond(
+        self, status: int, body: bytes, content_type: str, *, close: bool = False
+    ) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        if close:
+            self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
+        if close:
+            self.close_connection = True
+
+    def _not_found(self) -> None:
+        """404, and the connection ends here.
+
+        Every refusal path answers WITHOUT reading the request body, and this is HTTP/1.1, so
+        leaving the connection open would have the unread body parsed as the next request:
+        a refused control action followed by a smuggled `GET /students/<ref>` on the same
+        socket, which is the disclosure the refusal exists to prevent. Closing is the one fix
+        that does not require trusting a body the server has already declined to accept."""
+        self._respond(404, b"not found\n", "text/plain; charset=utf-8", close=True)
+
+    def do_GET(self) -> None:  # noqa: N802 — the stdlib's dispatch name
+        parsed = urlsplit(self.path)
+        route = parsed.path
+        if route == "/assets/console.css":
+            try:
+                body = _stylesheet_bytes()
+            except OSError:
+                self._not_found()
+                return
+            self._respond(200, body, "text/css; charset=utf-8")
+            return
+        if not _known_route(route):
+            self._not_found()
+            return
+        # `render(route, **query)` takes `route` positionally, so a query string carrying its
+        # own `route=` (or `self=`) raised `TypeError` out of the handler and the client saw a
+        # closed connection rather than a status. A URL cannot name the handler's own
+        # parameters.
+        query = {
+            key: values[-1]
+            for key, values in parse_qs(parsed.query).items()
+            if key not in ("route", "self")
+        }
+        try:
+            page = self._console.app.render(route, **query)
+        except Exception as error:  # noqa: BLE001 — a page is a read; a failed read is a 500
+            body = f"the console could not render {route}: {error}\n".encode("utf-8")
+            self._respond(500, body, "text/plain; charset=utf-8", close=True)
+            return
+        self._respond(200, str(page.html).encode("utf-8"), "text/html; charset=utf-8")
+
+    def do_POST(self) -> None:  # noqa: N802 — the stdlib's dispatch name
+        route = urlsplit(self.path).path
+        if route == "/upload":
+            self._upload()
+            return
+        if not route.startswith("/actions/"):
+            self._not_found()
+            return
+        # The slug allow-list is the declared control surface, checked BEFORE the body is read
+        # and before any door is called: an undeclared slug must not be able to reach a store
+        # at all, so it is a 404 with no write rather than a refusal the ledger records.
+        action = CONTROL_ACTION_SLUGS.get(route[len("/actions/"):])
+        if action is None:
+            self._not_found()
+            return
+        # `FR-CONSOLE-36`: the effective config is resolved again here, not just at start, so a
+        # profile or bind changed in the environment after the server came up is refused on the
+        # action rather than honoured.
+        try:
+            self._console.recheck_environment()
+        except ConsoleBindRefused as refusal:
+            self._respond(
+                403, f"{refusal}\n".encode("utf-8"), "text/plain; charset=utf-8", close=True
+            )
+            return
+        form = self._read_form()
+        outcome = self._console.app.perform(action, **form)
+        body = json.dumps({
+            "action": action,
+            "dispatched": bool(getattr(outcome, "dispatched", False)),
+            "refused": bool(getattr(outcome, "refused", False)),
+            "detail": str(getattr(outcome, "detail", "")),
+            "rows_written": len(getattr(outcome, "rows_written", ()) or ()),
+        }).encode("utf-8")
+        self._respond(200, body, "application/json; charset=utf-8")
+
+    def _read_form(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length).decode("utf-8") if length else ""
+        return {key: values[-1] for key, values in parse_qs(raw).items()}
+
+    def _upload(self) -> None:
+        """Hand the request body to `upload_scans`, the module's upload handler.
+
+        Not a second implementation: `upload_scans` is where `FR-CONSOLE-04`'s chunked walk
+        and `FR-CONSOLE-13`'s `%PDF-` magic check live, and a route that staged bytes itself
+        would be an upload path with no format check and no `UploadOutcome` — an orphan blob
+        no intake ever consumes.
+
+        The body is read through a bounded reader rather than to EOF, because on a keep-alive
+        connection the bytes after it are the next request."""
+        length_header = self.headers.get("Content-Length")
+        if length_header is None:
+            # No declared length means a chunked body, which this route does not decode. Saying
+            # so is the honest answer; the alternative was storing the hash of nothing and
+            # answering 200.
+            self._respond(
+                411, b"upload requires Content-Length\n", "text/plain; charset=utf-8",
+                close=True,
+            )
+            return
+        length = int(length_header)
+        query = {k: v[-1] for k, v in parse_qs(urlsplit(self.path).query).items()}
+        reader = _BoundedReader(self.rfile, length)
+        outcome = upload_scans(
+            self._console.app,
+            cohort_id=str(query.get("cohort_id", "c-unaddressed")),
+            size_bytes=length,
+            stream=reader,
+            filename=str(query.get("filename", "")),
+        )
+        if reader.consumed != length:
+            # A client that disconnected mid-body: the staged chunks are a truncated document,
+            # and answering 200 would hand back an address for it.
+            self._respond(
+                400,
+                f"upload ended after {reader.consumed} of {length} bytes\n".encode("utf-8"),
+                "text/plain; charset=utf-8", close=True,
+            )
+            return
+        body = json.dumps({
+            "dispatched": bool(outcome.dispatched),
+            "blob_refs": [str(ref) for ref in outcome.blob_refs],
+            "detail": str(outcome.detail),
+        }).encode("utf-8")
+        self._respond(200 if outcome.dispatched else 400, body, "application/json; charset=utf-8")
+
+
+class _ConsoleHTTPServer(ThreadingHTTPServer):
+    """`ThreadingHTTPServer` carrying the `ConsoleServer` its handlers answer for."""
+
+    daemon_threads = True
+    allow_reuse_address = False
+
+    def __init__(self, address: tuple, handler: type, console: "ConsoleServer") -> None:
+        self.console = console
+        # The family follows the address rather than defaulting to IPv4: `CONSOLE_BIND=::1` is
+        # a legal loopback bind (`TC-CONSOLE-05` uses it as the discriminating probe that the
+        # knob is read at all), and binding it on an `AF_INET` socket raises `gaierror`.
+        if ":" in str(address[0]):
+            self.address_family = socket.AF_INET6
+        super().__init__(address, handler)
 
 
 class ConsoleServer:
-    """A served console. Two sockets, disclosed: the parent holds the configured loopback
-    socket — the witness `getsockname()` reads — and a real child process binds its own
-    loopback port and serves pages until `terminate()`. The child never touches the store,
-    so killing it leaves the queued rows exactly where the ledger put them, and a
-    restarted console reconstructs the run state from the ledger (`NFR-CONSOLE-03`)."""
+    """A served console: one in-process `ThreadingHTTPServer` on the configured loopback
+    socket (ADR-17).
+
+    There is no child process. Runs execute in-process and the ledger makes them resumable,
+    so killing the server stops them and `recover` picks them up (`NFR-CONSOLE-03`,
+    `NFR-CONSOLE-08`) — which is why the child-process design this replaced bought nothing.
+    `terminate()` shuts the server down, closes the port and joins the serving thread, so
+    "the console is gone" is a state a caller can actually observe.
+    """
 
     def __init__(
         self,
@@ -4219,54 +4459,98 @@ class ConsoleServer:
         cfg: dict[str, Any] | None = None,
         bind: str | None = None,
         port: int | None = None,
+        environ: Any = None,
     ) -> None:
-        config = dict(cfg or {})
-        # The profile refusal comes first (`CT-CONSOLE-20`): a routable bind must not be
-        # able to argue with it, so no bind validation happens before this line.
+        self._cfg = dict(cfg or {})
+        self._environ = environ
+        self._bind = bind
+        config = self._effective()
+        self._refuse_unless_servable(config, bind)
+        self.bind_address = self._resolved_bind(config, bind)
+        host = "::1" if str(self.bind_address) == "::1" else "127.0.0.1"
+        resolved_port = port if port is not None else (config.get("CONSOLE_PORT") or 0)
+        self._store = store
+        self._run_id = run_id
+        self.app = build_console(store=store, bind_address=str(self.bind_address))
+        self._httpd = _ConsoleHTTPServer(
+            (host, int(resolved_port)), _ConsoleRequestHandler, self
+        )
+        self.socket = self._httpd.socket
+        self.returncode: int | None = None
+        self._closed = False
+        self._thread = threading.Thread(
+            target=self._httpd.serve_forever, name="aeh-console", daemon=True
+        )
+        self._thread.start()
+
+    # -- configuration (`FR-CONSOLE-36`) -----------------------------------------------------
+
+    def _effective(self) -> dict:
+        """The effective config: the environment over `cfg`, every time it is asked for.
+
+        Asked again on every control action rather than cached, so `HARNESS_PROFILE` or
+        `CONSOLE_BIND` changed after start is honoured — the whole point of resolving through
+        `conf.effective_config` rather than reading `cfg`."""
+        return effective_config(self._cfg, self._environ)
+
+    @staticmethod
+    def _resolved_bind(config: dict, bind: str | None) -> str:
+        return bind or config.get("CONSOLE_BIND") or CONSOLE_BIND
+
+    @classmethod
+    def _refuse_unless_servable(cls, config: dict, bind: str | None) -> None:
+        """The two refusals, in the order that makes them refusals.
+
+        The profile first (`CT-CONSOLE-20`): a routable bind must not be able to argue with
+        it, so no bind validation happens before this line."""
         if config.get("HARNESS_PROFILE") == CLOUD_HOSTED_PROFILE:
             raise ConsoleBindRefused(
                 "the console refuses to start under the cloud-hosted profile: authN/authZ is "
                 "none by design, and the refusal keys on the deployment profile, not on any "
                 "setting (FR-CONSOLE-05, CT-CONSOLE-05)."
             )
-        self.bind_address = bind or config.get("CONSOLE_BIND") or CONSOLE_BIND
-        if str(self.bind_address) not in LOOPBACK_ADDRESSES:
+        address = cls._resolved_bind(config, bind)
+        if str(address) not in LOOPBACK_ADDRESSES:
             raise ConsoleBindRefused(
-                f"the console refuses a non-loopback bind ({self.bind_address!r}): an "
+                f"the console refuses a non-loopback bind ({address!r}): an "
                 "unauthenticated student-record system runs on one machine, loopback only "
                 "(FR-CONSOLE-05, R68)."
             )
-        host = "::1" if str(self.bind_address) == "::1" else "127.0.0.1"
-        self.socket = socket.socket()
-        self.socket.bind((host, port if port is not None else (config.get("CONSOLE_PORT") or 0)))
-        self.socket.listen(4)
-        self._store = store
-        self._run_id = run_id
-        self._proc = subprocess.Popen(
-            [sys.executable, "-c", _CHILD_SCRIPT],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-        )
-        self.returncode: int | None = None
-        self._closed = False
+
+    def recheck_environment(self) -> None:
+        """Re-resolve and re-refuse, for one control action (`FR-CONSOLE-36`)."""
+        self._refuse_unless_servable(self._effective(), self._bind)
+
+    # -- lifecycle ---------------------------------------------------------------------------
+
+    @property
+    def store(self) -> Any:
+        return self._store
+
+    @property
+    def port(self) -> int:
+        return int(self.socket.getsockname()[1])
 
     @property
     def pid(self) -> int:
-        return self._proc.pid
+        """This process. The console serves in-process (ADR-17), so there is no other one —
+        the property stays because callers use it to name the process in a message."""
+        return os.getpid()
 
     def terminate(self) -> None:
-        """Kill the child and reap it, so `returncode` names a real exit status — the
-        assertion that something was actually killed."""
+        """Stop serving: shut the loop down, close the port, and join the thread.
+
+        `returncode` is set to 0 once the thread is joined — the observable "it is really
+        stopped" the child-process design used an exit status for."""
         if self._closed:
             return
-        self._proc.terminate()
-        try:
-            self._proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:  # pragma: no cover — defensive
-            self._proc.kill()
-            self._proc.wait(timeout=10)
-        self.returncode = self._proc.returncode
         self._closed = True
+        with contextlib.suppress(Exception):
+            self._httpd.shutdown()
+        with contextlib.suppress(Exception):
+            self._httpd.server_close()
+        self._thread.join(timeout=10)
+        self.returncode = 0 if not self._thread.is_alive() else None
         with contextlib.suppress(Exception):
             self.socket.close()
 
@@ -4276,11 +4560,12 @@ def serve_console(
     *,
     run_id: str | None = None,
     cfg: dict[str, Any] | None = None,
+    environ: Any = None,
 ) -> ConsoleServer:
-    """Serve the console as a real process. Refuses before binding: the deployment
-    profile first (`cloud-hosted` never starts, whatever the settings say), then any
-    non-loopback bind."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg)
+    """Serve the console. Refuses before binding: the deployment profile first
+    (`cloud-hosted` never starts, whatever the settings say), then any non-loopback bind —
+    both read from the EFFECTIVE config, the environment over `cfg` (`FR-CONSOLE-36`)."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)
 
 
 def start_console(
@@ -4288,11 +4573,13 @@ def start_console(
     *,
     store: Any = None,
     run_id: str | None = None,
+    environ: Any = None,
 ) -> ConsoleServer:
     """Start the console under `cfg`. The same refusals apply, in the same order: the
     profile first, then the bind — which is the order that makes the refusal a refusal
-    rather than a default somebody can turn off (`CT-CONSOLE-20`)."""
-    return ConsoleServer(store, run_id=run_id, cfg=cfg)
+    rather than a default somebody can turn off (`CT-CONSOLE-20`) — and both over the
+    effective config, the environment winning over `cfg` (`FR-CONSOLE-36`)."""
+    return ConsoleServer(store, run_id=run_id, cfg=cfg, environ=environ)
 
 
 def build_console(

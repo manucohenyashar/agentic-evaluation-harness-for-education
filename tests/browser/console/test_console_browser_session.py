@@ -115,7 +115,6 @@ def _views_rendered(session, routes: dict[str, str]) -> list[str]:
 # --- TC-CONSOLE-40 — no browser storage of student text, no service worker, no cache ---------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_40_a_browser_session_leaves_no_storage_worker_or_cache_behind(tmp_data_dir):
     """`TC-CONSOLE-40` / `FR-CONSOLE-17` (invariant 12, runtime half) — browser storage inspection.
 
@@ -161,7 +160,6 @@ def test_tc_console_40_a_browser_session_leaves_no_storage_worker_or_cache_behin
 # --- TC-CONSOLE-41 / SEC-12 — zero requests to any origin but the console's own -------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_41_sec_12_a_full_session_requests_nothing_from_another_origin(tmp_data_dir):
     """`TC-CONSOLE-41` / `SEC-12` / `FR-CONSOLE-18` (invariant 13, runtime half) — network log.
 
@@ -190,7 +188,6 @@ def test_tc_console_41_sec_12_a_full_session_requests_nothing_from_another_origi
 # --- TC-CONSOLE-37 — the composite: loopback, no browser storage, no external origins -------------
 
 
-@pytest.mark.writtenahead
 def test_tc_console_37_the_running_console_is_loopback_storage_free_and_origin_closed(
     tmp_data_dir,
 ):

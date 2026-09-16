@@ -1173,23 +1173,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # server replaces, so the probe passes exactly when the in-process server has landed.
     # (It was keyed on `src/aeh/console_assets/console.css` until #358 packaged that file;
     # the stylesheet is now present and no longer discriminates.)
-    "#366 console served over HTTP with environment-resolved profile and bind": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.console as m; "
-        "sys.exit(0 if '_CHILD_SCRIPT' not in inspect.getsource(m) else 1)\"",
-        (
-            "tests/security/console/test_console_loopback_and_profile.py"
-            "::test_tc_console_05_the_bind_and_profile_set_in_the_environment_are_honoured",
-            "tests/integration/console/test_console_clean_machine.py"
-            "::test_tc_console_34_the_console_starts_and_serves_its_pages_with_no_toolchain_or_network",
-            "tests/browser/console/test_console_browser_session.py"
-            "::test_tc_console_40_a_browser_session_leaves_no_storage_worker_or_cache_behind",
-            "tests/browser/console/test_console_browser_session.py"
-            "::test_tc_console_41_sec_12_a_full_session_requests_nothing_from_another_origin",
-            "tests/browser/console/test_console_browser_session.py"
-            "::test_tc_console_37_the_running_console_is_loopback_storage_free_and_origin_closed",
-        ),
-    ),
     # #367 moves the screens onto their services and stops swallowing schema errors; keyed on
     # the error FR-CONSOLE-37 names.
     "#367 service-backed console screens (TC-CONSOLE-33)": (
@@ -1253,17 +1236,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # Same target as the #366 entry above, and re-keyed with it: nothing before the
     # in-process server can make a served console answer.
-    "#366 TS-103 the served console re-reads the environment per resolution": (
-        "command",
-        "python -c \"import sys, inspect; sys.path.insert(0, 'src'); import aeh.console as m; "
-        "sys.exit(0 if '_CHILD_SCRIPT' not in inspect.getsource(m) else 1)\"",
-        (
-            "tests/integration/conf/test_profile_switch_entry_points.py"
-            "::test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested",
-            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
-            "::test_tc_conf_c15_serve_console_resolves_through_effective_config_exactly_once",
-        ),
-    ),
     # --- TS-100 (#394), the MVVP measurement drivers (Phase 2) ------------------------------
     #
     # A conjunction over both drivers: each case needs one, and #374 lands them together.

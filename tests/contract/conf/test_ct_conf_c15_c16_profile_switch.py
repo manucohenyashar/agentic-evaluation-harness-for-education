@@ -170,7 +170,6 @@ def test_tc_conf_c15_recover_resolves_through_effective_config_from_the_environm
     _assert_every_call_carries(composed, environment, "main(['recover', ...])")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("row", sorted(ROWS))
 def test_tc_conf_c15_serve_console_resolves_through_effective_config_exactly_once(
     tmp_data_dir, monkeypatch, row
