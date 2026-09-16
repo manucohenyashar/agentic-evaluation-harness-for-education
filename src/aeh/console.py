@@ -206,6 +206,7 @@ import aeh.synth  # noqa: E402,F401
 from aeh.det import DeterministicEvaluator
 
 __all__ = [
+    "TOO_FEW_QUALIFIER",
     "BLIND_SAMPLE_RANGE",
     "CONSOLE_BIND",
     "CONSOLE_PORT",
@@ -600,6 +601,23 @@ _SELECT_REVIEW_BUDGET = (
 _SELECT_GRADE_REVISION = (
     "SELECT submission_id, revision, finalized_at, state, total, policy_version "
     "FROM submission_grade WHERE submission_id = :submission_id AND revision = :revision "
+    "ORDER BY submission_id"
+)
+#: `FR-CONSOLE-39`: the revision the teacher is looking at — the ledger's own `is_current`
+#: flag, never `MAX(revision)` and never revision 1.
+#:
+#: ADR-9's partial unique index is `(run_id, submission_id) WHERE is_current = 1`, so
+#: "current" is current *per run*: a submission graded under two runs of one cohort has TWO
+#: current rows, and a bare `is_current = 1` would hand back whichever the file listed first.
+#: This route names no run — `grade_revision(submission_ref=...)` is the teacher's read of a
+#: submission — so it scopes to the ledger's newest run, the same subselect and the same
+#: reasoning as `_SELECT_SCORES` above (#359): a second run's grade replaces the first's on
+#: the page rather than shadowing it by row order.
+_SELECT_CURRENT_GRADE_REVISION = (
+    "SELECT submission_id, revision, finalized_at, state, total, policy_version "
+    "FROM submission_grade WHERE submission_id = :submission_id AND is_current = 1 "
+    "AND run_id = (SELECT run_id FROM run "
+    "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1) "
     "ORDER BY submission_id"
 )
 _SELECT_NARRATIVE = (
@@ -2805,9 +2823,17 @@ class ConsoleApp:
         """Read one revision of a grade off the append-only history (`FR-GRADE-09`):
         the superseded revision stays readable after an amendment writes the next one —
         which is the differential that separates superseding a delivered grade from
-        mutating it. `revision=None` reads the latest. The `actor` is accepted and
+        mutating it. `revision=None` reads the CURRENT revision (see below). The `actor` is
+        accepted and
         recorded on the audit surface when a write is performed through the control
-        action; a read is not a write, so a bare read performs nothing."""
+        action; a read is not a write, so a bare read performs nothing.
+
+        `revision=None` reads the **current** revision — the row flagged `is_current = 1`
+        (`FR-CONSOLE-39`, GAP-20), which is the grade the teacher is looking at. It is not
+        `MAX(revision)` and not revision 1: an amendment that was itself superseded, or a
+        ledger whose current row is an earlier revision, would otherwise render a grade
+        nobody holds. The flag is the ledger's own answer to "which one counts"
+        (ADR-9's partial unique index), so the read asks it rather than inferring."""
         history = self._grade_ledger.get(submission_ref)
         if history:
             if revision is None:
@@ -2816,8 +2842,12 @@ class ConsoleApp:
                 if record.revision == revision:
                     return record
             return None
-        rows = self._read_cohort_files(
-            _SELECT_GRADE_REVISION, [], submission_id=submission_ref, revision=revision or 1
+        rows = (
+            self._read_cohort_files(
+                _SELECT_CURRENT_GRADE_REVISION, [], submission_id=submission_ref)
+            if revision is None
+            else self._read_cohort_files(
+                _SELECT_GRADE_REVISION, [], submission_id=submission_ref, revision=revision)
         )
         if not rows:
             return None
@@ -3169,6 +3199,13 @@ def render_conformance_surface(report: Any) -> str:
     return ". ".join(lines) + "."
 
 
+#: `FR-CONSOLE-38` (GAP-17): what a figure below `aeh.stats.STATS_MIN_N_FOR_HEADLINE` is
+#: qualified with. A headline number over a sample too small to support it is the §2.1 error
+#: in its most quotable form — the figure goes in a slide deck and the qualifier does not —
+#: so the sentence travels WITH the number rather than in a footnote.
+TOO_FEW_QUALIFIER = "too few to draw conclusions from"
+
+
 def render_agreement_block(
     *,
     figure: Any = None,
@@ -3232,6 +3269,17 @@ def render_agreement_block(
     provenance = (
         f" (package version {package_version})" if package_version else ""
     )
+    # FR-CONSOLE-38 (GAP-17, HLD §7.9): a figure computed over too small a sample renders
+    # WITH the qualifier. The number is still shown — it is the figure the labels support —
+    # but a reader who takes 0.41 over eleven papers as the system's agreement is drawing a
+    # conclusion the sample cannot carry. The threshold is `aeh.stats`' and is read HERE, at
+    # call time (seam 3), so a deployment that lowers it changes the rendering without a
+    # code change and without this module keeping a second copy of the number.
+    from aeh.stats import STATS_MIN_N_FOR_HEADLINE
+
+    too_few = ""
+    if n is not None and int(n) < int(STATS_MIN_N_FOR_HEADLINE):
+        too_few = f" This sample is {TOO_FEW_QUALIFIER}."
     degeneracy = ""
     if degenerate or band_count == 2:
         degeneracy = (
@@ -3242,7 +3290,7 @@ def render_agreement_block(
     return (
         f"Agreement{scope}: {named}, {size}, chance-corrected and scoped to this "
         f"population and backend{provenance}; atomic and holistic criteria are "
-        f"reported separately and never merged.{degeneracy}"
+        f"reported separately and never merged.{too_few}{degeneracy}"
     )
 
 

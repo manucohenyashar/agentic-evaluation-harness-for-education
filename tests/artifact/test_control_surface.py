@@ -209,8 +209,14 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   actions delegate to (`GradingService.finalize_batch`, the orchestrator's control-row
 #:   application, the package catalog S1 reads, `DeterministicEvaluator` for S12's key
 #:   correction re-derivation).
+#: - `aeh.stats` — `STATS_MIN_N_FOR_HEADLINE`, the sample size below which a rendered
+#:   agreement figure carries the too-few qualifier. `FR-CONSOLE-38` names this seam in those
+#:   words ("read at call time"), which is why the edge is declared rather than duplicated: a
+#:   console holding its own copy of the threshold would drift from the module that owns it,
+#:   and the qualifier would then disagree with the figure it qualifies (#357).
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pkg", "aeh.review", "aeh.store"}
+    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pkg", "aeh.review", "aeh.stats",
+     "aeh.store"}
 )
 
 
