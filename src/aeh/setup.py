@@ -106,6 +106,7 @@ from aeh.pkg import (
     PackageDraft,
     PackageVersionId,
     QUESTION_TYPES,
+    default_evaluation_mode,
     default_grade_policy,
 )
 from aeh.prov import InferenceProvider, ModelRef, PromptPayload, SamplingParams
@@ -292,7 +293,7 @@ SETUP_EVIDENCE_TYPE_DEFAULT = "textual_span"
 #: (its writers are trusted), but the design names exactly two models — `atomic` and
 #: `holistic` (FR-SETUP-13, FR-AGG-06) — so the read back proposes within those and a
 #: third name in a model reply is a schema-validation failure, re-requested.
-SCORING_MODELS: tuple[str, ...] = ("atomic", "holistic")
+SCORING_MODELS: tuple[str, ...] = ("atomic", "atomic_with_gate", "holistic")
 
 # -- #52: the decomposability classification (FR-SETUP-06/-07/-08, §5.3) ------------------
 
@@ -537,6 +538,11 @@ class CriterionDraft:
     bands: tuple[ProposedBand, ...]
     justification: str = ""
     evidence_type: str = SETUP_EVIDENCE_TYPE_DEFAULT
+    #: `FR-SETUP-17` / `FR-PKG-22`: how this criterion is EVALUATED — `deterministic`
+    #: for FR-SETUP-13's criteria, `judged` for everything else. Distinct from `kind`,
+    #: which says what shape the criterion is: a package may declare a multiple-choice
+    #: criterion whose options a panel weighs, and the two fields are what let it.
+    evaluation_mode: str = "judged"
     #: `proposed` when the model proposed the band set, `derived_default` when the
     #: module derived the two-band met / not-met set (`FR-SETUP-14`: a default taken
     #: is recorded, not indistinguishable from an explicit choice).
@@ -1218,6 +1224,10 @@ def _parse_readback_reply(
         scoring_model = raw.get("scoring_model")
         decomposition_basis = ""
         needs_confirmation = False
+        # `FR-SETUP-17`: decided from the shape here and re-decided explicitly in the
+        # classifier branches below, so every path out of this loop has bound it — the
+        # arm that takes the reply's own `scoring_model` reaches neither branch.
+        evaluation_mode = default_evaluation_mode(kind)
         if scoring_model is None:
             # #52 (`FR-SETUP-06`/`-08`): the reply carried the §5.3 ANSWERS (or none at
             # all) and no scoring model — the classification is the module's table, not
@@ -1227,7 +1237,12 @@ def _parse_readback_reply(
             # the default is `holistic`, never `atomic` (NFR-SETUP-02, RISK-27).
             if kind == "mcq":
                 scoring_model = "atomic"
+                # `FR-SETUP-17`: FR-SETUP-13's criteria are the deterministic ones, and
+                # the mode is bound here rather than left for M-PKG's column default —
+                # the service DECLARES how each criterion is evaluated (`FR-PKG-22`).
+                evaluation_mode = "deterministic"
             else:
+                evaluation_mode = "judged"
                 raw_answers = raw.get("answers")
                 raw_answers = raw_answers if isinstance(raw_answers, dict) else {}
                 scoring_model, decided = _classify_answers(raw_answers)
@@ -1382,6 +1397,7 @@ def _parse_readback_reply(
                     )
         drafts.append(CriterionDraft(
             criterion_id=criterion_id, question_id=question_id, kind=kind,
+            evaluation_mode=evaluation_mode,
             scoring_model=scoring_model, max_points=float(max_points),
             construct=construct, band_count=band_count, bands=bands,
             justification=justification.strip(), evidence_type=evidence_type.strip(),
@@ -1539,6 +1555,7 @@ def _criterion_to_dict(draft: CriterionDraft) -> dict:
         "construct": draft.construct,
         "band_count": draft.band_count,
         "evidence_type": draft.evidence_type,
+        "evaluation_mode": draft.evaluation_mode,
         "justification": draft.justification,
         "bands_source": draft.bands_source,
         "decomposition_basis": draft.decomposition_basis,
@@ -1563,6 +1580,7 @@ def _criterion_record(draft: CriterionDraft) -> dict:
         "band_count": draft.band_count,
         "evidence_type": draft.evidence_type,
         "band_justification": draft.justification or None,
+        "evaluation_mode": draft.evaluation_mode,
         "bands": [
             {"band": band.band, "ordinal": band.ordinal, "points": band.points,
              "descriptor": band.descriptor}
@@ -1621,6 +1639,10 @@ def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricRea
             justification=str(entry.get("justification", "")),
             evidence_type=str(entry.get("evidence_type",
                                         SETUP_EVIDENCE_TYPE_DEFAULT)),
+            # A payload written before `evaluation_mode` existed carries none; the shape
+            # default reproduces exactly what that payload meant when it was written.
+            evaluation_mode=str(entry.get("evaluation_mode")
+                                or default_evaluation_mode(str(entry["kind"]))),
             bands_source=str(entry.get("bands_source", "proposed")),
             decomposition_basis=str(entry.get("decomposition_basis", "")),
         )
@@ -3182,8 +3204,9 @@ class SetupService:
         """Stage the deterministic criteria the confirmed inventory implies
         (`FR-SETUP-03`, `CT-SETUP-07`, #53): one criterion per mcq/mixed question,
         id `CRIT-<question id>`, kind `mcq`, scoring model `atomic` (the carrier the
-        gate and the acceptance rule read — the evaluation_mode vocabulary has no
-        storage yet, the disclosed bet C07 records), EXACTLY the two bands
+        gate and the acceptance rule read), `evaluation_mode='deterministic'` bound
+        explicitly (`FR-SETUP-17`; #369 gave the vocabulary storage, retiring the
+        disclosed bet C07 recorded), EXACTLY the two bands
         correct/incorrect — the zero-point band at the lower ordinal, per FR-PKG-06's
         monotone mapping — and the question's own option set mirrored onto the
         criterion. Never submitted to the §5.3 test —
@@ -3207,6 +3230,11 @@ class SetupService:
             add_criterion(
                 v, criterion_id, question_id=question["question_id"], kind="mcq",
                 scoring_model="atomic", max_points=max_points, band_count=2,
+                # `FR-SETUP-17`: these ARE FR-SETUP-13's criteria, so the service states
+                # the mode rather than letting `add_criterion` infer it from `kind`. The
+                # stored value is the same either way; what differs is whether M-SETUP
+                # declared it, and the requirement is about the declaration.
+                evaluation_mode="deterministic",
             )
             # The bands are the two names with FR-PKG-06's monotone mapping — points
             # non-decreasing in ordinal, so the zero-point `incorrect` band sits at

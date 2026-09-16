@@ -286,6 +286,29 @@ WORK_ID_INPUTS: tuple[str, ...] = (
 )
 
 
+def _row_evaluation_mode(criterion: Any) -> str:
+    """One criterion row's declared evaluation mode (`FR-PKG-22`, `FR-ORCH-35`).
+
+    Read from the column, with the shape default only for a row that predates the column
+    — a package file migrated to version 11 always carries it, so the fallback covers the
+    in-memory catalogue doubles rather than any stored package. `kind = 'mcq'` is NOT a
+    test any consumer may make: the equivalence it encoded was retired with the column,
+    because a judged multiple-choice criterion is a package the design allows and that
+    test makes unrepresentable.
+    """
+    try:
+        declared = criterion["evaluation_mode"]
+    except (KeyError, IndexError, TypeError):
+        declared = getattr(criterion, "evaluation_mode", None)
+    if declared:
+        return str(declared)
+    try:
+        kind = criterion["kind"]
+    except (KeyError, IndexError, TypeError):
+        kind = getattr(criterion, "kind", None)
+    return "deterministic" if kind == "mcq" else "judged"
+
+
 def _encode_field(value: str | None) -> bytes:
     """The canonical byte encoding of one `work_id` input.
 
@@ -2697,14 +2720,18 @@ class Orchestrator:
         `kind='open'`) gets one `stage='extract'` unit with a null judge — extraction is
         judge-independent by §7.2 Rule 2 — plus one `stage='score'` unit per panel arm up
         to the criterion's base depth (`FR-SETUP-08`: 1 for `atomic`/`atomic_with_gate`,
-        3 for `holistic`). An `kind='mcq'` criterion gets exactly one
-        `stage='deterministic'` unit with a null judge and no extraction and no scoring
-        unit. **Reconciliation recorded (#59, completing #57's note):** the design's
-        `evaluation_mode = 'deterministic'` column exists in no shipped schema; the
-        catalog's `kind='mcq'` — deterministic evaluation, §7.8 — is the criterion shape
-        the deterministic mode names, so `kind='mcq'` IS `evaluation_mode='deterministic'`
-        for this module and no `evaluation_mode` column is added. Extract and score units
-        are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
+        3 for `holistic`). A criterion the package declares
+        `evaluation_mode='deterministic'` gets exactly one `stage='deterministic'` unit
+        with a null judge and no extraction and no scoring unit.
+        **Reconciliation closed (#369, retiring #59's note):** that note recorded the
+        design's `evaluation_mode` column as existing in no shipped schema, and stood the
+        equivalence `kind='mcq'` IS `evaluation_mode='deterministic'` in its place.
+        `FR-PKG-22` ships the column, so the equivalence is retired here and everywhere
+        that read it (`FR-ORCH-35`): shape and evaluation are separate claims, and a
+        package may declare a multiple-choice criterion whose options a panel weighs.
+        The migration's backfill makes the switch lossless — `deterministic` exactly where
+        `kind='mcq'` held — so no existing package changes behaviour. Extract and score
+        units are enumerated for **admitted** submissions only (`FR-ORCH-22`); the
         deterministic unit is enumerated for every submission.
 
         **The random arm** (`FR-ORCH-11`, this story): after a judged pair's base score
@@ -2798,8 +2825,11 @@ class Orchestrator:
         random_arm_units = 0
         for submission in submissions:
             for criterion in criteria:
-                kind = criterion["kind"]
-                if kind == "mcq":
+                # `FR-ORCH-35`: the criterion's DECLARED mode, not its shape. A package
+                # may declare a judged multiple-choice criterion — one whose options a
+                # panel must weigh — and enumerating it as deterministic would skip the
+                # extract and score units it is entitled to.
+                if _row_evaluation_mode(criterion) == "deterministic":
                     computed.append(self._unit(
                         row, STAGE_DETERMINISTIC, submission, criterion, None,
                     ))

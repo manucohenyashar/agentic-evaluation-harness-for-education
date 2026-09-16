@@ -938,7 +938,11 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # ahead**: their oracles turn on storage or surfaces the design does not pin — the
     # panel-depth/auto-acceptance columns (11), an `evidence_type` column that does not
     # exist and no interface member carries (12), the prefix token-counting seam (14), an
-    # `evaluation_mode` column that does not exist (16), the cross-story skip sweep whose
+    # `evaluation_mode` column that did not exist (16 — **#369 shipped it**: Package
+    # migration 11 `pkg_criterion_evaluation_mode`, so that stated ground is spent and
+    # TC-SETUP-16 is now writable; it was a deferral rather than a written-ahead entry,
+    # so there is no marker to remove, and authoring the case belongs to /write-tests),
+    # the cross-story skip sweep whose
     # recorded-default storage is unpinned (17), and calibration-paper intake no surface
     # accepts (18). That is the TC-INGEST-38 precedent; disclosed on the #54 PR.
     # The TC-SETUP-12 deferral left with #232: migration 8 added the column, #51 (PR

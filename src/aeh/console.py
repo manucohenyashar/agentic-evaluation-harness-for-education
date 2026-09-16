@@ -3737,9 +3737,9 @@ def _criterion_figure_lines(score_rows: Any, kinds: Any) -> str:
     lines = ""
     for row in score_rows:
         criterion_id = str(_row_get(row, "criterion_id"))
-        kind = kinds.get(criterion_id)
+        mode = kinds.get(criterion_id)
         agreement = _row_get(row, "agreement")
-        if kind == "mcq":
+        if mode == "deterministic":
             figure = _NULL_FIGURE_PRESENTATION
         elif agreement is None:
             figure = _NO_FIGURE_PRESENTATION
@@ -3830,10 +3830,15 @@ def render_grade_coverage(
         package_path = Path(store.data_dir, "packages", f"{package_id}.pkg.sqlite")
         if package_path.exists():
             try:
+                # `FR-ORCH-35` (#369): the DECLARED mode, not the shape. A criterion
+                # the package declares judged has a panel agreement figure to show
+                # whatever its `kind` is, and reading `kind='mcq'` here withheld it.
+                # M-CONSOLE is not in FR-ORCH-35's enumerated consumer list; the
+                # predicate was the same defect, so it moves with the others (disclosed).
                 kinds = {
-                    row["criterion_id"]: str(row["kind"])
+                    row["criterion_id"]: str(row["evaluation_mode"])
                     for row in store.package(package_id).query(
-                        "SELECT criterion_id, kind FROM criterion "
+                        "SELECT criterion_id, evaluation_mode FROM criterion "
                         "WHERE package_version_id = :version",
                         version=version,
                     )
