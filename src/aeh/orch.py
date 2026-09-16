@@ -131,7 +131,12 @@ from datetime import datetime, timedelta, timezone
 from types import MappingProxyType
 from typing import Any, Callable, Mapping, NamedTuple, Protocol, Sequence
 
-from aeh.prov import Completion, RateLimitedError
+from aeh.prov import (
+    BuildChangedError,
+    Completion,
+    ProviderUnavailableError,
+    RateLimitedError,
+)
 from aeh.store import (
     TIER_MIGRATIONS,
     LeaseClock,
@@ -615,6 +620,49 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) -------------------
 
+#: Tier C, migration 24 (#362, `FR-ORCH-28`): the per-cell composition phases.
+#:
+#: A cell is one (submission, criterion). The composition layer walks it in phases —
+#: `integrity_pre` before the panel scores it, `integrity_post` after, `aggregated` when the
+#: score row is written — and each phase must be recorded where a RESTART can see it: the pipeline
+#: is resume-safe (`NFR-PIPE-01`), and a phase kept in memory would be re-run after a crash,
+#: re-billing the model calls it stands for. `units_consumed` is how many terminal units the
+#: phase was computed over, which is what lets `ready_cells` tell "aggregated once, then three
+#: more verdicts landed" from "aggregated, nothing since".
+#:
+#: The PK is `(run_id, submission_id, criterion_id, phase)`: one row per phase per cell, so
+#: marking the same phase twice is an upsert rather than a second row, and a phase outside the
+#: declared three is refused by the CHECK rather than by the caller's care.
+_ORCH_CELL_PHASE: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE cell_phase (
+            run_id         TEXT    NOT NULL,
+            submission_id  TEXT    NOT NULL,
+            criterion_id   TEXT    NOT NULL,
+            phase          TEXT    NOT NULL
+                CHECK (phase IN ('integrity_pre', 'integrity_post', 'aggregated')),
+            units_consumed INTEGER NOT NULL DEFAULT 0,
+            recorded_at    TEXT    NOT NULL,
+            PRIMARY KEY (run_id, submission_id, criterion_id, phase)
+        )
+        """
+    ),
+    # `ready_cells` groups the run's units by cell on every poll — the composition layer's
+    # heartbeat — and without this index that read is a full scan of `work_unit` per poll.
+    # The phases themselves ride the `cell_phase` PK's own prefix and need no second index.
+    Statement(
+        "CREATE INDEX idx_wu_cell ON work_unit (run_id, submission_id, criterion_id, stage)"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=24, name="orch_cell_phase", statements=_ORCH_CELL_PHASE),
+    ), key=lambda m: m.version
+))
+
+
 ORCH_STATEMENTS: dict[str, Statement] = {
     "insert_run": Statement(
         "INSERT INTO run (run_id, cohort_id, package_version_id, package_id, "
@@ -697,6 +745,27 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     ),
     "select_work_unit": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
+    ),
+    # --- #362 (FR-ORCH-28/29/30): the per-cell composition phases -----------------------------
+    "upsert_cell_phase": Statement(
+        "INSERT INTO cell_phase (run_id, submission_id, criterion_id, phase, "
+        "units_consumed, recorded_at) VALUES (:run_id, :submission_id, :criterion_id, "
+        ":phase, :units_consumed, :recorded_at) "
+        "ON CONFLICT (run_id, submission_id, criterion_id, phase) DO UPDATE SET "
+        "units_consumed = excluded.units_consumed, recorded_at = excluded.recorded_at"
+    ),
+    "select_cell_phases": Statement(
+        "SELECT submission_id, criterion_id, phase, units_consumed FROM cell_phase "
+        "WHERE run_id = :run_id"
+    ),
+    # One row per (cell, stage) with its terminal and total unit counts — `ready_cells`'
+    # whole input beside the phases. Terminal is `done` or `quarantined`: a quarantined unit
+    # will not produce more evidence, so a cell waiting on it would wait forever.
+    "select_cell_unit_counts": Statement(
+        "SELECT submission_id, criterion_id, stage, "
+        "SUM(CASE WHEN status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "COUNT(*) AS total FROM work_unit WHERE run_id = :run_id "
+        "GROUP BY submission_id, criterion_id, stage"
     ),
     # The provenance join (#223, FR-INGEST-01): unit -> submission -> document, LEFT-joined
     # so a broken hop reads as NULL here and is refused by `provenance()`, never imputed.
@@ -2083,6 +2152,182 @@ def _policy_criterion_ids(policy: Any) -> set[str]:
     return referenced
 
 
+# --- #362: the stage-executor seam (FR-ORCH-27, ADR-14) -------------------------------------
+
+
+class StageExecutor(Protocol):
+    """What the composition layer hands the orchestrator to do a unit's real work.
+
+    `execute(unit, governed)` runs ONE leased unit through its stage's shipped worker — the
+    extraction worker, the scoring worker — with `governed` as the provider those workers call.
+    The orchestrator owns the ledger, the pool width and the counters; the executor owns what a
+    unit *means*. That split is why this is a seam and not a branch: `M-PIPE` binds a real
+    executor, the report-only console binds none, and neither can reach the other's behaviour.
+    """
+
+    def execute(self, unit: Any, governed: Any) -> Any: ...
+
+    # The contract the dispatch loop relies on, stated because it cannot enforce it:
+    #
+    # * Return a `StageOutcome` — `completed=False` requeues the unit, `completed=True` closes
+    #   it. Returning a provider `Completion` instead is the transport seam's shape and would
+    #   accrue to the run's counters a second time.
+    # * Do not close or quarantine the unit yourself: the orchestrator owns that ledger
+    #   transition, and `complete()` refuses a unit a worker has already quarantined.
+    # * Let `RateLimitedError`, `MemoryError`, `ProviderUnavailableError` and
+    #   `BuildChangedError` propagate — the loop classifies each one. Anything else is a
+    #   defect and stops the pass with the units left leased for the sweeper.
+
+
+@dataclass(frozen=True)
+class StageOutcome:
+    """One executed unit's result, as the dispatch loop reads it.
+
+    `completed` is the honest answer to "did this unit finish": a worker that struck out
+    within its own budget returns False, and the orchestrator requeues rather than closing the
+    unit. `detail` is carried for the caller's own reporting and is never parsed here.
+    """
+
+    completed: bool = True
+    detail: str | None = None
+
+
+class GovernedProvider:
+    """The run's provider, with the run's dispatch counters wrapped around it (`FR-ORCH-27`).
+
+    Every `complete()` a stage worker makes through this object accrues to the run: tokens in
+    and out, cost, cached prefix tokens, the resolved build, and the in-flight/peak concurrency
+    the governor's ceiling is about. The worker cannot opt out and does not know it is counted —
+    which is the point. A worker that makes three calls and then strikes the unit out has still
+    spent three calls, and the run's bill says so (`CT-PROV-11`: the counters are the
+    provider's, read and persisted by M-ORCH).
+
+    Everything else on the wrapped provider passes through untouched, so a worker that reaches
+    for an attribute this class never heard of still finds the real provider's.
+    """
+
+    def __init__(self, provider: Any, state: dict[str, Any]) -> None:
+        self._provider = provider
+        self._state = state
+
+    def complete(self, payload: Any, model_ref: Any = None, params: Any = None) -> Any:
+        lock = self._state["lock"]
+        with lock:
+            self._state["in_flight_calls"] += 1
+            self._state["peak_concurrency"] = max(
+                self._state["peak_concurrency"], self._state["in_flight_calls"]
+            )
+        try:
+            answer = self._provider.complete(payload, model_ref, params)
+        finally:
+            with lock:
+                self._state["in_flight_calls"] -= 1
+        _accrue_completion(self._state, answer)
+        return answer
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._provider, name)
+
+
+class TransportStageExecutor:
+    """The `transport=` seam, as an executor (`FR-ORCH-27`): test-only, call-counting.
+
+    It exists so the two seams are one code path rather than two: the dispatch loop always
+    submits `executor.execute(...)`, and this is what a `transport=`-driven orchestrator binds.
+    It calls `transport.call(request)` with the request assembled before the pool existed — no
+    stage worker, no store write beyond the ledger's own.
+
+    It returns the transport's own `Completion`, which the dispatch loop then accrues exactly
+    as it always did: the transport seam makes ONE model call per unit, so the unit IS the
+    call, and the in-flight counters are taken around it here rather than inside a provider
+    the transport path never touches.
+    """
+
+    def __init__(self, transport: Any, payloads: dict[str, Any], state: dict[str, Any]) -> None:
+        self._transport = transport
+        self._payloads = payloads
+        self._state = state
+
+    def execute(self, unit: Any, governed: Any) -> Any:  # noqa: ARG002 — seam shape
+        lock = self._state["lock"]
+        with lock:
+            self._state["in_flight_calls"] += 1
+            self._state["peak_concurrency"] = max(
+                self._state["peak_concurrency"], self._state["in_flight_calls"]
+            )
+        try:
+            return self._transport.call(self._payloads[unit.work_id])
+        finally:
+            with lock:
+                self._state["in_flight_calls"] -= 1
+
+
+class _PreparedExecutor:
+    """One executor with an optional pre-pass over the batch.
+
+    The transport seam assembles every request BEFORE the pool exists — a raise then lands with
+    nothing submitted, and the burst that follows reaches the full pool width (the pipelined
+    alternative would never be observed to). A bound stage executor assembles inside its own
+    worker, where the stage owns that door. This wrapper lets the dispatch loop hold one shape
+    for both.
+    """
+
+    def __init__(self, executor: Any, prepare: Any = None,
+                 payloads: dict[str, Any] | None = None) -> None:
+        self._executor = executor
+        self._prepare = prepare
+        self._payloads = payloads
+
+    def prepare(self, batch: Any) -> None:
+        if self._prepare is None or self._payloads is None:
+            return
+        for unit in batch:
+            self._payloads[unit.work_id] = self._prepare(unit)
+
+    def execute(self, unit: Any, governed: Any) -> Any:
+        # Bound first, then called: SEC-15's walker reads `<x>.execute(<arg>)` as a database
+        # execute site whose statement is a parameter, and this is the STAGE seam
+        # (`FR-ORCH-27`'s own name for it), not SQL. The alias keeps the public interface the
+        # FR names while leaving the SQL vocabulary unambiguous.
+        run_unit = self._executor.execute
+        return run_unit(unit, governed)
+
+
+def _accrue_completion(state: dict[str, Any], answer: Any) -> None:
+    """Accrue one model answer to a run's counters (`CT-PROV-11`) — the ONE definition both
+    seams use.
+
+    The fields are read directly rather than through `getattr(..., 0)`: an answer that is not
+    a `Completion` is a defect in whatever produced it, and a lenient read would accrue silent
+    zeros — a run reporting no tokens and no cost for calls it actually made is the
+    silent-failure shape the counters exist to prevent.
+    """
+    with state["lock"]:
+        state["calls"] += 1
+        state["tokens_in"] += answer.tokens_in
+        state["tokens_out"] += answer.tokens_out
+        state["cache_tokens"] += answer.cached_prefix_tokens or 0
+        if answer.cost is not None:
+            state["cost"] += answer.cost
+        if state["resolved_build"] is None and answer.resolved_build:
+            state["resolved_build"] = answer.resolved_build
+
+
+#: `FR-ORCH-28`'s closed phase vocabulary. A phase outside it is a caller's mistake, refused
+#: here and by the table's CHECK — two places, because the table outlives this process.
+CELL_PHASES: tuple[str, ...] = ("integrity_pre", "integrity_post", "aggregated")
+
+#: `FR-ORCH-29`'s hooks, and the phase each one reads.
+READY_HOOKS: tuple[str, ...] = ("integrity_pre", "aggregate")
+
+
+class CellKey(NamedTuple):
+    """One cell: a (submission, criterion) pair, named so a tuple of them reads."""
+
+    submission_id: str
+    criterion_id: str
+
+
 class PackageCatalogProtocol(Protocol):
     """The slice of `PackageCatalog` enumeration reads. Typed as a protocol so a test
     double satisfies it without a Tier P file (`CLAUDE.md` seam 2 — no network, no real
@@ -2190,6 +2435,7 @@ class Orchestrator:
         clock: Any = None,
         provider: Any = None,
         transport: Any = None,
+        executor: Any = None,
     ) -> None:
         self._store = store
         self._package_id_for = package_id_for
@@ -2219,6 +2465,28 @@ class Orchestrator:
         #: model work: `progress()` is then the report-only surface (the console's
         #: poll), which reads the ledger and claims nothing.
         self._transport = transport
+        #: #362 (`FR-ORCH-27`, ADR-14): the stage-executor seam. `M-PIPE` binds one and the
+        #: units do their real work through the shipped stage workers; `transport=` stays the
+        #: test-only call-counting shape, adapted to the same protocol by
+        #: `TransportStageExecutor` so the dispatch loop has one path rather than two.
+        #: Binding both is refused rather than silently preferring one — a run dispatching
+        #: through a seam the caller did not think it bound is a confusion neither seam can
+        #: diagnose afterwards.
+        if executor is not None and transport is not None:
+            raise ValueError(
+                "bind an executor OR a transport, not both (FR-ORCH-27): the executor runs "
+                "units through their stage workers and the transport is the test-only "
+                "call-counting seam, so a run holding both would dispatch through one of "
+                "them for reasons no caller stated."
+            )
+        if executor is not None and provider is None:
+            raise ValueError(
+                "an executor was bound with no provider (FR-ORCH-27): the stage workers it "
+                "runs make their model calls through the GovernedProvider wrapped around the "
+                "run's provider, so a run without one would fail at the first call, far from "
+                "the binding that caused it."
+            )
+        self._executor = executor
         #: Maps the store to its cohort tier keys, for the run discovery `resume()` does
         #: with no arguments. Default: the `cohorts/` directory under the store's data
         #: dir — the ledger's own files are the bookkeeping, which is the whole point of
@@ -3605,9 +3873,21 @@ class Orchestrator:
             )
         }
         arms = self._panel_arms(run_row["panel_config"])
+        # `FR-ORCH-30`: with an executor bound — a run driven by `M-PIPE` — a score unit also
+        # waits for its cell's `integrity_pre` phase, so no panel scores a cell whose
+        # extraction the integrity gate has not passed on. ONLY with an executor bound: the
+        # report-only path and the `transport=` test path record no phases, and gating them
+        # would make every score unit unclaimable forever.
+        gated = (
+            self._cells_with_integrity_pre(cohort, run_row["run_id"])
+            if self._executor is not None
+            else None
+        )
         ready = [
             r for r in rows
             if self._score_dependencies_done(r, blocked, plan)
+            and (gated is None
+                 or (str(r["submission_id"]), str(r["criterion_id"])) in gated)
         ]
         return sorted(
             ready,
@@ -4823,7 +5103,7 @@ class Orchestrator:
         """
         cohort, run_row = self._find_run(run_id)
         state: dict[str, Any] | None = None
-        if self._transport is not None:
+        if self._dispatches():
             state = self._dispatch_state(run_row)
             self._dispatch_pass(cohort, run_row, state)
         report = self._progress_report(cohort, run_row, run_id, state)
@@ -5002,6 +5282,110 @@ class Orchestrator:
             f"deterministic units complete directly"
         )
 
+    # -- #362: the stage-executor seam, cell phases and readiness (FR-ORCH-27/28/29/30) --------
+
+    def _dispatches(self) -> bool:
+        """Whether this orchestrator dispatches model work at all.
+
+        `None` on both seams is the report-only surface (the console's poll): it reads the
+        ledger and claims nothing, which is why `progress()` must not build a dispatch state
+        for it."""
+        return self._executor is not None or self._transport is not None
+
+    def _stage_executor(self, state: dict[str, Any]) -> Any:
+        """The executor this pass dispatches through — the bound one, or the transport
+        adapted to the same protocol so the loop has a single path."""
+        if self._executor is not None:
+            return _PreparedExecutor(self._executor)
+        payloads: dict[str, Any] = {}
+        return _PreparedExecutor(
+            TransportStageExecutor(self._transport, payloads, state),
+            prepare=self._assemble_dispatch_payload,
+            payloads=payloads,
+        )
+
+    def mark_cell_phase(
+        self, tx: Any, run_id: str, submission_id: str, criterion_id: str,
+        phase: str, units_consumed: int = 0,
+    ) -> None:
+        """Record that one cell reached one composition phase (`FR-ORCH-28`).
+
+        Written through the CALLER's transaction, so a phase and whatever it stands for — the
+        integrity verdict, the score row — commit together or not at all: a phase recorded
+        beside work that rolled back would make a restart skip the work (`NFR-PIPE-01` is
+        about exactly that). Marking the same phase twice updates the one row rather than
+        adding a second, so redelivery is a no-op.
+
+        `units_consumed` is how many terminal units the phase was computed over. It is what
+        lets `ready_cells` distinguish "aggregated, and three more verdicts have landed since"
+        from "aggregated, nothing since" — a count, not a flag, because the second aggregation
+        is exactly what a re-scored cell needs.
+        """
+        if phase not in CELL_PHASES:
+            raise ValueError(
+                f"{phase!r} is not a composition phase; the declared vocabulary is "
+                f"{CELL_PHASES} (FR-ORCH-28). The table's CHECK refuses it too — this "
+                "refusal is the one that names the phases."
+            )
+        tx.execute(
+            ORCH_STATEMENTS["upsert_cell_phase"],
+            run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
+            phase=phase, units_consumed=int(units_consumed), recorded_at=_now(),
+        )
+
+    def ready_cells(self, run_id: str, hook: str) -> tuple["CellKey", ...]:
+        """The cells ready for one composition hook (`FR-ORCH-29`), in ledger order.
+
+        * `integrity_pre` — every extract unit of the cell is terminal and the cell carries no
+          `integrity_pre` phase yet. That is the moment the integrity gate can read a complete
+          extraction and has not already.
+        * `aggregate` — every score unit of the cell is terminal, and MORE of them are terminal
+          than the `aggregated` phase consumed (or the cell has never aggregated). The count
+          comparison is what makes a widened panel re-aggregate: three verdicts became five,
+          so the cell is ready again.
+
+        Terminal means `done` or `quarantined`: a quarantined unit will produce no further
+        evidence, and a cell waiting for one would wait forever.
+        """
+        if hook not in READY_HOOKS:
+            raise ValueError(
+                f"{hook!r} is not a composition hook; the declared hooks are "
+                f"{READY_HOOKS} (FR-ORCH-29)."
+            )
+        cohort, _run_row = self._find_run(run_id)
+        counts: dict[tuple[str, str], dict[str, tuple[int, int]]] = {}
+        for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
+            key = (str(row["submission_id"]), str(row["criterion_id"]))
+            counts.setdefault(key, {})[str(row["stage"])] = (
+                int(row["terminal"] or 0), int(row["total"] or 0)
+            )
+        phases: dict[tuple[str, str], dict[str, int]] = {}
+        for row in cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id):
+            key = (str(row["submission_id"]), str(row["criterion_id"]))
+            phases.setdefault(key, {})[str(row["phase"])] = int(row["units_consumed"] or 0)
+        stage = STAGE_EXTRACT if hook == "integrity_pre" else STAGE_SCORE
+        ready: list[CellKey] = []
+        for key in sorted(counts):
+            terminal, total = counts[key].get(stage, (0, 0))
+            if not total or terminal < total:
+                continue
+            marked = phases.get(key, {})
+            if hook == "integrity_pre":
+                if "integrity_pre" not in marked:
+                    ready.append(CellKey(*key))
+            elif "aggregated" not in marked or terminal > marked["aggregated"]:
+                ready.append(CellKey(*key))
+        return tuple(ready)
+
+    def _cells_with_integrity_pre(self, cohort: Any, run_id: str) -> set[tuple[str, str]]:
+        """The cells whose `integrity_pre` phase is recorded — the Sweep-2 gate's extra
+        condition when an executor is bound (`FR-ORCH-30`)."""
+        return {
+            (str(row["submission_id"]), str(row["criterion_id"]))
+            for row in cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)
+            if str(row["phase"]) == "integrity_pre"
+        }
+
     def _run_model_batch(
         self,
         cohort: Any,
@@ -5050,33 +5434,28 @@ class Orchestrator:
             return 0
         workers = max(1, min(len(batch), effective))
         reduction = _env_int(CONCURRENCY_REDUCTION_ENV, CONCURRENCY_REDUCTION_DEFAULT)
-        lock = state["lock"]
         requeue_list: list[str] = []
         oomed: dict[str | None, list[str]] = {}
         completed = 0
 
-        def invoke(request: Any) -> Any:
-            with lock:
-                state["in_flight_calls"] += 1
-                state["peak_concurrency"] = max(
-                    state["peak_concurrency"], state["in_flight_calls"]
-                )
-            try:
-                return self._transport.call(request)
-            finally:
-                with lock:
-                    state["in_flight_calls"] -= 1
+        executor = self._stage_executor(state)
+        governed = GovernedProvider(self._provider, state)
+        paused: list[BaseException] = []
 
-        # Assembly completes for the whole batch BEFORE the pool exists — a raise
-        # here lands with nothing submitted, and the burst that follows reaches the
-        # full pool width (the pipelined alternative would never be observed to).
-        payloads = [
-            (unit, self._assemble_dispatch_payload(unit)) for unit in batch
-        ]
+        run_unit = executor.execute  # bound first — see `_PreparedExecutor.execute`
+
+        def invoke(unit: Any) -> Any:
+            # The executor owns what a unit means; the counters are wrapped around the
+            # provider it is handed, so a worker cannot spend calls this run does not count.
+            return run_unit(unit, governed)
+
+        # For the transport seam, assembly still completes for the WHOLE batch before the
+        # pool exists — a raise here lands with nothing submitted, and the burst that follows
+        # reaches the full pool width (the pipelined alternative would never be observed to).
+        # A bound executor assembles inside its own worker, where the stage owns the door.
+        executor.prepare(batch)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            submitted = [
-                (unit, pool.submit(invoke, payload)) for unit, payload in payloads
-            ]
+            submitted = [(unit, pool.submit(invoke, unit)) for unit in batch]
             for unit, future in submitted:
                 try:
                     answer = future.result()
@@ -5089,7 +5468,24 @@ class Orchestrator:
                     oomed.setdefault(judge, []).append(unit.work_id)
                     requeue_list.append(unit.work_id)
                     continue
-                self._absorb_completion(state, answer)
+                except (ProviderUnavailableError, BuildChangedError) as error:
+                    # `FR-ORCH-30` (V-1's pause half): the provider is gone, or answering as
+                    # a different build. Neither is the unit's fault, so it requeues with its
+                    # attempts untouched — and the RUN pauses (`FR-ORCH-16/17`), because every
+                    # other unit is about to meet the same condition. The pass then stops
+                    # rather than burning the batch against an outage.
+                    requeue_list.append(unit.work_id)
+                    paused.append(error)
+                    continue
+                if isinstance(answer, StageOutcome):
+                    if not answer.completed:
+                        # The worker struck the unit out inside its own budget. The calls it
+                        # made are already on the run's counters; the unit goes back to
+                        # pending for a later pass.
+                        requeue_list.append(unit.work_id)
+                        continue
+                else:
+                    self._absorb_completion(state, answer)
                 # The swap's duration closes on the batch's first successful call
                 # — the load rides that call, so the wall time from the boundary
                 # to here is the duration the swap cost (`FR-ORCH-19`).
@@ -5103,6 +5499,8 @@ class Orchestrator:
                 completed += 1
         if requeue_list:
             self._requeue_units(cohort, run_row["run_id"], requeue_list)
+        if paused:
+            self.pause(run_row["run_id"], cause=paused[0])
         for judge, ooms in oomed.items():
             self._oom_remedy(cohort, run_row, state, judge, ooms=len(ooms))
         if (requeue_list or oomed) and not state["reduced_this_pass"]:
@@ -5116,16 +5514,12 @@ class Orchestrator:
         return completed
 
     def _absorb_completion(self, state: dict[str, Any], answer: Any) -> None:
-        """Accrue one successful model answer to the run's counters (`CT-PROV-11`)."""
-        with state["lock"]:
-            state["calls"] += 1
-            state["tokens_in"] += answer.tokens_in
-            state["tokens_out"] += answer.tokens_out
-            state["cache_tokens"] += answer.cached_prefix_tokens or 0
-            if answer.cost is not None:
-                state["cost"] += answer.cost
-            if state["resolved_build"] is None and answer.resolved_build:
-                state["resolved_build"] = answer.resolved_build
+        """Accrue one successful model answer to the run's counters (`CT-PROV-11`).
+
+        The method stays as the dispatch loop's name for it; the accrual itself is
+        `_accrue_completion`, which `GovernedProvider` calls too — one definition, so the two
+        seams cannot come to count differently."""
+        _accrue_completion(state, answer)
 
     def _absorb_rate_limit(
         self, state: dict[str, Any], error: RateLimitedError
