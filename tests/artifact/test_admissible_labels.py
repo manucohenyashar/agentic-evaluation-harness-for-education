@@ -209,7 +209,6 @@ def test_tc_stats_01_agreement_over_the_matrix_is_the_blind_judged_population_on
         )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_01_a_null_saw_system_output_is_inadmissible_not_blind(tmp_path):
     """The variant, plan-literal: *"a label whose `saw_system_output` is null —
     must be treated as inadmissible, not as blind."*
