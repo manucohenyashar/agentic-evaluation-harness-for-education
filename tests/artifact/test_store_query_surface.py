@@ -554,12 +554,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # Every one a declared `STATS_STATEMENTS` statement with keyword
     # parameters (FR-STORE-08); the module's other reads go through tier
     # handles, which are not census sites. Pinned from the walker.
-    "aeh.stats:3312",
-    "aeh.stats:3319",
     "aeh.stats:3324",
-    "aeh.stats:3328",
-    "aeh.stats:3368",
-    "aeh.stats:3742",
+    "aeh.stats:3331",
+    "aeh.stats:3336",
+    "aeh.stats:3340",
+    "aeh.stats:3380",
+    "aeh.stats:3968",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
