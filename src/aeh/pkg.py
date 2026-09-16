@@ -60,6 +60,7 @@ __all__ = [
     "GateRule",
     "GradePolicy",
     "GradePolicyError",
+    "PackageIntegrityError",
     "ImportReport",
     "InventoryError",
     "QUESTION_TYPES",
@@ -252,6 +253,18 @@ class GradePolicyError(PackageError):
     is an arbitrary-code surface and an un-auditable grade, so a policy that is not a
     structured object is refused at construction, at write and at read. Not retryable —
     the policy is the mistake, and rewriting it is a draft edit."""
+
+
+class PackageIntegrityError(PackageError):
+    """A package version whose declarations do not hang together (`FR-ORCH-31`).
+
+    The first member is the grade policy naming a criterion the version does not declare: the
+    package is internally inconsistent, so a run started against it would grade by a rule
+    referring to something that is not there. The refusal names **every** offending id, not the
+    first — an operator fixing a package needs the list, and a refusal that names one id per
+    attempt turns one edit into four. Not retryable: the package is the mistake."""
+
+    retryable = False
 
 
 class ExportBlockedError(PackageError):
