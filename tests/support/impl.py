@@ -1140,18 +1140,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # null figure presented as not-applicable — and the rollup screen's grade rows
     # render through the same presentation helpers, so all four limbs run unmarked
     # and this entry is gone. C15's run-start limb remains (M-ORCH's refusal).
-    # C15's run-start limb: `CT-GRADE-15` requires a policy referencing a criterion
-    # that no longer exists to be refused AT RUN START, so grading is never reached
-    # in that state — the run-creation path validates nothing of the kind yet, so
-    # the disclosed `aeh.orch:validate_grade_policy` is that refusal's surface.
-    "#107 c15 a policy naming a nonexistent criterion is refused at run start (M-ORCH)": (
-        "symbol",
-        f"{ORCH_MODULE}:validate_grade_policy",
-        (
-            "tests/contract/grade/test_ct_grade_c15_error_discipline.py"
-            "::test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run_start",
-        ),
-    ),
+    # C15's run-start limb left with #354: `create_run` now calls
+    # `aeh.orch:validate_grade_policy` (FR-ORCH-31) before the run insert, so the
+    # ghost-criterion policy dies at run start and the case runs unmarked.
     # --- TS-42 (#119), the TC-STATS admissible-label and hand-reference suite ---------------
     #
     # #119 is a TEST issue over the landed M-STATS surface, and most of its cases run

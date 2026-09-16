@@ -35,7 +35,8 @@ from __future__ import annotations
 
 import pytest
 
-from aeh.pkg import GradePolicy, GateRule
+from aeh.orch import default_package_id_for
+from aeh.pkg import GradePolicy, GateRule, PackageCatalog, PackageIntegrityError
 from aeh.store import open_store
 from tests.contract.grade._drive import (
     COHORT,
@@ -216,7 +217,6 @@ def test_tc_grade_c15_the_pass_never_raises_and_never_substitutes_a_zero(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run_start(
     tmp_data_dir,
 ):
@@ -225,11 +225,12 @@ def test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run
     grading time: the run refuses to start, so grading is never reached in that
     state.
 
-    Writtenahead on the disclosed `aeh.orch:validate_grade_policy` (#107): the
-    landed run-creation path validates nothing of the kind, so the surface is
-    named-and-waited (the `aeh.orch:evaluate_alerts` naming precedent). When an
-    orch story lands it, this test loses the marker and becomes the standing
-    assertion that the ghost-criterion policy dies at run start."""
+Landed with #354 (`FR-ORCH-31`): `validate_grade_policy(catalog,
+    package_version_id)` reads the version's declared criteria through the catalog and
+    `create_run` calls it before the run insert. The marker is gone and this is now the
+    standing assertion that the ghost-criterion policy dies at run start. (The surface
+    was written ahead as `validate_grade_policy(version, policy)`; the landed signature
+    is the FR's, and the call below is the reconciliation.)"""
     require(GRADE_MODULE, "open_grade", issue="#101")
     validate_grade_policy = require(
         ORCH_MODULE, "validate_grade_policy", issue="#107"
@@ -260,8 +261,12 @@ def test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run
 
         # The refusal's shape, on the disclosed surface: the error names the
         # criterion that no longer exists, or the operator cannot fix the package.
-        with pytest.raises(Exception) as refused:
-            validate_grade_policy(world.version, ghost_policy)
+        catalog = PackageCatalog(
+            store.package(default_package_id_for(world.version)),
+            package_id=default_package_id_for(world.version),
+        )
+        with pytest.raises(PackageIntegrityError) as refused:
+            validate_grade_policy(catalog, world.version)
         assert "C-GONE" in str(refused.value), (
             f"the run-start refusal named nothing ({refused.value!r}) — the error "
             "must name the criterion that no longer exists, or the operator cannot "
@@ -271,7 +276,7 @@ def test_tc_grade_c15_a_policy_referencing_a_missing_criterion_is_refused_at_run
         # The refusal is terminal AT RUN START: a new run created against the
         # ghost-policy version through the real run-creation path never starts,
         # so grading is never reached in that state.
-        with pytest.raises(Exception) as start_refused:
+        with pytest.raises(PackageIntegrityError):
             world.orchestrator.create_run(
                 COHORT, world.version, orch_cfg("edge-local")
             )
