@@ -207,7 +207,6 @@ def test_tc_conf_23_run_prints_the_profile_summary_and_its_source(
 # --- TC-CONF-21, in-process console variant — the console re-reads the environment per action --
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested(
     tmp_data_dir, monkeypatch, network_guard
 ):
