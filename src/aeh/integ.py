@@ -166,6 +166,13 @@ TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (
 #: The index carries `document_id` as its second column because the read orders by it — the
 #: seek and the order come from one structure rather than a scan plus a sort.
 #:
+#: `verdict.work_id` is the one that governs how the module SCALES. `count_verdicts` asks
+#: "has this cell been scored yet" on every `verify`, through `work_id IN (SELECT …)`, and with
+#: no index on the child column that is a scan of the whole `verdict` table per cell — so the
+#: gate's per-call cost grows with the cohort, which is exactly what PERF-06 measured when it
+#: was written (15.1 ms per verify at 350 submissions against 3.1 ms at 8, and the note it
+#: prints names this scan first). `read_panel_sufficiency`'s join reads it too.
+#:
 #: `document_region.document_id` is an unindexed foreign-key child column, and
 #: `StoreExtractionView.regions` reads it once per cell, so without the second index the view
 #: this story publishes would add a full scan of `document_region` per cell to a module held to
@@ -186,6 +193,7 @@ _INTEG_READ_INDEXES: tuple[Statement, ...] = (
     Statement(
         "CREATE INDEX idx_document_region_doc ON document_region (document_id, position)"
     ),
+    Statement("CREATE INDEX idx_verdict_work ON verdict (work_id)"),
     Statement("ALTER TABLE cell_phase ADD COLUMN panel_state TEXT"),
 )
 

@@ -646,18 +646,18 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #363 (FR-INTEG-10): `_record_routed`'s write of the panel state this cell was
     # routed on, as `cell_phase`'s `integrity_post` row. It is what makes a repeat
     # `verify` over unchanged evidence route nothing across a process restart.
-    "aeh.integ:1135",
-    "aeh.integ:1144",
-    "aeh.integ:1160",
-    "aeh.integ:1171",
-    "aeh.integ:1239",
-    "aeh.integ:1315",
-    "aeh.integ:1333",
-    "aeh.integ:1347",
-    "aeh.integ:1364",
-    "aeh.integ:1381",
-    "aeh.integ:1391",
-    "aeh.integ:1401",
+    "aeh.integ:1143",
+    "aeh.integ:1152",
+    "aeh.integ:1168",
+    "aeh.integ:1179",
+    "aeh.integ:1247",
+    "aeh.integ:1323",
+    "aeh.integ:1341",
+    "aeh.integ:1355",
+    "aeh.integ:1372",
+    "aeh.integ:1389",
+    "aeh.integ:1399",
+    "aeh.integ:1409",
     # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
     # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
     # bootstrap insert the security suite's fixture surface makes before its
