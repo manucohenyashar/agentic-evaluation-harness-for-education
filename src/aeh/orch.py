@@ -1066,6 +1066,15 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "WHERE run_id = :run_id AND applied_at IS NULL "
         "ORDER BY requested_at ASC, control_id ASC"
     ),
+    #: `FR-ORCH-33`: the APPLIED controls, in the order they took effect. The wall clock
+    #: subtracts paused intervals, and an interval is a pause that actually happened —
+    #: `applied_at`, not `requested_at`: a pause requested and superseded before it ever
+    #: applied never stopped the clock, and subtracting it would under-report the work.
+    "select_applied_control": Statement(
+        "SELECT control_id, action, applied_at FROM run_control "
+        "WHERE run_id = :run_id AND applied_at IS NOT NULL "
+        "ORDER BY applied_at ASC, control_id ASC"
+    ),
     "mark_control_applied": Statement(
         "UPDATE run_control SET applied_at = :applied_at "
         "WHERE control_id = :control_id AND applied_at IS NULL"
@@ -1146,6 +1155,18 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # The run-metrics write (CT-ORCH-20 makes the names contract): one EAV row per
     # metric, REPLACE so a re-flush updates in place. M-ORCH is the sole writer
     # (CT-STORE-03's single-writership: the orchestrator owns what the run did).
+    #: `FR-ORCH-32`: the cache hit rates OTHER runs recorded — this run's baseline. Its
+    #: own row is excluded, or the current figure would be part of the mean it is being
+    #: compared against and a collapse would partly hide itself.
+    "select_prior_cache_hit_rates": Statement(
+        "SELECT value FROM run_metrics WHERE metric = 'cache_hit_rate' "
+        "AND run_id <> :run_id ORDER BY run_id"
+    ),
+    #: `FR-ORCH-33`: this run's already-recorded metrics, so a flush can EXTEND a set
+    #: rather than replace it with whatever this process happened to observe. Tier D.
+    "select_run_metric_values": Statement(
+        "SELECT metric, value FROM run_metrics WHERE run_id = :run_id ORDER BY metric"
+    ),
     "insert_run_metric": Statement(
         "INSERT OR REPLACE INTO run_metrics (run_id, metric, value) "
         "VALUES (:run_id, :metric, :value)"
@@ -1242,6 +1263,285 @@ RANDOM_ARM_RATE_ENV = "HARNESS_ORCH_RANDOM_ARM_RATE"
 #: adjusts it at **call** time. The rate is never silently reduced by this knob: over
 #: budget means rationed in the open (`CT-ORCH-16`), never refused quietly.
 ORCH_ESCALATION_BUDGET = 0.30
+
+# --- #370 (`FR-ORCH-32`): the five run alerts ---------------------------------------------
+#
+# §3.7 names five conditions an operator must hear about. They were design text with no
+# surface carrying them, so `TC-ORCH-36` was written ahead against an invented name. This
+# is that surface: ONE pure function over already-gathered state, which is what lets each
+# condition be breached independently in a test and what keeps the rules out of the
+# dispatch loop, where they would only be reachable by running a whole pass.
+
+#: The fraction of the ceiling at which spend becomes an alert, BEFORE the pause at the
+#: ceiling itself (`FR-ORCH-15`'s early form — "within 10% of ceiling"). A knob because
+#: a ceiling's useful warning distance depends on how fast the run burns it.
+COST_WARNING_FRACTION_DEFAULT = 0.9
+COST_WARNING_FRACTION_ENV = "HARNESS_ORCH_COST_WARNING_FRACTION"
+
+#: Cache collapse is RISK-23's ONLY detection path: nothing errors, throughput just dies.
+#: Three guards, because a bare "below average" would cry wolf on every ordinary dip:
+#:   * `_SIGMA` — how many standard deviations below the run history counts as a break
+#:     rather than noise;
+#:   * `_FLOOR` — an absolute floor the rate must ALSO be under, so a perfectly steady
+#:     history (zero variance) does not make a 1% dip a three-sigma event;
+#:   * `_MIN_HISTORY` — the fewest prior runs that make a mean meaningful at all. Below
+#:     it there is no alert, because two runs are not a baseline (`CT-STATS-09`'s reading
+#:     of "no data is not a zero", applied to a threshold instead of a rate).
+CACHE_COLLAPSE_SIGMA_DEFAULT = 3.0
+CACHE_COLLAPSE_SIGMA_ENV = "HARNESS_ORCH_CACHE_COLLAPSE_SIGMA"
+CACHE_COLLAPSE_FLOOR_DEFAULT = 0.5
+CACHE_COLLAPSE_FLOOR_ENV = "HARNESS_ORCH_CACHE_COLLAPSE_FLOOR"
+CACHE_COLLAPSE_MIN_HISTORY_DEFAULT = 3
+CACHE_COLLAPSE_MIN_HISTORY_ENV = "HARNESS_ORCH_CACHE_COLLAPSE_MIN_HISTORY"
+
+#: The five names, stable and declared here rather than spelled at each raise site: an
+#: operator's runbook keys off them, and a name assembled at the raise is a name that can
+#: drift between two branches of the same condition.
+ALERT_ESCALATION_RATE = "orch_escalation_rate_above_budget"
+ALERT_CRITERION_BREAKER = "orch_criterion_breaker_tripped"
+ALERT_COST_NEAR_CEILING = "orch_cost_near_ceiling"
+ALERT_CACHE_COLLAPSE = "orch_cache_hit_rate_collapse"
+ALERT_RUN_PAUSED = "orch_run_paused"
+
+RUN_ALERT_NAMES: tuple[str, ...] = (
+    ALERT_ESCALATION_RATE,
+    ALERT_CRITERION_BREAKER,
+    ALERT_COST_NEAR_CEILING,
+    ALERT_CACHE_COLLAPSE,
+    ALERT_RUN_PAUSED,
+)
+
+
+@dataclass(frozen=True)
+class RunAlert:
+    """One fired alert (`FR-ORCH-32`): its stable `name`, and the `detail` that tells the
+    operator which figure fired it.
+
+    `detail` is deliberately not part of equality-by-name usage — `OBS-05`'s oracle is
+    about WHICH condition fired, and a test comparing whole objects would break whenever
+    a message improved. `str(alert)` is the name, so a fired tuple reads as its names.
+    """
+
+    name: str
+    detail: str = ""
+
+    def __str__(self) -> str:
+        return self.name
+
+
+def _alert_knobs() -> dict[str, float]:
+    """The alert thresholds, read at CALL time (seam 3) and refused rather than clamped:
+    a `HARNESS_ORCH_COST_WARNING_FRACTION` of 1.5 would mean "warn only after the ceiling
+    is passed", which is not a warning, and a clamp would silently make it 1.0."""
+    return {
+        "cost_warning_fraction": _env_float(
+            COST_WARNING_FRACTION_ENV, COST_WARNING_FRACTION_DEFAULT,
+            low=0.0, high=1.0,
+        ),
+        "cache_sigma": _env_float(
+            CACHE_COLLAPSE_SIGMA_ENV, CACHE_COLLAPSE_SIGMA_DEFAULT,
+            low=0.0, high=100.0,
+        ),
+        "cache_floor": _env_float(
+            CACHE_COLLAPSE_FLOOR_ENV, CACHE_COLLAPSE_FLOOR_DEFAULT,
+            low=0.0, high=1.0,
+        ),
+        "cache_min_history": float(
+            _env_int(CACHE_COLLAPSE_MIN_HISTORY_ENV, CACHE_COLLAPSE_MIN_HISTORY_DEFAULT)
+        ),
+    }
+
+
+def _as_float(value: Any, default: float = 0.0) -> float:
+    """One figure from a row or mapping, with a declared default. A metric that is absent
+    is not a metric that is zero everywhere — but for these five rules the absent reading
+    is the quiet one (no spend recorded is no spend alert), which is the safe direction."""
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _mapping_get(row: Any, key: str, default: Any = None) -> Any:
+    """One field from whichever row shape the caller holds — `sqlite3.Row`, a mapping, or
+    a dataclass-ish object."""
+    try:
+        value = row[key]
+    except (KeyError, IndexError, TypeError):
+        value = getattr(row, key, None)
+    return default if value is None else value
+
+
+def paused_milliseconds(control_rows: Any, *, now: str) -> float:
+    """How long the run spent paused, from its APPLIED control rows (`FR-ORCH-33`).
+
+    Pairs each `pause` with the next `resume` after it. Two cases decide the shape:
+
+    * **An open pause** — paused and never resumed — is closed at `now`. AC4's second
+      pause has no resume, and dropping it would count the time since as working time,
+      which is the opposite of what the operator sees.
+    * **A repeated pause** with no intervening resume does not restart the interval: the
+      run was already stopped, and counting the overlap twice would subtract more than
+      the elapsed time and drive the clock negative.
+    """
+    total = 0.0
+    open_since: str | None = None
+    for row in (control_rows or ()):
+        action = str(_mapping_get(row, "action", "") or "").lower()
+        applied_at = _mapping_get(row, "applied_at")
+        if not applied_at:
+            continue
+        if action == "pause":
+            if open_since is None:
+                open_since = str(applied_at)
+        elif action == "resume" and open_since is not None:
+            total += max(_millis_between(open_since, str(applied_at)), 0.0)
+            open_since = None
+    if open_since is not None:
+        total += max(_millis_between(open_since, now), 0.0)
+    return total
+
+
+def _provider_config(run_row: Any) -> dict[str, Any]:
+    """The run's FROZEN backend snapshot as a mapping, or empty when there is none.
+
+    `run.provider_config` is the run as it was STARTED — the ceiling, the currency, the
+    retention setting. Reading current configuration instead would relabel a finished
+    run's figures every time an operator polled it."""
+    raw = _mapping_get(run_row, "provider_config")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except (ValueError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _as_utc(timestamp: Any) -> Any:
+    """One ledger timestamp as an aware datetime, or `None` when there is no honest one —
+    `_elapsed_seconds_since`'s reading, factored out so the two agree about what a naive
+    stamp means (UTC) and about an unparseable one (no reading, never a guess)."""
+    if not timestamp:
+        return None
+    try:
+        moment = datetime.fromisoformat(str(timestamp))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment
+
+
+def _millis_between(start: Any, end: Any) -> float:
+    """Milliseconds between two stored timestamps, or 0.0 when either is unreadable —
+    an unparseable stamp must not make the clock negative."""
+    began, ended = _as_utc(start), _as_utc(end)
+    if began is None or ended is None:
+        return 0.0
+    return (ended - began).total_seconds() * 1000.0
+
+
+def evaluate_alerts(
+    *,
+    run_row: Any = None,
+    metrics: Any = None,
+    breaker_rows: Any = (),
+    budget_state: Any = None,
+    cache_history: Any = (),
+) -> tuple[RunAlert, ...]:
+    """`FR-ORCH-32`: the run's fired alerts, as a pure function of already-read state.
+
+    Pure on purpose. Every input is a value the caller has already gathered, so the rules
+    can be exercised one condition at a time without a store, a clock or a model call —
+    `TC-ORCH-36`'s isolation rung — and so the operator surface and a test see the same
+    function rather than two spellings of the same thresholds.
+
+    `OBS-05`'s oracle is that each condition fires its OWN alert and not another's, so the
+    five rules below are independent by construction: no rule reads another's input, and
+    none of them short-circuits the rest.
+    """
+    knobs = _alert_knobs()
+    fired: list[RunAlert] = []
+
+    rate = _as_float(_mapping_get(metrics, "escalation_rate"), -1.0)
+    if rate < 0:
+        rate = _as_float(_mapping_get(budget_state, "escalation_rate"), -1.0)
+    budget = _env_float(
+        ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0
+    )
+    if rate > budget:
+        # ABOVE the budget, never at it: the budget is the allowance, and a run that
+        # spends exactly its allowance has not overrun it. The budget is the same
+        # call-time knob the admission sites read — an alert that fires at 0.30 while
+        # the dispatcher admits to 1.0 is noise on a compliant run, and one that stays
+        # silent to 0.30 while the dispatcher refuses at 0.10 hides a real overrun.
+        fired.append(RunAlert(
+            ALERT_ESCALATION_RATE,
+            f"escalation rate {rate:.4f} is above the {budget} budget",
+        ))
+
+    tripped = [row for row in (breaker_rows or ()) if row is not None]
+    if tripped:
+        names = ", ".join(
+            str(_mapping_get(row, "criterion_id", "")) for row in tripped
+        )
+        fired.append(RunAlert(
+            ALERT_CRITERION_BREAKER,
+            f"criterion breaker tripped: {names}" if names else "criterion breaker tripped",
+        ))
+
+    ceiling = _as_float(_mapping_get(budget_state, "ceiling"))
+    if not ceiling:
+        # The run's FROZEN declared ceiling, never `cost_estimate`: the estimate is what
+        # the run is expected to cost, the ceiling is what it may not exceed, and reading
+        # one as the other makes this alert fire on a different quantity's data.
+        ceiling = _as_float(_provider_config(run_row).get("cost_ceiling"))
+    spend = _as_float(_mapping_get(budget_state, "spend"))
+    if not spend:
+        spend = _as_float(_mapping_get(run_row, "cost_spend"))
+    if ceiling > 0 and spend >= knobs["cost_warning_fraction"] * ceiling:
+        fired.append(RunAlert(
+            ALERT_COST_NEAR_CEILING,
+            f"spend {spend} is at or past "
+            f"{knobs['cost_warning_fraction']:.2f} of the {ceiling} ceiling",
+        ))
+
+    history = [
+        _as_float(value, -1.0) for value in (cache_history or ())
+    ]
+    history = [value for value in history if value >= 0]
+    current = _as_float(_mapping_get(metrics, "cache_hit_rate"), -1.0)
+    if current >= 0 and len(history) >= int(knobs["cache_min_history"]):
+        mean = sum(history) / len(history)
+        variance = sum((value - mean) ** 2 for value in history) / len(history)
+        deviation = variance ** 0.5
+        breach = mean - knobs["cache_sigma"] * deviation
+        # BOTH guards: statistically unusual against the baseline history, AND absolutely
+        # low. A steady history has no deviation, which would otherwise make any dip at
+        # all a three-sigma event.
+        if current < breach and current < knobs["cache_floor"]:
+            fired.append(RunAlert(
+                ALERT_CACHE_COLLAPSE,
+                f"cache hit rate {current:.3f} is below both the history's "
+                f"{knobs['cache_sigma']}-sigma break ({breach:.3f}) and the "
+                f"{knobs['cache_floor']} floor",
+            ))
+
+    # `status` is the run row's own lifecycle column and the authority on whether the run
+    # is paused (`CHECK (status IN ('pending','running','paused','complete','failed'))`).
+    # `pause_reason` is kept as a second signal, not the primary one: it says WHY, and a
+    # pause recorded without a reason is still a pause.
+    status_text = str(_mapping_get(run_row, "status", "") or "").lower()
+    pause_reason = _mapping_get(run_row, "pause_reason")
+    paused_flag = _mapping_get(budget_state, "paused")
+    if status_text == "paused" or pause_reason or bool(paused_flag):
+        reason = str(pause_reason or "") or "no reason recorded"
+        fired.append(RunAlert(ALERT_RUN_PAUSED, f"run is paused: {reason}"))
+
+    return tuple(fired)
 ESCALATION_BUDGET_ENV = "HARNESS_ORCH_ESCALATION_BUDGET"
 
 #: The criterion circuit breaker's rate (`FR-ORCH-13`, design §3.7 Configuration:
@@ -1846,7 +2146,7 @@ class SweeperReport:
 #: The operator extras `ProgressReport` serves beside the designed field set. They are
 #: deliberately NOT dataclass fields — the field set is §3.7's, asserted by set equality
 #: (TC-ORCH-26), and these ride outside it through the mapping protocol.
-PROGRESS_EXTRA_FIELDS = ("complete", "concurrency", "by_unit")
+PROGRESS_EXTRA_FIELDS = ("complete", "concurrency", "by_unit", "alerts")
 
 #: The per-student figure FR-ORCH-23 forbids, named once so the prohibition is
 #: checkable: neither the type's fields nor the mapping's keys may carry it.
@@ -1927,6 +2227,12 @@ class ProgressReport:
                 "complete": self.pending == 0 and self.in_flight == 0,
                 "concurrency": 0,
                 "by_unit": {},
+                # `FR-ORCH-32`: an extra, not a field. The designed field set is exactly
+                # eleven and `FR-ORCH-23`'s per-student prohibition is asserted over that
+                # enumeration, so alerts ride beside the other operator extras. A report
+                # built without run state has no alerts — not "no problems", simply
+                # nothing evaluated; `progress()` attaches the evaluated tuple.
+                "alerts": (),
             },
         )
         for key in (*PROGRESS_EXTRA_FIELDS, *(f.name for f in dataclass_fields(self))):
@@ -5209,7 +5515,6 @@ class Orchestrator:
                 "in_flight_calls": 0,
                 "reduced_this_pass": False,
                 "lock": threading.Lock(),
-                "started_monotonic": time.monotonic(),
             }
             self._dispatch_states[run_id] = state
         return state
@@ -5700,10 +6005,13 @@ class Orchestrator:
             else len(arms)
         )
         _processed, _escalated, rate = self._escalation_rate(cohort.query, run_id)
-        if state is not None:
-            elapsed = max(time.monotonic() - state["started_monotonic"], 0.0)
-        else:
-            elapsed = _elapsed_seconds_since(run_row["started_at"])
+        # `FR-ORCH-33`: ONE elapsed reading, the ledger's, for both the dispatching and
+        # the report-only path. The monotonic branch measured how long this PROCESS had
+        # been running, so a resumed run extrapolated its throughput from the restart —
+        # and a run paused overnight extrapolated it from the pause. The wall clock
+        # excludes paused intervals, which is what makes it a throughput window rather
+        # than a stopwatch left running.
+        elapsed = self._run_wall_clock_ms(cohort, run_id) / 1000.0
         estimate = estimated_completion_seconds(
             completed=done,
             remaining=pending + in_flight,
@@ -5751,9 +6059,79 @@ class Orchestrator:
                 "complete": pending == 0 and in_flight == 0 and leased_score == 0,
                 "concurrency": concurrency,
                 "by_unit": by_unit,
+                # `FR-ORCH-32`: the five §3.7 conditions, evaluated over state this pass
+                # already read. The rules live in a pure function so they can be
+                # exercised one condition at a time; `progress()` is where the operator
+                # actually meets them.
+                "alerts": self._run_alerts(cohort, run_id, run_row, rate),
             },
         )
         return report
+
+    def _run_alerts(
+        self, cohort: Any, run_id: str, run_row: Any, rate: float
+    ) -> tuple[RunAlert, ...]:
+        """The run's fired alerts (`FR-ORCH-32`), gathered from the ledger and evaluated.
+
+        Gathering is here and the RULES are in `evaluate_alerts`: the split is what keeps
+        each condition independently breachable without a store (`TC-ORCH-36`'s rung), and
+        what stops the thresholds being spelled twice.
+        """
+        snapshot = _provider_config(run_row)
+        ceiling = snapshot.get("cost_ceiling")
+        budget_state = {
+            "escalation_rate": rate,
+            "ceiling": _as_float(ceiling) if ceiling is not None else 0.0,
+            "spend": _as_float(_mapping_get(run_row, "cost_spend")),
+        }
+        # The RUN-scoped read: `select_breaker` answers about one criterion, and the
+        # alert is about the run having any tripped breaker at all.
+        breaker_rows = cohort.query(
+            ORCH_STATEMENTS["select_run_breakers"], run_id=run_id
+        )
+        # This run's cache hit rate, and the rates EVERY OTHER RUN IN THE STORE recorded
+        # — the baseline a collapse is measured against. Without enough history there is
+        # no baseline and `evaluate_alerts` declines to fire, the honest answer for a
+        # first run. The baseline is deliberately unscoped and unwindowed for now, which
+        # is a calibration weakness disclosed on #370: runs of different packages, panels
+        # and backends widen the variance, and a wide variance is what lets a genuine
+        # collapse sit inside the sigma band.
+        durable = self._store.durable()
+        # `-1.0` is `evaluate_alerts`' declared "not measured" sentinel, and starting at
+        # 0.0 instead defeated it: `progress()` evaluates alerts BEFORE the pass flushes,
+        # so every run's first poll in a store with enough prior runs reported a perfect
+        # cache as a total collapse. A rate nobody has measured is not a rate of zero.
+        current = -1.0
+        tokens_in = 0.0
+        for row in durable.query(
+            ORCH_STATEMENTS["select_run_metric_values"], run_id=run_id
+        ):
+            metric = str(_mapping_get(row, "metric", ""))
+            if metric == "cache_hit_rate":
+                current = _as_float(_mapping_get(row, "value"), -1.0)
+            elif metric == "tokens_in":
+                tokens_in = _as_float(_mapping_get(row, "value"))
+        if tokens_in <= 0:
+            # `_flush_run_metrics` records `cache_hit_rate = 0.0` for a pass that sent no
+            # tokens, because the field is under CT-ORCH-20's set-equality contract and
+            # cannot be omitted. A run that has dispatched nothing — idle, paused,
+            # enumerated but not started — has no cache behaviour to judge, so that zero
+            # is read here as the absence it is rather than as a collapse that would
+            # alert forever.
+            current = -1.0
+        history = [
+            _as_float(_mapping_get(row, "value"))
+            for row in durable.query(
+                ORCH_STATEMENTS["select_prior_cache_hit_rates"], run_id=run_id
+            )
+        ]
+        return evaluate_alerts(
+            run_row=run_row,
+            metrics={"escalation_rate": rate, "cache_hit_rate": current},
+            breaker_rows=breaker_rows,
+            budget_state=budget_state,
+            cache_history=history,
+        )
 
     def _flush_run_metrics(
         self,
@@ -5792,20 +6170,97 @@ class Orchestrator:
             "total_units": float(total_units),
             "escalated_units": float(escalated),
             "quarantined_units": float(report.quarantined),
-            "wall_clock_ms": max(
-                (time.monotonic() - state["started_monotonic"]) * 1000.0, 0.0
-            ),
+            "wall_clock_ms": self._run_wall_clock_ms(cohort, run_id),
             "peak_concurrency": float(state["peak_concurrency"]),
             "estimated_completion_s": float(report.estimated_completion),
             "actual_cost": float(state["cost"]),
             "model_swap_count": float(state["residency"]["swaps"]),
             "model_swap_duration_ms": float(state["residency"]["swap_ms"]),
         }
+        # TEXT rides the REAL-affinity column as TEXT: these are labels, not
+        # measurements, and the EAV shape carries both.
         if state["resolved_build"]:
-            # TEXT rides the REAL-affinity column as TEXT: the resolved build is a
-            # label, not a measurement, and the EAV shape carries both.
             metrics["resolved_build"] = state["resolved_build"]
+        # `FR-ORCH-33`: the SET over the run, as a JSON list. A run can resolve more than
+        # one build — a judge dropped after an OOM, a panel narrowed mid-run — and the
+        # singular column recorded only whichever one landed first, which is the least
+        # interesting of them. Sorted, so two runs that resolved the same builds write
+        # the same bytes (`NFR-ORCH-05`).
+        resolved = self._run_resolved_builds(cohort, run_id, state)
+        if resolved:
+            metrics["resolved_builds"] = json.dumps(
+                resolved, separators=_JSON_SEPARATORS
+            )
+        run_row = self._run_row_in(cohort, run_id)
+        if run_row is not None:
+            estimate = _mapping_get(run_row, "cost_estimate")
+            if estimate is not None:
+                metrics["estimated_cost"] = str(estimate)
+            # `cost_currency` and `retention_setting` live in the run's FROZEN backend
+            # snapshot (`run.provider_config`), not in current configuration: a metric
+            # about a run must describe the run as it was started, and reading today's
+            # config would relabel a finished run's figures on the next poll.
+            snapshot = _provider_config(run_row)
+            for key in ("cost_currency", "retention_setting"):
+                value = snapshot.get(key)
+                if value is not None:
+                    metrics[key] = str(value)
         self.record_run_metrics(run_id, metrics)
+
+    def _run_row_in(self, cohort: Any, run_id: str) -> Any:
+        """The run's row from a cohort handle the caller already holds.
+
+        Distinct from `_run_row(run_id)`, which WALKS the cohort files to find which one
+        owns the run. Both flush and report already know the cohort, so re-walking would
+        open every cohort file to answer a question the caller had answered."""
+        rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
+        return rows[0] if rows else None
+
+    def _run_wall_clock_ms(self, cohort: Any, run_id: str) -> float:
+        """`FR-ORCH-33`: elapsed since `run.started_at`, less every paused interval.
+
+        Read from the LEDGER, never from `time.monotonic()`. A monotonic anchor measures
+        how long *this process* has been running, so a run resumed after a restart
+        reported a clock that began at the restart — and a run paused overnight reported
+        the pause as work. Both readings are wrong in the direction that flatters the
+        run, which is the direction an operator cannot afford.
+        """
+        run_row = self._run_row_in(cohort, run_id)
+        started_at = _mapping_get(run_row, "started_at") if run_row is not None else None
+        if not started_at:
+            return 0.0
+        now = _now()
+        elapsed = _millis_between(started_at, now)
+        paused = paused_milliseconds(
+            cohort.query(ORCH_STATEMENTS["select_applied_control"], run_id=run_id),
+            now=now,
+        )
+        return max(elapsed - paused, 0.0)
+
+    def _run_resolved_builds(
+        self, cohort: Any, run_id: str, state: Mapping[str, Any]
+    ) -> list[str]:
+        """Every build this run resolved, as a sorted set. The pass's own answer plus
+        whatever earlier passes already recorded, so a restart does not shorten the
+        list to just what this process happened to see."""
+        seen: set[str] = set()
+        if state.get("resolved_build"):
+            seen.add(str(state["resolved_build"]))
+        # `run_metrics` is Tier D (`record_run_metrics` writes it there), so the prior
+        # passes' rows are read from the durable handle, not the cohort's.
+        for row in self._store.durable().query(
+            ORCH_STATEMENTS["select_run_metric_values"], run_id=run_id
+        ):
+            metric = str(_mapping_get(row, "metric", "") or "")
+            value = _mapping_get(row, "value")
+            if metric == "resolved_build" and value:
+                seen.add(str(value))
+            elif metric == "resolved_builds" and value:
+                try:
+                    seen.update(str(item) for item in json.loads(str(value)))
+                except (ValueError, TypeError):
+                    continue
+        return sorted(seen)
 
     def record_run_metrics(self, run_id: str, metrics: Mapping[str, Any]) -> None:
         """Write one run's metrics as EAV rows — the write `CT-ORCH-20` makes contract.

@@ -34,7 +34,7 @@ import pytest
 
 from tests.support.impl import ORCH_MODULE, require
 
-pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]
+pytestmark = [pytest.mark.integration]
 
 ISSUE = "#66"
 
@@ -59,8 +59,38 @@ def _healthy(**overrides):
 
 
 def _fired(**state) -> tuple:
+    """The adapter this file's header reserved for the owning story.
+
+    `#370` shipped `evaluate_alerts` under `FR-ORCH-32` with the name this file guessed
+    and a different SIGNATURE: structured run state (`run_row`, `metrics`,
+    `breaker_rows`, `budget_state`, `cache_history`) rather than one flat scalar per
+    condition. The header called that out in advance — "the owning story may ship another
+    name or a push-based surface, reconciled in one line here" — so the reconciliation
+    lands here, in the adapter, and every oracle below is untouched.
+
+    `cache_history` is the one input with no flat equivalent: a collapse is a collapse
+    RELATIVE to the run's own baseline, so the healthy rate is repeated as the history
+    the current rate is judged against.
+    """
     alerts = require(ORCH_MODULE, "evaluate_alerts", issue=ISSUE)
-    return tuple(alerts(**state))
+    healthy_rate = _healthy()["cache_hit_rate"]
+    fired = alerts(
+        # `status`, the run row's real lifecycle column. An earlier draft of this adapter
+        # passed a `paused_at` field that exists in no schema, so the production path's
+        # pause detection went untested while the test passed.
+        run_row={"status": "paused" if state["paused"] else "running"},
+        metrics={
+            "escalation_rate": state["escalation_rate"],
+            "cache_hit_rate": state["cache_hit_rate"],
+        },
+        breaker_rows=({"criterion_id": "C1"},) if state["breaker_tripped"] else (),
+        budget_state={
+            "spend": state["cost"],
+            "ceiling": state["cost_ceiling"],
+        },
+        cache_history=[healthy_rate, healthy_rate, healthy_rate],
+    )
+    return tuple(str(alert) for alert in fired)
 
 
 def test_tc_orch_36_healthy_run_fires_no_alert():

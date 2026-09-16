@@ -84,6 +84,27 @@ _CONTRACT_METRIC_NAMES = frozenset({
     "model_swap_count",
     "model_swap_duration_ms",
     "resolved_build",
+    # --- #370 (`FR-ORCH-33`) -------------------------------------------------------
+    # The requirement widens this contract in as many words: `_flush_run_metrics`
+    # "shall ADDITIONALLY write" these five. `resolved_build` stays beside
+    # `resolved_builds` rather than being replaced — the singular is what M-STATS
+    # reads today, and a set-equality contract is exactly the wrong place to drop a
+    # name consumers still use; the plural is the set over the run, as JSON.
+    "resolved_builds",
+    "estimated_cost",
+})
+
+#: `FR-ORCH-33`'s other two, deliberately NOT in the set-equality list above.
+#: `cost_currency` and `retention_setting` are declared by the BACKEND PROFILE
+#: (`conf.py`: currency for `cloud-hosted`/`dev-ci`, retention for `cloud-hosted`), so a
+#: local-profile run has neither — and the oracle above is "what EVERY dispatched run
+#: writes". Forcing them in would mean writing an empty string for runs that declare
+#: none, which is precisely the null-defaulted field this contract exists to reject.
+#: They are written when the run declares them; that is a profile-conditional assertion
+#: and belongs to a case with a cloud-hosted fixture (disclosed on #370).
+_PROFILE_CONDITIONAL_METRIC_NAMES = frozenset({
+    "cost_currency",
+    "retention_setting",
 })
 
 _UNIT_ESTIMATE = Decimal("0.10")
@@ -231,7 +252,9 @@ def test_tc_orch_c20_run_metrics_written_in_full_by_contract_name(
             "SELECT metric, value FROM run_metrics WHERE run_id = :r", r=run_id
         )
         written = {row["metric"]: row["value"] for row in rows}
-        assert set(written) == set(_CONTRACT_METRIC_NAMES), (
+        assert set(written) - _PROFILE_CONDITIONAL_METRIC_NAMES == set(
+            _CONTRACT_METRIC_NAMES
+        ), (
             "run_metrics is not written in full: missing="
             f"{sorted(set(_CONTRACT_METRIC_NAMES) - set(written))} unexpected="
             f"{sorted(set(written) - set(_CONTRACT_METRIC_NAMES))} — the names are "
