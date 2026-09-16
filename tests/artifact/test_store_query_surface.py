@@ -613,29 +613,29 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # GRADE_STATEMENTS statement with keyword parameters, the FR-STORE-08
     # discipline), the rest moved with the docstring and statement edits above
     # them. Re-read from the walker, never hand-unioned.
-    "aeh.grade:1485",
-    "aeh.grade:1492",
-    "aeh.grade:1494",
-    "aeh.grade:1502",
-    "aeh.grade:1512",
-    "aeh.grade:1586",
-    "aeh.grade:1611",
-    "aeh.grade:1617",
-    "aeh.grade:1648",
-    "aeh.grade:1656",
-    "aeh.grade:1749",
-    "aeh.grade:1762",
-    "aeh.grade:1872",
-    "aeh.grade:1904",
-    "aeh.grade:1898",
-    "aeh.grade:1979",
-    "aeh.grade:2249",
-    "aeh.grade:2260",
-    "aeh.grade:2265",
-    "aeh.grade:2629",
-    "aeh.grade:2635",
-    "aeh.grade:2640",
-    "aeh.grade:3123",
+    "aeh.grade:1486",
+    "aeh.grade:1493",
+    "aeh.grade:1495",
+    "aeh.grade:1503",
+    "aeh.grade:1514",
+    "aeh.grade:1588",
+    "aeh.grade:1613",
+    "aeh.grade:1619",
+    "aeh.grade:1650",
+    "aeh.grade:1659",
+    "aeh.grade:1752",
+    "aeh.grade:1765",
+    "aeh.grade:1875",
+    "aeh.grade:1907",
+    "aeh.grade:1901",
+    "aeh.grade:1982",
+    "aeh.grade:2252",
+    "aeh.grade:2263",
+    "aeh.grade:2268",
+    "aeh.grade:2632",
+    "aeh.grade:2638",
+    "aeh.grade:2643",
+    "aeh.grade:3126",
     # The #73/#74 integ sites: the routing ladder's ledger writes (the four
     # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
     # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
@@ -646,18 +646,18 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #363 (FR-INTEG-10): `_record_routed`'s write of the panel state this cell was
     # routed on, as `cell_phase`'s `integrity_post` row. It is what makes a repeat
     # `verify` over unchanged evidence route nothing across a process restart.
-    "aeh.integ:1143",
-    "aeh.integ:1152",
-    "aeh.integ:1168",
-    "aeh.integ:1179",
-    "aeh.integ:1247",
-    "aeh.integ:1323",
-    "aeh.integ:1341",
-    "aeh.integ:1355",
-    "aeh.integ:1372",
-    "aeh.integ:1389",
-    "aeh.integ:1399",
-    "aeh.integ:1409",
+    "aeh.integ:1144",
+    "aeh.integ:1153",
+    "aeh.integ:1169",
+    "aeh.integ:1187",
+    "aeh.integ:1256",
+    "aeh.integ:1332",
+    "aeh.integ:1350",
+    "aeh.integ:1364",
+    "aeh.integ:1381",
+    "aeh.integ:1398",
+    "aeh.integ:1408",
+    "aeh.integ:1418",
     # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
     # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
     # bootstrap insert the security suite's fixture surface makes before its
@@ -677,14 +677,21 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # from the walker, never hand-unioned.)
     # (#115's re-pin: the `upsert_label` Statement added to REVIEW_STATEMENTS
     # moved the site again; the statement is the same one.)
-    "aeh.review:2449",
+    # #367 (FR-REVIEW-20): the queue row's own record — `ensure_queue_row` and
+    # `record_shown` write what the BUILD decided (rank score, estimate, shown at) for the
+    # items it showed, and `record_action` writes what the teacher then DID to one. Before
+    # these the row said only that a cell had been flagged.
+    "aeh.review:1666",
+    "aeh.review:1672",
+    "aeh.review:1697",
+    "aeh.review:2590",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
     # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries, upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:2997",
+    "aeh.review:3164",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
@@ -729,15 +736,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console:2146",
-    "aeh.console:2223",
-    "aeh.console:2431",
-    "aeh.console:4751",
-    "aeh.console:4756",
-    "aeh.console:4779",
-    "aeh.console:4787",
-    "aeh.console:4795",
-    "aeh.console:4808",
+    "aeh.console:2229",
+    "aeh.console:2306",
+    "aeh.console:2514",
+    "aeh.console:4876",
+    "aeh.console:4881",
+    "aeh.console:4904",
+    "aeh.console:4912",
+    "aeh.console:4920",
+    "aeh.console:4933",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the

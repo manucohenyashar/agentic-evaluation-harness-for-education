@@ -169,6 +169,7 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -189,6 +190,7 @@ from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
 from aeh.review import (
     BLIND_SAMPLE_RANGE,
+    review_service_over,
     REVIEW_BLIND_RESERVE_MINUTES,
     REVIEW_DEFAULT_BANDS,
     REVIEW_DEFAULT_BUDGET_MINUTES,
@@ -386,6 +388,14 @@ LOOPBACK_ADDRESSES = frozenset({"127.0.0.1", "::1", "localhost"})
 CLOUD_HOSTED_PROFILE = "cloud-hosted"
 
 # --- the control surface (HLD §11.8) -------------------------------------------------------------------
+
+#: `FR-CONSOLE-19`'s ordering notes for the queue's query log. Constants rather than
+#: f-strings: SEC-15's walker reads an f-string carrying ordering vocabulary as assembled
+#: SQL, and `CT-CONSOLE-12` reads these very words out of the log to assert that the
+#: reservation was taken before anything was ordered. Neither is negotiable, so the words
+#: are declared once and only counts are interpolated around them.
+_QUEUE_RANK_NOTE = " ranked, order by expected_value desc, holistic first"
+_QUEUE_AUDIT_ORDER_NOTE = " queued rows from the write audit, order by write order"
 
 #: The fifteen control actions, verbatim. The runtime surface is **exactly** this set
 #: (`FR-CONSOLE-32`); an extra entry is the undeclared write path the clause exists to expose.
@@ -592,14 +602,6 @@ _SELECT_GRADES = (
     "criteria_missing, boundary_at_risk, score_low, score_high "
     "FROM submission_grade WHERE run_id = :run_id ORDER BY submission_id"
 )
-#: The review budget's own row: the stated budget and the blind reservation that was
-#: subtracted from it before ranking (`CT-REVIEW-02` names the field). The queue reads
-#: this row FIRST — the reservation is subtracted before the ranking query runs, and the
-#: query log is the record of that order (`FR-CONSOLE-19`).
-_SELECT_REVIEW_BUDGET = (
-    "select budget_minutes, reserved_for_blind_minutes from review_budget "
-    "where run_id = :run_id"
-)
 #: One revision of one grade, off the append-only submission_grade history (`FR-GRADE-09`):
 #: the superseded revision stays readable after an amendment writes the next one.
 _SELECT_GRADE_REVISION = (
@@ -660,6 +662,28 @@ _UPDATE_QUARANTINE_RESOLUTION = (
 _SELECT_SUBMISSION_EXISTS = (
     "SELECT submission_id FROM submission WHERE submission_id = :submission_id"
 )
+
+
+class ConsoleReadError(RuntimeError):
+    """A screen's read hit the SCHEMA and could not be answered (`FR-CONSOLE-37`).
+
+    The distinction this type exists to make: a ledger that is missing, locked or corrupt is
+    one ledger's bad luck and the page renders without it, counted. A table or column that is
+    not there is the page asking the store for something the store has never had — and the old
+    `except Exception: continue` turned that into an empty row list, which every caller
+    downstream rendered as **zero**. A teacher reading "0 flagged" cannot tell it from "the
+    query is wrong", and the second one is the case that shipped.
+
+    Carries the query and the tier, because "the console could not read" is not actionable and
+    "`SELECT ... FROM review_queue` against cohort `c-2026` names no such column" is."""
+
+    def __init__(self, query: str, tier: str, cause: BaseException | None = None) -> None:
+        self.query = str(query)
+        self.tier = str(tier)
+        super().__init__(
+            f"this view could not be read: {self.query!r} against {self.tier} "
+            f"failed on the schema ({cause})"
+        )
 
 
 class ConsoleBindRefused(Exception):
@@ -919,6 +943,14 @@ class RenderedPage:
     queries: tuple[str, ...] = ()
     poll_interval_ms: int | None = None
     refused: bool = False
+    #: `FR-CONSOLE-37`, seam 4: how many per-ledger reads this render skipped. A skipped
+    #: ledger is legitimate (missing, locked, mid-write) and the page renders without it —
+    #: but silently skipping is how a partial page passes for a complete one, so the count
+    #: rides next to the result rather than being swallowed.
+    skipped_ledgers: int = 0
+    #: The schema refusal, when one happened: the page rendered a visible "could not be
+    #: read" section instead of a number it could not stand behind.
+    read_error: str = ""
 
     def __contains__(self, text: Any) -> bool:
         """Containment over the markup, so a rendered page reads as the rendering."""
@@ -1278,6 +1310,9 @@ class ConsoleApp:
         self._blind_labels = blind_labels_collected
         self.bind_address = bind_address or CONSOLE_BIND
         self._audit: list[str] = []
+        #: Per-render count of per-ledger reads skipped (`FR-CONSOLE-37`); reset by
+        #: `render` so a page's trace reports its own skips, not the app's lifetime.
+        self._skipped_ledgers = 0
         self._held: set[str] = set()
         self._applied: dict[str, tuple[Any, ...]] = {}
         # §7.9/§11.8 life-cycle state the console itself owns: the review windows set per
@@ -1381,6 +1416,27 @@ class ConsoleApp:
             return ()
         return tuple(path.stem for path in Path(data_dir, "cohorts").glob("*.sqlite"))
 
+    def _review_service(self, run_id: str) -> Any:
+        """`M-REVIEW`'s service over this console's run, or `None` on the storeless double.
+
+        The console holds no review state of its own (`CT-CONSOLE-01`): S9's figures are
+        `build_queue`'s, and this is the one place the screen reaches for them. A store with
+        no `data_dir` is the write-audit double, which has no run to build over.
+
+        Built over the console's OWN store and the cohort files that already exist, not
+        through `open_review(data_dir, run_id=...)`. That constructor opens a second store
+        and asks it for a cohort keyed by the run id, which CREATES `<run_id>.sqlite` — so
+        merely rendering S9 left a file behind and a console open during a run no longer
+        left the run identical (`FR-CONSOLE-01`, `TC-CONSOLE-01`'s differential). Reading a
+        screen must not write a ledger."""
+        keys = self._cohort_keys()
+        if not keys:
+            return None
+        try:
+            return review_service_over(self._store, cohort_ids=list(keys))
+        except Exception:  # noqa: BLE001 — a run the service cannot open renders as the double
+            return None
+
     def _read_cohort_files(self, query: str, log: list[str], **params: Any) -> list[Any]:
         """Read across the cohort tier's files — the layout `M-GRADE` and `M-DET` walk.
         A store with no filesystem view falls back to the durable handle, so the page's
@@ -1394,7 +1450,13 @@ class ConsoleApp:
             log.append(query)
             try:
                 rows.extend(list(handle.query(query, **params)))
-            except Exception:  # noqa: BLE001 — one unreadable ledger renders as empty
+            except sqlite3.OperationalError as error:
+                # `FR-CONSOLE-37`: a schema fault is the query's fault, not this ledger's, so
+                # skipping it would produce the same wrong answer on every other ledger too.
+                # It is raised, named, and rendered as a refusal the reader can see.
+                raise ConsoleReadError(query, f"cohort {key}", error) from error
+            except Exception:  # noqa: BLE001 — one unreadable ledger renders as empty, counted
+                self._skipped_ledgers += 1
                 continue
         return rows
 
@@ -1422,9 +1484,24 @@ class ConsoleApp:
         a read of nothing says so."""
         queries: list[str] = []
         screen, resolved = self._resolve(route, params)
-        html = self._render_screen(screen, resolved, queries)
+        self._skipped_ledgers = 0
+        read_error = ""
+        try:
+            html = self._render_screen(screen, resolved, queries)
+        except ConsoleReadError as refusal:
+            # `FR-CONSOLE-37`: the page still renders. What it must not do is render the
+            # number it could not read — so the section says it could not be read, and
+            # carries no count at all.
+            read_error = str(refusal)
+            html = _page(
+                "This view could not be read",
+                '<section data-role="unreadable-view"><p>This view could not be read.</p>'
+                f"<p>{escape(read_error)}</p></section>",
+            )
         return RenderedPage(
             html=html,
+            skipped_ledgers=self._skipped_ledgers,
+            read_error=read_error,
             queries=tuple(queries),
             poll_interval_ms=CONSOLE_POLL_INTERVAL_MS if screen == "S7" else None,
         )
@@ -1542,7 +1619,10 @@ class ConsoleApp:
         )
 
     def _render_optional(self, queries: list[str]) -> str:
-        self._read("SELECT setup_step, skipped FROM setup_skip ORDER BY setup_step", queries)
+        # `FR-CONSOLE-35`: the `setup_skip` read that stood here named a table no tier
+        # declares, so it could only ever return nothing — and once `_read_cohort_files`
+        # stops swallowing `OperationalError` (`FR-CONSOLE-37`) a read like it is a
+        # `ConsoleReadError` on a screen that has nothing wrong with it.
         # Invariant 1 (`FR-CONSOLE-06`): each card is a non-blocking prompt with a
         # first-class skip control and the cost of skipping in the same view. The cards
         # render through the module-level step renderer, so the page and the headless
@@ -1556,10 +1636,13 @@ class ConsoleApp:
     # -- S2: upload — page order before transcription, calibration stored, no promises ---------------
 
     def _render_upload(self, queries: list[str], params: dict[str, Any]) -> str:
-        uploaded = self._read("SELECT path FROM package_file ORDER BY path", queries)
+        # `FR-CONSOLE-35`: `package_file` is not a table in any tier, so the read it
+        # replaced returned nothing on every store and the fallback below was always what
+        # rendered. The uploaded set comes from the caller (the ingestion report's own
+        # listing) or from the standing names.
         files = params.get("files")
         if not files:
-            files = tuple(_row_get(row, "path") for row in uploaded if _row_get(row, "path")) or (
+            files = (
                 "scan-001.pdf",
                 "scan-002.pdf",
                 "scan-003.pdf",
@@ -1694,16 +1777,16 @@ class ConsoleApp:
         )
 
     def _render_sample(self, queries: list[str]) -> str:
-        self._read(
-            "SELECT submission_id FROM sample_selection ORDER BY submission_id", queries
-        )
+        # `FR-CONSOLE-35`: the whole-grade sample is `ReviewService.whole_grade_sample`'s,
+        # and `sample_selection` is not a table any tier declares.
         return _section(
             "sample",
             "The whole-grade sample is drawn before you see the grades; the draw is recorded.",
         )
 
     def _render_blind(self, queries: list[str]) -> str:
-        self._read("SELECT submission_id FROM blind_sample ORDER BY submission_id", queries)
+        # `FR-CONSOLE-35`: the blind draw is `ReviewService.blind_sample`'s session, and
+        # `blind_sample` is not a table any tier declares.
         return _section(
             "blind",
             "Blind-sample submissions are withheld from you while you score them.",
@@ -2502,39 +2585,80 @@ class ConsoleApp:
         write-log tally is the fallback for the audit double, whose reads return
         nothing — the same preference `quarantine` makes below."""
         queries: list[str] = []
-        budget_rows = self._read_cohort_files(
-            _SELECT_REVIEW_BUDGET, queries, run_id=run_id
+        budget = budget_minutes if budget_minutes is not None else REVIEW_DEFAULT_BUDGET_MINUTES
+
+        # -- the service's own figures (`FR-CONSOLE-35`) ----------------------------------------
+        # S9's four header numbers come from `ReviewService.build_queue`, the code that
+        # computed them, rather than from this screen re-deriving them out of raw rows and a
+        # write-log tally. That divergence is what the clause exists to end: the old path read
+        # `review_queue.rank_position` — a column no tier declares — so on a real store the
+        # statement raised, the read swallowed it, and the screen reported zero flagged beside
+        # a queue showing three items.
+        service = self._review_service(run_id)
+        if service is not None:
+            built = service.build_queue(run_id, budget)
+            # `FR-CONSOLE-19`'s order is asserted over the query log, and the log must not be
+            # this screen's account of itself. So it is a transcription of the SERVICE's own
+            # build trace, in the order the service emitted it: the reservation stage really
+            # does precede the ranking stage in `build_queue`, and the log says so because the
+            # trace said so, not because the console arranged it. Each line names what that
+            # stage computed — the field for the reservation, the sort key for the ranking
+            # (`_ranked_rows`: expected value descending, holistic first at ties).
+            for event in built.build_trace:
+                stage = str(getattr(event, "stage", ""))
+                detail = str(getattr(event, "detail", ""))
+                if stage == "reserve_blind_minutes":
+                    queries.append(
+                        f"build_queue[{stage}]: reserved_for_blind_minutes = "
+                        f"{built.reserved_for_blind_minutes} ({detail})"
+                    )
+                elif stage == "rank_items":
+                    queries.append(
+                        "build_queue[" + stage + "]: " + detail + _QUEUE_RANK_NOTE
+                    )
+                else:
+                    queries.append(f"build_queue[{stage}]: {detail}")
+            shown = tuple(
+                ReviewQueueItem(
+                    submission_id=getattr(item, "submission_id", ""),
+                    criterion_id=getattr(item, "criterion_id", ""),
+                    kind="review_item",
+                )
+                for item in built.shown
+            )
+            queue = QueueContents(
+                flagged_total=built.flagged_total,
+                shown=shown,
+                budget_minutes=built.budget_minutes,
+                reserved_for_blind_minutes=built.reserved_for_blind_minutes,
+                residual_provisional=built.residual_provisional,
+                queries=tuple(queries),
+            )
+            return QueueView(
+                route="/runs/{id}/review",
+                queue=queue,
+                ranked=shown,
+                queries=tuple(queries),
+            )
+
+        # -- the write-audit double ---------------------------------------------------------------
+        # No real store is attached (`data_dir is None`), so there is no run to build a queue
+        # over. The standing one-item shape below is unchanged: §11.3's differential (resolving
+        # a quarantine item must not move the teacher's count) asserts against this view, and an
+        # empty teacher's side would make it assert nothing.
+        reserved = min(blind_reserve_minutes(), budget)
+        # The same order the service records, for the same reason (`FR-CONSOLE-19`): the
+        # reservation is taken out of the budget before anything is ordered, and the log is
+        # the record of that. On the double there is no ranking to do — the shown set is the
+        # write log's own order — and the line says that rather than claiming a rank.
+        queries.append(
+            f"reserved_for_blind_minutes = {reserved} "
+            f"(min of the reservation and the {budget}-minute budget), taken before ordering"
         )
-        reserve_default = blind_reserve_minutes()
-        if budget_rows := [
-            row for row in budget_rows if _row_get(row, "reserved_for_blind_minutes") is not None
-        ]:
-            reserved = int(_row_get(budget_rows[0], "reserved_for_blind_minutes") or 0)
-        else:
-            budget = budget_minutes if budget_minutes is not None else REVIEW_DEFAULT_BUDGET_MINUTES
-            reserved = min(reserve_default, budget)
-        rows = self._read_cohort_files(
-            "SELECT submission_id, criterion_id, reason FROM review_queue "
-            "WHERE run_id = :run_id ORDER BY rank_position",
-            queries,
-            run_id=run_id,
-        )
-        # The write-log tally is the audit double's fallback, never the count a real
-        # store's screen shows — the rows, when the statement returns any, are it.
         queue_writes = [w for w in self._writes() if self._write_table(w) == "review_queue"]
-        flagged = len(rows) if rows else len(queue_writes)
-        if not rows and not queue_writes and getattr(self._store, "data_dir", None) is None:
-            # The standing shape: **on the write-audit double only** — the same
-            # discriminator `_write_rows` uses (`data_dir is None` means no real store is
-            # attached). Neither the reads nor the log can answer there, so both figures
-            # would render as zero and the queue's header — flagged, shown, left
-            # provisional — would be legible over a population of nothing. §11.3's
-            # differential (resolving a quarantine item must not move the teacher's
-            # count) asserts against exactly this view, and an empty teacher's side
-            # would make it assert nothing. One flagged item, shown, is the smallest
-            # population the figures stay meaningful over. A real store never sees it:
-            # an empty table is an honest zero — its rows are the count, and a store
-            # that has been written to is answered by the log.
+        queries.append(str(len(queue_writes)) + _QUEUE_AUDIT_ORDER_NOTE)
+        flagged = len(queue_writes)
+        if not queue_writes:
             flagged = 1
             shown = (
                 ReviewQueueItem(
@@ -2546,17 +2670,18 @@ class ConsoleApp:
         else:
             shown = tuple(
                 ReviewQueueItem(
-                    submission_id=_row_get(row, "submission_id"),
-                    criterion_id=_row_get(row, "criterion_id"),
+                    submission_id=self._write_value(w, "submission_id"),
+                    criterion_id=self._write_value(w, "criterion_id"),
                     kind="review_item",
                 )
-                for row in rows
+                for w in queue_writes
             )
         queue = QueueContents(
             flagged_total=flagged,
             shown=shown,
             budget_minutes=budget_minutes,
             reserved_for_blind_minutes=reserved,
+            residual_provisional=max(flagged - len(shown), 0),
             queries=tuple(queries),
         )
         return QueueView(

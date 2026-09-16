@@ -335,6 +335,7 @@ interrupted-session half, and the blind path of `CT-REVIEW-08`):
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 import os
 import random
@@ -578,6 +579,75 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
 }
 
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_006,)
+
+# --- Tier C, migration 26 (#367, `FR-REVIEW-20`): what the queue did, on the queue's own row --
+#
+# `review_queue` shipped as four columns — `queue_id`, `submission_id`, `criterion_id`,
+# `reason` — which say that an item was flagged and nothing about the review of it. HLD §9.6
+# declares eight more, in two groups:
+#
+#   * what BUILDING the queue decided — `run_id` (a queue row belonged to no run, so two runs
+#     over one cohort shared a queue), `rank_score`, `est_seconds` and `shown_at`, written for
+#     the items `build_queue` actually showed;
+#   * what ACTING on it did — `action`, `new_band`, `new_points` and `acted_at`, written by
+#     `act`.
+#
+# Without them the screen had to re-derive its own header figures from raw rows and a
+# write-log tally, which is the divergence `FR-CONSOLE-35` exists to end: the queue's numbers
+# now come from the service that computed them, and the row records what it decided.
+_COHORT_026 = Migration(
+    version=26,
+    name="review_queue_columns",
+    statements=(
+        Statement("ALTER TABLE review_queue ADD COLUMN run_id TEXT"),
+        Statement("ALTER TABLE review_queue ADD COLUMN rank_score REAL"),
+        Statement("ALTER TABLE review_queue ADD COLUMN est_seconds REAL"),
+        Statement("ALTER TABLE review_queue ADD COLUMN shown_at TEXT"),
+        Statement("ALTER TABLE review_queue ADD COLUMN action TEXT"),
+        Statement("ALTER TABLE review_queue ADD COLUMN new_band TEXT"),
+        Statement("ALTER TABLE review_queue ADD COLUMN new_points REAL"),
+        Statement("ALTER TABLE review_queue ADD COLUMN acted_at TEXT"),
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_COHORT_026,), key=lambda m: m.version
+))
+
+REVIEW_QUEUE_STATEMENTS: dict[str, Statement] = {
+    # What the BUILD decided, for the items it actually showed. `INSERT OR IGNORE` first so a
+    # cell flagged by a route that predates the row still gets one, then the update: the queue
+    # row is the record of the build, and a build that showed an item the ledger never queued
+    # would otherwise leave no trace of having shown it.
+    "ensure_queue_row": Statement(
+        "INSERT OR IGNORE INTO review_queue (queue_id, run_id, submission_id, criterion_id, "
+        "reason) VALUES (:queue_id, :run_id, :submission_id, :criterion_id, :reason)"
+    ),
+    "record_shown": Statement(
+        "UPDATE review_queue SET run_id = :run_id, rank_score = :rank_score, "
+        "est_seconds = :est_seconds, shown_at = :shown_at WHERE queue_id = :queue_id"
+    ),
+    # What the ACTION did. Written by `act`, so the row says what the teacher decided and
+    # when — the queue's own history, rather than a label the queue cannot join to.
+    "record_action": Statement(
+        "UPDATE review_queue SET action = :action, new_band = :new_band, "
+        "new_points = :new_points, acted_at = :acted_at WHERE queue_id = :queue_id"
+    ),
+}
+
+
+def _queue_id_for(run_id: str, submission_id: str, criterion_id: str) -> str:
+    """The queue row's id for one cell of one run.
+
+    `M-GRADE` mints `q-<hash>` and `M-INTEG` mints `integ-<reason>-...`, so there is no single
+    spelling to reuse; this is the review side's own, and it is deterministic so a rebuild
+    updates its row rather than adding a second one."""
+    # A unit separator, not bare concatenation: ("r1", "s", "c") and ("r", "1s", "c") are
+    # different cells and must not share a queue row.
+    digest = hashlib.sha256(
+        chr(31).join([run_id, submission_id, criterion_id]).encode("utf-8")
+    ).hexdigest()
+    return f"rq-{digest[:24]}"
 
 #: The views that display a band and can therefore carry a review action
 #: (`FR-REVIEW-15`; the teacher routes of the design's console table): the
@@ -1491,6 +1561,7 @@ class ReviewService:
                 "review_items_flagged": flagged_total,
             },
         )
+        self._record_shown_rows(run_id, shown, knobs)
 
         return ReviewQueue(
             run_id=run_id,
@@ -1566,6 +1637,74 @@ class ReviewService:
 
     # -- actions -------------------------------------------------------------------------------------
 
+    def _record_shown_rows(self, run_id: str, shown: Sequence[Any], knobs: Any) -> None:
+        """Write `FR-REVIEW-20`'s build columns for the items this build showed.
+
+        Best-effort against the store, and only there: the in-memory service has no
+        `review_queue` to write to, and a queue build is a READ as far as the teacher is
+        concerned — a store that refuses the write must not take the screen down with it."""
+        if self._store is None:
+            return
+        # The COHORT the rows live in, not the run: `_attribution_run` answers "which run does
+        # a label belong to", which is a different question, and asking the store for a cohort
+        # keyed by a run id would CREATE that cohort's file (`FR-CONSOLE-01`: a read must not
+        # write a ledger).
+        cohort_id = self._cohort_ids[0] if len(self._cohort_ids) == 1 else None
+        if cohort_id is None:
+            return
+        shown_at = self._clock()
+        try:
+            handle = self._store.cohort(cohort_id)
+            with handle.transaction() as tx:
+                for entry in shown:
+                    for member in getattr(entry, "members", None) or (entry,):
+                        submission_id = str(getattr(member, "submission_id", ""))
+                        criterion_id = str(getattr(member, "criterion_id", ""))
+                        if not submission_id:
+                            continue
+                        queue_id = _queue_id_for(run_id, submission_id, criterion_id)
+                        tx.execute(
+                            REVIEW_QUEUE_STATEMENTS["ensure_queue_row"],
+                            queue_id=queue_id, run_id=run_id,
+                            submission_id=submission_id, criterion_id=criterion_id,
+                            reason="queued for review",
+                        )
+                        tx.execute(
+                            REVIEW_QUEUE_STATEMENTS["record_shown"],
+                            queue_id=queue_id, run_id=run_id,
+                            rank_score=float(_expected_value(member, knobs)),
+                            est_seconds=float(getattr(member, "est_seconds", 0.0) or 0.0),
+                            shown_at=shown_at,
+                        )
+        except Exception:  # noqa: BLE001 — the queue still renders; the row is bookkeeping
+            return
+
+    def _record_queue_action(self, item: Any, action: str, label: Any) -> None:
+        """Write `FR-REVIEW-20`'s action columns for one acted item."""
+        if self._store is None:
+            return
+        cohort_id = self._cohort_ids[0] if len(self._cohort_ids) == 1 else None
+        run_id = self._current_run_id or ""
+        if cohort_id is None or not run_id:
+            return
+        submission_id = str(getattr(item, "submission_id", ""))
+        criterion_id = str(getattr(item, "criterion_id", ""))
+        if not submission_id:
+            return
+        try:
+            handle = self._store.cohort(cohort_id)
+            with handle.transaction() as tx:
+                tx.execute(
+                    REVIEW_QUEUE_STATEMENTS["record_action"],
+                    queue_id=_queue_id_for(run_id, submission_id, criterion_id),
+                    action=action,
+                    new_band=getattr(label, "teacher_band", None),
+                    new_points=getattr(label, "new_points", None),
+                    acted_at=self._clock(),
+                )
+        except Exception:  # noqa: BLE001 — the label is the record of the decision either way
+            return
+
     def act(
         self,
         item: Any,
@@ -1602,6 +1741,7 @@ class ReviewService:
         )
         self._record_writes(item, action, label)
         self._acted.add(item.score_id)
+        self._record_queue_action(item, action, label)
         self._record_action_emission([label])
         return label.label_id
 
@@ -1629,6 +1769,7 @@ class ReviewService:
             )
             self._record_writes(member, action, label)
             self._acted.add(member.score_id)
+            self._record_queue_action(member, action, label)
             labels.append(label)
             label_ids.append(label.label_id)
         self._record_action_emission(labels)
@@ -2599,6 +2740,32 @@ def _store_cohort_ids(store: Any) -> list[str]:
     administration; `aeh.det` and `aeh.orch` walk the identical layout)."""
     return sorted(
         path.stem for path in Path(store.data_dir, "cohorts").glob("*.sqlite")
+    )
+
+
+def review_service_over(
+    store: Any,
+    *,
+    cohort_ids: Sequence[str] | None = None,
+    actor: str = "teacher",
+    clock: Callable[[], str] | None = None,
+    catalog: Any = None,
+    config: Any = None,
+) -> ReviewService:
+    """A review service over an ALREADY-OPEN store (`FR-CONSOLE-35`).
+
+    `open_review` is the constructor for a caller holding a path: it opens its own store and
+    asks it for a cohort keyed by the run id, which creates that cohort's file. A caller that
+    already has a store — the console, whose screens are reads — must not do either, because
+    rendering a screen would then leave a ledger behind (`FR-CONSOLE-01`). Same service, same
+    admission, no new file."""
+    return _service_from_store(
+        store,
+        cohort_ids=cohort_ids,
+        actor=actor,
+        clock=clock,
+        catalog=catalog,
+        config=config,
     )
 
 

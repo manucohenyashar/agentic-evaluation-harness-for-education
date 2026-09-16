@@ -1435,7 +1435,7 @@ def current_schema_version(tier: Tier) -> int:
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 25,
+    Tier.COHORT: 26,
     Tier.DURABLE: 9,
 }
 

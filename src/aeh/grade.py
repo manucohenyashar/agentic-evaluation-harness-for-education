@@ -864,8 +864,9 @@ GRADE_STATEMENTS: dict[str, Statement] = {
     # queue id, so a re-run of the same missing input replaces its own row rather than
     # duplicating it, and a fully-scored cohort enqueues nothing at all (TC-GRADE-01).
     "insert_review_row": Statement(
-        "INSERT OR REPLACE INTO review_queue (queue_id, submission_id, criterion_id, "
-        "reason) VALUES (:queue_id, :submission_id, :criterion_id, :reason)"
+        "INSERT OR REPLACE INTO review_queue (queue_id, run_id, submission_id, "
+        "criterion_id, reason) VALUES (:queue_id, :run_id, :submission_id, "
+        ":criterion_id, :reason)"
     ),
     # The routing's other half: when the input arrives, the queue row's reason is
     # gone — a pass that left the stale "rescan" row would keep an operator chasing a
@@ -1504,6 +1505,7 @@ class GradingService:
                     queue_id=(
                         "q-" + _content_hash([run_id, submission_id, criterion_id])[:24]
                     ),
+                    run_id=run_id,
                     submission_id=submission_id,
                     criterion_id=criterion_id,
                     reason=reason,
@@ -1648,6 +1650,7 @@ class GradingService:
                     tx.execute(
                         GRADE_STATEMENTS["insert_review_row"],
                         queue_id=queue_id,
+                        run_id=run_id,
                         submission_id=queued_submission,
                         criterion_id=criterion_id,
                         reason=_RESCAN_DIRECTIVE,
