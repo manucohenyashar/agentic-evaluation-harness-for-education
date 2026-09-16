@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import time
 import uuid
 import zlib
@@ -612,6 +613,26 @@ def _v4_lexical_affinity(a: str, b: str) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / len(left | right)
+
+
+class ClusterResolution(tuple):
+    """What one cluster resolution touched (`FR-INGEST-36`).
+
+    A tuple of the affected document ids — the shape every caller of `resolve_cluster` has
+    always read — carrying the report beside it: `selection_unresolved` lists the region ids
+    of selection marks the resolution did NOT match a declared option for. They keep their
+    ambiguous state and their NULL selection; the list is how the operator learns the typed
+    value was not one of the question's options."""
+
+    def __new__(cls, documents, *, selection_unresolved=()):
+        resolution = super().__new__(cls, tuple(documents))
+        resolution.selection_unresolved = tuple(selection_unresolved)
+        return resolution
+
+    @property
+    def documents(self) -> tuple:
+        """The affected document ids, under a name that says what they are."""
+        return tuple(self)
 
 
 class IngestError(Exception):
@@ -1792,6 +1813,61 @@ _INGEST_TOKEN_CLUSTERS = Migration(
     ),
 )
 
+#: Tier C, migration 23 (#355, `FR-INGEST-37`): the selection biconditional, as triggers.
+#:
+#: `CT-INGEST-05` says a resolved selection mark carries a selection. `FR-INGEST-36` makes the
+#: writer honour it; these triggers make the DATABASE refuse the violating row, so no path —
+#: this module's, a console's, an operator's hand-written UPDATE, a future writer nobody has
+#: reviewed — can store `region_kind='selection_mark' AND selection_state='resolved' AND
+#: selection IS NULL`. Defence in depth (`CT-INGEST-21`): the one state M-DET reads as
+#: "unanswered" for a question the operator actually fixed is unrepresentable rather than
+#: merely unwritten (RISK-50).
+#:
+#: Both directions, because either door reaches the same state: `BEFORE INSERT` for a row born
+#: wrong, `BEFORE UPDATE` for one made wrong. Rows of other kinds are untouched — a
+#: `transcribed_text` region has no selection to carry.
+_INGEST_SELECTION_BICONDITIONAL: tuple[Statement, ...] = (
+    # The rows the defect already wrote come first. A trigger validates the row being written,
+    # never the ones already there, so a ledger carrying `resolved` + NULL selection would
+    # migrate cleanly and then abort on the NEXT update of that row — including this module's
+    # own content replacement, which would make one poisoned legacy row block every other
+    # region in its cluster. They are put back to `ambiguous`: the honest state, since nobody
+    # knows which option the operator meant, and the state M-DET already reads them as.
+    Statement(
+        "UPDATE document_region SET selection_state = 'ambiguous' "
+        "WHERE region_kind = 'selection_mark' AND selection_state = 'resolved' "
+        "AND selection IS NULL"
+    ),
+    Statement(
+        "CREATE TRIGGER document_region_selection_insert_biconditional "
+        "BEFORE INSERT ON document_region "
+        "WHEN NEW.region_kind = 'selection_mark' AND NEW.selection_state = 'resolved' "
+        "AND NEW.selection IS NULL "
+        "BEGIN SELECT RAISE(ABORT, 'a resolved selection mark carries a selection "
+        "(CT-INGEST-05, FR-INGEST-37): selection_state=resolved with selection NULL is the "
+        "state M-DET reads as unanswered'); END"
+    ),
+    Statement(
+        "CREATE TRIGGER document_region_selection_update_biconditional "
+        "BEFORE UPDATE ON document_region "
+        "WHEN NEW.region_kind = 'selection_mark' AND NEW.selection_state = 'resolved' "
+        "AND NEW.selection IS NULL "
+        "BEGIN SELECT RAISE(ABORT, 'a resolved selection mark carries a selection "
+        "(CT-INGEST-05, FR-INGEST-37): selection_state=resolved with selection NULL is the "
+        "state M-DET reads as unanswered'); END"
+    ),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(
+            version=23, name="ingest_selection_biconditional",
+            statements=_INGEST_SELECTION_BICONDITIONAL,
+        ),
+    ), key=lambda m: m.version
+))
+
+
 INGEST_STATEMENTS: dict[str, Statement] = {
     "insert_document": Statement(
         "INSERT INTO document (document_id, submission_id, content_hash, markdown, "
@@ -1854,10 +1930,34 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     "select_region_ids_for_token": Statement(
         "SELECT region_id FROM unresolved_token WHERE token = :token"
     ),
-    "update_region_content": Statement(
+    # FR-INGEST-36 splits the old `update_region_content` in two. The single statement set
+    # `selection_state = 'resolved'` for EVERY region kind and never wrote `selection`, so an
+    # operator resolving an ambiguous tick stored a resolved selection mark with a NULL
+    # selection and M-DET scored the question unanswered (RISK-50 — RISK-03 through a new
+    # door). Text and graphic regions get their content replaced and nothing else; a selection
+    # mark's selection and state are set together, in one statement, or not at all.
+    "update_region_text": Statement(
+        "UPDATE document_region SET content = REPLACE(content, "
+        "'<unresolved>' || :token || '</unresolved>', :resolution) "
+        "WHERE region_id = :region_id"
+    ),
+    "resolve_selection_region": Statement(
         "UPDATE document_region SET content = REPLACE(content, "
         "'<unresolved>' || :token || '</unresolved>', :resolution), "
-        "selection_state = 'resolved' WHERE region_id = :region_id"
+        "selection = :selection, selection_state = 'resolved' "
+        "WHERE region_id = :region_id"
+    ),
+    # The region's kind and its question (`element_kind` is the question id — M-DET's own
+    # reading, `det._selection_reads`), for the per-kind rule.
+    "select_regions_by_id": Statement(
+        "SELECT region_id, region_kind, element_kind FROM document_region "
+        "WHERE region_id = :region_id"
+    ),
+    # The declared option ids for one question, read off the package tier when the caller
+    # names a catalog that is a bare handle rather than a `PackageCatalog`.
+    "select_question_options": Statement(
+        "SELECT option_id FROM question_option WHERE package_version_id = :v "
+        "AND question_id = :question_id ORDER BY option_id"
     ),
     "delete_unresolved_token": Statement(
         "DELETE FROM unresolved_token WHERE token = :token"
@@ -2579,8 +2679,15 @@ class Ingestor:
         residency: ResidencySlot | None = None,
         high_risk_criterion_ids: Sequence[str] = (),
         second_model_ref: ModelRef | None = None,
+        package_catalog: Any | None = None,
+        package_version: str | None = None,
     ) -> None:
         self._handle = handle
+        # FR-INGEST-36's option source, bindable once at construction so an operator surface
+        # that resolves many clusters names the package once; `resolve_cluster` still takes the
+        # pair per call, and the call's own wins.
+        self._package_catalog = package_catalog
+        self._package_version = package_version
         self._blobs = blobs
         self._provider = provider
         self._model_ref = model_ref
@@ -3825,12 +3932,38 @@ class Ingestor:
                     grouped[normalized].document_ids.append(row["document_id"])
         return tuple(grouped.values())
 
-    def resolve_cluster(self, cluster_id: str,
-                        resolution: str) -> tuple[DocumentId, ...]:
+    def resolve_cluster(
+        self, cluster_id: str, resolution: str,
+        *, package_catalog: Any | None = None, package_version: str | None = None,
+    ) -> "ClusterResolution":
         """Apply one operator resolution to EVERY occurrence of the cluster's token
-        (`FR-INGEST-20`): every region carrying it is resolved in place, the
-        resolution is recorded once in `token_cluster`, and the document ids whose
-        regions changed are returned — the set of documents the correction touches."""
+        (`FR-INGEST-20`), **per region kind** (`FR-INGEST-36`): every region carrying it is
+        resolved in place, the resolution is recorded once in `token_cluster`, and the
+        document ids whose regions changed are returned — the set of documents the correction
+        touches.
+
+        The per-kind rule:
+
+        * `transcribed_text` and `described_graphic` — the content is replaced and nothing
+          else; `selection_state` is not the operator's to change by reading a word.
+        * `selection_mark` — the resolution must equal a declared `question_option.option_id`
+          for the region's question (`element_kind`, M-DET's own reading). When it does,
+          `selection` and `selection_state='resolved'` are written **together**, in one
+          statement. Otherwise the region stays `ambiguous` with a NULL selection, its content
+          is still replaced, and it is listed under `selection_unresolved` on the returned
+          report — an operator who typed `E` for a four-option question learns it from the
+          report rather than from a student's lost mark (RISK-50).
+
+        The declared options come from `package_catalog`/`package_version` — given here, or
+        bound once on the gateway. **Without them no selection mark resolves**: the module will
+        not guess an option set, and fail-closed here means a region left ambiguous and listed,
+        never a resolved mark with no selection (`CT-INGEST-21`). A caller that resolves ticks
+        must therefore name the package; a caller that only ever resolves illegible words need
+        not, and nothing it does can produce the forbidden row.
+
+        The returned `ClusterResolution` IS the tuple of affected document ids — the shape
+        every existing caller reads — with the report riding beside it.
+        """
         matches = [cluster for cluster in self.clusters(self._cohort_id)
                    if cluster.cluster_id == cluster_id]
         if not matches:
@@ -3842,18 +3975,101 @@ class Ingestor:
             INGEST_STATEMENTS["select_unresolved_documents"], token=token))
         region_ids = [row["region_id"] for row in self._handle.query(
             INGEST_STATEMENTS["select_region_ids_for_token"], token=token)]
-        with self._handle.transaction() as tx:
-            for region_id in region_ids:
-                tx.execute(INGEST_STATEMENTS["update_region_content"],
+        catalog = package_catalog if package_catalog is not None else self._package_catalog
+        version = package_version if package_version is not None else self._package_version
+        try:
+            # ONE transaction for the whole resolution: the region writes, the token's
+            # retirement and the cluster record. A resolution that is half-applied — content
+            # rewritten while the token still reads unresolved — is the state no operator can
+            # act on, and the earlier two-transaction shape could produce it.
+            with self._handle.transaction() as tx:
+                unresolved = self._write_region_resolutions(
+                    tx, region_ids, token, resolution, catalog, version
+                )
+                tx.execute(INGEST_STATEMENTS["delete_unresolved_token"], token=token)
+                tx.execute(INGEST_STATEMENTS["insert_cluster"],
+                           cluster_id=cluster_id, cohort_id=matches[0].cohort_id,
+                           token=token, resolution=resolution, resolved_at=self._now())
+        except sqlite3.IntegrityError as error:
+            # FR-INGEST-37's trigger, at the module boundary (`CT-INGEST-21`). The message
+            # names the biconditional only when the database's own text does; any other
+            # integrity failure is reported as itself rather than given a cause nobody checked.
+            detail = (
+                "A resolved selection mark carries a selection (CT-INGEST-05). "
+                if "selection" in str(error).lower() else ""
+            )
+            raise IngestError(
+                f"the resolution of cluster {cluster_id!r} was refused by the database: "
+                f"{error}. {detail}Nothing was written."
+            ) from error
+        LOGGER.info(
+            "resolved cluster %s token=%r across %d document(s); %d selection mark(s) "
+            "left ambiguous", cluster_id, token, len(affected), len(unresolved))
+        return ClusterResolution(affected, selection_unresolved=tuple(unresolved))
+
+    def _write_region_resolutions(
+        self, tx: Any, region_ids: Sequence[str], token: str, resolution: str,
+        package_catalog: Any | None, package_version: str | None,
+    ) -> list[str]:
+        """The per-kind writes of one cluster resolution; returns the region ids left
+        ambiguous. Writes through the CALLER's transaction, so the whole resolution — regions,
+        token, cluster record — commits or aborts together."""
+        unresolved: list[str] = []
+        for region_id in region_ids:
+            rows = self._handle.query(
+                INGEST_STATEMENTS["select_regions_by_id"], region_id=region_id)
+            region = rows[0] if rows else None
+            kind = str(region["region_kind"]) if region is not None else ""
+            if kind != "selection_mark":
+                # Text and graphic regions: content only (FR-INGEST-36).
+                tx.execute(INGEST_STATEMENTS["update_region_text"],
+                           region_id=region_id, resolution=resolution, token=token)
+                continue
+            options = self._declared_options(
+                package_catalog, package_version,
+                str(region["element_kind"] or "") if region is not None else "",
+            )
+            if resolution in options:
+                tx.execute(INGEST_STATEMENTS["resolve_selection_region"],
                            region_id=region_id, resolution=resolution,
-                           token=token)
-            tx.execute(INGEST_STATEMENTS["delete_unresolved_token"], token=token)
-            tx.execute(INGEST_STATEMENTS["insert_cluster"],
-                       cluster_id=cluster_id, cohort_id=matches[0].cohort_id,
-                       token=token, resolution=resolution, resolved_at=self._now())
-        LOGGER.info("resolved cluster %s token=%r across %d document(s)",
-                    cluster_id, token, len(affected))
-        return affected
+                           token=token, selection=resolution)
+            else:
+                # Stays ambiguous, content replaced, and the operator is told.
+                tx.execute(INGEST_STATEMENTS["update_region_text"],
+                           region_id=region_id, resolution=resolution, token=token)
+                unresolved.append(region_id)
+        return unresolved
+
+    @staticmethod
+    def _declared_options(
+        package_catalog: Any | None, package_version: str | None, question_id: str
+    ) -> frozenset[str]:
+        """The option ids declared for one question, or the empty set when the caller named no
+        package. Exact ids: `'c'` is not `'C'`, and a case-folded match would resolve a tick to
+        an option the package never declared (TC-INGEST-50 row 6)."""
+        if package_catalog is None or package_version is None or not question_id:
+            return frozenset()
+        reader = getattr(package_catalog, "question_options", None)
+        if callable(reader):
+            rows = reader(package_version, question_id)
+        else:
+            handle = getattr(package_catalog, "handle", None) or package_catalog
+            rows = handle.query(
+                INGEST_STATEMENTS["select_question_options"],
+                v=package_version, question_id=question_id,
+            )
+        ids: set[str] = set()
+        for row in rows or ():
+            if isinstance(row, str):
+                ids.add(row)
+            elif isinstance(row, dict):
+                ids.add(str(row.get("option_id")))
+            else:
+                try:
+                    ids.add(str(row["option_id"]))
+                except (TypeError, KeyError, IndexError):
+                    ids.add(str(getattr(row, "option_id", "")))
+        return frozenset(name for name in ids if name)
 
     def ingest_submission(
         self, blobs: Sequence[str], cohort_id: str,

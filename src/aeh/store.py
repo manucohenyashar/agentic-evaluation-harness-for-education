@@ -1429,10 +1429,12 @@ def current_schema_version(tier: Tier) -> int:
 #: contributor lists the same way — Durable's tail is now `aeh.pkg`'s.
 #: #359's `agg_run_scoped_score` moved Cohort 19→20 — Cohort's tail is now `aeh.agg`'s.
 #: #361's `extract_latency` (21) and `judge_verdict_assessment` (22) moved Cohort 20→22 and its
-#: `judge_run_metrics_judge_dimension` moved Durable 8→9 — `aeh.judge` holds both tails.)
+#: `judge_run_metrics_judge_dimension` moved Durable 8→9 — `aeh.judge` holds both tails.
+#: #355's `ingest_selection_biconditional` moved Cohort 22→23 — Cohort's tail is `aeh.ingest`'s
+#: again, where it began.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 22,
+    Tier.COHORT: 23,
     Tier.DURABLE: 9,
 }
 
@@ -1465,7 +1467,8 @@ _SELECT_COHORT_TRIGGERS_VIEWS = Statement(
 #: body is a single `SELECT RAISE(ABORT|FAIL, ...)` (a `WHEN` clause allowed in front).
 #: Its event is UPDATE, so it never fires on the sweep's own DELETEs, and a RAISE-only
 #: body cannot write a row — it can only refuse one. Everything else (any AFTER/DELETE/
-#: INSERT trigger, any trigger with a write in its body, anything unparseable) fails
+#: AFTER trigger, a BEFORE DELETE trigger, any trigger with a write in its body, anything
+#: unparseable) fails
 #: closed: the purge cannot verify a shape it does not recognize. #103's append-only
 #: enforcement is a cohort-tier trigger of exactly this shape (`submission_grade`'s
 #: content lock); the audit trio in Tier D never meets this guard — the purge sweeps
@@ -1481,7 +1484,7 @@ def _is_pure_refusal_trigger(sql: str | None) -> bool:
     )
     if header is None or header.group(1) != "before":
         return False
-    if not header.group(2).startswith("update"):
+    if not header.group(2).startswith(("update", "insert")):
         return False
     body = flat[header.end():]
     begin = body.find("begin")
@@ -3750,10 +3753,11 @@ class SqliteStore:
                     # report is about to claim cleared — student text surviving a
                     # "successful" purge. Views are refused for the same fail-closed
                     # reason. The one carve-out is the pure refusal trigger (see
-                    # `_is_pure_refusal_trigger`): a BEFORE UPDATE trigger whose body is
-                    # a single RAISE never fires on the sweep's DELETEs and cannot write
-                    # a row, so it cannot repopulate anything — #103's append-only
-                    # content lock rides exactly this shape. (Indexes stay: they are
+                    # `_is_pure_refusal_trigger`): a BEFORE UPDATE or BEFORE INSERT
+                    # trigger whose body is a single RAISE never fires on the sweep's
+                    # DELETEs and cannot write a row, so it cannot repopulate anything —
+                    # #103's append-only content lock and #355's selection biconditional
+                    # (FR-INGEST-37, which needs both directions) ride exactly this shape. (Indexes stay: they are
                     # SQLite-managed structure, emptied with their tables, and a
                     # legitimate performance object.)
                     objects = _run(
@@ -3771,10 +3775,12 @@ class SqliteStore:
                             "sweep's own DELETEs — or carries a write in its body — can "
                             "repopulate tables the report would claim cleared — student "
                             "text surviving a purge. Schema belongs to migrations "
-                            "(NFR-STORE-04); the only coexisting shape is a BEFORE "
-                            "UPDATE trigger whose body is a single RAISE refusal "
-                            "(`_is_pure_refusal_trigger`), the shape #103's append-only "
-                            "enforcement rides. Nothing was removed."
+                            "(NFR-STORE-04); the only coexisting shape is a "
+                            "pure refusal trigger — one that fires BEFORE a row is written "
+                            "or updated and whose body is a single RAISE "
+                            "(`_is_pure_refusal_trigger`) — the shape #103's append-only "
+                            "enforcement and #355's selection biconditional ride. Nothing "
+                            "was removed."
                         )
                     unknown = sorted(
                         table for table in found

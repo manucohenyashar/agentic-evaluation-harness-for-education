@@ -404,21 +404,27 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest:2998",
-    "aeh.ingest:3009",
-    "aeh.ingest:3031",
-    "aeh.ingest:3695",
-    "aeh.ingest:3740",
-    "aeh.ingest:3772",
+    "aeh.ingest:3105",
+    "aeh.ingest:3116",
+    "aeh.ingest:3138",
+    "aeh.ingest:3802",
     "aeh.ingest:3847",
-    "aeh.ingest:3850",
-    "aeh.ingest:3851",
-    "aeh.ingest:3961",
-    "aeh.ingest:4197",
-    "aeh.ingest:4209",
-    "aeh.ingest:4750",
-    "aeh.ingest:4773",
-    "aeh.ingest:3718",
+    "aeh.ingest:3879",
+    "aeh.ingest:4025",
+    # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
+    # option's selection and state together, and `update_region_text` (below) replaces the
+    # content of a region that resolved to no declared option — both declared statements,
+    # keyword-parameterized.
+    "aeh.ingest:4033",
+    "aeh.ingest:4038",
+    "aeh.ingest:3989",
+    "aeh.ingest:3990",
+    "aeh.ingest:4177",
+    "aeh.ingest:4413",
+    "aeh.ingest:4425",
+    "aeh.ingest:4966",
+    "aeh.ingest:4989",
+    "aeh.ingest:3825",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -535,8 +541,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1931",
-    "aeh.store:2726",
+    "aeh.store:1934",
+    "aeh.store:2729",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write
