@@ -871,15 +871,25 @@ GRADE_STATEMENTS: dict[str, Statement] = {
     # The routing's other half: when the input arrives, the queue row's reason is
     # gone — a pass that left the stale "rescan" row would keep an operator chasing a
     # criterion the ledger already scores. A submission whose every criterion now
-    # scores carries no queue row at all. The delete is submission-scoped, which is
-    # exact today — this module is the review_queue's ONLY writer, so every row the
-    # submission carries is its own. It must NOT outlive that fact: when a second
-    # writer (M-REVIEW/M-INGEST) begins queueing its own rows, this delete has to
-    # narrow to this module's content-derived ids — and `LIKE` is not the way
-    # (TC-STORE-15/C08 ban the search shapes outright), so the narrowing is a keyed
-    # criterion+reason read or an exact-id delete, decided by that landing.
+    # scores carries no queue row at all.
+    #
+    # NARROWED at #367, the landing the note here always anticipated: this module is no
+    # longer the `review_queue`'s only writer. `M-REVIEW` writes the build and action
+    # columns `FR-REVIEW-20` declares, and `M-INTEG` enqueues its own rows, so a
+    # submission-scoped delete now reaches other modules' rows. Two predicates carry the
+    # narrowing, and `LIKE` is not among them (TC-STORE-15/C08 ban the search shapes):
+    #
+    #   * `run_id` — a grading pass clears its OWN run's routing, not a previous run's;
+    #   * `action IS NULL` — a row a teacher has acted on records a human decision, and a
+    #     grading pass must never delete one. This is the half that matters: the rest is
+    #     regenerable bookkeeping, an `acted_at` is not.
+    #
+    # Still not exact: an unacted `M-REVIEW` row for this run and submission is deleted
+    # too. Exactness needs this module's minted ids (it has no criteria list at the delete
+    # site) or an origin column `FR-REVIEW-20` does not declare. Disclosed on #367.
     "delete_review_rows": Statement(
-        "DELETE FROM review_queue WHERE submission_id = :submission_id"
+        "DELETE FROM review_queue WHERE submission_id = :submission_id "
+        "AND run_id = :run_id AND action IS NULL"
     ),
     # Tier R reads — the batch's coverage summary and the exports.
     "count_run_grades_by_state": Statement(
@@ -1514,6 +1524,7 @@ class GradingService:
                 tx.execute(
                     GRADE_STATEMENTS["delete_review_rows"],
                     submission_id=submission_id,
+                    run_id=run_id,
                 )
 
         return GradeReport(
@@ -1659,6 +1670,7 @@ class GradingService:
                 tx.execute(
                     GRADE_STATEMENTS["delete_review_rows"],
                     submission_id=submission_id,
+                    run_id=run_id,
                 )
 
     def coverage(self, run_id: str) -> CoverageSummary:

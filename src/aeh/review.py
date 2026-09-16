@@ -1491,8 +1491,17 @@ class ReviewService:
 
     # -- the queue -----------------------------------------------------------------------------------
 
-    def build_queue(self, run_id: str, budget_minutes: int) -> ReviewQueue:
+    def build_queue(
+        self, run_id: str, budget_minutes: int, *, record: bool = True
+    ) -> ReviewQueue:
         """Build the minute-budgeted queue (`FR-REVIEW-01`).
+
+        `record=False` builds the same queue and writes nothing. `FR-REVIEW-20` makes a build
+        a writer — the shown items' `rank_score`, `est_seconds` and `shown_at` land on their
+        queue rows — and `FR-CONSOLE-35` puts this call on a console screen, which is a READ
+        (`FR-CONSOLE-01`: a console open during a run leaves the run identical). Rendering S9
+        must therefore be able to ask for the figures without recording a build that never
+        happened, and that is what this flag is for. Nothing else about the queue differs.
 
         Stage order is the contract, not an implementation detail
         (`CT-REVIEW-02`): the blind reserve is subtracted **before** anything is
@@ -1561,7 +1570,8 @@ class ReviewService:
                 "review_items_flagged": flagged_total,
             },
         )
-        self._record_shown_rows(run_id, shown, knobs)
+        if record:
+            self._record_shown_rows(run_id, shown, knobs)
 
         return ReviewQueue(
             run_id=run_id,
@@ -1645,11 +1655,7 @@ class ReviewService:
         concerned — a store that refuses the write must not take the screen down with it."""
         if self._store is None:
             return
-        # The COHORT the rows live in, not the run: `_attribution_run` answers "which run does
-        # a label belong to", which is a different question, and asking the store for a cohort
-        # keyed by a run id would CREATE that cohort's file (`FR-CONSOLE-01`: a read must not
-        # write a ledger).
-        cohort_id = self._cohort_ids[0] if len(self._cohort_ids) == 1 else None
+        cohort_id = self._writable_cohort()
         if cohort_id is None:
             return
         shown_at = self._clock()
@@ -1683,7 +1689,7 @@ class ReviewService:
         """Write `FR-REVIEW-20`'s action columns for one acted item."""
         if self._store is None:
             return
-        cohort_id = self._cohort_ids[0] if len(self._cohort_ids) == 1 else None
+        cohort_id = self._writable_cohort()
         run_id = self._current_run_id or ""
         if cohort_id is None or not run_id:
             return
@@ -2343,7 +2349,10 @@ class ReviewService:
             self._store = None
 
     def _with_store(
-        self, store: Any, cohort_ids: Sequence[str] = ()
+        self,
+        store: Any,
+        cohort_ids: Sequence[str] = (),
+        owning_cohorts: Sequence[str] = (),
     ) -> "ReviewService":
         """Attach the rung-2 store handle (``open_review``'s plumbing). The
         cohort ids ride along so a label written before any queue build can
@@ -2351,7 +2360,23 @@ class ReviewService:
         one; never to an invented run (`NFR-REVIEW-04`)."""
         self._store = store
         self._cohort_ids = tuple(cohort_ids)
+        #: The cohorts whose rows this service actually loaded — a subset of `cohort_ids`
+        #: once a run scope is given, and what `FR-REVIEW-20`'s writes are addressed to.
+        self._owning_cohorts = tuple(owning_cohorts)
         return self
+
+    def _writable_cohort(self) -> "str | None":
+        """The cohort `FR-REVIEW-20`'s columns are written to.
+
+        The cohort whose rows this service actually loaded, when exactly one did — not
+        `_attribution_run`, which answers "which run does a label belong to". Asking the store
+        for a cohort keyed by a run id would create that cohort's file."""
+        owning = getattr(self, "_owning_cohorts", ())
+        if len(owning) == 1:
+            return owning[0]
+        if len(self._cohort_ids) == 1:
+            return self._cohort_ids[0]
+        return None
 
     # -- the write audit, and the residual's read path (#109) -----------------------------------------
 
@@ -2747,6 +2772,7 @@ def review_service_over(
     store: Any,
     *,
     cohort_ids: Sequence[str] | None = None,
+    run_id: str | None = None,
     actor: str = "teacher",
     clock: Callable[[], str] | None = None,
     catalog: Any = None,
@@ -2762,6 +2788,7 @@ def review_service_over(
     return _service_from_store(
         store,
         cohort_ids=cohort_ids,
+        run_id=run_id,
         actor=actor,
         clock=clock,
         catalog=catalog,
@@ -2773,6 +2800,7 @@ def _service_from_store(
     store: Any,
     *,
     cohort_ids: Sequence[str] | None = None,
+    run_id: str | None = None,
     actor: str = "teacher",
     clock: Callable[[], str] | None = None,
     catalog: Any = None,
@@ -2822,16 +2850,24 @@ def _service_from_store(
     # plan reports the same values. Drift between the two is caught by review
     # of the pair, as the plan's docstring says. The mode and origin halves of
     # the admission ride the predicate on the fetched rows.
+    # `run_id` given: that run, in whichever cohort holds it — not each cohort's NEWEST run.
+    # Without it S9 for an older run showed the newest run's queue, and a store with two
+    # cohorts pooled both cohorts' flagged items into one count. `None` keeps the previous
+    # behaviour for callers that mean "this cohort, as it now stands".
+    owning: list[str] = []
     for cohort_id in cohort_ids:
-        run_id = _newest_run_id(store, cohort_id)
-        if run_id is None:
+        scope = run_id if run_id is not None else _newest_run_id(store, cohort_id)
+        if scope is None:
             continue
-        rows.extend(
+        found = [
             _row_mapping(row)
             for row in store.cohort(cohort_id).query(
-                REVIEW_STATEMENTS["select_run_advisory_scores"], run_id=run_id
+                REVIEW_STATEMENTS["select_run_advisory_scores"], run_id=scope
             )
-        )
+        ]
+        if found:
+            owning.append(cohort_id)
+        rows.extend(found)
     knobs = _calibration_knobs()
     mapped = [
         _StoredScoreRow(mapping, knobs["default_est_seconds"]) for mapping in rows
@@ -2849,7 +2885,7 @@ def _service_from_store(
         seed=seed,
         administration_id=administration_id,
         previous_administration=previous_administration,
-    )._with_store(store, cohort_ids=cohort_ids)
+    )._with_store(store, cohort_ids=cohort_ids, owning_cohorts=owning)
 
 
 class _StoredScoreRow:

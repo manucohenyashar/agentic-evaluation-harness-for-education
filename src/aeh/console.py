@@ -389,6 +389,17 @@ CLOUD_HOSTED_PROFILE = "cloud-hosted"
 
 # --- the control surface (HLD §11.8) -------------------------------------------------------------------
 
+#: The run's queue rows as `FR-REVIEW-20` records them: the build's own `rank_score`,
+#: `est_seconds` and `shown_at`, and the action columns `act` writes. Ordered by the rank the
+#: build computed, so the screen lists items in the order the service ranked them rather than
+#: re-deriving one. Scoped by `run_id`, the column migration 26 adds: before it, two runs over
+#: one cohort shared a queue.
+_SELECT_RUN_QUEUE = (
+    "SELECT queue_id, submission_id, criterion_id, reason, rank_score, est_seconds, "
+    "shown_at, action, new_band, new_points, acted_at FROM review_queue "
+    "WHERE run_id = :run_id ORDER BY rank_score DESC, queue_id"
+)
+
 #: `FR-CONSOLE-19`'s ordering notes for the queue's query log. Constants rather than
 #: f-strings: SEC-15's walker reads an f-string carrying ordering vocabulary as assembled
 #: SQL, and `CT-CONSOLE-12` reads these very words out of the log to assert that the
@@ -662,6 +673,18 @@ _UPDATE_QUARANTINE_RESOLUTION = (
 _SELECT_SUBMISSION_EXISTS = (
     "SELECT submission_id FROM submission WHERE submission_id = :submission_id"
 )
+
+
+#: What SQLite says when a query names something the store does not have. Matched on the
+#: message because SQLite raises one exception type for "no such table" and for "database is
+#: locked", and `FR-CONSOLE-37` treats those oppositely.
+_SCHEMA_FAULTS: tuple[str, ...] = ("no such table", "no such column", "has no column named")
+
+
+def _is_schema_fault(error: BaseException) -> bool:
+    """Whether this `OperationalError` is the query's fault rather than the ledger's."""
+    text = str(error).lower()
+    return any(marker in text for marker in _SCHEMA_FAULTS)
 
 
 class ConsoleReadError(RuntimeError):
@@ -1310,9 +1333,11 @@ class ConsoleApp:
         self._blind_labels = blind_labels_collected
         self.bind_address = bind_address or CONSOLE_BIND
         self._audit: list[str] = []
-        #: Per-render count of per-ledger reads skipped (`FR-CONSOLE-37`); reset by
-        #: `render` so a page's trace reports its own skips, not the app's lifetime.
-        self._skipped_ledgers = 0
+        #: Per-render count of per-ledger reads skipped (`FR-CONSOLE-37`). Thread-local,
+        #: not plain instance state: since #366 one `ConsoleApp` serves every request
+        #: thread of a real `ThreadingHTTPServer`, so a shared counter would have two
+        #: concurrent renders reporting each other's skips.
+        self._render_state = threading.local()
         self._held: set[str] = set()
         self._applied: dict[str, tuple[Any, ...]] = {}
         # §7.9/§11.8 life-cycle state the console itself owns: the review windows set per
@@ -1433,7 +1458,9 @@ class ConsoleApp:
         if not keys:
             return None
         try:
-            return review_service_over(self._store, cohort_ids=list(keys))
+            return review_service_over(
+                self._store, cohort_ids=list(keys), run_id=run_id
+            )
         except Exception:  # noqa: BLE001 — a run the service cannot open renders as the double
             return None
 
@@ -1451,14 +1478,28 @@ class ConsoleApp:
             try:
                 rows.extend(list(handle.query(query, **params)))
             except sqlite3.OperationalError as error:
-                # `FR-CONSOLE-37`: a schema fault is the query's fault, not this ledger's, so
-                # skipping it would produce the same wrong answer on every other ledger too.
-                # It is raised, named, and rendered as a refusal the reader can see.
-                raise ConsoleReadError(query, f"cohort {key}", error) from error
+                # `FR-CONSOLE-37` splits the two: a missing table or column is the QUERY's
+                # fault and would give the same wrong answer on every other ledger, so it is
+                # raised and rendered as a refusal. A locked or unopenable ledger is that
+                # ledger's bad luck — the pipeline is probably writing it — and stays
+                # skippable, counted. Both arrive as `OperationalError`, so the message is
+                # what separates them.
+                if _is_schema_fault(error):
+                    raise ConsoleReadError(query, f"cohort {key}", error) from error
+                self._skipped_ledgers += 1
+                continue
             except Exception:  # noqa: BLE001 — one unreadable ledger renders as empty, counted
                 self._skipped_ledgers += 1
                 continue
         return rows
+
+    @property
+    def _skipped_ledgers(self) -> int:
+        return int(getattr(self._render_state, "skipped", 0))
+
+    @_skipped_ledgers.setter
+    def _skipped_ledgers(self, value: int) -> None:
+        self._render_state.skipped = int(value)
 
     # -- the screens ---------------------------------------------------------------------------------
 
@@ -1770,8 +1811,8 @@ class ConsoleApp:
         contents = view.queue
         return _review_queue_body(
             flagged=contents.flagged_total,
-            shown=len(contents.shown),
-            left=contents.flagged_total - len(contents.shown),
+            shown=_items_covered(contents.shown),
+            left=contents.residual_provisional,
             budget_minutes=contents.budget_minutes,
             entries=_review_queue_entries(contents.shown),
         )
@@ -2596,7 +2637,12 @@ class ConsoleApp:
         # a queue showing three items.
         service = self._review_service(run_id)
         if service is not None:
-            built = service.build_queue(run_id, budget)
+            # `record=False`: rendering a screen is a READ. `build_queue` writes the shown
+            # items' build columns (`FR-REVIEW-20`), and a page that recorded a build every
+            # time a teacher refreshed it would rewrite `shown_at` on every render and leave
+            # rows behind for a build nobody asked for — which is what `FR-CONSOLE-01` and
+            # `TC-CONSOLE-01`'s ledger differential forbid.
+            built = service.build_queue(run_id, budget, record=False)
             # `FR-CONSOLE-19`'s order is asserted over the query log, and the log must not be
             # this screen's account of itself. So it is a transcription of the SERVICE's own
             # build trace, in the order the service emitted it: the reservation stage really
@@ -2605,7 +2651,7 @@ class ConsoleApp:
             # stage computed — the field for the reservation, the sort key for the ranking
             # (`_ranked_rows`: expected value descending, holistic first at ties).
             for event in built.build_trace:
-                stage = str(getattr(event, "stage", ""))
+                stage = str(getattr(event, "name", ""))
                 detail = str(getattr(event, "detail", ""))
                 if stage == "reserve_blind_minutes":
                     queries.append(
@@ -2618,6 +2664,13 @@ class ConsoleApp:
                     )
                 else:
                     queries.append(f"build_queue[{stage}]: {detail}")
+            # The persisted rows, read AFTER the trace so the log keeps the service's own
+            # order: the reservation stage precedes anything that orders (`FR-CONSOLE-19`,
+            # `CT-CONSOLE-12`), and this statement carries an ORDER BY. It is also the read
+            # that can FAIL — a dropped `review_queue` must reach the teacher as "this view
+            # could not be read" rather than as a number (`FR-CONSOLE-37`), and the figures
+            # above, being the service's, would otherwise render happily over a missing table.
+            self._read_cohort_files(_SELECT_RUN_QUEUE, queries, run_id=run_id)
             shown = tuple(
                 ReviewQueueItem(
                     submission_id=getattr(item, "submission_id", ""),
@@ -2646,6 +2699,13 @@ class ConsoleApp:
         # over. The standing one-item shape below is unchanged: §11.3's differential (resolving
         # a quarantine item must not move the teacher's count) asserts against this view, and an
         # empty teacher's side would make it assert nothing.
+        if getattr(self._store, "data_dir", None) is not None:
+            # A real store whose service would not build: the figures are unknown, and an
+            # unknown figure is not a number. Same refusal a schema fault renders.
+            raise ConsoleReadError(
+                "ReviewService.build_queue", f"run {run_id}",
+                RuntimeError("no review service could be built over this store"),
+            )
         reserved = min(blind_reserve_minutes(), budget)
         # The same order the service records, for the same reason (`FR-CONSOLE-19`): the
         # reservation is taken out of the budget before anything is ordered, and the log is
