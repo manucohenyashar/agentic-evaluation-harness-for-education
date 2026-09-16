@@ -1073,16 +1073,14 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `ScoringWorker.assemble` and `assert_isolated`;
     # `test_one_submission_per_request.py` lost its marker and rejoined the
     # integration tier.
-    "#66 TS-25 alert rules (TC-ORCH-36)": (
-        # The five OBS-05 conditions are design text with no pinned surface;
-        # `evaluate_alerts` is invented-and-disclosed (the `aeh.synth:-
-        # synthesize` / `ALERT_SPAN_VERIFICATION_FAILURES` precedent) — if the
-        # observability story ships another name, the rename here and in the
-        # test module is one line.
-        "symbol",
-        f"{ORCH_MODULE}:evaluate_alerts",
-        ("tests/integration/orch/test_alert_rules.py",),
-    ),
+    # "#66 TS-25 alert rules (TC-ORCH-36)" left with #370: `evaluate_alerts` landed
+    # (`FR-ORCH-32`), so the invented-and-disclosed name is a real surface and the file
+    # runs unmarked. The reconciliation the entry anticipated ("if the observability story
+    # ships another name, the rename here and in the test module is one line") came due on
+    # the SIGNATURE rather than the name: the file assumed flat per-condition scalars,
+    # `FR-ORCH-32` ships structured run state, and the file's own header names that as the
+    # owning story's to settle. Its `_fired` adapter does the mapping; all eight oracles
+    # are untouched.
     # --- TS-30 (#82), the M-JUDGE judgment-isolation suite -----------------------------------
     #
     # Two files, one per owning story of the surface they resolve. The isolation

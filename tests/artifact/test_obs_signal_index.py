@@ -300,8 +300,20 @@ def test_the_obs_checks_catch_drift():
             "unresolved_mark_rate", "unresolved_rate")),
         "a deleted alert case": run("OBS-05", edit=(
             alert_rules, "def test_tc_orch_36_any_pause_fires_alone", "def _dropped")),
-        "an unregistered writtenahead holder": run(
-            "OBS-05", impl_text=impl.replace(alert_rules, "tests/elsewhere.py")),
+        # Reworked by #370. This mutation used to plant its violation by deleting a
+        # holder's registration from `impl.py` — which only works while some holder is
+        # still `writtenahead`, and after #370 landed `evaluate_alerts` and un-marked
+        # `test_alert_rules.py`, NO OBS holder is. The old form then planted nothing and
+        # the self-test passed while checking nothing, the exact silent-vacuity shape
+        # this whole file exists to catch.
+        #
+        # So the marker is planted instead of the registration removed: add
+        # `writtenahead` to a holder that is registered nowhere, and the check must fire.
+        # That works no matter how many holders happen to be marked today.
+        "an unregistered writtenahead holder": run("OBS-01", edit=(
+            "tests/integration/ingest/test_ingest_telemetry_and_medium.py",
+            "pytestmark = pytest.mark.integration",
+            "pytestmark = [pytest.mark.integration, pytest.mark.writtenahead]")),
         "a changed plan row": run("OBS-09", plan_edit={"Req": "FR-GRADE-04"}),
         "a second renamed signal": run("OBS-01", edit=(
             "tests/integration/ingest/test_ingest_telemetry_and_medium.py",
