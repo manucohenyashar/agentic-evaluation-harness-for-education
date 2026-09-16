@@ -248,6 +248,26 @@ def unresolved_alert_rate(environ: Mapping[str, str] | None = None) -> float:
     return value
 
 
+def _declared_mode(criterion: Any) -> str:
+    """One criterion row's declared evaluation mode (`FR-PKG-22`, `FR-ORCH-35`).
+
+    A row read through this module's own statements always carries the column; the shape
+    fallback covers only the in-memory doubles that predate it. `kind` is not a test any
+    consumer may make — the equivalence it stood for was retired when the column shipped.
+    """
+    try:
+        declared = criterion["evaluation_mode"]
+    except (KeyError, IndexError, TypeError):
+        declared = getattr(criterion, "evaluation_mode", None)
+    if declared:
+        return str(declared)
+    try:
+        kind = criterion["kind"]
+    except (KeyError, IndexError, TypeError):
+        kind = getattr(criterion, "kind", None)
+    return "deterministic" if kind == "mcq" else "judged"
+
+
 def _now() -> str:
     """The one wall-clock read the audit trail writes, UTC ISO-8601 — the same
     form `ingest._now` and `orch._now` use, so every recorded_at in the store
@@ -618,13 +638,14 @@ DET_STATEMENTS: dict[str, Statement] = {
     ),
     "select_criterion": Statement(
         "SELECT criterion_id, question_id, kind, answer_key, multi_select, "
-        "partial_credit FROM criterion WHERE package_version_id = :v "
-        "AND criterion_id = :criterion_id"
+        "partial_credit, evaluation_mode FROM criterion "
+        "WHERE package_version_id = :v AND criterion_id = :criterion_id"
     ),
     "select_mcq_criteria": Statement(
         "SELECT criterion_id, question_id, kind, answer_key, multi_select, "
-        "partial_credit FROM criterion WHERE package_version_id = :v "
-        "AND kind = 'mcq' ORDER BY criterion_id"
+        "partial_credit, evaluation_mode FROM criterion "
+        "WHERE package_version_id = :v "
+        "AND evaluation_mode = 'deterministic' ORDER BY criterion_id"
     ),
     "select_options": Statement(
         "SELECT option_id FROM mcq_option WHERE package_version_id = :v "
@@ -1502,12 +1523,16 @@ class DeterministicEvaluator:
         reads each criterion's option rows once, holds one pinned catalog, and
         reads each submission's regions once, instead of per pair
         (`NFR-DET-01`)."""
-        if criterion["kind"] != "mcq":
-            # FR-ORCH-08: a non-mcq criterion reaching the deterministic
-            # evaluator is an admission failure upstream, never a score.
+        if _declared_mode(criterion) != "deterministic":
+            # FR-ORCH-08: a criterion the package does not declare deterministic
+            # reaching the deterministic evaluator is an admission failure upstream,
+            # never a score. FR-ORCH-35: the test is the DECLARED mode, not `kind` —
+            # the same predicate the deterministic population is selected by, so the
+            # selector and the guard cannot disagree about who belongs here.
             raise NotDeterministicCriterion(
-                f"criterion {criterion['criterion_id']!r} has kind "
-                f"{criterion['kind']!r}; only mcq criteria score by lookup."
+                f"criterion {criterion['criterion_id']!r} is declared "
+                f"{_declared_mode(criterion)!r}; only criteria the package declares "
+                "deterministic score by lookup."
             )
         key = tuple(criterion["answer_key"])
         if not key:

@@ -147,8 +147,9 @@ would read as "no variation", which is a different claim from "the figure does n
 apply"). A criterion is deterministic here when every band its score rows carry is one
 of M-DET's result values (`correct` / `incorrect`, plus the never-scored marker
 `unresolved`) — the bands are the deterministic-criterion marker the accessor has when
-no package is in hand. The rollup classifies by the package's declared criterion
-kind (`kind='mcq'` IS `evaluation_mode='deterministic'`, orch.py's disclosure) and
+no package is in hand. The rollup classifies by the package's declared
+`evaluation_mode` (#369: the column exists, and the old `kind='mcq'` reading of it is
+retired — a judged multiple-choice criterion rolls into the judged block) and
 trusts that verdict for the figures: its judged block computes real entropy and a
 real interior rate for every criterion the package declared judged — even one whose
 rubric names its bands like M-DET's (a judged pass/fail rubric may) — and falls
@@ -2345,11 +2346,12 @@ def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
     combined figure across the two, anywhere on the record: the refusal is the
     record's shape, not a comment.
 
-    The blocks are classified by the package's declared criterion kind —
-    `kind='mcq'` IS `evaluation_mode='deterministic'` for this module (aeh/orch.py's
-    disclosure; the design's `evaluation_mode` column exists in no shipped schema) —
-    with the M-DET band vocabulary as the fallback reading for a score row no
-    declared criterion owns. Each block carries its own submission population and
+    The blocks are classified by the package's declared `evaluation_mode`
+    (`FR-ORCH-35`) — #369 shipped the column, so the shape-based reading this module
+    used to make (`kind='mcq'` IS deterministic) is retired: a criterion the package
+    declares judged rolls into the judged block whatever its shape. The M-DET
+    band vocabulary stays the fallback reading for a score row that no declared
+    criterion owns. Each block carries its own submission population and
     its own per-criterion figures (`criterion_band_figures` produces the judged
     figures, the deterministic block carries histograms with the derived figures
     nulled by the block's own kind verdict)."""
@@ -2357,8 +2359,12 @@ def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
     cohort, run = service._find_run(run_id)
     version = run["package_version_id"]
     package = store.package(run["package_id"])
-    declared_kind = {
-        row["criterion_id"]: row["kind"]
+    # `FR-ORCH-35`: the block a criterion rolls into follows the mode the package
+    # DECLARES, not the criterion's shape. The two used to be the same claim here
+    # ("`kind='mcq'` IS `evaluation_mode='deterministic'`"); they are not, and a
+    # judged multiple-choice criterion belongs in the judged block.
+    declared_mode = {
+        row["criterion_id"]: row["evaluation_mode"]
         for row in package.query(PKG_STATEMENTS["select_criteria"], v=version)
     }
     # The declared band order per criterion (ordinal order, the package's own
@@ -2418,10 +2424,10 @@ def separated_rollup(run_id: str, store: Store) -> SeparatedRollup:
     judged_ids: set[str] = set()
     deterministic_ids: set[str] = set()
     for criterion_id in bands_by_criterion:
-        kind = declared_kind.get(criterion_id)
-        if kind == "mcq":
+        mode = declared_mode.get(criterion_id)
+        if mode == "deterministic":
             deterministic_ids.add(criterion_id)
-        elif kind is not None:
+        elif mode is not None:
             judged_ids.add(criterion_id)
         elif _band_population_is_deterministic(bands_by_criterion[criterion_id]):
             deterministic_ids.add(criterion_id)

@@ -114,7 +114,9 @@ pass, and every bug found later becomes a permanent case.
 The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
 modules that own the schema they add. Before the first store open in any process, import all
 eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
-`import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it),
+`import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it;
+`aeh.pkg` owns Package's last migration — #369's `pkg_criterion_evaluation_mode`, 11 — and
+`aeh.det`'s `det_selection_policy_columns` is 10),
 `aeh.review` owns Cohort's last migration (#367's `review_queue_columns`, 26),
 `aeh.integ` the one before it (#363's `integ_gate_reads_and_panel_state`, 25),
 `aeh.orch` the one before it (#362's `orch_cell_phase`, 24),

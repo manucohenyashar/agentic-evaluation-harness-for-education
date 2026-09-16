@@ -576,6 +576,51 @@ class GradePolicy:
             ) from error
 
 
+#: The two modes a criterion may declare (`FR-PKG-22`). `judged` runs the panel;
+#: `deterministic` is scored by rule (§7.8).
+EVALUATION_MODES: tuple[str, ...] = ("judged", "deterministic")
+
+
+def default_evaluation_mode(kind: str | None) -> str:
+    """The mode a criterion takes when its author does not say (`FR-PKG-22`).
+
+    This is the ONE place the old `kind='mcq'` equivalence still lives, and it lives here
+    deliberately: choosing a default from the shape is a WRITER's convenience, and every
+    reader must consult the column instead (`FR-ORCH-35` — no consumer may test
+    `kind = 'mcq'`, because a package is entitled to declare a judged multiple-choice
+    criterion and a reader that infers the mode makes that package unrepresentable).
+
+    The default is not symmetric in cost. A criterion wrongly marked `judged` spends judge
+    calls on something a rule could have scored; one wrongly marked `deterministic` skips
+    the panel silently and reports a score nobody weighed. So everything that is not the
+    declared deterministic shape defaults to doing the work.
+    """
+    return "deterministic" if kind == "mcq" else "judged"
+
+
+def _criterion_field(criterion: Any, name: str) -> Any:
+    """One field of a criterion payload, whichever mapping-ish shape it arrives in."""
+    try:
+        return criterion[name]
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def _declared_evaluation_mode(criterion: Any) -> str:
+    """The mode a criterion payload declares, or its shape default. Refuses a value
+    outside the vocabulary rather than storing it for the DDL's CHECK to reject with a
+    bare `IntegrityError` that names no requirement."""
+    declared = _criterion_field(criterion, "evaluation_mode")
+    if declared is None:
+        return default_evaluation_mode(_criterion_field(criterion, "kind"))
+    if declared not in EVALUATION_MODES:
+        raise PackageError(
+            f"criterion evaluation_mode {declared!r} is not one of {EVALUATION_MODES} "
+            "(FR-PKG-22). The mode is a declared vocabulary member, not free text."
+        )
+    return str(declared)
+
+
 def default_grade_policy() -> GradePolicy:
     """`FR-SETUP-12`'s default: unweighted sum of criteria into question and test
     totals, raw points, no transforms, null review window (finalize on run completion).
@@ -1474,10 +1519,10 @@ PKG_STATEMENTS.update({
         # criterion rows whose evidence_type the copy silently NULLed.
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, answer_key, "
-        "evidence_type, band_justification) "
+        "evidence_type, band_justification, evaluation_mode) "
         "SELECT :new, criterion_id, question_id, kind, max_points, scoring_model, "
-        "construct_tag, band_count, answer_key, evidence_type, band_justification "
-        "FROM criterion WHERE package_version_id = :old"
+        "construct_tag, band_count, answer_key, evidence_type, band_justification, "
+        "evaluation_mode FROM criterion WHERE package_version_id = :old"
     ),
     "pkg_revision_copy_band": Statement(
         # The descriptor rides with the set (#230): a band without its descriptor is
@@ -1531,9 +1576,10 @@ PKG_STATEMENTS.update({
     ),
     "insert_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
-        "max_points, scoring_model, construct_tag, band_count, evidence_type) VALUES "
+        "max_points, scoring_model, construct_tag, band_count, evidence_type, "
+        "evaluation_mode) VALUES "
         "(:v, :criterion_id, :question_id, :kind, :max_points, :scoring_model, "
-        ":construct_tag, :band_count, :evidence_type)"
+        ":construct_tag, :band_count, :evidence_type, :evaluation_mode)"
     ),
     "insert_dependency": Statement(
         "INSERT INTO criterion_dependency (package_version_id, criterion_id, "
@@ -1550,8 +1596,8 @@ PKG_STATEMENTS.update({
     ),
     "select_criteria": Statement(
         "SELECT criterion_id, question_id, kind, max_points, scoring_model, "
-        "construct_tag, band_count, answer_key, evidence_type, band_justification "
-        "FROM criterion "
+        "construct_tag, band_count, answer_key, evidence_type, band_justification, "
+        "evaluation_mode FROM criterion "
         "WHERE package_version_id = :v ORDER BY criterion_id"
     ),
     "select_bands": Statement(
@@ -1780,9 +1826,10 @@ PKG_STATEMENTS.update({
     "insert_readback_criterion": Statement(
         "INSERT INTO criterion (package_version_id, criterion_id, question_id, kind, "
         "max_points, scoring_model, construct_tag, band_count, evidence_type, "
-        "band_justification) VALUES (:v, :criterion_id, :question_id, :kind, "
+        "band_justification, evaluation_mode) VALUES "
+        "(:v, :criterion_id, :question_id, :kind, "
         ":max_points, :scoring_model, :construct_tag, :band_count, :evidence_type, "
-        ":band_justification)"
+        ":band_justification, :evaluation_mode)"
     ),
     "pkg_revision_copy_setup_readback": Statement(
         "INSERT INTO setup_readback (package_version_id, rubric_doc_id, "
@@ -1903,6 +1950,40 @@ PKG_STATEMENTS.update({
         "AND criterion_id = :criterion_id AND ordinal = :ordinal"
     ),
 })
+# --- Package migration 11 (#369, `FR-PKG-22`): how a criterion is evaluated ------------------
+#
+# `kind` says what SHAPE a criterion is; it has been doing double duty as a statement about
+# how the criterion is EVALUATED, through the equivalence "`kind='mcq'` IS
+# `evaluation_mode='deterministic'`" that several modules wrote into their docstrings. The
+# two are not the same claim. A multiple-choice question whose options a panel must weigh is
+# `kind='mcq'` and judged; the equivalence makes that package unrepresentable, and every
+# consumer that tested `kind = 'mcq'` was deciding evaluation from shape.
+#
+# So the mode becomes a column the package DECLARES (`CT-PKG-19`), and the equivalence
+# becomes the backfill: `deterministic` exactly where `kind='mcq'` today, which is what the
+# equivalence asserted and is therefore lossless for every package that exists. The default
+# is `judged` — the mode that runs the full pipeline. A wrong `judged` costs judge calls; a
+# wrong `deterministic` silently skips the panel, so the default fails toward doing the work.
+_PKG_CRITERION_EVALUATION_MODE = Migration(
+    version=11,
+    name="pkg_criterion_evaluation_mode",
+    statements=(
+        Statement(
+            "ALTER TABLE criterion ADD COLUMN evaluation_mode TEXT NOT NULL "
+            "DEFAULT 'judged' "
+            "CHECK (evaluation_mode IN ('judged', 'deterministic'))"
+        ),
+        # The backfill, second and deliberately so: the ALTER gives every existing row
+        # `judged`, and this restores the reading the old predicate had. Running it the
+        # other way round would leave every mcq criterion judged for the width of one
+        # migration — and a migration is not a window anyone gets to observe, but the
+        # order is still the one that is correct on its own.
+        Statement(
+            "UPDATE criterion SET evaluation_mode = 'deterministic' WHERE kind = 'mcq'"
+        ),
+    ),
+)
+
 STATEMENTS.update(PKG_STATEMENTS)
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
@@ -1914,6 +1995,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_QUESTION_INVENTORY,)
     + (_PKG_SETUP_READBACK,)
     + (_PKG_SETUP_CLASSIFICATION,)
+    + (_PKG_CRITERION_EVALUATION_MODE,)
 )
 
 # Durable v8 — #118's promotion record. M-PKG is the seam `aeh.stats.promote` stores its
@@ -2298,6 +2380,7 @@ class PackageCatalog:
         kind: str = "open", max_points: float = 0.0, scoring_model: str = "atomic",
         construct_tag: str = "", dependencies: Sequence[str] = (),
         band_count: int | None = None, evidence_type: str | None = None,
+        evaluation_mode: str | None = None,
     ) -> None:
         """Add a criterion with its dependency edges, refusing a cycle (`FR-PKG-05`) —
         the guard's add-refusal applies to published versions; drafts add freely. The
@@ -2323,13 +2406,27 @@ class PackageCatalog:
                 "(design §5.10, R40) — declared at the criterion, not discovered after "
                 "the bands are written."
             )
+        # `FR-PKG-22`: declared when the caller declares it, shape default otherwise —
+        # and refused here, by name, rather than left for the column's CHECK to answer
+        # with a bare IntegrityError that names no requirement.
+        mode = (
+            default_evaluation_mode(kind) if evaluation_mode is None
+            else str(evaluation_mode)
+        )
+        if mode not in EVALUATION_MODES:
+            raise PackageError(
+                f"criterion evaluation_mode {evaluation_mode!r} is not one of "
+                f"{EVALUATION_MODES} (FR-PKG-22). The mode is a declared vocabulary "
+                "member, not free text."
+            )
         with self._handle.transaction() as tx:
             self._guard(tx, v, "criterion.add")
             tx.execute(PKG_STATEMENTS["insert_criterion"],
                        v=v, criterion_id=criterion_id, question_id=question_id,
                        kind=kind, max_points=max_points, scoring_model=scoring_model,
                        construct_tag=construct_tag, band_count=band_count,
-                       evidence_type=evidence_type)
+                       evidence_type=evidence_type,
+                       evaluation_mode=mode)
             for depends_on in dependencies:
                 if depends_on == criterion_id:
                     # Same self-edge refusal as set_dependencies: the graph error the
@@ -3324,7 +3421,9 @@ class PackageCatalog:
             tx.execute(PKG_STATEMENTS["insert_criterion"], v=version_id,
                        criterion_id=criterion_id, question_id=criterion_id,
                        kind="open", max_points=0.0, scoring_model="atomic",
-                       construct_tag="", band_count=None, evidence_type=None)
+                       construct_tag="", band_count=None, evidence_type=None,
+                       # A draft placeholder is `kind="open"`, so: judged.
+                       evaluation_mode=default_evaluation_mode("open"))
         if parent is not None:
             copied = ", ".join(
                 f"{row['surface']}={row['n']}" for row in self._handle.query(
@@ -3716,8 +3815,10 @@ class PackageCatalog:
 
         Each criterion record is a mapping with `criterion_id`, `question_id`, `kind`,
         `max_points`, `scoring_model`, `band_count`, `evidence_type`,
-        `band_justification` and `bands` (a sequence of mappings with `band`, `ordinal`,
-        `points`, `descriptor`). The structural validation here is M-PKG's own
+        `band_justification`, an optional `evaluation_mode` (`FR-PKG-22`: `judged` or
+        `deterministic`, defaulting from `kind` when the record does not declare one, and
+        REFUSED if it is anything else) and `bands` (a sequence of mappings with `band`,
+        `ordinal`, `points`, `descriptor`). The structural validation here is M-PKG's own
         (`CT-PKG-12`) — the band rules are the same ones `add_criterion`/`add_band`
         enforce (`FR-PKG-06`), plus the read-back's own rule: a `band_count` above two
         carries a recorded justification (`FR-SETUP-04`). Descriptor CONTENT is not
@@ -3762,7 +3863,12 @@ class PackageCatalog:
                            construct_tag=criterion["construct_tag"],
                            band_count=criterion["band_count"],
                            evidence_type=criterion["evidence_type"],
-                           band_justification=criterion["band_justification"])
+                           band_justification=criterion["band_justification"],
+                           # `FR-SETUP-17`: the readback carries the mode when the
+                           # proposal declared one, and otherwise takes the shape
+                           # default — bound explicitly at the insert either way, never
+                           # left to the column's DDL default.
+                           evaluation_mode=_declared_evaluation_mode(criterion))
                 for band in criterion["bands"]:
                     tx.execute(PKG_STATEMENTS["insert_band"], v=v,
                                criterion_id=criterion["criterion_id"],
@@ -3907,6 +4013,13 @@ class PackageCatalog:
                 "scoring_model": scoring_model, "construct_tag": construct_tag,
                 "band_count": band_count, "evidence_type": evidence_type,
                 "band_justification": justification or None, "bands": tuple(bands),
+                # `FR-SETUP-17`/`FR-PKG-22`: validated HERE so the declaration survives
+                # into the write. This dict is what `write_readback` binds from, so a key
+                # dropped here is a declaration the caller cannot make — and the mode
+                # would then be re-derived from `kind`, which is precisely the
+                # shape-decides-evaluation reading this story retires. Validating it here
+                # also makes the vocabulary refusal reachable instead of dead.
+                "evaluation_mode": _declared_evaluation_mode(record),
             })
         return tuple(validated)
 
@@ -4441,10 +4554,11 @@ def export_package(package_version: str, dest: Path | str | None = None,
                 connection.execute(
                     "INSERT INTO criterion (package_version_id, criterion_id, "
                     "question_id, kind, max_points, scoring_model, construct_tag, "
-                    "band_count, answer_key) VALUES (?, ?, ?, ?, NULL, 'atomic', "
-                    "'', NULL, ?)",
+                    "band_count, answer_key, evaluation_mode) "
+                    "VALUES (?, ?, ?, ?, NULL, 'atomic', '', NULL, ?, ?)",
                     (version_id, criterion["criterion_id"], criterion["question_id"],
-                     criterion["kind"], answer_key))
+                     criterion["kind"], answer_key,
+                     _declared_evaluation_mode(criterion)))
                 for band in criterion.get("bands", ()):
                     connection.execute(
                         "INSERT INTO band (package_version_id, criterion_id, ordinal, "
