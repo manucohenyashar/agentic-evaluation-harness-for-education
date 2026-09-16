@@ -1431,10 +1431,11 @@ def current_schema_version(tier: Tier) -> int:
 #: #361's `extract_latency` (21) and `judge_verdict_assessment` (22) moved Cohort 20→22 and its
 #: `judge_run_metrics_judge_dimension` moved Durable 8→9 — `aeh.judge` holds both tails.
 #: #355's `ingest_selection_biconditional` moved Cohort 22→23 — Cohort's tail is `aeh.ingest`'s
-#: again, where it began.)
+#: again, where it began. #362's `orch_cell_phase` moved Cohort 23→24, and `aeh.orch` holds the
+#: tail.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 10,
-    Tier.COHORT: 23,
+    Tier.COHORT: 24,
     Tier.DURABLE: 9,
 }
 
@@ -1550,6 +1551,9 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
     "evidence", "work_unit", "escalation_request", "circuit_breaker", "run_control",
+    # #362's per-cell composition phases: swept before `run`, like every other run-scoped
+    # table, so the FK graph is walked child-first.
+    "cell_phase",
     "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
@@ -1560,6 +1564,10 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     "narrative": Statement("DELETE FROM narrative"),
     "submission_grade": Statement("DELETE FROM submission_grade"),
     "criterion_score": Statement("DELETE FROM criterion_score"),
+    # #362 (FR-ORCH-28): the composition phases of the run's cells. Purged with the cohort
+    # like every other run-scoped row — a phase outliving the work it describes would tell a
+    # restarted pipeline to skip a cell whose evidence is gone.
+    "cell_phase": Statement("DELETE FROM cell_phase"),
     "verdict": Statement("DELETE FROM verdict"),
     "evidence": Statement("DELETE FROM evidence"),
     "work_unit": Statement("DELETE FROM work_unit"),
@@ -1632,6 +1640,10 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     # the scan registry covers every swept name so a column a future migration adds
     # is read by the same walk without an edit here.
     "escalation_request": Statement("SELECT * FROM escalation_request"),
+    # #362's `cell_phase`: ids, a phase name and a count — no blob reference and no student
+    # bytes. Registered anyway, because the scan registry covers every swept name so a column
+    # a later migration adds is read by the same walk without an edit here.
+    "cell_phase": Statement("SELECT * FROM cell_phase"),
     "circuit_breaker": Statement("SELECT * FROM circuit_breaker"),
     # #61's control-row queue: no blob references (reason strings name conditions,
     # never student bytes), but the scan registry covers every swept name so a
