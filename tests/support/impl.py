@@ -244,17 +244,45 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # written-ahead draft's missing bridge (the limb asked the store-form queue
     # for a row it never persisted; it now performs the insert its own file's
     # rung-3 limb declares, per the queue's §3.15 data flow). The c09 ranking
-    # limb STAYS marked — the queue cannot rank holistic-first at equal value
-    # through the store, because `scoring_model` lives only in the Tier P
-    # `criterion` table and cohort rows carry no package linkage — and its row
-    # below is re-keyed on the landed queue surface plus the declared planned
-    # owner of the scoring-model read; the gap is a finding on #108's PR.
+    # limb STAYS marked, but #368 changed WHY, so the row below is re-keyed.
     # (The two M-GRADE rows went at #101's landing: `aeh.grade` ships `apply_policy`,
     # so the c07 and c16 `[m_grade]` params run unmarked.)
+    #
+    # **#368 re-key.** The old key was `REVIEW_MODULE:ReviewService.queue,
+    # ...:ReviewService.scoring_model_for` — "cohort rows carry no package linkage, so
+    # the store cannot know a criterion is holistic". #368 landed both symbols: the run
+    # row carries `package_id`/`package_version_id`, `_run_row_context` resolves the
+    # package, and `scoring_model_for` reads the declaration. The stated blocker is gone
+    # and the case is still red, for a reason that is not a missing name:
+    #
+    #   `FR-REVIEW-18` maps `est_seconds` to 45 s atomic / 90 s holistic, and
+    #   `FR-REVIEW-03` divides by it. The case's fixture builds its pair with IDENTICAL
+    #   stored figures and calls that "equal expected value" — which it no longer is:
+    #   identical figures now differ in expected value by exactly 2x, so the holistic
+    #   row ranks below and the tie-break (`0 if holistic else 1`) never fires.
+    #
+    # The premise is still CONSTRUCTIBLE — expected value is
+    # `p_error x criterion_weight x proximity / est_seconds`, so a holistic criterion
+    # weighted 2x its atomic twin in `grade_policy` reaches exactly equal expected value
+    # at 90 s against 45 s, and #368 made both of those inputs real store reads. What is
+    # stale is the FIXTURE, which equalises the figures instead of the expected value.
+    # (An earlier draft of this comment claimed the premise was unconstructible; that was
+    # wrong — the arithmetic above is the correction, found in review.)
+    #
+    # Re-basing that fixture is test authorship, which `/write-tests` owns and this
+    # implementation PR does not do — so the case stays marked and is keyed `command`,
+    # the kind this registry reserves for "a defect in existing tooling rather than a
+    # missing name". The command exits 0 — blocker resolved — once the case declares the
+    # criterion weights that make its two rows genuinely equal in expected value.
+    # Disclosed on #368 and belongs to TS-89 (#383), the M-REVIEW delta test story.
     "#96 c09 holistic ranks higher at rung 3 (M-REVIEW)": (
-        "symbols",
-        (f"{REVIEW_MODULE}:ReviewService.queue,"
-         f"{REVIEW_MODULE}:ReviewService.scoring_model_for"),
+        "command",
+        (
+            "python -c \"import pathlib,sys; sys.exit(0 if 'weights' in "
+            "pathlib.Path('tests/contract/agg/"
+            "test_ct_agg_c09_no_runtime_special_casing.py')"
+            ".read_text(encoding='utf-8') else 1)\""
+        ),
         (
             "tests/contract/agg/test_ct_agg_c09_no_runtime_special_casing.py"
             "::test_tc_agg_c09_a_holistic_criterion_ranks_higher_in_the_review_queue",

@@ -343,6 +343,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
+from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 # The label store's own schema: this module owns Tier D's last migration (the
@@ -446,8 +447,31 @@ REVIEW_BOUNDARY_HALF_WIDTH: float = 10.0
 #: P contribution of an override history nobody has measured (`CT-STATS-09`:
 #: no data is not a zero; the unmeasured criterion is the risky one).
 REVIEW_OVERRIDE_RATE_NO_DATA: float = 0.5
-#: The estimate used when a row carries no usable ``est_seconds``.
+#: The estimate used when a row carries no usable ``est_seconds`` AND the criterion's
+#: scoring model is unknown. A KNOWN model takes the two figures below instead.
 REVIEW_DEFAULT_EST_SECONDS: float = 60.0
+#: `FR-REVIEW-18`'s per-model review estimates, the design's stated `Assumption:` —
+#: an atomic criterion is one band judgement, a holistic one re-reads the response.
+#: Both are knobs (seam 3) precisely because they are an assumption: the first
+#: measurement against a real teacher replaces the number, not the code.
+REVIEW_EST_SECONDS_ATOMIC: float = 45.0
+REVIEW_EST_SECONDS_HOLISTIC: float = 90.0
+
+#: The estimate map, DECLARED — `CT-AGG-09` bans a run-time special case on the scoring
+#: model, and `aeh.orch`'s `SCORING_MODEL_BASE_DEPTH` is the sanctioned precedent for the
+#: legitimate other half: a difference the DESIGN declares, expressed as a table the code
+#: looks up rather than as a branch the code takes. A model absent from this map takes the
+#: model-free default; adding a model is a data change here, not a new branch elsewhere.
+#: Each entry names the knob that overrides it, so the seam-3 override stays declarative too.
+SCORING_MODEL_EST_SECONDS: "Mapping[str, tuple[str, float]]" = MappingProxyType({
+    "atomic": ("EST_SECONDS_ATOMIC", REVIEW_EST_SECONDS_ATOMIC),
+    "holistic": ("EST_SECONDS_HOLISTIC", REVIEW_EST_SECONDS_HOLISTIC),
+})
+#: The judgement count below which an override rate is NOT reported (`FR-REVIEW-18`).
+#: Four teachers who overrode once are not a 25% override rate; they are four
+#: teachers. Below this the rate reads `None` and `_override_rate_of` applies
+#: `CT-STATS-09`'s no-data figure, which is deliberately not zero.
+REVIEW_OVERRIDE_MIN_N: int = 5
 
 _WEIGHT_LOW, _WEIGHT_HIGH = 0.0, 10.0
 
@@ -529,11 +553,13 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
         "label_type, band, evaluation_mode, saw_system_output, routing, origin, "
         "review_seconds, system_band, teacher_band, actor, timestamp, score_id, "
-        "review_queue_action, new_points, cohort_id) "
+        "review_queue_action, new_points, cohort_id, "
+        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at) "
         "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
         ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
         ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
-        ":score_id, :review_queue_action, :new_points, :cohort_id)"
+        ":score_id, :review_queue_action, :new_points, :cohort_id, "
+        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at)"
     ),
     # #111's whole-grade read: the auto-accepted population the sample draws
     # from. The service's own fetch admits only the teacher's routings
@@ -561,7 +587,23 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "SELECT * FROM criterion_score "
         "WHERE run_id = :run_id AND routing IN ('queued', 'provisional')"
     ),
-    # #115's collection route: the same 19 columns `insert_label` carries,
+    #: The run's package linkage (`FR-REVIEW-18`): which package, and which VERSION of
+    #: it, this run graded against. The version is what pins the weights, the scoring
+    #: models and the boundary table, so a re-ranked older run is ranked by the package
+    #: as it stood then rather than as it stands now.
+    "select_run_package": Statement(
+        "SELECT package_id, package_version_id, panel_config FROM run "
+        "WHERE run_id = :run_id"
+    ),
+    #: Each submission's current total, for boundary proximity. `is_current = 1` because
+    #: `submission_grade` is append-only with revisions (`#103`) and the superseded
+    #: revision's total would place the submission at a boundary it has already left.
+    "select_run_submission_totals": Statement(
+        "SELECT submission_id, total FROM submission_grade "
+        "WHERE run_id = :run_id AND is_current = 1"
+    ),
+    # #115's collection route: the same 27 columns `insert_label` carries (19 until
+    # #368's `review_label_columns` added eight),
     # written as an upsert so a caller collecting the same label into a second
     # administration's cohort re-keys the row rather than failing on a
     # conflicting id. One statement, keyword-parameterized like its sibling —
@@ -570,15 +612,56 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "INSERT OR REPLACE INTO label (label_id, run_id, student_ref, "
         "criterion_id, label_type, band, evaluation_mode, saw_system_output, "
         "routing, origin, review_seconds, system_band, teacher_band, actor, "
-        "timestamp, score_id, review_queue_action, new_points, cohort_id) "
+        "timestamp, score_id, review_queue_action, new_points, cohort_id, "
+        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at) "
         "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
         ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
         ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
-        ":score_id, :review_queue_action, :new_points, :cohort_id)"
+        ":score_id, :review_queue_action, :new_points, :cohort_id, "
+        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at)"
     ),
 }
 
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_006,)
+
+# --- Tier D, migration 10 (#368, `FR-REVIEW-21`): what a label AGREED with ---------------------
+#
+# `label` records what the teacher chose and what the system had proposed, and nothing
+# that says how far apart the two were or which package version they were about. Every
+# consumer therefore re-derived the comparison: `FR-STATS-24`'s override history, the
+# MVVP step-4 cases and `should_escalate`'s `history` each had to compare two band
+# STRINGS and each had to guess the lineage. These eight columns record the comparison
+# once, at the moment the label is written, while the criterion's band scale is still in
+# hand.
+#
+# Tier D's standing rule holds (`store.py:1219`): no column here is a student name and
+# none ever may be. `system_points`/`teacher_points` are the criterion's points and
+# `panel_config` the panel's shape — figures about the SCORING, not about the student.
+_DURABLE_010 = Migration(
+    version=10,
+    name="review_label_columns",
+    statements=(
+        # Which package version the judgement was about, so a history can be scoped to a
+        # lineage instead of pooling every version a criterion has ever had.
+        Statement("ALTER TABLE label ADD COLUMN package_version_id TEXT"),
+        # The population scope the package declares for this criterion; NULL where it
+        # declares none — an undeclared scope is not an assumed one.
+        Statement("ALTER TABLE label ADD COLUMN assignment_type TEXT"),
+        # |system_ordinal - teacher_ordinal|: how far the teacher moved the band, which a
+        # string comparison cannot answer. NULL where the band scale is not in hand.
+        Statement("ALTER TABLE label ADD COLUMN band_distance INTEGER"),
+        Statement("ALTER TABLE label ADD COLUMN system_points REAL"),
+        Statement("ALTER TABLE label ADD COLUMN teacher_points REAL"),
+        # The agreement bit itself, recorded rather than re-derived: it is the figure
+        # every consumer actually reads, and a derivation in six places is six chances to
+        # disagree about what a NULL band means.
+        Statement("ALTER TABLE label ADD COLUMN agreed INTEGER CHECK (agreed IN (0, 1))"),
+        Statement("ALTER TABLE label ADD COLUMN panel_config TEXT"),
+        Statement("ALTER TABLE label ADD COLUMN recorded_at TEXT"),
+    ),
+)
+
+TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_010,)
 
 # --- Tier C, migration 26 (#367, `FR-REVIEW-20`): what the queue did, on the queue's own row --
 #
@@ -1149,38 +1232,70 @@ def _calibration_knobs() -> dict[str, float]:
     take the production number."""
     return {
         "panel_spread_weight": _env_float(
-            "AEH_REVIEW_PANEL_SPREAD_WEIGHT", REVIEW_PANEL_SPREAD_WEIGHT,
+            _knob_name("PANEL_SPREAD_WEIGHT"), REVIEW_PANEL_SPREAD_WEIGHT,
             low=_WEIGHT_LOW, high=_WEIGHT_HIGH,
         ),
         "integrity_signal_weight": _env_float(
-            "AEH_REVIEW_INTEGRITY_SIGNAL_WEIGHT", REVIEW_INTEGRITY_SIGNAL_WEIGHT,
+            _knob_name("INTEGRITY_SIGNAL_WEIGHT"), REVIEW_INTEGRITY_SIGNAL_WEIGHT,
             low=_WEIGHT_LOW, high=_WEIGHT_HIGH,
         ),
         "transcription_overlap_weight": _env_float(
-            "AEH_REVIEW_TRANSCRIPTION_OVERLAP_WEIGHT", REVIEW_TRANSCRIPTION_OVERLAP_WEIGHT,
+            _knob_name("TRANSCRIPTION_OVERLAP_WEIGHT"), REVIEW_TRANSCRIPTION_OVERLAP_WEIGHT,
             low=_WEIGHT_LOW, high=_WEIGHT_HIGH,
         ),
         "override_rate_weight": _env_float(
-            "AEH_REVIEW_OVERRIDE_RATE_WEIGHT", REVIEW_OVERRIDE_RATE_WEIGHT,
+            _knob_name("OVERRIDE_RATE_WEIGHT"), REVIEW_OVERRIDE_RATE_WEIGHT,
             low=_WEIGHT_LOW, high=_WEIGHT_HIGH,
         ),
         "integrity_signal_cap": _env_float(
-            "AEH_REVIEW_INTEGRITY_SIGNAL_CAP", float(REVIEW_INTEGRITY_SIGNAL_CAP),
+            _knob_name("INTEGRITY_SIGNAL_CAP"), float(REVIEW_INTEGRITY_SIGNAL_CAP),
             low=1.0, high=100.0,
         ),
         "boundary_half_width": _env_float(
-            "AEH_REVIEW_BOUNDARY_HALF_WIDTH", REVIEW_BOUNDARY_HALF_WIDTH,
+            _knob_name("BOUNDARY_HALF_WIDTH"), REVIEW_BOUNDARY_HALF_WIDTH,
             low=1e-06, high=1e06,
         ),
         "override_rate_no_data": _env_float(
-            "AEH_REVIEW_OVERRIDE_RATE_NO_DATA", REVIEW_OVERRIDE_RATE_NO_DATA,
+            _knob_name("OVERRIDE_RATE_NO_DATA"), REVIEW_OVERRIDE_RATE_NO_DATA,
             low=0.0, high=1.0,
         ),
         "default_est_seconds": _env_float(
-            "AEH_REVIEW_DEFAULT_EST_SECONDS", REVIEW_DEFAULT_EST_SECONDS,
+            _knob_name("DEFAULT_EST_SECONDS"), REVIEW_DEFAULT_EST_SECONDS,
             low=1.0, high=3600.0,
         ),
+        "est_seconds_atomic": _env_float(
+            _knob_name("EST_SECONDS_ATOMIC"), REVIEW_EST_SECONDS_ATOMIC,
+            low=1.0, high=3600.0,
+        ),
+        "est_seconds_holistic": _env_float(
+            _knob_name("EST_SECONDS_HOLISTIC"), REVIEW_EST_SECONDS_HOLISTIC,
+            low=1.0, high=3600.0,
+        ),
+        "override_min_n": _env_float(
+            _knob_name("OVERRIDE_MIN_N"), float(REVIEW_OVERRIDE_MIN_N),
+            low=1.0, high=1e06,
+        ),
     }
+
+
+#: The knob prefix this module reads, and the one it still answers to. The project's
+#: knobs are being renamed `AEH_*` -> `HARNESS_*`; a deployment that already sets the old
+#: name keeps working for one release rather than silently reverting to the production
+#: default, which is the phantom-bug shape seam 3 exists to prevent (`#368`).
+_KNOB_PREFIX = "HARNESS_REVIEW_"
+_LEGACY_KNOB_PREFIX = "AEH_REVIEW_"
+
+
+def _knob_name(suffix: str) -> str:
+    """The environment name a knob is read from: the new one when it is set, else the
+    legacy one when THAT is set, else the new one (so a refusal names the new spelling)."""
+    new = _KNOB_PREFIX + suffix
+    if os.environ.get(new, "").strip():
+        return new
+    legacy = _LEGACY_KNOB_PREFIX + suffix
+    if os.environ.get(legacy, "").strip():
+        return legacy
+    return new
 
 
 def _env_float(name: str, default: float, *, low: float, high: float) -> float:
@@ -2365,6 +2480,39 @@ class ReviewService:
         self._owning_cohorts = tuple(owning_cohorts)
         return self
 
+    #: The run's declared criteria and their scoring models, attached when the service is
+    #: built over a store. The PACKAGE is the authority on which criteria exist
+    #: (`CT-SETUP-05`); the queue only knows which of them need a teacher.
+    _declared_models: "Mapping[str, str]" = {}
+
+    def scoring_model_for(self, criterion_id: str) -> str:
+        """`FR-REVIEW-19`: the criterion's stored scoring model for this service's run.
+
+        Raises for a criterion the run does not score, rather than answering `"atomic"`.
+        The guess is the failure mode this replaces: a holistic criterion silently read
+        as atomic is budgeted at half the minutes a teacher needs, and the queue that
+        results overruns without ever reporting that it did."""
+        declared = self._declared_models
+        if criterion_id in declared:
+            model = declared[criterion_id]
+            if model:
+                return str(model)
+            raise ReviewError(
+                f"criterion {criterion_id!r} is declared by this run's package version, "
+                "but the version declares no model for it (FR-REVIEW-19). The "
+                "model is the package's to declare; the review will not assume one."
+            )
+        for row in self._rows:
+            if getattr(row, "criterion_id", None) != criterion_id:
+                continue
+            carried = getattr(row, "scoring_model", None)
+            if carried:
+                return str(carried)
+            break
+        raise ReviewError(
+            f"criterion {criterion_id!r} is not declared by this run (FR-REVIEW-19)"
+        )
+
     def _writable_cohort(self) -> "str | None":
         """The cohort `FR-REVIEW-20`'s columns are written to.
 
@@ -2635,13 +2783,101 @@ class ReviewService:
                 score_id=label.score_id,
                 review_queue_action=label.review_queue_action,
                 new_points=label.new_points,
-                # The promotion gate's scoping column carries the run's id, not
-                # a per-row cohort: a run belongs to one cohort in this
-                # codebase, so in the declared store flow the two coincide —
-                # the rule and its purge consequence are disclosed in the
-                # module interpretations.
-                cohort_id=run_id,
+                # `FR-REVIEW-22`: the COHORT, resolved from the rows this service
+                # actually loaded — never the run id. The two are different values, and
+                # M-STORE reads this column as a purge PRECONDITION ("Tier D holds a
+                # promoted row for this cohort", `store.py:56`): a run id here means the
+                # gate looks for a cohort that has no rows, so the purge it guards can
+                # never pass. `None` where the cohort cannot be resolved, which fails the
+                # same gate CLOSED — the safe direction, and honest about not knowing.
+                cohort_id=self._writable_cohort(),
+                **self._label_judgement_columns(label, run_id),
             )
+
+    def _label_judgement_columns(
+        self, label: LabelRecord, run_id: str
+    ) -> dict[str, Any]:
+        """`FR-REVIEW-21`'s eight columns: what this label agreed with, recorded at the
+        moment it is written.
+
+        Everything here is resolved best-effort and defaults to `None`, never to a
+        flattering value: a `band_distance` the band scale cannot supply is unknown, and
+        a zero would read as "the teacher agreed". `agreed` is the one figure that does
+        not need the scale — two band ids are equal or they are not — so it is recorded
+        even where the distance is not, which is what keeps `FR-STATS-24`'s override
+        count computable on a store with no package behind it.
+        """
+        system_band = label.system_band
+        teacher_band = label.teacher_band
+        agreed: int | None = None
+        if system_band is not None and teacher_band is not None:
+            agreed = 1 if str(system_band) == str(teacher_band) else 0
+
+        facts: dict[str, Any] = {
+            "package_version_id": None,
+            "assignment_type": None,
+            "band_distance": None,
+            "system_points": None,
+            "teacher_points": None,
+            "agreed": agreed,
+            "panel_config": None,
+            "recorded_at": label.timestamp or self._clock(),
+        }
+
+        cohort_id = self._writable_cohort()
+        if cohort_id is None:
+            return facts
+        try:
+            rows = self._store.cohort(cohort_id).query(
+                REVIEW_STATEMENTS["select_run_package"], run_id=run_id
+            )
+        except Exception:
+            return facts
+        if not rows:
+            return facts
+        facts["package_version_id"] = rows[0]["package_version_id"]
+        facts["panel_config"] = rows[0]["panel_config"]
+        package_id = rows[0]["package_id"]
+
+        try:
+            from aeh.pkg import PackageCatalog
+
+            catalog = PackageCatalog(
+                self._store.package(package_id), package_id=package_id
+            )
+            version_id = facts["package_version_id"]
+            # Primes the per-version cache BEFORE the two version-free readers below.
+            declared = catalog.criteria(version_id)
+            ordinals = {
+                band["band"]: band["ordinal"]
+                for band in catalog.bands(label.criterion_id)
+            }
+            if system_band in ordinals and teacher_band in ordinals:
+                facts["band_distance"] = abs(
+                    int(ordinals[system_band]) - int(ordinals[teacher_band])
+                )
+            if system_band is not None:
+                facts["system_points"] = catalog.points_for_band(
+                    label.criterion_id, system_band
+                )
+            if teacher_band is not None:
+                facts["teacher_points"] = catalog.points_for_band(
+                    label.criterion_id, teacher_band
+                )
+            for entry in declared:
+                if entry["criterion_id"] != label.criterion_id:
+                    continue
+                # ONLY a declared population scope. `construct_tag` is a different
+                # dimension and is deliberately NOT substituted: M-STATS reads a missing
+                # `assignment_type` as "not recorded" and refuses to partition, which is
+                # the honest answer — a construct tag here would produce a confident
+                # figure partitioned on the wrong axis.
+                if "assignment_type" in entry.keys():
+                    facts["assignment_type"] = entry["assignment_type"]
+                break
+        except Exception:
+            pass
+        return facts
 
     def _record_emission(
         self,
@@ -2867,12 +3103,18 @@ def _service_from_store(
         ]
         if found:
             owning.append(cohort_id)
-        rows.extend(found)
+        rows.extend((mapping, cohort_id, scope) for mapping in found)
     knobs = _calibration_knobs()
-    mapped = [
-        _StoredScoreRow(mapping, knobs["default_est_seconds"]) for mapping in rows
-    ]
-    return build_review(
+    contexts: dict[tuple[str, str], _ScoreRowContext] = {}
+    mapped = []
+    for mapping, cohort_id, scope in rows:
+        key = (cohort_id, scope)
+        if key not in contexts:
+            contexts[key] = _run_row_context(store, cohort_id, scope, knobs)
+        mapped.append(
+            _StoredScoreRow(mapping, knobs["default_est_seconds"], contexts[key])
+        )
+    service = build_review(
         mapped,
         actor=actor,
         clock=clock,
@@ -2886,6 +3128,181 @@ def _service_from_store(
         administration_id=administration_id,
         previous_administration=previous_administration,
     )._with_store(store, cohort_ids=cohort_ids, owning_cohorts=owning)
+    # What the run's package DECLARES, which is a wider set than what the queue holds:
+    # `FR-REVIEW-19` answers for every criterion the run scores, including the ones that
+    # were auto-accepted and so never reached a teacher's queue.
+    declared: dict[str, str] = {}
+    for context in contexts.values():
+        declared.update(context.declared_models())
+    service._declared_models = declared
+    return service
+
+
+def _given(
+    mapping: Mapping[str, Any],
+    name: str,
+    store_column: str | None = None,
+    *,
+    default: "Callable[[], Any] | None" = None,
+) -> Any:
+    """One ranking input: what the CALLER supplied, else what the store column carries,
+    else what the run's package says.
+
+    The precedence matters and is not arbitrary. `rank_queue_items` is public and takes
+    mappings in the ranking's own vocabulary — a caller that says `grade_boundary_delta`
+    means it, and reading only the store's spelling silently discarded it (`CT-GRADE-19`:
+    the queue then ranked by arrival order rather than by boundary proximity). A stored
+    row carries the store's spelling and none of the caller's, so for the store path this
+    resolves to the same value either way; the two vocabularies never collide.
+    """
+    value = mapping.get(name)
+    if value is not None:
+        return value
+    if store_column is not None:
+        value = mapping.get(store_column)
+        if value is not None:
+            return value
+    return default() if default is not None else None
+
+
+def _adverse_signal_count(mapping: Mapping[str, Any]) -> int:
+    """`FR-REVIEW-18`'s adverse-signal count, through M-AGG's declared polarity.
+
+    Imported at call time: `aeh.agg` and `aeh.review` both own cohort migrations, and a
+    module-level import would pin the order in which their chains register."""
+    from aeh.agg import adverse_signal_count
+
+    return adverse_signal_count(mapping)
+
+
+class _ScoreRowContext:
+    """The per-run package facts a stored score row cannot carry itself (`FR-REVIEW-18`).
+
+    A `criterion_score` row knows what the panel did; it does not know what the criterion
+    is WORTH, which model scores it, where the submission's total sits relative to a grade
+    boundary, or how often teachers have overridden this criterion before. Those four come
+    from the run's package version and from Tier D, are the same for every row in a build,
+    and are resolved once here rather than per row (`NFR-PKG-05`: ~23,000 unit reads).
+
+    Every lookup has a declared answer for "not known", and none of them is a silent zero:
+    an unknown weight is `1.0` (M-GRADE's own reading of an unweighted sum, `grade.py:474`
+    — `weights.get(cid, 1.0)`), an unknown scoring model is `None` so `est_seconds` falls
+    back to the model-free default, and an unmeasured override rate is `None` so
+    `CT-STATS-09`'s no-data figure applies instead of "nobody disagrees".
+    """
+
+    def __init__(
+        self,
+        *,
+        weights: Mapping[str, float] | None = None,
+        models: Mapping[str, str] | None = None,
+        boundary_deltas: Mapping[str, float | None] | None = None,
+        override_rates: Mapping[str, float | None] | None = None,
+        knobs: Mapping[str, float] | None = None,
+    ) -> None:
+        self._weights = dict(weights or {})
+        self._models = dict(models or {})
+        self._boundary_deltas = dict(boundary_deltas or {})
+        self._override_rates = dict(override_rates or {})
+        self._knobs = dict(knobs or {})
+
+    def weight(self, criterion_id: Any) -> float:
+        """The criterion's weight — M-GRADE's reading, so the ranking's idea of a
+        criterion's share matches the grade's (`grade.py:474`)."""
+        return float(self._weights.get(criterion_id, 1.0))
+
+    def declared_models(self) -> "Mapping[str, str]":
+        """Every criterion the run's package version declares, with its model —
+        `FR-REVIEW-19`'s authority for "does this criterion exist"."""
+        return dict(self._models)
+
+    def model_for(self, criterion_id: Any) -> str | None:
+        """The criterion's model as the package declares it, or `None` where it declares
+        none. Carried, never interpreted: the hard-coded `"atomic"` this replaces was an
+        interpretation, and it budgeted every holistic criterion at half a teacher's time."""
+        model = self._models.get(criterion_id)
+        return str(model) if model else None
+
+    def boundary_delta(self, submission_id: Any) -> float | None:
+        return self._boundary_deltas.get(submission_id)
+
+    def override_rate(self, criterion_id: Any) -> float | None:
+        return self._override_rates.get(criterion_id)
+
+    def est_seconds(self, model: str | None, default: float) -> float:
+        """`FR-REVIEW-18`'s per-model estimate: a LOOKUP in the declared map, so a model
+        the design has not declared takes the model-free default instead of falling into
+        whichever branch happened to be written last."""
+        declared = SCORING_MODEL_EST_SECONDS.get(model or "")
+        if declared is None:
+            return float(default)
+        knob, fallback = declared
+        return float(self._knobs.get(knob.lower(), fallback))
+
+
+def _run_row_context(
+    store: Any, cohort_id: str, run_id: str, knobs: Mapping[str, float]
+) -> "_ScoreRowContext":
+    """The run's package facts, resolved once per build (`FR-REVIEW-18`).
+
+    Every lookup here is best-effort by design: this is the RANKING, and a run whose
+    package file has been archived, or which has not been graded yet, must still produce
+    an ordered queue rather than refuse to show one. What it must never do is invent a
+    figure — each failure leaves the corresponding lookup unset, and `_ScoreRowContext`
+    turns "unset" into the declared no-data answer rather than into a zero.
+    """
+    from aeh.pkg import PackageCatalog
+
+    handle = store.cohort(cohort_id)
+    rows = handle.query(REVIEW_STATEMENTS["select_run_package"], run_id=run_id)
+    if not rows:
+        return _ScoreRowContext(knobs=knobs)
+    package_id = rows[0]["package_id"]
+    version_id = rows[0]["package_version_id"]
+
+    weights: dict[str, float] = {}
+    models: dict[str, str] = {}
+    boundary_deltas: dict[str, float | None] = {}
+    try:
+        catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+        policy = catalog.grade_policy(version_id)
+        # M-GRADE's reading, transcribed: a criterion the policy does not name weighs
+        # 1.0, which is what makes an unweighted sum a sum (`grade.py:474`). Reading it
+        # as 0.0 would drop exactly the criteria the default policy covers.
+        weights = {cid: float(w) for cid, w in (getattr(policy, "weights", None) or ())}
+        for entry in catalog.criteria(version_id):
+            declared_model = (
+                entry["scoring_model"] if "scoring_model" in entry.keys() else None
+            )
+            if declared_model:
+                models[entry["criterion_id"]] = str(declared_model)
+        for row in handle.query(
+            REVIEW_STATEMENTS["select_run_submission_totals"], run_id=run_id
+        ):
+            total = row["total"]
+            if total is None:
+                continue
+            # `None` from a version with no boundary table is kept as `None`
+            # (`CT-PKG-10`): no invented distance, and no invented proximity either.
+            boundary_deltas[row["submission_id"]] = (
+                catalog.distance_to_nearest_boundary(version_id, float(total))
+            )
+    except Exception:
+        # An unreadable or archived package ranks on what the rows themselves carry.
+        # The queue stays ordered; it is simply ordered by fewer inputs.
+        pass
+
+    return _ScoreRowContext(
+        weights=weights,
+        models=models,
+        boundary_deltas=boundary_deltas,
+        knobs=knobs,
+    )
+
+
+#: The context for a row built with no package behind it — every lookup takes its
+#: declared "not known" answer. `rank_queue_items` over bare mappings uses this.
+_EMPTY_ROW_CONTEXT = _ScoreRowContext()
 
 
 class _StoredScoreRow:
@@ -2895,7 +3312,13 @@ class _StoredScoreRow:
     not (the review inputs the store does not carry yet arrive with their
     stories — an override history the store has none of reads as no data)."""
 
-    def __init__(self, mapping: Mapping[str, Any], default_est_seconds: float) -> None:
+    def __init__(
+        self,
+        mapping: Mapping[str, Any],
+        default_est_seconds: float,
+        context: "_ScoreRowContext | None" = None,
+    ) -> None:
+        facts = context if context is not None else _EMPTY_ROW_CONTEXT
         submission_id = mapping.get("submission_id")
         criterion_id = mapping.get("criterion_id")
         self.score_id = f"{submission_id}:{criterion_id}"
@@ -2906,21 +3329,65 @@ class _StoredScoreRow:
         self.evaluation_mode = mapping.get("evaluation_mode", "judged")
         self.state = mapping.get("state")
         self.proposed_band = mapping.get("band")
-        self.panel_spread = mapping.get("panel_spread")
-        self.adverse_integrity_signals = mapping.get("adverse_integrity_signals") or 0
-        self.transcription_overlap = mapping.get("transcription_overlap")
-        self.historical_override_rate = mapping.get("historical_override_rate")
-        self.criterion_weight = mapping.get("criterion_weight")
-        self.grade_boundary_delta = mapping.get("grade_boundary_delta")
+        # `FR-REVIEW-18`: every one of these is READ FROM THE ROW or from the run's
+        # package, under the name the store actually uses. They were previously fetched
+        # under the ranking's own vocabulary — `panel_spread`, `transcription_overlap`,
+        # `criterion_weight` — which `select_run_advisory_scores` has never returned, so
+        # each resolved `None` and every store-backed row ranked identically at 0.0.
+        #
+        # The panel's disagreement, as the aggregator recorded it: the ordinal distance
+        # between the panel's extreme bands (`agg.band_spread`), not a re-derivation.
+        self.panel_spread = _given(mapping, "panel_spread", "band_spread")
+        # Counted through M-AGG so the polarity has ONE definition (`agg._AGG_FAVOURABLE`)
+        # and the count agrees with the confidence already stored on this row.
+        given_signals = mapping.get("adverse_integrity_signals")
+        self.adverse_integrity_signals = (
+            given_signals if given_signals is not None
+            else _adverse_signal_count(mapping)
+        )
+        # The OCR risk flag is the transcription-overlap input; it is a 0/1 column, which
+        # is the 0-1 figure `_p_error` weights.
+        self.transcription_overlap = _given(
+            mapping, "transcription_overlap", "ocr_overlap_risk"
+        )
+        # Per (package lineage, criterion), and `None` below the minimum count — NOT a
+        # zero (`CT-STATS-09`). `_override_rate_of` turns the `None` into the no-data
+        # figure; a zero here would say "nobody ever disagrees with this criterion".
+        self.historical_override_rate = _given(
+            mapping, "historical_override_rate",
+            default=lambda: facts.override_rate(criterion_id),
+        )
+        # The criterion's share of the grade, from the run's package. This is the input
+        # that made the whole ranking constant: `_impact_of` multiplies by it, so a
+        # missing weight zeroed the product no matter how loud the other six inputs were.
+        self.criterion_weight = _given(
+            mapping, "criterion_weight", default=lambda: facts.weight(criterion_id)
+        )
+        self.grade_boundary_delta = _given(
+            mapping, "grade_boundary_delta",
+            default=lambda: facts.boundary_delta(submission_id),
+        )
+        # The package's declaration first, then the row's own — a caller ranking mappings
+        # it built itself (`rank_queue_items`) carries the model ON the mapping and has no
+        # package behind it. `None` only when neither says: the hard-coded `"atomic"` this
+        # replaces answered for both, which is how a holistic criterion came to be
+        # budgeted at an atomic criterion's minutes.
+        model = _given(
+            mapping, "scoring_model", default=lambda: facts.model_for(criterion_id)
+        )
+        self.scoring_model = model
         est = mapping.get("est_seconds")
-        self.est_seconds = default_est_seconds if not est else est
+        if not est:
+            est = facts.est_seconds(model, default_est_seconds)
+        self.est_seconds = est
         self.self_confidence = mapping.get("confidence")
         self.spans_verified = mapping.get("spans_verified")
         self.evidence_present = mapping.get("evidence_present")
         self.sufficiency_flag = mapping.get("sufficiency_flag")
         self.ocr_overlap_risk = mapping.get("ocr_overlap_risk")
+        self.described_evidence = mapping.get("described_evidence")
+        self.extractor_disagreement = mapping.get("extractor_disagreement")
         self.version = 1
-        self.scoring_model = "atomic"
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
@@ -3196,6 +3663,9 @@ def _write_collected_label(
         )
     store = _collection_store(data_dir)
     handle = store.durable()
+    # Hoisted: the same value the `system_band` column below is written from, needed a
+    # second time for `FR-REVIEW-21`'s `agreed`.
+    system_band = getattr(label, "system_band", None) or getattr(label, "band", None)
     with handle.transaction() as tx:
         tx.execute(
             REVIEW_STATEMENTS["upsert_label"],
@@ -3221,8 +3691,7 @@ def _write_collected_label(
             routing=getattr(label, "routing", None) or "queued",
             origin=getattr(label, "origin", None) or "direct",
             review_seconds=getattr(label, "review_seconds", None) or 0,
-            system_band=getattr(label, "system_band", None)
-            or getattr(label, "band", None),
+            system_band=system_band,
             teacher_band=teacher_band,
             actor=getattr(label, "actor", None) or "",
             timestamp=getattr(label, "timestamp", None),
@@ -3230,6 +3699,24 @@ def _write_collected_label(
             review_queue_action=None,
             new_points=None,
             cohort_id=cohort_id,
+            # `FR-REVIEW-21`'s columns on the collection route. This route carries no run
+            # (`run_id=""` above) and therefore no package linkage, so the six
+            # package-derived figures are honestly unknown rather than defaulted — a 0
+            # `band_distance` here would read as "the teacher agreed" about a judgement
+            # this route cannot see the band scale for.
+            package_version_id=None,
+            assignment_type=None,
+            band_distance=None,
+            system_points=None,
+            teacher_points=None,
+            # `agreed` needs no scale: two band ids are equal or they are not. It is the
+            # figure `FR-STATS-24` counts, so a collected label still carries a history.
+            agreed=(
+                None if not (system_band and teacher_band)
+                else (1 if str(system_band) == str(teacher_band) else 0)
+            ),
+            panel_config=None,
+            recorded_at=getattr(label, "timestamp", None),
         )
     return str(label_id)
 
