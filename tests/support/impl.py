@@ -1160,14 +1160,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     #   console's own namespace or re-keys this entry — the `#148 judge_signals`
     #   invented-and-used-together pattern, with the invention recorded here rather than
     #   left for whoever closes the behaviour to rediscover.
-    "#119 too-few headline qualifier (HLD §11.5 S12)": (
-        "symbol",
-        f"{CONSOLE_MODULE}:TOO_FEW_QUALIFIER",
-        (
-            "tests/unit/stats/test_agreement_references.py"
-            "::test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier",
-        ),
-    ),
     # --- The seven cases red after landing TS-49/TS-53/TS-54 (#130, #146, #147) --------------
     #
     # Merging the stacked PRs #336, #338 and #339 onto main surfaced seven cases whose code

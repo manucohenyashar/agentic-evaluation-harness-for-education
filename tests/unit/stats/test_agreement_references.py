@@ -54,8 +54,8 @@ exactly where the plan's table says the degenerate rows are flagged.
 Row 7 has two halves. The figure's own values are green here; the console
 *qualifier* half — below `STATS_MIN_N_FOR_HEADLINE` the headline renders with
 "too few to draw conclusions from" (HLD §11.5's S12 mock renders it at n = 15)
-— is unlanded: `render_agreement_block` today renders no qualifier. That leg
-is `writtenahead` and carried in `WRITTEN_AHEAD_BLOCKERS` under "#119".
+— landed with #357 (`FR-CONSOLE-38`), which reads the threshold from
+`aeh.stats` at call time. Both halves of the row run unmarked.
 
 Isolation: rung 0 — pure functions over in-memory labels. Interface: the
 landed `build_stats`/`agreement` surface (#115) and `aeh.console`'s
@@ -308,18 +308,16 @@ def test_tc_stats_04_row7_fifteen_labels_match_their_hand_computed_fractions():
     assert figure.ordinal_alpha == pytest.approx(float(Fraction(22, 25)))
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_04_row7_the_headline_below_the_declared_n_carries_the_qualifier():
     """Row 7, qualifier half — below `STATS_MIN_N_FOR_HEADLINE` the rendered
     headline carries *"too few to draw conclusions from"* (HLD §11.5's S12
     mock renders exactly this at n = 15).
 
-    **Written ahead**: `render_agreement_block` renders the figure's number,
-    size, scope and degeneracy disclosure today, and no qualifier. The
-    declared knob exists (`STATS_MIN_N_FOR_HEADLINE = 30`, pinned by
-    `TC-STATS-C20`), the vocabulary carries the qualifier string, and the
-    rendering is the unlanded half of the row. Red by design until the
-    console qualifies the headline; the blocker is recorded under "#119"."""
+    `render_agreement_block` renders the figure's number, size, scope and
+    degeneracy disclosure, and — since #357 — the qualifier beside them when the
+    sample is below the declared knob (`STATS_MIN_N_FOR_HEADLINE = 30`, pinned by
+    `TC-STATS-C20`), read at call time so a deployment that lowers the threshold
+    changes the rendering rather than the code."""
     render = require(CONSOLE_MODULE, "render_agreement_block", issue="#123")
     figure = _figure(
         {(1, 1): 5, (1, 2): 1, (2, 2): 5, (2, 3): 1, (3, 3): 2, (3, 4): 1},
