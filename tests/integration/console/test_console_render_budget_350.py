@@ -44,7 +44,6 @@ pytestmark = [pytest.mark.integration]
 FLAGGED_ITEMS = 800
 
 
-@pytest.mark.writtenahead
 def test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_run(tmp_data_dir):
     """`TC-CONSOLE-33` — metric threshold, with the load proven present on each timed page."""
     store = open_store(tmp_data_dir)

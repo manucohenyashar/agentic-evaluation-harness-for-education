@@ -1175,14 +1175,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # the stylesheet is now present and no longer discriminates.)
     # #367 moves the screens onto their services and stops swallowing schema errors; keyed on
     # the error FR-CONSOLE-37 names.
-    "#367 service-backed console screens (TC-CONSOLE-33)": (
-        "symbol",
-        f"{CONSOLE_MODULE}:ConsoleReadError",
-        (
-            "tests/integration/console/test_console_render_budget_350.py"
-            "::test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_run",
-        ),
-    ),
     # PERF-06 stays written-ahead, RE-KEYED. #363 shipped `StoreExtractionView`, the symbol
     # this entry used to name — but PERF-06 drives the gate through `LedgerEvidenceView`, the
     # test double (`test_perf_06_...:35-38`), so the view #363 published is not in this case's

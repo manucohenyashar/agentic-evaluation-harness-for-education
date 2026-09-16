@@ -304,8 +304,9 @@ INTEG_STATEMENTS: dict[str, Statement] = {
         "stage = 'extract' AND status IN ('pending', 'leased')"
     ),
     "enqueue_review": Statement(
-        "INSERT OR IGNORE INTO review_queue (queue_id, submission_id, criterion_id, "
-        "reason) VALUES (:queue_id, :submission_id, :criterion_id, :reason)"
+        "INSERT OR IGNORE INTO review_queue (queue_id, run_id, submission_id, "
+        "criterion_id, reason) VALUES (:queue_id, :run_id, :submission_id, "
+        ":criterion_id, :reason)"
     ),
     # The described-evidence review unit: its id carries the crop reference, so the
     # teacher-review surface can resolve the image in one action (FR-INTEG-05).
@@ -1173,12 +1174,20 @@ class IntegrityGate:
                 max_attempts=_retry_limit(),
             )
 
-    def _enqueue_review(self, submission_id: str, criterion_id: str, reason: str) -> None:
+    def _enqueue_review(
+        self, submission_id: str, criterion_id: str, reason: str, run_id: str = ""
+    ) -> None:
+        """Queue one cell for a human, carrying the run it was flagged in.
+
+        `run_id` is `FR-REVIEW-20`'s column: a queue row that named no run made two runs
+        over one cohort share a queue, so a re-run's flags and the previous run's were the
+        same list to every reader."""
         queue_id = f"integ-{reason}-{submission_id}-{criterion_id}"
         with self._handle.transaction() as tx:
             tx.execute(
                 INTEG_STATEMENTS["enqueue_review"],
                 queue_id=queue_id,
+                run_id=run_id,
                 submission_id=submission_id,
                 criterion_id=criterion_id,
                 reason=reason,
@@ -1332,7 +1341,7 @@ class IntegrityGate:
                 )
             self._bump_retries(run_id, submission_id, criterion_id)
             if present is False and citation:
-                self._enqueue_review(submission_id, criterion_id, "empty-evidence")
+                self._enqueue_review(submission_id, criterion_id, "empty-evidence", run_id)
         elif present is False and citation:
             # Shadowed under the locked signal semantics (an empty or faulted
             # span read already verified False); kept so the fail-closed route
@@ -1349,7 +1358,7 @@ class IntegrityGate:
                     attempts=0,
                 )
             self._bump_retries(run_id, submission_id, criterion_id)
-            self._enqueue_review(submission_id, criterion_id, "empty-evidence")
+            self._enqueue_review(submission_id, criterion_id, "empty-evidence", run_id)
         elif sufficiency_input := _computed_insufficient(panel_flags):
             with self._handle.transaction() as tx:
                 tx.execute(
@@ -1380,7 +1389,7 @@ class IntegrityGate:
                             criterion_id=criterion_id,
                         )
         elif ocr_risk:
-            self._enqueue_review(submission_id, criterion_id, "ocr-overlap-risk")
+            self._enqueue_review(submission_id, criterion_id, "ocr-overlap-risk", run_id)
         elif described and _described_routes_enabled():
             review_id = f"integ-review-{run_id}-{submission_id}-{criterion_id}"
             if crop_ref:
@@ -1393,7 +1402,7 @@ class IntegrityGate:
                     submission_id=submission_id,
                     criterion_id=criterion_id,
                 )
-            self._enqueue_review(submission_id, criterion_id, "described-evidence")
+            self._enqueue_review(submission_id, criterion_id, "described-evidence", run_id)
         else:
             with self._handle.transaction() as tx:
                 tx.execute(
