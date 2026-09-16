@@ -1,0 +1,151 @@
+/* The console's stylesheet, packaged with the module (`FR-STORE-15`, `FR-CONSOLE-33`).
+ *
+ * Every rendered page links `/assets/console.css`, and the served console answers that route
+ * from this file — so the install that carries `aeh.console` carries its styling too, and a
+ * console started on a machine with no toolchain and no network renders styled rather than as
+ * unstyled HTML (RISK-58: "the installed console renders unstyled").
+ *
+ * Hand-written, and deliberately small: there is no build step, no preprocessor and no client
+ * bundle anywhere in this project (`TC-CONSOLE-34` asserts the repository carries no
+ * `package.json` or toolchain output). What is here is layout and legibility for the twelve
+ * screens — never anything a rendering invariant depends on. §11.6's invariant elements are
+ * structure the HTML carries; a stylesheet that failed to load must not be able to hide one,
+ * so nothing below sets `display: none` on a data-role section.
+ */
+
+:root {
+  --ink: #1a1a1a;
+  --muted: #55606a;
+  --rule: #d5dae0;
+  --surface: #ffffff;
+  --page: #f6f7f9;
+  --accent: #23508a;
+  --warn-bg: #fdf3e3;
+  --warn-ink: #7a4b08;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem);
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+section {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  margin: 0 0 1rem;
+  padding: 1rem 1.15rem;
+}
+
+p {
+  margin: 0 0 0.6rem;
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+a {
+  color: var(--accent);
+}
+
+/* The absence sentences, the skip copy and the MVP limitation notice are the honest
+ * disclosures §2.1 is about: quieter than the figures they sit beside, never hidden. */
+[data-role="skip"],
+[data-role="limitation"],
+[data-role="provenance"] {
+  color: var(--muted);
+  font-size: 0.925rem;
+}
+
+[data-role="provenance"] {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.6rem;
+}
+
+/* A withheld narrative and a quarantined item read as *marked*, not as missing. */
+.withheld,
+[data-role="quarantine"] {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border-left: 3px solid currentColor;
+  padding: 0.4rem 0.7rem;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--rule);
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  font-weight: 600;
+}
+
+label {
+  display: inline-block;
+  margin-right: 0.5rem;
+}
+
+select,
+input,
+button {
+  font: inherit;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+  color: inherit;
+}
+
+button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e9edf2;
+    --muted: #a9b4c0;
+    --rule: #39414a;
+    --surface: #1d2228;
+    --page: #14181c;
+    --accent: #8ab4f8;
+    --warn-bg: #3a2f18;
+    --warn-ink: #f0d9a8;
+  }
+
+  button {
+    color: #10161c;
+  }
+}

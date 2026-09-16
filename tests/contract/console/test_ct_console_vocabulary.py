@@ -523,9 +523,13 @@ def test_the_repo_carries_no_client_toolchain_artefacts(repo_root):
     repository and is checkable today. Review caught the docstring promising it while the body
     asserted nothing of the kind.
 
-    The clean-environment **install** remains unachievable and is reported rather than faked:
-    `pyproject.toml` declares no `[build-system]`, `dependencies` is empty, and `pythonpath =
-    ["src", "."]` — there is nothing to install into a fresh environment.
+    The clean-environment **install** is achievable since #358 (`FR-STORE-15`):
+    `pyproject.toml` declares a `[build-system]`, an `aeh` console script and a stdlib-only
+    core, and the console's stylesheet ships as package data. What stays forbidden is the
+    CLIENT toolchain — an npm manifest, a lockfile, a bundler config — because a build step
+    between the source and the served page is what makes the console unrepairable by whoever
+    is present at the school. A Python package build is not that step: it produces no client
+    artifact and nothing to serve.
     """
     forbidden = (
         "package.json",
@@ -544,11 +548,20 @@ def test_the_repo_carries_no_client_toolchain_artefacts(repo_root):
     )
     assert not (repo_root / "node_modules").exists()
 
+    # The flip this assertion's earlier form prescribed for exactly this case: the install is
+    # now declared, so the suite asserts it rather than reporting it missing (#358).
     pyproject = read_repo_text(repo_root, "pyproject.toml")
-    assert "[build-system]" not in pyproject, (
-        "pyproject.toml has acquired a build system. If that is deliberate, CT-CONSOLE-21's "
-        "clean-environment install becomes achievable and this suite should assert it instead of "
-        "reporting it as missing."
+    assert "[build-system]" in pyproject and "setuptools" in pyproject, (
+        "pyproject.toml declares no Python build system. `FR-STORE-15` makes `pip install .` "
+        "the way the harness reaches a school's machine, and CT-CONSOLE-21's clean-environment "
+        "install depends on it."
+    )
+    assert 'aeh = "aeh.pipeline:main"' in pyproject, (
+        "the `aeh` console script is not declared; the installed harness would carry no command."
+    )
+    assert "console_assets" in pyproject, (
+        "the console's stylesheet is not packaged: an installed console would render unstyled "
+        "(RISK-58), which is the one client-side artifact this suite cares about shipping."
     )
 
 

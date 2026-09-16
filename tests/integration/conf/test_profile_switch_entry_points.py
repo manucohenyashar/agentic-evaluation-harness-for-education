@@ -43,7 +43,7 @@ import pytest
 from aeh.store import open_store
 from tests.support.clock import FrozenClock
 from tests.support.conf_builders import SENTINEL_CREDENTIAL, seed_credentials
-from tests.support.impl import CONSOLE_MODULE, require, require_path
+from tests.support.impl import CONSOLE_MODULE, NotImplementedYet, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort, seed_package
 from tests.support.profile_switching import (
     clear_profile_environment,
@@ -221,11 +221,18 @@ def test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested(
         monkeypatch.setenv("HARNESS_PROFILE", "dev-ci")
         monkeypatch.setenv("CONSOLE_PORT", "0")
         # `serve_console` already exists; the served HTTP console does not. Fail fast naming
-        # #366 rather than on a connect timeout against today's non-accepting socket.
-        require_path(
-            REPO_ROOT / "src/aeh/console_assets/console.css", "the served console",
-            issue=CONSOLE_ISSUE,
-        )
+        # #366 rather than on a connect timeout against today's non-accepting socket. The
+        # signal is `_CHILD_SCRIPT`'s deletion — `FR-CONSOLE-33` names it in those words, and
+        # it is the child-process console the in-process server replaces. (This guard read the
+        # packaged stylesheet until #358 shipped that file; a path that now exists cannot
+        # discriminate.)
+        if "_CHILD_SCRIPT" in (REPO_ROOT / "src" / "aeh" / "console.py").read_text(
+            encoding="utf-8"
+        ):
+            raise NotImplementedYet(
+                f"the console still serves through the child-process script — the in-process "
+                f"ThreadingHTTPServer is blocked on {CONSOLE_ISSUE}"
+            )
         serve_console = require(CONSOLE_MODULE, "serve_console", issue=CONSOLE_ISSUE)
         server = serve_console(store=store, cfg=f_profiles(None))
         host, port = server.socket.getsockname()[:2]

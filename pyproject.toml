@@ -1,3 +1,15 @@
+# FR-STORE-15: `pip install .` provides the pipeline without the dev requirements. setuptools
+# is the build backend because the project is a plain src-layout package with no extension
+# modules and no build step of its own — the console's stylesheet is package DATA, not an
+# artifact something compiles (TC-CONSOLE-34 asserts the repository carries no toolchain).
+#
+# Note for an air-gapped install: pip's default build isolation FETCHES setuptools, so a
+# machine with no network needs `pip install . --no-build-isolation` with setuptools already
+# present. The RUNTIME is stdlib-only either way; it is the build step that wants a backend.
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "agentic-evaluation-harness-for-education"
 version = "0.0.0"
@@ -7,6 +19,33 @@ requires-python = ">=3.11"
 # ADR-11: Python 3.11+, stdlib sqlite3. Runtime dependencies land with the modules that
 # need them; nothing is required to run the fast tier by design (NFR-SYS-06, test plan §4.5 E1).
 dependencies = []
+
+# ADR-11, stated as packaging: the core is stdlib-only, so a core install can never pull a
+# transitive dependency into the machine that grades student work. The PDF readers the LIVE
+# ingest leg needs are an extra, and the fast tier does not install it — which is what keeps
+# "no network, no toolchain" a property of the install rather than of anyone's discipline.
+[project.optional-dependencies]
+live-ingest = ["pypdf>=6.0", "pypdfium2>=4.0"]
+
+# The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the
+# entry point is declared ahead of it deliberately (the install succeeds and the name exists;
+# invoking it says the CLI has not landed). `python -m aeh` is the same call through
+# `aeh/__main__.py`, so the two spellings cannot drift.
+[project.scripts]
+aeh = "aeh.pipeline:main"
+
+[tool.setuptools]
+# The console's stylesheet ships inside the package: a console installed on a machine with no
+# toolchain and no network must render styled (RISK-58), and `GET /assets/console.css` serves
+# this file from the installed package rather than from a checkout.
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["aeh*"]
+
+[tool.setuptools.package-data]
+aeh = ["console_assets/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

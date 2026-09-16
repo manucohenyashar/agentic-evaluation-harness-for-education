@@ -295,10 +295,11 @@ def test_tc_console_c21_the_console_renders_with_no_toolchain_and_no_network(net
     carries no toolchain artefacts, the rendered page pulls no external origin, and the render
     completes with the socket guard active.
 
-    **The clean-environment install is not achievable here and is reported rather than faked.**
-    `pyproject.toml` puts `src` and `.` on the pytest path; there is no package build and nothing
-    to install into a fresh environment. Substituting "the guard was on and nothing broke" for
-    "installed clean and rendered" would be the weaker rung the skill forbids taking silently.
+    **This case runs in the checkout, not from an install, and says so rather than faking it.**
+    `pyproject.toml` declares a build and an `aeh` command since #358 (`FR-STORE-15`), so a
+    clean-environment install IS achievable now — it is `TC-SMOKE-12`'s subject, at its own rung.
+    Substituting "the guard was on and nothing broke" for "installed clean and rendered" would be
+    the weaker rung the skill forbids taking silently, so this case claims only what it drives.
     """
     build_console = require(CONSOLE_MODULE, "build_console", issue="#122")
 
