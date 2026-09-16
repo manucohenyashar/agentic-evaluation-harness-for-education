@@ -37,6 +37,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.store_api import statement
 
 pytestmark = [pytest.mark.integration]
 
@@ -87,6 +88,34 @@ def _scenario(tmp_data_dir):
     return store, handle, run_id, doc, payload, gate
 
 
+
+def _panel_moved(handle, run_id, submission_id, criterion_id, ordinal):
+    """A terminal score unit for the cell: the cell's panel state has moved (`FR-INTEG-10`)."""
+    with handle.transaction() as tx:
+        tx.execute(
+            statement(
+                "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, status, "
+                "run_id, criterion_id) VALUES (:w, :s, 'score', 'done', :r, :c)",
+                issue="#363",
+            ),
+            w=f"w-panel-{submission_id}-{criterion_id}-{ordinal}",
+            s=submission_id, r=run_id, c=criterion_id,
+        )
+
+
+def _reextraction_landed(handle, run_id, submission_id, criterion_id, ordinal):
+    """The re-extraction the previous round asked for completes, moving panel state."""
+    with handle.transaction() as tx:
+        tx.execute(
+            statement(
+                "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, status, "
+                "run_id, criterion_id) VALUES (:w, :s, 'extract', 'done', :r, :c)",
+                issue="#363",
+            ),
+            w=f"w-reextract-{submission_id}-{criterion_id}-{ordinal}",
+            s=submission_id, r=run_id, c=criterion_id,
+        )
+
 def test_tc_integ_02_failing_span_is_discarded_and_the_unit_retried(tmp_data_dir):
     """`TC-INTEG-02`, attempts 1 and 2 — the failing span is discarded and the
     extraction unit retried: no evidence row carries the rejected span, and a fresh
@@ -94,6 +123,11 @@ def test_tc_integ_02_failing_span_is_discarded_and_the_unit_retried(tmp_data_dir
     store, handle, run_id, doc, payload, gate = _scenario(tmp_data_dir)
     payload[:] = [_hallucinated_span()]
     for attempt in (1, 2):
+        if attempt > 1:
+            # `FR-INTEG-10` (#363): a repeat `verify` over UNCHANGED evidence is the same round asked twice and routes nothing, so each round is driven the way a real one arrives — the work the previous round asked for lands, which moves the cell's panel state.
+            # A terminal score unit: invisible to every assertion below, which reads
+            # `stage = 'extract'` and the evidence table.
+            _panel_moved(handle, run_id, "SUB-101", "C1", attempt)
         signals = gate.verify(run_id, "SUB-101", "C1")
         assert signals.spans_verified is False, f"attempt {attempt}: the hallucinated span verified"
         extracted = _units(store, run_id, "SUB-101", "C1", "extract")
@@ -124,7 +158,13 @@ def test_tc_integ_02_repeated_failure_quarantines_and_never_reaches_scoring(tmp_
     request, and the criterion's score units stay pending through a full lease pass."""
     store, handle, run_id, doc, payload, gate = _scenario(tmp_data_dir)
     payload[:] = [_hallucinated_span()]
-    for _attempt in range(RETRY_LIMIT):
+    for attempt in range(RETRY_LIMIT):
+        if attempt:
+            # `FR-INTEG-10` (#363): a repeat `verify` over UNCHANGED evidence is the same round asked twice and routes nothing, so each round is driven the way a real one arrives — the work the previous round asked for lands, which moves the cell's panel state.
+            # The re-extraction the previous round asked for lands, still carrying the
+            # hallucinated span: a terminal EXTRACT unit, which leaves this case's score
+            # assertions (no score unit `done`) untouched.
+            _reextraction_landed(handle, run_id, "SUB-101", "C1", attempt)
         gate.verify(run_id, "SUB-101", "C1")
     extracted = _units(store, run_id, "SUB-101", "C1", "extract")
     quarantined = [u for u in extracted if u["status"] == "quarantined"]

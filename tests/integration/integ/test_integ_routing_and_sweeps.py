@@ -32,7 +32,7 @@ from __future__ import annotations
 import pytest
 
 from aeh.store import open_store
-from tests.support.impl import INTEG_MODULE, require
+from tests.support.impl import INTEG_MODULE, ORCH_MODULE, require
 from tests.support.integ_vocabulary import (
     Doc,
     ExtractionView,
@@ -43,6 +43,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.store_api import statement
 
 pytestmark = [pytest.mark.integration]
 
@@ -131,6 +132,21 @@ def test_tc_integ_07_repeated_insufficiency_escalates_to_a_human(tmp_data_dir):
         tmp_data_dir, PanelFlags((False, False, True))
     )
     gate.verify(run_id, "SUB-201", "C1")
+    # `FR-INTEG-10` (#363): a repeat `verify` over UNCHANGED evidence is the same
+    # round asked twice and routes nothing, so the second round is driven the way a
+    # real one arrives — the re-extraction the first round asked for lands, and the
+    # panel answers again. That is a terminal EXTRACT unit, which moves the cell's
+    # panel state; it is deliberately not a score unit, which would inflate the count
+    # asserted below.
+    with handle.transaction() as tx:
+        tx.execute(
+            statement(
+                "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, status, "
+                "run_id, criterion_id) VALUES (:w, :s, 'extract', 'done', :r, :c)",
+                issue="#363",
+            ),
+            w="w-reextract-round-2", s="SUB-201", r=run_id, c="C1",
+        )
     gate.verify(run_id, "SUB-201", "C1")
     score_units = _score_units(store, run_id)
     assert len(score_units) > _PANEL_SIZE, (
@@ -236,4 +252,57 @@ def test_tc_integ_12_sufficiency_reruns_after_scoring_and_reports_the_panel(tmp_
         "after the panel answered, the sufficiency signal still reads the conservative "
         "default — the post-scoring rerun (FR-INTEG-07's data flow) did not happen"
     )
+    store.close()
+
+
+def test_tc_integ_19_the_gates_phase_row_is_readable_by_the_orchestrator(tmp_data_dir):
+    """`TC-INTEG-19` — the idempotence record the gate writes is one the orchestrator can
+    read back.
+
+    `FR-INTEG-10` puts the record in `cell_phase`, the table `FR-ORCH-28` owns, and
+    `Orchestrator.ready_cells` parses **every** phase row's `units_consumed` with `int()` —
+    its `select_cell_phases` read has no phase filter, so it sees the gate's `integrity_post`
+    rows too. A regression case rather than a plan case: the defect it pins (the gate storing
+    a join of `work_id`s in an `INTEGER NOT NULL` column, so a shipped reader raised
+    `ValueError` on the gate's own row) had no coverage anywhere, because `ready_cells` has no
+    caller until M-PIPE lands and nothing else reads the column.
+    """
+    store, handle, run_id, gate = _scenario(
+        tmp_data_dir, PanelFlags((True, True, True))
+    )
+    # A cell with terminal units, so the recorded panel state is a non-empty join of ids —
+    # an empty one would parse as 0 and hide the defect.
+    with handle.transaction() as tx:
+        tx.execute(
+            statement(
+                "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, status, "
+                "run_id, criterion_id) VALUES (:w, 'SUB-201', 'extract', 'done', :r, 'C1')",
+                issue="#363",
+            ),
+            w="w-terminal-for-phase", r=run_id,
+        )
+    gate.verify(run_id, "SUB-201", "C1")
+
+    recorded = handle.query(
+        statement(
+            "SELECT phase, units_consumed, panel_state FROM cell_phase WHERE run_id = :r "
+            "AND phase = 'integrity_post'", issue="#363"),
+        r=run_id,
+    )
+    assert recorded, "the gate recorded no integrity_post phase (FR-INTEG-10)"
+    assert "w-terminal-for-phase" in str(recorded[0]["panel_state"]), (
+        "the panel state the gate routed on is not in `panel_state` — the identity is what "
+        "makes a repeat call over unchanged evidence route nothing"
+    )
+    assert int(recorded[0]["units_consumed"]) == 1, (
+        f"`units_consumed` reads {recorded[0]['units_consumed']!r} — FR-ORCH-28 declares it "
+        "as how many terminal units the phase was computed over, and `ready_cells` parses "
+        "every phase's value with int()"
+    )
+
+    orchestrator = require(ORCH_MODULE, "Orchestrator", issue="#363")(store)
+    # The read that raised: any cell poll over a run the gate has verified. Both declared
+    # hooks walk `select_cell_phases`, which has no phase filter, so both see the gate's row.
+    for hook in ("integrity_pre", "aggregate"):
+        orchestrator.ready_cells(run_id, hook)
     store.close()

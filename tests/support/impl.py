@@ -1200,17 +1200,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "::test_tc_console_33_queue_and_rollup_render_within_budget_for_a_350_student_run",
         ),
     ),
-    # #363 adds the per-run document cache and read indexes that bring the integrity gate
-    # under 1% of run wall clock; keyed on the production view FR-INTEG-09 publishes in the
-    # same story.
-    "#363 integrity gate inside its 1% budget (PERF-06)": (
-        "symbol",
-        "aeh.integ:StoreExtractionView",
-        (
-            "tests/perf/test_perf_06_zero_model_stages_full_run.py"
-            "::test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run",
-        ),
-    ),
     # --- TS-103 (#397), switching harness profiles by environment variable -----------------
     #
     # #352 landed the `M-CONF` helpers (`effective_config`, `select_profile_config`,

@@ -44,6 +44,7 @@ from tests.support.integ_vocabulary import (
     seed_document,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.store_api import statement
 
 pytestmark = pytest.mark.contract
 
@@ -205,6 +206,21 @@ def test_tc_integ_c08_repeated_insufficiency_goes_to_a_human_never_a_band(
     handle, run_id, gate, store = _scenario(
         tmp_data_dir, PanelFlags((False, True, True)))
     gate.verify(run_id, _SUBMISSION, _CRITERION)
+    # `FR-INTEG-10` (#363): a repeat `verify` over UNCHANGED evidence is the same
+    # round asked twice and routes nothing, so the second round is driven the way a
+    # real one arrives — the re-extraction the first round asked for lands, and the
+    # panel answers again. That is a terminal EXTRACT unit, which moves the cell's
+    # panel state; it is deliberately not a score unit, which would inflate the count
+    # asserted below.
+    with handle.transaction() as tx:
+        tx.execute(
+            statement(
+                "INSERT OR IGNORE INTO work_unit (work_id, submission_id, stage, status, "
+                "run_id, criterion_id) VALUES (:w, :s, 'extract', 'done', :r, :c)",
+                issue="#363",
+            ),
+            w="w-reextract-round-2", s=_SUBMISSION, r=run_id, c=_CRITERION,
+        )
     gate.verify(run_id, _SUBMISSION, _CRITERION)
     score_units = handle.query(
         "SELECT work_id FROM work_unit WHERE run_id = :r AND submission_id = :s "
