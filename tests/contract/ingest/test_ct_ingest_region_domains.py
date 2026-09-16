@@ -213,16 +213,14 @@ def test_tc_ingest_c05_selection_rows_carry_an_option_iff_resolved(tmp_data_dir)
     `resolved` with a NULL `selection`, the hole this same case disclosed
     before #219 closed it — turns this red.
 
-    Residual, disclosed in the #219 PR rather than fixed there: the
-    biconditional is closed at PARSE (this sweep) and at the V2 gate, but the
-    operator's cluster resolution (`update_region_content`, reached from
-    `resolve_cluster`) stamps `selection_state='resolved'` onto EVERY region
-    carrying a resolved token without setting `selection` — so a selection_mark
-    stored `ambiguous` with an `<unresolved>` token in its body can be flipped
-    to `resolved` with a NULL `selection` by an operator action (which can also
-    stamp `resolved` onto non-mark rows). The clause's letter binds the
-    transcript-stored rows this sweep reads; the operator-path residual belongs
-    to the FR-INGEST-20 flow."""
+    The operator-path residual this case disclosed after #219 — cluster
+    resolution stamping `selection_state='resolved'` onto every region carrying
+    the token, without setting `selection` — closed with #355 (`FR-INGEST-36`):
+    `resolve_cluster` applies the resolution per region kind and writes a mark's
+    selection and state together or not at all, and `FR-INGEST-37`'s BEFORE
+    INSERT / BEFORE UPDATE triggers refuse the forbidden row from any path.
+    This sweep still binds the transcript-stored rows it reads; the operator
+    path's own cases are TC-INGEST-50 and TC-INGEST-51."""
     fx = Contract(tmp_data_dir, "c05-biconditional")
     fx.add_roster("cal")
     source = fx.put(b"c05 pdf")
