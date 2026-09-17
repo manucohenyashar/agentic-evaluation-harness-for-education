@@ -1858,11 +1858,32 @@ _INGEST_SELECTION_BICONDITIONAL: tuple[Statement, ...] = (
     ),
 )
 
+#: `#373`: which question a region belongs to, as a COLUMN.
+#:
+#: The fact was already in the parser (`#349` keeps it in memory) and already had a stored
+#: home of a sort — `element_kind` is set to the declared `question_id` when there is one
+#: (see the parser), so consumers read ownership out of a column that means two things at
+#: once. That overloading is what forces the inference this migration removes: a graphic
+#: declares no question, so it lands under `element_kind='graphic'`, and the only way to
+#: learn that it belongs to Q2 is to look at what came before it in `position` order.
+#:
+#: Nullable, and no backfill. Regions written before this migration genuinely do not record
+#: their owner, and inventing one now — by running that same positional inference once, at
+#: migration time — would freeze a guess into the column and make it indistinguishable from
+#: a parsed fact. A NULL here means "not recorded", which is the truth about those rows.
+_INGEST_REGION_QUESTION_OWNER = (
+    Statement("ALTER TABLE document_region ADD COLUMN question_id TEXT"),
+)
+
 TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     TIER_MIGRATIONS[Tier.COHORT] + (
         Migration(
             version=23, name="ingest_selection_biconditional",
             statements=_INGEST_SELECTION_BICONDITIONAL,
+        ),
+        Migration(
+            version=27, name="ingest_region_question_owner",
+            statements=_INGEST_REGION_QUESTION_OWNER,
         ),
     ), key=lambda m: m.version
 ))
@@ -1887,17 +1908,19 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "INSERT INTO document_region (region_id, document_id, page_no, element_kind, "
         "region_kind, description, retraction, ocr_conf, content_state, "
         "selection_state, selection, crop_ref, source_hash, page_index, position, "
-        "is_untrusted_content, description_secondary, content) VALUES (:region_id, "
+        "is_untrusted_content, description_secondary, content, question_id) VALUES "
+        "(:region_id, "
         ":document_id, :page_no, :element_kind, :region_kind, :description, "
         ":retraction, :ocr_conf, :content_state, :selection_state, :selection, "
         ":crop_ref, :source_hash, :page_index, :position, :is_untrusted_content, "
-        ":description_secondary, :content)"
+        ":description_secondary, :content, :question_id)"
     ),
     "select_regions": Statement(
         "SELECT region_id, document_id, page_no, element_kind, region_kind, "
         "description, retraction, ocr_conf, content_state, selection_state, "
         "selection, crop_ref, source_hash, page_index, position, "
-        "is_untrusted_content, description_secondary, content FROM document_region "
+        "is_untrusted_content, description_secondary, content, question_id "
+        "FROM document_region "
         "WHERE document_id = :document_id ORDER BY position"
     ),
     "select_all_regions": Statement(
@@ -2517,6 +2540,15 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
     position = position_start
     cursor = 0
     supersede_requests: list[int] = []
+    # `#373`: the question the regions being read now belong to. A transcript names a
+    # question once, on the region that carries its text, and everything that follows until
+    # the next named question is part of that question — a graphic, a selection mark, a
+    # continuation. Carrying it forward here is what lets `document_region.question_id` be a
+    # PARSED fact for every region rather than one the reader has to reconstruct from
+    # position order. It stays `None` until the transcript names its first question, so a
+    # region that genuinely precedes any question (a header, a name field) records no owner
+    # instead of being adopted by the first question that happens to follow it.
+    current_question: str | None = None
     for match in matches:
         outside = transcript[cursor:match.start()].strip()
         if outside:
@@ -2558,7 +2590,10 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
                 f"{content_state!r}, which is not one of present/blank/absent — "
                 "malformed model output."
             )
-        element = attributes.get("question_id") or attributes.get("element_kind") or (
+        declared_question = attributes.get("question_id")
+        if declared_question:
+            current_question = str(declared_question)
+        element = declared_question or attributes.get("element_kind") or (
             "text" if kind == "transcribed_text" else "graphic")
         body = match.group("body").strip()
         if not body and "state" not in attributes:
@@ -2619,7 +2654,10 @@ def _parse_regions(transcript: str, source_hash: str, page_no: int,
             # mapped to an option or to an incorrect answer.
             selection=(None if kind != "selection_mark" else mark_option),
             supersedes_previous=supersedes,
-            question_id=attributes.get("question_id"),
+            # The declared question when the region names one, the question in force
+            # otherwise — never `element_kind`, which carries the question id only when it
+            # was declared and a generic kind the rest of the time.
+            question_id=current_question,
         ))
         if supersedes:
             supersede_requests.append(len(regions) - 1)
@@ -3131,7 +3169,8 @@ class Ingestor:
                            page_index=region["page_index"],
                            position=region["position"],
                            is_untrusted_content=region["is_untrusted_content"],
-                           description_secondary=region.get("description_secondary"))
+                           description_secondary=region.get("description_secondary"),
+                           question_id=region.get("question_id"))
                 for token in re.findall(r"<unresolved>(.*?)</unresolved>",
                                         region["content"] or ""):
                     if token.strip():

@@ -660,7 +660,7 @@ DET_STATEMENTS: dict[str, Statement] = {
     ),
     "select_regions": Statement(
         "SELECT region_id, document_id, element_kind, region_kind, retraction, "
-        "content_state, selection_state, selection FROM document_region "
+        "content_state, selection_state, selection, question_id FROM document_region "
         "WHERE document_id = :document_id ORDER BY position"
     ),
     "upsert_criterion_score": Statement(
@@ -1592,7 +1592,18 @@ class DeterministicEvaluator:
         )
         mine: dict[str, list[Any]] = {}
         for row in regions:
-            mine.setdefault(row["element_kind"], []).append(row)
+            # `#373`: the stored owner first. `element_kind` carries the question id only
+            # when the transcript declared one ON that region, and a generic kind
+            # ("text", "graphic") otherwise — so grouping by it filed a graphic under
+            # "graphic" and left its question to be inferred from what preceded it.
+            # `question_id` is the parsed fact, carried forward from the question in force.
+            #
+            # The fallback is for rows written before the column existed: the migration
+            # deliberately backfills nothing, so those rows read NULL, and reading them the
+            # old way is the only honest option for them. It is a compatibility path for
+            # old data, not a second source of truth for new.
+            owner = row["question_id"] or row["element_kind"]
+            mine.setdefault(owner, []).append(row)
         reads: dict[str, SelectionRead] = {}
         for question_id, rows in mine.items():
             reads[question_id] = self._read_from_regions(rows)

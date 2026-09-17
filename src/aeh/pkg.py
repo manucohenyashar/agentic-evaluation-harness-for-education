@@ -68,6 +68,7 @@ __all__ = [
     "Manifest",
     "NO_NEW_VALIDATION_EVIDENCE",
     "NoValidationData",
+    "record_validation_baseline",
     "PROVENANCE_VOCABULARY",
     "PackageCatalog",
     "PackageDraft",
@@ -1637,6 +1638,43 @@ PKG_STATEMENTS.update({
         ":criterion_id, :population_scope_id, :backend_profile, :panel_build_ref, "
         ":scoring_model, :agreement, :n, datetime('now'))"
     ),
+    # -- the baseline distribution (#373, FR-AGG-08) ---------------------------------------
+    "select_validation_baseline": Statement(
+        "SELECT expected_mean, expected_sd, expected_histogram FROM validation_record "
+        "WHERE package_version_id = :v "
+        "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
+    "select_version_present": Statement(
+        "SELECT package_version_id FROM package_version "
+        "WHERE package_version_id = :v"
+    ),
+    "select_criterion_band_ordinals": Statement(
+        "SELECT band, ordinal FROM band "
+        "WHERE package_version_id = :v AND criterion_id = :criterion_id "
+        "ORDER BY ordinal"
+    ),
+    "update_validation_baseline": Statement(
+        "UPDATE validation_record SET expected_mean = :expected_mean, "
+        "expected_sd = :expected_sd, expected_histogram = :expected_histogram "
+        "WHERE package_version_id = :v AND criterion_id = :criterion_id "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
+    "insert_validation_baseline": Statement(
+        "INSERT INTO validation_record (validation_record_id, package_version_id, "
+        "criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n, recorded_at, expected_mean, expected_sd, "
+        "expected_histogram) VALUES (hex(randomblob(8)), :v, :criterion_id, "
+        ":population_scope_id, :backend_profile, :panel_build_ref, :scoring_model, "
+        "NULL, NULL, datetime('now'), :expected_mean, :expected_sd, "
+        ":expected_histogram)"
+    ),
     "select_exemplar_provenance": Statement(
         "SELECT DISTINCT provenance FROM exemplar WHERE package_version_id = :v "
         "AND provenance IS NOT NULL"
@@ -1984,6 +2022,23 @@ _PKG_CRITERION_EVALUATION_MODE = Migration(
     ),
 )
 
+#: `#373`: the baseline distribution a promoted administration leaves behind, so
+#: `should_escalate`'s distributional-anomaly input (`FR-AGG-08`) has something to compare
+#: against and the drift check (`FR-STATS-09`) has a prior. Three columns, all NULLABLE and
+#: all defaulting to NULL — a version nobody has promoted has NO baseline, and that is a
+#: different fact from a baseline of zero. `should_escalate` reads the absence as "no data"
+#: and skips the rule; a zero would read as a real distribution with no spread and suppress
+#: the rule while looking like it ran.
+_PKG_VALIDATION_BASELINE = Migration(
+    version=12,
+    name="pkg_validation_baseline",
+    statements=(
+        Statement("ALTER TABLE validation_record ADD COLUMN expected_mean REAL"),
+        Statement("ALTER TABLE validation_record ADD COLUMN expected_sd REAL"),
+        Statement("ALTER TABLE validation_record ADD COLUMN expected_histogram TEXT"),
+    ),
+)
+
 STATEMENTS.update(PKG_STATEMENTS)
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
@@ -1996,6 +2051,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_SETUP_READBACK,)
     + (_PKG_SETUP_CLASSIFICATION,)
     + (_PKG_CRITERION_EVALUATION_MODE,)
+    + (_PKG_VALIDATION_BASELINE,)
 )
 
 # Durable v8 — #118's promotion record. M-PKG is the seam `aeh.stats.promote` stores its
@@ -2142,6 +2198,142 @@ def record_promotion(
         connection.commit()
     finally:
         connection.close()
+
+#: The one value `record_validation_baseline` accepts for the two key parts `M-STATS` does
+#: not carry. The six-part key (`FR-PKG-08`) dimensions a validation record by population and
+#: scoring model; an administration's promote knows neither, and INVENTING one would file the
+#: baseline under a population it was never measured on — the exact non-transfer error R30 put
+#: those parts in the key to prevent. The empty string is the key's "not dimensioned here"
+#: value, which `validation_for`'s `scoring_model: str = ""` default already uses.
+_BASELINE_UNDIMENSIONED = ""
+
+
+def _population_mean_and_sd(weighted: Mapping[int, int]) -> tuple[float, float]:
+    """Mean and **population** standard deviation over a weighted histogram of ordinals.
+
+    Population, not sample: the histogram IS the administration's judged distribution, not a
+    draw from a larger one to be estimated. The baseline describes the labels that exist, so
+    dividing by ``n`` rather than ``n-1`` is the honest arithmetic — and it also keeps a
+    single-label administration expressible (sd 0.0) instead of a division by zero.
+    """
+    total = sum(weighted.values())
+    mean = sum(ordinal * count for ordinal, count in weighted.items()) / total
+    variance = sum(
+        count * (ordinal - mean) ** 2 for ordinal, count in weighted.items()
+    ) / total
+    return mean, math.sqrt(variance)
+
+
+def record_validation_baseline(
+    data_dir: Path | str,
+    *,
+    package_version_id: str,
+    criterion_id: str,
+    band_histogram: Mapping[str, int],
+    population_scope_id: str = _BASELINE_UNDIMENSIONED,
+    backend_profile: str = _BASELINE_UNDIMENSIONED,
+    panel_build_ref: str = _BASELINE_UNDIMENSIONED,
+    scoring_model: str = _BASELINE_UNDIMENSIONED,
+) -> bool:
+    """`#373`: one criterion's baseline distribution onto its `validation_record` row.
+
+    `M-STATS`'s ``promote`` is the intended caller, and the split of work between the two
+    modules is the point of this function's shape. `M-STATS` counts — it knows how many of
+    the administration's judged labels landed in each band, by NAME, because that is what a
+    label carries. It does not know what those names are worth: the ordinal scale lives in
+    Tier P's ``band`` table, which is this module's schema (`CT-PKG-12`). So the caller sends
+    the distribution and this side maps it, which is also why the write carries `M-PKG`'s
+    frames the way `record_promotion` does (`CT-STATS-15`'s indirection).
+
+    **The scale is the declared ordinal, and that is load-bearing.** `should_escalate`
+    computes ``z = (ordinal - expected_mean) / expected_sd`` where ``ordinal`` is the score's
+    DECLARED band ordinal (`agg._band_by_ordinal`). A baseline computed on any other scale —
+    the band's name read as a number, or `aeh.stats._band_ordinals`' inferred rank — would be
+    a z-score between two different spaces, wrong by a constant for every package and
+    silently so. Bands are 0-based (`store.py`'s ``CHECK (ordinal >= 0)``).
+
+    Refuses rather than guesses, in three cases, each returning ``False`` with nothing
+    written:
+
+    * The version is not in this data directory's packages.
+    * A band NAME in the histogram is not one the criterion declares. A mean over a scale the
+      package does not declare is a fabricated figure, and a partial mean over "the ones I
+      recognised" is worse — it would silently drop a band and shift the baseline.
+    * The version is published. `FR-PKG-04` makes a published version's rows immutable and
+      the triggers enforce it; a baseline is evidence about a version, and evidence arriving
+      after publication does not get to rewrite it. Skipped, not raised: a promote of an
+      administration against a published package is a normal thing to do, and it must not
+      fail because one optional record could not be filed.
+
+    Returns whether the baseline was written, so the caller can report rather than assume.
+    """
+    if not band_histogram or sum(band_histogram.values()) <= 0:
+        return False
+    directory = Path(data_dir) / "packages"
+    if not directory.is_dir():
+        return False
+    for database_path in sorted(directory.glob("*.pkg.sqlite")):
+        connection = sqlite3.connect(str(database_path))
+        connection.row_factory = sqlite3.Row
+        try:
+            present = connection.execute(
+                PKG_STATEMENTS["select_version_present"], {"v": package_version_id}
+            ).fetchall()
+            if not present:
+                continue
+            ordinals = {
+                str(row["band"]): int(row["ordinal"])
+                for row in connection.execute(
+                    PKG_STATEMENTS["select_criterion_band_ordinals"],
+                    {"v": package_version_id, "criterion_id": criterion_id},
+                ).fetchall()
+            }
+            weighted: dict[int, int] = {}
+            for band_name, count in band_histogram.items():
+                if str(band_name) not in ordinals:
+                    return False
+                ordinal = ordinals[str(band_name)]
+                weighted[ordinal] = weighted.get(ordinal, 0) + int(count)
+            mean, sd = _population_mean_and_sd(weighted)
+            # Keyed by the ORDINAL, the same scale `expected_mean` is in, so the stored
+            # record is self-consistent: a reader that recomputes the mean from the
+            # histogram gets the stored mean back. Keys are strings because JSON has no
+            # integer keys.
+            histogram = json.dumps(
+                {str(ordinal): count for ordinal, count in sorted(weighted.items())},
+                sort_keys=True,
+            )
+            parameters = {
+                "v": package_version_id,
+                "criterion_id": criterion_id,
+                "population_scope_id": population_scope_id,
+                "backend_profile": backend_profile,
+                "panel_build_ref": panel_build_ref,
+                "scoring_model": scoring_model,
+                "expected_mean": mean,
+                "expected_sd": sd,
+                "expected_histogram": histogram,
+            }
+            try:
+                cursor = connection.execute(
+                    PKG_STATEMENTS["update_validation_baseline"], parameters
+                )
+                if cursor.rowcount == 0:
+                    connection.execute(
+                        PKG_STATEMENTS["insert_validation_baseline"], parameters
+                    )
+                connection.commit()
+            except sqlite3.DatabaseError:
+                # The published-version triggers (`validation_record_immutable`,
+                # `validation_record_insert_locked`) abort here. See the docstring: this is
+                # the designed refusal, not a failure of the promote that triggered it.
+                connection.rollback()
+                return False
+            return True
+        finally:
+            connection.close()
+    return False
+
 
 #: The revision copy order: parents before children, so every copied row's FK is
 #: satisfied at insert time. Each key names a statement in `PKG_STATEMENTS`.
@@ -2344,6 +2536,45 @@ class PackageCatalog:
         if not rows:
             return NoValidationData()
         return dict(rows[0])
+
+    def validation_baseline(
+        self, v: PackageVersionId, criterion_id: str | None = None, *,
+        population_scope_id: str = _BASELINE_UNDIMENSIONED,
+        backend_profile: str = _BASELINE_UNDIMENSIONED,
+        panel_build_ref: str = _BASELINE_UNDIMENSIONED,
+        scoring_model: str = _BASELINE_UNDIMENSIONED,
+    ) -> Any:
+        """`#373`: one criterion's baseline distribution, or `NoValidationData`.
+
+        Shaped for `aeh.agg.should_escalate`'s ``baseline=`` argument — the keys are ``mean``
+        and ``std``, the names it reads — so the figure this module stores reaches the rule
+        that needs it without a caller in between reshaping (and possibly rescaling) it.
+
+        `NoValidationData` is returned for BOTH "no row" and "a row with no baseline", and
+        the second case is the one that matters: a `validation_record` written by
+        ``store_validation`` carries agreement and n but no baseline until an administration
+        is promoted, and its three NULL columns are not a distribution. Returning the same
+        sentinel `validation_for` returns keeps absence one type on this surface rather than
+        two, and it is what makes the distributional-anomaly rule skip (`FR-AGG-08`) instead
+        of dividing by a zero that was never measured.
+        """
+        rows = self._handle.query(PKG_STATEMENTS["select_validation_baseline"],
+                                  v=v, criterion_id=criterion_id,
+                                  population_scope_id=population_scope_id,
+                                  backend_profile=backend_profile,
+                                  panel_build_ref=panel_build_ref,
+                                  scoring_model=scoring_model)
+        if not rows:
+            return NoValidationData()
+        row = rows[0]
+        if row["expected_mean"] is None or row["expected_sd"] is None:
+            return NoValidationData()
+        raw = row["expected_histogram"]
+        return {
+            "mean": float(row["expected_mean"]),
+            "std": float(row["expected_sd"]),
+            "histogram": json.loads(raw) if raw else {},
+        }
 
     def manifest(self, v: PackageVersionId) -> Manifest:
         """`FR-PKG-21`: per-population validation entries, the weakest criterion per

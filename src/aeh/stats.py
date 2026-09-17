@@ -3406,6 +3406,37 @@ def promote(
 
     from aeh import pkg as _pkg
 
+    # #373 (`FR-AGG-08`): the baseline distribution, per criterion, so escalation's
+    # distributional-anomaly input has a prior to compare against instead of being
+    # permanently no-data. Counted from `teacher_band`: the administration's blind labels
+    # are its validity evidence (`admissible`), and the TEACHER's band is the judgement
+    # they evidence — the system's own band is the thing a later anomaly is measured
+    # against, so sourcing the baseline from it would compare the system to itself and
+    # report drift only once the system had already drifted twice.
+    #
+    # Band NAMES go over, not ordinals: a label carries the band it was given, and the
+    # scale those names sit on is Tier P's (`record_validation_baseline` maps them). A
+    # label whose teacher band is unrecorded is left out rather than bucketed — `#372`'s
+    # rule, that a null is never a value, applies to a histogram as much as to an export.
+    for criterion in sorted(per_criterion):
+        histogram: dict[str, int] = {}
+        for label in admissible:
+            if (getattr(label, "criterion_id", "") or "") != criterion:
+                continue
+            band = getattr(label, "teacher_band", None)
+            if band is None or str(band) == "":
+                continue
+            histogram[str(band)] = histogram.get(str(band), 0) + 1
+        if histogram:
+            _pkg.record_validation_baseline(
+                data_dir,
+                package_version_id=package_version_id,
+                criterion_id=criterion,
+                band_histogram=histogram,
+                backend_profile=backend_profile,
+                panel_build_ref=panel_build_ref,
+            )
+
     _pkg.record_promotion(
         data_dir,
         package_version_id=package_version_id,
