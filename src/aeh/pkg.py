@@ -1639,10 +1639,16 @@ PKG_STATEMENTS.update({
         ":scoring_model, :agreement, :n, datetime('now'))"
     ),
     # -- the baseline distribution (#373, FR-AGG-08) ---------------------------------------
+    # `criterion_id` is matched exactly, with no `IS NULL` wildcard limb — unlike
+    # `select_validation`, which has one. A baseline is always ONE criterion's
+    # distribution, so a wildcard read has no meaning to return: with several criteria
+    # promoted, an unkeyed query matches them all and the reader's `rows[0]` hands back
+    # whichever SQLite ordered first. That is an adjacent key answering, the precise
+    # failure the six-part key exists to prevent (`CT-PKG-07`, RISK-08).
     "select_validation_baseline": Statement(
         "SELECT expected_mean, expected_sd, expected_histogram FROM validation_record "
         "WHERE package_version_id = :v "
-        "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
+        "AND criterion_id = :criterion_id "
         "AND population_scope_id = :population_scope_id "
         "AND backend_profile = :backend_profile "
         "AND panel_build_ref = :panel_build_ref "
@@ -2537,18 +2543,23 @@ class PackageCatalog:
             return NoValidationData()
         return dict(rows[0])
 
-    def validation_baseline(
-        self, v: PackageVersionId, criterion_id: str | None = None, *,
-        population_scope_id: str = _BASELINE_UNDIMENSIONED,
-        backend_profile: str = _BASELINE_UNDIMENSIONED,
-        panel_build_ref: str = _BASELINE_UNDIMENSIONED,
-        scoring_model: str = _BASELINE_UNDIMENSIONED,
+    def baseline_for(
+        self, v: PackageVersionId, criterion_id: str, population_scope_id: str,
+        backend_profile: str, panel_build_ref: str, scoring_model: str = "",
     ) -> Any:
         """`#373`: one criterion's baseline distribution, or `NoValidationData`.
 
         Shaped for `aeh.agg.should_escalate`'s ``baseline=`` argument — the keys are ``mean``
         and ``std``, the names it reads — so the figure this module stores reaches the rule
         that needs it without a caller in between reshaping (and possibly rescaling) it.
+
+        **The signature mirrors `validation_for` deliberately**, down to the argument order
+        and the `scoring_model` default, because it reads the SAME row under the same
+        six-part key (`FR-PKG-08`). Naming the key is the caller's job here exactly as it is
+        there: defaults on `backend_profile` and `panel_build_ref` would let a caller who
+        names neither read back a `NoValidationData` for a baseline that IS stored, and
+        `record_validation_baseline` writes both (they are the two parts `M-STATS` carries).
+        `criterion_id` is required rather than optional — see the statement's own note.
 
         `NoValidationData` is returned for BOTH "no row" and "a row with no baseline", and
         the second case is the one that matters: a `validation_record` written by
@@ -2557,6 +2568,10 @@ class PackageCatalog:
         sentinel `validation_for` returns keeps absence one type on this surface rather than
         two, and it is what makes the distributional-anomaly rule skip (`FR-AGG-08`) instead
         of dividing by a zero that was never measured.
+
+        Named `baseline_for` rather than `validation_baseline` so the surface keeps
+        `CT-PKG-07`'s prohibition legible: every public name carrying "validation" on this
+        class is the keyed record read or its write, and nothing else.
         """
         rows = self._handle.query(PKG_STATEMENTS["select_validation_baseline"],
                                   v=v, criterion_id=criterion_id,

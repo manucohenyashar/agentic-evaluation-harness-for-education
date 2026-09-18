@@ -1973,7 +1973,7 @@ INGEST_STATEMENTS: dict[str, Statement] = {
     # The region's kind and its question (`element_kind` is the question id — M-DET's own
     # reading, `det._selection_reads`), for the per-kind rule.
     "select_regions_by_id": Statement(
-        "SELECT region_id, region_kind, element_kind FROM document_region "
+        "SELECT region_id, region_kind, element_kind, question_id FROM document_region "
         "WHERE region_id = :region_id"
     ),
     # The declared option ids for one question, read off the package tier when the caller
@@ -3241,9 +3241,11 @@ class Ingestor:
 
         **Which question a graphic belongs to.** The pinned transcription prompt tags
         a graphic by `element_kind`, not by question, so a graphic belongs to the
-        question whose region precedes it in document order (an explicit
-        `question_id` on the graphic's own marker wins). A graphic before any
-        question region belongs to none and is counted as unassigned.
+        question in force where it appears (an explicit `question_id` on the graphic's
+        own marker wins). Since `#373` that is `question_id`, carried forward by
+        `_parse_regions` and stored on the row, so this pass reads the fact rather than
+        recomputing it. A graphic before any question region belongs to none and is
+        counted as unassigned.
 
         Every other region gets exactly one description. A failed second call — an
         exception, an empty or evaluative reply, or an answer resolved to the
@@ -3255,17 +3257,19 @@ class Ingestor:
         wanted = set(high_risk_questions)
         entries: list[dict] = []
         graphics = unassigned = 0
-        current_question: str | None = None
         params = SamplingParams(temperature=0.0, max_tokens=_configured_max_tokens())
         second_ref = self._second_model_ref
         candidates = []
         for region in regions:
             if region["region_kind"] != "described_graphic":
-                if region.get("question_id"):
-                    current_question = region["question_id"]
                 continue
             graphics += 1
-            question = region.get("question_id") or current_question
+            # `#373`: one read of the parsed column, where a walk carrying the question
+            # forward across the non-graphic regions used to stand. `_parse_regions` now
+            # does that carry-forward itself, so this is the same answer from the single
+            # place that owns it — and the second copy of the rule, which could drift
+            # from the stored one, is gone.
+            question = region.get("question_id")
             if question is None:
                 unassigned += 1
                 continue
@@ -3879,7 +3883,12 @@ class Ingestor:
                            page_index=region["page_index"],
                            position=region["position"],
                            is_untrusted_content=1 if row["kind"] == "submission" else 0,
-                           description_secondary=None)
+                           description_secondary=None,
+                           # `#373`: the revision's regions are freshly parsed, so the
+                           # question in force came with them — carry it to the column
+                           # rather than letting the new document's rows read NULL and
+                           # send their consumers back to positional inference.
+                           question_id=region.get("question_id"))
                 for token in re.findall(r"<unresolved>(.*?)</unresolved>",
                                         region["content"] or ""):
                     if token.strip():
@@ -3941,7 +3950,12 @@ class Ingestor:
                            position=None,
                            is_untrusted_content=0,
                            description_secondary=None,
-                           content=None)
+                           content=None,
+                           # `#373`: a minted absent row exists BECAUSE this declared
+                           # question had none, so its owner is known exactly — not
+                           # inferred from a neighbour, which is why it is recorded
+                           # rather than left NULL like a pre-migration row.
+                           question_id=question_id)
         return absent
 
     # -- cohort-wide token clustering (FR-INGEST-20) --------------------------------------
@@ -3986,7 +4000,8 @@ class Ingestor:
         * `transcribed_text` and `described_graphic` — the content is replaced and nothing
           else; `selection_state` is not the operator's to change by reading a word.
         * `selection_mark` — the resolution must equal a declared `question_option.option_id`
-          for the region's question (`element_kind`, M-DET's own reading). When it does,
+          for the region's question (`question_id` since `#373`, `element_kind` for rows
+          written before the column existed — M-DET's own reading). When it does,
           `selection` and `selection_state='resolved'` are written **together**, in one
           statement. Otherwise the region stays `ambiguous` with a NULL selection, its content
           is still replaced, and it is listed under `selection_unresolved` on the returned
@@ -4064,9 +4079,19 @@ class Ingestor:
                 tx.execute(INGEST_STATEMENTS["update_region_text"],
                            region_id=region_id, resolution=resolution, token=token)
                 continue
+            # `#373`: the stored owner, falling back to `element_kind` for rows written
+            # before the column existed (the migration backfills nothing, by design). A
+            # mark that declared its own question reads the same either way; one that did
+            # NOT — the transcript tagged the question on the text above and the mark
+            # below it carries the generic kind — used to resolve against an option set
+            # read for the literal question `"text"`, i.e. against nothing, and the
+            # operator's correct answer was listed `selection_unresolved` (RISK-50, from
+            # the other side).
+            question = ""
+            if region is not None:
+                question = str(region["question_id"] or region["element_kind"] or "")
             options = self._declared_options(
-                package_catalog, package_version,
-                str(region["element_kind"] or "") if region is not None else "",
+                package_catalog, package_version, question,
             )
             if resolution in options:
                 tx.execute(INGEST_STATEMENTS["resolve_selection_region"],
