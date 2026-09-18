@@ -65,11 +65,11 @@ __all__ = [
     "InventoryError",
     "QUESTION_TYPES",
     "InMemoryCatalog",
+    "BASELINE_RECORDED",
+    "BaselineWrite",
     "Manifest",
     "NO_NEW_VALIDATION_EVIDENCE",
     "NoValidationData",
-    "BASELINE_RECORDED",
-    "BaselineWrite",
     "record_validation_baseline",
     "PROVENANCE_VOCABULARY",
     "PackageCatalog",
@@ -1618,10 +1618,22 @@ PKG_STATEMENTS.update({
     "delete_dependencies": Statement(
         "DELETE FROM criterion_dependency WHERE package_version_id = :v"
     ),
+    # `agreement IS NOT NULL` since `#373`, for the reason spelled out on
+    # `select_all_validations` below: a validation record IS an agreement claim, and
+    # `record_validation_baseline` writes a row that makes none. Without it,
+    # `validation_for` hands back `{"agreement": None, "n": None}` — a "record" whose
+    # figure is absent, which is precisely the reading `NoValidationData` exists to keep
+    # unrepresentable (`FR-PKG-09`, distinguishable **in type**).
+    #
+    # It also restores `store_validation`'s pre-`#373` behaviour exactly rather than
+    # changing it: before the baseline there was no such thing as a NULL-agreement row,
+    # so this filter can only ever hide a baseline row, and a baseline row is not a
+    # validation record whose rewrite `_guard` exists to refuse. On a published version
+    # the insert trigger refuses regardless.
     "select_validation": Statement(
         "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
         "scoring_model, agreement, n FROM validation_record "
-        "WHERE package_version_id = :v "
+        "WHERE package_version_id = :v AND agreement IS NOT NULL "
         "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
         "AND population_scope_id = :population_scope_id "
         "AND backend_profile = :backend_profile "
