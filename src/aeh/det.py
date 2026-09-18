@@ -660,7 +660,7 @@ DET_STATEMENTS: dict[str, Statement] = {
     ),
     "select_regions": Statement(
         "SELECT region_id, document_id, element_kind, region_kind, retraction, "
-        "content_state, selection_state, selection, question_id FROM document_region "
+        "content_state, selection_state, selection FROM document_region "
         "WHERE document_id = :document_id ORDER BY position"
     ),
     "upsert_criterion_score": Statement(
@@ -1592,18 +1592,24 @@ class DeterministicEvaluator:
         )
         mine: dict[str, list[Any]] = {}
         for row in regions:
-            # `#373`: the stored owner first. `element_kind` carries the question id only
-            # when the transcript declared one ON that region, and a generic kind
-            # ("text", "graphic") otherwise — so grouping by it filed a graphic under
-            # "graphic" and left its question to be inferred from what preceded it.
-            # `question_id` is the parsed fact, carried forward from the question in force.
+            # Grouped by `element_kind`, DELIBERATELY, although `#373` added
+            # `document_region.question_id` and it is the better name for ownership.
             #
-            # The fallback is for rows written before the column existed: the migration
-            # deliberately backfills nothing, so those rows read NULL, and reading them the
-            # old way is the only honest option for them. It is a compatibility path for
-            # old data, not a second source of truth for new.
-            owner = row["question_id"] or row["element_kind"]
-            mine.setdefault(owner, []).append(row)
+            # `_read_from_regions` below reads one question's regions on the premise its
+            # own docstring states — "today's ingest writes one region per question,
+            # making the mixed case defensive". Grouping by `element_kind` is what makes
+            # that true here: a graphic lands under its own kind ("free_body_diagram"),
+            # never under the question, so a question's group holds the one region that
+            # answers it.
+            #
+            # Regrouping by `question_id` would put a question's text region AND every
+            # region that follows it — its graphic, its continuation — in one group, and
+            # `len(candidates) > 1` would read them as `multiple_marks`. Measured: a
+            # BLANK answer with a graphic after it goes from `SelectionRead("blank", ...)`
+            # — a legitimate zero under R47 — to an unresolved `multiple_marks`. That is a
+            # scoring change, and it belongs to whatever issue teaches the kernel to read
+            # a mixed group, not to the one that added the column.
+            mine.setdefault(row["element_kind"], []).append(row)
         reads: dict[str, SelectionRead] = {}
         for question_id, rows in mine.items():
             reads[question_id] = self._read_from_regions(rows)

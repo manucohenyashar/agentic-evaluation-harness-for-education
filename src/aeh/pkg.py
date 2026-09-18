@@ -68,6 +68,8 @@ __all__ = [
     "Manifest",
     "NO_NEW_VALIDATION_EVIDENCE",
     "NoValidationData",
+    "BASELINE_RECORDED",
+    "BaselineWrite",
     "record_validation_baseline",
     "PROVENANCE_VOCABULARY",
     "PackageCatalog",
@@ -1626,10 +1628,17 @@ PKG_STATEMENTS.update({
         "AND panel_build_ref = :panel_build_ref "
         "AND scoring_model = :scoring_model"
     ),
+    # `agreement IS NOT NULL` since `#373`: a `ManifestEntry` IS an agreement claim
+    # (`FR-PKG-21`), and `manifest()` casts `float(agreement)` / `int(n)` unconditionally.
+    # `record_validation_baseline` writes a row that carries a distribution and NO
+    # agreement — it makes no such claim — so without this filter the first promoted
+    # administration made `manifest()` raise `TypeError` on its own version, and
+    # `_weakest_entry` would have invented a weakest criterion for the empty population
+    # the baseline is keyed under. A baseline is read through `baseline_for`, never here.
     "select_all_validations": Statement(
         "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
         "scoring_model, agreement, n FROM validation_record "
-        "WHERE package_version_id = :v"
+        "WHERE package_version_id = :v AND agreement IS NOT NULL"
     ),
     "insert_validation": Statement(
         "INSERT INTO validation_record (validation_record_id, package_version_id, "
@@ -2214,6 +2223,38 @@ def record_promotion(
 _BASELINE_UNDIMENSIONED = ""
 
 
+@dataclass(frozen=True)
+class BaselineWrite:
+    """`#373`: what `record_validation_baseline` did, and — when it did nothing — why.
+
+    A bare ``bool`` was the first shape and it was the wrong one. Every refusal this
+    function makes is a NORMAL event on the production path (the commonest by far is a
+    promote against a published package), so the caller's only signal that its baseline
+    never landed would have been a `False` it had no reason to inspect. That is the
+    silent-failure trap exactly: a promote reporting success on top of a record that was
+    never written. `reason` is what the caller puts in its own trace.
+
+    `recorded` is the status; `reason` is one of the `BASELINE_*` codes below and is
+    always set, `BASELINE_RECORDED` included, so a log line never has to special-case
+    success.
+    """
+
+    recorded: bool
+    reason: str
+
+
+#: `record_validation_baseline`'s outcome codes. Named constants rather than bare strings
+#: so a caller can branch on one without matching prose that may be reworded.
+BASELINE_RECORDED = "recorded"
+BASELINE_NO_HISTOGRAM = "the histogram was empty or summed to zero"
+BASELINE_NO_PACKAGES = "the data directory holds no packages"
+BASELINE_NO_SUCH_VERSION = "no package in this data directory holds that version"
+BASELINE_UNDECLARED_BAND = "the histogram names a band the criterion does not declare"
+BASELINE_PUBLISHED = (
+    "the version is published and its validation records are immutable (FR-PKG-04)"
+)
+
+
 def _population_mean_and_sd(weighted: Mapping[int, int]) -> tuple[float, float]:
     """Mean and **population** standard deviation over a weighted histogram of ordinals.
 
@@ -2240,7 +2281,7 @@ def record_validation_baseline(
     backend_profile: str = _BASELINE_UNDIMENSIONED,
     panel_build_ref: str = _BASELINE_UNDIMENSIONED,
     scoring_model: str = _BASELINE_UNDIMENSIONED,
-) -> bool:
+) -> BaselineWrite:
     """`#373`: one criterion's baseline distribution onto its `validation_record` row.
 
     `M-STATS`'s ``promote`` is the intended caller, and the split of work between the two
@@ -2271,20 +2312,32 @@ def record_validation_baseline(
       administration against a published package is a normal thing to do, and it must not
       fail because one optional record could not be filed.
 
-    Returns whether the baseline was written, so the caller can report rather than assume.
+    Returns a `BaselineWrite` — the status AND the reason — so the caller reports what
+    happened rather than assuming it worked. Every refusal above is an ordinary event on
+    the production path, so a caller that cannot name the reason cannot tell a promote
+    that stored a baseline from one that quietly did not.
     """
     if not band_histogram or sum(band_histogram.values()) <= 0:
-        return False
+        return BaselineWrite(False, BASELINE_NO_HISTOGRAM)
     directory = Path(data_dir) / "packages"
     if not directory.is_dir():
-        return False
+        return BaselineWrite(False, BASELINE_NO_PACKAGES)
     for database_path in sorted(directory.glob("*.pkg.sqlite")):
         connection = sqlite3.connect(str(database_path))
         connection.row_factory = sqlite3.Row
         try:
-            present = connection.execute(
-                PKG_STATEMENTS["select_version_present"], {"v": package_version_id}
-            ).fetchall()
+            try:
+                present = connection.execute(
+                    PKG_STATEMENTS["select_version_present"], {"v": package_version_id}
+                ).fetchall()
+            except sqlite3.OperationalError:
+                # A file matching the glob that is not a package database — no
+                # `package_version` table. This loop's whole job is to find the file
+                # holding the version, so a file that cannot answer the question is
+                # skipped like one that answers "no". Note the narrowness: a genuine
+                # schema fault in a file that IS a package still raises below, where the
+                # statement it breaks names it.
+                continue
             if not present:
                 continue
             ordinals = {
@@ -2297,7 +2350,7 @@ def record_validation_baseline(
             weighted: dict[int, int] = {}
             for band_name, count in band_histogram.items():
                 if str(band_name) not in ordinals:
-                    return False
+                    return BaselineWrite(False, BASELINE_UNDECLARED_BAND)
                 ordinal = ordinals[str(band_name)]
                 weighted[ordinal] = weighted.get(ordinal, 0) + int(count)
             mean, sd = _population_mean_and_sd(weighted)
@@ -2329,16 +2382,25 @@ def record_validation_baseline(
                         PKG_STATEMENTS["insert_validation_baseline"], parameters
                     )
                 connection.commit()
-            except sqlite3.DatabaseError:
-                # The published-version triggers (`validation_record_immutable`,
-                # `validation_record_insert_locked`) abort here. See the docstring: this is
-                # the designed refusal, not a failure of the promote that triggered it.
+            except sqlite3.IntegrityError:
+                # `IntegrityError` ONLY, which is what the published-version triggers
+                # (`validation_record_immutable`, `validation_record_insert_locked`)
+                # raise through `RAISE(ABORT, ...)`. See the docstring: that is the
+                # designed refusal, not a failure of the promote that triggered it.
+                #
+                # `sqlite3.DatabaseError` stood here and was too wide by exactly the
+                # cases that matter. A missing column — this function connects with raw
+                # `sqlite3.connect`, so it never passes `open_store`'s
+                # `IncompleteMigrationChainError` gate — is an `OperationalError`, and
+                # swallowing it returned the same quiet `False` as the refusal. That is
+                # the distant-failure mode the chain pin exists to make loud, so it is
+                # left to propagate.
                 connection.rollback()
-                return False
-            return True
+                return BaselineWrite(False, BASELINE_PUBLISHED)
+            return BaselineWrite(True, BASELINE_RECORDED)
         finally:
             connection.close()
-    return False
+    return BaselineWrite(False, BASELINE_NO_SUCH_VERSION)
 
 
 #: The revision copy order: parents before children, so every copied row's FK is

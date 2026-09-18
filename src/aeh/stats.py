@@ -240,7 +240,7 @@ import os
 import sqlite3
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping, Sequence
@@ -2553,6 +2553,17 @@ class ValidationUpdate:
     weakest_per_population: Mapping[str, Mapping[str, Any]]
     surface_proxy_flags: tuple[str, ...]
     message: str
+    #: `#373`, seam 4: what became of each criterion's baseline distribution, keyed by
+    #: criterion id, valued by `aeh.pkg`'s `BASELINE_*` reason — `BASELINE_RECORDED` when
+    #: it landed, and the reason it did not otherwise. Defaulted empty because rung 0
+    #: writes nothing at all, so it has no outcomes to report rather than failed ones.
+    #:
+    #: It is a field rather than a log line because the refusals are ORDINARY: an
+    #: administration promoted against a published package is the normal case, and
+    #: `FR-PKG-04` freezes that version's validation records. Without this, `promote`
+    #: would return its counters and a success status over a baseline that was never
+    #: stored, leaving `should_escalate`'s input no-data with nothing anywhere saying so.
+    baseline_outcomes: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -3418,24 +3429,45 @@ def promote(
     # scale those names sit on is Tier P's (`record_validation_baseline` maps them). A
     # label whose teacher band is unrecorded is left out rather than bucketed — `#372`'s
     # rule, that a null is never a value, applies to a histogram as much as to an export.
+    # The outcome per criterion rides the RESULT, not just this function's conscience.
+    # Every way this write can decline is an ordinary event — the commonest being a
+    # promote against a published package, whose validation records `FR-PKG-04` freezes —
+    # so a promote that reported its counters and said nothing about the baseline would
+    # be the seam-4 trap in miniature: a success status sitting on top of a record that
+    # was never written.
+    #
+    # Labels are bucketed by criterion in ONE pass rather than re-scanning `admissible`
+    # per criterion: the same histogram, without the criteria x labels product.
+    histograms: dict[str, dict[str, int]] = {}
+    for label in admissible:
+        criterion = getattr(label, "criterion_id", "") or ""
+        if criterion not in per_criterion:
+            continue
+        band = getattr(label, "teacher_band", None)
+        if band is None or str(band) == "":
+            continue
+        counts = histograms.setdefault(criterion, {})
+        counts[str(band)] = counts.get(str(band), 0) + 1
+    baseline_outcomes: dict[str, str] = {}
     for criterion in sorted(per_criterion):
-        histogram: dict[str, int] = {}
-        for label in admissible:
-            if (getattr(label, "criterion_id", "") or "") != criterion:
-                continue
-            band = getattr(label, "teacher_band", None)
-            if band is None or str(band) == "":
-                continue
-            histogram[str(band)] = histogram.get(str(band), 0) + 1
-        if histogram:
-            _pkg.record_validation_baseline(
-                data_dir,
-                package_version_id=package_version_id,
-                criterion_id=criterion,
-                band_histogram=histogram,
-                backend_profile=backend_profile,
-                panel_build_ref=panel_build_ref,
-            )
+        histogram = histograms.get(criterion)
+        if not histogram:
+            # No teacher band on any of this criterion's admissible labels: there is no
+            # distribution to record, which is a different fact from one that was refused.
+            baseline_outcomes[criterion] = _pkg.BASELINE_NO_HISTOGRAM
+            continue
+        written = _pkg.record_validation_baseline(
+            data_dir,
+            package_version_id=package_version_id,
+            criterion_id=criterion,
+            band_histogram=histogram,
+            backend_profile=backend_profile,
+            panel_build_ref=panel_build_ref,
+        )
+        # The reason travels whether or not the write landed. This module logs nothing
+        # (it has no logger, by long standing), so the returned record IS the disclosure:
+        # `ValidationUpdate.baseline_outcomes` below.
+        baseline_outcomes[criterion] = written.reason
 
     _pkg.record_promotion(
         data_dir,
@@ -3461,6 +3493,7 @@ def promote(
         weakest_per_population=weakest,
         surface_proxy_flags=flags,
         message=message,
+        baseline_outcomes=baseline_outcomes,
     )
 
 
