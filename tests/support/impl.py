@@ -1260,17 +1260,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # in-process server can make a served console answer.
     # --- TS-100 (#394), the MVVP measurement drivers (Phase 2) ------------------------------
     #
-    # A conjunction over both drivers: each case needs one, and #374 lands them together.
-    "#374 TS-100 measure_position_bias / measure_self_agreement (TC-STATS-28)": (
-        "symbols",
-        "aeh.stats:measure_position_bias, aeh.stats:measure_self_agreement",
-        (
-            "tests/integration/stats/test_tc_stats_28_mvvp_measurement_drivers.py"
-            "::test_tc_stats_28_position_bias_is_the_per_judge_band_change_rate",
-            "tests/integration/stats/test_tc_stats_28_mvvp_measurement_drivers.py"
-            "::test_tc_stats_28_self_agreement_replicates_at_least_three_times",
-        ),
-    ),
+    # The "#374 TS-100" conjunction over both drivers is gone because #374 landed:
+    # `aeh.stats:measure_position_bias` and `aeh.stats:measure_self_agreement` both exist,
+    # and TC-STATS-28's two cases run unmarked against them. A resolved blocker left in
+    # this dict fails the gate test by design.
     # --- TS-87 (#381), workers: taxonomy, verdicts_for, persisted latency and assessment ----
     #
     # "#353 TS-87 provider taxonomy errors are not strikes" left with #353: both workers

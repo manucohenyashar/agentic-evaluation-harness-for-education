@@ -27,9 +27,13 @@ A precondition refuses to measure until each salt is proven to have moved the or
 exemplar set, different sequence), since a salt that coincided with the default would make J2's
 "changed" recordings unreachable and the rate vacuous.
 
-**Written ahead of implementation: yes** — keyed on `aeh.stats:measure_position_bias` (#374).
+**Written ahead of implementation: it was** — keyed on `aeh.stats:measure_position_bias`
+(#374). #374 landed both drivers, so the `writtenahead` markers and the
+`WRITTEN_AHEAD_BLOCKERS` entry are gone and these two cases run in the gate.
 
-**Interface assumed** (design delta §3.9, FR-STATS-21), stated so #374 reconciles it deliberately:
+**Interface assumed** (design delta §3.9, FR-STATS-21), stated so #374 reconciles it
+deliberately — and #374 implemented it unchanged, signature for signature, so the table below
+is now the shipped interface rather than an assumption about it:
 
 | Name | Assumption |
 |---|---|
@@ -136,7 +140,6 @@ def _record_world(tmp_data_dir, make_fixture_provider, monkeypatch):
     return store, provider, panel, j1, j2, j3
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_28_position_bias_is_the_per_judge_band_change_rate(
     tmp_data_dir, make_fixture_provider, monkeypatch
 ):
@@ -173,7 +176,6 @@ def test_tc_stats_28_position_bias_is_the_per_judge_band_change_rate(
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_28_self_agreement_replicates_at_least_three_times(
     tmp_data_dir, make_fixture_provider, monkeypatch
 ):
