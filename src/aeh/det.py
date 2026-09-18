@@ -1592,6 +1592,23 @@ class DeterministicEvaluator:
         )
         mine: dict[str, list[Any]] = {}
         for row in regions:
+            # Grouped by `element_kind`, DELIBERATELY, although `#373` added
+            # `document_region.question_id` and it is the better name for ownership.
+            #
+            # `_read_from_regions` below reads one question's regions on the premise its
+            # own docstring states — "today's ingest writes one region per question,
+            # making the mixed case defensive". Grouping by `element_kind` is what makes
+            # that true here: a graphic lands under its own kind ("free_body_diagram"),
+            # never under the question, so a question's group holds the one region that
+            # answers it.
+            #
+            # Regrouping by `question_id` would put a question's text region AND every
+            # region that follows it — its graphic, its continuation — in one group, and
+            # `len(candidates) > 1` would read them as `multiple_marks`. Measured: a
+            # BLANK answer with a graphic after it goes from `SelectionRead("blank", ...)`
+            # — a legitimate zero under R47 — to an unresolved `multiple_marks`. That is a
+            # scoring change, and it belongs to whatever issue teaches the kernel to read
+            # a mixed group, not to the one that added the column.
             mine.setdefault(row["element_kind"], []).append(row)
         reads: dict[str, SelectionRead] = {}
         for question_id, rows in mine.items():
