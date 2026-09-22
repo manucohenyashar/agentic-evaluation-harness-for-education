@@ -113,7 +113,7 @@ pass, and every bug found later becomes a permanent case.
 
 The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time** by the
 modules that own the schema they add. Before the first store open in any process, import all
-eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
+twelve contributors: `import aeh.agg, aeh.calib, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
 `import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it;
 `aeh.pkg` owns Package's last migration — #373's `pkg_validation_baseline`, 12; #369's
 `pkg_criterion_evaluation_mode` was 11 — and
@@ -129,8 +129,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.grade` the one before it (#103's `grade_superseded_at_and_append_only`, 19;
 #101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.review` owns
-Durable's last migration (#368's `review_label_columns`, 10), `aeh.judge` the one before it
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.calib` owns
+Durable's last migration (#375's `calib_dual_scored_roster`, 11), `aeh.review` the one before
+it (#368's `review_label_columns`, 10), `aeh.judge` the one before it
 (#361's `judge_run_metrics_judge_dimension`, 9), `aeh.pkg` the one
 before it (#118's `pkg_validation_record`, 8), `aeh.grade` the one
 before it (#103's `grade_audit_record_append_only`, 7; #110's

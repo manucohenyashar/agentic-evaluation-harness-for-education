@@ -37,8 +37,9 @@ nothing else, so 3 of 12 papers moved.
 names. The cohort, run and score rows are seeded directly (the `tests/support/orch_run.py`
 precedent) because M-CALIB reads them as stored rows; no pipeline is driven.
 
-**Written ahead of implementation: yes** — keyed on `aeh.calib:register_dual_scored_roster`
-(#375, Phase 3). Before it lands both cases fail at `require`, naming #375.
+**Written ahead of implementation: no longer** — #375 landed `aeh.calib:register_dual_scored_roster`,
+so both cases run unmarked against it. `require` stays: it is the probe that named the issue
+while the symbol was missing, and it costs nothing now that it resolves.
 
 **Interface assumed** (design delta §3.10 / FR-CALIB-15), for #375 to reconcile deliberately:
 
@@ -258,7 +259,6 @@ def _comparable(result: Any) -> dict[str, Any]:
 # --- TC-CALIB-20 --------------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_20_the_registered_roster_is_persisted_and_carries_only_r0s_bands(
     tmp_data_dir,
 ):
@@ -312,7 +312,6 @@ def test_tc_calib_20_the_registered_roster_is_persisted_and_carries_only_r0s_ban
 # --- TC-CALIB-C17 — the restart arm -------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_calib_c17_the_roster_survives_a_restart_and_the_gate_agrees(tmp_data_dir):
     """`TC-CALIB-C17` (`CT-CALIB-17`) — a new `Store` and an emptied `_CLASS_ROSTERS` give the
     same gate result: the roster came off disk, not out of the module dict."""

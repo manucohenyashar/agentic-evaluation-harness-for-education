@@ -287,7 +287,8 @@ class IncompleteMigrationChainError(StoreError):
     The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
     the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det`,
 `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth`, `aeh.agg` and `aeh.grade`; Tier D:
-    `aeh.det` and `aeh.integ` — so the chain an open sees is only as long
+    `aeh.det`, `aeh.integ`, `aeh.grade`, `aeh.pkg`, `aeh.judge`, `aeh.review` and — since #375's
+    `calib_dual_scored_roster` — `aeh.calib` — so the chain an open sees is only as long
     as the list of contributing modules the process has imported so far. A file opened on the
     short chain
     builds at the base schema, and the columns the missing migrations would have added surface
@@ -297,7 +298,7 @@ class IncompleteMigrationChainError(StoreError):
     `_open_tier` before the tier file's parent directory is made and before any connection is
     opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
     a refusal **at the open site, naming the cause**. The fix on the
-caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
+caller's side is one line — `import aeh.agg, aeh.calib, aeh.det, aeh.extract, aeh.grade,
     aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth,
     aeh.review`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
@@ -1436,7 +1437,7 @@ def current_schema_version(tier: Tier) -> int:
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 12,
     Tier.COHORT: 27,
-    Tier.DURABLE: 10,
+    Tier.DURABLE: 11,
 }
 
 

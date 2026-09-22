@@ -556,8 +556,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1946",
-    "aeh.store:2741",
+    "aeh.store:1947",
+    "aeh.store:2742",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write
@@ -677,7 +677,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # line move.) (#134's re-pin: the conformance module's divergence-gate
     # machinery and the per-fixture ingest-ladder drive grew the module above
     # the ephemeral store open.)
-    "aeh.conform:833",
+    "aeh.conform:834",
     # The review site is #110's: the label store's one durable write, a single
     # `tx.execute` inside `_persist_label`'s transaction body, passing
     # `REVIEW_STATEMENTS["insert_label"]` — a declared statement with keyword
@@ -702,7 +702,7 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries (27 since #368), upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:3670",
+    "aeh.review:3672",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
@@ -747,15 +747,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console:2270",
-    "aeh.console:2347",
-    "aeh.console:2555",
-    "aeh.console:4941",
-    "aeh.console:4946",
-    "aeh.console:4969",
-    "aeh.console:4977",
-    "aeh.console:4985",
-    "aeh.console:4998",
+    "aeh.console:2271",
+    "aeh.console:2348",
+    "aeh.console:2556",
+    "aeh.console:4942",
+    "aeh.console:4947",
+    "aeh.console:4970",
+    "aeh.console:4978",
+    "aeh.console:4986",
+    "aeh.console:4999",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the
@@ -772,10 +772,16 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # guardrail gates, the dual-scoring budget and the knob surface were
     # inserted above the fixture builders and moved all four again (the
     # statements are the same four).
-    "aeh.calib:2607",
-    "aeh.calib:2821",
-    "aeh.calib:2852",
-    "aeh.calib:2862",
+    # #375 (FR-CALIB-15): `register_dual_scored_roster`'s two durable writes, both from
+    # CALIB_STATEMENTS and keyword-parameterized, in one transaction — the comparison's
+    # previous roster is deleted and the new cells inserted, so a re-registration replaces
+    # rather than accumulates and a roster is never half-written.
+    "aeh.calib:2649",
+    "aeh.calib:2656",
+    "aeh.calib:2911",
+    "aeh.calib:3126",
+    "aeh.calib:3157",
+    "aeh.calib:3167",
 
 })
 

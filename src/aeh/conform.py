@@ -804,6 +804,7 @@ class ConformanceSuite:
         # open rather than failing at a distance. `aeh.grade` owns Cohort's last migration,
         # which is the one a short list misses.
         import aeh.agg  # noqa: F401
+        import aeh.calib  # noqa: F401
         import aeh.det  # noqa: F401
         import aeh.extract  # noqa: F401
         import aeh.grade  # noqa: F401
@@ -1596,6 +1597,7 @@ def _promotion_store_dir() -> Path:
         root = Path(tempfile.gettempdir()) / f"aeh-conform-durable-{uuid4().hex[:8]}"
         os.makedirs(root, exist_ok=True)
         import aeh.agg  # noqa: F401
+        import aeh.calib  # noqa: F401
         import aeh.det  # noqa: F401
         import aeh.extract  # noqa: F401
         import aeh.grade  # noqa: F401

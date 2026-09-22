@@ -1277,16 +1277,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # #375 adds `register_dual_scored_roster` (Phase 3): the roster is built from the R0 run's
     # run-scoped score rows, persisted to `calib_roster`, and read back after a restart. One
     # new name, so the probe is the symbol; both cases fail at it until #375 lands.
-    "#375 TS-101 persisted dual-scored roster (TC-CALIB-20, TC-CALIB-C17)": (
-        "symbol",
-        f"{CALIB_MODULE}:register_dual_scored_roster",
-        (
-            "tests/integration/calib/test_tc_calib_20_persisted_dual_scored_roster.py"
-            "::test_tc_calib_20_the_registered_roster_is_persisted_and_carries_only_r0s_bands",
-            "tests/integration/calib/test_tc_calib_20_persisted_dual_scored_roster.py"
-            "::test_tc_calib_c17_the_roster_survives_a_restart_and_the_gate_agrees",
-        ),
-    ),
+    # #375 landed `register_dual_scored_roster`: the roster is built from the R0 run's
+    # run-scoped score rows, persisted to `calib_roster` (Tier D migration 11) and read back
+    # after a restart. TC-CALIB-20 and TC-CALIB-C17 run unmarked against it, markers gone.
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
