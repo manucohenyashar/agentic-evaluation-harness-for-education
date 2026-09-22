@@ -1028,18 +1028,32 @@ STATS_STATEMENTS: dict[str, Statement] = {
         "WHERE run_id = :run_id AND stage = 'score' AND judge_id IS NOT NULL "
         "ORDER BY criterion_id, judge_id"
     ),
-    # `#374` (`FR-STATS-21`): every score unit in a cohort, in the shape the LEASE hands a
-    # worker (`orch.select_run_claimable`'s column list, minus the `pending` filter). The
-    # measurement drivers re-score judgments that are already `done`, so a lease cannot
-    # supply them — it claims pending work — and re-scoring is a read, not a claim. The
-    # `student_ref` join is not decoration: `assemble`'s store door fills the view's ref
-    # slot from it, so a unit rebuilt without it assembles a DIFFERENT request and misses
-    # its recorded reply.
+    # `#374` (`FR-STATS-21`): the score units a measurement driver may re-score, in the
+    # shape the LEASE hands a worker (`orch.select_run_claimable`'s column list). The
+    # drivers re-score judgments that have already been MADE, so a lease cannot supply
+    # them — it claims pending work — and re-scoring is a read, not a claim.
+    #
+    # `status = 'done'` is load-bearing, not tidiness. A pending, leased or quarantined
+    # score unit was never judged; re-scoring one asks the provider a question nobody
+    # asked before, which against a recorded fixture is a missing-recording refusal
+    # blaming the prompt, and against a live backend is a real model call whose answer
+    # then enters the rate as though it were a re-score. Neither is a measurement.
+    #
+    # The `student_ref` join is not decoration: `assemble`'s store door fills the view's
+    # ref slot from it, so a unit rebuilt without it assembles a DIFFERENT request and
+    # misses its recorded reply.
+    #
+    # Deliberately NOT filtered by run: `FR-STATS-21`'s signature names a fixture
+    # submission set, not a run, and a fixture set judged across two runs is still that
+    # judge's evidence. What the absence of a run filter forbids is dividing by the
+    # submission count — see the drivers, which divide by each judge's own measured
+    # judgments precisely so a second run cannot inflate a rate past 1.0.
     "select_score_units": Statement(
         "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, "
         "w.judge_id, w.attempts AS attempt, s.student_ref AS student_ref "
         "FROM work_unit w JOIN submission s ON s.submission_id = w.submission_id "
-        "WHERE w.stage = 'score' AND w.judge_id IS NOT NULL ORDER BY w.work_id"
+        "WHERE w.stage = 'score' AND w.judge_id IS NOT NULL AND w.status = 'done' "
+        "ORDER BY w.work_id"
     ),
     "select_run_verdicts": Statement(
         "SELECT w.criterion_id, v.judge_id, v.band, v.uncited, v.evidence_sufficient, "
@@ -1794,11 +1808,12 @@ class _ExemplarSalt:
 def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any]:
     """The score units of `fixture_submissions`, rebuilt as the lease resolved them.
 
-    The drivers re-score judgments that have already been made, so the units are `done`
-    and `Orchestrator.lease` — which claims PENDING work — cannot hand them over. They are
-    read back instead, into the shipped `WorkUnit`: same fields, same values the claim
-    select filled, `student_name` and `submission_text` left `None` exactly as a lease
-    leaves them (the assembler resolves the words; `FR-ORCH-04`'s reconciliation).
+    The drivers re-score judgments that have already been made, so the units are the
+    `done` ones — the statement says so — and `Orchestrator.lease`, which claims PENDING
+    work, cannot hand them over. They are read back instead, into the shipped `WorkUnit`:
+    same fields, same values the claim select filled, `student_name` and `submission_text`
+    left `None` exactly as a lease leaves them (the assembler resolves the words;
+    `FR-ORCH-04`'s reconciliation).
 
     That fidelity is the whole point. `assemble` builds the request from these fields, the
     recorded-fixture key IS the request, and a unit rebuilt with one field different
@@ -1808,7 +1823,12 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
     Cohorts are discovered by walking the tier's files, the no-side-index discovery
     `M-JUDGE` and `M-EXTRACT` use. A submission the store does not hold contributes no
     unit rather than raising: the caller names a fixture SET, and the drivers report a
-    rate per judge over the submissions that exist.
+    rate per judge over the judgments that exist — which is why they divide by what this
+    returns per judge, never by `len(fixture_submissions)`.
+
+    One (submission, judge) may yield SEVERAL units — one per criterion, and one more per
+    run the fixture set was judged in. That is correct and each is its own judgment; the
+    per-judge denominator is what keeps the arithmetic honest across all of them.
     """
     from aeh.orch import WorkUnit
 
@@ -1841,20 +1861,38 @@ def _score_units_for(store: Any, fixture_submissions: Sequence[str]) -> list[Any
     return units
 
 
-def _judged_band(store: Any, provider: Any, ref: Any, unit: Any, salt: str | None) -> str:
-    """Assemble one unit under `salt` and dispatch it, returning the band answered.
+def _exemplar_order(request: Any) -> tuple:
+    """The exemplar ids of an assembled request, in presentation order.
+
+    This is the thing the salt permutes, so comparing two of these is how the drivers
+    tell a real permutation from one that changed nothing.
+    """
+    criterion = getattr(request, "criterion", None)
+    return tuple(
+        getattr(view, "exemplar_id", None)
+        for view in (getattr(criterion, "exemplars", ()) or ())
+    )
+
+
+def _assemble_under(store: Any, provider: Any, ref: Any, unit: Any, salt: str | None) -> Any:
+    """Assemble one unit with `HARNESS_JUDGE_EXEMPLAR_SEED` set to `salt`.
 
     Assembly is inside the salt and dispatch is outside it on purpose: the exemplar order
     is fixed the moment the request exists, and the recorded reply is keyed on that
-    request, so holding the environment across the call would change nothing and would
-    widen the window in which an unrelated concurrent assembly saw the wrong order.
+    request, so holding the environment across the dispatch would change nothing and
+    would widen the window in which an unrelated concurrent assembly saw the wrong order.
     """
     from aeh.judge import ScoringWorker
 
-    worker = ScoringWorker(store, provider, ref)
     with _ExemplarSalt(salt):
-        request = worker.assemble(unit)
-    return worker.dispatch(request, ref).band
+        return ScoringWorker(store, provider, ref).assemble(unit)
+
+
+def _band_of(store: Any, provider: Any, ref: Any, request: Any) -> str:
+    """Dispatch one assembled request and return the band answered."""
+    from aeh.judge import ScoringWorker
+
+    return ScoringWorker(store, provider, ref).dispatch(request, ref).band
 
 
 def measure_position_bias(
@@ -1870,19 +1908,46 @@ def measure_position_bias(
     Re-scores every fixture judgment twice through the real `ScoringWorker.assemble` /
     `dispatch` path — once in the shipped default order, once with
     `HARNESS_JUDGE_EXEMPLAR_SEED` set to `seed` — and reports, per judge, the fraction of
-    submissions whose band MOVED. A judge whose verdict is a property of the work answers
-    the same band either way and rates 0; one whose verdict is a property of where the
-    exemplars sat rates above it. That is `FR-STATS-15`'s order/position swap, measured.
+    its judgments whose band MOVED. A judge whose verdict is a property of the work
+    answers the same band either way and rates 0; one whose verdict is a property of
+    where the exemplars sat rates above it. That is `FR-STATS-15`'s order/position swap,
+    measured.
 
-    **The denominator is the fixture set, not the dispatch count.** Two dispatches make
-    one comparison, and the rate `run_mvvp` pairs with self-agreement in step 5 is per
-    judgment — "J2 moved on two of its six" — so dividing by dispatches would silently
-    halve every rate.
+    **The denominator is each judge's own measured judgments — not the fixture-submission
+    count, and not the dispatch count.** All three coincide in the simple world (one run,
+    one criterion, every submission judged) and diverge everywhere else, silently:
+
+    * one (submission, judge) yields one judgment PER CRITERION, and one more per run the
+      fixture set was judged in. Dividing by `len(fixture_submissions)` counted those
+      extra judgments in the numerator while leaving the denominator at six — a fixture
+      set judged twice reported double the true rate, and `run_mvvp` then REFUSED the
+      result for leaving `[0, 1]`, turning a wrong figure into a crash one call later;
+    * a submission the store holds no judgment for inflated the denominator, understating
+      every rate (`2/7` where the truth is `2/6`);
+    * two dispatches make ONE comparison, so dividing by dispatches would halve
+      everything.
+
+    **A judge with no measured judgment is absent from the result, never `0.0`.** Zero is
+    a measurement — "this judge did not move" — and a judge the fixture set never reached
+    has not been measured at all. `run_mvvp` reports an absent judge as
+    `measured=False` with its declared reason, which is the true statement; a fabricated
+    `0.0` would have been stamped `measured=True`. This is the same rule the empty-fixture
+    guard below applies, held at per-judge granularity.
+
+    **A permutation that moved nothing is excluded from both sides of the fraction.**
+    `judge._ordered_exemplars` returns early for a criterion with fewer than two
+    exemplars, so the salt cannot reorder what is not there: the permuted request is
+    byte-identical to the default, the same recorded reply answers both, and the
+    comparison can only ever say "no change". Counting that as evidence of
+    order-insensitivity would manufacture a confident `0.0` out of a criterion that was
+    never permutable. Units whose order did not move are skipped; a judge left with no
+    movable judgment is absent, and a call where nothing at all was permutable raises
+    rather than returning a mapping of silent zeroes.
 
     The return is a plain `Mapping[judge build_id, float]`, which is what
     `run_mvvp(measured_position_bias=...)` validates and reports verbatim. No wrapper
-    type: a rate that cannot be compared with `==` to the figure a reader hand-computes is
-    a rate nobody can check.
+    type: a rate that cannot be compared with `==` to the figure a reader hand-computes
+    is a rate nobody can check.
 
     Judges outside `panel` are ignored rather than measured — `run_mvvp` refuses rates for
     judges its declared panel does not name, so emitting one here would produce a mapping
@@ -1896,16 +1961,36 @@ def measure_position_bias(
             "empty fixture set is 0/0, and reporting 0.0 for it would read as 'this judge "
             "is order-insensitive' when nothing was measured at all."
         )
-    changed = {build_id: 0 for build_id in refs}
-    for unit in _score_units_for(store, submissions):
+    changed: dict[str, int] = {}
+    measured: dict[str, int] = {}
+    units = _score_units_for(store, submissions)
+    for unit in units:
         ref = refs.get(unit.judge)
         if ref is None:
             continue
-        default_band = _judged_band(store, provider, ref, unit, None)
-        permuted_band = _judged_band(store, provider, ref, unit, str(seed))
+        default_request = _assemble_under(store, provider, ref, unit, None)
+        permuted_request = _assemble_under(store, provider, ref, unit, str(seed))
+        if _exemplar_order(permuted_request) == _exemplar_order(default_request):
+            # The salt moved nothing for this judgment — see the docstring. Not a
+            # measurement, so it enters neither the numerator nor the denominator.
+            continue
+        measured[unit.judge] = measured.get(unit.judge, 0) + 1
+        default_band = _band_of(store, provider, ref, default_request)
+        permuted_band = _band_of(store, provider, ref, permuted_request)
         if permuted_band != default_band:
-            changed[unit.judge] += 1
-    return {build_id: changed[build_id] / len(submissions) for build_id in refs}
+            changed[unit.judge] = changed.get(unit.judge, 0) + 1
+    if units and not measured:
+        raise ValueError(
+            f"measure_position_bias(seed={seed!r}) found judgments to re-score but the "
+            "exemplar salt reordered none of them, so every rate would be a vacuous 0.0 "
+            "reading as 'order-insensitive'. A criterion with fewer than two exemplars "
+            "cannot be permuted (judge._ordered_exemplars returns early); measure a "
+            "fixture set whose criteria declare at least two."
+        )
+    return {
+        build_id: changed.get(build_id, 0) / count
+        for build_id, count in measured.items()
+    }
 
 
 def measure_self_agreement(
@@ -1925,7 +2010,14 @@ def measure_self_agreement(
 
     **Replication is per judgment, not per judge.** `runs` dispatches of one submission
     says nothing about the other five; the floor `FR-STATS-21` states is on each judgment,
-    so this issues ``runs * len(fixture_submissions)`` dispatches per judge.
+    so this issues ``runs`` dispatches for every judgment the judge actually made.
+
+    **The denominator is each judge's own measured judgments**, and a judge with none is
+    absent from the result rather than carrying `0.0` — for the reasons set out on
+    `measure_position_bias`, which apply here with the sign flipped: a fabricated `0.0`
+    self-agreement reads as "measured, and never stable", the harshest possible claim
+    about a judge that was never asked anything. The two drivers fabricating opposite
+    lies from the same empty input is what makes this a rule rather than a preference.
 
     `runs` below `SELF_AGREEMENT_MINIMUM_RUNS` raises `ValueError` — a real refusal, not an
     assertion, so it survives ``python -O`` and reads as a rejected argument rather than a
@@ -1954,15 +2046,21 @@ def measure_self_agreement(
             "measure_self_agreement() needs at least one fixture submission: 1.0 over an "
             "empty fixture set would read as perfect stability, measured on nothing."
         )
-    agreed = {build_id: 0 for build_id in refs}
+    agreed: dict[str, int] = {}
+    measured: dict[str, int] = {}
     for unit in _score_units_for(store, submissions):
         ref = refs.get(unit.judge)
         if ref is None:
             continue
-        bands = {_judged_band(store, provider, ref, unit, None) for _ in range(runs)}
+        request = _assemble_under(store, provider, ref, unit, None)
+        measured[unit.judge] = measured.get(unit.judge, 0) + 1
+        bands = {_band_of(store, provider, ref, request) for _ in range(runs)}
         if len(bands) == 1:
-            agreed[unit.judge] += 1
-    return {build_id: agreed[build_id] / len(submissions) for build_id in refs}
+            agreed[unit.judge] = agreed.get(unit.judge, 0) + 1
+    return {
+        build_id: agreed.get(build_id, 0) / count
+        for build_id, count in measured.items()
+    }
 
 
 def run_mvvp(
