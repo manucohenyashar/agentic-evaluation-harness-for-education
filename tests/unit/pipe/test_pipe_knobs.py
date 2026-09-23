@@ -146,13 +146,20 @@ def test_tc_pipe_14_an_invalid_knob_is_refused_before_any_row_is_written(
 
 @pytest.mark.writtenahead
 @pytest.mark.parametrize(("name", "bad", "good"), REFUSALS)
-def test_tc_pipe_14_main_exits_1_on_an_invalid_knob(name, bad, good, tmp_data_dir, monkeypatch):
+def test_tc_pipe_14_main_exits_1_on_an_invalid_knob(
+    name, bad, good, tmp_data_dir, monkeypatch, capsys
+):
     """`main` exits 1 for a refused configuration, and does so *because of the knob*.
 
-    The control arm carries this case: `main` exits 1 for many reasons, so the same invocation
-    is made under a valid value of the same knob and the assertion is that only the invalid one
-    names it. Without the pair, `TC-PIPE-08`'s unknown-`--package-version` exit would satisfy
-    every assertion here while the knob went unread.
+    `main(argv) -> int` **returns** the exit code; only `aeh/__main__.py` turns it into a
+    `SystemExit` (design delta §3.1 interface block). A test expecting the exception would pass
+    for a `main` that raised instead of returning — the opposite of the declared contract.
+
+    The control arm carries this case. `main` exits 1 for many reasons, and `TC-PIPE-08` already
+    pins exit 1 for an unknown `--package-version` — which this invocation also has. So the same
+    call is made under a valid value of the same knob, and the assertion is that only the
+    invalid one *names the knob*. Without the pair, every assertion here would hold while the
+    knob went entirely unread.
     """
     main = require(PIPE_MODULE, "main", issue=ISSUE)
     argv = [
@@ -163,21 +170,24 @@ def test_tc_pipe_14_main_exits_1_on_an_invalid_knob(name, bad, good, tmp_data_di
     ]
 
     monkeypatch.setenv(name, bad)
-    with pytest.raises(SystemExit) as caught:
-        main(list(argv))
-    assert caught.value.code == 1, (
-        f"main exited {caught.value.code!r} for {name}={bad!r}; the plan pins exit 1 for a "
+    invalid_code = main(list(argv))
+    invalid_output = "".join(capsys.readouterr())
+    assert invalid_code == 1, (
+        f"main returned {invalid_code!r} for {name}={bad!r}; the plan pins exit 1 for a "
         "refused configuration (Q-14)"
     )
-    invalid_message = str(caught.value)
+    assert name in invalid_output, (
+        f"main refused {name}={bad!r} without naming the knob: {invalid_output!r}. An operator "
+        "has to be told which setting they got wrong"
+    )
 
     monkeypatch.setenv(name, good)
-    with pytest.raises(SystemExit) as control:
-        main(list(argv))
-    assert name in invalid_message or name not in str(control.value), (
-        f"main's refusal reads the same with {name}={bad!r} as with {name}={good!r}: "
-        f"{invalid_message!r} vs {str(control.value)!r}. Nothing here shows the knob was read "
-        "at all — this invocation exits 1 for its unknown package version either way"
+    main(list(argv))
+    valid_output = "".join(capsys.readouterr())
+    assert name not in valid_output, (
+        f"main names {name} even when it holds the valid value {good!r}: {valid_output!r}. "
+        "This invocation exits 1 for its unknown package version either way, so a refusal that "
+        "names the knob in both cases shows nothing about the knob having been read"
     )
 
 
