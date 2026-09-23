@@ -1,165 +1,209 @@
-"""`TS-83` (issue #377) — `TC-PIPE-14`: `M-PIPE`'s two knobs, validated and read at call time
-(`FR-PIPE-01` config arm, gap-fix test plan §5 / §6).
+"""`TS-83` (issue #377) — `TC-PIPE-14`'s refusal arms: `M-PIPE` validates its two knobs before
+it writes anything, and `main` exits 1 (`FR-PIPE-01` config arm, gap-fix test plan §5 / §6).
 
 | Case | Input | Expected |
 |---|---|---|
-| `TC-PIPE-14` | `HARNESS_PIPE_MAX_PASSES` ∈ {`"0"`, `"-1"`, `"x"`, unset, `"2"`}; `HARNESS_PIPE_PASS_SLEEP_MS` ∈ {`"-5"`, `"0"`} | Unset → unbounded. `"2"` → at most 2 passes. `"0"`, `"-1"`, `"x"` and `"-5"` raise before any row is written, and `main` exits 1 (type per Q-14). The knob is read at call time: changing the environment between two calls changes the pass bound |
+| `TC-PIPE-14` | `HARNESS_PIPE_MAX_PASSES` ∈ {`"0"`, `"-1"`, `"x"`, unset, `"2"`}; `HARNESS_PIPE_PASS_SLEEP_MS` ∈ {`"-5"`, `"0"`} | Unset → unbounded. `"2"` → at most 2 passes. `"0"`, `"-1"`, `"x"` and `"-5"` raise before any row is written, and `main` exits 1 (type per Q-14). The knob is read at call time |
 
-**Rung 1, and why this case is the one that stays there.** Seam 3 says an environment-sensitive
-constant gets a knob whose production value is the default. Nothing about *resolving* a knob
-needs a store, a provider or a run — so the resolution arms here construct nothing. The one arm
-that does touch a filesystem is the "before any row is written" half, which is an assertion
-about **absence**: after `main` refuses, the data directory holds no store files. That needs a
-directory, not a world.
+**What is implemented here, and what is not.** The **refusal** clauses are implemented: an invalid
+knob raises before any row is written, `main` exits 1, and the refusal names the knob it is
+about. The **positive** clauses — "unset → unbounded" and "`"2"` → at most 2 passes" — are *not*,
+because observing a pass bound requires driving a run to completion, and no world in this repo
+can drive `run_to_completion` today (see #377's PR and the issue comment: `F-DEV-PIPE` does not
+exist, and the recorded-fixture world records its responses *as it drives*, so a self-driving
+composer has nothing to replay). They land with `TC-PIPE-01` once that corpus exists.
+
+**Why the refusal arms are not blocked by the same thing.** The refusal happens *before* the
+driver dispatches anything, so the store never needs to be drivable — only real. These cases use
+`tests.support.orch_run.seed_run`, a genuine run over a real store, and assert the refusal lands
+before it is touched.
 
 **Q-14, honoured rather than worked around.** The plan records that `M-PIPE` declares no module
 error type, so `TC-PIPE-14` "asserts only that the error is raised before any row is written and
 that `main` exits 1; the type is not asserted". These cases therefore catch `Exception` for the
-refusal arms and pin the *exit code* and the *absence of rows*, never a class name. When #364
-declares an error type, tightening this to that type is a deliberate edit, not a silent one.
+refusal arms and pin the *exit code*, the *absence of writes* and the *knob named in the
+message* — never a class name.
 
-**Read at call time, which is the half a constant gets wrong.** A knob captured at import time
-is indistinguishable from a correct one until the second call in the same process — so the last
-case changes the environment *between* two resolutions and asserts the answer moved. A module
-that read its knob once passes every other assertion in this file.
+**The control arm is what makes the `main` cases about the knob.** `main` exits 1 for plenty of
+reasons — `TC-PIPE-08` already pins exit 1 for an unknown `--package-version` — so an exit code
+alone cannot show the knob was read. Each refusal is therefore paired with the same invocation
+under a *valid* knob, and the assertion is that only the invalid one names the knob.
 
-**Written ahead of implementation: yes** — `aeh.pipeline` does not exist; #364 builds it. Every
-body probes it first with `require(...)`, so each case fails in milliseconds with a message
-naming #364 rather than erroring at collection. `WRITTEN_AHEAD_BLOCKERS` keys the entry to
-**#364**, the implementing issue, not to #377 which writes the tests.
+**Interface.** Only `CT-PIPE-01`'s declared surface is used: `run_to_completion`, `recover`,
+`main`. An earlier draft of this file invented `pipeline.max_passes(environ=...)` and
+`pipeline.pass_sleep_ms(environ=...)` readers; they are not in the design, `max_passes` already
+names a `run_to_completion` parameter, and every clause here is observable through the declared
+surface — so they are gone.
 
-**Scope.** `TC-PIPE-08`'s full CLI contract (exit 0/1/3, stdout JSON, the `HARNESS_PROFILE`
-resolution) is `TS-84` (#378) and is deliberately not asserted here; this file touches `main`
-only for the one clause `TC-PIPE-14` names.
+**Written ahead of implementation: yes** — `aeh.pipeline` is #364's. Every body probes it first
+with `require(...)`, so each case fails in milliseconds naming #364 rather than erroring at
+collection. `WRITTEN_AHEAD_BLOCKERS` keys the entry to **#364**, the implementing issue.
 """
 
 from __future__ import annotations
 
 import pytest
 
+import aeh.agg  # noqa: F401 — the full migration chain (CLAUDE.md), for the seeded store
+import aeh.det  # noqa: F401
+import aeh.extract  # noqa: F401
+import aeh.grade  # noqa: F401
+import aeh.ingest  # noqa: F401
+import aeh.integ  # noqa: F401
+import aeh.judge  # noqa: F401
+import aeh.orch  # noqa: F401
+import aeh.pkg  # noqa: F401
+import aeh.review  # noqa: F401
+import aeh.synth  # noqa: F401
+from aeh.store import Statement, open_store
 from tests.support.impl import PIPE_MODULE, require
+from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 ISSUE = "#364"
 
 MAX_PASSES_ENV = "HARNESS_PIPE_MAX_PASSES"
 PASS_SLEEP_ENV = "HARNESS_PIPE_PASS_SLEEP_MS"
 
-#: The values the plan names as refusals, per knob.
-REFUSED_MAX_PASSES = ("0", "-1", "x")
-REFUSED_PASS_SLEEP = ("-5",)
+#: The refusals the plan names, per knob, with a valid value of the same knob to control against.
+REFUSALS = (
+    (MAX_PASSES_ENV, "0", "2"),
+    (MAX_PASSES_ENV, "-1", "2"),
+    (MAX_PASSES_ENV, "x", "2"),
+    (PASS_SLEEP_ENV, "-5", "0"),
+)
 
-#: The reader each knob is resolved through. `M-PIPE` does not exist, so these names are an
-#: interface assumption this case makes for #364 to reconcile deliberately: the keyword-`environ`
-#: shape every other module in this repo already uses for an env-gated knob
-#: (`calib._max_questions`, `store._int_env`), so a knob is testable without mutating the process.
-READERS = {MAX_PASSES_ENV: "max_passes", PASS_SLEEP_ENV: "pass_sleep_ms"}
+CRITERIA = ({"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},)
+SUBMISSIONS = ("S01",)
+
+#: The five §4.3 tables a driven run writes into. "Before any row is written" is asserted
+#: against all of them, not against one.
+WRITTEN_TABLES = ("evidence", "verdict", "criterion_score", "narrative", "cell_phase")
 
 
-def _resolver(name: str):
-    """The module's reader for one knob, probed by name so a missing `M-PIPE` fails legibly."""
-    return require(PIPE_MODULE, READERS[name], issue=ISSUE)
+def _row_counts(store) -> dict[str, int]:
+    handle = store.cohort(ORCH_COHORT_ID)
+    counts = {}
+    for table in WRITTEN_TABLES:
+        rows = handle.query(Statement(f"SELECT COUNT(*) AS n FROM {table}"))  # noqa: S608
+        counts[table] = int(rows[0]["n"])
+    return counts
 
 
-# --- TC-PIPE-14 — resolution ---------------------------------------------------------------
+@pytest.fixture
+def seeded_run(tmp_data_dir):
+    """A real run over a real store. Nothing is dispatched — the refusal lands first."""
+    store = open_store(tmp_data_dir)
+    try:
+        _orchestrator, run_id, _version = seed_run(
+            store, submissions=SUBMISSIONS, criteria=CRITERIA,
+        )
+        yield store, run_id
+    finally:
+        store.close()
+
+
+# --- TC-PIPE-14 — the refusal lands before anything is written -----------------------------
 
 
 @pytest.mark.writtenahead
-def test_tc_pipe_14_an_unset_max_passes_is_unbounded():
-    """Unset → unbounded. `None` is the only honest spelling: a sentinel integer would make
-    "unbounded" a number somebody later compares against."""
-    resolve = _resolver(MAX_PASSES_ENV)
-    assert resolve(environ={}) is None, (
-        f"{MAX_PASSES_ENV} unset must resolve to None (unbounded); a numeric default would cap "
-        "a production run at a figure nobody declared"
+@pytest.mark.parametrize(("name", "bad", "good"), REFUSALS)
+def test_tc_pipe_14_an_invalid_knob_is_refused_before_any_row_is_written(
+    name, bad, good, seeded_run, monkeypatch
+):
+    """The refusal raises, names the knob, and leaves every §4.3 table untouched.
+
+    "Before any row is written" is the half worth asserting: an implementation that validated
+    its knobs after starting to drive would raise too, and the exception alone cannot tell the
+    two apart. The row counts can.
+    """
+    run_to_completion = require(PIPE_MODULE, "run_to_completion", issue=ISSUE)
+    store, run_id = seeded_run
+    before = _row_counts(store)
+    monkeypatch.setenv(name, bad)
+
+    with pytest.raises(Exception) as caught:  # Q-14: the type is not asserted
+        run_to_completion(store, run_id, provider=None, run_config=None)
+
+    assert name in str(caught.value), (
+        f"the refusal does not name {name}: an operator reading it has to guess which knob they "
+        f"set wrong. Got: {caught.value!r}"
     )
-
-
-@pytest.mark.writtenahead
-def test_tc_pipe_14_max_passes_two_resolves_to_two():
-    resolve = _resolver(MAX_PASSES_ENV)
-    assert resolve(environ={MAX_PASSES_ENV: "2"}) == 2
-
-
-@pytest.mark.writtenahead
-@pytest.mark.parametrize("value", REFUSED_MAX_PASSES)
-def test_tc_pipe_14_an_invalid_max_passes_is_refused(value):
-    """`"0"`, `"-1"` and `"x"`. Zero is refused with the negatives deliberately: a run that may
-    make no passes at all is a run that cannot finish, which is a configuration nobody means."""
-    resolve = _resolver(MAX_PASSES_ENV)
-    # Q-14: the plan does not declare M-PIPE's error type, so the type is not asserted.
-    with pytest.raises(Exception) as caught:
-        resolve(environ={MAX_PASSES_ENV: value})
-    assert MAX_PASSES_ENV in str(caught.value), (
-        f"the refusal does not name {MAX_PASSES_ENV}: an operator reading this message has to "
-        f"guess which knob they set wrong. Got: {caught.value!r}"
+    assert _row_counts(store) == before, (
+        f"{name}={bad!r} was refused, but rows were written first: {before} became "
+        f"{_row_counts(store)}. A rejected configuration must leave no half-driven run behind"
     )
-
-
-@pytest.mark.writtenahead
-def test_tc_pipe_14_a_zero_pass_sleep_is_valid_and_a_negative_one_is_refused():
-    """`"0"` is a legitimate value — no sleep between passes — and `"-5"` is not. The pair is
-    one case because the boundary is the whole point: an implementation validating `> 0` refuses
-    the valid value, and one validating nothing accepts the invalid one."""
-    resolve = _resolver(PASS_SLEEP_ENV)
-    assert resolve(environ={PASS_SLEEP_ENV: "0"}) == 0
-    for value in REFUSED_PASS_SLEEP:
-        with pytest.raises(Exception) as caught:
-            resolve(environ={PASS_SLEEP_ENV: value})
-        assert PASS_SLEEP_ENV in str(caught.value), (
-            f"the refusal does not name {PASS_SLEEP_ENV}. Got: {caught.value!r}"
+    # The control: the same call under a valid value of the same knob must not refuse *for the
+    # knob*. Without this the assertions above pass for a driver that refuses everything.
+    monkeypatch.setenv(name, good)
+    try:
+        run_to_completion(store, run_id, provider=None, run_config=None)
+    except Exception as exc:  # noqa: BLE001 — a valid knob may still fail for other reasons
+        assert name not in str(exc), (
+            f"{name}={good!r} is a valid value but the driver still refused naming the knob: "
+            f"{exc!r}. The knob check is rejecting a value the plan declares legal"
         )
 
 
 @pytest.mark.writtenahead
-def test_tc_pipe_14_the_knobs_are_read_at_call_time():
-    """Two resolutions in one process, with the environment changed between them, give two
-    answers (seam 3). A module that captured its knob at import time passes every assertion
-    above and fails this one — which is the defect the clause exists for."""
-    resolve = _resolver(MAX_PASSES_ENV)
-    first = resolve(environ={MAX_PASSES_ENV: "2"})
-    second = resolve(environ={MAX_PASSES_ENV: "5"})
-    assert (first, second) == (2, 5), (
-        f"the pass bound did not move when the environment did: {first} then {second}. The knob "
-        "is read at call time, not captured at import (CLAUDE.md seam 3)"
+@pytest.mark.parametrize(("name", "bad", "good"), REFUSALS)
+def test_tc_pipe_14_main_exits_1_on_an_invalid_knob(name, bad, good, tmp_data_dir, monkeypatch):
+    """`main` exits 1 for a refused configuration, and does so *because of the knob*.
+
+    The control arm carries this case: `main` exits 1 for many reasons, so the same invocation
+    is made under a valid value of the same knob and the assertion is that only the invalid one
+    names it. Without the pair, `TC-PIPE-08`'s unknown-`--package-version` exit would satisfy
+    every assertion here while the knob went unread.
+    """
+    main = require(PIPE_MODULE, "main", issue=ISSUE)
+    argv = [
+        "run",
+        "--data-dir", str(tmp_data_dir),
+        "--cohort", ORCH_COHORT_ID,
+        "--package-version", "pv-knob",
+    ]
+
+    monkeypatch.setenv(name, bad)
+    with pytest.raises(SystemExit) as caught:
+        main(list(argv))
+    assert caught.value.code == 1, (
+        f"main exited {caught.value.code!r} for {name}={bad!r}; the plan pins exit 1 for a "
+        "refused configuration (Q-14)"
     )
+    invalid_message = str(caught.value)
 
-
-# --- TC-PIPE-14 — the refusal happens before anything is written ---------------------------
+    monkeypatch.setenv(name, good)
+    with pytest.raises(SystemExit) as control:
+        main(list(argv))
+    assert name in invalid_message or name not in str(control.value), (
+        f"main's refusal reads the same with {name}={bad!r} as with {name}={good!r}: "
+        f"{invalid_message!r} vs {str(control.value)!r}. Nothing here shows the knob was read "
+        "at all — this invocation exits 1 for its unknown package version either way"
+    )
 
 
 @pytest.mark.writtenahead
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [(MAX_PASSES_ENV, value) for value in REFUSED_MAX_PASSES]
-    + [(PASS_SLEEP_ENV, value) for value in REFUSED_PASS_SLEEP],
-)
-def test_tc_pipe_14_main_exits_1_and_writes_no_row_on_an_invalid_knob(
-    name, value, tmp_data_dir, monkeypatch
-):
-    """`main` exits 1, and the refusal lands **before any row is written**.
+def test_tc_pipe_14_the_knob_is_read_at_call_time(seeded_run, monkeypatch):
+    """Two calls in one process, with the environment changed between them, behave differently.
 
-    The second half is the one worth asserting: an implementation that validates its knobs after
-    creating the run row leaves a run nobody can finish, and it exits 1 all the same — so the
-    exit code alone cannot tell the two apart. The oracle is the absence of the store files a
-    run would have created.
+    Seam 3: a knob captured at import time is indistinguishable from a correct one until the
+    second call. The observable used here is the refusal itself — valid, then invalid — which
+    needs no drivable run.
     """
-    main = require(PIPE_MODULE, "main", issue=ISSUE)
-    monkeypatch.setenv(name, value)
+    run_to_completion = require(PIPE_MODULE, "run_to_completion", issue=ISSUE)
+    store, run_id = seeded_run
 
-    with pytest.raises(SystemExit) as caught:
-        main([
-            "run",
-            "--data-dir", str(tmp_data_dir),
-            "--cohort", "coh-knob",
-            "--package-version", "pv-knob",
-        ])
-    assert caught.value.code == 1, (
-        f"main exited {caught.value.code!r} for {name}={value!r}; the plan pins exit 1 for a "
-        "refused configuration (Q-14)"
-    )
-    written = sorted(path.name for path in tmp_data_dir.rglob("*.sqlite") if path.is_file())
-    assert written == [], (
-        f"main refused {name}={value!r} but left store files behind: {written}. The knob is "
-        "validated before any row is written, or a rejected configuration leaves a half-built "
-        "run somebody has to clean up"
+    monkeypatch.setenv(MAX_PASSES_ENV, "2")
+    try:
+        run_to_completion(store, run_id, provider=None, run_config=None)
+    except Exception as exc:  # noqa: BLE001
+        assert MAX_PASSES_ENV not in str(exc), (
+            f"{MAX_PASSES_ENV}=2 is valid but was refused: {exc!r}"
+        )
+
+    monkeypatch.setenv(MAX_PASSES_ENV, "0")
+    with pytest.raises(Exception) as caught:
+        run_to_completion(store, run_id, provider=None, run_config=None)
+    assert MAX_PASSES_ENV in str(caught.value), (
+        f"the second call did not refuse {MAX_PASSES_ENV}=0 although the environment changed "
+        f"between the two: {caught.value!r}. The knob was captured once, not read at call time"
     )

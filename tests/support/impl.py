@@ -1292,48 +1292,23 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     ),
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
-    # --- TS-83 (#377), M-PIPE composition ---------------------------------------------------
+    # --- TS-83 (#377), M-PIPE's knob refusals ------------------------------------------------
     #
-    # `aeh.pipeline` does not exist at all - #364 builds the module, and #377 only writes the
-    # cases. The entry is keyed to the IMPLEMENTING issue, as the test issue instructs, so the
-    # gate names #364 when it fires. One `module` probe covers all eight TC IDs: every body
-    # calls `require(PIPE_MODULE, ...)` first, so none of them builds a world until it lands.
-    "#364 TS-83 M-PIPE composition (TC-PIPE-01..06, 13, 14)": (
+    # `aeh.pipeline` does not exist - #364 builds it, and #377 only writes the cases, so the
+    # entry is keyed to the IMPLEMENTING issue and the gate names #364 when it fires.
+    #
+    # Only TC-PIPE-14's refusal arms are here. The rest of TS-83 (TC-PIPE-01..06, 13) is
+    # blocked on the F-DEV-PIPE corpus, which does not exist: the recorded-fixture world
+    # records each response immediately before dispatching it, and a score request is keyed on
+    # the assembled prompt INCLUDING the extracted evidence - so nothing can pre-record the
+    # responses a self-driving `run_to_completion` would need. See #377.
+    "#364 TS-83 M-PIPE knob refusals (TC-PIPE-14)": (
         "module",
         "aeh.pipeline",
         (
-            "tests/integration/pipe/test_aggregate_hook.py::test_tc_pipe_04_a_cell_that_does_not_escalate_enqueues_nothing",
-            "tests/integration/pipe/test_aggregate_hook.py::test_tc_pipe_04_a_failing_write_score_leaves_no_score_no_escalation_and_no_phase",
-            "tests/integration/pipe/test_aggregate_hook.py::test_tc_pipe_04_an_escalated_cell_aggregates_again_with_five_units",
-            "tests/integration/pipe/test_aggregate_hook.py::test_tc_pipe_04_one_score_row_and_a_recorded_phase_per_cell",
-            "tests/integration/pipe/test_aggregate_hook.py::test_tc_pipe_04_the_hooks_run_in_the_order_fr_pipe_04_numbers",
-            "tests/integration/pipe/test_fallback_and_completion.py::test_tc_pipe_05_a_successful_re_request_keeps_three_verdicts_and_no_fallback",
-            "tests/integration/pipe/test_fallback_and_completion.py::test_tc_pipe_05_no_cell_is_ever_scored_as_an_even_panel",
-            "tests/integration/pipe/test_fallback_and_completion.py::test_tc_pipe_05_two_surviving_verdicts_aggregate_with_fallback",
-            "tests/integration/pipe/test_fallback_and_completion.py::test_tc_pipe_06_a_complete_run_synthesizes_and_grades_every_submission",
-            "tests/integration/pipe/test_fallback_and_completion.py::test_tc_pipe_06_an_unscored_criterion_means_no_narrative_and_an_incomplete_grade",
-            "tests/integration/pipe/test_integrity_pre_hook.py::test_tc_pipe_03_a_cell_with_a_pending_extract_unit_is_not_verified",
-            "tests/integration/pipe/test_integrity_pre_hook.py::test_tc_pipe_03_a_quarantined_extract_unit_is_terminal",
-            "tests/integration/pipe/test_integrity_pre_hook.py::test_tc_pipe_03_a_second_pass_does_not_verify_the_cell_again",
-            "tests/integration/pipe/test_integrity_pre_hook.py::test_tc_pipe_03_a_terminal_cell_is_verified_once_and_records_its_phase",
-            "tests/integration/pipe/test_payload_before_done.py::test_tc_pipe_02_a_clean_run_leaves_no_done_unit_without_its_payload",
-            "tests/integration/pipe/test_payload_before_done.py::test_tc_pipe_02_a_fault_after_the_model_call_leaves_the_unit_not_done",
-            "tests/integration/pipe/test_payload_before_done.py::test_tc_pipe_02_the_faulted_unit_is_pending_or_quarantined",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_a_paused_run_returns_paused_and_writes_nothing",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_an_unknown_run_id_raises_before_any_write",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_max_passes_one_stops_after_one_pass",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_obs_14_no_stage_detail_is_a_bare_status",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_run_to_completion_drives_the_run_to_complete",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_the_extract_entry_agrees_with_the_ledger",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_01_the_trace_holds_one_entry_per_stage_in_execution_order",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_13_a_composition_fault_pauses_the_run_and_names_itself",
-            "tests/integration/pipe/test_run_to_completion.py::test_tc_pipe_13_the_aggregate_stage_detail_names_the_cell",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_a_zero_pass_sleep_is_valid_and_a_negative_one_is_refused",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_an_invalid_max_passes_is_refused",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_an_unset_max_passes_is_unbounded",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_main_exits_1_and_writes_no_row_on_an_invalid_knob",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_max_passes_two_resolves_to_two",
-            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_the_knobs_are_read_at_call_time",
+            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_an_invalid_knob_is_refused_before_any_row_is_written",
+            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_main_exits_1_on_an_invalid_knob",
+            "tests/unit/pipe/test_pipe_knobs.py::test_tc_pipe_14_the_knob_is_read_at_call_time",
         ),
     ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
