@@ -711,6 +711,16 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "FROM run WHERE status IN ('pending', 'running', 'paused') "
         "ORDER BY run_id"
     ),
+    # The same columns with no status filter: `recover` (FR-PIPE-07) has to find runs that are
+    # COMPLETE but whose grades are not all final, and those are exactly the runs
+    # `select_open_runs` excludes. Filtering in Python rather than in SQL keeps one statement
+    # for every status a caller might ask about.
+    "select_all_runs": Statement(
+        "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
+        "backend_profile, provider_config, prompt_template_v, status, started_at, "
+        "completed_at, cost_estimate, cost_spend, pause_reason "
+        "FROM run ORDER BY run_id"
+    ),
     "select_run_work_ids": Statement(
         "SELECT work_id FROM work_unit WHERE run_id = :run_id"
     ),
@@ -5713,6 +5723,33 @@ class Orchestrator:
             status=str(row["status"]),
             pause_reason=row["pause_reason"],
         )
+
+    def runs(self, statuses: Sequence[str] | None = None) -> tuple[RunHandle, ...]:
+        """Every run the store holds, optionally filtered by status, in ledger order.
+
+        `recover` (`FR-PIPE-07`) needs the runs that are COMPLETE but not fully graded, and
+        `resume`'s discovery deliberately sees only open ones. A composition layer cannot walk
+        the cohorts itself (`CT-PIPE-05`), so the owner answers — the same reasoning as
+        `run_handle`, widened from one run to all of them.
+        """
+        wanted = None if statuses is None else {str(s) for s in statuses}
+        found: list[RunHandle] = []
+        for key in self._cohort_keys():
+            cohort = self._store.cohort(key)
+            for row in cohort.query(ORCH_STATEMENTS["select_all_runs"]):
+                status = str(row["status"])
+                if wanted is not None and status not in wanted:
+                    continue
+                found.append(RunHandle(
+                    run_id=str(row["run_id"]),
+                    cohort_id=str(row["cohort_id"]),
+                    cohort=cohort,
+                    package_id=str(row["package_id"]),
+                    package_version_id=str(row["package_version_id"]),
+                    status=status,
+                    pause_reason=row["pause_reason"],
+                ))
+        return tuple(found)
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
         """`(terminal, total)` units per cell for one stage — the count a phase is computed over.

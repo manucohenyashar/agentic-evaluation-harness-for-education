@@ -65,14 +65,36 @@ unit closes over it.
 
 from __future__ import annotations
 
+# The eleven migration contributors FIRST (CLAUDE.md): every one must be registered before the
+# first store open in any process, and `aeh/__main__.py` makes this module that process's
+# entry point. Ten arrive through the imports below — `aeh.review` arrives through none of
+# them, and its absence was not theoretical: `python -m aeh recover` opened Tier D against a
+# chain missing versions 6 and 10 and the open refused, which is the guard doing its job.
+import aeh.agg  # noqa: F401
+import aeh.det  # noqa: F401
+import aeh.extract  # noqa: F401
+import aeh.grade  # noqa: F401
+import aeh.ingest  # noqa: F401
+import aeh.integ  # noqa: F401
+import aeh.judge  # noqa: F401
+import aeh.orch  # noqa: F401
+import aeh.pkg  # noqa: F401
+import aeh.review  # noqa: F401
+import aeh.synth  # noqa: F401
+
+import argparse
+import dataclasses
+import json
 import os
+import sys
 import time
 from dataclasses import dataclass, replace
+from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from aeh.agg import aggregate, should_escalate, write_score
-from aeh.conf import ModelRef
+from aeh.conf import ModelRef, effective_config
 from aeh.det import DeterministicEvaluator
 from aeh.extract import ExtractionWorker
 from aeh.grade import open_grade
@@ -141,9 +163,8 @@ class RunResult:
 class RecoveryReport:
     """What `recover` reclaimed, resumed and regraded (`FR-PIPE-07`).
 
-    Declared here because the design puts it in this module's interface block. `recover()`
-    itself is **#365**, which also brings `main` and `aeh/__main__.py`; this type lands with
-    #364 so the module's surface is whole and #365 adds the function that fills it.
+    `recover()` fills it (`FR-PIPE-07`): what one sweep reclaimed, which paused runs it
+    resumed, and which complete runs it re-graded after a review window lapsed.
     """
 
     leases_reclaimed: int = 0
@@ -655,3 +676,244 @@ def run_to_completion(
         grades_computed=grades_computed,
         grades_final=grades_final,
     )
+
+
+# --- recovery (issue #365, FR-PIPE-07) ------------------------------------------------------
+
+
+def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
+    """Reclaim expired leases, resume open runs, and settle grades a window lapse left behind.
+
+    `FR-PIPE-07`, in its stated order: `sweep_expired_leases()` then `resume()`, then
+    `compute_all` for every run that is `complete` but whose grades are not all final.
+
+    **Why the third step exists.** A run can complete while its grades are still
+    `provisional` because a review window has not lapsed yet (`FR-GRADE-10`). Nothing wakes up
+    to settle them when it does — the lapse is a fact about the clock, not an event — so the
+    next process start is where it gets noticed. Without this, a run graded under a window
+    would sit provisional until somebody re-ran it by hand, which is the defect PR #339 found.
+
+    Idempotent by construction: on a clean store the sweep reclaims nothing, `resume` is the
+    documented no-op, and no complete run reports unsettled grades, so the report comes back
+    empty and no row is written.
+    """
+    orchestrator = Orchestrator(store)
+    sweep = orchestrator.sweep_expired_leases()
+
+    # `runs_resumed` names the runs recovery actually put back to work, which is NOT the same
+    # as the runs that were paused when it started. `resume()` with no argument applies each
+    # open run's UNAPPLIED control rows — a resume written while the orchestrator was down —
+    # and deliberately leaves alone a run an operator paused on purpose. Reporting every
+    # paused run as "resumed" would tell an operator their stop had been overridden when it
+    # had not. So the transition is measured, not assumed.
+    before = {handle.run_id: handle.status for handle in orchestrator.runs()}
+    orchestrator.resume()
+    resumed = tuple(
+        run_id for run_id, status in
+        ((h.run_id, h.status) for h in orchestrator.runs())
+        if before.get(run_id) != status and status == "running"
+    )
+
+    grading = open_grade(store, clock=clock) if clock is not None else open_grade(store)
+    regraded: list[str] = []
+    for handle in orchestrator.runs(("complete",)):
+        if _grades_all_final(grading, handle.run_id):
+            continue
+        grading.compute_all(handle.run_id)
+        regraded.append(handle.run_id)
+
+    return RecoveryReport(
+        leases_reclaimed=int(getattr(sweep, "requeued", 0) or 0),
+        runs_resumed=resumed,
+        runs_regraded=tuple(regraded),
+    )
+
+
+def _grades_all_final(grading: Any, run_id: str) -> bool:
+    """Whether every grade of one run is settled.
+
+    Read through `coverage`, which reports the class's states as they STAND rather than the
+    stored rows alone — a window that has lapsed since the rows were written shows as settled
+    here, which is the question being asked. A run with no grades at all is 'nothing to
+    settle', not 'unsettled': re-grading it would compute a class that does not exist yet.
+    """
+    by_state = dict(getattr(grading.coverage(run_id), "grades_by_state", {}) or {})
+    total = sum(int(n) for n in by_state.values())
+    if total == 0:
+        return True
+    return int(by_state.get("final", 0)) == total
+
+
+# --- the command line (issue #365, FR-PIPE-08, FR-PIPE-09) ----------------------------------
+
+#: `FR-PIPE-08`'s exit codes. Changing this mapping is a breaking change to `CT-PIPE-01`.
+EXIT_OK = 0
+EXIT_ERROR = 1
+EXIT_PAUSED = 3
+
+
+def _open_store(data_dir: str) -> Any:
+    """The store. The migration chain is already complete — this module imports all eleven
+    contributors at module scope, which is what makes this entry point safe to open from."""
+    from aeh.store import open_store
+
+    return open_store(Path(data_dir))
+
+
+def _provider_for(config: Mapping[str, Any]) -> Any:
+    """The provider the run's backend profile names.
+
+    **A declared resolution of a gap, not a shipped factory.** `FR-PIPE-08` says the command
+    resolves its configuration and then drives the run, but nothing in the design says which
+    provider object a profile maps to, and no factory exists anywhere in `src/aeh/` —
+    `M-PROV` ships the three classes and leaves construction to the caller. So the mapping is
+    made here, minimally and in the open:
+
+    * `dev-ci` -> `RecordedFixtureProvider` over `HARNESS_FIXTURE_DIR`. The profile's whole
+      point is running with no network (`CT-PROV-10`), and this is the shipped transport for
+      that.
+    * `edge-local` -> `LocalServerProvider`.
+    * `cloud-hosted` -> `OpenRouterProvider`.
+
+    Both live providers are constructed with their own defaults; a deployment that needs
+    different endpoints sets them through `M-PROV`'s own seams rather than through this
+    function, which knows nothing about backends beyond the profile name.
+    """
+    from aeh.prov import LocalServerProvider, OpenRouterProvider, RecordedFixtureProvider
+
+    profile = str(config.get("backend_profile") or config.get("HARNESS_BACKEND_PROFILE") or "")
+    if profile == "dev-ci":
+        fixture_dir = config.get("HARNESS_FIXTURE_DIR") or config.get("fixture_dir")
+        if not fixture_dir:
+            raise ValueError(
+                "the dev-ci profile records and replays through a fixture directory; set "
+                "HARNESS_FIXTURE_DIR so the provider has somewhere to read"
+            )
+        return RecordedFixtureProvider(fixture_dir=Path(str(fixture_dir)))
+    if profile == "edge-local":
+        return LocalServerProvider()
+    if profile == "cloud-hosted":
+        return OpenRouterProvider()
+    raise ValueError(
+        f"no backend profile is configured ({profile!r}); set HARNESS_BACKEND_PROFILE or "
+        f"declare backend_profile in the config file. The declared profiles are "
+        f"'edge-local', 'cloud-hosted' and 'dev-ci'."
+    )
+
+
+def _load_config_file(path: str | None) -> dict[str, Any]:
+    """The `--config` file, or an empty mapping. JSON only — the format the repo already reads."""
+    if not path:
+        return {}
+    text = Path(path).read_text(encoding="utf-8")
+    loaded = json.loads(text)
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
+    return loaded
+
+
+def _build_parser() -> Any:
+    parser = argparse.ArgumentParser(
+        prog="aeh",
+        description="Run, recover and serve the agentic evaluation harness.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = sub.add_parser("run", help="drive a cohort's run to completion")
+    run_parser.add_argument("--data-dir", required=True)
+    run_parser.add_argument("--cohort", required=True)
+    run_parser.add_argument("--package-version", required=True)
+    run_parser.add_argument("--config", default=None)
+
+    recover_parser = sub.add_parser("recover", help="reclaim leases, resume and settle grades")
+    recover_parser.add_argument("--data-dir", required=True)
+
+    console_parser = sub.add_parser("console", help="recover, then serve the operator console")
+    console_parser.add_argument("--data-dir", required=True)
+    console_parser.add_argument("--config", default=None)
+    return parser
+
+
+def main(argv: "Sequence[str] | None" = None) -> int:
+    """`python -m aeh` and the installed `aeh` command (`FR-PIPE-08`, `FR-PIPE-09`).
+
+    Exit codes are the contract (`CT-PIPE-01`): **0** when the run completes, **3** when it
+    pauses, **1** on any error. A paused run is not a failure — it is a run waiting for an
+    operator — and collapsing the two would make an outage indistinguishable from a bug in
+    every script that calls this.
+
+    Returns rather than raising `SystemExit`: `aeh/__main__.py` does the raising, so this
+    function stays callable from a test without catching an exception to read an integer.
+    """
+    parser = _build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    try:
+        if args.command == "recover":
+            store = _open_store(args.data_dir)
+            try:
+                report = recover(store)
+            finally:
+                store.close()
+            print(json.dumps(_as_json(report), indent=2, sort_keys=True))
+            return EXIT_OK
+
+        if args.command == "console":
+            from aeh.console import serve_console
+
+            config = effective_config(_load_config_file(args.config))
+            store = _open_store(args.data_dir)
+            # `FR-PIPE-09`: recovery runs BEFORE the socket accepts, so an expired lease is
+            # reclaimed rather than sitting held while an operator watches a stalled queue.
+            recover(store)
+            serve_console(store, cfg=config)
+            return EXIT_OK
+
+        config = effective_config(_load_config_file(args.config))
+        store = _open_store(args.data_dir)
+        try:
+            recover(store)
+            result = _run_command(store, args, config)
+        finally:
+            store.close()
+        print(json.dumps(_as_json(result), indent=2, sort_keys=True))
+        return EXIT_OK if result.status == "complete" else EXIT_PAUSED
+    except Exception as error:  # noqa: BLE001 - the command line reports, never traces back
+        print(f"aeh {args.command}: {type(error).__name__}: {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+
+def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
+    """`aeh run`: look the run up or create it, then drive it (`FR-PIPE-08`)."""
+    from aeh.conf import CohortRef, resolve_run_config
+
+    orchestrator = Orchestrator(store)
+    existing = [
+        handle for handle in orchestrator.runs()
+        if handle.cohort_id == args.cohort
+        and handle.package_version_id == args.package_version
+    ]
+    run_config = resolve_run_config(
+        dict(config), CohortRef(cohort_id=args.cohort),
+    )
+    if existing:
+        run_id = existing[-1].run_id
+    else:
+        run_id = orchestrator.create_run(
+            args.cohort, args.package_version, run_config)
+    provider = _provider_for(config)
+    return run_to_completion(
+        store, run_id, provider=provider, run_config=run_config)
+
+
+def _as_json(value: Any) -> Any:
+    """A `RunResult` or `RecoveryReport` as plain JSON — the shape stdout carries."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _as_json(getattr(value, field.name))
+            for field in dataclasses.fields(value)
+        }
+    if isinstance(value, (list, tuple)):
+        return [_as_json(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(k): _as_json(v) for k, v in value.items()}
+    return value
