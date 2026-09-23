@@ -45,7 +45,7 @@ import pytest
 
 from harness.corpora import dev_pipe
 from tests.support.pipe_world import (
-    drive_full_run,
+    drive_composed,
     drive_second_run,
     recordings_dir,
     replay_world,
@@ -162,7 +162,9 @@ def test_f_dev_pipe_drives_a_full_run_with_nothing_recorded_on_the_way(tmp_path)
     """
     world = replay_world(tmp_path / "data")
     try:
-        drive_full_run(world)
+        world.build_run()
+        world.start_run()
+        drive_composed(world)
         assert world.provider.misses == [], (
             f"requests with no recording: {world.provider.misses}")
         assert world.provider.replayed_calls > 0
@@ -209,7 +211,7 @@ def test_f_dev_pipe_c2_escalates_on_the_band_its_panel_settles(tmp_path, monkeyp
     `should_escalate` through `tests.support.e2e_world`'s import, which is the seam a spy can
     reach without changing the drive.
     """
-    import tests.support.e2e_world as world_module
+    import aeh.pipeline as world_module
 
     real = world_module.should_escalate
     reasons_by_criterion: dict[str, set[str]] = {}
@@ -225,7 +227,9 @@ def test_f_dev_pipe_c2_escalates_on_the_band_its_panel_settles(tmp_path, monkeyp
 
     world = replay_world(tmp_path / "data")
     try:
-        drive_full_run(world)
+        world.build_run()
+        world.start_run()
+        drive_composed(world)
     finally:
         world.store.close()
 
@@ -280,7 +284,9 @@ def test_f_dev_pipe_two_run_each_set_replays_a_full_run(run, tmp_path) -> None:
     expected = dev_pipe.band_at("C1", dev_pipe.TWO_RUN_ORDINALS[run])
     world = two_run_replay_world(tmp_path / "data", run)
     try:
-        drive_full_run(world)
+        world.build_run()
+        world.start_run()
+        drive_composed(world)
         assert world.provider.misses == [], (
             f"{run} has requests with no recording: {world.provider.misses}")
         judged = {
@@ -313,7 +319,9 @@ def test_f_dev_pipe_two_run_drives_both_runs_in_one_store(tmp_path) -> None:
     """
     world = two_run_replay_world(tmp_path / "data", "run-a")
     try:
-        drive_full_run(world)
+        world.build_run()
+        world.start_run()
+        drive_composed(world)
         run_a = world.run_id
         assert world.provider.misses == []
 

@@ -581,6 +581,7 @@ All M-PIPE cases use F-DEV-PIPE, a real temp data dir with all eleven migration 
 | TC-JUDGE-26 | FR-JUDGE-19 | `ScoringWorker.dispatch`, per error class, as in TC-EXTRACT-16 | Rung 2 | As TC-EXTRACT-16, with `verdict` in place of `evidence`. The FR-JUDGE-10 re-request is **not** triggered by a taxonomy error | Exact state | P0 |
 | TC-JUDGE-27 | FR-JUDGE-20 | `persist` of a verdict with `evidence_assessment="partial: two of three steps"` and a 320 ms call | Rung 2 | The stored row carries both values exactly; `evidence_assessment` NULL is stored as NULL, not `""` | Exact value | P1 |
 | TC-JUDGE-28 | FR-JUDGE-21 | Judge J2 returns 3 contract-violating responses on C1 (they strike); J1 returns 1 | Rung 2 | `run_metrics` rows `judge_contract_violations` with dimensions `(C1,J2) = 3` and `(C1,J1) = 1`; a successful response writes none | Exact rows | P1 |
+| TC-REG-07 | FR-EXTRACT-01, FR-JUDGE-18 | `aeh.extract.INGEST_STATEMENTS` and `aeh.judge.INGEST_STATEMENTS`, in any import order | Rung 0 (identity, no store) | Each **is** `aeh.ingest.INGEST_STATEMENTS` and is **not** `aeh.store.STATEMENTS`; the resolved `select_document_head` selects `markdown`. Positive control: `aeh.det.DET_STATEMENTS` still declares that name with different columns and no `markdown`, so the collision the case guards is still real | Object identity | P0 |
 
 ### 5.4 Module: `M-INTEG` (delta)
 

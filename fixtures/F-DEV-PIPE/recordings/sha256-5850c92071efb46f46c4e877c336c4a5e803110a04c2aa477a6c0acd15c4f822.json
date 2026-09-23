@@ -1,6 +1,6 @@
 {
   "schema": "aeh.prov/fixture/1",
-  "key": "sha256:d7254e275a32214f6dc6d6af92e426b3ebb09d7dc997c47aafcf24d90ba03cae",
+  "key": "sha256:5850c92071efb46f46c4e877c336c4a5e803110a04c2aa477a6c0acd15c4f822",
   "request": {
     "fields": [
       [
@@ -25,7 +25,7 @@
       ],
       [
         "verdicts",
-        "criterion=C1 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=absent\ncriterion=C1 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=absent\ncriterion=C1 judge=/models/mistral-large.gguf@sha256:eeee band=absent\ncriterion=C1 judge=escalation-arm-4 band=absent\ncriterion=C1 judge=escalation-arm-5 band=absent\ncriterion=C2 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=emerging\ncriterion=C2 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=secure\ncriterion=C2 judge=/models/mistral-large.gguf@sha256:eeee band=secure\ncriterion=C2 judge=escalation-arm-4 band=secure\ncriterion=C2 judge=escalation-arm-5 band=secure"
+        "criterion=C1 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=comprehensive\ncriterion=C1 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=comprehensive\ncriterion=C1 judge=/models/mistral-large.gguf@sha256:eeee band=comprehensive\ncriterion=C2 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=emerging\ncriterion=C2 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=secure\ncriterion=C2 judge=/models/mistral-large.gguf@sha256:eeee band=secure\ncriterion=C2 judge=escalation-arm-4 band=secure\ncriterion=C2 judge=escalation-arm-5 band=secure"
       ],
       [
         "evidence",
@@ -33,7 +33,7 @@
       ],
       [
         "submission",
-        "sub-339f44b419ee"
+        "sub-22a56dc63714"
       ]
     ],
     "model_ref": {
