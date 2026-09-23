@@ -44,7 +44,14 @@ import json
 import pytest
 
 from harness.corpora import dev_pipe
-from tests.support.pipe_world import drive_full_run, recordings_dir, replay_world
+from tests.support.pipe_world import (
+    drive_full_run,
+    drive_second_run,
+    recordings_dir,
+    replay_world,
+    two_run_dir,
+    two_run_replay_world,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -227,3 +234,106 @@ def test_f_dev_pipe_c2_escalates_on_the_band_its_panel_settles(tmp_path, monkeyp
     assert "interior band position" in reasons_by_criterion["C2"], (
         f"C2's panel settles on a band that is not interior, so the limb §4.4's (2,4,4) is "
         f"meant to fire never fired. Reasons seen: {sorted(reasons_by_criterion['C2'])}")
+
+
+# --- F-DEV-PIPE-TWO-RUN ---------------------------------------------------------------------
+
+
+def test_f_dev_pipe_two_run_sets_answer_identical_requests_with_different_bands() -> None:
+    """Why the two sets are two directories, asserted on the committed bytes.
+
+    A judge request is keyed on the assembled prompt — directive, criterion, bands, then the
+    submission and its extracted evidence. No run identifier appears in it, and the two runs
+    share submissions and extraction, so run A's verdict and run B's verdict are answers to a
+    byte-identical request. This case pins that: the judge recordings SHARE their keys across
+    the sets and differ only in the completion. One directory could not hold both, and a future
+    change that tried to merge them would fail here rather than silently dropping half.
+    """
+    a, b = (
+        {p.name: json.loads(p.read_text(encoding="utf-8"))
+         for p in sorted(two_run_dir(run).glob("*.json"))}
+        for run in ("run-a", "run-b")
+    )
+    assert a and b, "both two-run recording sets must be committed"
+
+    judge_keys = {
+        name for name, doc in a.items()
+        if doc["request"]["model_ref"]["role"] == "judge"
+    }
+    assert judge_keys <= set(b), (
+        "a judge request recorded in run-a has no counterpart key in run-b - the two sets are "
+        "supposed to answer the SAME requests")
+    shared = sorted(k for k in judge_keys if a[k]["completion"] == b[k]["completion"])
+    assert shared == [], (
+        f"{len(shared)} of {len(judge_keys)} judge recordings carry the SAME completion in "
+        f"both sets, so those cells cannot tell the two runs apart: {shared[:3]}")
+
+
+@pytest.mark.parametrize("run", ["run-a", "run-b"])
+def test_f_dev_pipe_two_run_each_set_replays_a_full_run(run, tmp_path) -> None:
+    """Each set drives the whole pipeline from committed bytes with nothing recorded.
+
+    The band assertion is the discriminating half: `run-a` must land every judged criterion on
+    `minimal` and `run-b` on `developing` — §4.4's `(1,1,1)` and `(3,3,3)`. A world pointed at
+    one set while expecting the other's bands fails inside the drive.
+    """
+    expected = dev_pipe.band_at("C1", dev_pipe.TWO_RUN_ORDINALS[run])
+    world = two_run_replay_world(tmp_path / "data", run)
+    try:
+        drive_full_run(world)
+        assert world.provider.misses == [], (
+            f"{run} has requests with no recording: {world.provider.misses}")
+        judged = {
+            (row["submission_id"], row["criterion_id"]): row["band"]
+            for row in world.handle.query(
+                "SELECT submission_id, criterion_id, band FROM criterion_score "
+                "WHERE criterion_id IN ('C1', 'C2')"
+            )
+        }
+        assert len(judged) == 6, f"expected 3 submissions x 2 judged criteria, got {len(judged)}"
+        assert set(judged.values()) == {expected}, (
+            f"{run}'s judged cells must all settle on {expected!r} - a unanimous panel at one "
+            f"ordinal is what (1,1,1) and (3,3,3) mean. Got {sorted(set(judged.values()))}")
+    finally:
+        world.store.close()
+
+
+def test_f_dev_pipe_two_run_drives_both_runs_in_one_store(tmp_path) -> None:
+    """The shape the isolation cases need: one cohort, one ingest, two runs, different bands.
+
+    TC-GRADE-25 and ADV-13 ask whether run B's figures can leak into run A's grades, queue,
+    stats or console. Neither can be written unless two runs can coexist in one store with
+    recognisably different judged bands — that is what this asserts, and it is the reason the
+    corpus exists at all rather than being two unrelated fixtures.
+
+    The scores are read back per run: every judged cell of A sits at `minimal`, every judged
+    cell of B at `developing`, in the same `criterion_score` table. The MCQ criterion is
+    identical in both by design — `M-DET` scores it from the selection mark, so it is not a
+    judged criterion and §4.4's "differ on every judged criterion" does not reach it.
+    """
+    world = two_run_replay_world(tmp_path / "data", "run-a")
+    try:
+        drive_full_run(world)
+        run_a = world.run_id
+        assert world.provider.misses == []
+
+        run_b = drive_second_run(world, "run-b")
+        assert world.provider.misses == [], (
+            f"the second run has requests with no recording: {world.provider.misses}")
+        assert run_b != run_a, "the second run must have its own run id"
+
+        by_run: dict[str, set[str]] = {}
+        for row in world.handle.query(
+            "SELECT run_id, band FROM criterion_score WHERE criterion_id IN ('C1', 'C2')"
+        ):
+            by_run.setdefault(row["run_id"], set()).add(row["band"])
+
+        assert set(by_run) == {run_a, run_b}, (
+            f"both runs must have their own criterion_score rows, found {sorted(by_run)}")
+        assert by_run[run_a] == {dev_pipe.band_at("C1", dev_pipe.TWO_RUN_ORDINALS["run-a"])}
+        assert by_run[run_b] == {dev_pipe.band_at("C1", dev_pipe.TWO_RUN_ORDINALS["run-b"])}
+        assert by_run[run_a] != by_run[run_b], (
+            "the two runs settled on the same bands, so no isolation case built on this corpus "
+            "could tell a leak from correct behaviour")
+    finally:
+        world.store.close()

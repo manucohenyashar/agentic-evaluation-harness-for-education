@@ -1,0 +1,62 @@
+{
+  "schema": "aeh.prov/fixture/1",
+  "key": "sha256:f359317a5816f3a0f4e25bd45117b23c5b633d775cbef8198b8cb917dd40a347",
+  "request": {
+    "fields": [
+      [
+        "directive",
+        "You write the per-question feedback narrative for one student's submission. Read the question's criterion verdicts and the evidence below; compose prose that states what the student's own work shows, anchored to the criteria and paraphrasing the evidence. State no mark, no score, no band and no overall quality verdict: the narrative never grades. Reply as JSON with a 'narrative' text and a 'citations' list of the criterion ids the narrative anchors to."
+      ],
+      [
+        "prompt_template_v",
+        "synth-prompt/1"
+      ],
+      [
+        "level",
+        "l1_question"
+      ],
+      [
+        "question",
+        "Q1"
+      ],
+      [
+        "criteria",
+        "C1, C2"
+      ],
+      [
+        "verdicts",
+        "criterion=C1 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=minimal\ncriterion=C1 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=minimal\ncriterion=C1 judge=/models/mistral-large.gguf@sha256:eeee band=minimal\ncriterion=C1 judge=escalation-arm-4 band=minimal\ncriterion=C1 judge=escalation-arm-5 band=minimal\ncriterion=C2 judge=/models/llama-3.3-70b.gguf@sha256:aaaa band=minimal\ncriterion=C2 judge=/models/qwen-2.5-72b.gguf@sha256:dddd band=minimal\ncriterion=C2 judge=/models/mistral-large.gguf@sha256:eeee band=minimal\ncriterion=C2 judge=escalation-arm-4 band=minimal\ncriterion=C2 judge=escalation-arm-5 band=minimal"
+      ],
+      [
+        "evidence",
+        "(no evidence spans)"
+      ],
+      [
+        "submission",
+        "sub-22a56dc63714"
+      ]
+    ],
+    "model_ref": {
+      "role": "synthesizer",
+      "provider": "local",
+      "build_id": "vlm@sha256:e2e02-synth",
+      "quantization": "q4"
+    },
+    "params": {
+      "temperature": 0.0,
+      "max_tokens": 512,
+      "top_p": null,
+      "seed": null,
+      "stop": []
+    }
+  },
+  "completion": {
+    "text": "{\"narrative\": \"The response addresses the criteria the panel read, citing the work's own words as evidence; where the work stops short, the narrative says so in the same terms the criteria name.\", \"citations\": [\"C1\", \"C2\"]}",
+    "tokens_in": 10,
+    "tokens_out": 5,
+    "latency_ms": 1,
+    "resolved_build": "vlm@sha256:e2e02-synth",
+    "cached_prefix_tokens": 0,
+    "cost": null
+  }
+}

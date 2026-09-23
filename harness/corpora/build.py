@@ -17,13 +17,15 @@ manifest in the tree.
 One corpus has a half this module does not emit. `F-DEV-PIPE/recordings/` holds the model
 replies a complete run of that corpus asks for, and they cannot be generated here — a score
 request is keyed on the assembled prompt including the extracted evidence, so the keys do not
-exist until a real run has produced them. They are re-captured by driving the pipeline once::
+exist until a real run has produced them. `F-DEV-PIPE-TWO-RUN/run-a` and `run-b` are two more
+sets over the same submissions, whose judged bands differ so a two-run isolation case can tell
+the runs apart. All three are re-captured by driving the pipeline once each::
 
-    python -m tests.support.pipe_world     # rewrites fixtures/F-DEV-PIPE/recordings/
+    python -m tests.support.pipe_world     # rewrites all three recording sets
 
-`_RECORDED_GOLDEN_TREES` below exempts that directory from `--check` for the same reason
+`_RECORDED_GOLDEN_TREES` below exempts those directories from `--check` for the same reason
 `F-SCHEMA`'s checksums are exempt, and `tests/integration/pipe/test_f_dev_pipe_corpus.py` is
-what actually pins it: a run driven from the committed bytes must miss no recording.
+what actually pins them: a run driven from the committed bytes must miss no recording.
 """
 
 from __future__ import annotations
@@ -557,7 +559,19 @@ _RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
 #: to be hand-edited in the same change. The corpus is still pinned — `TC-PIPE-*`'s replay drive
 #: fails on any request whose recording is missing, which is a stronger check than a filename
 #: list and the one that actually matters.
-_RECORDED_GOLDEN_TREES = ("F-DEV-PIPE/recordings/",)
+#: `F-DEV-PIPE-TWO-RUN/` is the same corpus's submissions with TWO more recording sets
+#: (`run-a`, `run-b`). It has no manifest and no submissions of its own by design — §4.4 calls
+#: it *"F-DEV-PIPE plus a second recorded response set"*, and duplicating three Markdown files
+#: to give it a manifest would create a second place for the same submissions to drift.
+#:
+#: They cannot be one directory: a judge request is keyed on the assembled prompt, which
+#: carries no run identifier, so run A's verdict and run B's verdict answer a byte-identical
+#: request. Measured — 30 of the 52 recordings share a key across the two sets and differ only
+#: in their completion.
+_RECORDED_GOLDEN_TREES = (
+    "F-DEV-PIPE/recordings/",
+    "F-DEV-PIPE-TWO-RUN/",
+)
 
 
 def _is_recorded_baseline(path: str) -> bool:

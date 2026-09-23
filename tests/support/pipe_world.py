@@ -71,6 +71,19 @@ def recordings_dir(root: Path | None = None) -> Path:
     return (root or CORPUS_ROOT) / "F-DEV-PIPE" / RECORDINGS_DIRNAME
 
 
+def two_run_dir(run: str, root: Path | None = None) -> Path:
+    """One of F-DEV-PIPE-TWO-RUN's two recordings directories (`run-a` / `run-b`).
+
+    A directory per set rather than one shared store, because the two sets answer
+    byte-identical judge requests with different bands - see `dev_pipe.TWO_RUN_ORDINALS`. The
+    corpus carries no manifest or submissions of its own: it IS F-DEV-PIPE's, which is what
+    §4.4's *"F-DEV-PIPE plus a second recorded response set"* says.
+    """
+    assert run in dev_pipe.TWO_RUN_ORDINALS, (
+        f"{run!r} is not a declared two-run set: {sorted(dev_pipe.TWO_RUN_ORDINALS)}")
+    return (root or CORPUS_ROOT) / "F-DEV-PIPE-TWO-RUN" / run
+
+
 @contextmanager
 def pinned_uuid4(seed: int = PINNED_UUID_SEED) -> Iterator[None]:
     """Pin `uuid.uuid4` to a seeded, collision-free sequence for the duration.
@@ -151,7 +164,12 @@ class PipeWorld(SynthWorld):
     journeys run. A second copy of the drive is a second place for it to be wrong.
     """
 
-    def __init__(self, data_dir: Any, fixture_dir: Any, **kwargs: Any) -> None:
+    def __init__(self, data_dir: Any, fixture_dir: Any, *,
+                 uniform_panel_ordinal: int | None = None, **kwargs: Any) -> None:
+        # `F-DEV-PIPE-TWO-RUN`'s mode: every judged criterion's panel unanimous at ONE ordinal,
+        # every arm, every submission - §4.4's `(1,1,1)` and `(3,3,3)`. None is F-DEV-PIPE's
+        # own shape, where the panel varies per criterion and per submission.
+        self.uniform_panel_ordinal = uniform_panel_ordinal
         kwargs.setdefault("cohort_id", PIPE_COHORT_ID)
         kwargs.setdefault("run_id", PIPE_RUN_ID)
         # The mint is pinned around CONSTRUCTION, which is where `ingest_submission` mints the
@@ -287,7 +305,7 @@ class PipeWorld(SynthWorld):
     # -- the disagreeing panel -------------------------------------------------------------------
 
     def _judge_band(self, sid: str, cid: str, judge: str | None = None) -> str:
-        """The band THIS arm records — §4.4's `(2,4,4)` on `C2`.
+        """The band THIS arm records — §4.4's `(2,4,4)` on `C2`, or a two-run set's uniform band.
 
         The reference world's arms all return the submission's own corpus band, so its panels
         agree and nothing escalates. F-DEV-PIPE's whole purpose includes the escalation half of
@@ -299,6 +317,11 @@ class PipeWorld(SynthWorld):
         assert judge is not None, (
             "PipeWorld's panel disagrees by construction, so a verdict cannot be chosen "
             "without knowing which arm is asking")
+        if self.uniform_panel_ordinal is not None:
+            # The two-run sets: one ordinal for every arm, every judged criterion and every
+            # submission, extension arms included - so each run's cells settle unanimously and
+            # a band that leaked between runs is visible as a band.
+            return dev_pipe.band_at(cid, self.uniform_panel_ordinal)
         #: The submission's own reference band — what a criterion with no declared panel
         #: answers, on every arm. `C1` reads differently on each of the three submissions
         #: because of this; a constant would make the panel ignore the student's work.
@@ -343,12 +366,60 @@ def drive_full_run(world: PipeWorld, *, monkeypatch: Any = None) -> None:
     world.finalize()
 
 
-def capture(destination: Path | None = None) -> int:
-    """Drive F-DEV-PIPE once with record-as-you-go and keep what it recorded.
+def drive_second_run(world: PipeWorld, run: str, *, run_id: str | None = None,
+                     monkeypatch: Any = None) -> str:
+    """Drive a SECOND run over the same store, from the other two-run recording set.
+
+    This is the shape every two-run isolation case needs (TC-GRADE-25, ADV-13): one cohort,
+    one ingest, one package, two runs whose judged bands differ. The world is rebound to the
+    other set's recordings and given a fresh run id; everything else — submissions, documents,
+    extraction — is the run before's, which is what makes a leak between the two visible.
+
+    Returns the new run id.
+
+    `Orchestrator` is imported HERE rather than at module scope, deliberately. `aeh.extract`
+    and `aeh.judge` resolve `select_document_head` through the SHARED statement registry
+    (`extract.py:84`, `judge.py:209` alias `store.STATEMENTS`, not `ingest.INGEST_STATEMENTS`),
+    and `det.py:750` overwrites that key with a five-column spelling that has no `markdown`.
+    Whichever module imports last wins, so a consumer whose first `aeh` import is `aeh.orch`
+    gets det's spelling and extraction dies far away at `head["markdown"]` with
+    `IndexError: No item with that key`. Importing inside the function keeps `e2e_world`'s
+    eleven-module chain first in every caller. Reported separately — it is a defect in the
+    registry, not in this corpus, and the workaround belongs here only until it is fixed.
+    """
+    from aeh.orch import Orchestrator
+
+    world.run_id = run_id or f"{PIPE_RUN_ID}-{run}"
+    world.uniform_panel_ordinal = dev_pipe.TWO_RUN_ORDINALS[run]
+    world.provider = StrictReplayProvider(two_run_dir(run))
+    world.orchestrator = Orchestrator(world.store, provider=world.provider)
+    drive_full_run(world, monkeypatch=monkeypatch)
+    return world.run_id
+
+
+def capture_all() -> dict[str, int]:
+    """Capture F-DEV-PIPE and both F-DEV-PIPE-TWO-RUN sets. The entry point.
+
+    Three drives of the same pipeline over the same submissions, differing only in what the
+    panel answers. Returns the recording count per set.
+    """
+    counts = {"F-DEV-PIPE": capture()}
+    for run, ordinal in dev_pipe.TWO_RUN_ORDINALS.items():
+        counts[f"F-DEV-PIPE-TWO-RUN/{run}"] = capture(
+            two_run_dir(run), uniform_panel_ordinal=ordinal)
+    return counts
+
+
+def capture(destination: Path | None = None, *,
+            uniform_panel_ordinal: int | None = None) -> int:
+    """Drive the corpus once with record-as-you-go and keep what it recorded.
 
     Returns the number of recordings written. The destination is emptied first: a stale
     recording nothing asks for any more would sit in the corpus forever, and `--check` does not
     look inside a recorded golden.
+
+    With `uniform_panel_ordinal` this captures one of the two-run sets instead — same
+    submissions, same extraction, a panel unanimous at that ordinal.
     """
     import tempfile
 
@@ -363,7 +434,8 @@ def capture(destination: Path | None = None) -> int:
         for sub in ("packages", "cohorts", "blobs"):
             (data_dir / sub).mkdir(parents=True)
         staging = scratch / "recordings"
-        world = PipeWorld(data_dir, staging)
+        world = PipeWorld(data_dir, staging,
+                          uniform_panel_ordinal=uniform_panel_ordinal)
         drive_full_run(world)
         world.store.close()
 
@@ -382,8 +454,26 @@ def capture(destination: Path | None = None) -> int:
     return len(written)
 
 
+def two_run_replay_world(data_dir: Path, run: str, *, monkeypatch: Any = None) -> PipeWorld:
+    """A `PipeWorld` bound to one of F-DEV-PIPE-TWO-RUN's sets, replay-only.
+
+    The ordinal is passed as well as the directory, and both come from the same declaration
+    (`dev_pipe.TWO_RUN_ORDINALS`). The drive checks each replayed verdict against the band it
+    expected for that arm (`e2e_world._drive_score_unit`), so a world pointed at `run-b`'s
+    recordings while expecting `run-a`'s bands fails immediately rather than scoring a run out
+    of the wrong set - which is the exact confusion a two-run isolation case exists to catch.
+    """
+    return replay_world(
+        data_dir,
+        recordings=two_run_dir(run),
+        monkeypatch=monkeypatch,
+        uniform_panel_ordinal=dev_pipe.TWO_RUN_ORDINALS[run],
+    )
+
+
 def replay_world(data_dir: Path, *, recordings: Path | None = None,
-                 monkeypatch: Any = None) -> PipeWorld:
+                 monkeypatch: Any = None,
+                 uniform_panel_ordinal: int | None = None) -> PipeWorld:
     """A `PipeWorld` bound to the COMMITTED recordings, with the mint pinned.
 
     The supported way to drive F-DEV-PIPE without recording: every request the run assembles
@@ -394,9 +484,10 @@ def replay_world(data_dir: Path, *, recordings: Path | None = None,
     for sub in ("packages", "cohorts", "blobs"):
         (data_dir / sub).mkdir(parents=True, exist_ok=True)
     return PipeWorld(data_dir, recordings or recordings_dir(), monkeypatch=monkeypatch,
-                     record_as_you_go=False)
+                     record_as_you_go=False,
+                     uniform_panel_ordinal=uniform_panel_ordinal)
 
 
 if __name__ == "__main__":  # pragma: no cover - the capture entry point
-    count = capture()
-    print(f"wrote {count} recordings to {recordings_dir()}")
+    for _name, _count in capture_all().items():
+        print(f"wrote {_count} recordings for {_name}")

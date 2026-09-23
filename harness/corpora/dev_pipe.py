@@ -238,6 +238,32 @@ ESCALATION_ORDINALS: Mapping[str, tuple[int, ...]] = {
 }
 
 
+#: `F-DEV-PIPE-TWO-RUN` — the two recorded response sets every two-run isolation case drives.
+#:
+#: §4.4: *"F-DEV-PIPE plus a second recorded response set whose bands differ on every judged
+#: criterion (`(1,1,1)` → `(3,3,3)`)"*. Same submissions, same package, same extraction; only
+#: the verdicts move. Each run's panel is UNANIMOUS at one ordinal — that is what `(1,1,1)`
+#: and `(3,3,3)` say — so every judged cell of run A sits two bands below its twin in run B,
+#: and a figure that leaked from B into A is visible as a band, not as a rounding difference.
+#:
+#: **They cannot share a directory, and this is the reason.** A judge request is keyed on the
+#: assembled prompt — directive, criterion, bands, then the submission and its extracted
+#: evidence (`judge.prompt_fields`, `FR-JUDGE-07`). No run identifier appears in it, and the
+#: two runs have the same submissions and the same extraction. So run A's `minimal` verdict
+#: and run B's `developing` verdict are answers to a BYTE-IDENTICAL request, and one
+#: `request_key` cannot hold both. Each set therefore gets its own recordings directory and a
+#: consumer points the provider at one per run.
+#:
+#: TC-GRADE-25 drives A, lands B, and re-reads A; ADV-13 reads run B as a re-run after a key
+#: correction. ADV-13's prose says run B is *"all bands at the top"* where §4.4 says `(3,3,3)`;
+#: the literal numbers are what ships, since `(3,3,3)` is what makes the pair differ on every
+#: judged criterion without either run sitting on a scale edge.
+TWO_RUN_ORDINALS: Mapping[str, int] = {
+    "run-a": 1,
+    "run-b": 3,
+}
+
+
 @dataclass(frozen=True)
 class PipeSubmission:
     """One F-DEV-PIPE submission: the student work, and the reference labels for it."""
