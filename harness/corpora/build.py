@@ -22,8 +22,12 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
-from harness.corpora import adv_inj, adv_pdf, conform_set, graphic, hand, reference_package, scan, stats, synth
+from harness.corpora import (
+    adv_inj, adv_pdf, conform_set, dev_pipe, graphic, hand, reference_package, scan, stats,
+    synth,
+)
 from harness.corpora.baselines import (
     BASELINES,
     WORK_ID_INPUTS,
@@ -50,7 +54,17 @@ def _json_bytes(payload: object) -> bytes:
 
 def _build_submission_corpus(root: Path, corpus: str, seed: int, generator: str,
                              description: str,
-                             submissions: tuple[synth.SyntheticSubmission, ...]) -> None:
+                             submissions: tuple[synth.SyntheticSubmission, ...],
+                             package: Any = reference_package) -> None:
+    """One submission corpus: a Markdown document per submission, then the manifest.
+
+    `package` is the module declaring the package the submissions were written against —
+    `reference_package` for the three corpora drawn from `synth`, `dev_pipe` for F-DEV-PIPE,
+    which has its own three-criterion package (see that module on why it cannot share one).
+    It is a parameter rather than a constant because the manifest's `extra` block carries the
+    package identity, and a corpus declaring the wrong `max_points` would make every reference
+    figure computed against it wrong by a constant nobody would think to look for.
+    """
     members = [
         (
             s.submission_id,
@@ -87,10 +101,10 @@ def _build_submission_corpus(root: Path, corpus: str, seed: int, generator: str,
             description=description,
             entries=entries,
             extra={
-                "package_id": reference_package.PACKAGE_ID,
-                "package_version": reference_package.PACKAGE_VERSION,
+                "package_id": package.PACKAGE_ID,
+                "package_version": package.PACKAGE_VERSION,
                 "consent_class": "synthetic",
-                "max_points": reference_package.MAX_POINTS,
+                "max_points": package.MAX_POINTS,
             },
         ),
     )
@@ -480,6 +494,19 @@ def build(root: Path) -> None:
         "harness.corpora.synth:dev_set",
         "The 8 submissions development iterates against, disjoint from F-FROZEN (§4.4).",
         synth.dev_set(),
+    )
+    _build_submission_corpus(
+        root / "F-DEV-PIPE",
+        "F-DEV-PIPE",
+        dev_pipe.DEV_PIPE_SEED,
+        "harness.corpora.dev_pipe:dev_pipe_set",
+        (
+            "The small pipeline corpus every M-PIPE case drives: 3 submissions x 1 question x "
+            "3 criteria (2 judged, 1 MCQ-deterministic), against the three-criterion "
+            "PKG-DEV-PIPE package (gap-fix test plan §4.4)."
+        ),
+        dev_pipe.dev_pipe_set(),
+        package=dev_pipe,
     )
     _build_graphic(root / "F-GRAPHIC")
     _build_stats(root / "F-STATS")

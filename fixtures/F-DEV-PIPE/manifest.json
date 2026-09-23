@@ -1,0 +1,60 @@
+{
+  "corpus": "F-DEV-PIPE",
+  "version": "1",
+  "seed": 20260104,
+  "generator": "harness.corpora.dev_pipe:dev_pipe_set",
+  "description": "The small pipeline corpus every M-PIPE case drives: 3 submissions x 1 question x 3 criteria (2 judged, 1 MCQ-deterministic), against the three-criterion PKG-DEV-PIPE package (gap-fix test plan §4.4).",
+  "set_content_hash": "sha256:0e795b79c8d2e4c942c279e4ed30dd45636836252c84801a1a2ef747d0a4ec84",
+  "fixture_set_id": "F-DEV-PIPE@1+sha256:0e795b79c8d2e4c942c279e4ed30dd45636836252c84801a1a2ef747d0a4ec84",
+  "package_id": "PKG-DEV-PIPE",
+  "package_version": "1",
+  "consent_class": "synthetic",
+  "max_points": 11.0,
+  "submissions": [
+    {
+      "id": "S1",
+      "path": "submissions/S1.md",
+      "content_hash": "sha256:297095dc8b9bd29391f393f48f762a0595c9aa4de0cc52e982b1d3cba7ed8ff4",
+      "student_ref": "P-0001",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "absent",
+        "C2": "secure",
+        "C3": "met"
+      },
+      "reference_points": 5.0
+    },
+    {
+      "id": "S2",
+      "path": "submissions/S2.md",
+      "content_hash": "sha256:c8c7c11311ec0dc5ecb9bc8666da1768c946c58857342f9caacdd5a7bb8e6a99",
+      "student_ref": "P-0002",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "developing",
+        "C2": "secure",
+        "C3": "not_met"
+      },
+      "reference_points": 7.0
+    },
+    {
+      "id": "S3",
+      "path": "submissions/S3.md",
+      "content_hash": "sha256:d1017eeb5b09e6d61aa3ff868ab3f2db92a5e027684e5b9df3e0571be589137b",
+      "student_ref": "P-0003",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "comprehensive",
+        "C2": "secure",
+        "C3": "met"
+      },
+      "reference_points": 10.0
+    }
+  ]
+}
