@@ -1222,14 +1222,12 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # pinned write set, the SEC-15 census and `_record_routed`'s after-the-routing ordering, so
     # it is its own story, and this entry is keyed on the symbol that work would introduce.
     # Disclosed on #363.
-    "#363 integrity gate inside its 1% budget (PERF-06)": (
-        "symbol",
-        "aeh.integ:CellWriteBatch",
-        (
-            "tests/perf/test_perf_06_zero_model_stages_full_run.py"
-            "::test_perf_06_zero_model_stages_stay_inside_their_budgets_in_a_full_run",
-        ),
-    ),
+    # #363's PERF-06 entry is gone: the case PASSES at its own scale. The blocker was keyed
+    # on `aeh.integ:CellWriteBatch` after a cohort-60 drive read 3.27-3.67% against the 1%
+    # budget. Measured where NFR-INTEG-01's acceptance form lives — PERF-06's full-scale run —
+    # the gate is 27.258 s of 3626.70 s over 8184 verify calls: 0.7516%. The share is a ratio
+    # over the whole run, so the small-cohort reading was the denominator, not the gate.
+    # Batching remains worth doing (#432, unscheduled), but it does not gate this case.
     # --- TS-103 (#397), switching harness profiles by environment variable -----------------
     #
     # #352 landed the `M-CONF` helpers (`effective_config`, `select_profile_config`,
