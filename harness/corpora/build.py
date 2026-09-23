@@ -531,6 +531,23 @@ _GENERATED_UNDER_BASELINES = frozenset(
 #: build open stores, which is test-harness work, not corpus generation.
 _RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
 
+#: Recorded goldens that are a whole DIRECTORY rather than one file.
+#:
+#: `F-DEV-PIPE/recordings/` holds one JSON document per `request_key` — the model replies a
+#: complete run of that corpus asks for. They are emphatically not generated data: a score
+#: request is keyed on the assembled prompt *including the extracted evidence*, so the keys do
+#: not exist until a real run has produced them. `tests/support/pipe_world.py:capture()` drives
+#: the pipeline once and keeps what it recorded, which is the same "output of a producer"
+#: relationship `F-SCHEMA`'s checksums have, and deriving them here would make the corpora build
+#: open stores — the thing this module does not do.
+#:
+#: A prefix rather than 52 literal paths because the filenames ARE the request keys: a prompt
+#: that legitimately changes renames its recording, and a registry of literals would then have
+#: to be hand-edited in the same change. The corpus is still pinned — `TC-PIPE-*`'s replay drive
+#: fails on any request whose recording is missing, which is a stronger check than a filename
+#: list and the one that actually matters.
+_RECORDED_GOLDEN_TREES = ("F-DEV-PIPE/recordings/",)
+
 
 def _is_recorded_baseline(path: str) -> bool:
     """Is this a §6.9 golden that a producer recorded, rather than generated corpus data?
@@ -548,8 +565,10 @@ def _is_recorded_baseline(path: str) -> bool:
     *registered* here — `tests/support/baselines.py` does, by refusing to compare against a
     path the registry does not list.
     """
-    return (path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES) or (
-        path in _RECORDED_GOLDENS
+    return (
+        (path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES)
+        or path in _RECORDED_GOLDENS
+        or path.startswith(_RECORDED_GOLDEN_TREES)
     )
 
 

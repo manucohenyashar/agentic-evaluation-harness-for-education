@@ -81,10 +81,19 @@ OPEN_BANDS: tuple[tuple[str, int, float, str], ...] = (
     ("comprehensive", 5, 5.0, "The work carries the idea through and states its limits."),
 )
 
-#: The two-band MCQ scale (`FR-SETUP-04`'s met / not-met default).
+#: The two-band MCQ scale, named `incorrect` / `correct` rather than `FR-SETUP-04`'s
+#: `met` / `not_met` default.
+#:
+#: `M-DET` does not read these names from anywhere — `det._score_one` produces the outcome
+#: band itself and then asks the catalog to price it (`det.py:1681` →
+#: `pkg.points_for_band`), which raises `PackageError: criterion 'C3' declares no band
+#: 'correct'` against a met/not-met catalog. So the package declares the names the
+#: deterministic evaluator actually scores with; the same disclosure `tests/support/e2e_world`
+#: carries for the reference world. Declaring the setup default here would make the corpus
+#: undrivable, and the corpus's whole purpose is being driven.
 MCQ_BANDS: tuple[tuple[str, int, float, str], ...] = (
-    ("not_met", 0, 0.0, "The selected option is not the keyed option."),
-    ("met", 1, 1.0, "The selected option is the keyed option."),
+    ("incorrect", 0, 0.0, "The selected option is not the keyed option."),
+    ("correct", 1, 1.0, "The selected option is the keyed option."),
 )
 
 MCQ_OPTIONS: tuple[str, ...] = ("A", "B", "C", "D")
@@ -189,20 +198,24 @@ def band_at(criterion_id: str, ordinal: int) -> str:
 
 # --- the assigned cohort --------------------------------------------------------------------
 
-#: The panel every judged cell records, as band ORDINALS in panel order.
+#: The panel a judged criterion records, as band ORDINALS in panel order.
 #:
-#: `C2` carries §4.4's `(2,4,4)` on every submission: it is *"one criterion's recorded panel
-#: bands"*, so the disagreement is a property of the criterion rather than of one cell, and
-#: every submission then exercises the escalation ladder. `C1`'s panel agrees, which is what
-#: makes the contrast legible — a corpus where every cell escalates cannot show that the
-#: non-escalating path works.
+#: Only `C2` appears, carrying §4.4's `(2,4,4)` — it is *"one criterion's recorded panel
+#: bands"*, so the disagreement is a property of the criterion rather than of one cell. A
+#: criterion absent from this table has a UNANIMOUS panel at the submission's own reference
+#: band, which is `SynthWorld`'s behaviour and the reason `C1` reads differently on each of the
+#: three submissions instead of being a constant that ignores the student's work.
 PANEL_ORDINALS: Mapping[str, tuple[int, ...]] = {
-    "C1": (3, 3, 3),
     "C2": (2, 4, 4),
 }
 
 #: The two extension arms the ladder adds when `should_escalate` fires (`units_consumed=5` in
 #: TC-PIPE-08's second aggregation: the panel of three plus these two).
+#:
+#: `C2` names them because its panel disagrees and the arms have to settle it. `C1` does not,
+#: and still escalates on any submission whose band is interior — a six-band scale makes
+#: ordinals 1..4 interior, and the interior-band limb is the first thing `should_escalate`
+#: reads. Its arms then answer at the submission's own reference band, the same as its panel.
 ESCALATION_ORDINALS: Mapping[str, tuple[int, ...]] = {
     "C2": (4, 4),
 }
@@ -255,16 +268,18 @@ _ASSIGNED: tuple[tuple[str, str, Mapping[str, int], bool], ...] = (
 
 def _page_text(submission_id: str, ordinals: Mapping[str, int],
                mcq_choices: Mapping[str, str]) -> str:
-    question = QUESTIONS[0]
     lines = [
         f"Page 1 of {PAGES_PER_SUBMISSION} - {submission_id}",
         "",
-        f"## {question.question_id}",
+        f"## {QUESTIONS[0].question_id}",
         "",
     ]
     for cid in OPEN_CRITERION_IDS:
         lines.append(render_band(cid, ordinals[cid]))
-    lines.append("")
+    # The MCQ question gets its own `##` heading: the marker protocol keys a region to the
+    # heading it sits under, and without this the item line is swept into Q1's prose region —
+    # which V2 then rejects, because Q1 is declared open and the region carries an mcq answer.
+    lines += ["", f"## {QUESTIONS[1].question_id}", ""]
     for cid in MCQ_CRITERION_IDS:
         lines.append(f"{cid}: {mcq_choices[cid]}")
     return "\n".join(lines)
@@ -281,7 +296,7 @@ def _generate(submission_id: str, student_ref: str, ordinals: Mapping[str, int],
         # inspection.
         choice = key if mcq_correct else next(o for o in MCQ_OPTIONS if o != key)
         mcq_choices[cid] = choice
-        bands[cid] = "met" if mcq_correct else "not_met"
+        bands[cid] = "correct" if mcq_correct else "incorrect"
     pages = (_page_text(submission_id, ordinals, mcq_choices),)
     return PipeSubmission(
         submission_id=submission_id,

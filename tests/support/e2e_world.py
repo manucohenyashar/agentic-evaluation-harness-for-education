@@ -565,6 +565,8 @@ class SynthWorld:
         quarantine_indices: tuple[int, ...] = QUARANTINE_INDICES,
         panel_size: int = 3,
         review_window_hours: int | None = None,
+        package: Any = corpus,
+        record_as_you_go: bool = True,
     ) -> None:
         for name, value in WORLD_ENV.items():
             if monkeypatch is not None:
@@ -581,8 +583,13 @@ class SynthWorld:
             index for index in quarantine_indices if index <= n_submissions
         )
         self.review_window_hours = review_window_hours
+        # Whether the drive pre-records each reply before dispatching it. False is
+        # the replay shape #435's fifth acceptance criterion names: every request
+        # must already have its answer on disk, so a miss is a real failure rather
+        # than something the drive quietly fills in.
+        self.record_as_you_go = record_as_you_go
         self.store = open_store(data_dir)
-        self.provider = JourneyProvider(fixture_dir)
+        self.provider = self._make_provider(fixture_dir)
         self.blobs = self.store.blobs()
         self.handle = self.store.cohort(cohort_id)
         self.panel_refs = edge_panel(panel_size)
@@ -591,9 +598,15 @@ class SynthWorld:
             "escalation-arm-4": self._judge_ref("escalation-arm-4"),
             "escalation-arm-5": self._judge_ref("escalation-arm-5"),
         }
-        self.open_ids = tuple(corpus.OPEN_CRITERION_IDS)
-        self.mcq_ids = tuple(corpus.MCQ_CRITERION_IDS)
-        self.cohort = corpus_synth.synth_cohort()[:n_submissions]
+        # The package the world builds its catalog from. A parameter rather than the module
+        # constant because `PipeWorld` drives the same pipeline over `PKG-DEV-PIPE`'s three
+        # criteria; every default here is the reference package, so the three journeys and
+        # PERF-06 see exactly the world they saw before.
+        self.package = package
+        self.package_id = package.PACKAGE_ID
+        self.open_ids = tuple(package.OPEN_CRITERION_IDS)
+        self.mcq_ids = tuple(package.MCQ_CRITERION_IDS)
+        self.cohort = self._cohort_submissions(n_submissions)
         self.sid_by_index: dict[int, str] = {}
         self.index_by_sid: dict[str, int] = {}
         self.student_ref_by_sid: dict[str, str] = {}
@@ -609,6 +622,52 @@ class SynthWorld:
         return ModelRef(role="judge", provider="local", build_id=build_id,
                         quantization="q4")
 
+    # -- the corpus seams ------------------------------------------------------------------------
+    #
+    # Five hooks a differently-shaped corpus overrides. Each is the reference package's own
+    # behaviour here, so overriding none of them leaves the three journeys and PERF-06
+    # byte-identical; `tests/support/pipe_world.py` overrides all five for F-DEV-PIPE.
+
+    def _make_provider(self, fixture_dir: Any) -> Any:
+        """The model boundary. `JourneyProvider` answers a first sight of an unknown
+        request from the world's own computation and records it; a replay-only world
+        overrides this with one that refuses."""
+        return JourneyProvider(fixture_dir)
+
+    def _cohort_submissions(self, n_submissions: int) -> tuple[Any, ...]:
+        """The submissions this world ingests, in corpus order."""
+        return corpus_synth.synth_cohort()[:n_submissions]
+
+    def _pages_for(self, submission: Any, *, with_student: bool) -> list[str]:
+        """One submission's page transcripts, region-marked per the marker protocol."""
+        return _marked_pages(submission, with_student=with_student)
+
+    def _assessment_transcript(self) -> str:
+        """The single assessment artifact's transcript — the V4 lineage head."""
+        return _assessment_page()
+
+    def _render_band(self, criterion_id: str, ordinal: int) -> str:
+        """One open criterion rendered as student prose at one band ordinal."""
+        return corpus_synth.render_band(criterion_id, ordinal)
+
+    def _mcq_band_rows(self) -> tuple[tuple[str, int, float], ...]:
+        """The mcq band names the catalog declares - the names `M-DET` scores with."""
+        return MCQ_BANDS
+
+    def _grade_boundaries(self) -> tuple[tuple[str, float], ...]:
+        """The inclusive scaled floors. Package-scaled: a table written for a 47-point
+        package puts every submission of an 11-point one in the bottom band."""
+        return GRADE_BOUNDARIES
+
+    def _ordinal_for(self, submission: Any, criterion_id: str) -> int:
+        """The ordinal the submission's reference band sits at."""
+        for band in self.package.BY_ID[criterion_id].bands:
+            if band.band == submission.bands[criterion_id]:
+                return band.ordinal
+        raise KeyError(
+            f"{submission.bands[criterion_id]!r} is not a band of {criterion_id}"
+        )
+
     def _build(self) -> None:
         self._build_catalog()
         self._build_cohort()
@@ -622,22 +681,22 @@ class SynthWorld:
         table, then publication and the lock. The package row lives on the Tier P
         file - the same write `orch_run.seed_package` makes before its catalog
         opens (`create_version` refuses to mint a package row)."""
-        package_handle = self.store.package(PKG_ID)
+        package_handle = self.store.package(self.package_id)
         with package_handle.transaction() as tx:
             tx.execute(
                 "INSERT INTO package (package_id, created_at) VALUES (:p, :c)",
-                p=PKG_ID, c=STAMP,
+                p=self.package_id, c=STAMP,
             )
         self.catalog = PackageCatalog(
-            package_handle, package_id=PKG_ID, blobs=self.blobs)
+            package_handle, package_id=self.package_id, blobs=self.blobs)
         version = self.catalog.create_version(None)
         self.version = version
-        for criterion in corpus.CRITERIA:
+        for criterion in self.package.CRITERIA:
             if criterion.kind == "open":
                 self.catalog.add_criterion(
                     version, criterion.criterion_id,
                     question_id=criterion.question_id, kind="open",
-                    max_points=corpus.points_for(
+                    max_points=self.package.points_for(
                         criterion.criterion_id, criterion.bands[-1].band),
                     scoring_model="holistic",
                 )
@@ -652,17 +711,18 @@ class SynthWorld:
                     question_id=criterion.question_id, kind="mcq",
                     max_points=1.0, scoring_model="atomic", band_count=2,
                 )
-                for ordinal, (name, _band_ordinal, points) in enumerate(MCQ_BANDS):
+                for ordinal, (name, _band_ordinal, points) in enumerate(
+                        self._mcq_band_rows()):
                     self.catalog.add_band(
                         version, criterion.criterion_id, ordinal, name, points,
                     )
                 self.catalog.set_mcq_options(
                     version, criterion.criterion_id,
-                    [(o, f"Option {o}") for o in corpus.MCQ_OPTIONS],
+                    [(o, f"Option {o}") for o in self.package.MCQ_OPTIONS],
                 )
                 self.catalog.set_answer_key(version, criterion.criterion_id,
                                             criterion.answer_key)
-        self.catalog.set_boundaries(version, list(GRADE_BOUNDARIES))
+        self.catalog.set_boundaries(version, list(self._grade_boundaries()))
         # The review window is per-package data (`ADR-3`), and a published
         # version is immutable (`FR-PKG-01`) - so a journey that needs a window
         # attaches its policy HERE, before the lock, exactly as the package
@@ -682,10 +742,14 @@ class SynthWorld:
                 "VALUES (:c, 'synthetic', :ts)",
                 c=self.cohort_id, ts=STAMP,
             )
-            for index in range(1, self.n_submissions + 1):
+            # The refs come from the cohort itself rather than from a rebuilt
+            # `f"S-{index:04d}"`: F-SYNTH's refs are exactly that, so this is the same roster
+            # the journeys had, but a corpus with another convention (F-DEV-PIPE's `P-0001`)
+            # would otherwise fail V3 as `unmatched` against a roster of names nobody issued.
+            for submission in self.cohort:
                 tx.execute(
                     "INSERT INTO roster (cohort_id, student_ref) VALUES (:c, :s)",
-                    c=self.cohort_id, s=f"S-{index:04d}",
+                    c=self.cohort_id, s=submission.student_ref,
                 )
 
     def _ingestor(self) -> Ingestor:
@@ -701,7 +765,7 @@ class SynthWorld:
     def _ingest_assessment(self) -> None:
         """The ONE assessment artifact, ingested before any submission - the single
         lineage head the V4 semantic signal compares against."""
-        text = _assessment_page()
+        text = self._assessment_transcript()
         blob = self.blobs.put(_pdf_of([text]))
         self.provider.stage_transcript(blob, {1: text})
         ingestor = self.ingestor
@@ -717,7 +781,7 @@ class SynthWorld:
         `Student:` line: V3 identity fails, V4 still matches."""
         ingestor = self.ingestor
         for index, submission in enumerate(self.cohort, start=1):
-            pages = _marked_pages(
+            pages = self._pages_for(
                 submission, with_student=(index not in self.quarantine_indices))
             blob = self.blobs.put(_pdf_of(pages))
             self.provider.stage_transcript(
@@ -752,7 +816,8 @@ class SynthWorld:
             markdown = self.stored_markdown[sid]
             cursor = 0
             for cid in self.open_ids:
-                needle = corpus_synth.render_band(cid, _ordinal_of(submission, cid))
+                needle = self._render_band(
+                    cid, self._ordinal_for(submission, cid))
                 start = markdown.find(needle, cursor)
                 assert start >= 0, (
                     f"fixture bug: the band line for {cid} of index {index} is not "
@@ -818,7 +883,7 @@ class SynthWorld:
         synthesis replies replay from the fixture store under their exact keys -
         the resume variant's whole point (a restart invents nothing)."""
         self.store = open_store(self.data_dir)
-        self.provider = JourneyProvider(self.fixture_dir)
+        self.provider = self._make_provider(self.fixture_dir)
         self.blobs = self.store.blobs()
         self.handle = self.store.cohort(self.cohort_id)
         self.orchestrator = Orchestrator(self.store, provider=self.provider)
@@ -890,14 +955,15 @@ class SynthWorld:
         self.ensure_available()
         request = assemble_request(unit, store=self.store)
         spans = self.spans_by_cell[(unit.submission_id, unit.criterion_id)]
-        self.provider.record(
-            prompt_fields(request), ref, sampling_params(),
-            span_completion(spans, build_id=EXTRACT_BUILD),
-        )
-        self.provider.record(
-            prompt_fields(request), second, sampling_params(),
-            span_completion(spans, build_id=EXTRACT_SECOND_BUILD),
-        )
+        if self.record_as_you_go:
+            self.provider.record(
+                prompt_fields(request), ref, sampling_params(),
+                span_completion(spans, build_id=EXTRACT_BUILD),
+            )
+            self.provider.record(
+                prompt_fields(request), second, sampling_params(),
+                span_completion(spans, build_id=EXTRACT_SECOND_BUILD),
+            )
         worker.process(unit)
 
     def drive_score(self, *, include_escalations: bool = False,
@@ -933,17 +999,28 @@ class SynthWorld:
         worker = ScoringWorker(self.store, self.provider, ref)
         request = worker.assemble(unit)
         spans = self.spans_by_cell[(unit.submission_id, unit.criterion_id)]
-        band = self._judge_band(unit.submission_id, unit.criterion_id)
-        self.provider.record(
-            judge_prompt_fields(request), ref, sampling_params(),
-            verdict_completion(band, 0.9, build_id=ref.build_id, cited_spans=spans),
-        )
+        band = self._judge_band(unit.submission_id, unit.criterion_id,
+                                judge=unit.judge)
+        if self.record_as_you_go:
+            self.provider.record(
+                judge_prompt_fields(request), ref, sampling_params(),
+                verdict_completion(band, 0.9, build_id=ref.build_id,
+                                   cited_spans=spans),
+            )
         result = worker.dispatch(request, ref)
         assert result.band == band, (
             "the judge's reply was not the verdict the fixture recorded")
         worker.persist(unit, result)
 
-    def _judge_band(self, sid: str, cid: str) -> str:
+    def _judge_band(self, sid: str, cid: str, judge: str | None = None) -> str:
+        """The band THIS judge records for this cell.
+
+        The reference world's panel agrees by construction: every arm returns the
+        submission's own corpus band, so `judge` is accepted and ignored. A corpus that
+        specifies a DISAGREEING panel - F-DEV-PIPE's `(2,4,4)` on `C2` - overrides this and
+        reads the arm's position off the panel, which is the only way `should_escalate` has
+        anything to fire on.
+        """
         return self.cohort[self.index_by_sid[sid] - 1].bands[cid]
 
     def ensure_available(self) -> None:
@@ -1011,7 +1088,8 @@ class SynthWorld:
             _set_env(monkeypatch, CRITERION_BREAKER_MIN_N_ENV, breaker_min_n)
         config = agg_config(**(agg_config_kwargs or {}))
         self.breaker_marked = []
-        catalog = PackageCatalog(self.store.package(PKG_ID), package_id=PKG_ID)
+        catalog = PackageCatalog(
+            self.store.package(self.package_id), package_id=self.package_id)
         bands = {cid: catalog.bands(cid) for cid in self.open_ids}
         enqueued = 0
         for sid in self.admitted_ids():
@@ -1165,7 +1243,7 @@ class SynthWorld:
             })
         return {
             "issue": ISSUE,
-            "package_id": PKG_ID,
+            "package_id": self.package_id,
             "version_shape": "PKG-REF@<uuid12hex>",
             "submissions": submissions,
         }
