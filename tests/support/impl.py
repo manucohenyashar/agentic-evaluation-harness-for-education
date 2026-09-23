@@ -53,6 +53,10 @@ INGEST_MODULE = f"{IMPLEMENTATION_PACKAGE}.ingest"
 SETUP_MODULE = f"{IMPLEMENTATION_PACKAGE}.setup"
 SYNTH_MODULE = f"{IMPLEMENTATION_PACKAGE}.synth"
 INTEG_MODULE = f"{IMPLEMENTATION_PACKAGE}.integ"
+#: `M-PIPE`, run composition and process entry (design delta §3.1, ADR-15). The module
+#: does not exist yet — #364 builds it and #365 adds `recover` — so every TS-83/TS-84 case
+#: probes it by name.
+PIPE_MODULE = f"{IMPLEMENTATION_PACKAGE}.pipeline"
 
 # §4.2: "RecordedFixtureProvider (FR-PROV-10) is a *shipped implementation*, not a test fake."
 # The fast tier binds this class by name; the harness self-test asserts the binding.
@@ -1282,6 +1286,24 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # after a restart. TC-CALIB-20 and TC-CALIB-C17 run unmarked against it, markers gone.
     # --- TS-88 (#382), run-scoped scores: writer, migration, deterministic and grade reads ---
     #
+    # --- TS-84 (#378), M-PIPE recovery ------------------------------------------------------
+    #
+    # Keyed to #365, which builds `recover`, by SYMBOL rather than by module: `aeh.pipeline`
+    # itself arrives with #364, and a module-kind probe would fire the gate for these cases on
+    # the day the module lands rather than on the day `recover` does.
+    #
+    # TC-PIPE-07's arm (c) - the review-window regrade - is NOT among these: it needs a grade
+    # policy surface this author did not verify, and #377 is the cautionary tale for asserting
+    # against an unverified one. TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE.
+    "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)": (
+        "symbol",
+        "aeh.pipeline:recover",
+        (
+            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_a_clean_store_is_left_alone",
+            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_a_running_run_with_pending_units_is_resumed",
+            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_an_expired_lease_is_reclaimed_and_the_unit_is_pending",
+        ),
+    ),
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the
