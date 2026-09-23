@@ -3067,7 +3067,6 @@ def _service_from_store(
     # #110 label-store columns — make the complete chain; importing aeh.review
     # from inside aeh.review is a no-op, so the ten it does not own are here.
     import aeh.agg  # noqa: F401
-    import aeh.calib  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.grade  # noqa: F401
@@ -3603,7 +3602,6 @@ def _collection_store(data_dir: Path | str) -> Any:
     aeh.review from inside aeh.review is a no-op, so the ten it does not own
     are imported here, mirroring ``open_review``'s block."""
     import aeh.agg  # noqa: F401
-    import aeh.calib  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.grade  # noqa: F401

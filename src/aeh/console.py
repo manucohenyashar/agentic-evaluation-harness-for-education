@@ -200,7 +200,6 @@ from aeh.store import open_store, store_metrics
 # The full migration chain, before any store open in this module's processes. See the module
 # docstring: the open site refuses a short chain, and these imports are the completeness duty.
 import aeh.agg  # noqa: E402,F401
-import aeh.calib  # noqa: E402,F401
 import aeh.det  # noqa: E402,F401
 import aeh.extract  # noqa: E402,F401
 import aeh.grade  # noqa: E402,F401

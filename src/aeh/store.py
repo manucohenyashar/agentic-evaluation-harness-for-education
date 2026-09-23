@@ -287,8 +287,8 @@ class IncompleteMigrationChainError(StoreError):
     The chains in `TIER_MIGRATIONS` are **concatenated at import time** by the modules that own
     the schema they add — Tier P: `aeh.pkg` and `aeh.det`; Cohort: `aeh.ingest`, `aeh.det`,
 `aeh.orch`, `aeh.extract`, `aeh.judge`, `aeh.synth`, `aeh.agg` and `aeh.grade`; Tier D:
-    `aeh.det`, `aeh.integ`, `aeh.grade`, `aeh.pkg`, `aeh.judge`, `aeh.review` and — since #375's
-    `calib_dual_scored_roster` — `aeh.calib` — so the chain an open sees is only as long
+    `aeh.det` and `aeh.integ` (#375's `calib_dual_scored_roster` is declared in THIS module,
+    for the reason its own block gives) — so the chain an open sees is only as long
     as the list of contributing modules the process has imported so far. A file opened on the
     short chain
     builds at the base schema, and the columns the missing migrations would have added surface
@@ -298,7 +298,7 @@ class IncompleteMigrationChainError(StoreError):
     `_open_tier` before the tier file's parent directory is made and before any connection is
     opened — `open_store`'s layout skeleton is made regardless) turns that distant phantom into
     a refusal **at the open site, naming the cause**. The fix on the
-caller's side is one line — `import aeh.agg, aeh.calib, aeh.det, aeh.extract, aeh.grade,
+caller's side is one line — `import aeh.agg, aeh.det, aeh.extract, aeh.grade,
     aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.synth,
     aeh.review`
     registers every tier's complete chain (`import aeh.pkg` alone is *not* enough: it does not
@@ -1351,6 +1351,47 @@ _DURABLE_002: tuple[Statement, ...] = (
     ),
 )
 
+# --- Tier D, migration 11 (#375, `FR-CALIB-15`): the dual-scored roster ----------------------
+#
+# **Declared here rather than in `aeh.calib`, deliberately.** CLAUDE.md's convention is that a
+# migration is owned by the module that owns the schema it adds, and by that rule this belongs
+# to M-CALIB. `TC-REQ-89` outranks the convention: the console must render with M-CALIB absent
+# (`sys.modules["aeh.calib"] = None`), so a module the system is contractually required to run
+# WITHOUT cannot own a mandatory link in a tier's chain — every durable open in that world
+# would refuse with `IncompleteMigrationChainError`. `FR-CALIB-15` names the table, never its
+# owner. `aeh.store` is unconditionally imported, so the chain is complete in both worlds, and
+# it already declares other modules' base tables for the same reason (`criterion_score`,
+# `label`, `submission_grade`). Do not move this into `aeh.calib`.
+#
+# `_CLASS_ROSTERS` is a module-level dict in M-CALIB, so a roster registered into it alone
+# survives exactly as long as the process does — and the operator who runs the non-inferiority
+# gate on Monday and again on Tuesday is a new process (`CT-CALIB-17`). This is where a
+# registered roster actually lives; that dict is a cache of it.
+#
+# Tier D's standing rule holds: no column here is a student name and none ever may be.
+# `paper_id` carries the submission id, which is what `M-REVIEW` already writes into Tier D's
+# own identity column (`review.py:2769`) — a keyed reference to the work, never a name.
+#
+# The primary key is the comparison plus the cell: one cohort can be dual-scored under more
+# than one (R₀, R₁) pair over its life, and each such comparison has its own roster.
+_DURABLE_011: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE calib_roster (
+            cohort_id    TEXT NOT NULL,
+            r0           TEXT NOT NULL,
+            r1           TEXT NOT NULL,
+            paper_id     TEXT NOT NULL,
+            criterion_id TEXT NOT NULL,
+            r0_band      TEXT NOT NULL,
+            r1_band      TEXT NOT NULL,
+            recorded_at  TEXT NOT NULL,
+            PRIMARY KEY (cohort_id, r0, r1, paper_id, criterion_id)
+        )
+        """
+    ),
+)
+
 class _VersionOrderedRegistry(dict):
     """Tier chains stay in ascending version order whatever order their owners get
     imported in. Owners append by rebinding a tier's tuple
@@ -1371,6 +1412,7 @@ TIER_MIGRATIONS: Mapping[Tier, tuple[Migration, ...]] = _VersionOrderedRegistry(
         Tier.DURABLE: (
             Migration(1, "durable_tier_initial", _DURABLE_001),
             Migration(2, "durable_lease_clock", _DURABLE_002),
+            Migration(11, "calib_dual_scored_roster", _DURABLE_011),
         ),
     }
 )

@@ -178,7 +178,6 @@ def test_tc_store_25_pin_tracks_the_full_chain():
     ascending version order — `TC-STORE-06`'s no-reverse-step as a property of the registry
     (`_VersionOrderedRegistry`), not of anyone's collection order."""
     import aeh.agg  # noqa: F401
-    import aeh.calib  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.grade  # noqa: F401

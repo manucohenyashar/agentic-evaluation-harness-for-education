@@ -283,12 +283,7 @@ from typing import Any
 
 from aeh.det import EVALUATION_MODE_DETERMINISTIC
 from aeh.pkg import PackageCatalog, SchemaLockViolation
-# Module level, not lazy like this module's other store imports: #375's `calib_roster`
-# migration is concatenated onto Tier D's chain at IMPORT time, which is what makes
-# `aeh.calib` a contributing module (CLAUDE.md's migration-chain paragraph). A lazy import
-# would register the migration only once somebody called into the roster, and every open
-# before that would build the file short.
-from aeh.store import TIER_MIGRATIONS, Migration, Statement, Tier
+from aeh.store import Statement
 
 __all__: tuple[str, ...] = (
     "CALIB_AMBIGUITY_ALERT_AFTER",
@@ -1953,6 +1948,19 @@ class _ClassRoster:
     criteria: tuple[str, ...]
     scores: tuple[tuple[tuple[int, int], ...], ...]
     is_calibration_set: bool = False
+    #: Which comparison this roster's bands are of (#375). `_CLASS_ROSTERS` is keyed by cohort
+    #: alone and `calib_roster`'s rows by `(cohort_id, r0, r1)`, so without these the cached
+    #: roster of ONE comparison would answer the gate's question about ANOTHER — the same
+    #: question getting opposite verdicts depending on what happened to be cached.
+    #:
+    #: `None` on both means "registered by a rung-0 test seam, which declares no comparison":
+    #: those seams stay (`FR-CALIB-15`), and a roster that names no comparison answers any.
+    r0: str | None = None
+    r1: str | None = None
+
+    def answers(self, r0: str, r1: str) -> bool:
+        """Is this roster the one for this comparison?"""
+        return (self.r0 is None and self.r1 is None) or (self.r0, self.r1) == (r0, r1)
 
     @property
     def shifted_papers(self) -> int:
@@ -2093,6 +2101,11 @@ def non_inferiority(
             "returning a number somebody will cite (CT-CALIB-07)"
         )
     roster = _CLASS_ROSTERS.get(cohort_id)
+    if roster is not None and not roster.answers(r0, r1):
+        # The cache holds a DIFFERENT comparison's roster for this cohort. Fall through to the
+        # table, which is keyed by the comparison — and never fall back to the cached one, or
+        # this gate answers a question nobody asked.
+        roster = None
     if roster is None:
         # `FR-CALIB-15`: the registered roster is persisted, and the module dict is a cache
         # populated from it on first use. The process that runs the gate is often not the one
@@ -2456,41 +2469,10 @@ def run_dual_scoring(plan: DualScoringPlan) -> DualScoringPlan:
 # "unknown cohort" — `CT-CALIB-17`'s "breaks if". The table below is where a registered
 # roster actually lives; the dict is a cache of it, populated on first use.
 
-# --- Tier D, migration 11 (#375, `FR-CALIB-15`) ----------------------------------------------
-#
-# Tier D because the roster outlives the cohort's own data: it is the record of *which
-# comparison was made*, and `purge_cohort` — which sweeps Tier C — must not carry it off.
-#
-# Tier D's standing rule holds (`store.py:1219`): no column here is a student name and none
-# ever may be. `paper_id` carries the submission id, which is exactly what `M-REVIEW` already
-# writes into Tier D's own identity column (`review.py:2769`) — a keyed reference to the work,
-# never a name.
-#
-# The primary key is the comparison plus the cell: one cohort can be dual-scored under more
-# than one (R₀, R₁) pair over its life, and each such comparison has its own roster.
-_DURABLE_011 = Migration(
-    version=11,
-    name="calib_dual_scored_roster",
-    statements=(
-        Statement(
-            """
-            CREATE TABLE calib_roster (
-                cohort_id    TEXT NOT NULL,
-                r0           TEXT NOT NULL,
-                r1           TEXT NOT NULL,
-                paper_id     TEXT NOT NULL,
-                criterion_id TEXT NOT NULL,
-                r0_band      TEXT NOT NULL,
-                r1_band      TEXT NOT NULL,
-                recorded_at  TEXT NOT NULL,
-                PRIMARY KEY (cohort_id, r0, r1, paper_id, criterion_id)
-            )
-            """
-        ),
-    ),
-)
-
-TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_011,)
+# The `calib_roster` table itself is declared in `aeh.store` (Tier D migration 11), not
+# here: `TC-REQ-89` renders the console with `sys.modules["aeh.calib"] = None`, so a
+# module the system must run WITHOUT cannot own a mandatory link in a tier's chain. See
+# that migration's own block for the full reasoning.
 
 
 #: Every statement this module runs against a store, declared here rather than assembled at a
@@ -2671,6 +2653,8 @@ def register_dual_scored_roster(
         criteria=tuple(criteria),
         scores=scores,
         is_calibration_set=False,
+        r0=executed.r0,
+        r1=executed.r1,
     )
     _ROSTER_SOURCES[(cohort_id, executed.r0, executed.r1)] = Path(store.data_dir)
     return recorded_at
@@ -2687,15 +2671,21 @@ def _roster_from_store(cohort_id: str, *, r0: str, r1: str) -> _ClassRoster | No
     on a file some caller already has open is a lock nobody asked for."""
     from aeh.store import StoreError, data_dir_from_environment, open_store
 
-    data_dir = _ROSTER_SOURCES.get((cohort_id, r0, r1))
+    # The deployment's configured channel wins. `_ROSTER_SOURCES` is process-local memory of
+    # where a registration in THIS process wrote, and a remembered path silently outranking
+    # `HARNESS_DATA_DIR` would make the gate read a directory the deployment never named.
+    try:
+        data_dir = data_dir_from_environment()
+    except StoreError:
+        data_dir = _ROSTER_SOURCES.get((cohort_id, r0, r1))
     if data_dir is None:
-        try:
-            data_dir = data_dir_from_environment()
-        except StoreError:
-            return None
+        return None
     if not (Path(data_dir) / "durable.sqlite").exists():
         return None
 
+    # Read-only, so the gate — a reader — takes no write lock on a file some caller already
+    # holds open. The open itself is NOT guarded: `IncompleteMigrationChainError` is a refusal
+    # that must reach the caller, not something to swallow into "no roster recorded".
     store = open_store(data_dir, read_only=True)
     try:
         rows = [
@@ -2703,6 +2693,13 @@ def _roster_from_store(cohort_id: str, *, r0: str, r1: str) -> _ClassRoster | No
                 CALIB_STATEMENTS["select_roster"], cohort_id=cohort_id, r0=r0, r1=r1
             )
         ]
+    except sqlite3.OperationalError:
+        # A durable file written before #375 is still at Tier D 10 and has no `calib_roster`
+        # — and a read-only open applies no migrations (`store.py:2141`), so nothing creates
+        # it here. That is a cohort with no recorded roster, which is what the gate's own
+        # `CalibrationError` already says; a raw sqlite error at this line would replace a
+        # documented refusal with an implementation detail.
+        return None
     finally:
         store.close()
     if not rows:
@@ -2729,6 +2726,8 @@ def _roster_from_store(cohort_id: str, *, r0: str, r1: str) -> _ClassRoster | No
             tuple(cells[(paper, criterion)] for criterion in criteria) for paper in papers
         ),
         is_calibration_set=False,
+        r0=r0,
+        r1=r1,
     )
     _CLASS_ROSTERS[cohort_id] = roster
     return roster
@@ -2890,7 +2889,6 @@ def _build_published_package(data_dir: Path, package_id: str) -> str:
     caller proceeds: a warm handle emits no `sqlite3.connect` events, so the write
     audit can only observe the edit if the edit's reader reopens the file fresh."""
     # The full migration chain must be imported before the first open (CLAUDE.md):
-    # The twelfth contributor is this module itself (#375's Tier D migration 11).
     import aeh.agg  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
@@ -3104,7 +3102,6 @@ class _ElicitationHistoryFixture:
 
     def __init__(self) -> None:
         # The full migration chain must be imported before the first open (CLAUDE.md):
-        # The twelfth contributor is this module itself (#375's Tier D migration 11).
         import aeh.agg  # noqa: F401
         import aeh.det  # noqa: F401
         import aeh.extract  # noqa: F401

@@ -109,7 +109,7 @@ def test_tc_smoke_01_clean_install_needs_nothing_beyond_a_venv_and_a_data_dir(
         "from aeh.store import Statement, open_store\n"
         "# The chains concatenate at import time, so the full-world convention holds here\n"
         "# too: every contributing module before the first open (#234).\n"
-        "import aeh.agg, aeh.calib, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, "
+        "import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, "
         "aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth  # noqa: E401\n"
         "store = open_store()  # no argument: HARNESS_DATA_DIR or refusal\n"
         "handle = store.durable()\n"

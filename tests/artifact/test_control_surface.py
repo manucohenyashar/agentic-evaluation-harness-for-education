@@ -185,8 +185,6 @@ _PROMPT_ASSEMBLY_MODULES: tuple[str, ...] = ("aeh.judge", "aeh.extract")
 _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
     {
         "aeh.agg",
-        # #375: the twelfth contributor — Tier D's `calib_dual_scored_roster`.
-        "aeh.calib",
         "aeh.det",
         "aeh.extract",
         "aeh.grade",

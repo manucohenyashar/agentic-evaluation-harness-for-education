@@ -43,7 +43,6 @@ from tests.support.store_spy import StoreSpy
 # before THAT (11), and `aeh.extract` pulls `aeh.ingest` and `aeh.orch`
 # in transitively — every contributor is listed explicitly all the same.
 import aeh.agg  # noqa: E402
-import aeh.calib  # noqa: E402
 import aeh.det  # noqa: E402
 import aeh.extract  # noqa: E402
 import aeh.grade  # noqa: E402

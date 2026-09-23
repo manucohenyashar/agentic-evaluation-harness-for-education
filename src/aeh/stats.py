@@ -4757,7 +4757,6 @@ def open_stats(
     # These ten plus this package's review module — which owns Durable's #110
     # label-store columns this read uses — make the complete chain.
     import aeh.agg  # noqa: F401
-    import aeh.calib  # noqa: F401
     import aeh.det  # noqa: F401
     import aeh.extract  # noqa: F401
     import aeh.grade  # noqa: F401
