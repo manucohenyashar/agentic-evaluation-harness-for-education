@@ -11607,6 +11607,20 @@
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
     },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion_stats": {
       "rows": 1,
       "columns": [
@@ -11735,6 +11749,20 @@
         "cohort_id"
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion_stats": {
       "rows": 1,
@@ -11865,6 +11893,20 @@
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
     },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion_stats": {
       "rows": 1,
       "columns": [
@@ -11993,6 +12035,20 @@
         "cohort_id"
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion_stats": {
       "rows": 1,
@@ -12123,6 +12179,20 @@
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
     },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion_stats": {
       "rows": 1,
       "columns": [
@@ -12251,6 +12321,20 @@
         "cohort_id"
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion_stats": {
       "rows": 1,
@@ -12381,6 +12465,20 @@
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
     },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion_stats": {
       "rows": 1,
       "columns": [
@@ -12509,6 +12607,20 @@
         "cohort_id"
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion_stats": {
       "rows": 1,
@@ -12639,6 +12751,20 @@
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
     },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "criterion_stats": {
       "rows": 1,
       "columns": [
@@ -12767,6 +12893,163 @@
         "cohort_id"
       ],
       "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "criterion_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "backend_profile",
+        "panel_build_ref",
+        "n",
+        "cohort_id"
+      ],
+      "checksum": "cbd2f26b4d225073f84331f883701c2112c1889554c69d6341d38838f1fb10c8"
+    },
+    "label": {
+      "rows": 1,
+      "columns": [
+        "label_id",
+        "run_id",
+        "student_ref",
+        "criterion_id",
+        "label_type",
+        "band",
+        "evaluation_mode",
+        "saw_system_output",
+        "routing",
+        "origin",
+        "review_seconds",
+        "system_band",
+        "teacher_band",
+        "actor",
+        "timestamp",
+        "score_id",
+        "review_queue_action",
+        "new_points",
+        "cohort_id",
+        "package_version_id",
+        "assignment_type",
+        "band_distance",
+        "system_points",
+        "teacher_points",
+        "agreed",
+        "panel_config",
+        "recorded_at"
+      ],
+      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+    },
+    "mcq_item_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option",
+        "chosen",
+        "is_key"
+      ],
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77"
+    },
+    "mcq_item_summary": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
+      ],
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667"
+    },
+    "package_validation": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "cohort_id",
+        "recorded_at",
+        "cohorts_used",
+        "operational_count",
+        "blind_count",
+        "n",
+        "agreement_kappa",
+        "weakest_per_population",
+        "surface_proxy_flags",
+        "message"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_metrics": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "metric",
+        "value",
+        "submission_id",
+        "criterion_id",
+        "judge_id"
+      ],
+      "checksum": "89e7b85b55e0eefb7a33f72e61142e951f750d37dc7ada114cd8025f7267f9f2"
+    },
+    "store_lease_clock": {
+      "rows": 0,
+      "columns": [
+        "id",
+        "ticks",
+        "wall_clock"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "durable@v11": {
+    "audit_record": {
+      "rows": 1,
+      "columns": [
+        "audit_record_id",
+        "run_id",
+        "recorded_at",
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read",
+        "cohort_id"
+      ],
+      "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "criterion_stats": {
       "rows": 1,

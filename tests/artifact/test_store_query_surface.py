@@ -556,8 +556,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1946",
-    "aeh.store:2741",
+    "aeh.store:1989",
+    "aeh.store:2784",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write
@@ -772,10 +772,16 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # guardrail gates, the dual-scoring budget and the knob surface were
     # inserted above the fixture builders and moved all four again (the
     # statements are the same four).
-    "aeh.calib:2607",
-    "aeh.calib:2821",
-    "aeh.calib:2852",
-    "aeh.calib:2862",
+    # #375 (FR-CALIB-15): `register_dual_scored_roster`'s two durable writes, both from
+    # CALIB_STATEMENTS and keyword-parameterized, in one transaction — the comparison's
+    # previous roster is deleted and the new cells inserted, so a re-registration replaces
+    # rather than accumulates and a roster is never half-written.
+    "aeh.calib:2631",
+    "aeh.calib:2638",
+    "aeh.calib:2909",
+    "aeh.calib:3123",
+    "aeh.calib:3154",
+    "aeh.calib:3164",
 
 })
 
