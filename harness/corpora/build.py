@@ -13,6 +13,19 @@ Everything is written with explicit `\\n` line endings and UTF-8. `.gitattribute
 `fixtures/**` to LF for the same reason: content addressing is over bytes, so a CRLF checkout
 would give the same corpus different hashes on Windows and Linux and quietly break every
 manifest in the tree.
+
+One corpus has a half this module does not emit. `F-DEV-PIPE/recordings/` holds the model
+replies a complete run of that corpus asks for, and they cannot be generated here — a score
+request is keyed on the assembled prompt including the extracted evidence, so the keys do not
+exist until a real run has produced them. `F-DEV-PIPE-TWO-RUN/run-a` and `run-b` are two more
+sets over the same submissions, whose judged bands differ so a two-run isolation case can tell
+the runs apart. All three are re-captured by driving the pipeline once each::
+
+    python -m tests.support.pipe_world     # rewrites all three recording sets
+
+`_RECORDED_GOLDEN_TREES` below exempts those directories from `--check` for the same reason
+`F-SCHEMA`'s checksums are exempt, and `tests/integration/pipe/test_f_dev_pipe_corpus.py` is
+what actually pins them: a run driven from the committed bytes must miss no recording.
 """
 
 from __future__ import annotations
@@ -22,8 +35,12 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
-from harness.corpora import adv_inj, adv_pdf, conform_set, graphic, hand, reference_package, scan, stats, synth
+from harness.corpora import (
+    adv_inj, adv_pdf, conform_set, dev_pipe, graphic, hand, reference_package, scan, stats,
+    synth,
+)
 from harness.corpora.baselines import (
     BASELINES,
     WORK_ID_INPUTS,
@@ -50,7 +67,17 @@ def _json_bytes(payload: object) -> bytes:
 
 def _build_submission_corpus(root: Path, corpus: str, seed: int, generator: str,
                              description: str,
-                             submissions: tuple[synth.SyntheticSubmission, ...]) -> None:
+                             submissions: tuple[synth.SyntheticSubmission, ...],
+                             package: Any = reference_package) -> None:
+    """One submission corpus: a Markdown document per submission, then the manifest.
+
+    `package` is the module declaring the package the submissions were written against —
+    `reference_package` for the three corpora drawn from `synth`, `dev_pipe` for F-DEV-PIPE,
+    which has its own three-criterion package (see that module on why it cannot share one).
+    It is a parameter rather than a constant because the manifest's `extra` block carries the
+    package identity, and a corpus declaring the wrong `max_points` would make every reference
+    figure computed against it wrong by a constant nobody would think to look for.
+    """
     members = [
         (
             s.submission_id,
@@ -87,10 +114,10 @@ def _build_submission_corpus(root: Path, corpus: str, seed: int, generator: str,
             description=description,
             entries=entries,
             extra={
-                "package_id": reference_package.PACKAGE_ID,
-                "package_version": reference_package.PACKAGE_VERSION,
+                "package_id": package.PACKAGE_ID,
+                "package_version": package.PACKAGE_VERSION,
                 "consent_class": "synthetic",
-                "max_points": reference_package.MAX_POINTS,
+                "max_points": package.MAX_POINTS,
             },
         ),
     )
@@ -481,6 +508,19 @@ def build(root: Path) -> None:
         "The 8 submissions development iterates against, disjoint from F-FROZEN (§4.4).",
         synth.dev_set(),
     )
+    _build_submission_corpus(
+        root / "F-DEV-PIPE",
+        "F-DEV-PIPE",
+        dev_pipe.DEV_PIPE_SEED,
+        "harness.corpora.dev_pipe:dev_pipe_set",
+        (
+            "The small pipeline corpus every M-PIPE case drives: 3 submissions x 1 question x "
+            "3 criteria (2 judged, 1 MCQ-deterministic), against the three-criterion "
+            "PKG-DEV-PIPE package (gap-fix test plan §4.4)."
+        ),
+        dev_pipe.dev_pipe_set(),
+        package=dev_pipe,
+    )
     _build_graphic(root / "F-GRAPHIC")
     _build_stats(root / "F-STATS")
     _build_adv_inj(root / "F-ADV-INJ")
@@ -504,6 +544,35 @@ _GENERATED_UNDER_BASELINES = frozenset(
 #: build open stores, which is test-harness work, not corpus generation.
 _RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
 
+#: Recorded goldens that are a whole DIRECTORY rather than one file.
+#:
+#: `F-DEV-PIPE/recordings/` holds one JSON document per `request_key` — the model replies a
+#: complete run of that corpus asks for. They are emphatically not generated data: a score
+#: request is keyed on the assembled prompt *including the extracted evidence*, so the keys do
+#: not exist until a real run has produced them. `tests/support/pipe_world.py:capture()` drives
+#: the pipeline once and keeps what it recorded, which is the same "output of a producer"
+#: relationship `F-SCHEMA`'s checksums have, and deriving them here would make the corpora build
+#: open stores — the thing this module does not do.
+#:
+#: A prefix rather than 52 literal paths because the filenames ARE the request keys: a prompt
+#: that legitimately changes renames its recording, and a registry of literals would then have
+#: to be hand-edited in the same change. The corpus is still pinned — `TC-PIPE-*`'s replay drive
+#: fails on any request whose recording is missing, which is a stronger check than a filename
+#: list and the one that actually matters.
+#: `F-DEV-PIPE-TWO-RUN/` is the same corpus's submissions with TWO more recording sets
+#: (`run-a`, `run-b`). It has no manifest and no submissions of its own by design — §4.4 calls
+#: it *"F-DEV-PIPE plus a second recorded response set"*, and duplicating three Markdown files
+#: to give it a manifest would create a second place for the same submissions to drift.
+#:
+#: They cannot be one directory: a judge request is keyed on the assembled prompt, which
+#: carries no run identifier, so run A's verdict and run B's verdict answer a byte-identical
+#: request. Measured — 30 of the 52 recordings share a key across the two sets and differ only
+#: in their completion.
+_RECORDED_GOLDEN_TREES = (
+    "F-DEV-PIPE/recordings/",
+    "F-DEV-PIPE-TWO-RUN/",
+)
+
 
 def _is_recorded_baseline(path: str) -> bool:
     """Is this a §6.9 golden that a producer recorded, rather than generated corpus data?
@@ -521,8 +590,10 @@ def _is_recorded_baseline(path: str) -> bool:
     *registered* here — `tests/support/baselines.py` does, by refusing to compare against a
     path the registry does not list.
     """
-    return (path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES) or (
-        path in _RECORDED_GOLDENS
+    return (
+        (path.startswith("baselines/") and path not in _GENERATED_UNDER_BASELINES)
+        or path in _RECORDED_GOLDENS
+        or path.startswith(_RECORDED_GOLDEN_TREES)
     )
 
 

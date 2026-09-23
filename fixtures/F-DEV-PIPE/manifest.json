@@ -1,0 +1,60 @@
+{
+  "corpus": "F-DEV-PIPE",
+  "version": "1",
+  "seed": 20260104,
+  "generator": "harness.corpora.dev_pipe:dev_pipe_set",
+  "description": "The small pipeline corpus every M-PIPE case drives: 3 submissions x 1 question x 3 criteria (2 judged, 1 MCQ-deterministic), against the three-criterion PKG-DEV-PIPE package (gap-fix test plan §4.4).",
+  "set_content_hash": "sha256:c93d38eb85ec88a54cfc31fb869c2c01b594f7b421902fbb7813f7c7ad1aa1a3",
+  "fixture_set_id": "F-DEV-PIPE@1+sha256:c93d38eb85ec88a54cfc31fb869c2c01b594f7b421902fbb7813f7c7ad1aa1a3",
+  "package_id": "PKG-DEV-PIPE",
+  "package_version": "1",
+  "consent_class": "synthetic",
+  "max_points": 11.0,
+  "submissions": [
+    {
+      "id": "S1",
+      "path": "submissions/S1.md",
+      "content_hash": "sha256:6f7889d2cbc998001bf56754c55ab3b58325961fe64c5c1595440f9467dcbd81",
+      "student_ref": "P-0001",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "absent",
+        "C2": "secure",
+        "C3": "correct"
+      },
+      "reference_points": 5.0
+    },
+    {
+      "id": "S2",
+      "path": "submissions/S2.md",
+      "content_hash": "sha256:89feffc81845afd0a8bdfdd40e12c971b7585f02bc460d6687a6dcbf7a3e8bc7",
+      "student_ref": "P-0002",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "developing",
+        "C2": "secure",
+        "C3": "incorrect"
+      },
+      "reference_points": 7.0
+    },
+    {
+      "id": "S3",
+      "path": "submissions/S3.md",
+      "content_hash": "sha256:c8cfe9cf07f066fcf9e1c6c350e9e922d2a713f7cc9959fb0e376aed5e9c2df6",
+      "student_ref": "P-0003",
+      "consent_class": "synthetic",
+      "media_kind": "synthetic_markdown",
+      "pages": 1,
+      "reference_bands": {
+        "C1": "comprehensive",
+        "C2": "secure",
+        "C3": "correct"
+      },
+      "reference_points": 10.0
+    }
+  ]
+}

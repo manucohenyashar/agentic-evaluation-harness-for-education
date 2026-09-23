@@ -22,7 +22,9 @@ import hashlib
 import json
 
 from harness.corpora import build as corpora_build
-from harness.corpora import adv_inj, adv_pdf, conform_set, graphic, hand, reference_package, scan, synth
+from harness.corpora import (
+    adv_inj, adv_pdf, conform_set, dev_pipe, graphic, hand, reference_package, scan, synth,
+)
 from harness.corpora.manifest import set_content_hash
 from tests.support import corpora
 
@@ -50,7 +52,8 @@ def test_every_manifest_hash_still_describes_the_bytes_on_disk():
     let a copied submission pass a disjointness check. The same reasoning applies to every
     corpus: `NFR-CONFORM-01`'s point is that a result can *name* the fixtures that produced it.
     """
-    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-GRAPHIC", "F-STATS", "F-ADV-INJ", "F-SCAN"):
+    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-DEV-PIPE", "F-GRAPHIC", "F-STATS",
+                 "F-ADV-INJ", "F-SCAN"):
         corpus = corpora.load(name)
         for member in corpus.members:
             actual = "sha256:" + hashlib.sha256(member.path.read_bytes()).hexdigest()
@@ -273,7 +276,7 @@ def test_every_submission_carries_a_student_ref_and_no_name_shaped_field():
     Cheap now, and the corpus is the thing later stories copy when they need a fixture — so a
     name-shaped field here would propagate into every one of them.
     """
-    for name in ("F-SYNTH", "F-FROZEN", "F-DEV"):
+    for name in ("F-SYNTH", "F-FROZEN", "F-DEV", "F-DEV-PIPE"):
         corpus = corpora.load(name)
         assert corpus.manifest["consent_class"] == "synthetic"
         for member in corpus.members:
@@ -425,7 +428,11 @@ def test_the_generators_are_deterministic_across_two_runs_in_one_process():
     assert [s.as_document() for s in synth.frozen_set()] == [
         s.as_document() for s in synth.frozen_set()
     ]
+    assert [s.as_document() for s in dev_pipe.dev_pipe_set()] == [
+        s.as_document() for s in dev_pipe.dev_pipe_set()
+    ]
     assert json.dumps(reference_package.as_json()) == json.dumps(reference_package.as_json())
+    assert json.dumps(dev_pipe.as_json()) == json.dumps(dev_pipe.as_json())
     assert [s.as_document() for s in adv_inj.submissions()] == [
         s.as_document() for s in adv_inj.submissions()
     ]
