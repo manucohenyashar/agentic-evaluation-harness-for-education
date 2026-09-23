@@ -358,7 +358,13 @@ def capture(destination: Path | None = None) -> int:
             shutil.rmtree(target)
         target.mkdir(parents=True)
         for path in written:
-            shutil.copy2(path, target / path.name)
+            # Rewritten with explicit LF rather than copied. `RecordedFixtureProvider.record`
+            # writes through the platform's default newline, so a capture on Windows lands
+            # CRLF - and `.gitattributes` pins `fixtures/**` to LF because content addressing
+            # is over bytes. Copying verbatim would make every re-capture on a different
+            # platform a diff of 52 files that say the same thing.
+            text = path.read_text(encoding="utf-8")
+            (target / path.name).write_text(text, encoding="utf-8", newline="\n")
     return len(written)
 
 
