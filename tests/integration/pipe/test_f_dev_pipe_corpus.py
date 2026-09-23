@@ -36,12 +36,7 @@ import json
 import pytest
 
 from harness.corpora import dev_pipe
-from tests.support.pipe_world import (
-    drive_full_run,
-    pinned_uuid4,
-    recordings_dir,
-    replay_world,
-)
+from tests.support.pipe_world import drive_full_run, recordings_dir, replay_world
 
 pytestmark = pytest.mark.integration
 
@@ -146,39 +141,41 @@ def test_f_dev_pipe_drives_a_full_run_with_nothing_recorded_on_the_way(tmp_path)
     The provider raises on a miss, so this fails loudly if the corpus is incomplete. The band
     assertions are what make it more than a smoke test: replaying the wrong recording for a
     cell would still complete the run, and only the reference labels catch it.
+
+    No `uuid4` pinning here on purpose: `PipeWorld` pins its own construction, and a consumer
+    that had to remember the trick would be a corpus that only replays for whoever built it.
     """
-    with pinned_uuid4():
-        world = replay_world(tmp_path / "data")
-        try:
-            drive_full_run(world)
-            assert world.provider.misses == [], (
-                f"requests with no recording: {world.provider.misses}")
-            assert world.provider.replayed_calls > 0
+    world = replay_world(tmp_path / "data")
+    try:
+        drive_full_run(world)
+        assert world.provider.misses == [], (
+            f"requests with no recording: {world.provider.misses}")
+        assert world.provider.replayed_calls > 0
 
-            scores = {
-                (row["submission_id"], row["criterion_id"]): row
-                for row in world.handle.query(
-                    "SELECT submission_id, criterion_id, band, judge_count FROM "
-                    "criterion_score"
-                )
-            }
-            assert len(scores) == 9, f"expected 3 submissions x 3 criteria, got {len(scores)}"
+        scores = {
+            (row["submission_id"], row["criterion_id"]): row
+            for row in world.handle.query(
+                "SELECT submission_id, criterion_id, band, judge_count FROM "
+                "criterion_score"
+            )
+        }
+        assert len(scores) == 9, f"expected 3 submissions x 3 criteria, got {len(scores)}"
 
-            for index, submission in enumerate(world.cohort, start=1):
-                sid = world.sid_by_index[index]
-                for cid, reference in submission.bands.items():
-                    row = scores[(sid, cid)]
-                    assert row["band"] == reference, (
-                        f"{submission.submission_id}/{cid} scored {row['band']!r} against the "
-                        f"corpus's reference band {reference!r} - the run replayed a recording "
-                        "that does not belong to this cell")
+        for index, submission in enumerate(world.cohort, start=1):
+            sid = world.sid_by_index[index]
+            for cid, reference in submission.bands.items():
+                row = scores[(sid, cid)]
+                assert row["band"] == reference, (
+                    f"{submission.submission_id}/{cid} scored {row['band']!r} against the "
+                    f"corpus's reference band {reference!r} - the run replayed a recording "
+                    "that does not belong to this cell")
 
-            for index in world.sid_by_index:
-                sid = world.sid_by_index[index]
-                assert scores[(sid, "C2")]["judge_count"] == 5, (
-                    "C2's (2,4,4) panel must escalate: three panel arms plus the ladder's two "
-                    f"extension arms, got {scores[(sid, 'C2')]['judge_count']}")
-                assert scores[(sid, "C3")]["judge_count"] == 0, (
-                    "the mcq criterion is scored by M-DET, not by a panel")
-        finally:
-            world.store.close()
+        for index in world.sid_by_index:
+            sid = world.sid_by_index[index]
+            assert scores[(sid, "C2")]["judge_count"] == 5, (
+                "C2's (2,4,4) panel must escalate: three panel arms plus the ladder's two "
+                f"extension arms, got {scores[(sid, 'C2')]['judge_count']}")
+            assert scores[(sid, "C3")]["judge_count"] == 0, (
+                "the mcq criterion is scored by M-DET, not by a panel")
+    finally:
+        world.store.close()

@@ -25,10 +25,12 @@ Measured, not assumed (#435's probes, on three submissions):
   (`ingest.py:4167`) — straight into the prompt payload. Nothing reads it back out.
 - With the mint pinned (`pinned_uuid4`), all 280 match, ids included.
 
-So the capture pins the mint, and a replaying run pins it the same way. `PINNED_UUID_SEED` is
-part of the corpus contract, not a detail of the capture script — a consumer that does not pin
-it re-mints different ids and misses every narrative recording. `replay_world()` is the
-supported way to get that right without knowing the trick.
+So `PipeWorld` pins the mint around its own construction — the point where `M-INGEST` mints
+the submission ids — and every consumer gets the corpus's ids without knowing any of this.
+Pinning at construction rather than around the whole drive is enough because the run, work and
+document ids minted later never reach a hashed payload, and making it the world's own business
+rather than a caller's contract removes the failure mode where a consumer forgets and then
+misses every narrative recording with nothing to say why.
 
 The submission-id-in-prompt finding is filed separately: it also means every synthesis request
 is a permanent provider-cache miss in production, which is a defect in `M-SYNTH`, not in this
@@ -152,6 +154,16 @@ class PipeWorld(SynthWorld):
     def __init__(self, data_dir: Any, fixture_dir: Any, **kwargs: Any) -> None:
         kwargs.setdefault("cohort_id", PIPE_COHORT_ID)
         kwargs.setdefault("run_id", PIPE_RUN_ID)
+        # The mint is pinned around CONSTRUCTION, which is where `ingest_submission` mints the
+        # submission ids - the only minted value that reaches a hashed prompt payload
+        # (`synth.prompt_for`). Pinning here rather than asking callers to wrap the drive
+        # makes the corpus self-contained: a consumer that forgot would re-mint different ids
+        # and miss every narrative recording, with nothing to say why. The run and work ids
+        # minted later are free to vary, because nothing hashes them.
+        with pinned_uuid4():
+            self._construct(data_dir, fixture_dir, **kwargs)
+
+    def _construct(self, data_dir: Any, fixture_dir: Any, **kwargs: Any) -> None:
         super().__init__(
             data_dir,
             fixture_dir,
@@ -348,10 +360,9 @@ def capture(destination: Path | None = None) -> int:
         for sub in ("packages", "cohorts", "blobs"):
             (data_dir / sub).mkdir(parents=True)
         staging = scratch / "recordings"
-        with pinned_uuid4():
-            world = PipeWorld(data_dir, staging)
-            drive_full_run(world)
-            world.store.close()
+        world = PipeWorld(data_dir, staging)
+        drive_full_run(world)
+        world.store.close()
 
         written = sorted(staging.rglob("*.json"))
         if target.exists():
@@ -374,8 +385,8 @@ def replay_world(data_dir: Path, *, recordings: Path | None = None,
 
     The supported way to drive F-DEV-PIPE without recording: every request the run assembles
     has its reply on disk already, so `RecordedFixtureProvider` answers from the corpus and
-    never falls through. Callers stay inside `pinned_uuid4` for the whole drive — see the
-    module docstring on why the mint is part of the contract.
+    never falls through. Callers need no ceremony — `PipeWorld` pins the mint around its own
+    construction, which is where the ids that reach a prompt are minted.
     """
     for sub in ("packages", "cohorts", "blobs"):
         (data_dir / sub).mkdir(parents=True, exist_ok=True)
