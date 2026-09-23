@@ -212,16 +212,6 @@ def _wrap_region(kind: str, question_id: str, conf: float, body: str,
     )
 
 
-def _ordinal_of(submission: corpus_synth.SyntheticSubmission, criterion_id: str) -> int:
-    """The ordinal the submission's corpus band sits at."""
-    for band in corpus.BY_ID[criterion_id].bands:
-        if band.band == submission.bands[criterion_id]:
-            return band.ordinal
-    raise KeyError(
-        f"{submission.bands[criterion_id]!r} is not a band of {criterion_id}"
-    )
-
-
 def _q5_choice(item_lines: list[str], criterion_id: str = "C-13") -> str:
     """The choice the corpus's page-4 item lines carry for `criterion_id` - the ONE
     letter the world's selection mark records (disclosed: one mark for all three mcq

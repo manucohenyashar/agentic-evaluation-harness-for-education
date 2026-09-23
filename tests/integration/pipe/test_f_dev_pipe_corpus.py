@@ -21,12 +21,20 @@ driven from committed bytes with no network. Nothing below that level can answer
 test over `RecordedFixtureProvider` proves the provider replays, not that the corpus is
 complete for a run.
 
-**The escalation half is asserted through `judge_count`, not through a spy.** `C2`'s panel is
-`(2,4,4)`, so `should_escalate` fires on the interior median and the ladder adds two extension
-arms; the cell then aggregates a second time over five verdicts. `judge_count == 5` on the
-stored score is the observable end of that sequence and is what TC-PIPE-08 will assert the
-ordering of. Asserting it here keeps this case about the corpus rather than about M-PIPE's
-call order, which is #377's subject.
+**The escalation half is asserted on the REASONS, not on `judge_count` alone.** An earlier
+draft of this module claimed `judge_count == 5` showed that `(2,4,4)` caused the escalation.
+It does not, and the claim was measured false: every judged cell of this corpus escalates,
+`C1` at `absent` included — ordinal 0, an edge band, unanimous panel — because the
+aggregation baseline the walk passes is calibrated for the reference package's four-band
+scale and puts six-band ordinals several sigma out. `should_escalate` has no panel-spread limb
+at all (`FR-AGG-08`, §7.1), so a `judge_count` assertion passes with a unanimous panel and
+discriminates nothing.
+
+What IS panel-dependent is the band the panel settles on, and that is what the reasons record:
+`C2`'s aggregate lands `secure` — interior on a six-band scale — so `interior band position`
+appears among its escalation reasons. That assertion fails if the panel moves to an edge, and
+it is the honest form of §4.4's claim. `judge_count == 5` is still asserted, as the observable
+end of the ladder having run; it is simply not evidence about *why*.
 """
 
 from __future__ import annotations
@@ -179,3 +187,43 @@ def test_f_dev_pipe_drives_a_full_run_with_nothing_recorded_on_the_way(tmp_path)
                 "the mcq criterion is scored by M-DET, not by a panel")
     finally:
         world.store.close()
+
+
+def test_f_dev_pipe_c2_escalates_on_the_band_its_panel_settles(tmp_path, monkeypatch) -> None:
+    """The honest form of §4.4's `(2,4,4)` claim, asserted on `should_escalate`'s reasons.
+
+    `judge_count == 5` cannot carry this: every judged cell of the corpus escalates, so the
+    count is satisfied by a unanimous panel too (measured — see `dev_pipe.ESCALATION_ORDINALS`).
+    The reasons discriminate. `C2`'s panel settles on `secure`, ordinal 4 of 6 and therefore
+    interior, and `interior band position` is the limb that reads exactly that. Move the panel
+    to an edge and this fails while the count assertion would not.
+
+    Spying on the module-level name rather than on a collaborator: `aggregate_walk` calls
+    `should_escalate` through `tests.support.e2e_world`'s import, which is the seam a spy can
+    reach without changing the drive.
+    """
+    import tests.support.e2e_world as world_module
+
+    real = world_module.should_escalate
+    reasons_by_criterion: dict[str, set[str]] = {}
+
+    def spy(**kwargs):
+        decision = real(**kwargs)
+        reasons_by_criterion.setdefault(
+            kwargs["criterion"].criterion_id, set()
+        ).update(decision.reasons)
+        return decision
+
+    monkeypatch.setattr(world_module, "should_escalate", spy)
+
+    world = replay_world(tmp_path / "data")
+    try:
+        drive_full_run(world)
+    finally:
+        world.store.close()
+
+    assert "C2" in reasons_by_criterion, (
+        "should_escalate was never asked about C2 - the aggregation walk did not reach it")
+    assert "interior band position" in reasons_by_criterion["C2"], (
+        f"C2's panel settles on a band that is not interior, so the limb §4.4's (2,4,4) is "
+        f"meant to fire never fired. Reasons seen: {sorted(reasons_by_criterion['C2'])}")

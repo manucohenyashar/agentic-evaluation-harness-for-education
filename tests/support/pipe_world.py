@@ -190,12 +190,15 @@ class PipeWorld(SynthWorld):
         return dev_pipe.render_band(criterion_id, ordinal)
 
     def _mcq_band_rows(self) -> tuple[tuple[str, int, float], ...]:
-        """`not_met` / `met` — the corpus's own names.
+        """The corpus's own declaration of the mcq band names.
 
-        The reference world renames these to `incorrect` / `correct`; here the catalog
-        declares what `dev_pipe` declares, so the manifest's `reference_bands` and the band
-        `M-DET` writes are the same string. A corpus whose reference labels disagree with the
-        run's own output is a corpus no agreement figure means anything against.
+        Returns the same `incorrect` / `correct` pair the base does — `M-DET` produces those
+        names itself and prices them through the catalog, so neither package is free to choose
+        (see `dev_pipe.MCQ_BANDS`). The override earns its place by sourcing them from the
+        CORPUS rather than from `e2e_world`'s constant: the manifest's `reference_bands` and
+        the band the run writes then come from one declaration, and a corpus whose reference
+        labels disagree with its own run's output is one no agreement figure means anything
+        against.
         """
         return tuple((b, o, p) for b, o, p, _descriptor in dev_pipe.MCQ_BANDS)
 

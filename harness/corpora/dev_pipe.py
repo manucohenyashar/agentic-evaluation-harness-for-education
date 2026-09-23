@@ -213,9 +213,26 @@ PANEL_ORDINALS: Mapping[str, tuple[int, ...]] = {
 #: TC-PIPE-08's second aggregation: the panel of three plus these two).
 #:
 #: `C2` names them because its panel disagrees and the arms have to settle it. `C1` does not,
-#: and still escalates on any submission whose band is interior — a six-band scale makes
-#: ordinals 1..4 interior, and the interior-band limb is the first thing `should_escalate`
-#: reads. Its arms then answer at the submission's own reference band, the same as its panel.
+#: and escalates anyway — on EVERY submission, measured, including `absent` at ordinal 0 where
+#: the panel is unanimous and the band is an edge:
+#:
+#:     C1 absent        -> ('distributional anomaly vs package baseline (z=-4.00)',)
+#:     C1 developing    -> ('interior band position', 'distributional anomaly ... (z=2.00)')
+#:     C1 comprehensive -> ('distributional anomaly vs package baseline (z=6.00)',)
+#:     C2 secure        -> ('interior band position', 'distributional anomaly ... (z=4.00)')
+#:
+#: The anomaly limb alone clears the threshold, because the aggregation baseline every walk
+#: passes (`tests/support/agg_vocabulary.expected_distribution`, `mean=2.0, std=0.5`) is
+#: calibrated for the reference package's FOUR-band scale; on six bands the same ordinals sit
+#: several sigma out. So this corpus escalates every judged cell, and `(2,4,4)` is not what
+#: causes it — `should_escalate` has no panel-spread limb at all (`FR-AGG-08`, §7.1). §4.4's
+#: `(2,4,4)` still holds literally: the panel is recorded as specified and the criterion does
+#: escalate. What the corpus cannot currently demonstrate is the NON-escalating path, which
+#: would need a baseline scaled to this package. Recorded here rather than left for a reader
+#: to rediscover, and noted on #435.
+#:
+#: Every arm not named here answers at the submission's own reference band, the same as its
+#: panel — which is why the escalated cells still settle on the corpus's reference labels.
 ESCALATION_ORDINALS: Mapping[str, tuple[int, ...]] = {
     "C2": (4, 4),
 }
