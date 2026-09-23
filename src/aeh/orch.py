@@ -2657,6 +2657,31 @@ class CellKey(NamedTuple):
     criterion_id: str
 
 
+@dataclass(frozen=True)
+class RunHandle:
+    """Everything a composition layer needs to drive one run without reading the ledger.
+
+    `M-PIPE` opens the transaction that `write_score`, `enqueue_escalation` and
+    `mark_cell_phase` share (`FR-PIPE-04` requires the three to commit together), and a
+    transaction comes from the cohort handle. `CT-PIPE-05` says `M-PIPE` executes no SQL, so
+    it cannot find that handle by querying the run row itself — it asks the module that owns
+    the row. That is what this is: one read, answered by `M-ORCH`, returning the handle and
+    the four identities every hook needs.
+
+    `status` and `pause_reason` are the stored values at the moment of the call —
+    `RunResult.status` is required to equal `run.status`, and reading it through any other
+    path would be reading around the owner.
+    """
+
+    run_id: str
+    cohort_id: str
+    cohort: Any
+    package_id: str
+    package_version_id: str
+    status: str
+    pause_reason: "str | None"
+
+
 class PackageCatalogProtocol(Protocol):
     """The slice of `PackageCatalog` enumeration reads. Typed as a protocol so a test
     double satisfies it without a Tier P file (`CLAUDE.md` seam 2 — no network, no real
@@ -5667,6 +5692,50 @@ class Orchestrator:
             run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
             phase=phase, units_consumed=int(units_consumed), recorded_at=_now(),
         )
+
+    def run_handle(self, run_id: str) -> RunHandle:
+        """The run's cohort handle and identities, for a composition layer (`FR-PIPE-04`).
+
+        `M-PIPE` needs a transaction to commit a score, its escalation and its cell phase
+        together, and a transaction comes from the cohort handle. It is forbidden its own SQL
+        (`CT-PIPE-05`), so it asks here rather than querying the run row — which is the same
+        discipline every other cross-module read in this system follows: the owner answers.
+
+        Raises `RunNotFoundError` for an unknown run, exactly as the lifecycle writers do.
+        """
+        cohort, row = self._find_run(run_id)
+        return RunHandle(
+            run_id=run_id,
+            cohort_id=str(row["cohort_id"]),
+            cohort=cohort,
+            package_id=str(row["package_id"]),
+            package_version_id=str(row["package_version_id"]),
+            status=str(row["status"]),
+            pause_reason=row["pause_reason"],
+        )
+
+    def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
+        """`(terminal, total)` units per cell for one stage — the count a phase is computed over.
+
+        `mark_cell_phase(..., units_consumed=n)` wants the number of TERMINAL units the phase
+        consumed, and `ready_cells` compares that number against the cell's terminal count to
+        decide whether a widened panel needs re-aggregating. A composition layer therefore has
+        to record the same number this module counts, and it cannot count for itself
+        (`CT-PIPE-05`). Recording a verdict count instead would be a quiet bug: a quarantined
+        unit produces no verdict, so the cell would read as ready on every later pass and
+        aggregate forever.
+
+        Same read `ready_cells` performs, exposed rather than duplicated.
+        """
+        cohort, _run_row = self._find_run(run_id)
+        counts: dict[CellKey, tuple[int, int]] = {}
+        for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
+            if str(row["stage"]) != stage:
+                continue
+            counts[CellKey(str(row["submission_id"]), str(row["criterion_id"]))] = (
+                int(row["terminal"] or 0), int(row["total"] or 0)
+            )
+        return counts
 
     def ready_cells(self, run_id: str, hook: str) -> tuple["CellKey", ...]:
         """The cells ready for one composition hook (`FR-ORCH-29`), in ledger order.
