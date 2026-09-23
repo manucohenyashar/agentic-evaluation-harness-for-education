@@ -13,6 +13,17 @@ Everything is written with explicit `\\n` line endings and UTF-8. `.gitattribute
 `fixtures/**` to LF for the same reason: content addressing is over bytes, so a CRLF checkout
 would give the same corpus different hashes on Windows and Linux and quietly break every
 manifest in the tree.
+
+One corpus has a half this module does not emit. `F-DEV-PIPE/recordings/` holds the model
+replies a complete run of that corpus asks for, and they cannot be generated here — a score
+request is keyed on the assembled prompt including the extracted evidence, so the keys do not
+exist until a real run has produced them. They are re-captured by driving the pipeline once::
+
+    python -m tests.support.pipe_world     # rewrites fixtures/F-DEV-PIPE/recordings/
+
+`_RECORDED_GOLDEN_TREES` below exempts that directory from `--check` for the same reason
+`F-SCHEMA`'s checksums are exempt, and `tests/integration/pipe/test_f_dev_pipe_corpus.py` is
+what actually pins it: a run driven from the committed bytes must miss no recording.
 """
 
 from __future__ import annotations
