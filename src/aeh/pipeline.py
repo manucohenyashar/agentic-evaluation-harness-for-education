@@ -295,25 +295,41 @@ def _default_extractor(run_config: Any) -> Any:
 def _criterion_value(catalog: Any, view: Any, version: str, criterion_id: str) -> Any:
     """The criterion `aggregate` maps a panel through, assembled from the package.
 
-    `bands` and `scoring_model` come from the catalog; `evidence_required` from the gate's own
-    view, which is where `criterion_requires_citation` is declared (`FR-PIPE-10`). Built here
-    rather than imported from a test vocabulary: the journeys' `agg_vocabulary.criterion` is a
-    double of THIS shape, and a production caller reaching for the double would make the double
-    the definition.
+    **The package row is copied through wholesale rather than field by field, and that is
+    `CT-AGG-09`.** The contract's rule is that outside its sanctioned readers no shipped module
+    references the criterion's evaluation-mode column at all — because a consumer that can read
+    it can branch on it, and a run-time branch is a second source of truth that drifts from the
+    package. `M-PIPE` has no business knowing which modes exist. So every column the catalog
+    declares is forwarded verbatim to `aggregate`, which is the policy that owns the
+    distinction (`CT-SETUP-05`: the distinction comes from the package), and this module names
+    none of them.
+
+    `bands` comes from the catalog and `evidence_required` from the gate's own view, which is
+    where `criterion_requires_citation` is declared (`FR-PIPE-10`). Built here rather than
+    imported from a test vocabulary: the journeys' `agg_vocabulary.criterion` is a double of
+    THIS shape, and a production caller reaching for the double would make the double the
+    definition.
     """
-    bands = tuple(catalog.bands(criterion_id))
-    scoring_model = "atomic"
-    for row in catalog.criteria(version):
-        if str(row["criterion_id"]) == criterion_id:
-            scoring_model = str(row["scoring_model"] or "atomic")
+    row = None
+    for candidate in catalog.criteria(version):
+        if str(candidate["criterion_id"]) == criterion_id:
+            row = candidate
             break
-    return SimpleNamespace(
+    if row is None:
+        raise CompositionFault(
+            f"the package version declares no criterion {criterion_id!r}, but the run "
+            f"enumerated a cell for it"
+        )
+    keys = row.keys() if hasattr(row, "keys") else ()
+    fields: dict[str, Any] = {str(key): row[key] for key in keys}
+    bands = tuple(catalog.bands(criterion_id))
+    fields.update(
         criterion_id=criterion_id,
-        scoring_model=scoring_model,
         bands=bands,
         band_count=len(bands),
         evidence_required=bool(view.criterion_requires_citation(criterion_id)),
     )
+    return SimpleNamespace(**fields)
 
 
 def _integrity_pre_hook(orch: Any, handle: Any, gate: Any) -> StageTrace:

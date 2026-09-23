@@ -255,10 +255,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #362 (FR-ORCH-28): `mark_cell_phase`'s upsert of the per-cell composition phase,
     # written through the caller's transaction so the phase and the work it stands for
     # commit together.
-    "aeh.orch:2935",
-    "aeh.orch:3203",
-    "aeh.orch:3212",
-    "aeh.orch:3294",
+    "aeh.orch:2960",
+    "aeh.orch:3228",
+    "aeh.orch:3237",
+    "aeh.orch:3319",
     # #61's lifecycle sites (every one from ORCH_STATEMENTS, keyword-parameterized):
     # start's displayed-estimate write and its guarded pending→running transition with
     # its changes() read; pause's control-row insert and its already-paused satisfied-
@@ -269,37 +269,37 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # changes() read. Lines moved with #61's lifecycle block and the reviewer fixes
     # swapped the two resume sites noted above; the #57/#58 statements are the same
     # as ever.
-    "aeh.orch:3300",
-    "aeh.orch:3305",
-    "aeh.orch:3348",
-    "aeh.orch:3360",
-    "aeh.orch:3420",
-    "aeh.orch:3522",
-    "aeh.orch:3540",
-    "aeh.orch:3564",
-    "aeh.orch:3572",
-    "aeh.orch:4058",
+    "aeh.orch:3325",
+    "aeh.orch:3330",
+    "aeh.orch:3373",
+    "aeh.orch:3385",
+    "aeh.orch:3445",
+    "aeh.orch:3547",
+    "aeh.orch:3565",
+    "aeh.orch:3589",
+    "aeh.orch:3597",
+    "aeh.orch:4083",
     # #61's ceiling block in the claim pass: the in-transaction spend read, the
     # remaining-units count and the sensed pause write (the refusal arm), the guarded
     # claim with its changes() read, the in-transaction accrual, and the at-ceiling
     # arm's count and sensed pause — spend and lease commit in one transaction
     # (FR-ORCH-15), so the sites live inside the same `with`.
-    "aeh.orch:4073",
-    "aeh.orch:4077",
-    "aeh.orch:4089",
-    "aeh.orch:4097",
-    "aeh.orch:4106",
-    "aeh.orch:4125",
-    "aeh.orch:4129",
-    "aeh.orch:4346",
-    "aeh.orch:4353",
-    "aeh.orch:4404",
-    "aeh.orch:4408",
-    "aeh.orch:4458",
-    "aeh.orch:4463",
-    "aeh.orch:4514",
-    "aeh.orch:4520",
-    "aeh.orch:4626",
+    "aeh.orch:4098",
+    "aeh.orch:4102",
+    "aeh.orch:4114",
+    "aeh.orch:4122",
+    "aeh.orch:4131",
+    "aeh.orch:4150",
+    "aeh.orch:4154",
+    "aeh.orch:4371",
+    "aeh.orch:4378",
+    "aeh.orch:4429",
+    "aeh.orch:4433",
+    "aeh.orch:4483",
+    "aeh.orch:4488",
+    "aeh.orch:4539",
+    "aeh.orch:4545",
+    "aeh.orch:4651",
     # #60's escalation, breaker and budget sites (every one from ORCH_STATEMENTS,
     # keyword-parameterized, all inside one transaction — the caller's per CT-ORCH-08
     # or the method's own): the enqueue's key-to-runs resolution, the pair's prior
@@ -314,22 +314,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # #359's three-element escalation key: `select_run_pair_panel`, the check that the
     # named run's ledger holds the pair's panel; the site below it is the deprecated
     # two-element form's `select_pair_runs`, which now reads each run's open flag.
-    "aeh.orch:4638",
-    "aeh.orch:4709",
-    "aeh.orch:4725",
-    "aeh.orch:4745",
-    "aeh.orch:4759",
-    "aeh.orch:4765",
-    "aeh.orch:4783",
-    "aeh.orch:4820",
-    "aeh.orch:4836",
-    "aeh.orch:4858",
-    "aeh.orch:4905",
+    "aeh.orch:4663",
+    "aeh.orch:4734",
+    "aeh.orch:4750",
+    "aeh.orch:4770",
+    "aeh.orch:4784",
+    "aeh.orch:4790",
+    "aeh.orch:4808",
+    "aeh.orch:4845",
+    "aeh.orch:4861",
+    "aeh.orch:4883",
+    "aeh.orch:4930",
     # The lines moved again with #61's lifecycle and ceiling blocks and #62's
     # report-index migration (the #60 statements are the same as ever).
-    "aeh.orch:4909",
-    "aeh.orch:4988",
-    "aeh.orch:5665",
+    "aeh.orch:4934",
+    "aeh.orch:5013",
+    "aeh.orch:5690",
     # #62's dispatch additions (every one from ORCH_STATEMENTS, keyword-
     # parameterized, inside the method's own durable transaction): the OOM
     # remedy's reduced-panel write (`record_reduced_panel`, the panel_config
@@ -339,13 +339,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # metrics flush's `insert_run_metric` upsert (the EAV write CT-ORCH-20
     # makes contract). The report's own reads go through the tier's declared
     # `query`, not `execute`, so they are not sites here.
-    "aeh.orch:5915",
-    "aeh.orch:5947",
-    "aeh.orch:5949",
-    "aeh.orch:6279",
+    "aeh.orch:5984",
+    "aeh.orch:6016",
+    "aeh.orch:6018",
+    "aeh.orch:6348",
     # #57's audit-record insert (record_run_start), moved by #62's dispatch
     # block above it; same statement.
-    "aeh.orch:6319",
+    "aeh.orch:6388",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
