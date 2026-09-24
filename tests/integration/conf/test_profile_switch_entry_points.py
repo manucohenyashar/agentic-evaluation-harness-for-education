@@ -65,7 +65,6 @@ CONSOLE_ISSUE = "#366"
 # --- TC-CONF-22 — a switch never rebinds a resumed run ------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_22_recover_leaves_the_switched_run_paused_and_recovers_the_other(
     tmp_data_dir, monkeypatch
 ):
@@ -106,7 +105,6 @@ def test_tc_conf_22_recover_leaves_the_switched_run_paused_and_recovers_the_othe
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_22_variant_the_matching_profile_resumes_the_run(tmp_data_dir, monkeypatch):
     """`TC-CONF-22` variant — the refusal is the mismatch, not the run: the same world recovered
     with the environment on `edge-local` (RA's own profile) resumes RA, unchanged.
@@ -150,7 +148,6 @@ def _seed_cli_world(tmp_data_dir):
     return version
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize(
     ("environment_profile", "file_profile", "expected_source"),
     [("dev-ci", "edge-local", "environment"), (None, "dev-ci", "config file")],

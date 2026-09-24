@@ -124,7 +124,6 @@ def abandoned_lease(tmp_data_dir):
 # --- TC-PIPE-07 (a) ------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_07_an_expired_lease_is_reclaimed_and_the_unit_is_pending(abandoned_lease):
     """Arm (a) — `leases_reclaimed = 1`, and the unit is back to `pending`.
 
@@ -155,7 +154,6 @@ def test_tc_pipe_07_an_expired_lease_is_reclaimed_and_the_unit_is_pending(abando
 # --- TC-PIPE-07 (b) ------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_07_a_running_run_with_pending_units_is_resumed(abandoned_lease):
     """Arm (b) — `runs_resumed` contains the run.
 
@@ -179,7 +177,6 @@ def test_tc_pipe_07_a_running_run_with_pending_units_is_resumed(abandoned_lease)
 # --- TC-PIPE-07 (d) ------------------------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_07_a_clean_store_is_left_alone(tmp_data_dir):
     """Arm (d) — nothing reclaimed, nothing resumed, nothing regraded, and no row changed.
 

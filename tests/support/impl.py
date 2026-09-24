@@ -1240,24 +1240,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # `python -m aeh` (#365, which creates `aeh.pipeline`'s `recover`/`main`) and the served
     # console (#366). Keyed on those stories, not on #352 — #352's symbols already resolve.
     # A conjunction, since the run arms need `main` and the recover arms `recover`, both #365's.
-    "#365 TS-103 recover and python -m aeh honour a profile switch": (
-        "symbols",
-        "aeh.pipeline:recover, aeh.pipeline:main",
-        (
-            "tests/integration/conf/test_profile_switch_entry_points.py"
-            "::test_tc_conf_22_recover_leaves_the_switched_run_paused_and_recovers_the_other",
-            "tests/integration/conf/test_profile_switch_entry_points.py"
-            "::test_tc_conf_22_variant_the_matching_profile_resumes_the_run",
-            "tests/integration/conf/test_profile_switch_entry_points.py"
-            "::test_tc_conf_23_run_prints_the_profile_summary_and_its_source",
-            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
-            "::test_tc_conf_c15_run_resolves_through_effective_config_with_the_environment_winning",
-            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
-            "::test_tc_conf_c15_recover_resolves_through_effective_config_from_the_environment",
-            "tests/contract/conf/test_ct_conf_c15_c16_profile_switch.py"
-            "::test_tc_conf_c16_recover_never_rebinds_a_run_to_the_switched_profile",
-        ),
-    ),
+    # The "#365 TS-103 recover and python -m aeh honour a profile switch" entry left with
+    # #365: `recover` and `main` both landed, so the six run/recover arms rejoined the
+    # gate. The `serve_console` arm stays keyed to #366, which is still open.
     # Same target as the #366 entry above, and re-keyed with it: nothing before the
     # in-process server can make a served console answer.
     # --- TS-100 (#394), the MVVP measurement drivers (Phase 2) ------------------------------
@@ -1293,15 +1278,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # TC-PIPE-07's arm (c) - the review-window regrade - is NOT among these: it needs a grade
     # policy surface this author did not verify, and #377 is the cautionary tale for asserting
     # against an unverified one. TC-PIPE-08/11/12 and TC-SMOKE-12 are blocked on F-DEV-PIPE.
-    "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)": (
-        "symbol",
-        "aeh.pipeline:recover",
-        (
-            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_a_clean_store_is_left_alone",
-            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_a_running_run_with_pending_units_is_resumed",
-            "tests/integration/pipe/test_recover.py::test_tc_pipe_07_an_expired_lease_is_reclaimed_and_the_unit_is_pending",
-        ),
-    ),
+    # The "#365 TS-84 M-PIPE recover (TC-PIPE-07 arms a, b, d)" entry left with #365:
+    # `aeh.pipeline:recover` landed, so its three arms lost the marker and rejoined
+    # the gate. Arm (c), the review-window regrade, was never in the entry.
     # --- TS-82 (#155), the blast-radius rule ------------------------------------------------
     #
     # `harness.blast_radius` is the command test plan 4.7 and 6.12 name, and no story in the

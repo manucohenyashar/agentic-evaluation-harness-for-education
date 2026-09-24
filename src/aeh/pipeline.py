@@ -16,8 +16,8 @@ sets escalation policy, which is `M-ORCH`'s.
 graph (the migration registry's contributor order), so the orchestrator cannot import the
 workers at module scope. Composition has to live in a leaf, and this is it (ADR-15).
 
-Three gaps in the design's inputs, resolved here and reported on #364
---------------------------------------------------------------------
+Gaps in the design's declared inputs, resolved here and reported on #364 / #365
+-------------------------------------------------------------------------------
 Each is a place where the requirement names a call whose arguments the declared inputs cannot
 supply. None is papered over: the resolution is stated, and the reason it is safe is stated
 with it.
@@ -52,6 +52,11 @@ a widened panel (`orch.py:1747`), and those ids are not `RunConfig.panel` member
 panel runs on the backend the run froze. `judge_refs=` overrides that for a caller who knows
 better — which is what a replay against a recorded corpus needs, because the recorded arms
 carry whatever identity the capture used.
+
+**4. No provider factory exists.** `FR-PIPE-08` has the command resolve its configuration and
+drive the run, but nothing says which provider object a backend profile maps to, and `M-PROV`
+ships three classes and leaves construction to the caller. `_provider_for` makes the mapping
+in the open and refuses an unconfigured profile by name rather than guessing.
 
 **Deterministic units are evaluated here, not by the dispatch pass.** `FR-PIPE-02` forbids a
 unit reaching `done` without its payload row. The orchestrator's deterministic walk closes
@@ -99,7 +104,7 @@ from aeh.det import DeterministicEvaluator
 from aeh.extract import ExtractionWorker
 from aeh.grade import open_grade
 from aeh.integ import IntegrityGate, StoreExtractionView
-from aeh.judge import ScoringWorker, verdicts_for
+from aeh.judge import JudgmentError, ScoringWorker, verdicts_for
 from aeh.orch import (
     ESCALATION_ARM_PREFIX,
     STAGE_EXTRACT,
@@ -228,6 +233,14 @@ class ProductionStageExecutor:
         self._second_family = second_family
         self._judge_refs = dict(judge_refs or {})
         self._panel = {ref.build_id: ref for ref in getattr(run_config, "panel", ())}
+        #: What each executed unit did, per stage, drained into the trace once a pass ends.
+        #: `FR-PIPE-01` wants one entry per stage EXECUTED, and extract and score are executed
+        #: here rather than in a hook, so without this they would be the two stages a run
+        #: never reports having run (`#364`'s first acceptance criterion names both).
+        self.executed: dict[str, list[str]] = {STAGE_EXTRACT: [], STAGE_SCORE: []}
+        #: Bound by `run_to_completion`. The executor asks the ledger whether a worker has
+        #: already terminalised a unit; it never writes one.
+        self.orchestrator: Any = None
 
     # -- model identities ----------------------------------------------------------------
 
@@ -273,25 +286,59 @@ class ProductionStageExecutor:
                 high_risk_criteria=self._high_risk,
             )
             result = worker.process(unit)
-            return StageOutcome(
-                completed=True,
-                detail=f"extract {unit.submission_id}/{unit.criterion_id}: "
-                       f"{len(getattr(result, 'spans', ()) or ())} spans",
-            )
+            # `M-EXTRACT` quarantines at its strike ceiling and RETURNS the outcome rather
+            # than raising (`extract.py`'s "returned rather than raised"). Reporting that unit
+            # completed makes the orchestrator call `complete()`, which refuses an already
+            # quarantined unit — and the refusal would pause the whole run over one
+            # unparseable reply. `completed=False` is the honest answer: the requeue is
+            # guarded by `status = 'leased'`, so it is a no-op on a quarantined row and the
+            # unit stays quarantined, which is what `CT-PIPE-02` expects to find.
+            spans = len(getattr(result, "spans", ()) or ())
+            # The ledger read happens only on the strike-out SHAPE — an empty span set. A
+            # successful extraction cannot have been quarantined, and `NFR-PIPE-02` budgets
+            # composition overhead at under 5% of scheduling at 23,000 units, which a status
+            # query per unit would spend on the answer "no" almost every time.
+            if spans == 0 and self._terminalised(unit):
+                detail = f"{unit.submission_id}/{unit.criterion_id}: quarantined by the worker"
+                self.executed[STAGE_EXTRACT].append(detail)
+                return StageOutcome(completed=False, detail=detail)
+            detail = f"{unit.submission_id}/{unit.criterion_id}: {spans} spans"
+            self.executed[STAGE_EXTRACT].append(detail)
+            return StageOutcome(completed=True, detail=detail)
         if unit.stage == STAGE_SCORE:
             judge = self.judge_for(unit.judge)
             worker = ScoringWorker(self._store, governed, judge)
-            result = worker.dispatch(worker.assemble(unit), judge)
+            try:
+                result = worker.dispatch(worker.assemble(unit), judge)
+            except JudgmentError as error:
+                # A judge that cannot produce a legal verdict is an expected condition, not a
+                # composition fault: `NFR-JUDGE-05` says a broken judge fails visibly rather
+                # than grading confidently. `M-JUDGE`'s worker does not report the strike
+                # itself, so the strike is recorded here — the same `fail()` M-EXTRACT's
+                # worker calls internally — and the unit requeues until the ledger quarantines
+                # it at the ceiling. Letting it propagate instead would pause the run and
+                # leave the unit leased, swept and retried forever with no attempt counted.
+                detail = f"{unit.submission_id}/{unit.criterion_id} by {unit.judge}: {error}"
+                self.executed[STAGE_SCORE].append(detail)
+                if self.orchestrator is not None:
+                    self.orchestrator.fail(unit.work_id, str(error))
+                return StageOutcome(completed=False, detail=detail)
             worker.persist(unit, result)
-            return StageOutcome(
-                completed=True,
-                detail=f"score {unit.submission_id}/{unit.criterion_id} "
-                       f"by {unit.judge}: {getattr(result, 'band', '?')}",
-            )
+            detail = (f"{unit.submission_id}/{unit.criterion_id} by {unit.judge}: "
+                      f"{getattr(result, 'band', '?')}")
+            self.executed[STAGE_SCORE].append(detail)
+            return StageOutcome(completed=True, detail=detail)
         raise CompositionFault(
             f"unit {unit.work_id[:12]} carries stage {unit.stage!r}; the executor door "
             f"covers {STAGE_EXTRACT!r} and {STAGE_SCORE!r} only"
         )
+
+
+    def _terminalised(self, unit: Any) -> bool:
+        """Whether the ledger already closed this unit — the worker struck it out."""
+        if self.orchestrator is None:
+            return False
+        return self.orchestrator.unit_status(unit.work_id) in ("quarantined", "done")
 
 
 def _default_extractor(run_config: Any) -> Any:
@@ -386,6 +433,12 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
     """
     cells = orch.ready_cells(handle.run_id, "aggregate")
     counts = orch.cell_unit_counts(handle.run_id, STAGE_SCORE)
+    # `FR-PIPE-04` step 3 spells `aggregate(..., breaker_tripped=..., fallback=...)`, and the
+    # flag is not cosmetic: a criterion whose breaker latched must score `provisional` /
+    # `ungradeable_by_panel` rather than `auto` / `final` (`FR-ORCH-13`, `CT-ORCH-16`). The
+    # panel's own figure still stands; what the breaker changes is whether it may be trusted
+    # unreviewed. Read per criterion from the run's latched breakers.
+    latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
     detail: list[str] = []
     escalated = 0
     for cell in cells:
@@ -394,7 +447,11 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             handle.cohort, handle.run_id, cell.submission_id, cell.criterion_id)
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
-        score = aggregate(verdicts, criterion, signals, fallback=len(verdicts) == 2)
+        score = aggregate(
+            verdicts, criterion, signals,
+            fallback=len(verdicts) == 2,
+            breaker_tripped=cell.criterion_id in latched,
+        )
         terminal = counts.get(cell, (len(verdicts), len(verdicts)))[0]
         with handle.cohort.transaction() as tx:
             write_score(tx, handle.run_id, cell.submission_id, score, signals)
@@ -568,6 +625,7 @@ def run_to_completion(
     # the stage workers actually call, so the run's counters see every call a worker makes
     # inside its own retry budget (`FR-ORCH-27`, `CT-PROV-11`).
     orch = Orchestrator(store, executor=executor, provider=provider)
+    executor.orchestrator = orch
     handle = orch.run_handle(run_id)
     catalog = PackageCatalog(store.package(handle.package_id), package_id=handle.package_id)
     view = StoreExtractionView(handle.cohort, catalog, handle.package_version_id, run_id)
@@ -605,6 +663,12 @@ def run_to_completion(
             stages.append(StageTrace("aggregate", detail=(fault,)))
             break
 
+        for stage_name in (STAGE_EXTRACT, STAGE_SCORE):
+            done = executor.executed[stage_name]
+            if done:
+                stages.append(StageTrace(
+                    stage_name, units=len(done), done=len(done), detail=tuple(done)))
+                executor.executed[stage_name] = []
         if pre.units:
             stages.append(pre)
         if agg.units:
@@ -700,19 +764,56 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
     orchestrator = Orchestrator(store)
     sweep = orchestrator.sweep_expired_leases()
 
-    # `runs_resumed` names the runs recovery actually put back to work, which is NOT the same
-    # as the runs that were paused when it started. `resume()` with no argument applies each
-    # open run's UNAPPLIED control rows — a resume written while the orchestrator was down —
-    # and deliberately leaves alone a run an operator paused on purpose. Reporting every
-    # paused run as "resumed" would tell an operator their stop had been overridden when it
-    # had not. So the transition is measured, not assumed.
-    before = {handle.run_id: handle.status for handle in orchestrator.runs()}
-    orchestrator.resume()
-    resumed = tuple(
-        run_id for run_id, status in
-        ((h.run_id, h.status) for h in orchestrator.runs())
-        if before.get(run_id) != status and status == "running"
-    )
+    # The profile this PROCESS is running, resolved the way every entry point resolves it
+    # (`FR-CONF-14`): the environment wins. A run froze its own profile at creation
+    # (`FR-CONF-07`), and the two can disagree after an operator switches `HARNESS_PROFILE`.
+    current_profile = str(effective_config({}).get("HARNESS_PROFILE") or "")
+
+    # **Resume the RUNNING runs, one at a time — not the no-argument form.** `FR-PIPE-07`
+    # says `resume()`, and taken literally that is wrong: the no-argument form discovers every
+    # open run, `pending` ones included, and resuming re-enumerates — so a run an operator
+    # created but never started gets its work units written by a recovery pass nobody asked to
+    # start anything. TC-PIPE-07 arm (d) asserts exactly that absence, by row counts rather
+    # than by the report's own account of itself. Divergence reported on #365.
+    #
+    # A `running` run with work left is what a crashed process leaves behind (arm (b)) and is
+    # the case recovery exists for; re-enumerating it is a no-op on units that already exist.
+    #
+    # A `paused` run comes back ONLY if it carries an unapplied resume request — the row a
+    # process wrote before it died. `TC-CONF-22`'s variant asserts that it does; but an
+    # explicit `resume(run_id)` supersedes the pauses before it, so resuming every paused run
+    # would restart work an operator or the cost ceiling deliberately stopped. `M-ORCH`'s own
+    # rule is that a stop an operator requested outranks a scheduler's restart, and recovery
+    # is a scheduler. Hence the request check rather than the status alone.
+    #
+    # A `pending` run is never touched: it was created and never started, and re-enumerating
+    # it writes work units for a run nobody started (TC-PIPE-07 arm (d), by row counts).
+    resumed: list[str] = []
+    for handle in orchestrator.runs(("running", "paused")):
+        if current_profile and handle.backend_profile and (
+            handle.backend_profile != current_profile
+        ):
+            # `FR-CONF-15`: a resumed run keeps its persisted profile, so a process running
+            # under a different one must not pick it up — not even to honour a resume request
+            # queued before the switch. It stays paused and the refusal is RECORDED, naming
+            # both profiles: an operator who switched and then found a run stopped needs the
+            # reason in the row, not in a log nobody kept.
+            refusal = (
+                f"profile switch: the run froze {handle.backend_profile!r} and this process "
+                f"is running {current_profile!r}; recovery will not rebind a run to a backend "
+                f"its operator never approved (FR-CONF-15)"
+            )
+            if handle.status == "paused":
+                # Already stopped — annotate, never re-stop. `pause()` on a paused run
+                # changes nothing by design, so the refusal would go unrecorded.
+                orchestrator.record_pause_reason(handle.run_id, refusal)
+            else:
+                orchestrator.pause(handle.run_id, refusal)
+            continue
+        if handle.status == "paused" and not orchestrator.has_queued_resume(handle.run_id):
+            continue
+        orchestrator.resume(handle.run_id)
+        resumed.append(handle.run_id)
 
     grading = open_grade(store, clock=clock) if clock is not None else open_grade(store)
     regraded: list[str] = []
@@ -724,7 +825,7 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
 
     return RecoveryReport(
         leases_reclaimed=int(getattr(sweep, "requeued", 0) or 0),
-        runs_resumed=resumed,
+        runs_resumed=tuple(resumed),
         runs_regraded=tuple(regraded),
     )
 
@@ -769,6 +870,11 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     `M-PROV` ships the three classes and leaves construction to the caller. So the mapping is
     made here, minimally and in the open:
 
+    Reads the RESOLVED `RunConfig.backend_profile` rather than a raw configuration key: the
+    profile that matters is the one `resolve_run_config` settled on after the environment won
+    (`FR-CONF-14`), and a raw lookup finds nothing when the profile arrives through a
+    profile section.
+
     * `dev-ci` -> `RecordedFixtureProvider` over `HARNESS_FIXTURE_DIR`. The profile's whole
       point is running with no network (`CT-PROV-10`), and this is the shipped transport for
       that.
@@ -781,9 +887,13 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
     """
     from aeh.prov import LocalServerProvider, OpenRouterProvider, RecordedFixtureProvider
 
-    profile = str(config.get("backend_profile") or config.get("HARNESS_BACKEND_PROFILE") or "")
+    profile = str(
+        getattr(config, "backend_profile", None)
+        or (config.get("backend_profile") if hasattr(config, "get") else None)
+        or ""
+    )
     if profile == "dev-ci":
-        fixture_dir = config.get("HARNESS_FIXTURE_DIR") or config.get("fixture_dir")
+        fixture_dir = os.environ.get("HARNESS_FIXTURE_DIR")
         if not fixture_dir:
             raise ValueError(
                 "the dev-ci profile records and replays through a fixture directory; set "
@@ -802,14 +912,24 @@ def _provider_for(config: Mapping[str, Any]) -> Any:
 
 
 def _load_config_file(path: str | None) -> dict[str, Any]:
-    """The `--config` file, or an empty mapping. JSON only — the format the repo already reads."""
+    """The `--config` file, parsed by `M-CONF`'s own reader.
+
+    `parse_config_document` is the declared loader: it handles both formats, turns model
+    tables into `ModelRef`s and raises `ConfigurationError` with a sentence an operator can
+    act on. Hand-rolling a `json.loads` here — the first draft did — meant a TOML config, the
+    format the repo's own fixtures are written in, died with a bare `JSONDecodeError` before
+    the configuration was ever composed.
+
+    The format is taken from the suffix, which is what an operator passing `harness.toml`
+    expects; anything else is read as TOML, the documented default for the file.
+    """
+    from aeh.conf import parse_config_document
+
     if not path:
         return {}
-    text = Path(path).read_text(encoding="utf-8")
-    loaded = json.loads(text)
-    if not isinstance(loaded, dict):
-        raise ValueError(f"{path} does not contain a JSON object")
-    return loaded
+    source = Path(path)
+    fmt = "json" if source.suffix.lower() == ".json" else "toml"
+    return parse_config_document(source.read_text(encoding="utf-8"), fmt)
 
 
 def _build_parser() -> Any:
@@ -884,7 +1004,7 @@ def main(argv: "Sequence[str] | None" = None) -> int:
 
 def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     """`aeh run`: look the run up or create it, then drive it (`FR-PIPE-08`)."""
-    from aeh.conf import CohortRef, resolve_run_config
+    from aeh.conf import resolve_run_config
 
     orchestrator = Orchestrator(store)
     existing = [
@@ -892,15 +1012,36 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
         if handle.cohort_id == args.cohort
         and handle.package_version_id == args.package_version
     ]
-    run_config = resolve_run_config(
-        dict(config), CohortRef(cohort_id=args.cohort),
-    )
+    # The cohort's DECLARED consent class, read from the store. `CohortRef`'s default is
+    # `'real'` and fail-closed, so passing the bare id would refuse every synthetic cohort
+    # against a remote backend — the gate firing on an answer nobody looked up.
+    run_config = resolve_run_config(dict(config), orchestrator.cohort_ref(args.cohort))
     if existing:
         run_id = existing[-1].run_id
     else:
         run_id = orchestrator.create_run(
             args.cohort, args.package_version, run_config)
-    provider = _provider_for(config)
+    # `create_run` leaves the run `pending`, and a pending run never reaches the completion
+    # predicate: `_maybe_complete_run` fires only from `running`. Without this the command
+    # dispatches every unit, spends every model call, and then returns `pending` with no
+    # synthesis and no grades — exit 3 on a run that in fact finished its work. `start` is
+    # idempotent enough to be safe on a run this command just created; an existing run that
+    # is already running or paused is left to `recover` and the loop.
+    if orchestrator.run_handle(run_id).status == "pending":
+        orchestrator.start(run_id)
+    # `FR-CONF-14`'s composition is only observable if the command says what it resolved, so
+    # the profile summary goes to stdout before the run starts — an operator who switched
+    # `HARNESS_PROFILE` can see which profile was selected and where it came from
+    # (`TC-CONF-23`), rather than inferring it from how the run behaves.
+    # Where the profile came from, then what it resolved to. The source is the half an
+    # operator cannot infer from the summary: `HARNESS_PROFILE` in the environment beats the
+    # file (`FR-CONF-14`), and after a switch the question is always "did it take mine?".
+    source = "environment" if os.environ.get("HARNESS_PROFILE") else "config file"
+    print(f"HARNESS_PROFILE source: {source}")
+    summary = getattr(run_config, "profile_summary", None)
+    if callable(summary):
+        print(summary())
+    provider = _provider_for(run_config)
     return run_to_completion(
         store, run_id, provider=provider, run_config=run_config)
 
