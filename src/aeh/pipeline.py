@@ -445,6 +445,28 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
         signals = gate.verify(handle.run_id, cell.submission_id, cell.criterion_id)
         verdicts = verdicts_for(
             handle.cohort, handle.run_id, cell.submission_id, cell.criterion_id)
+        terminal_units = counts.get(cell, (len(verdicts), len(verdicts)))[0]
+        if not verdicts:
+            # Every score unit of this cell is terminal and none produced a verdict — they
+            # were all quarantined. `aggregate` refuses an empty panel outright
+            # (`EmptyVerdictsError`, `CT-AGG-12`: an empty verdict set is never a zero), and it
+            # is right to: there is nothing to average. `CT-PIPE-02` already allows for this
+            # cell — "exactly one `criterion_score` row **or** a quarantined extract/score
+            # unit" — so the honest outcome is no score at all.
+            #
+            # The phase is still recorded, and that is the part that matters: without it
+            # `ready_cells` reports this cell ready on every later pass and the run would spin
+            # until `max_passes`, re-deciding nothing.
+            with handle.cohort.transaction() as tx:
+                orch.mark_cell_phase(
+                    tx, handle.run_id, cell.submission_id, cell.criterion_id,
+                    "aggregated", units_consumed=terminal_units,
+                )
+            detail.append(
+                f"{cell.submission_id}/{cell.criterion_id}: no verdicts from "
+                f"{terminal_units} terminal unit(s) - all quarantined, no score written"
+            )
+            continue
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
         score = aggregate(
@@ -452,7 +474,6 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             fallback=len(verdicts) == 2,
             breaker_tripped=cell.criterion_id in latched,
         )
-        terminal = counts.get(cell, (len(verdicts), len(verdicts)))[0]
         with handle.cohort.transaction() as tx:
             write_score(tx, handle.run_id, cell.submission_id, score, signals)
             decision = should_escalate(
@@ -464,7 +485,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
                 escalated += 1
             orch.mark_cell_phase(
                 tx, handle.run_id, cell.submission_id, cell.criterion_id,
-                "aggregated", units_consumed=terminal,
+                "aggregated", units_consumed=terminal_units,
             )
         detail.append(
             f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
