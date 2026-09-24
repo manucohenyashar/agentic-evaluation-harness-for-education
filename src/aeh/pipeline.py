@@ -130,12 +130,6 @@ PASS_SLEEP_MS_ENV = "HARNESS_PIPE_PASS_SLEEP_MS"
 #: Three bounds the retry without turning a genuinely stuck run into a spin.
 STALL_PASSES = 3
 
-#: The stages a `RunResult` can carry a trace for, in §4.2.2 order.
-STAGE_NAMES: tuple[str, ...] = (
-    "deterministic", "extract", "integrity_pre", "score", "aggregate", "synthesize", "grade",
-)
-
-
 class CompositionFault(RuntimeError):
     """A hook raised something that is not a provider condition.
 
@@ -419,6 +413,23 @@ def _criterion_value(catalog: Any, view: Any, version: str, criterion_id: str) -
     return SimpleNamespace(**fields)
 
 
+def _drain(executor: Any) -> list[StageTrace]:
+    """The executor's per-unit record so far, as one trace per stage, clearing it.
+
+    `FR-PIPE-01` wants one entry per stage executed, and extract and score are executed in the
+    dispatch pass rather than in a hook — so without this they are the two stages a run never
+    reports having run.
+    """
+    drained: list[StageTrace] = []
+    for stage_name in (STAGE_EXTRACT, STAGE_SCORE):
+        done = executor.executed.get(stage_name) or []
+        if done:
+            drained.append(StageTrace(
+                stage_name, units=len(done), done=len(done), detail=tuple(done)))
+            executor.executed[stage_name] = []
+    return drained
+
+
 def _integrity_pre_hook(orch: Any, handle: Any, gate: Any) -> StageTrace:
     """`FR-PIPE-03`: verify once per cell whose extraction is terminal, and record the phase.
 
@@ -509,9 +520,12 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
                 score=score, criterion=criterion, history=None, baseline=None)
             escalates = bool(getattr(decision, "escalate", False))
             if escalates:
-                orch.enqueue_escalation(
+                reports = orch.enqueue_escalation(
                     tx, (handle.run_id, cell.submission_id, cell.criterion_id))
-                escalated += 1
+                # A widening the breaker halted did not escalate anything; counting it would
+                # make the trace claim work that was refused (`FR-ORCH-13`).
+                if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
+                    escalated += 1
             orch.mark_cell_phase(
                 tx, handle.run_id, cell.submission_id, cell.criterion_id,
                 "aggregated", units_consumed=terminal_units,
@@ -731,15 +745,13 @@ def run_to_completion(
             break
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
             fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
+            # Drain first: the pass that faulted may still have extracted and scored, and a
+            # trace that dropped that work would under-report what the run actually did.
+            stages.extend(_drain(executor))
             stages.append(StageTrace("aggregate", detail=(fault,)))
             break
 
-        for stage_name in (STAGE_EXTRACT, STAGE_SCORE):
-            done = executor.executed[stage_name]
-            if done:
-                stages.append(StageTrace(
-                    stage_name, units=len(done), done=len(done), detail=tuple(done)))
-                executor.executed[stage_name] = []
+        stages.extend(_drain(executor))
         if pre.units:
             stages.append(pre)
         if agg.units:
@@ -1146,7 +1158,10 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     # against a remote backend — the gate firing on an answer nobody looked up.
     run_config = resolve_run_config(dict(config), orchestrator.cohort_ref(args.cohort))
     if existing:
-        handle = existing[-1]
+        # Latest by start time. `run_id` is `run-<uuid4 hex>` and `select_all_runs` orders by
+        # it, so "the last row" is an arbitrary run among several for the same cohort and
+        # package version — picking it would continue whichever run happened to sort highest.
+        handle = max(existing, key=lambda h: (h.started_at, h.run_id))
         run_id = handle.run_id
         # `FR-CONF-15` / `FR-ORCH-16`: a run resumes on the backend it froze. This command
         # resolves a FRESH `RunConfig` from the current environment, so driving an existing

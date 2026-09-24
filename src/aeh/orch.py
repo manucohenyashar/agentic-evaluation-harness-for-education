@@ -2716,6 +2716,9 @@ class RunHandle:
     #: compares it against the process's current profile so a resume never rebinds a run to a
     #: backend its operator never approved (`FR-CONF-15`).
     backend_profile: str = ""
+    #: When the run started, or `""` if it never did. A caller picking "the latest run" needs
+    #: this: `run_id` is `run-<uuid4 hex>`, so id order is not time order.
+    started_at: str = ""
 
 
 class PackageCatalogProtocol(Protocol):
@@ -5854,6 +5857,7 @@ class Orchestrator:
                     status=status,
                     pause_reason=row["pause_reason"],
                     backend_profile=str(row["backend_profile"] or ""),
+                    started_at=str(row["started_at"] or ""),
                 ))
         return tuple(found)
 
