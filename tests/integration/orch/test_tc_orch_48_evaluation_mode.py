@@ -32,6 +32,16 @@ occurrence in the four modules fails the case. That is the same shape as SEC-15'
 census, and it is what makes a regression visible. #379 reports the question of whether the
 fallbacks should go.
 
+**The census covers both spellings, at both scopes, and that is not a refinement.** The plan's
+oracle names `kind = 'mcq'` *first* — the SQL form — and that is the one that actually
+regressed: `det.py`'s `select_mcq_criteria` carried `WHERE kind = 'mcq'` from #86 until #369
+replaced it with `evaluation_mode = 'deterministic'`. It lived in a module-level `Statement`
+dict, so a census matching only Python `==` inside function bodies would have been blind to the
+exact regression `FR-ORCH-35` exists to prevent. `_mcq_mentions` therefore matches `Compare`
+nodes *and* string constants carrying the SQL predicate, attributing each to its enclosing
+function or to `MODULE_SCOPE`. Docstrings are excluded by node identity rather than by
+heuristic, because `_row_evaluation_mode`'s own docstring contains the characters it forbids.
+
 **Isolation: rung 3** for the enumeration arm, static for the scan.
 """
 
@@ -39,6 +49,7 @@ from __future__ import annotations
 
 import ast
 import pathlib
+import re
 from typing import Any
 
 import pytest
@@ -121,26 +132,75 @@ def _units(store: Any, run_id: str) -> dict[tuple[str, str], int]:
     }
 
 
+#: The SQL spelling of the same predicate, matched inside string constants. `kind = 'mcq'` is
+#: the FIRST form the plan's oracle names, and it is the one that actually regressed:
+#: `det.py`'s `select_mcq_criteria` carried `WHERE kind = 'mcq'` from #86 until #369 replaced
+#: it with `evaluation_mode = 'deterministic'`. A census that saw only Python `==` would have
+#: been blind to the very regression `FR-ORCH-35` exists to prevent.
+_SQL_PREDICATE = re.compile(r"kind\s*(?:=|==|!=|<>|\bIN\b)\s*\(?\s*['\"]mcq['\"]", re.IGNORECASE)
+
+#: Where a match was found when it is not inside any function — module-level `Statement` dicts
+#: like `ORCH_STATEMENTS` and `DET_STATEMENTS` are exactly that, and they are where the SQL
+#: lives.
+MODULE_SCOPE = "<module>"
+
+
 def _mcq_mentions(module_name: str) -> list[tuple[str, int]]:
-    """Every function in `module_name` that compares something to the literal `'mcq'`.
+    """Every site in `module_name` that routes on the literal `'mcq'`, in two spellings.
 
     Parsed rather than grepped: a comment or a docstring saying "the `kind='mcq'` reading is
-    retired" is documentation, and a regex over the source would report all four modules as
-    offenders on the strength of their own explanations. Only a real `Compare` node counts.
+    retired" is documentation, and a regex over raw source would report all four modules as
+    offenders on the strength of their own explanations. So the AST is walked, and only two
+    shapes count:
+
+    * a `Compare` node against the constant `'mcq'` — the Python predicate;
+    * a **string constant** carrying the SQL predicate — a declared `Statement`'s text.
+
+    Both are attributed to their enclosing function, or to `MODULE_SCOPE` when there is none.
+    A docstring is skipped explicitly: `_row_evaluation_mode`'s own docstring contains the
+    characters `kind = 'mcq'` while describing why the test is forbidden, and reporting that
+    as an offence would make the census unusable.
     """
     source = pathlib.Path(aeh.orch.__file__).parent / module_name
     tree = ast.parse(source.read_text(encoding="utf-8"))
-    found: list[tuple[str, int]] = []
 
+    #: node id -> enclosing function name, so a match anywhere reports where it lives.
+    scope: dict[int, str] = {}
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        for inner in ast.walk(node):
-            if isinstance(inner, ast.Compare) and any(
-                isinstance(operand, ast.Constant) and operand.value == "mcq"
-                for operand in [inner.left, *inner.comparators]
-            ):
-                found.append((node.name, inner.lineno))
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for inner in ast.walk(node):
+                scope.setdefault(id(inner), node.name)
+
+    # Only the four node types that can carry a docstring. A blanket `getattr(node, "body")`
+    # also picks up `IfExp.body` and `Lambda.body`, which are single expressions rather than
+    # statement lists.
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+
+    found: list[tuple[str, int]] = []
+    for node in ast.walk(tree):
+        where = scope.get(id(node), MODULE_SCOPE)
+        if isinstance(node, ast.Compare) and any(
+            isinstance(operand, ast.Constant) and operand.value == "mcq"
+            for operand in [node.left, *node.comparators]
+        ):
+            found.append((where, node.lineno))
+        elif (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in docstrings
+            and _SQL_PREDICATE.search(node.value)
+        ):
+            found.append((where, node.lineno))
     return found
 
 
@@ -235,36 +295,57 @@ def test_tc_orch_48_the_sanctioned_fallbacks_are_still_there():
         )
 
 
-def test_tc_orch_48_the_scan_would_see_a_predicate_if_one_were_added():
-    """The scan's own oracle — it detects the pattern it claims to detect.
+@pytest.mark.parametrize(
+    "label,body,expected_scope",
+    (
+        (
+            "the Python predicate",
+            "def router(row):\n"
+            "    if row['kind'] == 'mcq':\n"
+            "        return 'deterministic'\n"
+            "    return 'judged'\n",
+            "router",
+        ),
+        (
+            "the SQL predicate in a module-level statement dict",
+            "STATEMENTS = {\n"
+            "    'select_mcq_criteria': Statement(\n"
+            "        \"SELECT criterion_id FROM criterion WHERE kind = 'mcq'\"\n"
+            "    ),\n"
+            "}\n",
+            MODULE_SCOPE,
+        ),
+        (
+            "the SQL predicate inside a function",
+            "def load(handle):\n"
+            "    return handle.query(\"SELECT * FROM criterion WHERE kind='mcq'\")\n",
+            "load",
+        ),
+    ),
+)
+def test_tc_orch_48_the_scan_sees_each_shape_it_claims_to_see(
+    tmp_path, label, body, expected_scope, monkeypatch
+):
+    """The census's own oracle, run through `_mcq_mentions` itself.
 
-    `_mcq_mentions` parses rather than greps, so this pins that the parse actually matches a
-    comparison. A scan that silently found nothing would make every case above vacuous, which
-    is precisely how a census rots.
+    Three shapes, because the census was blind to two of them when it was first written and
+    the blindness coincided on a real site: `det.py`'s `select_mcq_criteria` carried
+    `WHERE kind = 'mcq'` — SQL, at module scope, inside a `Statement` — until #369 replaced
+    it. A scan that matched only Python `Compare` nodes inside functions would have watched
+    that exact regression walk back in.
+
+    The matching rule is exercised through `_mcq_mentions`, not re-implemented here: a control
+    that reimplements the thing it controls stays green when the real function breaks.
     """
-    import ast as _ast
-
-    tree = _ast.parse(
-        "def router(row):\n"
-        "    if row['kind'] == 'mcq':\n"
-        "        return 'deterministic'\n"
-        "    return 'judged'\n"
+    module = tmp_path / "probe_module.py"
+    module.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(
+        pathlib.Path, "read_text", lambda self, **kw: body, raising=True
     )
-    found = [
-        node.name
-        for node in _ast.walk(tree)
-        if isinstance(node, _ast.FunctionDef)
-        and any(
-            isinstance(inner, _ast.Compare)
-            and any(
-                isinstance(operand, _ast.Constant) and operand.value == "mcq"
-                for operand in [inner.left, *inner.comparators]
-            )
-            for inner in _ast.walk(node)
-        )
-    ]
 
-    assert found == ["router"], (
-        "the census's matching rule does not recognise a plain `kind == 'mcq'` predicate, so "
-        "every scan above is passing over a pattern it cannot see"
+    found = _mcq_mentions("probe_module.py")
+
+    assert [scope for scope, _line in found] == [expected_scope], (
+        f"{label}: the census reported {found}, not one match in {expected_scope!r}. Every "
+        "scan above is passing over a pattern it cannot see"
     )

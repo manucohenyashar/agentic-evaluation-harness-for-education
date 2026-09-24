@@ -151,6 +151,28 @@ def test_tc_orch_38_arm_a_every_leased_model_unit_goes_through_the_executor(tmp_
             f"the executor was handed a non-model unit: {stages}. Only extract and score "
             "units cross the model-call seam"
         )
+
+        # The plan's oracle is "exact calls", and this is where it is taken. The recording
+        # executor reports `completed=True` for every unit it is handed, so every unit that
+        # reached the seam is `done` after the pass — the two counts are the same quantity
+        # measured at the seam and at the ledger, and they must agree.
+        closed = int(store.cohort(ORCH_COHORT_ID).query(
+            Statement(
+                "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r AND status = 'done'"
+            ),
+            r=run_id,
+        )[0]["n"])
+        assert len(executor.calls) == closed, (
+            f"the executor was called {len(executor.calls)} time(s) and the pass closed "
+            f"{closed} unit(s). One call per leased model unit (FR-ORCH-27): a unit closed "
+            "without crossing the seam did no work, and a call that closed no unit spent a "
+            "model answer the ledger has no record of"
+        )
+        work_ids = [getattr(unit, "work_id", None) for unit, _governed in executor.calls]
+        assert len(set(work_ids)) == len(work_ids), (
+            f"the executor was handed the same unit more than once in one pass: {work_ids}. "
+            "Each call is a model answer paid for, so a duplicate is a unit billed twice"
+        )
         assert report is not None
     finally:
         store.close()
@@ -246,11 +268,13 @@ def test_tc_orch_38_arm_c_the_transport_path_still_dispatches(tmp_data_dir):
 
 
 def test_tc_orch_38_arm_c_a_report_only_orchestrator_dispatches_through_neither(tmp_data_dir):
-    """The third configuration, asserted so arms (a) and (c) cannot both pass vacuously.
+    """The third configuration — with neither seam bound, nothing is claimed.
 
-    With neither seam bound the orchestrator is the console's poll: it reads the ledger and
-    claims nothing. Without this, an implementation that dispatched nothing at all would
-    satisfy "the transport was never called" in arm (a).
+    This is `FR-ORCH-27`'s report-only surface, and the failure it guards is a claim with
+    nowhere to send it: a unit leased by an orchestrator that cannot dispatch is stranded
+    until its lease expires, and the console's poll would quietly take work away from the
+    worker that could have done it. Not a control for arms (a) and (c) — each of those
+    already fails on its own if the seam is dead — but the third row of the same table.
     """
     store = open_store(tmp_data_dir)
     try:

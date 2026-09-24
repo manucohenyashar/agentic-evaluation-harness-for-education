@@ -156,11 +156,11 @@ def test_tc_orch_41_row_1_all_extraction_terminal_offers_the_integrity_gate(tabl
     store, orchestrator, run_a, _run_b = table_world
     _write_units(store, run_a, "R1", "extract", ("done", "done"))
 
-    assert CellKey("R1", CRITERION) in _ready(orchestrator, run_a, "integrity_pre"), (
+    assert _ready(orchestrator, run_a, "integrity_pre") == (CellKey("R1", CRITERION),), (
         "a cell whose every extract unit is terminal and which carries no integrity_pre phase "
         "is exactly the integrity gate's moment (FR-ORCH-29)"
     )
-    assert CellKey("R1", CRITERION) not in _ready(orchestrator, run_a, "aggregate"), (
+    assert _ready(orchestrator, run_a, "aggregate") == (), (
         "the cell has no score units at all; offering it to the aggregate hook would ask "
         "M-AGG to compose a panel that does not exist"
     )
@@ -176,11 +176,11 @@ def test_tc_orch_41_row_2_one_pending_extract_unit_withholds_the_cell(table_worl
     store, orchestrator, run_a, _run_b = table_world
     _write_units(store, run_a, "R2", "extract", ("done", "pending"))
 
-    assert CellKey("R2", CRITERION) not in _ready(orchestrator, run_a, "integrity_pre"), (
+    assert _ready(orchestrator, run_a, "integrity_pre") == (), (
         "one extract unit is still pending; the integrity gate reads a COMPLETE extraction "
         "(FR-ORCH-29) and a partial read would judge the student on half their answer"
     )
-    assert CellKey("R2", CRITERION) not in _ready(orchestrator, run_a, "aggregate")
+    assert _ready(orchestrator, run_a, "aggregate") == ()
 
 
 def test_tc_orch_41_row_3_a_gated_cell_with_all_scores_terminal_is_ready_to_aggregate(
@@ -196,11 +196,11 @@ def test_tc_orch_41_row_3_a_gated_cell_with_all_scores_terminal_is_ready_to_aggr
     _write_units(store, run_a, "R3", "score", ("done", "done", "done"))
     _mark(store, orchestrator, run_a, "R3", "integrity_pre", 2)
 
-    assert CellKey("R3", CRITERION) not in _ready(orchestrator, run_a, "integrity_pre"), (
+    assert _ready(orchestrator, run_a, "integrity_pre") == (), (
         "the cell carries an integrity_pre phase; re-offering it would run the gate a second "
         "time over the same extraction"
     )
-    assert CellKey("R3", CRITERION) in _ready(orchestrator, run_a, "aggregate"), (
+    assert _ready(orchestrator, run_a, "aggregate") == (CellKey("R3", CRITERION),), (
         "every score unit is terminal and the cell has never aggregated — FR-ORCH-29's "
         "aggregate hook"
     )
@@ -218,11 +218,11 @@ def test_tc_orch_41_row_4_a_leased_score_unit_is_not_terminal(table_world):
     _write_units(store, run_a, "R4", "score", ("done", "done", "leased"))
     _mark(store, orchestrator, run_a, "R4", "integrity_pre", 2)
 
-    assert CellKey("R4", CRITERION) not in _ready(orchestrator, run_a, "aggregate"), (
+    assert _ready(orchestrator, run_a, "aggregate") == (), (
         "one score unit is leased, not terminal; aggregating now would compose over a panel "
         "one verdict short of the one the run enumerated"
     )
-    assert CellKey("R4", CRITERION) not in _ready(orchestrator, run_a, "integrity_pre")
+    assert _ready(orchestrator, run_a, "integrity_pre") == ()
 
 
 def test_tc_orch_41_row_5_an_aggregated_cell_with_no_new_verdicts_is_not_re_offered(
@@ -239,7 +239,7 @@ def test_tc_orch_41_row_5_an_aggregated_cell_with_no_new_verdicts_is_not_re_offe
     _mark(store, orchestrator, run_a, "R5", "integrity_pre", 2)
     _mark(store, orchestrator, run_a, "R5", "aggregated", 3)
 
-    assert CellKey("R5", CRITERION) not in _ready(orchestrator, run_a, "aggregate"), (
+    assert _ready(orchestrator, run_a, "aggregate") == (), (
         "three verdicts are terminal and three were consumed; re-offering the cell would "
         "re-aggregate identical inputs on every pass"
     )
@@ -261,7 +261,7 @@ def test_tc_orch_41_row_6_a_widened_panel_re_offers_the_cell(table_world):
     _mark(store, orchestrator, run_a, "R6", "integrity_pre", 2)
     _mark(store, orchestrator, run_a, "R6", "aggregated", 3)
 
-    assert CellKey("R6", CRITERION) in _ready(orchestrator, run_a, "aggregate"), (
+    assert _ready(orchestrator, run_a, "aggregate") == (CellKey("R6", CRITERION),), (
         "five score units are terminal and only three were consumed; the widened panel is "
         "exactly the case FR-ORCH-29 re-offers, and a flag-shaped `aggregated` would drop it"
     )
@@ -277,7 +277,7 @@ def test_tc_orch_41_row_7_a_quarantined_extraction_still_opens_the_gate(table_wo
     store, orchestrator, run_a, _run_b = table_world
     _write_units(store, run_a, "R7", "extract", ("quarantined", "quarantined"))
 
-    assert CellKey("R7", CRITERION) in _ready(orchestrator, run_a, "integrity_pre"), (
+    assert _ready(orchestrator, run_a, "integrity_pre") == (CellKey("R7", CRITERION),), (
         "terminal means done OR quarantined (FR-ORCH-29): a cell whose extraction quarantined "
         "must still reach the gate, or it waits on evidence that is never coming"
     )
@@ -300,7 +300,7 @@ def test_tc_orch_41_row_8_one_runs_query_never_returns_another_runs_cell(table_w
         "the query is not scoped to the run (FR-ORCH-34's scoping rule, read across hooks)"
     )
     assert _ready(orchestrator, run_a, "aggregate") == ()
-    assert CellKey("R8", CRITERION) in _ready(orchestrator, run_b, "aggregate"), (
+    assert _ready(orchestrator, run_b, "aggregate") == (CellKey("R8", CRITERION),), (
         "RB's own cell must be ready — without this the scoping assertion above would pass "
         "against an implementation that returned nothing for anybody"
     )

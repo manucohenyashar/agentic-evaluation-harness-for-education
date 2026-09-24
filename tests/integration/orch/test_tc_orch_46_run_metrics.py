@@ -75,8 +75,21 @@ TOLERANCE_MS = 5_000.0
 _HOUR = 3_600_000.0
 
 _SET_STARTED = Statement(
-    "UPDATE run SET started_at = :started_at, status = 'paused' WHERE run_id = :run_id"
+    "UPDATE run SET started_at = :started_at, status = 'paused', "
+    "cost_estimate = :cost_estimate, provider_config = :provider_config "
+    "WHERE run_id = :run_id"
 )
+
+#: The fixture's frozen snapshot. Every one of `FR-ORCH-33`'s five added names is flushed only
+#: when its source exists, so the fixture supplies all three sources rather than leaving the
+#: assertions guarded — a guarded assertion over an absent source is an assertion that never
+#: runs, which is how a metric name comes to be claimed and uncovered.
+FROZEN_COST_ESTIMATE = "4.25"
+FROZEN_SNAPSHOT = {
+    "concurrency_ceiling": 2,
+    "cost_currency": "USD",
+    "retention_setting": "zero-retention",
+}
 _INSERT_CONTROL = Statement(
     "INSERT INTO run_control (control_id, run_id, action, reason, requested_at, applied_at) "
     "VALUES (:control_id, :run_id, :action, 'TC-ORCH-46', :requested_at, :applied_at)"
@@ -186,6 +199,8 @@ def paused_run(tmp_data_dir):
                 _SET_STARTED,
                 run_id=run_id,
                 started_at=_stamp(now - timedelta(hours=5)),
+                cost_estimate=FROZEN_COST_ESTIMATE,
+                provider_config=json.dumps(FROZEN_SNAPSHOT),
             )
             for index, (action, hours_ago) in enumerate(
                 (("pause", 4.0), ("resume", 2.0), ("pause", 0.5))
@@ -251,8 +266,16 @@ def test_tc_orch_46_the_flush_carries_every_name_fr_orch_33_adds(paused_run):
     fresh.progress(run_id)
 
     metrics = _metrics(store, run_id)
-    for name in ("wall_clock_ms", "resolved_builds"):
-        assert name in metrics, f"run_metrics is missing {name!r}: {sorted(metrics)}"
+    for name in (
+        "wall_clock_ms",
+        "resolved_builds",
+        "estimated_cost",
+        "cost_currency",
+        "retention_setting",
+    ):
+        assert name in metrics, (
+            f"run_metrics is missing FR-ORCH-33's added name {name!r}: {sorted(metrics)}"
+        )
 
     assert json.loads(str(metrics["resolved_builds"])) == ["b1", "b2"], (
         f"resolved_builds is {metrics['resolved_builds']!r}; the run resolved b1 and then b2, "
@@ -266,18 +289,17 @@ def test_tc_orch_46_the_flush_carries_every_name_fr_orch_33_adds(paused_run):
         ),
         r=run_id,
     )[0]
-    if run_row["cost_estimate"] is not None:
-        assert str(metrics.get("estimated_cost")) == str(run_row["cost_estimate"]), (
-            f"estimated_cost reads {metrics.get('estimated_cost')!r} and the run row holds "
-            f"{run_row['cost_estimate']!r}; the metric must be the run's own figure"
-        )
+    assert str(metrics["estimated_cost"]) == str(run_row["cost_estimate"]), (
+        f"estimated_cost reads {metrics['estimated_cost']!r} and the run row holds "
+        f"{run_row['cost_estimate']!r}; the metric must be the run's own figure, not a "
+        "recomputed one"
+    )
     snapshot = json.loads(str(run_row["provider_config"] or "{}"))
     for key in ("cost_currency", "retention_setting"):
-        if snapshot.get(key) is not None:
-            assert str(metrics.get(key)) == str(snapshot[key]), (
-                f"{key} reads {metrics.get(key)!r}; it must come from the run's FROZEN "
-                f"provider_config ({snapshot[key]!r}), not from current configuration"
-            )
+        assert str(metrics[key]) == str(snapshot[key]), (
+            f"{key} reads {metrics[key]!r}; it must come from the run's FROZEN "
+            f"provider_config ({snapshot[key]!r}), not from current configuration"
+        )
 
 
 def test_tc_orch_46_the_frozen_snapshot_is_what_the_metrics_report(paused_run):

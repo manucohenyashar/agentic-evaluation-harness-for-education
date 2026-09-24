@@ -20,8 +20,8 @@ that reason, and these two arms are its only cover.
 `executor is not None or transport is not None`), so "the score unit is leased" could not be
 observed through it however the gate behaved — the arm would pass against the very defect it
 exists to catch. `lease(worker, 'score', n)` is the claim surface the gate actually filters
-(`_score_ready_rows`, `orch.py:4277`), it is observable identically under all three
-configurations, and it is what a `progress()` dispatch pass calls underneath. Arm A asserts
+(`_score_ready_rows`, the `gated` expression at `orch.py:4281`), it is observable identically
+under all three configurations, and it is what a `progress()` dispatch pass calls underneath. Arm A asserts
 through **both**, so the plan's stated surface is still pinned where it is meaningful.
 
 **Isolation: rung 2** — real store, real Tier P package, real cohort ledger.

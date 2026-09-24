@@ -71,9 +71,10 @@ class ScriptedExecutor:
     The taxonomy is raised from the executor rather than from deep inside a shipped worker
     because `FR-ORCH-30`'s contract is stated at the seam — "let `RateLimitedError`,
     `MemoryError`, `ProviderUnavailableError` and `BuildChangedError` propagate; the loop
-    classifies each one" (`StageExecutor`'s own docstring). Raising here is raising exactly
-    where the loop promises to catch, so the case pins the classification rather than one
-    worker's re-raise behaviour.
+    classifies each one" — the contract comment directly under `StageExecutor`
+    (`orch.py:2538-2540`), stated there because the dispatch loop cannot enforce it. Raising
+    here is raising exactly where the loop promises to catch, so the case pins the
+    classification rather than one worker's re-raise behaviour.
     """
 
     def __init__(self, script: list[BaseException | None]) -> None:
