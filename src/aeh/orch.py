@@ -5752,6 +5752,7 @@ class Orchestrator:
             status=str(row["status"]),
             pause_reason=row["pause_reason"],
             backend_profile=str(row["backend_profile"] or ""),
+            started_at=str(row["started_at"] or ""),
         )
 
     def unit_status(self, work_id: str) -> str:
