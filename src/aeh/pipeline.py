@@ -106,6 +106,7 @@ from aeh.grade import open_grade
 from aeh.integ import IntegrityGate, StoreExtractionView
 from aeh.judge import JudgmentError, ScoringWorker, verdicts_for
 from aeh.orch import (
+    DECISION_HALTED_BY_BREAKER,
     ESCALATION_ARM_PREFIX,
     STAGE_EXTRACT,
     STAGE_SCORE,
@@ -469,11 +470,17 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
     # panel's own figure still stands; what the breaker changes is whether it may be trusted
     # unreviewed.
     #
-    # Read per CELL rather than once before the loop: `enqueue_escalation` latches the breaker
-    # inside the transaction this hook opens, so a later cell of the same criterion in the
-    # same pass would otherwise aggregate with a stale `False`, be phase-marked, and never
+    # Read ONCE, then kept current from the escalation reports below. `enqueue_escalation`
+    # latches the breaker inside the transaction this hook opens, so a stale read would let a
+    # later cell of the same criterion aggregate with `False`, be phase-marked, and never
     # re-aggregate — its score staying `auto`/`final` where `CT-ORCH-16` requires
     # `provisional`/`ungradeable_by_panel`.
+    #
+    # Re-reading per cell fixed that and cost too much: `tripped_breakers` walks the cohort
+    # files and queries each one, and `NFR-PIPE-02` budgets composition overhead at under 5%
+    # of scheduling at 23,000 units. The report already says when a widening was breaker-
+    # halted, so the set is updated from it instead.
+    latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
     detail: list[str] = []
     escalated = 0
     for cell in cells:
@@ -504,14 +511,20 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             continue
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
-        latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
         score = aggregate(
             verdicts, criterion, signals,
-            # `FR-PIPE-05` names the two-verdict case, but `aggregate` refuses EVERY even
-            # panel, and F3's attempt-counting makes a 4-verdict panel reachable: a widened
-            # five-arm panel with one arm quarantined. The rule is "never aggregate an even
-            # panel as one", so it is applied to the parity rather than to the number two.
-            fallback=len(verdicts) % 2 == 0,
+            # `FR-PIPE-05`: exactly two verdicts after a terminal failure. An earlier draft
+            # widened this to any even count, which was INERT — `agg.aggregate` reads
+            # `fallback and len(verdicts) == 2` and its own docstring says "any other even
+            # size still raises `EvenPanelError`". The widened form changed nothing while the
+            # comment above it claimed to cover the 4-verdict case, which is the sort of false
+            # rationale this file has had to correct twice already.
+            #
+            # A 4-verdict panel IS reachable — a widened five-arm panel with one arm
+            # quarantined — and it raises, which pauses the run as a composition fault. That
+            # is fail-closed and satisfies FR-PIPE-05's "never with an even panel"; making
+            # such a cell complete instead would need a rule M-AGG does not have.
+            fallback=len(verdicts) == 2,
             breaker_tripped=cell.criterion_id in latched,
         )
         with handle.cohort.transaction() as tx:
@@ -526,6 +539,11 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
                 # make the trace claim work that was refused (`FR-ORCH-13`).
                 if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
                     escalated += 1
+                if any(getattr(r, "decision", None) == DECISION_HALTED_BY_BREAKER
+                       for r in reports):
+                    # The breaker latched inside this transaction; every later cell of the
+                    # same criterion in this pass must see it.
+                    latched.add(cell.criterion_id)
             orch.mark_cell_phase(
                 tx, handle.run_id, cell.submission_id, cell.criterion_id,
                 "aggregated", units_consumed=terminal_units,
@@ -1135,6 +1153,12 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             # run — used to leave `status == "complete"` and return 0, reporting success for a
             # run whose hook raised and whose scores may be missing. The fault is on the
             # result either way, so the exit code follows it (`CT-PIPE-01`).
+            #
+            # **A deliberate narrowing of FR-PIPE-08's literal "3 on paused".** A run PAUSED by
+            # a composition fault now exits 1 rather than 3. #365's own criterion qualifies
+            # the 3 as "(provider outage)" — an operator condition to wait out — and a
+            # composition fault is a defect in this module, which is what 1 is for. Stated
+            # here because it is a choice, not an oversight.
             print(f"aeh run: {result.pause_reason}", file=sys.stderr)
             return EXIT_ERROR
         return EXIT_OK if result.status == "complete" else EXIT_PAUSED

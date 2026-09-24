@@ -304,12 +304,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # so a run recovery REFUSED to resume - a profile switch, FR-CONF-15 - would keep a
     # stale reason that answers a different question. Declared statement,
     # keyword-parameterized, in the caller's transaction (FR-STORE-08).
-    "aeh.orch:5809",
-    "aeh.orch:6131",
-    "aeh.orch:6163",
-    "aeh.orch:6165",
-    "aeh.orch:6495",
-    "aeh.orch:6535",
+    "aeh.orch:5810",
+    "aeh.orch:6132",
+    "aeh.orch:6164",
+    "aeh.orch:6166",
+    "aeh.orch:6496",
+    "aeh.orch:6536",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
