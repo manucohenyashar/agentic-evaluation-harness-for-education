@@ -365,22 +365,10 @@ class PipeWorld(SynthWorld):
 # --- the capture ----------------------------------------------------------------------------
 
 
-def drive_full_run(world: PipeWorld, *, monkeypatch: Any = None) -> None:
-    """One complete pass in §4.2.2's order — the same sequence journey 2 drives."""
-    world.build_run()
-    world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
-
-
+# `drive_full_run` stood here: the hand-rolled walk that drove this corpus before
+# `run_to_completion` existed. #364's technical notes retire it once M-PIPE lands, and
+# `drive_composed` is what every caller uses now — a second drive is a second place for
+# the pipeline to be wrong, and only one of them ships.
 def drive_second_run(world: PipeWorld, run: str, *, run_id: str | None = None,
                      monkeypatch: Any = None) -> str:
     """Drive a SECOND run over the same store, from the other two-run recording set.

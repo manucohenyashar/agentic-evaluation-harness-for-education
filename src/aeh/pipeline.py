@@ -481,9 +481,14 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
 def _submissions_of(orch: Any, run_id: str) -> tuple[str, ...]:
     """Every submission the run enumerated, in ledger order, without reading the ledger.
 
-    The union of both judged stages' cells: a submission with open criteria has extract units,
-    one with only deterministic criteria has neither, and the union covers a package that
-    carries both. `M-ORCH` counts them; `CT-PIPE-05` forbids this module counting for itself.
+    The union of both judged stages' cells. **This does not cover every package**: a
+    submission whose criteria are ALL deterministic has neither extract nor score units, so it
+    is never offered to synthesis at all. An earlier draft of this docstring stated the hole
+    and then claimed the union closed it, which it does not. The reference and F-DEV-PIPE
+    packages both carry open criteria so the gap is not reachable there; closing it needs a
+    per-run submission list `M-ORCH` does not currently expose. Reported rather than hidden.
+
+    `M-ORCH` counts the cells; `CT-PIPE-05` forbids this module counting for itself.
     """
     seen: dict[str, None] = {}
     for stage in (STAGE_EXTRACT, STAGE_SCORE):
@@ -655,8 +660,10 @@ def run_to_completion(
             pre = _integrity_pre_hook(orch, handle, gate)
             agg = _aggregate_hook(orch, handle, gate, catalog, view)
         except (ProviderUnavailableError, BuildChangedError):
-            # `FR-ORCH-30` already paused the run with its cause. The status read below is the
-            # authority and this module adds nothing to it.
+            # Defensive only. `FR-ORCH-30` absorbs both per future inside `_run_model_batch`
+            # and pauses the run there, so neither normally reaches this frame; if one ever
+            # does, the stored status read below is the authority and this adds nothing to it.
+            handle = orch.run_handle(run_id)
             break
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
             fault = f"composition fault: {type(error).__name__}: {error}"
@@ -710,9 +717,8 @@ def run_to_completion(
                 "aggregate",
                 units=int(report["pending"]),
                 detail=(
-                    f"no progress with {report['pending']} unit(s) pending and none in "
-                    f"flight after {passes} pass(es); the run cannot reach the completion "
-                    f"predicate",
+                    f"no progress after {passes} pass(es): {report['pending']} unit(s) "
+                    f"pending, none in flight, and no cell became ready",
                     _stall_reason(orch, run_id),
                 ),
             ))
@@ -727,10 +733,24 @@ def run_to_completion(
 
     grades_computed = grades_final = 0
     if handle.status == "complete":
-        stages.append(
-            _synthesize(store, provider, run_config, orch, handle, synthesizer))
-        grade_trace, grades_computed, grades_final = _grade(store, handle)
-        stages.append(grade_trace)
+        # Inside the same discipline as the loop's hooks: the design's error-handling
+        # paragraph says any exception out of a hook is recorded in that stage's `detail` and
+        # pauses the run, never swallowed and never raised past this function. Synthesis and
+        # grading are hooks too, and an exception here used to propagate out of
+        # `run_to_completion` instead.
+        try:
+            stages.append(
+                _synthesize(store, provider, run_config, orch, handle, synthesizer))
+            grade_trace, grades_computed, grades_final = _grade(store, handle)
+            stages.append(grade_trace)
+        except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
+            fault = f"composition fault: {type(error).__name__}: {error}"
+            stages.append(StageTrace("grade", detail=(fault,)))
+            try:
+                orch.pause(run_id, fault)
+            except Exception:  # noqa: BLE001 - a terminal run refuses a pause
+                pass
+            handle = orch.run_handle(run_id)
 
     return RunResult(
         run_id=run_id,
@@ -833,10 +853,18 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
 def _grades_all_final(grading: Any, run_id: str) -> bool:
     """Whether every grade of one run is settled.
 
-    Read through `coverage`, which reports the class's states as they STAND rather than the
-    stored rows alone — a window that has lapsed since the rows were written shows as settled
-    here, which is the question being asked. A run with no grades at all is 'nothing to
-    settle', not 'unsettled': re-grading it would compute a class that does not exist yet.
+    Read through `coverage`, which counts the STORED `state` column (plus a derived
+    `incomplete` for a submission with no current row). It does **not** re-evaluate review
+    windows — an earlier draft of this docstring claimed it did, and that claim was not only
+    false but backwards: if `coverage` settled a lapsed window on read, a lapsed run would
+    report as final and `FR-PIPE-07`'s whole third step would never fire. It is precisely
+    because the stored state is stale that recovery has to re-grade.
+
+    A run with **no grades at all** reads as settled here, and that is a narrow judgement
+    rather than an obvious one: its criterion scores may well exist and grading simply never
+    ran, which is the killed-after-completion state `NFR-PIPE-01` is about. It is safe only
+    because `run_to_completion`'s own `complete` branch grades such a run; `aeh recover`
+    alone would leave it ungraded. Recorded as a known edge rather than defended as correct.
     """
     by_state = dict(getattr(grading.coverage(run_id), "grades_by_state", {}) or {})
     total = sum(int(n) for n in by_state.values())
@@ -985,7 +1013,24 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             # `FR-PIPE-09`: recovery runs BEFORE the socket accepts, so an expired lease is
             # reclaimed rather than sitting held while an operator watches a stalled queue.
             recover(store)
-            serve_console(store, cfg=config)
+            server = serve_console(store, cfg=config)
+            # `serve_console` BINDS and returns: the accept loop runs on a daemon thread
+            # (`console.py`), so returning here would end the process and take the thread with
+            # it — the socket would close before anything could connect, and #365's "the
+            # expired lease is reclaimed before the socket accepts" would be vacuously true
+            # against a console that never accepted. So the command blocks, which is what an
+            # operator running `aeh console` expects it to do.
+            print(f"console listening on port {getattr(server, 'port', '?')} "
+                  f"(pid {getattr(server, 'pid', '?')}); Ctrl-C to stop")
+            try:
+                while True:
+                    time.sleep(0.5)
+            except KeyboardInterrupt:
+                pass
+            finally:
+                terminate = getattr(server, "terminate", None)
+                if callable(terminate):
+                    terminate()
             return EXIT_OK
 
         config = effective_config(_load_config_file(args.config))
@@ -1017,7 +1062,21 @@ def _run_command(store: Any, args: Any, config: Mapping[str, Any]) -> RunResult:
     # against a remote backend — the gate firing on an answer nobody looked up.
     run_config = resolve_run_config(dict(config), orchestrator.cohort_ref(args.cohort))
     if existing:
-        run_id = existing[-1].run_id
+        handle = existing[-1]
+        run_id = handle.run_id
+        # `FR-CONF-15` / `FR-ORCH-16`: a run resumes on the backend it froze. This command
+        # resolves a FRESH `RunConfig` from the current environment, so driving an existing
+        # run with it would rebind that run to whatever profile this process happens to carry.
+        # Rebuilding the frozen `RunConfig` from the run row is not a surface this module has,
+        # so the mismatch is refused rather than papered over: fail closed and say which
+        # profile the run expects. Reported on #365 as the narrower gap it is.
+        if handle.backend_profile and run_config.backend_profile != handle.backend_profile:
+            raise ValueError(
+                f"run {run_id} froze backend profile {handle.backend_profile!r} and this "
+                f"process resolved {run_config.backend_profile!r}; a run resumes on the "
+                f"backend it froze (FR-CONF-15). Set HARNESS_PROFILE to "
+                f"{handle.backend_profile!r} to continue it."
+            )
     else:
         run_id = orchestrator.create_run(
             args.cohort, args.package_version, run_config)
