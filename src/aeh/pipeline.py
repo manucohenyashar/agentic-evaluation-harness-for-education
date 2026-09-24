@@ -121,6 +121,15 @@ from aeh.synth import SynthesisWorker
 MAX_PASSES_ENV = "HARNESS_PIPE_MAX_PASSES"
 PASS_SLEEP_MS_ENV = "HARNESS_PIPE_PASS_SLEEP_MS"
 
+#: How many consecutive passes may make no headway before the loop gives up.
+#:
+#: One is too few. A pass in which every unit came back `RateLimitedError` requeues them all
+#: (`FR-ORCH-30`), so `done`, `pending` and `in_flight` are unchanged and the next pass looks
+#: identical — and `RES-11`'s back-off IS the next pass. Breaking on the first repeat would
+#: abandon a rate-limited run as `running` with work outstanding, which `FR-PIPE-01` forbids.
+#: Three bounds the retry without turning a genuinely stuck run into a spin.
+STALL_PASSES = 3
+
 #: The stages a `RunResult` can carry a trace for, in §4.2.2 order.
 STAGE_NAMES: tuple[str, ...] = (
     "deterministic", "extract", "integrity_pre", "score", "aggregate", "synthesize", "grade",
@@ -298,7 +307,7 @@ class ProductionStageExecutor:
             # successful extraction cannot have been quarantined, and `NFR-PIPE-02` budgets
             # composition overhead at under 5% of scheduling at 23,000 units, which a status
             # query per unit would spend on the answer "no" almost every time.
-            if spans == 0 and self._terminalised(unit):
+            if spans == 0 and self._quarantined(unit):
                 detail = f"{unit.submission_id}/{unit.criterion_id}: quarantined by the worker"
                 self.executed[STAGE_EXTRACT].append(detail)
                 return StageOutcome(completed=False, detail=detail)
@@ -334,11 +343,21 @@ class ProductionStageExecutor:
         )
 
 
-    def _terminalised(self, unit: Any) -> bool:
-        """Whether the ledger already closed this unit — the worker struck it out."""
+    def _quarantined(self, unit: Any) -> bool:
+        """Whether the WORKER struck this unit out. `quarantined` only, never `done`.
+
+        `ExtractionWorker.process` marks a successful unit `done` in its own transaction
+        before returning, so treating `done` as a strike-out misreads every successful
+        extraction that legitimately found nothing — `{"spans": []}` is a valid answer meaning
+        "no supporting evidence in this document". That misread is expensive and silent: the
+        unit joins the requeue list, which halves the run's concurrency cap as though a
+        transport condition had occurred, ends the extract walk early for that pass, and puts
+        "quarantined by the worker" in the trace about a unit that is `done` with its evidence
+        written. `complete()` early-returns on a `done` unit anyway, so `done` bought nothing.
+        """
         if self.orchestrator is None:
             return False
-        return self.orchestrator.unit_status(unit.work_id) in ("quarantined", "done")
+        return self.orchestrator.unit_status(unit.work_id) == "quarantined"
 
 
 def _default_extractor(run_config: Any) -> Any:
@@ -437,8 +456,13 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
     # flag is not cosmetic: a criterion whose breaker latched must score `provisional` /
     # `ungradeable_by_panel` rather than `auto` / `final` (`FR-ORCH-13`, `CT-ORCH-16`). The
     # panel's own figure still stands; what the breaker changes is whether it may be trusted
-    # unreviewed. Read per criterion from the run's latched breakers.
-    latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
+    # unreviewed.
+    #
+    # Read per CELL rather than once before the loop: `enqueue_escalation` latches the breaker
+    # inside the transaction this hook opens, so a later cell of the same criterion in the
+    # same pass would otherwise aggregate with a stale `False`, be phase-marked, and never
+    # re-aggregate — its score staying `auto`/`final` where `CT-ORCH-16` requires
+    # `provisional`/`ungradeable_by_panel`.
     detail: list[str] = []
     escalated = 0
     for cell in cells:
@@ -469,9 +493,14 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             continue
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
+        latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
         score = aggregate(
             verdicts, criterion, signals,
-            fallback=len(verdicts) == 2,
+            # `FR-PIPE-05` names the two-verdict case, but `aggregate` refuses EVERY even
+            # panel, and F3's attempt-counting makes a 4-verdict panel reachable: a widened
+            # five-arm panel with one arm quarantined. The rule is "never aggregate an even
+            # panel as one", so it is applied to the parity rather than to the number two.
+            fallback=len(verdicts) % 2 == 0,
             breaker_tripped=cell.criterion_id in latched,
         )
         with handle.cohort.transaction() as tx:
@@ -581,6 +610,19 @@ def _default_synthesizer(run_config: Any) -> Any:
     )
 
 
+def _over_escalation_budget(orch: Any, run_id: str) -> bool:
+    """Whether the run's escalation rate is over budget, so dispatch is deferring its pairs.
+
+    That is the one no-progress condition retrying cannot clear: the deferred units stay
+    pending until growth returns headroom, and on a cohort too small to grow it never does.
+    Every other stall — a rate-limited pass, a peer holding a lease — is worth another pass.
+    """
+    try:
+        return bool(getattr(orch.escalation_budget_state(run_id), "over_budget", False))
+    except Exception:  # noqa: BLE001 - a stall decision must not raise
+        return False
+
+
 def _stall_reason(orch: Any, run_id: str) -> str:
     """Why a pass stopped moving, in M-ORCH's own words.
 
@@ -672,6 +714,7 @@ def run_to_completion(
     ))
 
     passes = 0
+    stalled = 0
     fault: str | None = None
     last_seen: tuple[int, int, int] | None = None
     while True:
@@ -687,7 +730,7 @@ def run_to_completion(
             handle = orch.run_handle(run_id)
             break
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
-            fault = f"composition fault: {type(error).__name__}: {error}"
+            fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
             stages.append(StageTrace("aggregate", detail=(fault,)))
             break
 
@@ -709,6 +752,7 @@ def run_to_completion(
         seen = (int(report["done"]), int(report["pending"]), int(report["in_flight"]))
         moved = bool(pre.units or agg.units) or seen != last_seen
         last_seen = seen
+        stalled = 0 if moved else stalled + 1
 
         if report["complete"] and not (pre.units or agg.units):
             # Nothing pending, nothing in flight, no hook fired: let M-ORCH apply its own
@@ -721,6 +765,15 @@ def run_to_completion(
         if passes_cap is not None and passes >= passes_cap:
             break
         if not moved:
+            over_budget = _over_escalation_budget(orch, run_id)
+            if not over_budget and stalled < STALL_PASSES:
+                # No headway, but nothing says the run is stuck. The ordinary cause is a pass
+                # whose units all came back rate-limited and were requeued: counts unchanged,
+                # nothing in flight, and the back-off is simply the next pass. Retry a bounded
+                # number of times before concluding otherwise.
+                if pass_sleep_ms:
+                    time.sleep(pass_sleep_ms / 1000.0)
+                continue
             if report["in_flight"] and pass_sleep_ms:
                 time.sleep(pass_sleep_ms / 1000.0)
                 continue
@@ -765,7 +818,7 @@ def run_to_completion(
             grade_trace, grades_computed, grades_final = _grade(store, handle)
             stages.append(grade_trace)
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
-            fault = f"composition fault: {type(error).__name__}: {error}"
+            fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
             stages.append(StageTrace("grade", detail=(fault,)))
             try:
                 orch.pause(run_id, fault)
@@ -897,6 +950,9 @@ def _grades_all_final(grading: Any, run_id: str) -> bool:
 # --- the command line (issue #365, FR-PIPE-08, FR-PIPE-09) ----------------------------------
 
 #: `FR-PIPE-08`'s exit codes. Changing this mapping is a breaking change to `CT-PIPE-01`.
+#: The marker a composition fault carries in `RunResult.pause_reason`.
+_FAULT_PREFIX = "composition fault: "
+
 EXIT_OK = 0
 EXIT_ERROR = 1
 EXIT_PAUSED = 3
@@ -1062,6 +1118,13 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         finally:
             store.close()
         print(json.dumps(_as_json(result), indent=2, sort_keys=True))
+        if str(result.pause_reason or "").startswith(_FAULT_PREFIX):
+            # A composition fault that could not pause the run — `pause()` refuses a terminal
+            # run — used to leave `status == "complete"` and return 0, reporting success for a
+            # run whose hook raised and whose scores may be missing. The fault is on the
+            # result either way, so the exit code follows it (`CT-PIPE-01`).
+            print(f"aeh run: {result.pause_reason}", file=sys.stderr)
+            return EXIT_ERROR
         return EXIT_OK if result.status == "complete" else EXIT_PAUSED
     except Exception as error:  # noqa: BLE001 - the command line reports, never traces back
         print(f"aeh {args.command}: {type(error).__name__}: {error}", file=sys.stderr)
