@@ -711,6 +711,38 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "FROM run WHERE status IN ('pending', 'running', 'paused') "
         "ORDER BY run_id"
     ),
+    # The same columns with no status filter: `recover` (FR-PIPE-07) has to find runs that are
+    # COMPLETE but whose grades are not all final, and those are exactly the runs
+    # `select_open_runs` excludes. Filtering in Python rather than in SQL keeps one statement
+    # for every status a caller might ask about.
+    # The cohort's declared consent class (`ADR-5`). `M-PIPE` needs it to build the `CohortRef`
+    # `resolve_run_config` gates on: `CohortRef` defaults to `'real'` and that default is
+    # fail-closed by design, so a caller that does not read the stored value refuses every
+    # synthetic cohort against a remote backend (`FR-CONF-08`).
+    # Rewrite ONLY the recorded reason on a run that is already paused. `pause()` deliberately
+    # changes nothing in that case — an operator double-pausing must not manufacture a state
+    # flip — but a run refused for a NEW cause needs the new cause on the row, or the operator
+    # surface explains the stop with a reason that is no longer why.
+    "update_pause_reason": Statement(
+        "UPDATE run SET pause_reason = :pause_reason "
+        "WHERE run_id = :run_id AND status = 'paused'"
+    ),
+    # One unit's ledger status. A stage door may terminalise its own unit — `M-EXTRACT`'s
+    # worker quarantines at the strike ceiling and RETURNS rather than raising — and the
+    # composition layer has to know that before it reports the unit completed, because
+    # `complete()` refuses a unit a worker already quarantined.
+    "select_unit_status": Statement(
+        "SELECT status FROM work_unit WHERE work_id = :work_id"
+    ),
+    "select_cohort_row": Statement(
+        "SELECT cohort_id, consent_class FROM cohort WHERE cohort_id = :cohort_id"
+    ),
+    "select_all_runs": Statement(
+        "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
+        "backend_profile, provider_config, prompt_template_v, status, started_at, "
+        "completed_at, cost_estimate, cost_spend, pause_reason "
+        "FROM run ORDER BY run_id"
+    ),
     "select_run_work_ids": Statement(
         "SELECT work_id FROM work_unit WHERE run_id = :run_id"
     ),
@@ -2655,6 +2687,38 @@ class CellKey(NamedTuple):
 
     submission_id: str
     criterion_id: str
+
+
+@dataclass(frozen=True)
+class RunHandle:
+    """Everything a composition layer needs to drive one run without reading the ledger.
+
+    `M-PIPE` opens the transaction that `write_score`, `enqueue_escalation` and
+    `mark_cell_phase` share (`FR-PIPE-04` requires the three to commit together), and a
+    transaction comes from the cohort handle. `CT-PIPE-05` says `M-PIPE` executes no SQL, so
+    it cannot find that handle by querying the run row itself — it asks the module that owns
+    the row. That is what this is: one read, answered by `M-ORCH`, returning the handle and
+    the four identities every hook needs.
+
+    `status` and `pause_reason` are the stored values at the moment of the call —
+    `RunResult.status` is required to equal `run.status`, and reading it through any other
+    path would be reading around the owner.
+    """
+
+    run_id: str
+    cohort_id: str
+    cohort: Any
+    package_id: str
+    package_version_id: str
+    status: str
+    pause_reason: "str | None"
+    #: The backend profile the run FROZE at creation (`FR-CONF-07`). A composition layer
+    #: compares it against the process's current profile so a resume never rebinds a run to a
+    #: backend its operator never approved (`FR-CONF-15`).
+    backend_profile: str = ""
+    #: When the run started, or `""` if it never did. A caller picking "the latest run" needs
+    #: this: `run_id` is `run-<uuid4 hex>`, so id order is not time order.
+    started_at: str = ""
 
 
 class PackageCatalogProtocol(Protocol):
@@ -5667,6 +5731,159 @@ class Orchestrator:
             run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
             phase=phase, units_consumed=int(units_consumed), recorded_at=_now(),
         )
+
+    def run_handle(self, run_id: str) -> RunHandle:
+        """The run's cohort handle and identities, for a composition layer (`FR-PIPE-04`).
+
+        `M-PIPE` needs a transaction to commit a score, its escalation and its cell phase
+        together, and a transaction comes from the cohort handle. It is forbidden its own SQL
+        (`CT-PIPE-05`), so it asks here rather than querying the run row — which is the same
+        discipline every other cross-module read in this system follows: the owner answers.
+
+        Raises `RunNotFoundError` for an unknown run, exactly as the lifecycle writers do.
+        """
+        cohort, row = self._find_run(run_id)
+        return RunHandle(
+            run_id=run_id,
+            cohort_id=str(row["cohort_id"]),
+            cohort=cohort,
+            package_id=str(row["package_id"]),
+            package_version_id=str(row["package_version_id"]),
+            status=str(row["status"]),
+            pause_reason=row["pause_reason"],
+            backend_profile=str(row["backend_profile"] or ""),
+            started_at=str(row["started_at"] or ""),
+        )
+
+    def unit_status(self, work_id: str) -> str:
+        """One unit's ledger status, or `""` if the ledger has no such unit.
+
+        A stage executor needs it to tell "the worker did the work" from "the worker struck
+        the unit out and the ledger already closed it". `complete()` refuses the second case
+        and the refusal would surface as a composition fault, pausing a run over a single
+        unparseable reply — so the executor asks first.
+        """
+        for key in self._cohort_keys():
+            rows = self._store.cohort(key).query(
+                ORCH_STATEMENTS["select_unit_status"], work_id=work_id)
+            if rows:
+                return str(rows[0]["status"])
+        return ""
+
+    def has_queued_resume(self, run_id: str) -> bool:
+        """Whether an unapplied **resume** request is waiting on this run.
+
+        The distinction a recovery pass depends on. `resume()`'s no-argument form applies
+        queued control rows and deliberately never lifts a bare operator pause — "a stop an
+        operator requested outranks a scheduler's restart" — but it also re-enumerates every
+        open run it discovers, `pending` ones included, which writes work units for a run
+        nobody started. An explicit `resume(run_id)` enumerates only the run named, and
+        supersedes the pauses before it.
+
+        So a caller that wants the first rule without the second has to know which paused runs
+        carry a request, and that is this. Without it a recovery either restarts stopped work
+        or enumerates unstarted work; neither is acceptable and both have a case asserting so.
+        """
+        cohort, _row = self._find_run(run_id)
+        return any(
+            str(row["action"]) == "resume"
+            for row in cohort.query(
+                ORCH_STATEMENTS["select_unapplied_control"], run_id=run_id)
+        )
+
+    def record_pause_reason(self, run_id: str, cause: "BaseException | str") -> None:
+        """Record WHY an already-paused run is staying paused, with no state change.
+
+        `pause()` is the right call to stop a run and the wrong one to annotate a stopped one:
+        on a `paused` run it records the request as satisfied and changes nothing, which is
+        deliberate. But a run that recovery refuses to resume — a profile switch, say
+        (`FR-CONF-15`) — needs the refusal on the row, because an operator who switched
+        profiles and found a run stopped reads `pause_reason` to learn why, and a stale
+        operator note answers a different question.
+
+        Touches `pause_reason` and nothing else: not the status, not the frozen
+        `provider_config`/`panel_config` (`FR-ORCH-16`'s resume-same-backend). A run that is
+        not paused is left alone — this annotates, it never stops anything.
+        """
+        cohort, _row = self._find_run(run_id)
+        with cohort.transaction() as tx:
+            tx.execute(
+                ORCH_STATEMENTS["update_pause_reason"],
+                run_id=run_id, pause_reason=self._pause_reason_text(cause),
+            )
+
+    def cohort_ref(self, cohort_id: str) -> "CohortRef":
+        """The cohort's declared identity, as `M-CONF` wants it (`FR-CONF-08`, `ADR-5`).
+
+        `CohortRef`'s `consent_class` defaults to `'real'`, deliberately: an undeclared cohort
+        must fail closed against a remote backend. That makes the stored value something a
+        caller has to READ rather than omit, and a composition layer cannot read it itself
+        (`CT-PIPE-05`). So the owner answers, as it does for `run_handle`.
+
+        An unknown cohort returns the fail-closed default rather than raising: the consent gate
+        is the right place for that refusal, and it states the reason better than this would.
+        """
+        from aeh.conf import CohortRef
+
+        for key in self._cohort_keys():
+            rows = self._store.cohort(key).query(
+                ORCH_STATEMENTS["select_cohort_row"], cohort_id=cohort_id)
+            if rows:
+                declared = str(rows[0]["consent_class"] or "real")
+                return CohortRef(cohort_id=cohort_id, consent_class=declared)
+        return CohortRef(cohort_id=cohort_id)
+
+    def runs(self, statuses: Sequence[str] | None = None) -> tuple[RunHandle, ...]:
+        """Every run the store holds, optionally filtered by status, in ledger order.
+
+        `recover` (`FR-PIPE-07`) needs the runs that are COMPLETE but not fully graded, and
+        `resume`'s discovery deliberately sees only open ones. A composition layer cannot walk
+        the cohorts itself (`CT-PIPE-05`), so the owner answers — the same reasoning as
+        `run_handle`, widened from one run to all of them.
+        """
+        wanted = None if statuses is None else {str(s) for s in statuses}
+        found: list[RunHandle] = []
+        for key in self._cohort_keys():
+            cohort = self._store.cohort(key)
+            for row in cohort.query(ORCH_STATEMENTS["select_all_runs"]):
+                status = str(row["status"])
+                if wanted is not None and status not in wanted:
+                    continue
+                found.append(RunHandle(
+                    run_id=str(row["run_id"]),
+                    cohort_id=str(row["cohort_id"]),
+                    cohort=cohort,
+                    package_id=str(row["package_id"]),
+                    package_version_id=str(row["package_version_id"]),
+                    status=status,
+                    pause_reason=row["pause_reason"],
+                    backend_profile=str(row["backend_profile"] or ""),
+                    started_at=str(row["started_at"] or ""),
+                ))
+        return tuple(found)
+
+    def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
+        """`(terminal, total)` units per cell for one stage — the count a phase is computed over.
+
+        `mark_cell_phase(..., units_consumed=n)` wants the number of TERMINAL units the phase
+        consumed, and `ready_cells` compares that number against the cell's terminal count to
+        decide whether a widened panel needs re-aggregating. A composition layer therefore has
+        to record the same number this module counts, and it cannot count for itself
+        (`CT-PIPE-05`). Recording a verdict count instead would be a quiet bug: a quarantined
+        unit produces no verdict, so the cell would read as ready on every later pass and
+        aggregate forever.
+
+        Same read `ready_cells` performs, exposed rather than duplicated.
+        """
+        cohort, _run_row = self._find_run(run_id)
+        counts: dict[CellKey, tuple[int, int]] = {}
+        for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
+            if str(row["stage"]) != stage:
+                continue
+            counts[CellKey(str(row["submission_id"]), str(row["criterion_id"]))] = (
+                int(row["terminal"] or 0), int(row["total"] or 0)
+            )
+        return counts
 
     def ready_cells(self, run_id: str, hook: str) -> tuple["CellKey", ...]:
         """The cells ready for one composition hook (`FR-ORCH-29`), in ledger order.

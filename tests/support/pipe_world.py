@@ -39,18 +39,25 @@ corpus.
 
 from __future__ import annotations
 
+import json
 import random
+import re
 import shutil
+import os
 import uuid
 from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
-from aeh.prov import FixtureMissingError, RecordedFixtureProvider
+from aeh.prov import Completion, FixtureMissingError, RecordedFixtureProvider
+from aeh.conf import ModelRef
+from aeh.orch import ESCALATION_BUDGET_ENV
+from aeh.synth import LEVEL_L1, LEVEL_L2
 from harness.corpora import dev_pipe
 from harness.corpora.manifest import CORPUS_ROOT
 from tests.support.e2e_world import SynthWorld, _wrap_region
+from tests.support.extract_vocabulary import span_completion, verdict_completion
 
 #: The cohort and run the capture drives. Fixed rather than minted: the M-PIPE cases name
 #: cells by `(run, submission, criterion)` and a run id that moved per build would make
@@ -178,6 +185,14 @@ class PipeWorld(SynthWorld):
         # makes the corpus self-contained: a consumer that forgot would re-mint different ids
         # and miss every narrative recording, with nothing to say why. The run and work ids
         # minted later are free to vary, because nothing hashes them.
+        # The corpus is captured and replayed with the escalation budget raised, for the
+        # reason `CORPUS_ESCALATION_BUDGET` gives: at the shipped default M-ORCH defers this
+        # cohort's widened pairs and the run can never reach a pending count of zero.
+        monkeypatch = kwargs.get("monkeypatch")
+        if monkeypatch is not None:
+            monkeypatch.setenv(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET)
+        else:
+            os.environ[ESCALATION_BUDGET_ENV] = CORPUS_ESCALATION_BUDGET
         with pinned_uuid4():
             self._construct(data_dir, fixture_dir, **kwargs)
 
@@ -196,7 +211,7 @@ class PipeWorld(SynthWorld):
     def _make_provider(self, fixture_dir: Any) -> Any:
         """`JourneyProvider` while capturing; the strict replayer once the corpus exists."""
         if self.record_as_you_go:
-            return super()._make_provider(fixture_dir)
+            return CaptureProvider(self, fixture_dir)
         return StrictReplayProvider(fixture_dir)
 
     # -- the corpus seams ------------------------------------------------------------------------
@@ -350,22 +365,10 @@ class PipeWorld(SynthWorld):
 # --- the capture ----------------------------------------------------------------------------
 
 
-def drive_full_run(world: PipeWorld, *, monkeypatch: Any = None) -> None:
-    """One complete pass in §4.2.2's order — the same sequence journey 2 drives."""
-    world.build_run()
-    world.start_run()
-    world.drive_deterministic()
-    world.integrity_pass()
-    world.drive_extract()
-    world.drive_score()
-    world.integrity_pass(capture=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_score(include_escalations=True)
-    world.aggregate_walk(monkeypatch=monkeypatch)
-    world.drive_synthesis()
-    world.finalize()
-
-
+# `drive_full_run` stood here: the hand-rolled walk that drove this corpus before
+# `run_to_completion` existed. #364's technical notes retire it once M-PIPE lands, and
+# `drive_composed` is what every caller uses now — a second drive is a second place for
+# the pipeline to be wrong, and only one of them ships.
 def drive_second_run(world: PipeWorld, run: str, *, run_id: str | None = None,
                      monkeypatch: Any = None) -> str:
     """Drive a SECOND run over the same store, from the other two-run recording set.
@@ -393,7 +396,9 @@ def drive_second_run(world: PipeWorld, run: str, *, run_id: str | None = None,
     world.uniform_panel_ordinal = dev_pipe.TWO_RUN_ORDINALS[run]
     world.provider = StrictReplayProvider(two_run_dir(run))
     world.orchestrator = Orchestrator(world.store, provider=world.provider)
-    drive_full_run(world, monkeypatch=monkeypatch)
+    world.build_run()
+    world.start_run()
+    drive_composed(world)
     return world.run_id
 
 
@@ -436,7 +441,12 @@ def capture(destination: Path | None = None, *,
         staging = scratch / "recordings"
         world = PipeWorld(data_dir, staging,
                           uniform_panel_ordinal=uniform_panel_ordinal)
-        drive_full_run(world)
+        world.build_run()
+        world.start_run()
+        result = drive_composed(world)
+        assert result.status == "complete", (
+            f"the capture drive did not complete: status={result.status!r} "
+            f"reason={result.pause_reason!r}")
         world.store.close()
 
         written = sorted(staging.rglob("*.json"))
@@ -486,6 +496,200 @@ def replay_world(data_dir: Path, *, recordings: Path | None = None,
     return PipeWorld(data_dir, recordings or recordings_dir(), monkeypatch=monkeypatch,
                      record_as_you_go=False,
                      uniform_panel_ordinal=uniform_panel_ordinal)
+
+
+
+
+# --- capturing through the composed pipeline ------------------------------------------------
+
+#: The model identities the corpus is recorded against.
+#:
+#: They are declared HERE, by the corpus, rather than derived from `RunConfig` — because
+#: `RunConfig` has no field for an extractor or a synthesizer (`M-PIPE`'s module docstring,
+#: gap 2) and extension arms are not panel members (gap 3). A consumer replaying the corpus
+#: passes these to `run_to_completion`; `corpus_refs()` hands over the whole set so nobody has
+#: to reassemble it from three places and get one wrong.
+CORPUS_EXTRACTOR_BUILD = "vlm@sha256:e2e02-extract"
+CORPUS_SECOND_FAMILY_BUILD = "vlm@sha256:e2e02-extract-b"
+CORPUS_SYNTH_BUILD = "vlm@sha256:e2e02-synth"
+CORPUS_ESCALATION_ARMS = ("escalation-arm-4", "escalation-arm-5")
+
+#: The escalation budget the corpus is captured and replayed under.
+#:
+#: The shipped default is 0.3 and F-DEV-PIPE escalates four of its six judged cells, so at the
+#: default `M-ORCH` DEFERS the widened pairs and marks them provisional — the run's pending
+#: count never reaches zero and it cannot complete. That is the budget working as designed on a
+#: cohort too small to grow headroom, and the journeys raise it for the same reason. Raised
+#: here so the corpus contains its escalation calls at all: §4.4 requires them recorded.
+CORPUS_ESCALATION_BUDGET = "1.0"
+
+
+def _corpus_ref(role: str, build_id: str) -> Any:
+    return ModelRef(role=role, provider="local", build_id=build_id, quantization="q4")
+
+
+def corpus_refs() -> dict[str, Any]:
+    """Every model identity `run_to_completion` needs to replay this corpus, as keywords."""
+    return {
+        "extractor": _corpus_ref("extractor", CORPUS_EXTRACTOR_BUILD),
+        "second_family": _corpus_ref("extractor", CORPUS_SECOND_FAMILY_BUILD),
+        "synthesizer": _corpus_ref("synthesizer", CORPUS_SYNTH_BUILD),
+        "judge_refs": {
+            arm: _corpus_ref("judge", arm) for arm in CORPUS_ESCALATION_ARMS
+        },
+        "high_risk_criteria": dev_pipe.OPEN_CRITERION_IDS,
+    }
+
+
+class CaptureProvider:
+    """The model boundary while CAPTURING through the composed pipeline.
+
+    `JourneyProvider` cannot do this job. It answers a first sight of an unknown request only
+    for transcription and synthesis, because the hand-rolled drive pre-recorded every extract
+    and score reply immediately before dispatching it. `run_to_completion` pre-records nothing
+    — it hands units to the stage workers and the workers call the provider — so the capture
+    needs a boundary that can answer an extraction or a verdict *on demand*.
+
+    It answers from the corpus's own declarations, which is the same knowledge the old drive
+    used, reached differently: the cell is recovered from the REQUEST (`criterion_id: C1` in
+    the criterion field, `Page 1 of 1 - S1` in the submission block) instead of being known in
+    advance, and the reply is then the span set or the panel ordinal `dev_pipe` declares for
+    that cell. Nothing is invented here that the corpus does not already state.
+    """
+
+    _CRITERION = re.compile(r"criterion_id:\s*(\S+)")
+    _SUBMISSION = re.compile(r"Page\s+\d+\s+of\s+\d+\s+-\s+(\S+)")
+
+    def __init__(self, world: Any, fixture_dir: Any) -> None:
+        self._world = world
+        self._inner = RecordedFixtureProvider(fixture_dir=fixture_dir)
+        self._transcripts: dict[tuple[str, int], str] = {}
+        self.scripted_calls = 0
+        self.replayed_calls = 0
+
+    # -- the boundary --------------------------------------------------------------------
+
+    def stage_transcript(self, blob_hash: str, pages: dict[int, str]) -> None:
+        for page_no, text in pages.items():
+            self._transcripts[(blob_hash, int(page_no))] = text
+
+    def unavailable(self) -> bool:
+        return False
+
+    def estimate_cost(self, unit: Any) -> Decimal:
+        return Decimal("0.001")
+
+    def record(self, prompt: Any, model_ref: Any, params: Any, completion: Any) -> str:
+        return self._inner.record(prompt, model_ref, params, completion)
+
+    def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
+        try:
+            answer = self._inner.complete(prompt, model_ref, params)
+            self.replayed_calls += 1
+            return answer
+        except FixtureMissingError:
+            pass
+        fields = dict(prompt.fields)
+        completion = self._compose(fields, model_ref)
+        self._inner.record(prompt, model_ref, params, completion)
+        self.scripted_calls += 1
+        return completion
+
+    # -- composing one reply -------------------------------------------------------------
+
+    def _compose(self, fields: dict, model_ref: Any) -> Any:
+        role = getattr(model_ref, "role", "")
+        if "page_no" in fields:
+            key = (fields.get("source_blob_hash"), int(fields["page_no"]))
+            if key not in self._transcripts:
+                raise AssertionError(
+                    f"the capture staged no transcript for page {key[1]} of blob "
+                    f"{str(key[0])[:16]}")
+            return self._completion(self._transcripts[key], model_ref)
+        if fields.get("instruction", "").startswith("Decide whether"):
+            return self._completion("match", model_ref)
+        if fields.get("level") in (LEVEL_L1, LEVEL_L2):
+            return self._completion(_synth_reply(fields), model_ref)
+        if role == "extractor":
+            return self._extraction(fields, model_ref)
+        if role == "judge":
+            return self._verdict(fields, model_ref)
+        raise AssertionError(
+            f"the capture has no reply for a {role!r} request: fields {sorted(fields)[:6]}")
+
+    def _cell(self, fields: dict) -> tuple[str, str]:
+        """The (store submission id, criterion id) this request is about, from the request."""
+        criterion = self._CRITERION.search(fields.get("criterion", "") or "")
+        submission = self._SUBMISSION.search(fields.get("submission", "") or "")
+        if criterion is None or submission is None:
+            raise AssertionError(
+                "the capture cannot tell which cell a request is about: "
+                f"criterion={criterion}, submission={submission}")
+        corpus_id = submission.group(1)
+        index = 1 + next(
+            i for i, s in enumerate(self._world.cohort)
+            if s.submission_id == corpus_id
+        )
+        return self._world.sid_by_index[index], criterion.group(1)
+
+    def _extraction(self, fields: dict, model_ref: Any) -> Any:
+        sid, cid = self._cell(fields)
+        spans = self._world.spans_by_cell[(sid, cid)]
+        return span_completion(spans, build_id=model_ref.build_id)
+
+    def _verdict(self, fields: dict, model_ref: Any) -> Any:
+        sid, cid = self._cell(fields)
+        spans = self._world.spans_by_cell[(sid, cid)]
+        band = self._world._judge_band(sid, cid, judge=model_ref.build_id)
+        return verdict_completion(
+            band, 0.9, build_id=model_ref.build_id, cited_spans=spans)
+
+    @staticmethod
+    def _completion(text: str, model_ref: Any) -> Any:
+        return Completion(
+            text=text, tokens_in=10, tokens_out=5, latency_ms=1,
+            resolved_build=model_ref.build_id, cached_prefix_tokens=0, cost=None,
+        )
+
+
+def _synth_reply(fields: dict) -> str:
+    """The narrative reply, numeral-free so the score-claim ladder leaves it unflagged."""
+    if fields.get("level") == LEVEL_L1:
+        criteria = [c.strip() for c in fields.get("criteria", "").split(",") if c.strip()]
+        return json.dumps({
+            "narrative": (
+                "The response addresses the criteria the panel read, citing the work's own "
+                "words as evidence; where the work stops short, the narrative says so in the "
+                "same terms the criteria name."
+            ),
+            "citations": criteria,
+        })
+    return json.dumps({
+        "narrative": (
+            "The submission's questions are narrated above; the whole reads as one response "
+            "whose strengths and gaps the question narratives already state."
+        ),
+        "citations": [],
+    })
+
+
+def drive_composed(world: Any, **overrides: Any) -> Any:
+    """Drive the whole run through `M-PIPE` — the door this corpus exists to serve.
+
+    This replaces the hand-rolled walk for every purpose that matters. `#364`'s technical notes
+    say the walk goes once `run_to_completion` lands, and a corpus captured through a drive
+    nobody ships is a corpus keyed on requests the shipped composer never makes: the earlier
+    capture recorded its narratives under the journey baseline's escalate-everything panel,
+    and production escalates four of six cells, so two of three L1 prompts missed.
+    """
+    from aeh.pipeline import run_to_completion
+
+    keywords = corpus_refs()
+    keywords.update(overrides)
+    return run_to_completion(
+        world.store, world.run_id, provider=world.provider,
+        run_config=world.resolved, **keywords,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover - the capture entry point

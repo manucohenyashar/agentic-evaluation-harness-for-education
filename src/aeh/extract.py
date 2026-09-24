@@ -81,7 +81,14 @@ from aeh.ingest import (
     UNTRUSTED_CLOSE,
     UNTRUSTED_OPEN,
 )
-from aeh.ingest import STATEMENTS as INGEST_STATEMENTS
+# The module's OWN dict, not the shared `store.STATEMENTS` registry. Aliasing the shared
+# one here was an order-dependent defect: every module merges its dict into that registry,
+# `aeh.det` declares `select_document_head` with five columns and no `markdown`, and the
+# last importer won. A process whose first `aeh` import was `aeh.orch` got det's spelling
+# and extraction died far away at `head["markdown"]` with `IndexError: No item with that
+# key`, against a healthy store. Reading the owning module's dict makes the resolution
+# independent of import order.
+from aeh.ingest import INGEST_STATEMENTS
 from aeh.orch import (
     MAX_ATTEMPTS_ENV,
     ORCH_MAX_ATTEMPTS,

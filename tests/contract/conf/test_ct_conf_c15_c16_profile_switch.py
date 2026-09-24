@@ -114,7 +114,6 @@ def _write_config(tmp_path, file_extras):
     return path
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("row", sorted(ROWS))
 def test_tc_conf_c15_run_resolves_through_effective_config_with_the_environment_winning(
     tmp_data_dir, tmp_path, monkeypatch, row
@@ -152,7 +151,6 @@ def test_tc_conf_c15_run_resolves_through_effective_config_with_the_environment_
         )
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("row", sorted(ROWS))
 def test_tc_conf_c15_recover_resolves_through_effective_config_from_the_environment(
     tmp_data_dir, monkeypatch, row
@@ -200,7 +198,6 @@ def test_tc_conf_c15_serve_console_resolves_through_effective_config_exactly_onc
         store.close()
 
 
-@pytest.mark.writtenahead
 def test_tc_conf_c16_recover_never_rebinds_a_run_to_the_switched_profile(
     tmp_data_dir, monkeypatch
 ):
