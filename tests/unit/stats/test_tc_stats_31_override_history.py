@@ -186,23 +186,63 @@ def test_tc_stats_31_arm_2_a_population_below_the_minimum_is_no_data():
 
 
 @pytest.mark.writtenahead
-def test_tc_stats_31_arm_4_the_review_ranking_consumes_this_figure():
-    """Arm 4 — `FR-REVIEW-18`'s eighth input reads this object rather than staying `None`.
+def test_tc_stats_31_arm_4_the_review_ranking_consumes_this_figure(tmp_path):
+    """Arm 4 — `FR-REVIEW-18`'s eighth input reads this figure rather than staying `None`.
 
     **Red until #433.** `_ScoreRowContext` is constructed with `weights`, `models`,
     `boundary_deltas` and `knobs`, never with `override_rates`, so every store-backed row's
-    `historical_override_rate` is `None` and one of the eight ranking inputs is inert.
+    `historical_override_rate` is `None` whatever the history holds.
 
-    Asserted at the seam rather than through a ranked queue: the wiring is the fact in
-    question, and a rank comparison would also move if any of the other seven inputs changed.
+    **Asserted on the value the consumer sees, not on the source text.** An earlier draft of
+    this case grepped `aeh.review` for `"override_rates="` — byte-for-byte the same check as
+    the `WRITTEN_AHEAD_BLOCKERS` probe that gates it, so the gate and the test flipped together
+    and the test added nothing. It would also have gone green on `override_rates=None`. The
+    plan's oracle is what the ranking consumes, so that is what this reads: a real stored row,
+    built by the real loader, over a criterion whose admissible history is five labels with two
+    overrides. `0.4` is the figure `criterion_override_history` already returns for exactly
+    that population (arm 3), so the two agree by construction once the wire exists.
     """
-    import inspect
+    import aeh.agg  # noqa: F401 — the full migration chain (CLAUDE.md)
+    import aeh.det  # noqa: F401
+    import aeh.extract  # noqa: F401
+    import aeh.grade  # noqa: F401
+    import aeh.ingest  # noqa: F401
+    import aeh.integ  # noqa: F401
+    import aeh.judge  # noqa: F401
+    import aeh.orch  # noqa: F401
+    import aeh.pkg  # noqa: F401
+    import aeh.review  # noqa: F401
+    import aeh.synth  # noqa: F401
+    from aeh.review import _service_from_store
+    from aeh.store import open_store
+    from tests.support.grade_vocabulary import write_criterion_scores
+    from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
-    import aeh.review as review
+    data_dir = tmp_path / "data"
+    store = open_store(data_dir)
+    try:
+        _orchestrator, run_id, _version = seed_run(
+            store,
+            submissions=("S001",),
+            criteria=({"criterion_id": CRITERION, "kind": "open",
+                       "scoring_model": "atomic"},),
+        )
+        write_criterion_scores(
+            store.cohort(ORCH_COHORT_ID),
+            [("S001", CRITERION, "B1", 6.0, "provisional")],
+        )
+        service = _service_from_store(
+            store, cohort_ids=[ORCH_COHORT_ID], run_id=run_id,
+        )
+        row = next(
+            row for row in service._rows if str(row.criterion_id) == CRITERION
+        )
 
-    source = inspect.getsource(review)
-    assert "override_rates=" in source, (
-        "`aeh.review` never passes `override_rates=` to `_ScoreRowContext`, so "
-        "`_StoredScoreRow.historical_override_rate` is None on every store-backed row and "
-        "FR-REVIEW-18's eighth ranking input is inert (#433)"
-    )
+        assert row.historical_override_rate is not None, (
+            "`_StoredScoreRow.historical_override_rate` is None on a store-backed row, so "
+            "FR-REVIEW-18's eighth ranking input is inert: `_ScoreRowContext` is never "
+            "constructed with `override_rates` and nothing reads "
+            "`criterion_override_history` (#433)"
+        )
+    finally:
+        store.close()

@@ -103,13 +103,14 @@ def test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_rank
         run_id="run-1", budget_minutes=vocab.DEGRADED_BUDGET_MINUTES
     )
 
-    assert len(squeezed.shown) > 0, (
-        f"a {vocab.DEGRADED_BUDGET_MINUTES}-minute budget produced an empty queue. "
-        f"REVIEW_BLIND_RESERVE_MINUTES is "
-        f"{vocab.CONFIG_DEFAULTS['REVIEW_BLIND_RESERVE_MINUTES']} and FR-REVIEW-02 subtracts it "
-        "first, so a budget below the reserve has nothing left — but NFR-REVIEW-05 still "
-        "promises honest degradation at 5 minutes. The design settles neither; whichever way "
-        "this is resolved, an empty queue makes the ranking-rule assertion below vacuous."
+    assert len(squeezed.shown) == 1, (
+        f"a {vocab.DEGRADED_BUDGET_MINUTES}-minute budget showed {len(squeezed.shown)} "
+        f"entries, not the floor's one. REVIEW_BLIND_RESERVE_MINUTES is "
+        f"{vocab.CONFIG_DEFAULTS['REVIEW_BLIND_RESERVE_MINUTES']} and FR-REVIEW-02 subtracts "
+        "it first, so a budget at or below the reserve has nothing left to rank — and D-1 "
+        "settles what happens then: exactly one item, the top-ranked, with the rest stated in "
+        "the residual. Zero would make the ranking-rule assertion below vacuous; more than "
+        "one would mean the reserve was not subtracted."
     )
     assert len(squeezed.shown) < len(generous.shown), (
         f"a {vocab.DEGRADED_BUDGET_MINUTES}-minute budget showed {len(squeezed.shown)} items "
