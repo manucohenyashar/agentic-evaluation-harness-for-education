@@ -1304,6 +1304,29 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "--contracts-only --quiet",
         ("tests/contract/blast/test_tc_blast_rule.py::test_tc_blast_03_the_contracts_only_gate_fails_a_lost_clause_case_and_ci_runs_it",),
     ),
+    # TS-89 (#383), the two `TC-STATS-31` arms that need #433's D-5 decision. Both are about
+    # the same missing wiring, so they share one key: the override-rate figure has no declared
+    # population yet, nothing applies `REVIEW_OVERRIDE_MIN_N` (it and its knob are read into
+    # `_knobs()` and consumed nowhere), and `_ScoreRowContext` is never constructed with
+    # `override_rates`, so `_StoredScoreRow.historical_override_rate` is `None` on every
+    # store-backed row.
+    #
+    # Keyed on the CONSUMER wiring rather than on a symbol, because #433's decision may land
+    # the threshold on either side of the M-STATS/M-REVIEW boundary and no single name is
+    # guaranteed to appear. `override_rates=` as a keyword argument is: the parameter is
+    # declared (`override_rates:`) and never passed, so the string is absent today and present
+    # the moment the eighth input is wired, whichever population it ends up reading.
+    "#433 FR-REVIEW-18's eighth ranking input is wired (TS-89)": (
+        "command",
+        "python -c \"import pathlib,sys; sys.exit(0 if 'override_rates=' in "
+        "pathlib.Path('src/aeh/review.py').read_text(encoding='utf-8') else 1)\"",
+        (
+            "tests/unit/stats/test_tc_stats_31_override_history.py"
+            "::test_tc_stats_31_arm_2_a_population_below_the_minimum_is_no_data",
+            "tests/unit/stats/test_tc_stats_31_override_history.py"
+            "::test_tc_stats_31_arm_4_the_review_ranking_consumes_this_figure",
+        ),
+    ),
 }
 
 
