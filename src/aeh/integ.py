@@ -329,6 +329,27 @@ INTEG_STATEMENTS: dict[str, Statement] = {
         "INSERT OR REPLACE INTO run_metrics (run_id, metric, value, submission_id, "
         "criterion_id) VALUES (:run_id, :metric, :value, :submission_id, :criterion_id)"
     ),
+    # `#432`: the six per-cell rates in ONE statement. `_emit_metrics` issued six
+    # `upsert_metric` executes per verify and they were the single largest block of the
+    # gate's cost (0.694 s of 2.127 s over 456 calls). The rows are the same rows: same
+    # table, same columns, same REPLACE semantics, same six metric names in the same order
+    # — this is a change to how the writes are ISSUED, not to what is written
+    # (`CT-INTEG-04` pins the set).
+    #
+    # Six fixed tuples rather than an assembled VALUES list: `SEC-15`/`FR-STORE-08` forbids
+    # building SQL at runtime, so the arity is declared here and the parameters are keyword
+    # ones. A seventh signal is a new statement and a contract bump, which is the same
+    # property `INTEG_RATE_METRICS`' positional zip already gives.
+    "upsert_six_metrics": Statement(
+        "INSERT OR REPLACE INTO run_metrics (run_id, metric, value, submission_id, "
+        "criterion_id) VALUES "
+        "(:run_id, :metric_0, :value_0, :submission_id, :criterion_id), "
+        "(:run_id, :metric_1, :value_1, :submission_id, :criterion_id), "
+        "(:run_id, :metric_2, :value_2, :submission_id, :criterion_id), "
+        "(:run_id, :metric_3, :value_3, :submission_id, :criterion_id), "
+        "(:run_id, :metric_4, :value_4, :submission_id, :criterion_id), "
+        "(:run_id, :metric_5, :value_5, :submission_id, :criterion_id)"
+    ),
     "upsert_alert": Statement(
         "INSERT OR REPLACE INTO run_metrics (run_id, metric, value, submission_id, "
         "criterion_id) VALUES (:run_id, :metric, :value, :submission_id, :criterion_id)"
@@ -1138,17 +1159,24 @@ class IntegrityGate:
             "sufficiency_flag": 1.0 if sufficiency else 0.0,
             "extractor_disagreement": 1.0 if disagreement is True else 0.0,
         }
+        # `#432`: one execute for the six, not six. The zip is unchanged — the declared
+        # write set and the emission order still come from `INTEG_RATE_METRICS` paired
+        # positionally with `values` — and the parameters are named `metric_<i>`/`value_<i>`
+        # in that same order, so a reordered tuple still moves the rows it always moved.
+        parameters: dict[str, Any] = {
+            "run_id": run_id,
+            "submission_id": submission_id,
+            "criterion_id": criterion_id,
+        }
+        for index, (signal_name, metric_name) in enumerate(
+            zip(values, INTEG_RATE_METRICS)
+        ):
+            parameters[f"metric_{index}"] = metric_name
+            parameters[f"value_{index}"] = values[signal_name]
+
         durable = self._metrics_target()
         with durable.transaction() as tx:
-            for signal_name, metric_name in zip(values, INTEG_RATE_METRICS):
-                tx.execute(
-                    INTEG_STATEMENTS["upsert_metric"],
-                    run_id=run_id,
-                    metric=metric_name,
-                    value=values[signal_name],
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                )
+            tx.execute(INTEG_STATEMENTS["upsert_six_metrics"], **parameters)
             if failure_value > _alert_threshold():
                 tx.execute(
                     INTEG_STATEMENTS["upsert_alert"],
@@ -1164,34 +1192,15 @@ class IntegrityGate:
     def _own_unit_id(self, run_id: str, submission_id: str, criterion_id: str) -> str:
         return f"integ-unit-{run_id}-{submission_id}-{criterion_id}"
 
-    def _bump_retries(self, run_id: str, submission_id: str, criterion_id: str) -> None:
-        with self._handle.transaction() as tx:
-            tx.execute(
-                INTEG_STATEMENTS["bump_retries"],
-                run_id=run_id,
-                submission_id=submission_id,
-                criterion_id=criterion_id,
-                max_attempts=_retry_limit(),
-            )
-
-    def _enqueue_review(
-        self, submission_id: str, criterion_id: str, reason: str, run_id: str = ""
-    ) -> None:
-        """Queue one cell for a human, carrying the run it was flagged in.
-
-        `run_id` is `FR-REVIEW-20`'s column: a queue row that named no run made two runs
-        over one cohort share a queue, so a re-run's flags and the previous run's were the
-        same list to every reader."""
-        queue_id = f"integ-{reason}-{submission_id}-{criterion_id}"
-        with self._handle.transaction() as tx:
-            tx.execute(
-                INTEG_STATEMENTS["enqueue_review"],
-                queue_id=queue_id,
-                run_id=run_id,
-                submission_id=submission_id,
-                criterion_id=criterion_id,
-                reason=reason,
-            )
+    # `#432`: `_bump_retries` and `_enqueue_review` are gone. Each opened a transaction of
+    # its own for a single statement, and both are now `_bump()`/`_review()` inside
+    # `verify` — parameter builders that append to the cell's batch rather than writers.
+    # The statements (`bump_retries`, `enqueue_review`) are unchanged and still the only
+    # ones that touch those rows; what moved is the transaction boundary.
+    #
+    # `enqueue_review`'s `run_id` is still `FR-REVIEW-20`'s column and still carried: a
+    # queue row that named no run made two runs over one cohort share a queue, so a
+    # re-run's flags and the previous run's were the same list to every reader.
 
     # -- the verify ----------------------------------------------------------------------------------
 
@@ -1325,103 +1334,105 @@ class IntegrityGate:
         # `attempts` back and inserts two escalation units, so a bare repeat still wrote two
         # `work_unit` rows against a clause whose words are "writes no additional `work_unit`,
         # `review_queue` or `run_metrics` row".
+        # `#432`: every cohort-tier write this routing decision makes is COLLECTED here and
+        # issued in ONE transaction below. Eight transactions per verify became three (this
+        # one, the durable metrics flush, and `_record_routed`'s), and the routing's writes
+        # are now atomic with each other — a crash mid-route previously left the gate's own
+        # pending unit without the retry bump that belongs with it.
+        #
+        # The write SET is unchanged (`CT-INTEG-04`): same statements, same parameters, same
+        # order within the route. Only the transaction boundary moved.
+        writes: list[tuple[str, dict[str, Any]]] = []
+
+        def _own_unit(status: str) -> tuple[str, dict[str, Any]]:
+            return "insert_unit", {
+                "work_id": self._own_unit_id(run_id, submission_id, criterion_id),
+                "run_id": run_id,
+                "submission_id": submission_id,
+                "criterion_id": criterion_id,
+                "stage": "extract",
+                "status": status,
+                "attempts": 0,
+            }
+
+        def _bump() -> tuple[str, dict[str, Any]]:
+            return "bump_retries", {
+                "run_id": run_id,
+                "submission_id": submission_id,
+                "criterion_id": criterion_id,
+                "max_attempts": _retry_limit(),
+            }
+
+        def _review(reason: str) -> tuple[str, dict[str, Any]]:
+            return "enqueue_review", {
+                "queue_id": f"integ-{reason}-{submission_id}-{criterion_id}",
+                "run_id": run_id,
+                "submission_id": submission_id,
+                "criterion_id": criterion_id,
+                "reason": reason,
+            }
+
         if repeat:
             pass
         elif verified is False:
-            with self._handle.transaction() as tx:
-                tx.execute(
-                    INTEG_STATEMENTS["insert_unit"],
-                    work_id=self._own_unit_id(run_id, submission_id, criterion_id),
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                    stage="extract",
-                    status="pending",
-                    attempts=0,
-                )
-            self._bump_retries(run_id, submission_id, criterion_id)
+            writes.append(_own_unit("pending"))
+            writes.append(_bump())
             if present is False and citation:
-                self._enqueue_review(submission_id, criterion_id, "empty-evidence", run_id)
+                writes.append(_review("empty-evidence"))
         elif present is False and citation:
             # Shadowed under the locked signal semantics (an empty or faulted
             # span read already verified False); kept so the fail-closed route
             # survives any future relaxation of the verification signal.
-            with self._handle.transaction() as tx:
-                tx.execute(
-                    INTEG_STATEMENTS["insert_unit"],
-                    work_id=self._own_unit_id(run_id, submission_id, criterion_id),
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                    stage="extract",
-                    status="pending",
-                    attempts=0,
-                )
-            self._bump_retries(run_id, submission_id, criterion_id)
-            self._enqueue_review(submission_id, criterion_id, "empty-evidence", run_id)
+            writes.append(_own_unit("pending"))
+            writes.append(_bump())
+            writes.append(_review("empty-evidence"))
         elif sufficiency_input := _computed_insufficient(panel_flags):
-            with self._handle.transaction() as tx:
-                tx.execute(
-                    INTEG_STATEMENTS["insert_unit"],
-                    work_id=self._own_unit_id(run_id, submission_id, criterion_id),
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                    stage="extract",
-                    status="pending",
-                    attempts=0,
-                )
+            # Read BEFORE the insert, where it used to be read after it. The two agree:
+            # the insert adds this gate's own unit at `attempts = 0`, a MAX cannot be
+            # lowered by a 0, and the predicate below is `>= 1` — so the only case that
+            # differs is "no pending unit at all", which reads `None` before and `0` after
+            # and is False either way. Reading first is what lets the insert join the batch.
             pre_attempts = self._max_pending_attempts(run_id, submission_id, criterion_id)
-            self._bump_retries(run_id, submission_id, criterion_id)
+            writes.append(_own_unit("pending"))
+            writes.append(_bump())
             if pre_attempts is not None and pre_attempts >= 1:
                 # The repeat half: widen the criterion's score units — the
                 # escalation shape the ledger already knows how to express.
-                with self._handle.transaction() as tx:
-                    for ordinal in ("a", "b"):
-                        tx.execute(
-                            INTEG_STATEMENTS["insert_escalation_unit"],
-                            work_id=(
-                                f"integ-escalate-{run_id}-{submission_id}-"
-                                f"{criterion_id}-{ordinal}"
-                            ),
-                            run_id=run_id,
-                            submission_id=submission_id,
-                            criterion_id=criterion_id,
-                        )
+                for ordinal in ("a", "b"):
+                    writes.append(("insert_escalation_unit", {
+                        "work_id": (
+                            f"integ-escalate-{run_id}-{submission_id}-"
+                            f"{criterion_id}-{ordinal}"
+                        ),
+                        "run_id": run_id,
+                        "submission_id": submission_id,
+                        "criterion_id": criterion_id,
+                    }))
         elif ocr_risk:
-            self._enqueue_review(submission_id, criterion_id, "ocr-overlap-risk", run_id)
+            writes.append(_review("ocr-overlap-risk"))
         elif described and _described_routes_enabled():
             review_id = f"integ-review-{run_id}-{submission_id}-{criterion_id}"
             if crop_ref:
                 review_id = f"{review_id}-{crop_ref}"
-            with self._handle.transaction() as tx:
-                tx.execute(
-                    INTEG_STATEMENTS["insert_review_unit"],
-                    work_id=review_id,
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                )
-            self._enqueue_review(submission_id, criterion_id, "described-evidence", run_id)
+            writes.append(("insert_review_unit", {
+                "work_id": review_id,
+                "run_id": run_id,
+                "submission_id": submission_id,
+                "criterion_id": criterion_id,
+            }))
+            writes.append(_review("described-evidence"))
         else:
-            with self._handle.transaction() as tx:
-                tx.execute(
-                    INTEG_STATEMENTS["insert_unit"],
-                    work_id=self._own_unit_id(run_id, submission_id, criterion_id),
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                    stage="extract",
-                    status="done",
-                    attempts=0,
-                )
-                tx.execute(
-                    INTEG_STATEMENTS["mark_extract_done"],
-                    run_id=run_id,
-                    submission_id=submission_id,
-                    criterion_id=criterion_id,
-                )
+            writes.append(_own_unit("done"))
+            writes.append(("mark_extract_done", {
+                "run_id": run_id,
+                "submission_id": submission_id,
+                "criterion_id": criterion_id,
+            }))
 
+        if writes:
+            with self._handle.transaction() as tx:
+                for statement_key, parameters in writes:
+                    tx.execute(INTEG_STATEMENTS[statement_key], **parameters)
         # -- observability: the six per-cell rates, latest value wins --------------------------------
         failure_value = _failure_rate(raw, span_items, verified)
         self._emit_metrics(
