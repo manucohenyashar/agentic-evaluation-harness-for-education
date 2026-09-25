@@ -2116,8 +2116,15 @@ class ConsoleApp:
         grades: dict[str, GradeRecord] = {}
         window_open = self._review_windows.get(run_id) is not None
         if getattr(self._store, "data_dir", None) is not None:
-            with contextlib.suppress(Exception):  # the real effect is grade-domain
-                GradingService(self._store).finalize_batch(run_id, actor)
+            # `#398` (`FR-CONSOLE-34`): the suppressed second `finalize_batch` that stood here
+            # is gone. `perform("finalize batch", …)` above already calls M-GRADE's door and
+            # already reports a refusal rather than swallowing it, so this call finalized the
+            # same run a SECOND time per screen render — which is what made a double-clicked
+            # post change `run_metrics` when `FR-CONSOLE-02` says a replay writes nothing.
+            #
+            # `contextlib.suppress(Exception)` was the worse half: a refusal from the owning
+            # module became a screen that rendered as though the batch had settled. The
+            # console reports what the door did, and the door is called once.
             for row in self._read_cohort_files(_SELECT_GRADES, [], run_id=run_id):
                 sid = str(_row_get(row, "submission_id"))
                 record = GradeRecord(
