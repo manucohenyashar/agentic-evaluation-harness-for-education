@@ -619,22 +619,22 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # keyword parameters, and the module's reads still go through
     # `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
     #
-    #   1179  `upsert_six_metrics` — the six per-cell rates, one statement (was six)
-    #   1181  `upsert_alert` — the span-verification alert, above threshold only
-    #   1265  `_record_routed`'s `write_integrity_post` — #363 (FR-INTEG-10): the panel
+    #   1186  `upsert_six_metrics` — the six per-cell rates, one statement (was six)
+    #   1188  `upsert_alert` — the span-verification alert, above threshold only
+    #   1272  `_record_routed`'s `write_integrity_post` — #363 (FR-INTEG-10): the panel
     #         state this cell was routed on, as `cell_phase`'s `integrity_post` row, which
     #         is what makes a repeat `verify` route nothing across a process restart
-    #   1435  the batched routing loop — every `insert_unit` route, the escalation pair,
+    #   1442  the batched routing loop — every `insert_unit` route, the escalation pair,
     #         the review unit, `mark_extract_done`, `bump_retries` and `enqueue_review`,
     #         issued from one site inside one transaction
     #
     # The collapse is the point of #432 and not a loss of coverage: the loop's statements
     # are the same declared statements, chosen by key, and the write-set case
     # (`TC-INTEG-C16`/`CT-INTEG-04`) asserts what lands rather than where it was issued.
-    "aeh.integ:1179",
-    "aeh.integ:1181",
-    "aeh.integ:1265",
-    "aeh.integ:1435",
+    "aeh.integ:1186",
+    "aeh.integ:1188",
+    "aeh.integ:1272",
+    "aeh.integ:1442",
     # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
     # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
     # bootstrap insert the security suite's fixture surface makes before its

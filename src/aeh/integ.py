@@ -323,8 +323,15 @@ INTEG_STATEMENTS: dict[str, Statement] = {
         "stage, status, attempts, origin) VALUES (:work_id, :run_id, :submission_id, "
         ":criterion_id, 'score', 'pending', 0, 'escalation')"
     ),
-    # The six per-cell rates, latest value wins; the alert rides the same
-    # dimensioned surface so a fired alert names the cell it accuses.
+    # The per-cell rate write, latest value wins; the alert rides the same dimensioned
+    # surface so a fired alert names the cell it accuses.
+    #
+    # `#432`: no longer issued — `upsert_six_metrics` below writes all six rates in one
+    # statement. Kept declared rather than deleted because it is the single-row form of the
+    # same write, and `upsert_alert` is byte-identical to it: the pair documents that the
+    # alert and a rate are the same row shape on the same dimensioned surface, which is why
+    # a fired alert can name its cell at all. A future single-rate write belongs here rather
+    # than as a seventh tuple in the batched statement.
     "upsert_metric": Statement(
         "INSERT OR REPLACE INTO run_metrics (run_id, metric, value, submission_id, "
         "criterion_id) VALUES (:run_id, :metric, :value, :submission_id, :criterion_id)"
