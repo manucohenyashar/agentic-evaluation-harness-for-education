@@ -611,28 +611,30 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.grade:2656",
     "aeh.grade:2661",
     "aeh.grade:3144",
-    # The #73/#74 integ sites: the routing ladder's ledger writes (the four
-    # `insert_unit` routes, the escalation pair, the review unit, `mark_extract_done`)
-    # plus the shared `_bump_retries` / `_enqueue_review` helpers and the two rate
-    # emissions (`upsert_metric` in its six-signal loop, `upsert_alert` above
-    # threshold). All are INTEG_STATEMENTS with keyword parameters — the module writes
-    # only the declared signals-plus-routing surface (CT-INTEG-04's audit); its reads
-    # go through `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
-    # #363 (FR-INTEG-10): `_record_routed`'s write of the panel state this cell was
-    # routed on, as `cell_phase`'s `integrity_post` row. It is what makes a repeat
-    # `verify` over unchanged evidence route nothing across a process restart.
-    "aeh.integ:1144",
-    "aeh.integ:1153",
-    "aeh.integ:1169",
-    "aeh.integ:1187",
-    "aeh.integ:1256",
-    "aeh.integ:1332",
-    "aeh.integ:1350",
-    "aeh.integ:1364",
-    "aeh.integ:1381",
-    "aeh.integ:1398",
-    "aeh.integ:1408",
-    "aeh.integ:1418",
+    # The integ sites, **twelve until `#432` and four after it**. The module's write SET is
+    # unchanged (`CT-INTEG-04` pins it); what changed is that one `verify` now issues its
+    # cohort-tier routing writes from a single batched loop instead of from six separate
+    # `tx.execute` call sites scattered through the routing ladder, and its six rate
+    # emissions from one statement instead of six. All are still INTEG_STATEMENTS with
+    # keyword parameters, and the module's reads still go through
+    # `store.cohort(...).query()`, which is not a census site (FR-STORE-08).
+    #
+    #   1179  `upsert_six_metrics` — the six per-cell rates, one statement (was six)
+    #   1181  `upsert_alert` — the span-verification alert, above threshold only
+    #   1265  `_record_routed`'s `write_integrity_post` — #363 (FR-INTEG-10): the panel
+    #         state this cell was routed on, as `cell_phase`'s `integrity_post` row, which
+    #         is what makes a repeat `verify` route nothing across a process restart
+    #   1435  the batched routing loop — every `insert_unit` route, the escalation pair,
+    #         the review unit, `mark_extract_done`, `bump_retries` and `enqueue_review`,
+    #         issued from one site inside one transaction
+    #
+    # The collapse is the point of #432 and not a loss of coverage: the loop's statements
+    # are the same declared statements, chosen by key, and the write-set case
+    # (`TC-INTEG-C16`/`CT-INTEG-04`) asserts what lands rather than where it was issued.
+    "aeh.integ:1179",
+    "aeh.integ:1181",
+    "aeh.integ:1265",
+    "aeh.integ:1435",
     # The conform site is #133's: the fixture cohort's INSERT OR IGNORE on the
     # ephemeral store `ingest_one` opens, keyword-parameterized -- the same
     # bootstrap insert the security suite's fixture surface makes before its
