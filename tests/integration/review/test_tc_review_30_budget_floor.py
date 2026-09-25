@@ -52,10 +52,22 @@ import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
-from aeh.review import REVIEW_EST_SECONDS_ATOMIC, open_review
-from aeh.store import open_store
-from tests.support.grade_vocabulary import write_criterion_scores
+from aeh.pkg import GradePolicy, PackageCatalog
+from aeh.review import REVIEW_EST_SECONDS_ATOMIC, _service_from_store
+from aeh.store import Statement, open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+
+#: Written directly: `write_criterion_scores` leaves `band_spread` and every integrity signal
+#: NULL, so every row ranks identically and "the same first item at every budget" would hold by
+#: stable sort rather than by ranking — the ordering invariant would be true of a population
+#: where nothing is higher-ranked than anything else.
+_INSERT_SCORE = Statement(
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
+    "routing, state, band_spread, spans_verified, evidence_present, sufficiency_flag, "
+    "ocr_overlap_risk) VALUES (:run_id, :submission_id, :criterion_id, :band, 6.0, "
+    "'provisional', 'provisional_unreviewed', :band_spread, :spans_verified, 1, 0, "
+    ":ocr_overlap_risk)"
+)
 
 pytestmark = pytest.mark.integration
 
@@ -75,29 +87,47 @@ def budget_world(tmp_data_dir):
     """20 queued rows over one run, each with a distinct band so no signature group forms."""
     store = open_store(tmp_data_dir)
     try:
-        seed_run(store, submissions=SUBMISSIONS, criteria=CRITERIA)
-        write_criterion_scores(
-            store.cohort(ORCH_COHORT_ID),
-            [
-                (submission, "C1", f"B{index:03d}", 6.0, "provisional")
-                for index, submission in enumerate(SUBMISSIONS, start=1)
-            ],
+        _orchestrator, run_id, version = seed_run(
+            store, submissions=SUBMISSIONS, criteria=CRITERIA,
         )
+        catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
+        catalog.set_grade_policy(
+            version, GradePolicy(combination="weighted_sum", weights=(("C1", 2.5),)),
+        )
+        with store.cohort(ORCH_COHORT_ID).transaction() as tx:
+            for index, submission in enumerate(SUBMISSIONS):
+                # A distinct band keeps the rows ungrouped; a distinct adverse profile makes
+                # them rank distinctly, so the prefix property below is about the ranking.
+                tx.execute(
+                    _INSERT_SCORE,
+                    run_id=run_id, submission_id=submission, criterion_id="C1",
+                    band=f"B{index:03d}",
+                    band_spread=index % 4,
+                    spans_verified=0 if index % 3 == 0 else 1,
+                    ocr_overlap_risk=1 if index % 2 == 0 else 0,
+                )
     finally:
         store.close()
 
     def _service():
-        return open_review(
-            tmp_data_dir,
-            run_id=ORCH_COHORT_ID,
+        """A fresh run-scoped service and the store holding it open."""
+        opened = open_store(tmp_data_dir)
+        return opened, _service_from_store(
+            opened,
+            cohort_ids=[ORCH_COHORT_ID],
+            run_id=run_id,
             review_blind_reserve_minutes=RESERVE_MINUTES,
-        )
+        ), run_id
 
     return _service
 
 
 def _queue(service_factory, budget):
-    return service_factory().build_queue(ORCH_COHORT_ID, budget, record=False)
+    store, service, run_id = service_factory()
+    try:
+        return service.build_queue(run_id, budget, record=False)
+    finally:
+        store.close()
 
 
 def _shown_items(queue) -> int:
@@ -188,6 +218,17 @@ def test_tc_review_30_the_shown_prefix_is_in_the_same_order_at_every_budget(budg
     every count above and spends the teacher's last minute on the least valuable item in the
     queue. `NFR-REVIEW-05`: the fill takes what fits in rank order and never reorders.
     """
+    ranked = _queue(budget_world, 60)
+    values = [
+        float(member.expected_value)
+        for entry in ranked.shown
+        for member in (getattr(entry, "members", None) or (entry,))
+    ]
+    assert len(set(values)) > 1, (
+        f"every item ranks at {values[0]}, so 'the same first item at every budget' holds by "
+        "stable sort rather than by ranking and the invariant is degenerate"
+    )
+
     firsts = {}
     for budget in (60, 5, 4, 0.5):
         queue = _queue(budget_world, budget)
@@ -225,8 +266,13 @@ def test_tc_review_30_the_header_states_the_subtraction(budget_world):
         f"the build trace has no reserve stage: {sorted(events)}"
     )
     detail = events["reserve_blind_minutes"]
-    assert "5" in detail and ("0s" in detail or "0 " in detail), (
-        f"the reserve stage does not state the subtraction: {detail!r}"
+    assert f"{RESERVE_MINUTES} of {RESERVE_MINUTES}" in detail, (
+        f"the reserve stage does not state what was reserved out of what: {detail!r}. A bare "
+        f"'{RESERVE_MINUTES}' would match almost any rendering of this trace"
+    )
+    assert "0s" in detail, (
+        f"the reserve stage does not state that nothing is spendable: {detail!r} — which is "
+        "the number that explains why one item was shown"
     )
 
     stages = [event.name for event in queue.build_trace]

@@ -29,6 +29,7 @@ with position is the property that makes it the ranking's own figure.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -44,10 +45,9 @@ import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
-from aeh.pkg import PackageCatalog
-from aeh.review import open_review
+from aeh.pkg import GradePolicy, PackageCatalog
+from aeh.review import _service_from_store
 from aeh.store import Statement, open_store
-from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.integration
@@ -74,6 +74,19 @@ CRITERIA = (
     },
 )
 
+#: Written directly rather than through `write_criterion_scores`, which sets only
+#: `run_id, submission_id, criterion_id, band, points, routing, state` and leaves `band_spread`
+#: and every integrity signal NULL. Over such rows every ranking input resolves to its default,
+#: every row scores the same, and `rank_score` is `0.0` for all four — which made the ordering
+#: assertion below true of a constant. The rows here vary the inputs FR-REVIEW-18 ranks on.
+_INSERT_SCORE = Statement(
+    "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, points, "
+    "routing, state, band_spread, spans_verified, evidence_present, sufficiency_flag, "
+    "ocr_overlap_risk) VALUES (:run_id, :submission_id, :criterion_id, :band, :points, "
+    "'provisional', 'provisional_unreviewed', :band_spread, :spans_verified, 1, 0, "
+    ":ocr_overlap_risk)"
+)
+
 _QUEUE_ROWS = Statement(
     "SELECT queue_id, run_id, submission_id, criterion_id, rank_score, est_seconds, "
     "shown_at, action, new_band, new_points, acted_at FROM review_queue "
@@ -92,30 +105,44 @@ def queue_world(tmp_data_dir):
         catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
         for ordinal, band, points in BANDS:
             catalog.add_band(version, CRITERION, ordinal, band, points)
-        write_criterion_scores(
-            store.cohort(ORCH_COHORT_ID),
-            # A DISTINCT proposed band per row. `proposed_band` is the first of
-            # `SIGNATURE_COMPONENTS`, so identical bands collapse all four items into one
-            # `ReviewGroup` — the build would then show one entry covering four items and the
-            # per-row column assertions below would have one row to look at. Grouping at scale
-            # is TC-REVIEW-08's subject, not this case's.
-            [
-                (submission, CRITERION, band, points, "provisional")
-                for submission, (_ordinal, band, points) in zip(SUBMISSIONS, BANDS)
-            ],
+        catalog.set_grade_policy(
+            version,
+            GradePolicy(combination="weighted_sum", weights=((CRITERION, 2.5),)),
         )
+        with store.cohort(ORCH_COHORT_ID).transaction() as tx:
+            for index, (submission, (_ordinal, band, points)) in enumerate(
+                zip(SUBMISSIONS, BANDS)
+            ):
+                # A DISTINCT proposed band per row: `proposed_band` heads
+                # `SIGNATURE_COMPONENTS`, so identical bands collapse all four into one
+                # `ReviewGroup` and the per-row assertions would have one row to look at.
+                # Grouping at scale is TC-REVIEW-08's subject.
+                #
+                # And a DISTINCT adverse profile, so the four rank differently: without it
+                # every rank_score is 0.0 and "non-increasing" is true of a constant.
+                tx.execute(
+                    _INSERT_SCORE,
+                    run_id=run_id, submission_id=submission, criterion_id=CRITERION,
+                    band=band, points=points,
+                    band_spread=index,
+                    spans_verified=0 if index >= 2 else 1,
+                    ocr_overlap_risk=1 if index >= 1 else 0,
+                )
         yield tmp_data_dir, catalog, run_id
     finally:
         store.close()
 
 
 def _service(world):
-    tmp_data_dir, catalog, _run_id = world
-    # Loaded by COHORT, built by RUN — the two identifiers are different and the package
-    # resolution needs the run one (see TC-REVIEW-28).
-    return open_review(
-        tmp_data_dir,
-        run_id=ORCH_COHORT_ID,
+    """A run-scoped service. Not `open_review`, whose `run_id` parameter is really the cohort
+    id and which therefore serves whichever run is newest — see TC-REVIEW-25's `_service`,
+    which reports the defect in full."""
+    tmp_data_dir, catalog, run_id = world
+    store = open_store(tmp_data_dir)
+    return store, _service_from_store(
+        store,
+        cohort_ids=[ORCH_COHORT_ID],
+        run_id=run_id,
         catalog=catalog,
         review_blind_reserve_minutes=RESERVE_MINUTES,
     )
@@ -140,7 +167,8 @@ def test_tc_review_27_a_recorded_build_writes_the_build_columns(queue_world):
     statement changed, not that one figure was unavailable.
     """
     tmp_data_dir, _catalog, run_id = queue_world
-    queue = _service(queue_world).build_queue(run_id, BUDGET_MINUTES)
+    _store, service = _service(queue_world)
+    queue = service.build_queue(run_id, BUDGET_MINUTES)
 
     assert len(queue.shown) == ITEMS, (
         f"{len(queue.shown)} of {ITEMS} items shown; 5 spendable minutes fit six 45-second "
@@ -167,7 +195,8 @@ def test_tc_review_27_every_queue_row_names_its_run(queue_world):
     the second build overwrites the first's decisions.
     """
     tmp_data_dir, _catalog, run_id = queue_world
-    _service(queue_world).build_queue(run_id, BUDGET_MINUTES)
+    _store, service = _service(queue_world)
+    service.build_queue(run_id, BUDGET_MINUTES)
 
     rows = _queue_rows(tmp_data_dir)
     assert {row["run_id"] for row in rows} == {run_id}, (
@@ -175,27 +204,87 @@ def test_tc_review_27_every_queue_row_names_its_run(queue_world):
     )
 
 
-def test_tc_review_27_rank_score_does_not_increase_with_position(queue_world):
-    """The shown order is by descending `rank_score` — the column is the ranking's own figure.
+def test_tc_review_27_the_ranking_the_build_produced_is_non_increasing(queue_world):
+    """The shown order is by descending expected value, and the four rows score differently.
 
-    A constant, or a value recomputed at read time, satisfies "present" and tells the teacher
-    nothing about why an item is where it is.
+    **The plan asks this of the stored `rank_score` column; it is asserted on the build's own
+    figure instead, because the stored column is always `0.0` — a defect this case found.**
+
+    `_record_shown_rows` writes `rank_score=float(_expected_value(member, knobs))`, and
+    `member` is a `ReviewItem`. `ReviewItem` carries `expected_value` (computed at itemize time
+    from the `_StoredScoreRow`, correctly) but **none of the ranking inputs**: no
+    `criterion_weight`, no `panel_spread`, no `adverse_integrity_signals`. `_impact_of`
+    multiplies by `criterion_weight`, which `getattr` resolves to `0.0`, so the recomputation
+    is zero for every row. Measured on this fixture:
+
+        in-memory expected_value: [0.28704, 0.23148, 0.15741, 0.02778]
+        stored rank_score       : [0.0, 0.0, 0.0, 0.0]
+
+    That is exactly the divergence `FR-REVIEW-20` exists to end — the screen reading a figure
+    that disagrees with the service that computed it — reappearing inside the column meant to
+    close it. The one-line fix is to persist `member.expected_value` rather than recompute from
+    an object that has lost the inputs. #383 reports it; writing production code is
+    `/fix-issue`'s.
+
+    So this asserts the property the requirement is about, on the figure that carries it, and
+    the case above asserts the column is at least written. Both halves are needed: the
+    presence check alone passes over a dead column, and this alone says nothing about
+    persistence.
     """
-    tmp_data_dir, _catalog, run_id = queue_world
-    queue = _service(queue_world).build_queue(run_id, BUDGET_MINUTES)
+    _store, service = _service(queue_world)
+    _tmp, _catalog, run_id = queue_world
+    queue = service.build_queue(run_id, BUDGET_MINUTES)
 
-    shown_ids = [
-        str(getattr(member, "submission_id", ""))
+    values = [
+        float(member.expected_value)
         for entry in queue.shown
         for member in (getattr(entry, "members", None) or (entry,))
     ]
-    by_submission = {row["submission_id"]: row for row in _queue_rows(tmp_data_dir)}
-    scores = [float(by_submission[sid]["rank_score"]) for sid in shown_ids]
 
-    assert scores == sorted(scores, reverse=True), (
-        f"rank_score by shown position is {scores}, which is not non-increasing. The queue "
-        "fills in rank order, so the stored figure must agree with the order it produced"
+    assert len(values) == ITEMS, f"the build showed {len(values)} items"
+    assert len(set(values)) > 1, (
+        f"every shown item scored {values[0]}. A constant is what a ranking whose inputs all "
+        "resolve to their defaults looks like, and 'non-increasing' is trivially true of it"
     )
+    assert values == sorted(values, reverse=True), (
+        f"the shown order scores {values}, which is not non-increasing — the queue fills in "
+        "rank order, so the order and the figure must agree"
+    )
+
+
+def test_tc_review_27_the_stored_rank_score_does_not_yet_carry_the_ranking(queue_world):
+    """The defect above, pinned so the day it is fixed is visible rather than silent.
+
+    This asserts the **current** behaviour — every stored `rank_score` is `0.0` while the
+    build's own figures differ — and it is written to go RED when someone persists
+    `member.expected_value`. At that point delete this case and move the ordering assertion
+    above onto the stored column, which is where the plan wants it.
+
+    Pinned rather than left unwritten because an undocumented zero column is indistinguishable
+    from a column nobody has looked at, and this is the third store-scoping-shaped defect in
+    this module (see TC-REVIEW-25 on `open_review`).
+    """
+    tmp_data_dir, _catalog, run_id = queue_world
+    _store, service = _service(queue_world)
+    queue = service.build_queue(run_id, BUDGET_MINUTES)
+
+    built = {
+        str(member.submission_id): float(member.expected_value)
+        for entry in queue.shown
+        for member in (getattr(entry, "members", None) or (entry,))
+    }
+    stored = {
+        str(row["submission_id"]): float(row["rank_score"] or 0.0)
+        for row in _queue_rows(tmp_data_dir)
+    }
+
+    assert len(set(built.values())) > 1, "the build did not produce a varying ranking"
+    assert set(stored.values()) == {0.0}, (
+        f"the stored rank_score column now carries {sorted(set(stored.values()))} rather than "
+        "all zeros — the recompute-from-ReviewItem defect this case pins has been fixed. "
+        "Delete this case and assert the ordering on the stored column instead (FR-REVIEW-20)"
+    )
+    assert stored != built
 
 
 def test_tc_review_27_acting_records_the_action_on_the_items_own_row(queue_world):
@@ -207,7 +296,7 @@ def test_tc_review_27_acting_records_the_action_on_the_items_own_row(queue_world
     distinction between "reviewed" and "shown".
     """
     tmp_data_dir, _catalog, run_id = queue_world
-    service = _service(queue_world)
+    _store, service = _service(queue_world)
     queue = service.build_queue(run_id, BUDGET_MINUTES)
 
     entry = queue.shown[1]
@@ -243,33 +332,54 @@ def test_tc_review_27_acting_records_the_action_on_the_items_own_row(queue_world
 
 
 def test_tc_review_27_the_grade_and_integ_writers_name_the_run(queue_world):
-    """The other two `review_queue` producers carry `run_id` in their insert.
+    """The other two `review_queue` producers name `run_id` **in their INSERT column list**.
 
     `M-REVIEW` is no longer the table's only writer: `grade.py` enqueues a missing criterion
-    and `integ.py` enqueues an integrity route. A row from either without a run id reopens
-    the shared-queue hole from a module the review service never touches, so the column is
-    asserted in their statements rather than only in this module's.
+    and `integ.py` enqueues an integrity route. A row from either without a run id reopens the
+    shared-queue hole from a module the review service never touches.
+
+    The column list, not the statement text: `"run_id" in sql` is satisfied by a sub-select's
+    `WHERE run_id = …` on a statement that never writes the column, which is exactly the shape
+    a half-migrated writer takes. The list between `review_queue (` and the first `)` is what
+    the row actually gets.
+
+    **Idempotence is read off the conflict clause rather than driven.** The plan says "each
+    enqueues once"; driving M-GRADE's and M-INTEG's enqueue paths twice apiece is those
+    modules' own suites' work (`TC-GRADE-01`, `TC-INTEG-16`). What is checkable from here, and
+    what makes a second enqueue a no-op, is that each writer carries `OR REPLACE` or
+    `OR IGNORE` on a `queue_id` primary key — so the assertion is on that, and #383 notes the
+    behavioural half stays with the owning modules.
     """
     from aeh.grade import GRADE_STATEMENTS
     from aeh.integ import INTEG_STATEMENTS
 
     writers = {
-        f"grade:{name}": statement
+        f"grade:{name}": statement.sql
         for name, statement in GRADE_STATEMENTS.items()
         if "INSERT" in statement.sql.upper() and "review_queue" in statement.sql
     }
     writers.update({
-        f"integ:{name}": statement
+        f"integ:{name}": statement.sql
         for name, statement in INTEG_STATEMENTS.items()
         if "INSERT" in statement.sql.upper() and "review_queue" in statement.sql
     })
 
-    assert writers, (
-        "neither grade.py nor integ.py declares a review_queue insert; if the writers moved, "
-        "this case has to follow them (FR-REVIEW-20)"
+    assert len(writers) >= 2, (
+        f"expected a review_queue insert in each of grade.py and integ.py, found {writers}. "
+        "If the writers moved, this case has to follow them (FR-REVIEW-20)"
     )
-    missing = [name for name, statement in writers.items() if "run_id" not in statement.sql]
-    assert missing == [], (
-        f"these review_queue writers do not name run_id: {missing}. A queue row that belongs "
-        "to no run is shared by every run over the cohort"
-    )
+
+    for name, sql in sorted(writers.items()):
+        match = re.search(r"review_queue\s*\(([^)]*)\)", sql, re.IGNORECASE)
+        assert match, f"{name}: could not read the INSERT column list from {sql!r}"
+        columns = {column.strip() for column in match.group(1).split(",")}
+        assert "run_id" in columns, (
+            f"{name} writes columns {sorted(columns)} — no run_id. A queue row that belongs "
+            "to no run is shared by every run over the cohort, and the second build "
+            "overwrites the first's decisions"
+        )
+        assert "queue_id" in columns, f"{name} writes no queue_id: {sorted(columns)}"
+        assert re.search(r"INSERT\s+OR\s+(REPLACE|IGNORE)", sql, re.IGNORECASE), (
+            f"{name} is a bare INSERT, so a second enqueue of the same queue_id is a "
+            "constraint error rather than the no-op 'each enqueues once' requires"
+        )

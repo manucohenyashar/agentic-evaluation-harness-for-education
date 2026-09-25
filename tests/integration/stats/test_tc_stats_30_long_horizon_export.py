@@ -222,24 +222,28 @@ def test_tc_stats_30_the_export_writes_to_no_tier(export_world):
     )
 
 
-def test_tc_stats_30_stats_imports_no_columnar_engine():
-    """`stats.py` imports no Parquet or DuckDB reader.
+def _top_level_imports(source: str) -> set[str]:
+    """Every root package `source` imports, however it spells the import.
 
     Parsed rather than grepped: the module's own docstring explains what ADR-19 *replaced*, and
     a text search would report that explanation as the dependency it forbids. Only a real
     `import` or `from … import` statement counts.
     """
-    source = pathlib.Path(stats_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
-
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imported.update(alias.name.split(".")[0].lower() for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             imported.add(node.module.split(".")[0].lower())
+    return imported
 
-    offenders = sorted(imported & set(FORBIDDEN_ENGINES))
+
+def test_tc_stats_30_stats_imports_no_columnar_engine():
+    """`stats.py` imports no Parquet or DuckDB reader."""
+    source = pathlib.Path(stats_module.__file__).read_text(encoding="utf-8")
+
+    offenders = sorted(_top_level_imports(source) & set(FORBIDDEN_ENGINES))
     assert offenders == [], (
         f"aeh.stats imports {offenders}. ADR-19 chose JSON Lines so the archive can be read "
         "in five years by anything that reads a line; a columnar engine puts a "

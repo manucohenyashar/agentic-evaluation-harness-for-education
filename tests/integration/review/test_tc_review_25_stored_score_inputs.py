@@ -113,11 +113,18 @@ _INSERT_TOTAL = Statement(
 def sweep_world(tmp_data_dir):
     """Run R with both criteria scored, a second run RB holding a different spread.
 
-    `caps_fired` is left NULL on purpose. `adverse_signal_count` selects the two written
-    signals (`described_evidence`, `extractor_disagreement`) only for a row whose `caps_fired`
-    is recorded, because a NULL in them on an older row means "this column did not exist", not
-    "not measured". With `caps_fired` NULL the count is over the four recorded signals, which
-    is what makes the plan's "disagreement=NULL → not adverse" true.
+    `caps_fired` is left NULL on purpose, and the reason is narrower than the plan's wording
+    suggests. `adverse_signal_count` selects the two written signals (`described_evidence`,
+    `extractor_disagreement`) **only** for a row whose `caps_fired` is recorded, because a NULL
+    in them on an older row means "this column did not exist", not "not measured". So with
+    `caps_fired` NULL those two are **out of scope entirely** — the count is over the four
+    recorded signals.
+
+    That is not the same claim as the plan's "NULL is not adverse". *Inside* the selected
+    fields `None` IS adverse, fail-closed, as everywhere else in this system. The plan's row
+    reaches the right total for the scope reason rather than the polarity reason, and
+    `test_tc_review_25_a_null_inside_the_selected_fields_is_adverse` below pins the polarity
+    separately so neither reading is left to inference.
     """
     store = open_store(tmp_data_dir)
     try:
@@ -235,6 +242,41 @@ def test_tc_review_25_the_adverse_signal_count_excludes_an_unrecorded_null(sweep
         "spans_verified=0 and ocr_overlap_risk=1 are adverse, evidence_present=1 and "
         "sufficiency_flag=0 are not, and the two written signals are out of scope on a row "
         "with no caps_fired"
+    )
+
+
+def test_tc_review_25_a_null_inside_the_selected_fields_is_adverse(sweep_world):
+    """The polarity half, which the plan's row does not reach: in-scope `None` IS adverse.
+
+    The sweep row above gets its total of 2 because `caps_fired` is NULL and the two written
+    signals are out of scope — not because a NULL reads as favourable. Those are different
+    rules and they disagree the moment a row carries `caps_fired`, which every row
+    `write_score` writes does.
+
+    Asserted through `agg.adverse_signal_count` directly, over the same four recorded signals
+    with `sufficiency_flag` NULL: the count rises. An implementation that read NULL as "not
+    measured, so not adverse" would leave it flat, and every partially-measured cell would
+    rank as though it had passed every check it never ran.
+    """
+    from aeh.agg import adverse_signal_count
+
+    measured = {
+        "spans_verified": 1,
+        "evidence_present": 1,
+        "sufficiency_flag": 0,
+        "ocr_overlap_risk": 0,
+        "caps_fired": None,
+    }
+    assert adverse_signal_count(measured) == 0, (
+        f"a fully favourable row counted {adverse_signal_count(measured)} adverse signals"
+    )
+
+    unmeasured = {**measured, "sufficiency_flag": None}
+    assert adverse_signal_count(unmeasured) == 1, (
+        f"a NULL sufficiency_flag counted {adverse_signal_count(unmeasured)} adverse signals, "
+        "not 1. Inside the selected fields a NULL is adverse, fail-closed — reading it as "
+        "'not measured, so fine' ranks a partially-measured cell as though it passed every "
+        "check it never ran"
     )
 
 

@@ -47,7 +47,7 @@ import aeh.orch  # noqa: F401
 import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
-from aeh.review import ReviewError, _StoredScoreRow, open_review
+from aeh.review import ReviewError, _given, _StoredScoreRow, open_review
 from aeh.store import open_store
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
@@ -151,26 +151,64 @@ def test_tc_review_26_the_two_models_budget_different_amounts_of_time(review_wor
 
 
 def _returns_atomic_literal(function) -> list[int]:
-    """Lines in `function` that RETURN or assign the bare literal `"atomic"` as a fallback.
+    """Every place in `function` where the bare literal `"atomic"` could become the answer.
 
     Parsed, not grepped: `review.py` mentions `"atomic"` legitimately — it is a real scoring
     model, it keys `SCORING_MODEL_EST_SECONDS`, and the module's own comments explain the
-    default that was removed. Only a `Return` or an assignment of the bare constant counts,
-    which is the shape a reinstated fallback would take.
+    default that was removed. So only *value* positions count, and docstrings are skipped.
+
+    **Four shapes, not one.** An earlier draft matched only a `Return` or `Assign` whose value
+    was a bare `Constant`, and was therefore blind to the two shapes the member this scan
+    guards would actually take. `_StoredScoreRow.__init__` resolves the model as
+
+        model = _given(mapping, "scoring_model", default=lambda: facts.model_for(criterion_id))
+
+    so a reinstated fallback is `default="atomic"` (the `Assign`'s value is a `Call`, not a
+    constant) or `default=lambda: "atomic"` (a `Lambda` inside a keyword). Both were invisible.
+    Now any `Constant` equal to `"atomic"` appearing as a returned value, an assigned value, a
+    keyword argument, a lambda body, a `BoolOp` operand or an `IfExp` branch is reported.
     """
     # Dedented: `inspect.getsource` of a method returns it at class indentation, which is
     # an IndentationError to `ast.parse` on its own.
     tree = ast.parse(textwrap.dedent(inspect.getsource(function)))
+
+    docstrings = {
+        id(node.body[0].value)
+        for node in ast.walk(tree)
+        if isinstance(
+            node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        )
+        and node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+        and isinstance(node.body[0].value.value, str)
+    }
+
+    def _constants(node) -> list[ast.Constant]:
+        if node is None:
+            return []
+        return [
+            inner
+            for inner in ast.walk(node)
+            if isinstance(inner, ast.Constant)
+            and inner.value == "atomic"
+            and id(inner) not in docstrings
+        ]
+
     found: list[int] = []
     for node in ast.walk(tree):
-        value = None
+        candidates: list = []
         if isinstance(node, ast.Return):
-            value = node.value
+            candidates = _constants(node.value)
         elif isinstance(node, ast.Assign):
-            value = node.value
-        if isinstance(value, ast.Constant) and value.value == "atomic":
-            found.append(node.lineno)
-    return found
+            candidates = _constants(node.value)
+        elif isinstance(node, ast.keyword):
+            candidates = _constants(node.value)
+        elif isinstance(node, ast.Lambda):
+            candidates = _constants(node.body)
+        for constant in candidates:
+            found.append(constant.lineno)
+    return sorted(set(found))
 
 
 @pytest.mark.parametrize(
@@ -193,21 +231,40 @@ def test_tc_review_26_the_store_form_never_falls_back_to_atomic(member):
     )
 
 
-def test_tc_review_26_the_atomic_scan_recognises_the_fallback_it_forbids():
-    """The scan's own control — it matches the shape a reinstated fallback would take.
+def _reinstated_by_return(criterion_id):  # pragma: no cover — parsed, never called
+    declared: dict = {}
+    if criterion_id in declared:
+        return declared[criterion_id]
+    return "atomic"
+
+
+def _reinstated_by_default_keyword(mapping, criterion_id):  # pragma: no cover — parsed
+    """The shape `_StoredScoreRow.__init__` would actually take."""
+    model = _given(mapping, "scoring_model", default="atomic")
+    return model
+
+
+def _reinstated_by_default_lambda(mapping, criterion_id):  # pragma: no cover — parsed
+    """The shape it would take while keeping the existing `default=lambda:` idiom."""
+    model = _given(mapping, "scoring_model", default=lambda: "atomic")
+    return model
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    (_reinstated_by_return, _reinstated_by_default_keyword, _reinstated_by_default_lambda),
+    ids=("bare-return", "default-keyword", "default-lambda"),
+)
+def test_tc_review_26_the_atomic_scan_recognises_every_fallback_shape(candidate):
+    """The scan's control, over all three shapes a reinstated fallback could take.
 
     Exercised through `_returns_atomic_literal` itself rather than a re-implementation, so a
-    scan that silently stopped matching would fail here rather than leave the two cases above
-    passing over nothing.
+    scan that stopped matching fails here rather than leaving the cases above passing over
+    nothing. The two `default=` shapes are the ones that matter: the member the scan guards
+    resolves its model through `_given(..., default=...)`, so those — not a bare `return` —
+    are how the guess would come back.
     """
-
-    def reinstated(criterion_id):  # pragma: no cover — parsed, never called
-        declared = {}
-        if criterion_id in declared:
-            return declared[criterion_id]
-        return "atomic"
-
-    assert _returns_atomic_literal(reinstated), (
-        "the scan does not recognise a plain `return \"atomic\"` fallback, so the two cases "
+    assert _returns_atomic_literal(candidate), (
+        f"the scan does not recognise {candidate.__name__}'s shape, so the store-form cases "
         "above are passing over a pattern they cannot see"
     )

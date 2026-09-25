@@ -12,9 +12,17 @@ the moment the label is written.
 **Why the distance is recorded rather than derived later.** A string comparison cannot say how
 far a teacher moved a band: `"proficient"` and `"developing"` are two names, and only the
 package's ordinals know they are adjacent. `agreed` is recorded beside it for the opposite
-reason — it needs no scale, so it survives on a store with no package behind it, and it is the
-figure `FR-STATS-24` counts. Six consumers re-deriving either one is six chances to disagree
-about what a NULL band means.
+reason — it needs no scale, so it survives on a store with no package behind it.
+
+**A finding: `agreed` is not the figure `FR-STATS-24` counts, though `review.py` says it is.**
+`_label_judgement_columns`' docstring calls `agreed` "what keeps `FR-STATS-24`'s override count
+computable on a store with no package behind it". It is not:
+`stats.criterion_override_history` counts `getattr(label, "origin", None) == "override"` and
+never reads `agreed` at all. So a label whose teacher moved the band is `agreed = 0` here and
+is invisible to the override history unless its `origin` also says `override`. The two columns
+are one requirement recorded twice under different rules, which is the shape D-5 exists to
+prevent. #383 reports it; `TC-STATS-31` builds its population with `origin=`, so the two files
+in this change straddle the inconsistency deliberately rather than each assuming its own half.
 
 **Nothing defaults to a flattering value.** A `band_distance` the scale cannot supply is
 `None`, never `0` — a zero would read as "the teacher agreed" about a judgement the writer
@@ -31,8 +39,10 @@ asserted; the `'lab'` arm is reported by #383 as a gap between `FR-REVIEW-21`'s 
 `M-PKG`'s schema, not faked with a hand-written column.
 
 **Isolation: rung 2** — a real store, a real package with a real band scale, and the service
-route (`act`), which is the only route that populates these columns: the durable collection
-route writes them all `None` deliberately, because it carries no run and therefore no package.
+route (`act`), which is the only route that populates the package-derived columns. The durable
+collection route writes those five as `None` deliberately, because it carries no run and
+therefore no package; it still computes `agreed` (two band ids are equal or they are not) and
+sets `recorded_at` from the label's timestamp.
 """
 
 from __future__ import annotations
@@ -258,11 +268,3 @@ def test_tc_review_28_no_package_schema_can_declare_a_population_scope(label_wor
         "scope, TC-REVIEW-28's 'lab' arm is now expressible and belongs in this file — "
         "replace this case with it (#383 reported the gap)"
     )
-
-    store = open_store(label_world[0])
-    try:
-        catalog = PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch")
-        version = catalog.criteria
-        assert callable(version)
-    finally:
-        store.close()
