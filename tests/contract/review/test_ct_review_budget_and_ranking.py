@@ -86,6 +86,14 @@ def test_tc_review_c01_a_five_minute_budget_shows_fewer_items_with_the_same_rank
     satisfies "fewer items and a larger residual" **vacuously**, and this case would then pass
     while asserting nothing about the ranking rule — which is the half the clause is about.
     Reported as a finding on the PR.
+
+    **Settled by D-1, and re-specified accordingly** (gap-fix test plan §5.0, `TS-89`/#383).
+    The collision described above is now decided rather than open: the floor of one is the
+    rule, and this arm asserts it. The full boundary table — reserve 5 against budgets 60, 5,
+    4 and 0.5, with the residual and the ordering invariant at each — belongs to
+    `TC-REVIEW-30` (`tests/integration/review/test_tc_review_30_budget_floor.py`), which
+    passes the reserve explicitly instead of colliding with the module default. This case
+    keeps the one arm and defers the sweep, which is what §5.0 licenses changing here.
     """
     build_review = require(REVIEW_MODULE, "build_review", issue="#108")
     service = build_review(scores=broken.flagged_population(60))
