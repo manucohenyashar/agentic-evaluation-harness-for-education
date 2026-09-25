@@ -68,6 +68,18 @@ PROV12_METRIC_NAMES = (
     "cache_hit_rate",
 )
 
+#: `FR-ORCH-33` re-specifies this case (gap-fix test plan §5.0, line 390: "the metric list
+#: gains `estimated_cost`, `cost_currency`, `retention_setting`, `resolved_builds` (JSON list)
+#: and `wall_clock_ms`"). These two are unconditional — every flushed run has a wall clock, and
+#: a run that reached a provider resolved a build — so they are pinned here by EXACT name, the
+#: way FR-PROV-12's six are. The other three are present only when the run's frozen snapshot
+#: carries their source (a cost estimate, a currency, a retention setting), so `TC-ORCH-46`
+#: builds a run that supplies all three and pins the full five; OBS-15 traces there.
+FR_ORCH_33_METRIC_NAMES = (
+    "wall_clock_ms",
+    "resolved_builds",
+)
+
 #: Every CT-ORCH-20 concept, as (concept label, name tokens that satisfy it).
 #: A concept with NO matching metric name fails presence; the countable ones
 #: are value-checked against hand counts below.
@@ -226,6 +238,13 @@ def test_tc_orch_35_run_metrics_carries_every_ct_orch_20_signal(tmp_data_dir):
             f"{missing_exact} — the provider's counters persist under these "
             "exact names (CT-PROV-11, CT-ORCH-20); present: "
             f"{sorted(metrics)}"
+        )
+        # Presence, exact names — FR-ORCH-33's additions (§5.0's re-specification).
+        missing_added = [n for n in FR_ORCH_33_METRIC_NAMES if n not in metrics]
+        assert not missing_added, (
+            f"run_metrics is missing FR-ORCH-33's added name(s) {missing_added}. "
+            "M-STATS and the console read these rows by key, so a metric under a "
+            f"different name is a metric gone (OBS-15); present: {sorted(metrics)}"
         )
         # Presence, per concept (name-agnostic; exact strings reconcile).
         for label, tokens in CONCEPTS:
