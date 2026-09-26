@@ -118,7 +118,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.pkg` owns Package's last migration — #373's `pkg_validation_baseline`, 12; #369's
 `pkg_criterion_evaluation_mode` was 11 — and
 `aeh.det`'s `det_selection_policy_columns` is 10),
-`aeh.ingest` owns Cohort's last migration (#373's `ingest_region_question_owner`, 27),
+`aeh.judge` owns Cohort's last migration (#448's `judge_verdict_engine`, 29) and the one before it
+(#448's `judge_decision_prescreen`, 28),
+`aeh.ingest` the one before that (#373's `ingest_region_question_owner`, 27),
 `aeh.review` the one before it (#367's `review_queue_columns`, 26),
 `aeh.integ` the one before it (#363's `integ_gate_reads_and_panel_state`, 25),
 `aeh.orch` the one before it (#362's `orch_cell_phase`, 24),

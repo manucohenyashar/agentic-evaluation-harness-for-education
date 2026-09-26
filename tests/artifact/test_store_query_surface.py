@@ -361,10 +361,13 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statements are the same three. Re-read from the walker, never hand-unioned.)
     # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
     # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
-    "aeh.judge:2287",
-    "aeh.judge:2329",
-    "aeh.judge:2334",
-    "aeh.judge:2344",
+    "aeh.judge:2523",
+    "aeh.judge:2565",
+    "aeh.judge:2570",
+    "aeh.judge:2580",
+    # #448 (Jev design delta FR-JUDGE-34): the decision-seat pre-screen row, one declared
+    # JUDGE_STATEMENTS["insert_prescreen"] with keyword parameters, INSERT OR IGNORE on the work id.
+    "aeh.judge:2396",
     # The ingest sites are #220's line numbers (the transcription strike loop
     # and the honest-quarantine catch shifted the module; every statement
     # verified unchanged against the prior baseline, the tripwire diff being
@@ -520,8 +523,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1989",
-    "aeh.store:2784",
+    "aeh.store:1997",
+    "aeh.store:2792",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write

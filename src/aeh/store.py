@@ -1478,7 +1478,7 @@ def current_schema_version(tier: Tier) -> int:
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 12,
-    Tier.COHORT: 27,
+    Tier.COHORT: 29,
     Tier.DURABLE: 11,
 }
 
@@ -1593,6 +1593,8 @@ _PURGE_PRECONDITIONS: tuple[tuple[str, str], ...] = (
 #: every token-carrying cohort's purge aborted at COMMIT with a raw `IntegrityError` (#225).
 _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "review_queue", "narrative", "submission_grade", "criterion_score", "verdict",
+    # #448 (FR-JUDGE-34): the decision-seat pre-screen rows, run state keyed on the work id.
+    "decision_prescreen",
     "evidence", "work_unit", "escalation_request", "circuit_breaker", "run_control",
     # #362's per-cell composition phases: swept before `run`, like every other run-scoped
     # table, so the FK graph is walked child-first.
@@ -1612,6 +1614,9 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # restarted pipeline to skip a cell whose evidence is gone.
     "cell_phase": Statement("DELETE FROM cell_phase"),
     "verdict": Statement("DELETE FROM verdict"),
+    # #448 (FR-JUDGE-34): the decision-seat pre-screen rows — engine answers about a
+    # student's work (probabilities, cited-span labels) — die with the cohort like the verdicts.
+    "decision_prescreen": Statement("DELETE FROM decision_prescreen"),
     "evidence": Statement("DELETE FROM evidence"),
     "work_unit": Statement("DELETE FROM work_unit"),
     # #60's escalation bookkeeping: the queue's request rows and the breaker latch
@@ -1676,6 +1681,9 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     "submission_grade": Statement("SELECT * FROM submission_grade"),
     "criterion_score": Statement("SELECT * FROM criterion_score"),
     "verdict": Statement("SELECT * FROM verdict"),
+    # #448: no blob references (probabilities, labels, a build id), registered so a column a
+    # later migration adds is read by the same walk without an edit here.
+    "decision_prescreen": Statement("SELECT * FROM decision_prescreen"),
     "evidence": Statement("SELECT * FROM evidence"),
     "work_unit": Statement("SELECT * FROM work_unit"),
     # #60's escalation bookkeeping: neither table carries blob references (request

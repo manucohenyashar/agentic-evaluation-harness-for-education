@@ -204,6 +204,7 @@ import os
 import random
 import re
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any
 
 from aeh.extract import document_bytes
@@ -358,6 +359,55 @@ TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
 ))
 
 
+
+#: Tier C, migration 28 (Jev design delta FR-JUDGE-34): one pre-screen row per decision-seat unit.
+#: Written before the verdict (or the LLM fallback), keyed on the work id, so a redelivered unit
+#: reuses it and never samples the decision engine twice (FR-JUDGE-33). No points column.
+_JUDGE_DECISION_PRESCREEN: tuple[Statement, ...] = (
+    Statement(
+        """
+        CREATE TABLE decision_prescreen (
+            work_id            TEXT PRIMARY KEY,
+            run_id             TEXT NOT NULL,
+            submission_id      TEXT NOT NULL,
+            criterion_id       TEXT NOT NULL,
+            engine_build       TEXT NOT NULL,
+            outcome            TEXT NOT NULL CHECK (outcome IN
+                                   ('accepted', 'below_gate', 'ineligible', 'rejected', 'malformed')),
+            reason             TEXT,
+            gate_confidence    REAL,
+            band_confidence    REAL,
+            sufficiency_p      REAL,
+            argmax_band        TEXT,
+            band_probabilities TEXT,
+            band_score         REAL,
+            cite_probabilities TEXT,
+            threshold          REAL NOT NULL,
+            tokens_in          INTEGER,
+            latency_ms         INTEGER,
+            cost               TEXT
+        )
+        """
+    ),
+    Statement("CREATE INDEX idx_prescreen_run ON decision_prescreen (run_id, criterion_id)"),
+)
+
+#: Tier C, migration 29 (FR-JUDGE-35): verdict provenance. NULL on a pre-delta row reads `llm`.
+_JUDGE_VERDICT_ENGINE: tuple[Statement, ...] = (
+    Statement(
+        "ALTER TABLE verdict ADD COLUMN scoring_engine TEXT "
+        "CHECK (scoring_engine IN ('llm', 'decision'))"
+    ),
+    Statement("ALTER TABLE verdict ADD COLUMN engine_build TEXT"),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (
+        Migration(version=28, name="judge_decision_prescreen", statements=_JUDGE_DECISION_PRESCREEN),
+        Migration(version=29, name="judge_verdict_engine", statements=_JUDGE_VERDICT_ENGINE),
+    ), key=lambda m: m.version
+))
+
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
 #
 # Write ownership (CT-JUDGE-12): this dict holds the module's ENTIRE write surface —
@@ -387,15 +437,36 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
     "insert_verdict": Statement(
         "INSERT OR IGNORE INTO verdict (verdict_id, work_id, judge_id, band, "
         "band_ordinal, self_confidence, cited_spans, evidence_sufficient, uncited, "
-        "evidence_assessment, latency_ms) "
+        "evidence_assessment, latency_ms, scoring_engine, engine_build) "
         "VALUES (:verdict_id, :work_id, :judge_id, :band, :band_ordinal, "
         ":self_confidence, :cited_spans, :evidence_sufficient, :uncited, "
-        ":evidence_assessment, :latency_ms)"
+        ":evidence_assessment, :latency_ms, :scoring_engine, :engine_build)"
+    ),
+    # FR-JUDGE-33/34: the decision-seat pre-screen, read before any engine call and written
+    # once (INSERT OR IGNORE on the work id) before the verdict or the LLM fallback.
+    "select_prescreen": Statement(
+        "SELECT work_id, outcome, reason, engine_build, band_confidence, sufficiency_p, "
+        "band_probabilities, band_score, cite_probabilities, latency_ms, tokens_in "
+        "FROM decision_prescreen WHERE work_id = :work_id"
+    ),
+    "insert_prescreen": Statement(
+        "INSERT OR IGNORE INTO decision_prescreen (work_id, run_id, submission_id, "
+        "criterion_id, engine_build, outcome, reason, gate_confidence, band_confidence, "
+        "sufficiency_p, argmax_band, band_probabilities, band_score, cite_probabilities, "
+        "threshold, tokens_in, latency_ms, cost) VALUES (:work_id, :run_id, :submission_id, "
+        ":criterion_id, :engine_build, :outcome, :reason, :gate_confidence, :band_confidence, "
+        ":sufficiency_p, :argmax_band, :band_probabilities, :band_score, :cite_probabilities, "
+        ":threshold, :tokens_in, :latency_ms, :cost)"
+    ),
+    # FR-JUDGE-36: one run's pre-screen rows, for `decision_engine_metrics`.
+    "select_run_prescreens": Statement(
+        "SELECT criterion_id, outcome, reason, gate_confidence, latency_ms "
+        "FROM decision_prescreen WHERE run_id = :run_id ORDER BY work_id"
     ),
     # FR-JUDGE-18 / CT-JUDGE-20: one run's verdicts for one cell, in work_id order.
     "select_cell_verdicts": Statement(
         "SELECT v.work_id, v.judge_id, v.band, v.band_ordinal, v.cited_spans, "
-        "v.evidence_sufficient, v.uncited FROM verdict v "
+        "v.evidence_sufficient, v.uncited, v.scoring_engine FROM verdict v "
         "JOIN work_unit w ON w.work_id = v.work_id "
         "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
         "AND w.criterion_id = :criterion_id ORDER BY v.work_id"
@@ -755,6 +826,8 @@ class StoredVerdict:
     cited_spans: tuple[Any, ...]
     evidence_sufficient: bool
     uncited: bool
+    #: FR-JUDGE-35 / CT-JUDGE-24: `llm` or `decision`; a pre-delta row's NULL reads `llm`.
+    scoring_engine: str = "llm"
 
     @property
     def ordinal(self) -> int:
@@ -783,6 +856,7 @@ def verdicts_for(
             cited_spans=tuple(json.loads(row["cited_spans"])) if row["cited_spans"] else (),
             evidence_sufficient=bool(row["evidence_sufficient"]),
             uncited=bool(row["uncited"]),
+            scoring_engine=row["scoring_engine"] or "llm",
         )
         for row in rows
     )
@@ -2143,16 +2217,46 @@ class ScoringWorker:
     (`FR-JUDGE-16`).
     """
 
-    def __init__(self, store: Any = None, provider: Any = None, judge: Any = None) -> None:
+    def __init__(self, store: Any = None, provider: Any = None, judge: Any = None, *,
+                 decision_provider: Any = None, run_config: Any = None) -> None:
         self._store = store
         self._provider = provider
         self._judge = judge
+        #: Jev design delta FR-JUDGE-22: the decision provider and the frozen run config (its
+        #: engine and panel). With either absent, `dispatch` is byte-identical to today's.
+        self._decision_provider = decision_provider
+        self._run_config = run_config
 
     def assemble(self, unit: Any) -> ScoringRequest:
         """One unit in, one whitelist request out — pure, and exactly one parameter."""
         return assemble(unit, store=self._store)
 
     def dispatch(self, request: ScoringRequest, judge: Any) -> ScoringResult:
+        """One verdict for one unit (FR-JUDGE-22/31). On the decision seat, with an engine
+        configured, the decision engine pre-screens first and its answer is the verdict when
+        the gate passes; otherwise, and for every other unit, today's LLM path runs unchanged
+        (`_dispatch_llm`) — its request is byte-identical to engine-off (CT-JUDGE-22)."""
+        engine = getattr(self._run_config, "decision_engine", None)
+        prescreen_outcome: str | None = None
+        if (engine is not None and self._decision_provider is not None
+                and self._is_seat(judge)):
+            outcome = self._prescreen(request, engine, judge)
+            if isinstance(outcome, ScoringResult):
+                return outcome
+            prescreen_outcome = outcome
+        result = self._dispatch_llm(request, judge)
+        return dataclasses.replace(result, scoring_engine="llm",
+                                   engine_build=result.resolved_build,
+                                   prescreen_outcome=prescreen_outcome)
+
+    def _is_seat(self, judge: Any) -> bool:
+        """FR-JUDGE-23 from the arm being dispatched: the decision seat is the frozen
+        `RunConfig.panel[0]`. Equivalent to `is_decision_seat(unit, run_config)`, since the
+        judge passed here is the unit's arm."""
+        panel = getattr(self._run_config, "panel", ()) or ()
+        return bool(panel) and _judge_id_of(judge) == panel[0].build_id
+
+    def _dispatch_llm(self, request: ScoringRequest, judge: Any) -> ScoringResult:
         """Send one assembled request across the injected boundary and parse the reply.
 
         Temperature zero by default — judgment is not a sampling task — with the knob
@@ -2264,6 +2368,138 @@ class ScoringWorker:
             f"last refusal: {last_error}. No fallback verdict exists (NFR-JUDGE-05)."
         )
 
+
+    # -- the decision-seat pre-screen (FR-JUDGE-30…34) -------------------------------------------
+
+    def _unit_keys(self, work_id: str) -> dict[str, str]:
+        cohort = _find_cohort(self._store, work_id)
+        row = cohort.query(JUDGE_STATEMENTS["select_work_unit"], work_id=work_id)[0]
+        return {"run_id": row["run_id"], "submission_id": row["submission_id"],
+                "criterion_id": row["criterion_id"]}
+
+    def _write_prescreen(self, request: ScoringRequest, engine: Any, outcome: str, *,
+                         reason: str | None = None, decision: Any = None,
+                         gate: float | None = None, argmax_band: str | None = None) -> None:
+        """One row per decision-seat unit, INSERT OR IGNORE on the work id, in its own
+        transaction before the LLM path or `persist` (FR-JUDGE-34). A worker with no store
+        (rung-0 callers) records nothing."""
+        if self._store is None:
+            return
+        keys = self._unit_keys(request.work_id)
+        answers = getattr(decision, "answers", None) or {}
+        band = answers.get("band")
+        sufficiency = answers.get("evidence_sufficient")
+        cites = {key[len("cite_"):]: float(answer.p_true)
+                 for key, answer in answers.items() if key.startswith("cite_")}
+        cohort = _find_cohort(self._store, request.work_id)
+        with cohort.transaction() as tx:
+            tx.execute(
+                JUDGE_STATEMENTS["insert_prescreen"],
+                work_id=request.work_id,
+                run_id=keys["run_id"], submission_id=keys["submission_id"],
+                criterion_id=keys["criterion_id"],
+                engine_build=(decision.resolved_build if decision is not None else engine.model.build_id),
+                outcome=outcome, reason=reason,
+                gate_confidence=gate,
+                band_confidence=None if band is None else float(band.confidence),
+                sufficiency_p=None if sufficiency is None else float(sufficiency.p_true),
+                argmax_band=argmax_band,
+                band_probabilities=None if band is None else json.dumps(list(band.probabilities)),
+                band_score=None if band is None else float(band.score),
+                cite_probabilities=None if band is None else json.dumps(cites, sort_keys=True),
+                threshold=float(engine.confidence_threshold),
+                tokens_in=None if decision is None else int(decision.tokens_in),
+                latency_ms=None if decision is None else int(decision.latency_ms),
+                cost=None if decision is None or decision.cost is None else str(decision.cost),
+            )
+
+    def _stored_prescreen(self, work_id: str) -> Any:
+        if self._store is None:
+            return None
+        rows = _find_cohort(self._store, work_id).query(JUDGE_STATEMENTS["select_prescreen"], work_id=work_id)
+        return rows[0] if rows else None
+
+    @staticmethod
+    def _decision_from_row(row: Any) -> Any:
+        """Rebuild the accepted `Decision` from its stored pre-screen (FR-JUDGE-33), so a
+        redelivered unit reproduces the same verdict without calling the engine again."""
+        from types import MappingProxyType
+
+        from aeh.prov import Decision as _Decision, NoulAnswer, ScoreAnswer, derived_confidence
+
+        probabilities = tuple(float(p) for p in json.loads(row["band_probabilities"]))
+        p_suff = float(row["sufficiency_p"])
+        answers: dict[str, Any] = {
+            "band": ScoreAnswer(float(row["band_score"]), probabilities,
+                                float(row["band_confidence"]), "reported"),
+            "evidence_sufficient": NoulAnswer(p_suff, derived_confidence((p_suff, 1.0 - p_suff))),
+        }
+        for label, p in json.loads(row["cite_probabilities"] or "{}").items():
+            answers[f"cite_{label}"] = NoulAnswer(float(p), derived_confidence((float(p), 1.0 - float(p))))
+        return _Decision(MappingProxyType(answers), int(row["tokens_in"] or 0), 0,
+                         int(row["latency_ms"] or 0), row["engine_build"], None)
+
+    def _prescreen(self, request: ScoringRequest, engine: Any, judge: Any) -> "ScoringResult | str":
+        """The decision seat's pre-screen. Returns the decision-engine verdict when the gate
+        passes, else the outcome name (`ineligible`, `below_gate`, `rejected`, `malformed`)
+        for the LLM fallback to record. Engine outages (`RateLimitedError`,
+        `ProviderUnavailableError`, `BuildChangedError`) propagate: an outage pauses the run,
+        it is never a fallback (FR-JUDGE-32, CT-JUDGE-25)."""
+        from aeh.prov import DecisionRequestRejectedError
+
+        judge_id = _judge_id_of(judge)
+        stored = self._stored_prescreen(request.work_id)
+        if stored is not None:  # FR-JUDGE-33: one engine sample per unit, ever
+            if stored["outcome"] != "accepted":
+                return stored["outcome"]
+            outcome = gate_decision(self._decision_from_row(stored), request, engine, judge_id=judge_id)
+            if isinstance(outcome, Accepted):
+                return outcome.result
+            return "below_gate"
+        capabilities = self._decision_provider.decision_capabilities(engine.model)
+        eligibility = decision_eligibility(request, engine, capabilities)
+        if isinstance(eligibility, Ineligible):
+            self._write_prescreen(request, engine, "ineligible", reason=eligibility.reason)
+            return "ineligible"
+        from aeh.prov import DecisionRequestError
+
+        try:
+            decision_req = decision_request(request, engine)
+        except DecisionRequestError as error:
+            # Design §3.3 error handling: a request that cannot be built is a harness defect,
+            # a strike, surfaced as JudgmentError (the executor's strike path), never a fallback.
+            raise JudgmentError(f"the decision request for {request.work_id[:12]} cannot be built: {error}") from error
+        scan_decision_request(request, decision_req)
+        try:
+            decision = self._decision_provider.decide(decision_req, engine.model)
+        except DecisionRequestError as error:
+            raise JudgmentError(
+                f"the decision request for {request.work_id[:12]} exceeds the engine's declared "
+                f"limits: {error}") from error
+        except DecisionRequestRejectedError:
+            self._write_prescreen(request, engine, "rejected", reason="rejected")
+            return "rejected"
+        except MalformedResponseError:
+            self._write_prescreen(request, engine, "malformed", reason="malformed")
+            return "malformed"
+        outcome = gate_decision(decision, request, engine, judge_id=judge_id)
+        bands = _ordered_bands(request)
+        top = max(range(len(bands)), key=lambda i: decision.answers["band"].probabilities[i])
+        if isinstance(outcome, BelowGate):
+            self._write_prescreen(request, engine, "below_gate", reason=outcome.reason,
+                                  decision=decision, gate=outcome.gate, argmax_band=bands[top].band)
+            return "below_gate"
+        try:
+            # FR-JUDGE-30: cited spans must be the document's own bytes before the verdict exists.
+            _refuse_unverified_citations(outcome.result.cited_spans, request, self._store)
+        except MalformedResponseError:
+            self._write_prescreen(request, engine, "below_gate", reason="citation_unverified",
+                                  decision=decision, gate=outcome.gate, argmax_band=bands[top].band)
+            return "below_gate"
+        self._write_prescreen(request, engine, "accepted", decision=decision, gate=outcome.gate,
+                              argmax_band=outcome.result.band)
+        return outcome.result
+
     def _record_contract_violations(
         self, request: ScoringRequest, judge: Any, violations: int
     ) -> None:
@@ -2361,10 +2597,101 @@ class ScoringWorker:
                     uncited=int(bool(result.uncited)),
                     evidence_assessment=result.evidence_assessment,
                     latency_ms=result.latency_ms,
+                    # FR-JUDGE-35: provenance on every row this module writes.
+                    scoring_engine=getattr(result, "scoring_engine", "llm") or "llm",
+                    engine_build=getattr(result, "engine_build", None),
                 )
 
 
+
+# --- decision-engine metrics (FR-JUDGE-36, CT-JUDGE-28) -----------------------------------------
+
+FALLBACK_ALERT_RATE_ENV = "HARNESS_JEV_FALLBACK_ALERT_RATE"
+FALLBACK_ALERT_RATE_DEFAULT = 0.50
+ALERT_MIN_PRESCREENS_ENV = "HARNESS_JEV_ALERT_MIN_PRESCREENS"
+ALERT_MIN_PRESCREENS_DEFAULT = 50
+_FALLBACK_OUTCOMES = ("below_gate", "rejected", "malformed")
+
+
+@dataclass(frozen=True)
+class DecisionEngineMetrics:
+    """CT-JUDGE-28's names. `decision_prescreens` counts **every** pre-screen row, `ineligible`
+    included (design 1.6.1); `decision_fallback_rate` is (below_gate + rejected + malformed) /
+    prescreens. `per_criterion` holds the same figures keyed by criterion id."""
+
+    decision_prescreens: int
+    decision_accepted: int
+    decision_below_gate: int
+    decision_ineligible: int
+    decision_ineligible_reasons: Mapping[str, int]
+    decision_rejected: int
+    decision_malformed: int
+    decision_accepted_rate: float | None
+    decision_fallback_rate: float | None
+    decision_latency_p50_ms: float | None
+    decision_latency_p95_ms: float | None
+    decision_gate_histogram: tuple[int, ...]
+    decision_fallback_rate_high: bool
+    decision_requests_rejected: bool
+    per_criterion: Mapping[str, "DecisionEngineMetrics"] = dataclasses.field(default_factory=dict)
+
+
+def _percentile(values: list[float], q: float) -> float | None:
+    """Linear interpolation between closest ranks (numpy's default method)."""
+    if not values:
+        return None
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * q
+    low = math.floor(position)
+    high = math.ceil(position)
+    return ordered[low] + (ordered[high] - ordered[low]) * (position - low)
+
+
+def _metrics_of(rows: list[Any], alert_rate: float, alert_min: int) -> DecisionEngineMetrics:
+    count = len(rows)
+    by = {name: sum(1 for r in rows if r["outcome"] == name)
+          for name in ("accepted", "below_gate", "ineligible", "rejected", "malformed")}
+    reasons: dict[str, int] = {}
+    for r in rows:
+        if r["outcome"] == "ineligible" and r["reason"]:
+            reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
+    fallback = sum(by[name] for name in _FALLBACK_OUTCOMES)
+    histogram = [0] * 10
+    for r in rows:
+        if r["gate_confidence"] is not None:
+            histogram[min(9, int(float(r["gate_confidence"]) * 10))] += 1
+    latencies = [float(r["latency_ms"]) for r in rows if r["latency_ms"] is not None]
+    fallback_rate = fallback / count if count else None
+    return DecisionEngineMetrics(
+        decision_prescreens=count, decision_accepted=by["accepted"],
+        decision_below_gate=by["below_gate"], decision_ineligible=by["ineligible"],
+        decision_ineligible_reasons=reasons, decision_rejected=by["rejected"],
+        decision_malformed=by["malformed"],
+        decision_accepted_rate=by["accepted"] / count if count else None,
+        decision_fallback_rate=fallback_rate,
+        decision_latency_p50_ms=_percentile(latencies, 0.50),
+        decision_latency_p95_ms=_percentile(latencies, 0.95),
+        decision_gate_histogram=tuple(histogram),
+        decision_fallback_rate_high=bool(fallback_rate is not None and count >= alert_min
+                                         and fallback_rate > alert_rate),
+        decision_requests_rejected=by["rejected"] > 0,
+    )
+
+
+def decision_engine_metrics(handle: Any, run_id: str) -> DecisionEngineMetrics:
+    """FR-JUDGE-36: the run's decision-engine outcome mix, per criterion and overall, read from
+    the pre-screen rows (the only source; M-STATS reads it through here, never directly)."""
+    alert_rate = _env_float(FALLBACK_ALERT_RATE_ENV, FALLBACK_ALERT_RATE_DEFAULT, low=0.0, high=1.0)
+    alert_min = _env_int(ALERT_MIN_PRESCREENS_ENV, ALERT_MIN_PRESCREENS_DEFAULT)
+    rows = list(handle.query(JUDGE_STATEMENTS["select_run_prescreens"], run_id=run_id))
+    overall = _metrics_of(rows, alert_rate, alert_min)
+    criteria = sorted({r["criterion_id"] for r in rows})
+    per = {c: _metrics_of([r for r in rows if r["criterion_id"] == c], alert_rate, alert_min) for c in criteria}
+    return dataclasses.replace(overall, per_criterion=per)
+
 __all__ = [
+    "DecisionEngineMetrics",
+    "decision_engine_metrics",
     "Accepted",
     "BelowGate",
     "DECISION_ENGINE_INVENTORY",

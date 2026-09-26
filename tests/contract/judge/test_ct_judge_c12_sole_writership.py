@@ -326,7 +326,9 @@ def test_tc_judge_c12_no_write_path_to_the_forbidden_tables_statically():
     # migration statement, not a runtime write). Neither is student output — the clause's
     # subject is the grade, the evidence, the narrative and the package row, each asserted
     # by name above.
-    assert declared_tables == {"verdict", "run_metrics", "run_metrics_judged"}, (
+    # CT-JUDGE-12 as amended by the Jev design delta (CT-JUDGE v2.0): plus one
+    # `decision_prescreen` row per decision-seat unit (FR-JUDGE-34).
+    assert declared_tables == {"verdict", "run_metrics", "run_metrics_judged", "decision_prescreen"}, (
         f"aeh.judge's text declares write statements against {sorted(declared_tables)} "
         "— the module's whole write surface is its own verdict INSERT plus the "
         "shared mark_done (asserted byte-for-byte at rung 3 in this file's audit "
