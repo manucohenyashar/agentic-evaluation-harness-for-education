@@ -163,6 +163,7 @@ __all__ = [
     "ScoreQuestion",
     "decision_provider_for",
     "JevOpenRouterProvider",
+    "OpenJevLocalProvider",
     "decision_questions_document",
     "decision_request_key",
     "derived_confidence",
@@ -2058,7 +2059,6 @@ _FIXTURE_DECISION_CAPABILITIES = DecisionCapabilities(
 #: Decision provider names and the stories that ship them. Named so an unshipped one refuses
 #: with a reason rather than falling through to another backend (CT-PROV-21).
 _UNSHIPPED_DECISION_PROVIDERS = {
-    "openjev": "OpenJevLocalProvider (#443)",
     "openjev-small": "OpenJevSmallLocalProvider (#455)",
 }
 
@@ -2071,13 +2071,15 @@ def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvide
         return RecordedFixtureProvider(**seams)
     if name == "openrouter-jev":
         return JevOpenRouterProvider(**seams)
+    if name == "openjev":
+        return OpenJevLocalProvider(**seams)
     if name in _UNSHIPPED_DECISION_PROVIDERS:
         raise ConfigurationError(
             f"decision provider {name!r} is designed but not shipped yet: "
             f"{_UNSHIPPED_DECISION_PROVIDERS[name]}.")
     raise ConfigurationError(
         f"no decision provider is named {name!r}; the decision providers are "
-        f"{sorted(['fixture', 'openrouter-jev', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
+        f"{sorted(['fixture', 'openrouter-jev', 'openjev', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
 
 
 #: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.
@@ -2375,6 +2377,164 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
                 f"zero-retention routing unconfirmed for decision model(s): "
                 f"{'; '.join(r.build_id for r in unconfirmed)}. The run does not start (FR-PROV-28).")
         return RetentionReport(confirmed=tuple(confirmed), unconfirmed=())
+
+
+OPENJEV_BASE_URL_ENV = "HARNESS_OPENJEV_BASE_URL"
+DEFAULT_OPENJEV_BASE_URL = "http://127.0.0.1:3000"
+OPENJEV_MODEL_NAME_ENV = "HARNESS_OPENJEV_MODEL_NAME"
+DEFAULT_OPENJEV_MODEL_NAME = "openjev"
+OPENJEV_VLLM_URL_ENV = "HARNESS_OPENJEV_VLLM_URL"
+DEFAULT_OPENJEV_VLLM_URL = "http://127.0.0.1:8000/v1"
+OPENJEV_MAX_MODEL_LEN_ENV = "HARNESS_OPENJEV_MAX_MODEL_LEN"
+OPENJEV_ALLOW_REMOTE_ENV = "HARNESS_OPENJEV_ALLOW_REMOTE"
+OPENJEV_BUILD_PROBE_EVERY_ENV = "HARNESS_OPENJEV_BUILD_PROBE_EVERY"
+OPENJEV_TIMEOUT_S_ENV = "HARNESS_OPENJEV_TIMEOUT_S"
+#: OpenJev's published prompt limit (design §1.2) and per-pass option limit.
+OPENJEV_MAX_CONTEXT_TOKENS = 16_384
+OPENJEV_MAX_CHOICE_OPTIONS = 52
+
+
+def _url_is_loopback(url: str) -> bool:
+    """True only for `localhost` or a loopback IP literal. A look-alike host
+    (`127.0.0.1.example.com`) is a DNS name, not an IP, and is not loopback."""
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(url).hostname or "").lower()
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _env_flag(name: str) -> bool:
+    raw = (os.environ.get(name) or "").strip().lower()
+    if raw in ("", "0", "false", "no", "off"):
+        return False
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    raise ConfigurationError(f"{name} must be true or false, got {raw!r}.")
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        raise ConfigurationError(f"{name} must be a positive integer, got {raw!r}.") from None
+    if value < 1:
+        raise ConfigurationError(f"{name} must be at least 1, got {value}.")
+    return value
+
+
+def _weights_name(build_id: str) -> str:
+    """The weights directory/file name of an edge build, digest and trailing slash removed:
+    `/models/openjev-FP8@sha256:ab` -> `openjev-FP8`."""
+    path = build_id.split("@sha256:", 1)[0].rstrip("/\\")
+    return path.replace("\\", "/").rsplit("/", 1)[-1]
+
+
+class _LoopbackDecisionProvider(_BaseDecisionProvider):
+    """Shared loopback rule for the local decision providers (CT-PROV-22, CT-PROV-26): a
+    non-loopback base URL is refused at construction unless the provider's own allow-remote
+    knob is set."""
+
+    _allow_remote_env = ""
+    _base_url = ""
+
+    def _check_loopback(self, base_url: str, allow_remote: bool | None) -> None:
+        allowed = _env_flag(self._allow_remote_env) if allow_remote is None else allow_remote
+        if not allowed and not _url_is_loopback(base_url):
+            raise ConfigurationError(
+                f"{type(self).__name__} base URL {base_url!r} is not loopback. edge-local payloads "
+                f"never leave the machine; set {self._allow_remote_env}=true only for a deliberate "
+                f"remote decision host (FR-PROV-22).")
+
+    def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
+        """Nothing is retained off-machine on loopback; a deliberately remote host cannot be
+        confirmed and is reported unconfirmed (edge-local has no retention gate to raise)."""
+        if _url_is_loopback(self._base_url):
+            return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
+        return RetentionReport(confirmed=(), unconfirmed=tuple(model_refs))
+
+
+class OpenJevLocalProvider(_LoopbackDecisionProvider):
+    """OpenJev on loopback: the local configuration's decision engine (FR-PROV-22).
+
+    POSTs to the OpenJev shim's `/v1/systemone`. A separate class from `JevOpenRouterProvider`
+    (user directive). Build identity comes from the vLLM server behind the shim, probed at run
+    start and every `HARNESS_OPENJEV_BUILD_PROBE_EVERY` calls (FR-PROV-24); the shim itself
+    echoes only the served name. The probe compares the served weights *name* with the
+    `ModelRef`'s weights path, and any later change of the served identity; the digest is not
+    verifiable through vLLM (test plan Q-26)."""
+
+    _allow_remote_env = OPENJEV_ALLOW_REMOTE_ENV
+
+    def __init__(self, *, base_url: str | None = None, vllm_url: str | None = None,
+                 allow_remote: bool | None = None, **seams: Any) -> None:
+        seams.setdefault("timeout_s", _env_positive_float(OPENJEV_TIMEOUT_S_ENV, 20.0))
+        super().__init__(**seams)
+        self._base_url = (base_url or os.environ.get(OPENJEV_BASE_URL_ENV) or DEFAULT_OPENJEV_BASE_URL).rstrip("/")
+        self._check_loopback(self._base_url, allow_remote)
+        self._vllm_url = (vllm_url or os.environ.get(OPENJEV_VLLM_URL_ENV) or DEFAULT_OPENJEV_VLLM_URL).rstrip("/")
+        self._model_name = os.environ.get(OPENJEV_MODEL_NAME_ENV) or DEFAULT_OPENJEV_MODEL_NAME
+        self._served_identity: str | None = None
+        self._calls_since_probe = 0
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        context = min(OPENJEV_MAX_CONTEXT_TOKENS,
+                      _env_positive_int(OPENJEV_MAX_MODEL_LEN_ENV, OPENJEV_MAX_CONTEXT_TOKENS))
+        return DecisionCapabilities(max_context_tokens=context, max_choice_options=OPENJEV_MAX_CHOICE_OPTIONS,
+                                    max_questions=DECISION_MAX_QUESTIONS, cost_per_input_token=None,
+                                    deterministic=True)
+
+    def verify_build(self, model_ref: ModelRef) -> str:
+        """Probe vLLM's `GET /v1/models` and check the served weights name matches the
+        `ModelRef` (FR-PROV-24). Records the served identity; a later probe that differs raises
+        `BuildChangedError`. Returns the identity."""
+        if not _url_is_loopback(self._vllm_url) and not _env_flag(self._allow_remote_env):
+            raise ConfigurationError(f"the OpenJev build-probe URL {self._vllm_url!r} is not loopback.")
+        response = self._transport.send(HttpRequest("GET", f"{self._vllm_url}/models", {}, b""))
+        if response.status != 200:
+            raise ProviderUnavailableError(f"the OpenJev build probe got HTTP {response.status}")
+        try:
+            raw = response.body
+            document = raw if isinstance(raw, dict) else json.loads(bytes(raw).decode("utf-8"))
+            entry = document["data"][0]
+            identity = str(entry.get("root") or entry["id"])
+        except (KeyError, IndexError, TypeError, ValueError, UnicodeDecodeError) as exc:
+            raise MalformedResponseError(f"the OpenJev build probe returned no model entry: {exc}") from exc
+        if self._served_identity is not None and identity != self._served_identity:
+            raise BuildChangedError(
+                f"OpenJev's served weights changed mid-run: {self._served_identity!r} -> {identity!r}.")
+        if _weights_name(identity) != _weights_name(model_ref.build_id):
+            raise BuildChangedError(
+                f"OpenJev serves {identity!r}, but the run is configured for {model_ref.build_id!r} "
+                f"(FR-PROV-24).")
+        self._served_identity = identity
+        self._calls_since_probe = 0
+        return identity
+
+    def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
+        if not isinstance(request, DecisionRequest):
+            raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
+        every = _env_positive_int(OPENJEV_BUILD_PROBE_EVERY_ENV, 500)
+        if self._served_identity is not None and self._calls_since_probe >= every:
+            self.verify_build(model_ref)
+        body = json.dumps({"model": self._model_name, "state": request.state,
+                           "questions": decision_questions_document(request)},
+                          ensure_ascii=False).encode("utf-8")
+        decision = self._decide_http(request, model_ref, f"{self._base_url}/v1/systemone",
+                                     {"Content-Type": "application/json"}, body,
+                                     fallback_build=model_ref.build_id)
+        self._calls_since_probe += 1
+        # The shim echoes only the served name, so the (probe-verified) ModelRef build is the
+        # identity every answer reports (FR-PROV-24).
+        return dataclasses.replace(decision, resolved_build=model_ref.build_id)
 
 # --- the recorded-fixture implementation ------------------------------------------------------
 
