@@ -1,0 +1,2 @@
+# Vendored files are pinned byte-exact (sha256 in VENDOR.md): never convert line endings.
+vendor/** -text
