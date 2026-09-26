@@ -154,6 +154,9 @@ class StageTrace:
     done: int = 0
     quarantined: int = 0
     detail: tuple[str, ...] = ()
+    #: Jev design delta FR-PIPE-13: structured figures a stage reports beside its detail — the
+    #: decision-engine summary on the score stage, by CT-JUDGE-28's names. `None` elsewhere.
+    metrics: Any = None
 
 
 @dataclass(frozen=True)
@@ -227,9 +230,13 @@ class ProductionStageExecutor:
         extractor: Any = None,
         second_family: Any = None,
         judge_refs: Any = None,
+        decision_provider: Any = None,
     ) -> None:
         self._store = store
         self._provider = provider
+        #: FR-PIPE-11: handed to every `ScoringWorker` with the frozen run config, so the
+        #: decision seat is pre-screened by the engine the run froze.
+        self._decision_provider = decision_provider
         self._run_config = run_config
         self._catalog = catalog
         self._high_risk = tuple(high_risk_criteria)
@@ -311,7 +318,9 @@ class ProductionStageExecutor:
             return StageOutcome(completed=True, detail=detail)
         if unit.stage == STAGE_SCORE:
             judge = self.judge_for(unit.judge)
-            worker = ScoringWorker(self._store, governed, judge)
+            worker = ScoringWorker(self._store, governed, judge,
+                                   decision_provider=self._decision_provider,
+                                   run_config=self._run_config)
             try:
                 result = worker.dispatch(worker.assemble(unit), judge)
             except JudgmentError as error:
@@ -329,7 +338,7 @@ class ProductionStageExecutor:
                 return StageOutcome(completed=False, detail=detail)
             worker.persist(unit, result)
             detail = (f"{unit.submission_id}/{unit.criterion_id} by {unit.judge}: "
-                      f"{getattr(result, 'band', '?')}")
+                      f"{getattr(result, 'band', '?')}{_engine_tag(self._run_config, result)}")
             self.executed[STAGE_SCORE].append(detail)
             return StageOutcome(completed=True, detail=detail)
         raise CompositionFault(
@@ -412,6 +421,76 @@ def _criterion_value(catalog: Any, view: Any, version: str, criterion_id: str) -
         evidence_required=bool(view.criterion_requires_citation(criterion_id)),
     )
     return SimpleNamespace(**fields)
+
+
+def _engine_tag(run_config: Any, result: Any) -> str:
+    """FR-PIPE-14: which engine produced a score, **only when a decision engine is
+    configured** — with the engine off the line is byte-identical to before (NFR-SYS-14)."""
+    if getattr(run_config, "decision_engine", None) is None:
+        return ""
+    if getattr(result, "scoring_engine", "llm") == "decision":
+        return " [decision]"
+    outcome = getattr(result, "prescreen_outcome", None)
+    return f" [llm; prescreen={outcome}]" if outcome else " [llm]"
+
+
+def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider: Any) -> Any:
+    """FR-PIPE-11: the decision provider for the frozen engine — the injected one, else the
+    fixture double already bound as `provider` when the engine is `fixture`, else
+    `decision_provider_for`, the only construction path (CT-PROV-22). `None` when the engine
+    is off: an engine-off run constructs nothing (CT-PIPE-09)."""
+    engine = getattr(run_config, "decision_engine", None)
+    if engine is None:
+        return None
+    if decision_provider is not None:
+        return decision_provider
+    if engine.model.provider == "fixture" and hasattr(provider, "decide"):
+        return provider
+    from aeh.prov import decision_provider_for
+
+    return decision_provider_for(engine.model)
+
+
+def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
+    """FR-PIPE-12: before the first lease, the cloud decision model's retention is confirmed
+    and a local engine's served build is probed. A failure raises out of
+    `run_to_completion` with nothing dispatched."""
+    engine = getattr(run_config, "decision_engine", None)
+    if engine is None or decision_provider is None:
+        return
+    if getattr(run_config, "backend_profile", None) == "cloud-hosted":
+        decision_provider.verify_retention((engine.model,))
+    verify_build = getattr(decision_provider, "verify_build", None)
+    if callable(verify_build):
+        verify_build(engine.model)
+
+
+def _decision_summary(handle: Any, run_id: str) -> StageTrace:
+    """FR-PIPE-13 / CT-PIPE-08: the run's decision-engine outcome mix on the score stage."""
+    from aeh.judge import decision_engine_metrics
+
+    m = decision_engine_metrics(handle.cohort, run_id)
+    summary = {
+        "decision_prescreens": m.decision_prescreens,
+        "decision_accepted": m.decision_accepted,
+        "decision_below_gate": m.decision_below_gate,
+        "decision_ineligible": m.decision_ineligible,
+        "decision_ineligible_reasons": dict(m.decision_ineligible_reasons),
+        "decision_rejected": m.decision_rejected,
+        "decision_malformed": m.decision_malformed,
+        "decision_accepted_rate": m.decision_accepted_rate,
+        "decision_fallback_rate": m.decision_fallback_rate,
+        "decision_latency_p50_ms": m.decision_latency_p50_ms,
+        "decision_latency_p95_ms": m.decision_latency_p95_ms,
+        "decision_fallback_rate_high": m.decision_fallback_rate_high,
+        "decision_requests_rejected": m.decision_requests_rejected,
+    }
+    return StageTrace(
+        STAGE_SCORE, units=m.decision_prescreens, done=m.decision_accepted,
+        detail=(f"decision engine: {m.decision_prescreens} pre-screen(s), "
+                f"{m.decision_accepted} accepted, fallback rate {m.decision_fallback_rate}",),
+        metrics=summary,
+    )
 
 
 def _drain(executor: Any) -> list[StageTrace]:
@@ -696,6 +775,7 @@ def run_to_completion(
     judge_refs: Any = None,
     synthesizer: Any = None,
     high_risk_criteria: Sequence[str] = (),
+    decision_provider: Any = None,
 ) -> RunResult:
     """Drive `run_id` until `M-ORCH`'s completion predicate holds or the run pauses.
 
@@ -716,15 +796,21 @@ def run_to_completion(
     )
     pass_sleep_ms = _int_knob(PASS_SLEEP_MS_ENV, 0, minimum=0) or 0
 
+    # FR-PIPE-11/12: the frozen decision engine's provider, and its run-start checks before
+    # anything is leased. Both are no-ops with the engine off.
+    decision_provider = _decision_provider_for_run(run_config, provider, decision_provider)
+    _decision_run_start_checks(run_config, decision_provider)
     executor = ProductionStageExecutor(
         store, provider, run_config,
         high_risk_criteria=high_risk_criteria,
         extractor=extractor, second_family=second_family, judge_refs=judge_refs,
+        decision_provider=decision_provider,
     )
     # The provider is bound alongside the executor: `M-ORCH` wraps it in the `GovernedProvider`
     # the stage workers actually call, so the run's counters see every call a worker makes
     # inside its own retry budget (`FR-ORCH-27`, `CT-PROV-11`).
-    orch = Orchestrator(store, executor=executor, provider=provider)
+    orch = Orchestrator(store, executor=executor, provider=provider,
+                        decision_provider=decision_provider)
     executor.orchestrator = orch
     handle = orch.run_handle(run_id)
     catalog = PackageCatalog(store.package(handle.package_id), package_id=handle.package_id)
@@ -827,6 +913,9 @@ def run_to_completion(
                 ),
             ))
             break
+
+    if decision_provider is not None:
+        stages.append(_decision_summary(handle, run_id))
 
     if fault is not None:
         try:
