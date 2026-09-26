@@ -66,7 +66,7 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from decimal import Decimal, InvalidOperation
 from types import MappingProxyType
 from typing import Any, Literal
@@ -465,6 +465,13 @@ class HardwarePolicy:
     concurrency_ceiling: int
     quantization_target: str
     prefix_token_ceiling: int
+    #: Jev design delta FR-CONF-23 (as amended): which decision providers may run on this
+    #: hardware, and where — `"shared"` (co-resident with the judge) or `"cpu"` (system RAM, so
+    #: the judge keeps the accelerator). A provider absent here is refused on this profile.
+    #: Defaulted empty so a caller-supplied policy that predates the field admits no engine.
+    #: `compare=False`: not one of FR-CONF-06's policy cells, and a mapping would make the frozen
+    #: dataclass unhashable.
+    decision_coresident: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}), compare=False)
 
     def __post_init__(self) -> None:
         """Type hygiene, for the same reason `ModelRef` has it: this type is caller-supplied
@@ -489,6 +496,15 @@ class HardwarePolicy:
             raise ConfigurationError(
                 "HardwarePolicy.quantization_target must be a non-empty string."
             )
+        if not isinstance(self.decision_coresident, Mapping) or any(
+            not isinstance(k, str) or v not in DECISION_PLACEMENTS
+            for k, v in self.decision_coresident.items()
+        ):
+            raise ConfigurationError(
+                f"HardwarePolicy.decision_coresident must map provider names to one of "
+                f"{DECISION_PLACEMENTS}."
+            )
+        object.__setattr__(self, "decision_coresident", MappingProxyType(dict(self.decision_coresident)))
 
 
 @_typeerror_on_mutation
@@ -539,6 +555,131 @@ class CohortRef:
 #: is a rendering of the config, never a source for rebuilding it. It also never reaches
 #: `panel_build_ref`, which encodes `ref.quantization or ''` directly.
 PROVIDER_MANAGED = "provider-managed"
+
+
+# --- the decision engine (Jev design delta §3.2, FR-CONF-17…26) -----------------------------------
+
+#: `HARNESS_DECISION_ENGINE`'s domain (FR-CONF-18). Required, no default: a default here would
+#: select a backend, which CT-CONF-11 forbids.
+DECISION_ENGINES: tuple[str, ...] = ("jev", "off")
+#: FR-CONF-19: the decision provider each backend binds, first entry the default.
+DECISION_PROVIDERS_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    "edge-local": ("openjev",),
+    "cloud-hosted": ("openrouter-jev",),
+    "dev-ci": ("openrouter-jev",),
+})
+#: The hermetic double, accepted on any profile only under the test tier (HARNESS_FIXTURE_DIR).
+FIXTURE_DECISION_PROVIDER = "fixture"
+DECISION_PLACEMENTS: tuple[str, ...] = ("shared", "cpu")
+#: FR-CONF-21 defaults. The threshold default is per provider (design 1.7.1): OpenJevSmall's
+#: probabilities are uncalibrated entailment, so it starts stricter. An explicit value wins.
+#: Strings, not `Decimal`s: resolution reads only immutable module state (TC-CONF-13).
+DEFAULT_CONFIDENCE_THRESHOLD = "0.80"
+PROVIDER_DEFAULT_THRESHOLDS: Mapping[str, str] = MappingProxyType({"openjev-small": "0.85"})
+DEFAULT_CITE_THRESHOLD = "0.50"
+DEFAULT_MAX_CITATION_QUESTIONS = 16
+DEFAULT_TOKEN_BYTES_RATIO = 3
+
+
+def _decimal_knob(raw: Any, key: str, default: Decimal, low: Decimal, high: Decimal,
+                  *, high_inclusive: bool, low_inclusive: bool = True) -> Decimal:
+    """A frozen-at-resolution decimal knob, refused (never clamped) outside its domain."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    if isinstance(raw, bool):
+        raise ConfigurationError(f"{key} must be a decimal number, got a boolean.")
+    try:
+        value = Decimal(str(raw).strip())
+    except InvalidOperation:
+        raise ConfigurationError(f"{key} must be a decimal number, got {raw!r}.") from None
+    if not value.is_finite():
+        raise ConfigurationError(f"{key} must be a finite decimal number, got {raw!r}.")
+    below = value < low if low_inclusive else value <= low
+    above = value > high if high_inclusive else value >= high
+    if below or above:
+        lo, hi = ("[" if low_inclusive else "("), ("]" if high_inclusive else ")")
+        raise ConfigurationError(f"{key} must lie in {lo}{low}, {high}{hi}, got {raw!r}; it is refused, not clamped.")
+    return value
+
+
+def _bounded_int(raw: Any, key: str, default: int, low: int, high: int) -> int:
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return default
+    if isinstance(raw, bool):
+        raise ConfigurationError(f"{key} must be an integer, got a boolean.")
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        raise ConfigurationError(f"{key} must be an integer, got {raw!r}.") from None
+    if not low <= value <= high:
+        raise ConfigurationError(f"{key} must lie in {low}…{high}, got {value}; it is refused, not clamped.")
+    return value
+
+
+def _canonical_decimal(value: Decimal) -> str:
+    """One spelling per number, so `0.8`, `0.80` and `Decimal("0.800")` are one work identity
+    (FR-CONF-22): trailing zeros stripped, never scientific notation."""
+    text = format(value.normalize(), "f")
+    return text
+
+
+@_typeerror_on_mutation
+@dataclass(frozen=True)
+class DecisionEngine:
+    """The decision engine a run is frozen to (FR-CONF-17): the model and the four values that
+    decide which verdict counts. All are fixed at resolution and never re-read (CT-CONF-18)."""
+
+    model: ModelRef
+    confidence_threshold: Decimal
+    cite_threshold: Decimal
+    max_citation_questions: int
+    token_bytes_ratio: int
+
+    def __post_init__(self) -> None:
+        _require_model_ref(self.model, "decision_engine.model", "decision")
+        _decimal_knob(self.confidence_threshold, "confidence_threshold", Decimal(DEFAULT_CONFIDENCE_THRESHOLD),
+                      Decimal("0.50"), Decimal("1.00"), high_inclusive=False)
+        _decimal_knob(self.cite_threshold, "cite_threshold", Decimal(DEFAULT_CITE_THRESHOLD),
+                      Decimal("0"), Decimal("1"), high_inclusive=False, low_inclusive=False)
+        for name, value in (("confidence_threshold", self.confidence_threshold),
+                            ("cite_threshold", self.cite_threshold)):
+            if not isinstance(value, Decimal):
+                raise ConfigurationError(f"DecisionEngine.{name} must be a Decimal.")
+        _bounded_int(self.max_citation_questions, "max_citation_questions", 16, 1, 26)
+        _bounded_int(self.token_bytes_ratio, "token_bytes_ratio", 3, 1, 8)
+        for name in ("max_citation_questions", "token_bytes_ratio"):
+            if isinstance(getattr(self, name), bool) or not isinstance(getattr(self, name), int):
+                raise ConfigurationError(f"DecisionEngine.{name} must be an integer.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "model": _ref_to_dict(self.model),
+            "confidence_threshold": _canonical_decimal(self.confidence_threshold),
+            "cite_threshold": _canonical_decimal(self.cite_threshold),
+            "max_citation_questions": self.max_citation_questions,
+            "token_bytes_ratio": self.token_bytes_ratio,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: Any) -> "DecisionEngine":
+        if not isinstance(raw, Mapping):
+            raise ConfigurationError("persisted decision_engine must be a mapping.")
+        try:
+            return cls(
+                model=_ref_from_dict(raw.get("model"), "decision_engine.model"),
+                confidence_threshold=Decimal(str(raw["confidence_threshold"])),
+                cite_threshold=Decimal(str(raw["cite_threshold"])),
+                max_citation_questions=raw["max_citation_questions"],
+                token_bytes_ratio=raw["token_bytes_ratio"],
+            )
+        except (KeyError, InvalidOperation) as exc:
+            raise ConfigurationError(f"persisted decision_engine is incomplete or malformed: {exc}") from None
+
+    def identity(self) -> str:
+        """The encoding `compute_panel_build_ref` mixes in (FR-CONF-22)."""
+        return _FIELD_SEP.join((_build_identity(self.model), _canonical_decimal(self.confidence_threshold),
+                                _canonical_decimal(self.cite_threshold), str(self.max_citation_questions),
+                                str(self.token_bytes_ratio)))
 
 
 @_typeerror_on_mutation
@@ -606,6 +747,10 @@ class ProfileSummary:
     quantization: tuple[str, ...]
     retention_setting: str | None
     panel_build_ref: str
+    #: FR-CONF-26: the decision engine and its threshold, **omitted from the canonical JSON when
+    #: the engine is off**, so an engine-off record stays byte-identical to its pre-delta form.
+    decision_engine: BuildSummary | None = None
+    decision_threshold: str | None = None
 
     def to_canonical_json(self) -> str:
         """The one serialization, so `TC-CONF-17`'s differential can hold.
@@ -619,7 +764,11 @@ class ProfileSummary:
         `ProfileSummary` field additive, and ordering by declaration would let an additive change
         reorder every existing record.
         """
-        return json.dumps(asdict(self), sort_keys=True, separators=(",", ":"))
+        record = asdict(self)
+        if record["decision_engine"] is None:
+            del record["decision_engine"]
+            del record["decision_threshold"]
+        return json.dumps(record, sort_keys=True, separators=(",", ":"))
 
 
 @_typeerror_on_mutation
@@ -627,7 +776,9 @@ class ProfileSummary:
 class RunConfig:
     """One frozen answer to "which grader is this run" (design §3.1 Interfaces).
 
-    The field set is **exactly** these twelve. `CT-CONF-C02` asserts set equality rather than a
+    The field set is **exactly** these thirteen (Jev design delta FR-CONF-17 added
+    `decision_engine`, defaulted `None` so a literal written before it still constructs an
+    engine-off config). `CT-CONF-C02` asserts set equality rather than a
     subset, so adding a convenience field here breaks the contract suite by design — that is the
     clause working, not a broken test.
 
@@ -656,6 +807,7 @@ class RunConfig:
     cost_currency: str | None
     retention_setting: str | None
     panel_build_ref: str
+    decision_engine: DecisionEngine | None = None
 
     def __post_init__(self) -> None:
         """`CT-CONF-02` and `CT-CONF-03`, enforced on the **type** rather than only in the
@@ -778,7 +930,23 @@ class RunConfig:
         # `rehydrate_run_config` checks the same thing earlier and raises `BackendMismatchError`
         # instead, because `TC-CONF-04`'s variant names that type for a row whose stored ref no
         # longer matches its stored builds -- a changed panel, not a malformed row.
-        expected_ref = compute_panel_build_ref(self.panel)
+        # FR-CONF-17/19: a decision engine is resolved, of role `decision`, and bound to the
+        # provider this backend admits (the fixture double only under the test tier, which the
+        # resolver checks; the type admits it so a rehydrated test run reconstructs).
+        if self.decision_engine is not None:
+            if not isinstance(self.decision_engine, DecisionEngine):
+                raise ConfigurationError(
+                    f"decision_engine must be a DecisionEngine or None, got "
+                    f"{type(self.decision_engine).__name__}.")
+            provider = self.decision_engine.model.provider
+            allowed = DECISION_PROVIDERS_BY_PROFILE[self.backend_profile]
+            if provider != FIXTURE_DECISION_PROVIDER and provider not in allowed:
+                raise BackendMismatchError(
+                    f"decision provider {provider!r} is not bound to backend_profile "
+                    f"{self.backend_profile!r}; it admits {allowed} (FR-CONF-19).")
+            _check_resolved(self.decision_engine.model, "decision_engine.model", self.backend_profile)
+
+        expected_ref = compute_panel_build_ref(self.panel, self.decision_engine)
         if self.panel_build_ref != expected_ref:
             raise ConfigurationError(
                 f"panel_build_ref does not match this panel: carries "
@@ -815,6 +983,10 @@ class RunConfig:
             quantization=tuple(dict.fromkeys(build.quantization for build in builds)),
             retention_setting=self.retention_setting,
             panel_build_ref=self.panel_build_ref,
+            decision_engine=(None if self.decision_engine is None
+                             else BuildSummary.of(self.decision_engine.model)),
+            decision_threshold=(None if self.decision_engine is None
+                                else str(self.decision_engine.confidence_threshold)),
         )
 
     def to_persisted_dict(self) -> dict[str, Any]:
@@ -851,6 +1023,10 @@ class RunConfig:
                 "cost_ceiling": None if self.cost_ceiling is None else str(self.cost_ceiling),
                 "cost_currency": self.cost_currency,
                 "retention_setting": self.retention_setting,
+                # FR-CONF-17: present only when the engine is on, so an engine-off row is
+                # byte-identical to its pre-delta form (NFR-SYS-14).
+                **({} if self.decision_engine is None
+                   else {"decision_engine": self.decision_engine.to_dict()}),
             },
         }
 
@@ -875,6 +1051,9 @@ HARDWARE_PROFILES: Mapping[str, HardwarePolicy] = MappingProxyType({
         concurrency_ceiling=4,
         quantization_target="q4",
         prefix_token_ceiling=2000,
+        # Assumption (FR-CONF-23): OpenJev fits beside the judge on 64 GB+. `unified-small` and
+        # `discrete-gpu` admit no engine here; #455 adds `openjev-small` to all three.
+        decision_coresident=MappingProxyType({"openjev": "shared"}),
     ),
     "unified-small": HardwarePolicy(
         residency_policy=("judge",),
@@ -957,13 +1136,29 @@ _FALSE_TOKENS = frozenset({"false", "0", "no", "off", ""})
 #: is what the default snapshot lifts; `effective_config` asks for these explicitly.
 CONSOLE_KEYS: tuple[str, ...] = ("CONSOLE_BIND", "CONSOLE_PORT")
 
+#: The decision-engine keys (Jev design delta FR-CONF-18…21). Kept out of `HARNESS_KEYS` for the
+#: same reason as `CONSOLE_KEYS`; `effective_config` lifts them, so an exported
+#: `HARNESS_DECISION_ENGINE=off` overrides a config file's `jev` exactly as `HARNESS_PROFILE`
+#: overrides the file's profile. None is a credential.
+DECISION_KEYS: tuple[str, ...] = (
+    "HARNESS_DECISION_ENGINE",
+    "HARNESS_DECISION_PROVIDER",
+    "HARNESS_JEV_BUILD",
+    "HARNESS_JEV_QUANTIZATION",
+    "HARNESS_JEV_CONFIDENCE_THRESHOLD",
+    "HARNESS_JEV_CITE_THRESHOLD",
+    "HARNESS_JEV_MAX_CITATION_QUESTIONS",
+    "HARNESS_JEV_TOKEN_BYTES_RATIO",
+)
+
 #: Where `HARNESS_PROFILE` came from, as `profile_source` reports it (`FR-CONF-16`).
 PROFILE_SOURCE_ENVIRONMENT = "environment"
 PROFILE_SOURCE_CONFIG_FILE = "config file"
 
 
 def environment_snapshot(
-    environ: Mapping[str, str] | None = None, *, include_console: bool = False
+    environ: Mapping[str, str] | None = None, *, include_console: bool = False,
+    include_decision: bool = False,
 ) -> dict[str, str]:
     """Take the six `HARNESS_*` keys out of the process environment, once, for a caller to merge
     into `cfg`.
@@ -977,7 +1172,8 @@ def environment_snapshot(
     snapshot is unchanged: exactly the `HARNESS_*` keys.
     """
     source = os.environ if environ is None else environ
-    keys = HARNESS_KEYS + CONSOLE_KEYS if include_console else HARNESS_KEYS
+    keys = HARNESS_KEYS + (CONSOLE_KEYS if include_console else ()) + (
+        DECISION_KEYS if include_decision else ())
     return {key: source[key] for key in keys if key in source}
 
 
@@ -1144,7 +1340,7 @@ def effective_config(
     if cfg is not None and not isinstance(cfg, Mapping):
         raise ConfigurationError(f"cfg must be a Mapping, got {type(cfg).__name__}.")
     base_cfg: Mapping[str, Any] = cfg if cfg is not None else {}
-    snapshot = environment_snapshot(environ, include_console=True)
+    snapshot = environment_snapshot(environ, include_console=True, include_decision=True)
     profile = snapshot.get("HARNESS_PROFILE", base_cfg.get("HARNESS_PROFILE"))
     base = select_profile_config(base_cfg, profile)
     return {**base, **snapshot}
@@ -1171,8 +1367,18 @@ def format_profile_banner(config: RunConfig, source: str | None) -> str:
     return (
         f"HARNESS_PROFILE: {summary.backend_profile}\n"
         f"HARNESS_PROFILE source: {source if source is not None else 'unset'}\n"
+        f"{_decision_banner_line(config)}\n"
         f"profile_summary: {summary.to_canonical_json()}"
     )
+
+
+def _decision_banner_line(config: RunConfig) -> str:
+    """FR-CONF-25: which engine grades, visible at start-up."""
+    engine = config.decision_engine
+    if engine is None:
+        return "DECISION_ENGINE: off"
+    return (f"DECISION_ENGINE: {engine.model.provider}:{engine.model.build_id} "
+            f"threshold={engine.confidence_threshold}")
 
 
 def resume_profile_conflict(
@@ -1244,7 +1450,7 @@ def _build_identity(ref: ModelRef) -> str:
     return f"{ref.provider}{_FIELD_SEP}{ref.build_id}{_FIELD_SEP}{ref.quantization or ''}"
 
 
-def compute_panel_build_ref(panel: Sequence[ModelRef]) -> str:
+def compute_panel_build_ref(panel: Sequence[ModelRef], decision_engine: "DecisionEngine | None" = None) -> str:
     """A stable hash over the **ordered** panel (`FR-CONF-05`, `CT-CONF-07`).
 
     Canonical encoding, fixed here because it is a primary-key component of every
@@ -1261,6 +1467,10 @@ def compute_panel_build_ref(panel: Sequence[ModelRef]) -> str:
     so the field cannot be deferred, and #5 depends on #4.
     """
     payload = _REF_SEP.join(_build_identity(ref) for ref in panel)
+    if decision_engine is not None:
+        # FR-CONF-22: the engine and its frozen values are part of "which grader is this run".
+        # Only when present, so an engine-off ref is byte-identical to its pre-delta value.
+        payload += _REF_SEP + "decision" + _FIELD_SEP + decision_engine.identity()
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return _PANEL_BUILD_REF_PREFIX + digest[:_PANEL_BUILD_REF_LENGTH]
 
@@ -1736,6 +1946,18 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
 
     retention_setting = _resolve_retention_setting(cfg, backend_profile)
 
+    # 5b. The decision engine (Jev design delta FR-CONF-17…23), frozen here with its values.
+    decision_engine = _resolve_decision_engine(cfg, backend_profile, policy, hardware_profile)
+    if decision_engine is not None and backend_profile in REMOTE_PROFILES:
+        # FR-CONF-24: a remote decision engine dispatches student work exactly as the panel
+        # does, so the consent gate below covers it; name it in the refusal.
+        try:
+            _check_consent(cfg, cohort, backend_profile)
+        except ConsentGateError as error:
+            raise ConsentGateError(
+                f"{error} The run's decision engine ({decision_engine.model.provider}) would also "
+                f"send this cohort's work off the machine (FR-CONF-24).") from None
+
     # 6. The consent gate (FR-CONF-08), last because it is the only check that reads `cohort`:
     #    a malformed config reports the malformation, and a well-formed one gets an unambiguous
     #    consent verdict rather than one buried behind a typo.
@@ -1754,7 +1976,73 @@ def resolve_run_config(cfg: Mapping[str, Any], cohort: CohortRef) -> RunConfig:
         cost_ceiling=cost_ceiling,
         cost_currency=cost_currency,
         retention_setting=retention_setting,
-        panel_build_ref=compute_panel_build_ref(panel),
+        panel_build_ref=compute_panel_build_ref(panel, decision_engine),
+        decision_engine=decision_engine,
+    )
+
+
+def _resolve_decision_engine(cfg: Mapping[str, Any], backend_profile: str,
+                             policy: HardwarePolicy | None, hardware_profile: str | None) -> DecisionEngine | None:
+    """FR-CONF-17…23. `HARNESS_DECISION_ENGINE` is required (`jev`/`off`), with no default.
+
+    The model comes from `cfg["decision_model"]` (a `ModelRef`, or a table in a config file) or
+    from `HARNESS_JEV_BUILD` + `HARNESS_DECISION_PROVIDER` (default: the backend's provider) +
+    `HARNESS_JEV_QUANTIZATION`. The four gate values are read once, here (CT-CONF-18)."""
+    raw = cfg.get("HARNESS_DECISION_ENGINE")
+    if raw is None:
+        raise ConfigurationError(
+            "HARNESS_DECISION_ENGINE is required: 'jev' or 'off'. It has no default, because a "
+            "default would choose the grading engine for you (FR-CONF-18, CT-CONF-11).")
+    if raw not in DECISION_ENGINES:
+        raise ConfigurationError(
+            f"HARNESS_DECISION_ENGINE must be one of {DECISION_ENGINES}, got "
+            f"{_echo('HARNESS_DECISION_ENGINE', raw)}.")
+    if raw == "off":
+        return None
+    allowed = DECISION_PROVIDERS_BY_PROFILE[backend_profile]
+    model = cfg.get("decision_model")
+    if model is None:
+        build = cfg.get("HARNESS_JEV_BUILD")
+        if not isinstance(build, str) or not build.strip():
+            raise ConfigurationError(
+                "HARNESS_JEV_BUILD is required when HARNESS_DECISION_ENGINE is 'jev' (FR-CONF-20).")
+        provider = cfg.get("HARNESS_DECISION_PROVIDER") or allowed[0]
+        quantization = cfg.get("HARNESS_JEV_QUANTIZATION") or None
+        try:
+            model = ModelRef(role="decision", provider=provider, build_id=build.strip(), quantization=quantization)
+        except (TypeError, ValueError) as exc:
+            raise ConfigurationError(f"the decision model is malformed: {exc}") from None
+    model = _require_model_ref(model, "decision_model", "decision")
+    provider = model.provider
+    if provider == FIXTURE_DECISION_PROVIDER:
+        if not cfg.get("HARNESS_FIXTURE_DIR"):
+            raise ConfigurationError(
+                "the 'fixture' decision provider is accepted only under the test tier "
+                "(HARNESS_FIXTURE_DIR set) (FR-CONF-19).")
+    elif provider not in allowed:
+        raise BackendMismatchError(
+            f"decision provider {provider!r} is not bound to backend_profile {backend_profile!r}; "
+            f"it admits {allowed} (FR-CONF-19).")
+    _check_resolved(model, "decision_model", backend_profile)
+    if policy is not None and provider != FIXTURE_DECISION_PROVIDER and provider not in policy.decision_coresident:
+        alternatives = [f"'{name}'" for name in policy.decision_coresident] + ["HARNESS_DECISION_ENGINE=off"]
+        raise ConfigurationError(
+            f"hardware profile {hardware_profile!r} cannot hold decision provider {provider!r} "
+            f"beside the judge (FR-CONF-23). Admitted alternatives: {', '.join(alternatives)}.")
+    default_threshold = Decimal(PROVIDER_DEFAULT_THRESHOLDS.get(provider, DEFAULT_CONFIDENCE_THRESHOLD))
+    return DecisionEngine(
+        model=model,
+        confidence_threshold=_decimal_knob(cfg.get("HARNESS_JEV_CONFIDENCE_THRESHOLD"),
+                                           "HARNESS_JEV_CONFIDENCE_THRESHOLD", default_threshold,
+                                           Decimal("0.50"), Decimal("1.00"), high_inclusive=False),
+        cite_threshold=_decimal_knob(cfg.get("HARNESS_JEV_CITE_THRESHOLD"), "HARNESS_JEV_CITE_THRESHOLD",
+                                     Decimal(DEFAULT_CITE_THRESHOLD), Decimal("0"), Decimal("1"),
+                                     high_inclusive=False, low_inclusive=False),
+        max_citation_questions=_bounded_int(cfg.get("HARNESS_JEV_MAX_CITATION_QUESTIONS"),
+                                            "HARNESS_JEV_MAX_CITATION_QUESTIONS",
+                                            DEFAULT_MAX_CITATION_QUESTIONS, 1, 26),
+        token_bytes_ratio=_bounded_int(cfg.get("HARNESS_JEV_TOKEN_BYTES_RATIO"),
+                                       "HARNESS_JEV_TOKEN_BYTES_RATIO", DEFAULT_TOKEN_BYTES_RATIO, 1, 8),
     )
 
 
@@ -1830,8 +2118,10 @@ def rehydrate_run_config(
     # but `TC-CONF-04`'s variant names `BackendMismatchError` for it -- and it is right to: a
     # stored ref that no longer matches its stored builds means the panel changed underneath a
     # run, which is RISK-22, not a malformed row.
+    raw_engine = provider_config.get("decision_engine")
+    decision_engine = None if raw_engine is None else DecisionEngine.from_dict(raw_engine)
     persisted_ref = panel_config.get("panel_build_ref")
-    recomputed_ref = compute_panel_build_ref(panel)
+    recomputed_ref = compute_panel_build_ref(panel, decision_engine)
     if persisted_ref != recomputed_ref:
         raise BackendMismatchError(
             f"the persisted panel_build_ref {persisted_ref!r} disagrees with the one recomputed "
@@ -1872,6 +2162,7 @@ def rehydrate_run_config(
         cost_currency=raw_currency,
         retention_setting=provider_config.get("retention_setting"),
         panel_build_ref=persisted_ref,  # type: ignore[arg-type]
+        decision_engine=decision_engine,
     )
 
     if cfg is not None:
@@ -1921,12 +2212,32 @@ def _refuse_on_mismatch(persisted: RunConfig, cfg: Mapping[str, Any]) -> None:
             "outcome FR-CONF-04 must never produce."
         )
     current_ref = compute_panel_build_ref(tuple(current_panel))
-    if current_ref != persisted.panel_build_ref:
+    if current_ref != compute_panel_build_ref(persisted.panel):
         raise BackendMismatchError(
-            f"this run was started with panel {persisted.panel_build_ref!r} and current "
+            f"this run was started with panel {compute_panel_build_ref(persisted.panel)!r} and current "
             f"configuration resolves to {current_ref!r}. Half a cohort graded by one panel and "
             f"half by another is what FR-CONF-04 exists to prevent (RISK-22)."
         )
+
+    # The decision engine is part of which grader this run is (CT-CONF-14). A current config that
+    # names an engine state must agree with the persisted one; its gate values are frozen on the
+    # row and deliberately not re-compared (CT-CONF-18: an environment change after start does
+    # not alter them). A config predating the key compares only when the run had an engine.
+    wants = cfg.get("HARNESS_DECISION_ENGINE")
+    had = persisted.decision_engine
+    if wants is not None or had is not None:
+        if (wants == "jev") != (had is not None):
+            raise BackendMismatchError(
+                f"this run was started with the decision engine "
+                f"{'on' if had is not None else 'off'} and current configuration says "
+                f"{_echo('HARNESS_DECISION_ENGINE', wants)} (FR-CONF-04, CT-CONF-14).")
+        current_model = cfg.get("decision_model")
+        current_build = (current_model.build_id if isinstance(current_model, ModelRef)
+                         else cfg.get("HARNESS_JEV_BUILD"))
+        if had is not None and current_build not in (None, had.model.build_id):
+            raise BackendMismatchError(
+                "this run was started with one decision build and current configuration names "
+                "another (FR-CONF-04). Neither identity is echoed here (NFR-CONF-02).")
 
     # The transcriber and off-panel checker are compared by **full identity**, not by build_id
     # alone: the panel goes through `compute_panel_build_ref`, which mixes in provider and

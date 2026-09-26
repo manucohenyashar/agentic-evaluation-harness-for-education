@@ -181,6 +181,7 @@ def test_tc_calib_11_the_resolver_refuses_a_shared_build_the_same_way():
         conf.resolve_run_config(
             {
                 "HARNESS_PROFILE": "edge-local",
+                "HARNESS_DECISION_ENGINE": "off",  # FR-CONF-18: required, no default
                 "HARNESS_HARDWARE_PROFILE": "unified-large",
                 "panel": (EDGE_JUDGE,),
                 "transcriber": EDGE_TRANSCRIBER,

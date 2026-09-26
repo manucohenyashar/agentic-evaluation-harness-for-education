@@ -87,6 +87,9 @@ def edge_cfg(**overrides: Any) -> dict[str, Any]:
         "panel": (EDGE_JUDGE,),
         "transcriber": EDGE_TRANSCRIBER,
         "prompt_template_v": PROMPT_TEMPLATE_V,
+        # Jev design delta FR-CONF-18: the key is required with no default. The builders say
+        # "off" so every existing case stays an engine-off case (test plan 5.0, TS-104).
+        "HARNESS_DECISION_ENGINE": "off",
     }
     cfg.update(overrides)
     return cfg
@@ -102,6 +105,9 @@ def hosted_cfg(profile: str = "cloud-hosted", **overrides: Any) -> dict[str, Any
         "transcriber": HOSTED_TRANSCRIBER,
         "prompt_template_v": PROMPT_TEMPLATE_V,
         "retention_setting": default_retention_setting(),
+        # Jev design delta FR-CONF-18: the key is required with no default. The builders say
+        # "off" so every existing case stays an engine-off case (test plan 5.0, TS-104).
+        "HARNESS_DECISION_ENGINE": "off",
     }
     cfg.update(overrides)
     return cfg
