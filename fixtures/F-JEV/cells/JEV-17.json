@@ -3,6 +3,7 @@
   "kind": "graded",
   "criterion_id": "J6",
   "reference_ordinal": 1,
+  "llm_panel_median_ordinal": 1,
   "spans": [
     {
       "start": 0,

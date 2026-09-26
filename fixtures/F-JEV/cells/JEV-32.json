@@ -3,6 +3,7 @@
   "kind": "insufficient",
   "criterion_id": "J4",
   "reference_ordinal": 1,
+  "llm_panel_median_ordinal": 2,
   "spans": [
     {
       "start": 0,
