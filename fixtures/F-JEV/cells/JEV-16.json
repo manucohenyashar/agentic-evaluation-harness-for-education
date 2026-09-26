@@ -3,6 +3,7 @@
   "kind": "graded",
   "criterion_id": "J6",
   "reference_ordinal": 1,
+  "llm_panel_median_ordinal": 2,
   "spans": [],
   "submission_text": "Weight acts straight down on the crate. The ramp pushes back with a normal force perpendicular to its surface. So something stops it moving.",
   "adversarial_kind": null,

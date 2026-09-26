@@ -171,6 +171,9 @@ _CONFORM_SANCTIONED = (
     "scoring_model: str",
     'scoring_model=str(backend_config.get("prompt_template_v") or ""),',
     "scoring_model=record.scoring_model,",
+    # #453 (FR-CONFORM-10): the decision-engine record's key field, filled from the declared
+    # decision prompt template (`orch.JUDGE_DECISION_TEMPLATE_V`), never branched on.
+    "scoring_model=decision_template_v,",
 )
 
 _COHORT = ORCH_COHORT_ID

@@ -295,8 +295,16 @@ def jev_cells() -> tuple[dict[str, Any], ...]:
                 "sufficiency": sufficiency,
                 "cites": {labels[i]: (0.9 if i % 2 == 0 else 0.35) for i in range(len(span_list))},
             }
-        cells.append({"cell_id": f"JEV-{len(cells) + 1:02d}", "kind": kind, "criterion_id": cid,
-                      "reference_ordinal": ordinal, "spans": span_list, "submission_text": text,
+        index = len(cells) + 1
+        # FR-CONFORM-11's recorded LLM-panel median band: the reference ordinal, except every
+        # eighth cell (JEV-08, 16, 24, 32, 40), whose panel settled one band toward the
+        # interior. Hand count on the recorded answers: the engine's argmax is the reference
+        # band except on the four adversarial cells (JEV-37..40, top band), so 8 of 40 cells
+        # diverge: the five planted cells plus JEV-37, 38 and 39.
+        median = ordinal if index % 8 else (ordinal + 1 if ordinal < n // 2 else ordinal - 1)
+        cells.append({"cell_id": f"JEV-{index:02d}", "kind": kind, "criterion_id": cid,
+                      "reference_ordinal": ordinal, "llm_panel_median_ordinal": median,
+                      "spans": span_list, "submission_text": text,
                       "adversarial_kind": adversarial, "answers": answers})
 
     confident = {"cloud": 0.93, "edge": 0.9}

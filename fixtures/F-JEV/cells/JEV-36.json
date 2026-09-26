@@ -3,6 +3,7 @@
   "kind": "low_confidence",
   "criterion_id": "J4",
   "reference_ordinal": 2,
+  "llm_panel_median_ordinal": 2,
   "spans": [
     {
       "start": 0,
