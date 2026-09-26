@@ -1212,6 +1212,12 @@ ORCH_STATEMENTS: dict[str, Statement] = {
 }
 
 
+#: FR-ORCH-37: the input-token budget one decision pre-screen is estimated at when the run-start
+#: cost estimate adds the decision calls. Production default 1,500 (the judge prompt's shared
+#: prefix, NFR-JUDGE-01); `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` adjusts it at call time.
+DECISION_TOKENS_PER_SEAT_ENV = "HARNESS_ORCH_DECISION_TOKENS_PER_SEAT"
+DECISION_TOKENS_PER_SEAT_DEFAULT = 1500
+
 #: The decision-engine render version (Jev design delta FR-ORCH-36). Owned by `M-JUDGE`'s render;
 #: declared here because `panel_config` hashes it and `aeh.judge` already imports this module.
 #: Changing the Jev request render changes this string, and so every decision-engine work id.
@@ -3404,6 +3410,24 @@ class Orchestrator:
             return "paused"
         # FR-ORCH-15's displayed estimate, before any dispatch.
         estimate = self._run_cost_estimate(cohort, run_id)
+        # FR-ORCH-37: when the decision engine's calls are what push the estimate past the
+        # run's frozen ceiling, the start is refused before anything is written — the ceiling
+        # budgets Jev plus a full LLM fallback. Only when the engine contributes, so an
+        # engine-off run keeps today's behaviour exactly (NFR-SYS-14).
+        ceiling = self._run_ceiling(row)
+        if estimate is not None and ceiling is not None:
+            units = cohort.query(ORCH_STATEMENTS["select_run_units_for_estimate"], run_id=run_id)
+            decision_part = self._decision_cost_estimate(cohort, run_id, units)
+            if decision_part > 0 and estimate > ceiling:
+                from aeh.prov import ConfigurationError
+
+                raise ConfigurationError(
+                    f"start({run_id[:12]}) refused: the estimate {estimate} (including "
+                    f"{decision_part} for decision-engine pre-screens, assuming every seat "
+                    f"also falls back to the LLM) exceeds the run's cost ceiling {ceiling} "
+                    f"(FR-ORCH-37). Raise the ceiling or start without the decision engine. "
+                    f"Nothing was written."
+                )
         if estimate is not None:
             with cohort.transaction() as tx:
                 tx.execute(
@@ -3825,7 +3849,35 @@ class Orchestrator:
             )
             if figure is not None:
                 total += figure
-        return total
+        return total + self._decision_cost_estimate(cohort, run_id, rows)
+
+    def _decision_cost_estimate(self, cohort: Any, run_id: str, rows: Any) -> Decimal:
+        """FR-ORCH-37: one decision call per decision seat, **on top of** the unchanged LLM
+        estimate for every arm — i.e. assuming a 100% fallback rate, so the ceiling is never
+        optimistic. A seat is a score unit judged by the run's first arm when the run froze a
+        decision engine. Costed by the decision provider's own `estimate_cost` over
+        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens (output is free); zero without a
+        decision provider or engine, or when the engine is unbilled."""
+        if self._decision_provider is None:
+            return Decimal("0")
+        run_row = self._run_row_in(cohort, run_id)
+        try:
+            record = json.loads(_mapping_get(run_row, "panel_config") or "{}")
+        except (TypeError, ValueError):
+            return Decimal("0")
+        arms = record.get("arms") or []
+        if not record.get("decision_engine") or not arms:
+            return Decimal("0")
+        seats = sum(1 for row in rows
+                    if row["stage"] == STAGE_SCORE and row["judge_id"] == arms[0])
+        if not seats:
+            return Decimal("0")
+        from aeh.prov import CallPlan
+
+        tokens = _env_int(DECISION_TOKENS_PER_SEAT_ENV, DECISION_TOKENS_PER_SEAT_DEFAULT)
+        estimate = self._decision_provider.estimate_cost(CallPlan(seats, tokens, 0))
+        cost = getattr(estimate, "cost", None)
+        return Decimal("0") if cost is None else Decimal(cost)
 
     @staticmethod
     def _pause_reason_text(cause: BaseException | str | None) -> str:
@@ -6453,6 +6505,13 @@ class Orchestrator:
             "model_swap_count": float(state["residency"]["swaps"]),
             "model_swap_duration_ms": float(state["residency"]["swap_ms"]),
         }
+        # FR-ORCH-38 / CT-PROV-24: the decision provider's counters, by their contract names,
+        # when one is bound (a provider without counters — the fixture double — reports none).
+        decision_counters = getattr(self._decision_provider, "decision_counters", None)
+        if decision_counters is not None:
+            for name in ("decision_calls", "decision_tokens_in", "decision_transport_retries",
+                         "decision_rate_limited_calls", "decision_actual_cost"):
+                metrics[name] = float(getattr(decision_counters, name))
         # TEXT rides the REAL-affinity column as TEXT: these are labels, not
         # measurements, and the EAV shape carries both.
         if state["resolved_build"]:
