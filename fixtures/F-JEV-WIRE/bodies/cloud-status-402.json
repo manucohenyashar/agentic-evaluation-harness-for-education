@@ -1,0 +1,22 @@
+{
+  "id": "cloud-status-402",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "cloud",
+  "request": "canonical",
+  "status": 402,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 402,
+      "message": "Insufficient credits"
+    }
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "ProviderUnavailableError",
+    "retried": false
+  }
+}

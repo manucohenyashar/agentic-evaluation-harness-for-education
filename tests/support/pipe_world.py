@@ -50,7 +50,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Iterator
 
-from aeh.prov import Completion, FixtureMissingError, RecordedFixtureProvider
+from aeh.prov import (Completion, DecisionRequest, FixtureMissingError, NoulQuestion,
+                      RecordedFixtureProvider, ScoreQuestion)
 from aeh.conf import ModelRef
 from aeh.orch import ESCALATION_BUDGET_ENV
 from aeh.synth import LEVEL_L1, LEVEL_L2
@@ -76,6 +77,18 @@ RECORDINGS_DIRNAME = "recordings"
 def recordings_dir(root: Path | None = None) -> Path:
     """The committed recordings directory for F-DEV-PIPE."""
     return (root or CORPUS_ROOT) / "F-DEV-PIPE" / RECORDINGS_DIRNAME
+
+
+def jev_decisions_dir(root: Path | None = None) -> Path:
+    """F-JEV-DECISIONS: F-DEV-PIPE driven with the decision engine on — every `decide` and every
+    `complete` that run makes, in one directory (Jev test plan §4.4, #445)."""
+    return (root or CORPUS_ROOT) / "F-JEV-DECISIONS" / RECORDINGS_DIRNAME
+
+
+def jev_synth_dir(root: Path | None = None) -> Path:
+    """F-JEV-SYNTH: TC-E2E-05's engine-on overnight run over F-SYNTH's first submissions with a
+    base panel of 1 (`JevSynthWorld`), every `decide` and `complete` it makes (#445)."""
+    return (root or CORPUS_ROOT) / "F-JEV-SYNTH" / RECORDINGS_DIRNAME
 
 
 def two_run_dir(run: str, root: Path | None = None) -> Path:
@@ -144,6 +157,23 @@ class StrictReplayProvider:
         self.replayed_calls += 1
         return completion
 
+    def decide(self, request: Any, model_ref: Any) -> Any:
+        """The recorded decision, or a named miss (never a fresh `RecordedFixtureProvider`:
+        `aeh.pipeline` binds this double only because it has `decide`)."""
+        try:
+            decision = self._inner.decide(request, model_ref)
+        except FixtureMissingError as error:
+            self.misses.append({"role": "decision", "build_id": model_ref.build_id,
+                                "fields": "state, questions"})
+            raise AssertionError(
+                f"F-JEV-DECISIONS has no decision recording on build {model_ref.build_id!r}; "
+                f"re-capture with `python -m tests.support.pipe_world`.") from error
+        self.replayed_calls += 1
+        return decision
+
+    def decision_capabilities(self, model_ref: Any) -> Any:
+        return self._inner.decision_capabilities(model_ref)
+
     def record(self, prompt: Any, model_ref: Any, params: Any,
                completion: Any) -> str:  # pragma: no cover - guarded by the world
         raise AssertionError(
@@ -172,7 +202,13 @@ class PipeWorld(SynthWorld):
     """
 
     def __init__(self, data_dir: Any, fixture_dir: Any, *,
-                 uniform_panel_ordinal: int | None = None, **kwargs: Any) -> None:
+                 uniform_panel_ordinal: int | None = None, decision_engine: bool = False,
+                 **kwargs: Any) -> None:
+        #: F-JEV-DECISIONS' mode: the run resolves with the fixture decision engine on, so
+        #: seat 0 is pre-screened (`CORPUS_DECISION_BUILD`, `DECISION_OUTCOMES`).
+        self.decision_engine = decision_engine
+        self.decision_outcomes = DECISION_OUTCOMES
+        self._fixture_dir_for_cfg = str(fixture_dir)
         # `F-DEV-PIPE-TWO-RUN`'s mode: every judged criterion's panel unanimous at ONE ordinal,
         # every arm, every submission - §4.4's `(1,1,1)` and `(3,3,3)`. None is F-DEV-PIPE's
         # own shape, where the panel varies per criterion and per submission.
@@ -207,6 +243,17 @@ class PipeWorld(SynthWorld):
             package=dev_pipe,
             **kwargs,
         )
+
+    def _run_cfg_overrides(self) -> dict[str, Any]:
+        if not self.decision_engine:
+            return {}
+        return {
+            "HARNESS_DECISION_ENGINE": "jev",
+            "HARNESS_DECISION_PROVIDER": "fixture",
+            "HARNESS_JEV_BUILD": CORPUS_DECISION_BUILD,
+            "HARNESS_JEV_QUANTIZATION": "bf16",
+            "HARNESS_FIXTURE_DIR": self._fixture_dir_for_cfg,
+        }
 
     def _make_provider(self, fixture_dir: Any) -> Any:
         """`JourneyProvider` while capturing; the strict replayer once the corpus exists."""
@@ -362,6 +409,49 @@ class PipeWorld(SynthWorld):
         return dev_pipe.band_at(cid, panel[arms.index(judge)])
 
 
+class JevSynthWorld(SynthWorld):
+    """TC-E2E-05's world: `SynthWorld` over F-SYNTH's first `JEV_SYNTH_COUNT` submissions, with
+    the fixture decision engine on and a base panel of ONE.
+
+    Every judged cell's seat 0 is pre-screened, and none is named in `decision_outcomes`, so
+    every decision is accepted on the reference band (`DEFAULT_DECISION_OUTCOME`). The
+    reference package's four-band baseline (mean 2.0, sd 0.5) puts ordinals 0 and 3 two or more
+    sigma out, so any accepted cell at an edge band escalates. The two extension arms then
+    answer as LLM judges: the escalated panel is `{decision, llm, llm}`. Disclosed divergence:
+    TC-E2E-05 says "F-SYNTH overnight run", and this is its first eight submissions, which is
+    enough for every assertion the case makes and keeps the recordings reviewable.
+    """
+
+    def __init__(self, data_dir: Any, fixture_dir: Any, *, monkeypatch: Any = None,
+                 record_as_you_go: bool = True) -> None:
+        self.decision_engine = True
+        self.decision_outcomes: dict[tuple[str, str], dict[str, Any]] = {}
+        self.uniform_panel_ordinal = None
+        self._fixture_dir_for_cfg = str(fixture_dir)
+        if monkeypatch is not None:
+            monkeypatch.setenv(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET)
+        else:
+            os.environ[ESCALATION_BUDGET_ENV] = CORPUS_ESCALATION_BUDGET
+        with pinned_uuid4():
+            super().__init__(data_dir, fixture_dir, n_submissions=JEV_SYNTH_COUNT,
+                             cohort_id="coh-jev-synth", run_id="run-jev-synth",
+                             monkeypatch=monkeypatch, quarantine_indices=(), panel_size=1,
+                             record_as_you_go=record_as_you_go)
+
+    _run_cfg_overrides = PipeWorld._run_cfg_overrides
+    _make_provider = PipeWorld._make_provider
+
+
+JEV_SYNTH_COUNT = 8
+
+
+def jev_synth_replay_world(data_dir: Path, *, monkeypatch: Any = None) -> JevSynthWorld:
+    """A replay-only `JevSynthWorld` over the committed F-JEV-SYNTH recordings."""
+    for sub in ("packages", "cohorts", "blobs"):
+        (data_dir / sub).mkdir(parents=True, exist_ok=True)
+    return JevSynthWorld(data_dir, jev_synth_dir(), monkeypatch=monkeypatch, record_as_you_go=False)
+
+
 # --- the capture ----------------------------------------------------------------------------
 
 
@@ -412,11 +502,14 @@ def capture_all() -> dict[str, int]:
     for run, ordinal in dev_pipe.TWO_RUN_ORDINALS.items():
         counts[f"F-DEV-PIPE-TWO-RUN/{run}"] = capture(
             two_run_dir(run), uniform_panel_ordinal=ordinal)
+    counts["F-JEV-DECISIONS"] = capture(jev_decisions_dir(), decision_engine=True)
+    counts["F-JEV-SYNTH"] = capture(jev_synth_dir(), world_factory=JevSynthWorld)
     return counts
 
 
 def capture(destination: Path | None = None, *,
-            uniform_panel_ordinal: int | None = None) -> int:
+            uniform_panel_ordinal: int | None = None, decision_engine: bool = False,
+            world_factory: Any = None) -> int:
     """Drive the corpus once with record-as-you-go and keep what it recorded.
 
     Returns the number of recordings written. The destination is emptied first: a stale
@@ -439,8 +532,12 @@ def capture(destination: Path | None = None, *,
         for sub in ("packages", "cohorts", "blobs"):
             (data_dir / sub).mkdir(parents=True)
         staging = scratch / "recordings"
-        world = PipeWorld(data_dir, staging,
-                          uniform_panel_ordinal=uniform_panel_ordinal)
+        if world_factory is not None:
+            world = world_factory(data_dir, staging)
+        else:
+            world = PipeWorld(data_dir, staging,
+                              uniform_panel_ordinal=uniform_panel_ordinal,
+                              decision_engine=decision_engine)
         world.build_run()
         world.start_run()
         result = drive_composed(world)
@@ -481,9 +578,17 @@ def two_run_replay_world(data_dir: Path, run: str, *, monkeypatch: Any = None) -
     )
 
 
+def jev_replay_world(data_dir: Path, *, monkeypatch: Any = None) -> PipeWorld:
+    """A replay-only `PipeWorld` over F-JEV-DECISIONS: the fixture decision engine on, every
+    `decide` and `complete` answered from the committed recordings."""
+    return replay_world(data_dir, recordings=jev_decisions_dir(), monkeypatch=monkeypatch,
+                        decision_engine=True)
+
+
 def replay_world(data_dir: Path, *, recordings: Path | None = None,
                  monkeypatch: Any = None,
-                 uniform_panel_ordinal: int | None = None) -> PipeWorld:
+                 uniform_panel_ordinal: int | None = None,
+                 decision_engine: bool = False) -> PipeWorld:
     """A `PipeWorld` bound to the COMMITTED recordings, with the mint pinned.
 
     The supported way to drive F-DEV-PIPE without recording: every request the run assembles
@@ -495,7 +600,8 @@ def replay_world(data_dir: Path, *, recordings: Path | None = None,
         (data_dir / sub).mkdir(parents=True, exist_ok=True)
     return PipeWorld(data_dir, recordings or recordings_dir(), monkeypatch=monkeypatch,
                      record_as_you_go=False,
-                     uniform_panel_ordinal=uniform_panel_ordinal)
+                     uniform_panel_ordinal=uniform_panel_ordinal,
+                     decision_engine=decision_engine)
 
 
 
@@ -522,6 +628,67 @@ CORPUS_ESCALATION_ARMS = ("escalation-arm-4", "escalation-arm-5")
 #: cohort too small to grow headroom, and the journeys raise it for the same reason. Raised
 #: here so the corpus contains its escalation calls at all: §4.4 requires them recorded.
 CORPUS_ESCALATION_BUDGET = "1.0"
+
+
+#: F-JEV-DECISIONS' fixture decision model (edge-local needs a digest-pinned weights path).
+CORPUS_DECISION_BUILD = (
+    "/models/jev-fixture/model.safetensors@sha256:" + "fe" * 32)
+
+#: F-JEV-DECISIONS' outcome per judged cell (Jev test plan §4.4), keyed by the corpus
+#: submission id and criterion. `gate` is the reported band confidence; evidence sufficiency
+#: is answered at 0.99 (confidence 0.98), so `min(c_band, c_sufficient)` is `gate`.
+#:
+#: Disclosed divergences from §4.4: F-DEV-PIPE's C1 has six bands, not four, and its cells
+#: carry two spans (`a`, `b`), so C1/S1 cites `a` and not `b` — §4.4's "cites a/c" needs three.
+#: `cite` is the P(cited) per span label; a label absent from it answers 0.9. C2/S3's
+#: "malformed ×3" is one recorded `MalformedResponseError`: the three attempts are the live
+#: transport's retries, which the fixture double does not model.
+DECISION_OUTCOMES: dict[tuple[str, str], dict[str, Any]] = {
+    ("S1", "C1"): {"kind": "accepted", "gate": 0.92, "cite": {"a": 0.9, "b": 0.3}},
+    ("S2", "C1"): {"kind": "below_gate", "gate": 0.62, "cite": {}},
+    ("S3", "C1"): {"kind": "argmax_tie", "gate": 0.90, "cite": {}},
+    ("S1", "C2"): {"kind": "accepted_uncited", "gate": 0.90, "cite": {"a": 0.1, "b": 0.1}},
+    ("S2", "C2"): {"kind": "rejected"},
+    ("S3", "C2"): {"kind": "malformed"},
+}
+
+
+#: A cell no table names is accepted on its reference band, citing every span.
+DEFAULT_DECISION_OUTCOME: dict[str, Any] = {"kind": "accepted", "gate": 0.95, "cite": {}}
+
+
+def decision_response(request: Any, outcome: dict[str, Any], reference_ordinal: int) -> dict:
+    """The §1.2 response document for one cell's declared outcome. The band's probability mass
+    sits on the cell's reference ordinal (an argmax tie splits it with the next band), so an
+    accepted decision settles where the corpus's labels already are."""
+    answers: dict[str, Any] = {}
+    for question in request.questions:
+        if isinstance(question, ScoreQuestion):
+            n = len(question.levels)
+            gate = float(outcome["gate"])
+            probs = [0.0] * n
+            if outcome["kind"] == "argmax_tie":
+                other = reference_ordinal + 1 if reference_ordinal + 1 < n else reference_ordinal - 1
+                probs[reference_ordinal] = probs[other] = 0.5
+            else:
+                rest = round((1.0 - 0.95) / (n - 1), 6)
+                probs = [rest] * n
+                probs[reference_ordinal] = round(1.0 - rest * (n - 1), 6)
+            answers[question.key] = {
+                "type": "score", "score": round(sum(i * p for i, p in enumerate(probs)), 6),
+                "probabilities": {str(i): p for i, p in enumerate(probs)},
+                "legend": {str(i): level for i, level in enumerate(question.levels)},
+                "confidence": gate,
+            }
+        elif isinstance(question, NoulQuestion) and question.key == "evidence_sufficient":
+            answers[question.key] = {"type": "noul", "noul": 0.99}
+        elif isinstance(question, NoulQuestion):
+            label = question.key[len("cite_"):]
+            answers[question.key] = {"type": "noul", "noul": float(outcome["cite"].get(label, 0.9))}
+        else:  # pragma: no cover - the judge asks no Choice
+            raise AssertionError(f"F-JEV-DECISIONS has no answer for question {question.key!r}")
+    return {"model": "jev-fixture", "answers": answers,
+            "usage": {"input_tokens": 100, "output_tokens": 0}}
 
 
 def _corpus_ref(role: str, build_id: str) -> Any:
@@ -581,6 +748,32 @@ class CaptureProvider:
 
     def record(self, prompt: Any, model_ref: Any, params: Any, completion: Any) -> str:
         return self._inner.record(prompt, model_ref, params, completion)
+
+    def decision_capabilities(self, model_ref: Any) -> Any:
+        return self._inner.decision_capabilities(model_ref)
+
+    def decide(self, request: Any, model_ref: Any) -> Any:
+        """Replay, else record the cell's declared outcome (`DECISION_OUTCOMES`) and replay
+        that — so an error cell raises through the double exactly as it will on replay."""
+        try:
+            return self._inner.decide(request, model_ref)
+        except FixtureMissingError:
+            pass
+        sid, cid = self._cell({"criterion": request.state, "submission": request.state})
+        corpus_id = self._world.cohort[self._world.index_by_sid[sid] - 1].submission_id
+        outcome = getattr(self._world, "decision_outcomes", {}).get(
+            (corpus_id, cid), DEFAULT_DECISION_OUTCOME)
+        if outcome["kind"] == "rejected":
+            self._inner.record_decision(request, model_ref, error=(
+                "DecisionRequestRejectedError", "HTTP 422: the request was refused (F-JEV-DECISIONS)"))
+        elif outcome["kind"] == "malformed":
+            self._inner.record_decision(request, model_ref, error=(
+                "MalformedResponseError", "answers.band.legend is missing (F-JEV-DECISIONS)"))
+        else:
+            reference = self._world._ordinal_for(self._world.cohort[self._world.index_by_sid[sid] - 1], cid)
+            self._inner.record_decision(request, model_ref, decision_response(request, outcome, reference))
+        self.scripted_calls += 1
+        return self._inner.decide(request, model_ref)
 
     def complete(self, prompt: Any, model_ref: Any, params: Any) -> Any:
         try:
@@ -685,6 +878,13 @@ def drive_composed(world: Any, **overrides: Any) -> Any:
     from aeh.pipeline import run_to_completion
 
     keywords = corpus_refs()
+    if isinstance(world, JevSynthWorld):
+        keywords["high_risk_criteria"] = ()
+    if getattr(world, "decision_engine", False):
+        # The world's own boundary answers `decide` too: capturing records the declared
+        # outcome, replaying names any miss (`aeh.pipeline` would otherwise build a plain
+        # `RecordedFixtureProvider`, which neither records nor reports).
+        keywords["decision_provider"] = world.provider
     keywords.update(overrides)
     return run_to_completion(
         world.store, world.run_id, provider=world.provider,

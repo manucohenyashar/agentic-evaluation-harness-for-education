@@ -1,0 +1,268 @@
+{
+  "corpus": "F-JEV",
+  "version": "1",
+  "seed": null,
+  "generator": "harness.corpora.jev:jev_cells",
+  "description": "40 decision-engine conformance cells over a 4-band and a 6-band criterion (FR-CONFORM-10) with a recorded answer per backend, stored as figures and keyed at use by tests.support.jev_corpora.record_f_jev.",
+  "set_content_hash": "sha256:ff25ace742305e6c8b78133d8dfa526812d30f4a5442ebe3ed7b1a17a518c094",
+  "fixture_set_id": "F-JEV@1+sha256:ff25ace742305e6c8b78133d8dfa526812d30f4a5442ebe3ed7b1a17a518c094",
+  "criteria": {
+    "J4": {
+      "text": "Explains why the crate stays at rest on the ramp.",
+      "bands": [
+        [
+          "Beginning",
+          "Names no force."
+        ],
+        [
+          "Developing",
+          "Names a force without relating it to motion."
+        ],
+        [
+          "Proficient",
+          "Relates friction to the component of weight."
+        ],
+        [
+          "Exemplary",
+          "Relates both components and states the condition."
+        ]
+      ]
+    },
+    "J6": {
+      "text": "Identifies every force on the crate.",
+      "bands": [
+        [
+          "absent",
+          "No force appears."
+        ],
+        [
+          "minimal",
+          "One force, unlabelled."
+        ],
+        [
+          "emerging",
+          "Two forces."
+        ],
+        [
+          "developing",
+          "Three forces, one mislabelled."
+        ],
+        [
+          "secure",
+          "All three forces, labelled."
+        ],
+        [
+          "comprehensive",
+          "All three forces with directions and magnitudes."
+        ]
+      ]
+    }
+  },
+  "backends": [
+    "cloud",
+    "edge"
+  ],
+  "synthetic": true,
+  "submissions": [
+    {
+      "id": "JEV-01",
+      "path": "cells/JEV-01.json",
+      "content_hash": "sha256:8112b6407e3ef9232841215272cec939b260bc63c74211b28afd3aa86e21e382"
+    },
+    {
+      "id": "JEV-02",
+      "path": "cells/JEV-02.json",
+      "content_hash": "sha256:72c0565e9ebc3b3fff5eae492d359bd78c49c3e1d842dcb3403661e5629e0c5d"
+    },
+    {
+      "id": "JEV-03",
+      "path": "cells/JEV-03.json",
+      "content_hash": "sha256:120d435d2e0b0a2e16d33a6e2649cb5f2a0fee9b529d42140770d99a78d54fa9"
+    },
+    {
+      "id": "JEV-04",
+      "path": "cells/JEV-04.json",
+      "content_hash": "sha256:49fcd6e4bf2f21a6038211fdc316e84edb14443f5ee0c59e232165eef9c61117"
+    },
+    {
+      "id": "JEV-05",
+      "path": "cells/JEV-05.json",
+      "content_hash": "sha256:bc436b0999c5ee8f82f346cb0a0027ae8afcb3f7bf5ca7f153ff83e9c0a0b389"
+    },
+    {
+      "id": "JEV-06",
+      "path": "cells/JEV-06.json",
+      "content_hash": "sha256:12668f0bb327eafa1997ab366d21fced67289aed13bc178974f8a45422d284cd"
+    },
+    {
+      "id": "JEV-07",
+      "path": "cells/JEV-07.json",
+      "content_hash": "sha256:17da77db9e23081de3f87ec52356271ba92e6ec752211f9a9965e5ff9c0cd6d1"
+    },
+    {
+      "id": "JEV-08",
+      "path": "cells/JEV-08.json",
+      "content_hash": "sha256:35494841983f28975541ec9d40336eaab47de6f37de1151678a6881f2d466a6c"
+    },
+    {
+      "id": "JEV-09",
+      "path": "cells/JEV-09.json",
+      "content_hash": "sha256:5b1f96f50547cc687ce896c57889cea564e5b880a725d6d734040a68e5bfae62"
+    },
+    {
+      "id": "JEV-10",
+      "path": "cells/JEV-10.json",
+      "content_hash": "sha256:8505f298ca4275200e6b3adce7b6ee8800a6face2983d1df0abbef42c073ebfd"
+    },
+    {
+      "id": "JEV-11",
+      "path": "cells/JEV-11.json",
+      "content_hash": "sha256:ade3bb4d33580c7d0446b8aeb5bb29cbb8d495990e95ac37092320306414af42"
+    },
+    {
+      "id": "JEV-12",
+      "path": "cells/JEV-12.json",
+      "content_hash": "sha256:7033ff12ea658b74ee1613aee3087148ffcd80acec65ac7b9da99506a3401c7a"
+    },
+    {
+      "id": "JEV-13",
+      "path": "cells/JEV-13.json",
+      "content_hash": "sha256:dadfb28a959076b3269eb24f5c3e26aacdaa0ad4b5eda8577e6f9d2333cad54d"
+    },
+    {
+      "id": "JEV-14",
+      "path": "cells/JEV-14.json",
+      "content_hash": "sha256:96a66996c8001f53e3750ced9bf0d2f5d0e99b6976dc3918e0d623c4f943647a"
+    },
+    {
+      "id": "JEV-15",
+      "path": "cells/JEV-15.json",
+      "content_hash": "sha256:e5250656efb459958d8dd4db4f41763943f8914215becdc0b5740d6fa73147e7"
+    },
+    {
+      "id": "JEV-16",
+      "path": "cells/JEV-16.json",
+      "content_hash": "sha256:73078b9337e4e2477f3d20bbf308d2c14e68b22cb5594513ec87815c2d80e3c7"
+    },
+    {
+      "id": "JEV-17",
+      "path": "cells/JEV-17.json",
+      "content_hash": "sha256:59c27c7e86b9aa31b9c305df11eafd5e4894f31259b3a11a63ba9fbebb2493f7"
+    },
+    {
+      "id": "JEV-18",
+      "path": "cells/JEV-18.json",
+      "content_hash": "sha256:63aad61e5c4fa7ff6321159def7ed5d22c8a5612d36ebed7b73a2ee85a34db70"
+    },
+    {
+      "id": "JEV-19",
+      "path": "cells/JEV-19.json",
+      "content_hash": "sha256:54723ff8f5e8c76ac33ab0f1351c129a6789120b30c741677feb75e0c123464a"
+    },
+    {
+      "id": "JEV-20",
+      "path": "cells/JEV-20.json",
+      "content_hash": "sha256:fc258fcd2d4142bd2463d7c9153e5c848b4a29d222e1ce76f7114229b432e9ca"
+    },
+    {
+      "id": "JEV-21",
+      "path": "cells/JEV-21.json",
+      "content_hash": "sha256:381b35cd34466a4f30c4d94298a1248c87dba18331e8038490c3786076a59bbd"
+    },
+    {
+      "id": "JEV-22",
+      "path": "cells/JEV-22.json",
+      "content_hash": "sha256:1bad4a7f7c76e078f99c1708003b38983e5b7f82e162bb809f817bf76c5ff975"
+    },
+    {
+      "id": "JEV-23",
+      "path": "cells/JEV-23.json",
+      "content_hash": "sha256:3ba48e457e2ccec9b694ba5733ef7f25c3f41866e0551c8dc0fb91d25c0e1511"
+    },
+    {
+      "id": "JEV-24",
+      "path": "cells/JEV-24.json",
+      "content_hash": "sha256:e4205570487974ef167088b399728a48df9d138d851e342026bedb429c4a8e3e"
+    },
+    {
+      "id": "JEV-25",
+      "path": "cells/JEV-25.json",
+      "content_hash": "sha256:27b852c05ee830decf91269c6f677ffdd4f2af503370beb09250ea53d0be9c9d"
+    },
+    {
+      "id": "JEV-26",
+      "path": "cells/JEV-26.json",
+      "content_hash": "sha256:d415e8161064478b2c4896f915c082a842adcd8ae80aec80a984aff200d86608"
+    },
+    {
+      "id": "JEV-27",
+      "path": "cells/JEV-27.json",
+      "content_hash": "sha256:2bdbad41eb600b9d182b7ada43815efc54985ec6a89aea99f5f03f58c61af3a4"
+    },
+    {
+      "id": "JEV-28",
+      "path": "cells/JEV-28.json",
+      "content_hash": "sha256:8a8d3f5841dd5354ba7f2f9934f24403593a02d8285ecbd47ec2eaa485fb84fe"
+    },
+    {
+      "id": "JEV-29",
+      "path": "cells/JEV-29.json",
+      "content_hash": "sha256:828742db88135b9e7f23cfda394c41b9e7c0a8473fce742727758dd079a79843"
+    },
+    {
+      "id": "JEV-30",
+      "path": "cells/JEV-30.json",
+      "content_hash": "sha256:56b521a63f7aa1f410a85e466136a9c0c3b906ad26c45b1249e057e17a52793b"
+    },
+    {
+      "id": "JEV-31",
+      "path": "cells/JEV-31.json",
+      "content_hash": "sha256:494fcb9f6bd84c0782b02bcb25817a76c4eca28a64b94066c3094276e386a0dc"
+    },
+    {
+      "id": "JEV-32",
+      "path": "cells/JEV-32.json",
+      "content_hash": "sha256:1ea91152b0ccfa49b0dd593dfd99f92addbcfde5cd9ce0c91bb1a4c8b97c83af"
+    },
+    {
+      "id": "JEV-33",
+      "path": "cells/JEV-33.json",
+      "content_hash": "sha256:80da2eb1063e5c3a6f1163a42b8e590ab5312712058009f640ad9af98ca86445"
+    },
+    {
+      "id": "JEV-34",
+      "path": "cells/JEV-34.json",
+      "content_hash": "sha256:a30e0dd9bda8cafe02143d8dcbc685247ed5fb82f5e3a6a0361bbb993488e80b"
+    },
+    {
+      "id": "JEV-35",
+      "path": "cells/JEV-35.json",
+      "content_hash": "sha256:2a4085c16b2e942953c96a7117c61be15bf69a1638fe1878fa577a8f28fb09fc"
+    },
+    {
+      "id": "JEV-36",
+      "path": "cells/JEV-36.json",
+      "content_hash": "sha256:a9904ae3afb09476b198becc6996e234e4fcdbd817d416841be5049de133a4f2"
+    },
+    {
+      "id": "JEV-37",
+      "path": "cells/JEV-37.json",
+      "content_hash": "sha256:fb477535a8f5c80561180fecae9cec6e91c5b569f55f573e494e7cf635ea50a0"
+    },
+    {
+      "id": "JEV-38",
+      "path": "cells/JEV-38.json",
+      "content_hash": "sha256:1bcde4cbdee2a4aa9d1ef58cdac104ff935a5ab90634fb38a22e340f583b6124"
+    },
+    {
+      "id": "JEV-39",
+      "path": "cells/JEV-39.json",
+      "content_hash": "sha256:aa9e9a4c2d452199bb0541cf8323b6ac161a3018c38a49059efcd225ddfaa241"
+    },
+    {
+      "id": "JEV-40",
+      "path": "cells/JEV-40.json",
+      "content_hash": "sha256:274ea45202fe0d5bd2d011cc909bf41bb0bab19d50716c014d83fcd4471cd89b"
+    }
+  ]
+}

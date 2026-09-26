@@ -1,0 +1,3706 @@
+[
+  {
+    "label_id": "SJ-001",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.802,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-002",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8039,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-003",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.8058,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-004",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8077,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-005",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.8096,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-006",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8115,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-007",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.8134,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-008",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8153,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-009",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.8172,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-010",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8191,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-011",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.821,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-012",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8229,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-013",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.8248,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-014",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8267,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-015",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.8286,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-016",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8305,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-017",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.8324,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-018",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8343,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-019",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.8362,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-020",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8381,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-021",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": 0.84,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-022",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.8419,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-023",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": 0.8438,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-024",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": 0.8457,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-025",
+    "subsets": [
+      "D60",
+      "CAL25"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 3,
+    "band_confidence": 0.8476,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-026",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.852,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-027",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8545,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-028",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.857,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-029",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8595,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-030",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.862,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-031",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.8645,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-032",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.867,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-033",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8695,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-034",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.872,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-035",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8745,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-036",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.877,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-037",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": 0.8795,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-038",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.882,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-039",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.8845,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-040",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.887,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-041",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.8895,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-042",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.892,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-043",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.8945,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-044",
+    "subsets": [
+      "D60",
+      "CAL19"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.897,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-045",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.95,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-046",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.953,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-047",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.956,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-048",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.959,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-049",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.962,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-050",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.965,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-051",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.968,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-052",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.971,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-053",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.974,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-054",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.977,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-055",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.98,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-056",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.983,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-057",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.986,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-058",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.989,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-059",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.992,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-060",
+    "subsets": [
+      "D60"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.995,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-061",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-062",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-063",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-064",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-065",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-066",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-067",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-068",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-069",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-070",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-071",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-072",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-073",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-074",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-075",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-076",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-077",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-078",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-079",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-080",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-081",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-082",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-083",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-084",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-085",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-086",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-087",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-088",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-089",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-090",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-091",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-092",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-093",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-094",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-095",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-096",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-097",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-098",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-099",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-100",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-101",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-102",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-103",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-104",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-105",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-106",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-107",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-108",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-109",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-110",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-111",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-112",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-113",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-114",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-115",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-116",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-117",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-118",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-119",
+    "subsets": [
+      "D59"
+    ],
+    "partition": "decision",
+    "package_version": "2",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": 0.9,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-120",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-121",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-122",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-123",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-124",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-125",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-126",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-127",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-128",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-129",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-130",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-131",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-132",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-133",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-134",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-135",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-136",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-137",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-138",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-139",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-140",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-141",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-142",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-143",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-144",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-145",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-146",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-147",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-148",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-149",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-150",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-151",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-152",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-153",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-154",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-155",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-156",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-157",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-158",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-159",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-160",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-161",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-162",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-163",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-164",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-165",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-166",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-167",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-168",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-169",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-170",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-171",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-172",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-173",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-174",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-175",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-176",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-177",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-178",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-179",
+    "subsets": [
+      "F60"
+    ],
+    "partition": "llm_fallback",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-180",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-181",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-182",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-183",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-184",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-185",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-186",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-187",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-188",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-189",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-190",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-191",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-192",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-193",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-194",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-195",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-196",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-197",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-198",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-199",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-200",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-201",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-202",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-203",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-204",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-205",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-206",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-207",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-208",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-209",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-210",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-211",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-212",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-213",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-214",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-215",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-216",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-217",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-218",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-219",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-220",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-221",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-222",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-223",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-224",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-225",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-226",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-227",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-228",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-229",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-230",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-231",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-232",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 1,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-233",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-234",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-235",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 4,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-236",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-237",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-238",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 3,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-239",
+    "subsets": [
+      "O60"
+    ],
+    "partition": "llm_engine_off",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 2,
+    "band_confidence": null,
+    "label_type": "blind",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-240",
+    "subsets": [
+      "X5"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 3,
+    "band_confidence": 0.99,
+    "label_type": "operational",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-241",
+    "subsets": [
+      "X5"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 2,
+    "teacher_band": 4,
+    "band_confidence": 0.99,
+    "label_type": "operational",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-242",
+    "subsets": [
+      "X5"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 3,
+    "teacher_band": 1,
+    "band_confidence": 0.99,
+    "label_type": "operational",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-243",
+    "subsets": [
+      "X5"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 4,
+    "teacher_band": 2,
+    "band_confidence": 0.99,
+    "label_type": "operational",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  },
+  {
+    "label_id": "SJ-244",
+    "subsets": [
+      "X5"
+    ],
+    "partition": "decision",
+    "package_version": "1",
+    "criterion_id": "C-01",
+    "system_band": 1,
+    "teacher_band": 3,
+    "band_confidence": 0.99,
+    "label_type": "operational",
+    "evaluation_mode": "judged",
+    "saw_system_output": 0
+  }
+]

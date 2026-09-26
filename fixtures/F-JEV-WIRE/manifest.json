@@ -1,0 +1,254 @@
+{
+  "corpus": "F-JEV-WIRE",
+  "version": "1",
+  "seed": null,
+  "generator": "harness.corpora.jev:wire_bodies",
+  "description": "Synthetic decision-engine HTTP bodies for both backends (Jev test plan §4.4): well-formed answers, TC-PROV-25's malformed shapes, error statuses, a Retry-After 429 and a changed model. Synthetic, labelled so, until live captures replace them.",
+  "set_content_hash": "sha256:514f819b49dec7eefb12429a4f145d14fd199c021af95883e0c9100cac39a7f2",
+  "fixture_set_id": "F-JEV-WIRE@1+sha256:514f819b49dec7eefb12429a4f145d14fd199c021af95883e0c9100cac39a7f2",
+  "synthetic": true,
+  "requests": {
+    "canonical": {
+      "state": "### criterion\nExplains equilibrium on the ramp.\n\n### submission\nThe crate does not slide because static friction balances the component of weight.",
+      "questions": {
+        "topic": {
+          "type": "choice",
+          "instructions": "Which concept does the answer use?",
+          "options": {
+            "friction": "static friction",
+            "normal": "normal force",
+            "gravity": "weight only"
+          }
+        },
+        "band": {
+          "type": "score",
+          "instructions": "Which band does the work meet?",
+          "levels": [
+            "Beginning",
+            "Developing",
+            "Proficient",
+            "Exemplary"
+          ]
+        },
+        "evidence_sufficient": {
+          "type": "noul",
+          "instructions": "Is the evidence sufficient?"
+        },
+        "cite_a": {
+          "type": "noul",
+          "instructions": "Does span a support the band?"
+        }
+      }
+    },
+    "two_level": {
+      "state": "### criterion\nStates the net force.\n\n### submission\nThe net force is zero.",
+      "questions": {
+        "band": {
+          "type": "score",
+          "instructions": "Met or not met?",
+          "levels": [
+            "not met",
+            "met"
+          ]
+        }
+      }
+    }
+  },
+  "submissions": [
+    {
+      "id": "cloud-well-formed-derived",
+      "path": "bodies/cloud-well-formed-derived.json",
+      "content_hash": "sha256:4e2a78a5d87216943b1752ca0691f28a2f05bd1192beb16f12645af66412984e"
+    },
+    {
+      "id": "cloud-well-formed-reported",
+      "path": "bodies/cloud-well-formed-reported.json",
+      "content_hash": "sha256:ebf4079d61e21f228d4d0b76be1154b5b44cc6486a103fd2f1d184b035374485"
+    },
+    {
+      "id": "edge-well-formed-derived",
+      "path": "bodies/edge-well-formed-derived.json",
+      "content_hash": "sha256:02ad7c9b4c0d7ea1f2efb6b6d2cd9421c416c60f25d1e12e6e3921c4c8f588fc"
+    },
+    {
+      "id": "edge-well-formed-reported",
+      "path": "bodies/edge-well-formed-reported.json",
+      "content_hash": "sha256:19d6d358e2f4ec30c8b756856ed92c340f6463225684fe158c1f1ee60388deb6"
+    },
+    {
+      "id": "cloud-accept-sum-1-0009",
+      "path": "bodies/cloud-accept-sum-1-0009.json",
+      "content_hash": "sha256:e8b57a39eb11203f4bb7c26457841d635f0ccd27160da937282c5c4369000395"
+    },
+    {
+      "id": "cloud-malformed-missing_answer_key",
+      "path": "bodies/cloud-malformed-missing_answer_key.json",
+      "content_hash": "sha256:67bc7dedc6fc26802d35e77018b0c45b1c1624b49f9098e752410ddf1cab5df5"
+    },
+    {
+      "id": "cloud-malformed-extra_answer_key",
+      "path": "bodies/cloud-malformed-extra_answer_key.json",
+      "content_hash": "sha256:e4c3470de778bfde627a85c6b3e4a63c187baee29637088b9810b48959083913"
+    },
+    {
+      "id": "cloud-malformed-answer_type_mismatch",
+      "path": "bodies/cloud-malformed-answer_type_mismatch.json",
+      "content_hash": "sha256:1e779190060d6ec26df31dee289c707fe6d2e8805c792e49b8c3fea918453424"
+    },
+    {
+      "id": "cloud-malformed-choice_keys_not_options",
+      "path": "bodies/cloud-malformed-choice_keys_not_options.json",
+      "content_hash": "sha256:f41e9177a3dfbb7452e26aa8b2654527718121338a8ba55c91b764fe1d070975"
+    },
+    {
+      "id": "cloud-malformed-score_legend_mismatch",
+      "path": "bodies/cloud-malformed-score_legend_mismatch.json",
+      "content_hash": "sha256:9007f2f05f6349e007cb9117e8d000c0a93c005345029b501a041a062c42d1ce"
+    },
+    {
+      "id": "cloud-malformed-negative_probability",
+      "path": "bodies/cloud-malformed-negative_probability.json",
+      "content_hash": "sha256:97bd64ef141b331836435b98fa6b1e294b9841445cfbfde6f2ec4d2371ee4029"
+    },
+    {
+      "id": "cloud-malformed-sum_1_0011",
+      "path": "bodies/cloud-malformed-sum_1_0011.json",
+      "content_hash": "sha256:416c793cf07bd2d2d88dea55a557ccd3976297e1df8a7f7d219a33af34fd6944"
+    },
+    {
+      "id": "cloud-malformed-sum_0_98",
+      "path": "bodies/cloud-malformed-sum_0_98.json",
+      "content_hash": "sha256:dee202f883829303aa6169461a90678e6c2ab73abb335aa03f43b7281e6d1a42"
+    },
+    {
+      "id": "cloud-malformed-noul_above_one",
+      "path": "bodies/cloud-malformed-noul_above_one.json",
+      "content_hash": "sha256:548561cc45a321b8bd8f57080705609f2cc9bc4352730717d37d292f64cda8c7"
+    },
+    {
+      "id": "cloud-malformed-score-indices-gap",
+      "path": "bodies/cloud-malformed-score-indices-gap.json",
+      "content_hash": "sha256:bb0021dc8c21ce6c297e65051e80774b7b21014eaf9266aa5aef8c31649f73c1"
+    },
+    {
+      "id": "cloud-status-400",
+      "path": "bodies/cloud-status-400.json",
+      "content_hash": "sha256:f617bd1cf78a1106ef765cb90a56380e631b85323b72ce9464c2ea6b0810792e"
+    },
+    {
+      "id": "cloud-status-401",
+      "path": "bodies/cloud-status-401.json",
+      "content_hash": "sha256:e9fb8e6e9a82e097c8ead0125a0659bf30f162cc750d8974b96b768359384dc2"
+    },
+    {
+      "id": "cloud-status-402",
+      "path": "bodies/cloud-status-402.json",
+      "content_hash": "sha256:2c97c974d20ee990e6b80cef2799a153602e5beb10a09a522190c5a89a3f632e"
+    },
+    {
+      "id": "cloud-status-403",
+      "path": "bodies/cloud-status-403.json",
+      "content_hash": "sha256:7be91f9923c4320ca5a94a10564b3a87c989418414f846055b1bfc99e8d9623e"
+    },
+    {
+      "id": "cloud-status-422",
+      "path": "bodies/cloud-status-422.json",
+      "content_hash": "sha256:7f18f43c2bffc0549ab179cd473b96d7583d79358d52f763c6ace413281c465d"
+    },
+    {
+      "id": "cloud-status-429",
+      "path": "bodies/cloud-status-429.json",
+      "content_hash": "sha256:cf0800b6a8a8c40c74cbe510ce3177fd8c51162c958e1b0d022aec595aa78b95"
+    },
+    {
+      "id": "cloud-status-500",
+      "path": "bodies/cloud-status-500.json",
+      "content_hash": "sha256:7e80d6bd646bf8b90f0ffd4ad170e7fb38220ad9216bf44ed25abcdcd7c0d482"
+    },
+    {
+      "id": "cloud-status-524",
+      "path": "bodies/cloud-status-524.json",
+      "content_hash": "sha256:03f199748ab3720f7a9e8c37cd2eae57f7829be0ccd2289ee68336d36a35b53d"
+    },
+    {
+      "id": "cloud-status-529",
+      "path": "bodies/cloud-status-529.json",
+      "content_hash": "sha256:2cb5cd2234abd8e7dc264149d73df6c67428695a2fbfc97952a92aa6cdec7a06"
+    },
+    {
+      "id": "cloud-status-400-echo",
+      "path": "bodies/cloud-status-400-echo.json",
+      "content_hash": "sha256:192e7ee67a4763fc2c5d22f512e95705ceb63aa46ac6ccfcc1cdd2964db84906"
+    },
+    {
+      "id": "cloud-status-422-echo",
+      "path": "bodies/cloud-status-422-echo.json",
+      "content_hash": "sha256:1ed1dd226f40e406dbd2c434b3ef3ec7b5dcbbccae7b83a0e34672d53d07172c"
+    },
+    {
+      "id": "edge-status-400",
+      "path": "bodies/edge-status-400.json",
+      "content_hash": "sha256:6a4e729dff2acf18cd16aa51d9dcddd30c7001da7a01e53cb39980a7e0c64daa"
+    },
+    {
+      "id": "edge-status-401",
+      "path": "bodies/edge-status-401.json",
+      "content_hash": "sha256:918999de2f37aa8831f9f0da682761cae459a6cb59abfa62a95e207e7384a12b"
+    },
+    {
+      "id": "edge-status-402",
+      "path": "bodies/edge-status-402.json",
+      "content_hash": "sha256:b5ba66e08ea5e9bba9ba94c69e76eafa40d2ffd08577fd8c83052a92d3df73a6"
+    },
+    {
+      "id": "edge-status-403",
+      "path": "bodies/edge-status-403.json",
+      "content_hash": "sha256:98d47e81bef9ef8edbe9236625fb85fb5ea5e285585e26b8c476bb067bf5c1c2"
+    },
+    {
+      "id": "edge-status-422",
+      "path": "bodies/edge-status-422.json",
+      "content_hash": "sha256:1ccf28f87fa33d24154063a31e991a4a026a719cc62eccce1eb9055126d17898"
+    },
+    {
+      "id": "edge-status-429",
+      "path": "bodies/edge-status-429.json",
+      "content_hash": "sha256:da484b843335c06a5e89ca9c1a5588655c21978d06b31d57ef5660d5f824985f"
+    },
+    {
+      "id": "edge-status-500",
+      "path": "bodies/edge-status-500.json",
+      "content_hash": "sha256:1c4e0ac265dae1d1bfd5871225e2eb39a81754b5381723ad590cb2de360247d9"
+    },
+    {
+      "id": "edge-status-524",
+      "path": "bodies/edge-status-524.json",
+      "content_hash": "sha256:de170e5a25083ba065c646f69798eed9dad91c6b02ebf04a3aea29309d61a0aa"
+    },
+    {
+      "id": "edge-status-529",
+      "path": "bodies/edge-status-529.json",
+      "content_hash": "sha256:a7477d4134a75c7a86c59c183c8dae538328abe05fb9c06133013af648cdaed9"
+    },
+    {
+      "id": "edge-status-400-echo",
+      "path": "bodies/edge-status-400-echo.json",
+      "content_hash": "sha256:fda18b9a7941a522bfe7e81fe79f1cac2c384efcbe279946bf11a3114a3c1998"
+    },
+    {
+      "id": "edge-status-422-echo",
+      "path": "bodies/edge-status-422-echo.json",
+      "content_hash": "sha256:02825e5f4ab0f47ab9e2e4359e13f539748965a66766621bf6b0052de5cb1a2d"
+    },
+    {
+      "id": "edge-status-422-window",
+      "path": "bodies/edge-status-422-window.json",
+      "content_hash": "sha256:f8df94ed74fe33bd93829cbc922aa065ac8f0249b599a9d8a45993b59a25954f"
+    },
+    {
+      "id": "cloud-different-model",
+      "path": "bodies/cloud-different-model.json",
+      "content_hash": "sha256:15cc7075f5a220216b4fb855653c75acd67e84a29fddb36a9f652dedbb623e7a"
+    }
+  ]
+}

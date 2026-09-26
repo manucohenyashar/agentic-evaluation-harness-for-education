@@ -1,0 +1,62 @@
+{
+  "cell_id": "JEV-21",
+  "kind": "graded",
+  "criterion_id": "J6",
+  "reference_ordinal": 2,
+  "spans": [
+    {
+      "start": 0,
+      "end": 39,
+      "text": "Weight acts straight down on the crate.",
+      "region_kind": "transcribed_text"
+    },
+    {
+      "start": 40,
+      "end": 110,
+      "text": "The ramp pushes back with a normal force perpendicular to its surface.",
+      "region_kind": "transcribed_text"
+    },
+    {
+      "start": 111,
+      "end": 176,
+      "text": "Static friction acts up the ramp, opposing the tendency to slide.",
+      "region_kind": "transcribed_text"
+    }
+  ],
+  "submission_text": "Weight acts straight down on the crate. The ramp pushes back with a normal force perpendicular to its surface. Static friction acts up the ramp, opposing the tendency to slide. So a force is holding it.",
+  "adversarial_kind": null,
+  "answers": {
+    "cloud": {
+      "band_probabilities": [
+        0.014,
+        0.014,
+        0.93,
+        0.014,
+        0.014,
+        0.014
+      ],
+      "sufficiency": 0.97,
+      "cites": {
+        "a": 0.9,
+        "b": 0.35,
+        "c": 0.9
+      }
+    },
+    "edge": {
+      "band_probabilities": [
+        0.02,
+        0.02,
+        0.9,
+        0.02,
+        0.02,
+        0.02
+      ],
+      "sufficiency": 0.97,
+      "cites": {
+        "a": 0.9,
+        "b": 0.35,
+        "c": 0.9
+      }
+    }
+  }
+}

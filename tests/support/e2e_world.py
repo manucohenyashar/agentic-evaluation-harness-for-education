@@ -887,7 +887,7 @@ class SynthWorld:
         the journeys assert on the enumeration and the estimate first."""
         self.orchestrator = Orchestrator(self.store, provider=self.provider)
         resolved = resolve_run_config(
-            edge_cfg(panel=self.panel_refs),
+            edge_cfg(panel=self.panel_refs, **self._run_cfg_overrides()),
             CohortRef(cohort_id=self.cohort_id, consent_class="synthetic"),
         )
         self.resolved = resolved
@@ -896,6 +896,11 @@ class SynthWorld:
         self.enumeration = self.orchestrator.enumerate_units(self.run_id)
         self._stage_spans()
         return self.run_id
+
+    def _run_cfg_overrides(self) -> dict[str, Any]:
+        """Extra configuration keys the run resolves with. None here; `PipeWorld` turns the
+        decision engine on through it for F-JEV-DECISIONS."""
+        return {}
 
     def start_run(self) -> None:
         assert self.orchestrator.start(self.run_id) == "running", (

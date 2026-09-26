@@ -1,0 +1,16 @@
+{
+  "corpus": "F-JEV-PERF",
+  "version": "1",
+  "seed": null,
+  "generator": "harness.corpora.jev:perf_selection",
+  "description": "PERF-16's base-sweep cohort: 350 F-SYNTH submissions x 6 judged criteria (the NFR-SYS-05 shape). Manifest-only; the submissions are F-SYNTH's.",
+  "set_content_hash": "sha256:214f6f9a6235cd9296ee285702345a61b90209b0d1e81438093ecf71244c35f6",
+  "fixture_set_id": "F-JEV-PERF@1+sha256:214f6f9a6235cd9296ee285702345a61b90209b0d1e81438093ecf71244c35f6",
+  "submissions": [
+    {
+      "id": "selection",
+      "path": "selection.json",
+      "content_hash": "sha256:79b54eaf905557e12ae0a4f6f279f15441894cf118f09884c95c51ce2ecff32e"
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "id": "cloud-malformed-sum_0_98",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "cloud",
+  "request": "canonical",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "model": "typesafe/jev-1.13-20260917",
+    "answers": {
+      "topic": {
+        "type": "choice",
+        "choice": "friction",
+        "probabilities": {
+          "friction": 0.91,
+          "normal": 0.06,
+          "gravity": 0.03
+        }
+      },
+      "band": {
+        "type": "score",
+        "score": 2.05,
+        "probabilities": {
+          "0": 0.02,
+          "1": 0.08,
+          "2": 0.71,
+          "3": 0.17
+        },
+        "legend": {
+          "0": "Beginning",
+          "1": "Developing",
+          "2": "Proficient",
+          "3": "Exemplary"
+        }
+      },
+      "evidence_sufficient": {
+        "type": "noul",
+        "noul": 0.94
+      },
+      "cite_a": {
+        "type": "noul",
+        "noul": 0.88
+      }
+    },
+    "usage": {
+      "input_tokens": 412,
+      "output_tokens": 0,
+      "cost": 4.12e-05
+    }
+  },
+  "expect": {
+    "outcome": "malformed",
+    "error_type": "MalformedResponseError"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "cloud-status-401",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "cloud",
+  "request": "canonical",
+  "status": 401,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 401,
+      "message": "No auth credentials found"
+    }
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "ConfigurationError",
+    "retried": false
+  }
+}

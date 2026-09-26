@@ -1,0 +1,50 @@
+{
+  "schema": "aeh.prov/fixture/1",
+  "key": "sha256:ec65a41b07c2adbeedccb03fa1d24cf8dfeca2ebea465df499517ee3c1536f34",
+  "request": {
+    "fields": [
+      [
+        "directive",
+        "You write the whole-test narrative for one student's submission, from the per-question narratives below and nothing else. Compose prose that draws the threads of those narratives together. State no mark, no score, no band and no overall quality verdict: the narrative never grades. Reply as JSON with a 'narrative' text and a 'citations' list of criterion ids if any are named."
+      ],
+      [
+        "prompt_template_v",
+        "synth-prompt/1"
+      ],
+      [
+        "level",
+        "l2_test"
+      ],
+      [
+        "syntheses",
+        "The response addresses the criteria the panel read, citing the work's own words as evidence; where the work stops short, the narrative says so in the same terms the criteria name."
+      ],
+      [
+        "submission",
+        "sub-22a56dc63714"
+      ]
+    ],
+    "model_ref": {
+      "role": "synthesizer",
+      "provider": "local",
+      "build_id": "vlm@sha256:e2e02-synth",
+      "quantization": "q4"
+    },
+    "params": {
+      "temperature": 0.0,
+      "max_tokens": 512,
+      "top_p": null,
+      "seed": null,
+      "stop": []
+    }
+  },
+  "completion": {
+    "text": "{\"narrative\": \"The submission's questions are narrated above; the whole reads as one response whose strengths and gaps the question narratives already state.\", \"citations\": []}",
+    "tokens_in": 10,
+    "tokens_out": 5,
+    "latency_ms": 1,
+    "resolved_build": "vlm@sha256:e2e02-synth",
+    "cached_prefix_tokens": 0,
+    "cost": null
+  }
+}

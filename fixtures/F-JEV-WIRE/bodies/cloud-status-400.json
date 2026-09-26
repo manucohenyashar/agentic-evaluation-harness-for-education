@@ -1,0 +1,22 @@
+{
+  "id": "cloud-status-400",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "cloud",
+  "request": "canonical",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": {
+      "code": 400,
+      "message": "Invalid request: question 'band' has 11 levels"
+    }
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "DecisionRequestRejectedError",
+    "retried": false
+  }
+}

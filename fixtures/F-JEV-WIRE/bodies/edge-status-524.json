@@ -1,0 +1,20 @@
+{
+  "id": "edge-status-524",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "edge",
+  "request": "canonical",
+  "status": 524,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": "http_524",
+    "detail": "Upstream timed out"
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "ProviderUnavailableError",
+    "retried": true
+  }
+}
