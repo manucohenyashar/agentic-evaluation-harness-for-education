@@ -80,6 +80,10 @@ DECLARED_VERDICT_COLUMNS: tuple[str, ...] = (
     "uncited",
     "evidence_assessment",
     "latency_ms",
+    # CT-JUDGE-24 (Jev design delta FR-JUDGE-35, cohort migration 29): verdict provenance.
+    # Still no points column.
+    "scoring_engine",
+    "engine_build",
 )
 
 
