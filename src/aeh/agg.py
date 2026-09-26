@@ -140,6 +140,7 @@ __all__ = [
     "EmptyVerdictsError",
     "EscalationDecision",
     "EvenPanelError",
+    "PanelCorrelationError",
     "aggregate",
     "AGG_STATEMENTS",
     "AggregationSignals",
@@ -170,6 +171,17 @@ class EmptyVerdictsError(AggregateError, ValueError):
     different clauses — an empty panel is a caller bug (`CT-AGG-12`), an even
     panel is a real panel the contract refuses to adjudicate (`FR-AGG-03`).
     """
+
+
+class PanelCorrelationError(AggregateError, ValueError):
+    """A panel carrying two or more decision-engine verdicts (Jev design delta FR-AGG-18,
+    CT-AGG-22). The decision engine answers identical input near-identically, so two of its
+    verdicts in one panel would manufacture unanimity (alpha near 1) rather than measure it.
+    The seat rule (CT-JUDGE-21) makes this unreachable; the refusal is what makes a future
+    break of that rule fail loudly instead of auto-accepting. Not retryable; nothing is written.
+    """
+
+    retryable = False
 
 
 class EvenPanelError(AggregateError, ValueError):
@@ -725,6 +737,16 @@ def aggregate(
         raise EmptyVerdictsError(
             "aggregate over an empty verdict set is a programming error (CT-AGG-12): "
             "it is never a zero, a lowest band, or a null score."
+        )
+    # FR-AGG-18: the only place aggregation reads a verdict's engine. Everything below is
+    # engine-blind (FR-AGG-19, CT-AGG-23): a decision-engine verdict is a verdict.
+    decision_verdicts = sum(
+        1 for verdict in verdicts if _row_field(verdict, "scoring_engine") == "decision")
+    if decision_verdicts > 1:
+        raise PanelCorrelationError(
+            f"aggregate refuses a panel carrying {decision_verdicts} decision-engine verdicts "
+            f"(FR-AGG-18): two answers from one near-deterministic engine are one opinion "
+            f"counted twice, never agreement (CT-JUDGE-21, CT-AGG-22)."
         )
     if len(verdicts) % 2 == 0:
         if fallback and len(verdicts) == 2:
