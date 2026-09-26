@@ -1,0 +1,20 @@
+{
+  "id": "edge-status-422",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "edge",
+  "request": "canonical",
+  "status": 422,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "error": "http_422",
+    "detail": "Unprocessable: options exceed the per-pass limit"
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "DecisionRequestRejectedError",
+    "retried": false
+  }
+}

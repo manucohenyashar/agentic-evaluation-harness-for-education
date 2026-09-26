@@ -1,0 +1,21 @@
+{
+  "id": "edge-status-429",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "edge",
+  "request": "canonical",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json",
+    "retry-after": "2"
+  },
+  "body": {
+    "error": "http_429",
+    "detail": "Rate limit exceeded"
+  },
+  "expect": {
+    "outcome": "error",
+    "error_type": "ProviderUnavailableError",
+    "retried": true
+  }
+}

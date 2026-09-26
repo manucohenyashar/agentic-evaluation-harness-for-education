@@ -22,6 +22,13 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-SCAN/` | Synthetic rendered scans: the scanned-handwriting tier (`FR-CONFORM-03`, #133) — pixels-only pages, legible to marginal, plus one mixed-format paper |
 | `F-CONFORM/` | **Manifest only.** The version-pinned fixture set the conformance suite measures with (#133): a digest-addressed selection from the corpora above |
 | `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
+| `F-ADV-INJ-DECISION/` | Four injection twin pairs aimed at the decision path: band forcing, span-label, field-header and fence imitations (Jev plan §4.4, #445) |
+| `F-JEV-WIRE/` | **Synthetic** decision-engine HTTP bodies for both backends: valid, malformed per TC-PROV-25, error statuses (#445) |
+| `F-JEV/` | 40 decision conformance cells (4- and 6-band criteria) with per-backend answers as figures; keyed at use by `tests/support/jev_corpora.py` |
+| `F-JEV-PERF/` | **Selection only.** 350 F-SYNTH submissions x 6 judged criteria for PERF-16 |
+| `F-STATS-JEV/` | Blind labels partitioned by scoring engine, named subsets and 5 planted inadmissible labels (TC-STATS-33..35) |
+| `F-JEV-SYNTH/recordings/` | **Captured, not generated.** F-SYNTH's first 8 submissions, engine on, base panel of 1 (TC-E2E-05) |
+| `F-JEV-DECISIONS/recordings/` | **Captured, not generated.** F-DEV-PIPE with the fixture decision engine on; `python -m tests.support.pipe_world` re-captures it |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
 
 `F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not

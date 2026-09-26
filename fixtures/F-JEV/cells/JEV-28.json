@@ -1,0 +1,35 @@
+{
+  "cell_id": "JEV-28",
+  "kind": "graded",
+  "criterion_id": "J6",
+  "reference_ordinal": 5,
+  "spans": [],
+  "submission_text": "Weight acts straight down on the crate. The ramp pushes back with a normal force perpendicular to its surface. Static friction acts up the ramp, opposing the tendency to slide. Along the ramp, friction balances the component of weight, so the net force is zero. Friction can hold the crate only while the needed force stays below its maximum. Perpendicular to the ramp, the normal force balances the other component of weight. So it stays at rest while the required friction is below its maximum value.",
+  "adversarial_kind": null,
+  "answers": {
+    "cloud": {
+      "band_probabilities": [
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.014,
+        0.93
+      ],
+      "sufficiency": 0.2,
+      "cites": {}
+    },
+    "edge": {
+      "band_probabilities": [
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.02,
+        0.9
+      ],
+      "sufficiency": 0.2,
+      "cites": {}
+    }
+  }
+}

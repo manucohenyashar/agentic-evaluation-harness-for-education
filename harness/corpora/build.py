@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from harness.corpora import (
-    adv_inj, adv_pdf, conform_set, dev_pipe, graphic, hand, reference_package, scan, stats,
+    adv_inj, adv_pdf, conform_set, dev_pipe, graphic, hand, jev, reference_package, scan, stats,
     synth,
 )
 from harness.corpora.baselines import (
@@ -172,7 +172,9 @@ def _build_graphic(root: Path) -> None:
     )
 
 
-def _build_adv_inj(root: Path) -> None:
+def _build_adv_inj(root: Path, *, corpus: str = "F-ADV-INJ", members_of: Any = None,
+                   seed: int | None = None, generator: str = "harness.corpora.adv_inj:twin_pairs",
+                   description: str | None = None, extra_keys: dict[str, object] | None = None) -> None:
     """`F-ADV-INJ` — both halves of every twin pair, in pair order.
 
     The pairing is carried in the manifest by `twin_id` on **both** members, so a reader of one
@@ -181,7 +183,7 @@ def _build_adv_inj(root: Path) -> None:
     really are identical but for the payload.
     """
     members = []
-    for member in adv_inj.submissions():
+    for member in (members_of if members_of is not None else adv_inj.submissions()):
         extra: dict[str, object] = {
             "student_ref": member.student_ref,
             "consent_class": "synthetic",
@@ -216,11 +218,11 @@ def _build_adv_inj(root: Path) -> None:
     write_manifest(
         root,
         Manifest(
-            corpus="F-ADV-INJ",
+            corpus=corpus,
             version=CORPUS_VERSION,
-            seed=adv_inj.INJ_SEED,
-            generator="harness.corpora.adv_inj:twin_pairs",
-            description=(
+            seed=adv_inj.INJ_SEED if seed is None else seed,
+            generator=generator,
+            description=description or (
                 "Injection twin pairs (§4.4, FR-CONFORM-09). Each pair is one submission "
                 "carrying an injection payload and one benign twin identical in content but "
                 "for the payload; both halves carry the same reference bands, so a band "
@@ -231,9 +233,11 @@ def _build_adv_inj(root: Path) -> None:
                 "package_id": reference_package.PACKAGE_ID,
                 "package_version": reference_package.PACKAGE_VERSION,
                 "consent_class": "synthetic",
-                "pairs": len(adv_inj.twin_pairs()),
-                "payload_kinds": list(adv_inj.PAYLOAD_KINDS),
-                "pairs_per_kind": adv_inj.PAIRS_PER_KIND,
+                **(extra_keys if extra_keys is not None else {
+                    "pairs": len(adv_inj.twin_pairs()),
+                    "payload_kinds": list(adv_inj.PAYLOAD_KINDS),
+                    "pairs_per_kind": adv_inj.PAIRS_PER_KIND,
+                }),
             },
         ),
     )
@@ -458,6 +462,13 @@ To change a corpus, change its generator under `harness/corpora/` and rebuild.
 | `F-SCAN/` | Synthetic rendered scans: the scanned-handwriting tier (`FR-CONFORM-03`, #133) — pixels-only pages, legible to marginal, plus one mixed-format paper |
 | `F-CONFORM/` | **Manifest only.** The version-pinned fixture set the conformance suite measures with (#133): a digest-addressed selection from the corpora above |
 | `F-HAND/` | **Declaration only.** The consented real-handwriting corpus is never committed (§4.4 Tier C) |
+| `F-ADV-INJ-DECISION/` | Four injection twin pairs aimed at the decision path: band forcing, span-label, field-header and fence imitations (Jev plan §4.4, #445) |
+| `F-JEV-WIRE/` | **Synthetic** decision-engine HTTP bodies for both backends: valid, malformed per TC-PROV-25, error statuses (#445) |
+| `F-JEV/` | 40 decision conformance cells (4- and 6-band criteria) with per-backend answers as figures; keyed at use by `tests/support/jev_corpora.py` |
+| `F-JEV-PERF/` | **Selection only.** 350 F-SYNTH submissions x 6 judged criteria for PERF-16 |
+| `F-STATS-JEV/` | Blind labels partitioned by scoring engine, named subsets and 5 planted inadmissible labels (TC-STATS-33..35) |
+| `F-JEV-SYNTH/recordings/` | **Captured, not generated.** F-SYNTH's first 8 submissions, engine on, base panel of 1 (TC-E2E-05) |
+| `F-JEV-DECISIONS/recordings/` | **Captured, not generated.** F-DEV-PIPE with the fixture decision engine on; `python -m tests.support.pipe_world` re-captures it |
 | `baselines/` | The §6.9 golden-baseline registry: which artifact, whose signature, on what grounds |
 
 `F-ADV-PDF/` holds no `.pdf` files, deliberately: §4.7 says the corpus is *"generated, not
@@ -524,6 +535,26 @@ def build(root: Path) -> None:
     _build_graphic(root / "F-GRAPHIC")
     _build_stats(root / "F-STATS")
     _build_adv_inj(root / "F-ADV-INJ")
+    _build_adv_inj(
+        root / "F-ADV-INJ-DECISION", corpus="F-ADV-INJ-DECISION",
+        members_of=[m for pair in adv_inj.decision_path_pairs() for m in pair],
+        seed=adv_inj.DECISION_PATH_SEED, generator="harness.corpora.adv_inj:decision_path_pairs",
+        description=(
+            "Four injection twin pairs aimed at the decision path (Jev test plan §4.4, "
+            "TC-JUDGE-43, ADV-15/17): a band-forcing directive, an imitation span label, a "
+            "field-header imitation and a fence-delimiter imitation. Same generator and pair "
+            "construction as F-ADV-INJ; a separate corpus so F-ADV-INJ's five kinds stay pinned."
+        ),
+        extra_keys={"pairs": len(adv_inj.DECISION_PATH_KINDS),
+                    "payload_kinds": list(adv_inj.DECISION_PATH_KINDS), "pairs_per_kind": 1,
+                    # TC-JUDGE-43's recorded answers: the injected twin takes the bait (top
+                    # band at 0.99); the benign twin sits on its reference band at 0.95.
+                    "decision_answers": {"criterion_id": "C-01",
+                                         "injected": {"band": "top", "probability": 0.99},
+                                         "benign": {"band": "reference", "probability": 0.95},
+                                         "sufficiency": 0.97, "cite": 0.9}},
+    )
+    jev.build_all(root, _json_bytes)
     _build_adv_pdf(root / "F-ADV-PDF")
     _build_scan(root / "F-SCAN")
     _build_conform(root)
@@ -568,9 +599,16 @@ _RECORDED_GOLDENS = frozenset({"F-SCHEMA/post-migration-checksums.json"})
 #: carries no run identifier, so run A's verdict and run B's verdict answer a byte-identical
 #: request. Measured — 30 of the 52 recordings share a key across the two sets and differ only
 #: in their completion.
+#: `F-JEV-DECISIONS/recordings/` is F-DEV-PIPE driven with the fixture decision engine on
+#: (#445): every `decide` and `complete` that run makes, captured by
+#: `tests/support/pipe_world.py:capture(..., decision_engine=True)` for the same reason.
+#: `F-JEV-SYNTH/recordings/` is TC-E2E-05's engine-on, panel-of-one run over F-SYNTH's first
+#: eight submissions (`JevSynthWorld`), captured the same way.
 _RECORDED_GOLDEN_TREES = (
     "F-DEV-PIPE/recordings/",
     "F-DEV-PIPE-TWO-RUN/",
+    "F-JEV-DECISIONS/recordings/",
+    "F-JEV-SYNTH/recordings/",
 )
 
 

@@ -1,0 +1,37 @@
+{
+  "id": "cloud-malformed-score-indices-gap",
+  "synthetic": true,
+  "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
+  "backend": "cloud",
+  "request": "two_level",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": {
+    "model": "typesafe/jev-1.13-20260917",
+    "answers": {
+      "band": {
+        "type": "score",
+        "score": 1.0,
+        "probabilities": {
+          "0": 0.4,
+          "2": 0.6
+        },
+        "legend": {
+          "0": "not met",
+          "2": "met"
+        }
+      }
+    },
+    "usage": {
+      "input_tokens": 412,
+      "output_tokens": 0,
+      "cost": 4.12e-05
+    }
+  },
+  "expect": {
+    "outcome": "malformed",
+    "error_type": "MalformedResponseError"
+  }
+}
