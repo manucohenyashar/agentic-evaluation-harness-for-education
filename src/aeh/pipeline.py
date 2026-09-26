@@ -436,7 +436,7 @@ def _engine_tag(run_config: Any, result: Any) -> str:
 
 def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider: Any) -> Any:
     """FR-PIPE-11: the decision provider for the frozen engine — the injected one, else the
-    fixture double already bound as `provider` when the engine is `fixture`, else
+    fixture recordings already bound as `provider` when the engine is `fixture`, else
     `decision_provider_for`, the only construction path (CT-PROV-22). `None` when the engine
     is off: an engine-off run constructs nothing (CT-PIPE-09)."""
     engine = getattr(run_config, "decision_engine", None)
@@ -444,10 +444,11 @@ def _decision_provider_for_run(run_config: Any, provider: Any, decision_provider
         return None
     if decision_provider is not None:
         return decision_provider
-    if engine.model.provider == "fixture" and hasattr(provider, "decide"):
-        return provider
     from aeh.prov import decision_provider_for
 
+    if engine.model.provider == "fixture" and getattr(provider, "fixture_dir", None) is not None:
+        # Still through the one construction path, pointed at the recordings already bound.
+        return decision_provider_for(engine.model, fixture_dir=provider.fixture_dir)
     return decision_provider_for(engine.model)
 
 
@@ -459,7 +460,15 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
     if engine is None or decision_provider is None:
         return
     if getattr(run_config, "backend_profile", None) == "cloud-hosted":
-        decision_provider.verify_retention((engine.model,))
+        report = decision_provider.verify_retention((engine.model,))
+        confirmed = {ref.build_id for ref in getattr(report, "confirmed", ())}
+        if engine.model.build_id not in confirmed or getattr(report, "unconfirmed", ()):
+            from aeh.prov import RetentionPolicyError
+
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for the decision model "
+                f"{engine.model.provider}:{engine.model.build_id}; nothing was dispatched "
+                f"(FR-PIPE-12, FR-PROV-28).")
     verify_build = getattr(decision_provider, "verify_build", None)
     if callable(verify_build):
         verify_build(engine.model)
