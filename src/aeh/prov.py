@@ -88,6 +88,7 @@ import os
 import re
 import tempfile
 import time
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Callable
@@ -161,6 +162,7 @@ __all__ = [
     "ScoreAnswer",
     "ScoreQuestion",
     "decision_provider_for",
+    "JevOpenRouterProvider",
     "decision_questions_document",
     "decision_request_key",
     "derived_confidence",
@@ -1584,6 +1586,9 @@ class _DefaultTransport:
     connection failure or timeout. This is the module's egress point (`CT-PROV-15`) — the
     only code in the tree that opens a socket to a model endpoint."""
 
+    def __init__(self, timeout_s: float = 120.0) -> None:
+        self._timeout_s = timeout_s
+
     def send(self, request: HttpRequest) -> HttpResponse:
         import urllib.error
         import urllib.request
@@ -1592,7 +1597,7 @@ class _DefaultTransport:
             request.url, data=request.body if request.body else None,
             headers=request.headers, method=request.method)
         try:
-            with urllib.request.urlopen(req, timeout=120) as response:
+            with urllib.request.urlopen(req, timeout=self._timeout_s) as response:
                 return HttpResponse(
                     status=response.status,
                     headers={k: v for k, v in response.headers.items()},
@@ -2053,7 +2058,6 @@ _FIXTURE_DECISION_CAPABILITIES = DecisionCapabilities(
 #: Decision provider names and the stories that ship them. Named so an unshipped one refuses
 #: with a reason rather than falling through to another backend (CT-PROV-21).
 _UNSHIPPED_DECISION_PROVIDERS = {
-    "openrouter-jev": "JevOpenRouterProvider (#442)",
     "openjev": "OpenJevLocalProvider (#443)",
     "openjev-small": "OpenJevSmallLocalProvider (#455)",
 }
@@ -2065,13 +2069,15 @@ def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvide
     name = str(getattr(model_ref, "provider", "") or "")
     if name == "fixture":
         return RecordedFixtureProvider(**seams)
+    if name == "openrouter-jev":
+        return JevOpenRouterProvider(**seams)
     if name in _UNSHIPPED_DECISION_PROVIDERS:
         raise ConfigurationError(
             f"decision provider {name!r} is designed but not shipped yet: "
             f"{_UNSHIPPED_DECISION_PROVIDERS[name]}.")
     raise ConfigurationError(
         f"no decision provider is named {name!r}; the decision providers are "
-        f"{sorted(['fixture', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
+        f"{sorted(['fixture', 'openrouter-jev', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
 
 
 #: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.
@@ -2086,6 +2092,289 @@ def _decision_request_record(request: DecisionRequest, model_ref: ModelRef) -> d
     return {"state": request.state, "questions": decision_questions_document(request),
             "model_ref": {name: getattr(model_ref, name) for name in _MODEL_REF_FIELDS}}
 
+
+
+# --- the live decision providers (FR-PROV-21…24, FR-PROV-28) --------------------------------------
+
+JEV_OPENROUTER_URL_ENV = "HARNESS_JEV_OPENROUTER_URL"
+DEFAULT_JEV_OPENROUTER_URL = "https://openrouter.ai/api/alpha/decisions"
+JEV_OPENROUTER_PROVIDER_ENV = "HARNESS_JEV_OPENROUTER_PROVIDER"
+#: The upstream OpenRouter routes Jev to, pinned in `provider.order` (FR-PROV-11/21).
+#: Assumption: TypeSafe serves its own model; the knob exists for when that is not so.
+DEFAULT_JEV_OPENROUTER_PROVIDER = "typesafe"
+JEV_COST_PER_MTOK_IN_ENV = "HARNESS_JEV_COST_PER_MTOK_IN"
+DEFAULT_JEV_COST_PER_MTOK_IN = Decimal("0.042")
+JEV_TIMEOUT_S_ENV = "HARNESS_JEV_TIMEOUT_S"
+DEFAULT_JEV_TIMEOUT_S = 10.0
+
+
+def _env_decimal(name: str, default: Decimal) -> Decimal:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = Decimal(raw.strip())
+    except Exception:  # noqa: BLE001 - InvalidOperation and friends
+        raise ConfigurationError(f"{name} must be a decimal number, got {raw!r}.") from None
+    if not value.is_finite() or value < 0:
+        raise ConfigurationError(f"{name} must be a non-negative decimal, got {raw!r}.")
+    return value
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw.strip())
+    except ValueError:
+        raise ConfigurationError(f"{name} must be a number of seconds, got {raw!r}.") from None
+    if not math.isfinite(value) or value <= 0:
+        raise ConfigurationError(f"{name} must be positive, got {raw!r}.")
+    return value
+
+
+def _safe_excerpt(body: Any, state: str) -> str:
+    """The engine's own short error message, for diagnosis, only when it cannot carry student
+    work (FR-PROV-23: no request bytes in an exception). Only `error.message`/`error.code`/
+    `message` fields are read, never the raw body, so a JSON-escaped echo is compared as the
+    string it decodes to. A message sharing any 12-character run with the state is dropped."""
+    try:
+        document = body if isinstance(body, dict) else json.loads(bytes(body).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return "(body withheld)"
+    candidates = []
+    if isinstance(document, dict):
+        error = document.get("error")
+        if isinstance(error, dict):
+            candidates += [error.get("message"), error.get("code")]
+        elif isinstance(error, str):
+            candidates.append(error)
+        candidates.append(document.get("message"))
+    parts = [c for c in candidates if isinstance(c, (str, int)) and str(c).strip()]
+    text = "; ".join(str(c) for c in parts)[:200]
+    window = 12
+    if not text or any(state[i:i + window] in text for i in range(0, max(len(state) - window + 1, 1))):
+        return "(body withheld)"
+    return text
+
+
+def _decision_status_error(response: HttpResponse, state: str = "") -> ProviderError | ConfigurationError | None:
+    """FR-PROV-23's non-retried statuses. 429 and 5xx never reach here: the shared loop retries
+    them (and surfaces `ProviderUnavailableError` past the budget, CT-PROV-07)."""
+    status = response.status
+    if 200 <= status <= 299:
+        return None
+    excerpt = _safe_excerpt(response.body, state)
+    if status in (400, 422):
+        return DecisionRequestRejectedError(
+            f"the decision engine rejected the request (HTTP {status}): {excerpt}")
+    if status in (401, 403):
+        return ConfigurationError(
+            f"the decision engine refused the credentials (HTTP {status}); check the API key.")
+    if status == 402:
+        return ProviderUnavailableError(
+            "the decision engine reports insufficient credits (HTTP 402); the run pauses rather "
+            "than degrading (FR-PROV-23).")
+    return MalformedResponseError(f"unexpected HTTP {status} from the decision engine: {excerpt}")
+
+
+class _BaseDecisionProvider:
+    """Shared HTTP machinery of the live decision providers: the one retry loop, the status map,
+    validation through `parse_decision`, build watching, latency and the decision counters. Each
+    subclass supplies its URL, headers, body and capabilities. Not public surface."""
+
+    #: Whether calls are billed: a billed provider always returns a cost (measured, else derived).
+    _billed = False
+
+    def __init__(self, *, transport: Transport | None = None, clock: Clock | None = None,
+                 rng: random.Random | None = None, counters: RunCountersTracker | None = None,
+                 build_watch: BuildWatch | None = None, policy: RetryPolicy | None = None,
+                 timeout_s: float = DEFAULT_JEV_TIMEOUT_S) -> None:
+        self._transport = transport if transport is not None else _DefaultTransport(timeout_s)
+        self._clock = clock if clock is not None else SystemClock()
+        self._rng = rng if rng is not None else random.Random()
+        self._counters = counters if counters is not None else RunCountersTracker()
+        self._build_watch = build_watch if build_watch is not None else BuildWatch()
+        self._policy = policy if policy is not None else RetryPolicy.from_environment()
+        self._build_lock = threading.Lock()
+
+    @property
+    def decision_counters(self) -> DecisionCounters:
+        return self._counters.decision_snapshot()
+
+    def record_run_build(self, model_ref: ModelRef, served_build: str) -> None:
+        """The run-start served build `BuildWatch` guards (FR-PROV-24). `served_build` is what
+        the engine *reports* (`Decision.resolved_build`, e.g. `typesafe/jev-1.13-20260917`),
+        never the requested wire slug — recording the slug would fail the first call."""
+        self._build_watch.record(self._model_key(model_ref), served_build)
+
+    @staticmethod
+    def _model_key(model_ref: ModelRef) -> str:
+        return f"decision:{model_ref.provider}:{model_ref.build_id}"
+
+    def capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        """Alias of `decision_capabilities` on the decision-only providers (FR-PROV-16)."""
+        return self.decision_capabilities(model_ref)
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        raise NotImplementedError
+
+    def estimate_cost(self, plan: CallPlan) -> CostEstimate:
+        """Input tokens only: decision output tokens are free (design §1.2)."""
+        tokens_in = plan.calls * plan.tokens_in_per_call
+        per_token = self._cost_per_input_token()
+        return CostEstimate(calls=plan.calls, tokens_in=tokens_in, tokens_out=0,
+                            cost=None if per_token is None else Decimal(tokens_in) * per_token)
+
+    def _cost_per_input_token(self) -> Decimal | None:
+        return None
+
+    def _decide_http(self, request: DecisionRequest, model_ref: ModelRef, url: str,
+                     headers: dict[str, str], body: bytes, fallback_build: str) -> Decision:
+        request.validate_for(self.decision_capabilities(model_ref))
+        call_counters = RunCountersTracker()
+        model_key = self._model_key(model_ref)
+        started = self._clock.monotonic()
+
+        def parse(response: HttpResponse) -> Decision:
+            error = _decision_status_error(response, request.state)
+            if error is not None:
+                raise error
+            raw = response.body
+            if isinstance(raw, dict):
+                document = raw
+            else:
+                try:
+                    document = json.loads(bytes(raw).decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise MalformedResponseError(f"the decision response is not JSON: {exc}") from exc
+            usage = document.get("usage") if isinstance(document, dict) else None
+            cost = None
+            if self._billed and isinstance(usage, dict) and usage.get("cost") is not None:
+                try:
+                    cost = Decimal(str(usage["cost"]))
+                except Exception as exc:  # noqa: BLE001
+                    raise MalformedResponseError(f"usage.cost is not a decimal: {usage['cost']!r}") from exc
+            return parse_decision(document, request, fallback_build=fallback_build, cost=cost)
+
+        decision = dispatch_with_retries(
+            self._transport, lambda: HttpRequest("POST", url, headers, body), parse,
+            policy=self._policy, clock=self._clock, rng=self._rng, counters=call_counters,
+            build_watch=self._build_watch, model_key=model_key)
+        with self._build_lock:
+            # The first answer of the run fixes the served build unless run start recorded one;
+            # any later difference raises BuildChangedError (FR-PROV-24). Under a lock so two
+            # concurrent first calls served different builds cannot both pass.
+            if self._build_watch._expected.get(model_key) is None:
+                self._build_watch.record(model_key, decision.resolved_build)
+            else:
+                self._build_watch.check(model_key, decision.resolved_build)
+        elapsed_ms = int(round((self._clock.monotonic() - started) * 1000))
+        cost = decision.cost
+        if self._billed and cost is None:
+            per_token = self._cost_per_input_token()
+            cost = None if per_token is None else Decimal(decision.tokens_in) * per_token
+        if not self._billed:
+            cost = None
+        decision = dataclasses.replace(decision, latency_ms=elapsed_ms, cost=cost)
+        snap = call_counters.snapshot()
+        self._counters.on_decision(tokens_in=decision.tokens_in,
+                                   transport_retries=snap.transport_retries,
+                                   rate_limited=snap.rate_limited_calls > 0, cost=cost)
+        _LOGGER.debug("decision call", extra={
+            "model_ref": model_ref.build_id, "resolved_build": decision.resolved_build,
+            "latency_ms": elapsed_ms, "tokens_in": decision.tokens_in,
+            "questions": len(request.questions), "retry_count": snap.transport_retries})
+        return decision
+
+
+def _jev_wire_model(build_id: str) -> str:
+    """The OpenRouter model slug for a pinned build: `openrouter/` and `@<pin>` removed
+    (FR-PROV-21). A floating alias is refused: the grader must not change under a run."""
+    slug = build_id[len("openrouter/"):] if build_id.startswith("openrouter/") else build_id
+    slug = slug.split("@", 1)[0]
+    if not slug or slug.startswith("~") or slug.endswith("-latest") or ":latest" in slug:
+        raise ConfigurationError(
+            f"decision build {build_id!r} names a floating alias; pin a versioned Jev slug such "
+            f"as 'openrouter/typesafe/jev-1.13@<pin>' (FR-PROV-21, FR-CONF-20).")
+    return slug
+
+
+class JevOpenRouterProvider(_BaseDecisionProvider):
+    """Jev on OpenRouter — the connected configuration's decision engine (FR-PROV-21).
+
+    POSTs typed questions to OpenRouter's Decisions API for a pinned Jev build, with the
+    upstream pinned, fallbacks disabled and zero-retention routing requested. Separate from the
+    local providers by design (user directive); it shares only `_BaseDecisionProvider`."""
+
+    _billed = True
+
+    def __init__(self, *, api_key: str | None = None, url: str | None = None,
+                 session_id: str | None = None,
+                 retention_answers: Callable[[str], str] | None = None, **seams: Any) -> None:
+        seams.setdefault("timeout_s", _env_positive_float(JEV_TIMEOUT_S_ENV, DEFAULT_JEV_TIMEOUT_S))
+        super().__init__(**seams)
+        self._api_key = api_key if api_key is not None else os.environ.get(OPENROUTER_API_KEY_ENV)
+        self._url = url if url is not None else (os.environ.get(JEV_OPENROUTER_URL_ENV) or DEFAULT_JEV_OPENROUTER_URL)
+        self._upstream = os.environ.get(JEV_OPENROUTER_PROVIDER_ENV) or DEFAULT_JEV_OPENROUTER_PROVIDER
+        # FR-PROV-21: every request carries a session id. The composer passes the run id; a
+        # provider built without one groups its own lifetime's calls under a fresh id.
+        if session_id is not None and (not isinstance(session_id, str) or not 0 < len(session_id) <= 256):
+            raise ConfigurationError("session_id must be a non-empty string of at most 256 characters.")
+        self._session_id = session_id if session_id is not None else uuid.uuid4().hex
+        self._retention_answers = retention_answers
+        self._retention_gate_failed = False
+
+    def _cost_per_input_token(self) -> Decimal:
+        return _env_decimal(JEV_COST_PER_MTOK_IN_ENV, DEFAULT_JEV_COST_PER_MTOK_IN) / Decimal(1_000_000)
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        return DecisionCapabilities(max_context_tokens=32_000, max_choice_options=CHOICE_MAX_OPTIONS,
+                                    max_questions=DECISION_MAX_QUESTIONS,
+                                    cost_per_input_token=self._cost_per_input_token(), deterministic=True)
+
+    def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
+        if not isinstance(request, DecisionRequest):
+            raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
+        if self._retention_gate_failed:
+            raise RetentionPolicyError(
+                "zero-retention routing was not confirmed for the decision model at run start; "
+                "nothing has been or will be dispatched (FR-PROV-28).")
+        wire_model = _jev_wire_model(model_ref.build_id)
+        if not self._api_key:
+            raise ConfigurationError(
+                f"JevOpenRouterProvider needs an API key: pass api_key= or set {OPENROUTER_API_KEY_ENV}.")
+        document: dict[str, Any] = {
+            "model": wire_model,
+            "state": request.state,
+            "questions": decision_questions_document(request),
+            "provider": {"order": [self._upstream], "allow_fallbacks": False,
+                         "data_collection": "deny", "zdr": True},
+        }
+        document["session_id"] = self._session_id
+        body = json.dumps(document, ensure_ascii=False).encode("utf-8")
+        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
+        return self._decide_http(request, model_ref, self._url, headers, body, fallback_build=wire_model)
+
+    def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
+        """Zero-retention confirmation for the decision model, fail-closed exactly as
+        `OpenRouterProvider.verify_retention` (FR-PROV-28). An unconfirmed model raises and
+        arms `decide`'s refusal."""
+        confirmed: list[ModelRef] = []
+        unconfirmed: list[ModelRef] = []
+        for ref in model_refs:
+            if self._retention_answers is not None:
+                answer = self._retention_answers(ref.build_id)
+            else:
+                answer = None  # no confirmation source: unconfirmed, fail-closed
+            (confirmed if _is_retention_confirmed(answer) else unconfirmed).append(ref)
+        if unconfirmed:
+            self._retention_gate_failed = True
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for decision model(s): "
+                f"{'; '.join(r.build_id for r in unconfirmed)}. The run does not start (FR-PROV-28).")
+        return RetentionReport(confirmed=tuple(confirmed), unconfirmed=())
 
 # --- the recorded-fixture implementation ------------------------------------------------------
 
