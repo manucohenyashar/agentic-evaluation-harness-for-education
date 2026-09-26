@@ -1,0 +1,7 @@
+# The shim's own dependencies. Deliberately NOT in the harness's requirements-dev.txt or
+# pyproject.toml: torch must never enter the aeh import graph (CT-PROV-28).
+torch>=2.8
+transformers>=5.17
+numpy>=2.0
+safetensors>=0.5
+huggingface_hub>=0.34
