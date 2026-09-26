@@ -1212,7 +1212,29 @@ ORCH_STATEMENTS: dict[str, Statement] = {
 }
 
 
-def panel_config_json(panel: Sequence[Any]) -> str:
+#: The decision-engine render version (Jev design delta FR-ORCH-36). Owned by `M-JUDGE`'s render;
+#: declared here because `panel_config` hashes it and `aeh.judge` already imports this module.
+#: Changing the Jev request render changes this string, and so every decision-engine work id.
+JUDGE_DECISION_TEMPLATE_V = "judge-decision/1"
+
+
+def decision_engine_record(decision_engine: Any) -> dict[str, Any]:
+    """The frozen decision engine as `panel_config` and `provider_config` record it (FR-ORCH-36/40):
+    provider, build, the four gate values (canonical spellings) and the render version."""
+    from aeh.conf import _canonical_decimal
+
+    return {
+        "provider": decision_engine.model.provider,
+        "build": decision_engine.model.build_id,
+        "threshold": _canonical_decimal(decision_engine.confidence_threshold),
+        "cite_threshold": _canonical_decimal(decision_engine.cite_threshold),
+        "max_citation_questions": decision_engine.max_citation_questions,
+        "token_bytes_ratio": decision_engine.token_bytes_ratio,
+        "template": JUDGE_DECISION_TEMPLATE_V,
+    }
+
+
+def panel_config_json(panel: Sequence[Any], *, decision_engine: Any = None) -> str:
     """The canonical `panel_config` string a run records and hashes.
 
     `panel_config` is one of `FR-ORCH-01`'s nine inputs, so its serialization is part of
@@ -1227,11 +1249,13 @@ def panel_config_json(panel: Sequence[Any]) -> str:
     identity, never a friendly name) — the same string the unit's `judge_id` hash input
     carries, so a panel change and a judge change are both visible to the hash.
     """
-    return json.dumps(
-        {"arms": [ref.build_id for ref in panel]},
-        separators=_JSON_SEPARATORS,
-        sort_keys=True,
-    )
+    record: dict[str, Any] = {"arms": [ref.build_id for ref in panel]}
+    if decision_engine is not None:
+        # FR-ORCH-36: the engine joins the work identity only when present, so turning it on,
+        # changing its build or any gate value mints new work ids, while an engine-off
+        # `panel_config` stays byte-identical to its pre-delta form (CT-ORCH-30).
+        record["decision_engine"] = decision_engine_record(decision_engine)
+    return json.dumps(record, separators=_JSON_SEPARATORS, sort_keys=True)
 
 
 def default_package_id_for(package_version_id: str) -> str:
@@ -2829,8 +2853,13 @@ class Orchestrator:
         provider: Any = None,
         transport: Any = None,
         executor: Any = None,
+        decision_provider: Any = None,
     ) -> None:
         self._store = store
+        #: Jev design delta FR-ORCH-40: the decision provider whose `verify_retention` covers
+        #: the decision model at a `cloud-hosted` run start. Optional; see
+        #: `_verify_retention_at_start`.
+        self._decision_provider = decision_provider
         self._package_id_for = package_id_for
         #: The cost seam (`FR-ORCH-15`): the object the orchestrator consults for a
         #: unit's cost figure. Declared protocol: `estimate_cost(unit) -> Decimal |
@@ -2964,7 +2993,8 @@ class Orchestrator:
         )
         if run_id is None:
             run_id = f"run-{uuid.uuid4().hex}"
-        panel_config = panel_config_json(cfg.panel)
+        decision_engine = getattr(cfg, "decision_engine", None)
+        panel_config = panel_config_json(cfg.panel, decision_engine=decision_engine)
         # A `cloud-hosted` run starts only once zero-retention routing is confirmed for every
         # panel member (`FR-PROV-14`, `NFR-SYS-03`, `SEC-03`): verified here, before the run
         # row exists, so a refusal leaves nothing behind.
@@ -2989,6 +3019,9 @@ class Orchestrator:
                     str(cfg.cost_ceiling) if cfg.cost_ceiling is not None else None
                 ),
                 "cost_currency": cfg.cost_currency,
+                # FR-ORCH-40: recorded only when the engine is on (byte-identical when off).
+                **({} if decision_engine is None
+                   else {"decision_engine": decision_engine_record(decision_engine)}),
             },
             separators=_JSON_SEPARATORS,
             sort_keys=True,
@@ -3058,7 +3091,25 @@ class Orchestrator:
                 f"zero-retention routing unconfirmed for panel members: {names}. A "
                 "cloud-hosted run does not start until every member is confirmed."
             )
-        return report
+        engine = getattr(cfg, "decision_engine", None)
+        if engine is None:
+            return report
+        # FR-ORCH-40 / FR-PROV-28: the decision model sends student work off the machine too,
+        # so it passes the same fail-closed gate before anything is created. Its own provider
+        # answers when one is bound; otherwise the provider seam must speak for it.
+        engine_verify = getattr(self._decision_provider, "verify_retention", None) or verify
+        engine_report = engine_verify((engine.model,))
+        engine_confirmed = {ref.build_id for ref in getattr(engine_report, "confirmed", ())}
+        if engine.model.build_id not in engine_confirmed or getattr(engine_report, "unconfirmed", ()):
+            raise RetentionPolicyError(
+                f"zero-retention routing unconfirmed for the decision model "
+                f"{engine.model.provider}:{engine.model.build_id}. A cloud-hosted run does not "
+                f"start until it is confirmed (FR-PROV-28), and nothing was created."
+            )
+        from aeh.prov import RetentionReport
+
+        return RetentionReport(
+            confirmed=tuple(getattr(report, "confirmed", ())) + (engine.model,), unconfirmed=())
 
     def _invalidate_order_cache(self, run_id: str) -> None:
         """Drop the dispatch-order cache entries for one run (`NFR-ORCH-01`).
@@ -6128,11 +6179,19 @@ class Orchestrator:
         # The reduced panel is written in `panel_config_json`'s canonical shape —
         # same separators, same sort — built from the arm STRINGS the row already
         # carries (the arms are build ids; the frozen row is the identity source).
+        # Every other key the row carries (the decision engine, FR-ORCH-36) is kept: only the
+        # arms shrink. Dropping the engine here would mint later units' work ids without it.
+        try:
+            record = json.loads(run_row["panel_config"])
+        except (TypeError, ValueError):
+            record = {}
+        record = dict(record) if isinstance(record, dict) else {}
+        record["arms"] = list(reduced)
         with cohort.transaction() as tx:
             tx.execute(
                 ORCH_STATEMENTS["record_reduced_panel"],
                 panel_config=json.dumps(
-                    {"arms": list(reduced)},
+                    record,
                     separators=_JSON_SEPARATORS,
                     sort_keys=True,
                 ),
