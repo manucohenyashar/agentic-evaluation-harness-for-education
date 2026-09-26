@@ -60,12 +60,16 @@ def f_profiles(top_level_profile: str | None = "edge-local", **shared: Any) -> d
     cfg: dict[str, Any] = {
         "prompt_template_v": SHARED_TEMPLATE,
         "profiles": {
+            # Jev design delta FR-CONF-18: HARNESS_DECISION_ENGINE is required with no default.
+            # Each section says "off": these cases test profile switching, not engine choice.
             "edge-local": {
+                "HARNESS_DECISION_ENGINE": "off",
                 "HARNESS_HARDWARE_PROFILE": "unified-small",
                 "panel": (EDGE_JUDGE,),
                 "transcriber": EDGE_TRANSCRIBER,
             },
             "cloud-hosted": {
+                "HARNESS_DECISION_ENGINE": "off",
                 "HARNESS_COST_CEILING": 50,
                 "HARNESS_COST_CURRENCY": "EUR",
                 "retention_setting": default_retention_setting(),
@@ -73,6 +77,7 @@ def f_profiles(top_level_profile: str | None = "edge-local", **shared: Any) -> d
                 "transcriber": HOSTED_TRANSCRIBER,
             },
             "dev-ci": {
+                "HARNESS_DECISION_ENGINE": "off",
                 "HARNESS_COST_CEILING": 5,
                 "HARNESS_COST_CURRENCY": "USD",
                 "panel": (FIXTURE_JUDGE,),
@@ -101,14 +106,14 @@ def f_profiles_toml(top_level_profile: str | None = "edge-local") -> str:
         head.append(f'HARNESS_PROFILE = "{top_level_profile}"')
     parts = [
         "\n".join(head),
-        '[profiles.edge-local]\nHARNESS_HARDWARE_PROFILE = "unified-small"',
+        '[profiles.edge-local]\nHARNESS_DECISION_ENGINE = "off"\nHARNESS_HARDWARE_PROFILE = "unified-small"',
         _toml_ref("[profiles.edge-local.transcriber]", EDGE_TRANSCRIBER),
         _toml_ref("[[profiles.edge-local.panel]]", EDGE_JUDGE),
-        "[profiles.cloud-hosted]\nHARNESS_COST_CEILING = 50\nHARNESS_COST_CURRENCY = \"EUR\"\n"
+        "[profiles.cloud-hosted]\nHARNESS_DECISION_ENGINE = \"off\"\nHARNESS_COST_CEILING = 50\nHARNESS_COST_CURRENCY = \"EUR\"\n"
         f'retention_setting = "{default_retention_setting()}"',
         _toml_ref("[profiles.cloud-hosted.transcriber]", HOSTED_TRANSCRIBER),
         _toml_ref("[[profiles.cloud-hosted.panel]]", HOSTED_JUDGE),
-        '[profiles.dev-ci]\nHARNESS_COST_CEILING = 5\nHARNESS_COST_CURRENCY = "USD"',
+        '[profiles.dev-ci]\nHARNESS_DECISION_ENGINE = "off"\nHARNESS_COST_CEILING = 5\nHARNESS_COST_CURRENCY = "USD"',
         _toml_ref("[profiles.dev-ci.transcriber]", FIXTURE_TRANSCRIBER),
         _toml_ref("[[profiles.dev-ci.panel]]", FIXTURE_JUDGE),
     ]

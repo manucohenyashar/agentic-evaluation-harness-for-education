@@ -1,0 +1,74 @@
+# Reference harness configuration (Jev design delta FR-CONF-13/18).
+#
+# One file serves every profile: HARNESS_PROFILE (from the environment, else the top-level key
+# below) selects a [profiles.<name>] section, and environment variables override file keys.
+# Copy this file, replace every placeholder digest and slug with the build you actually serve,
+# and pass it with `python -m aeh --config <file> ...`.
+#
+# HARNESS_DECISION_ENGINE is required with no default (FR-CONF-18). Every section below sets
+# "jev": grading is powered by the Jev decision engine, and a unit falls back to the LLM panel
+# judge when Jev's confidence is not above the threshold (0.80 by default; 0.85 for openjev-small).
+# Set it to "off" to grade with the LLM panel alone.
+
+prompt_template_v = "judge-prompt/2"
+
+# --- local configuration: OpenJev on loopback ------------------------------------------------------
+# unified-large, because unified-small cannot hold OpenJev beside the judge (FR-CONF-23). On
+# unified-small or discrete-gpu, use the openjev-small provider (#455) or HARNESS_DECISION_ENGINE = "off".
+[profiles.edge-local]
+HARNESS_HARDWARE_PROFILE = "unified-large"
+HARNESS_DECISION_ENGINE = "jev"
+HARNESS_DECISION_PROVIDER = "openjev"
+HARNESS_JEV_BUILD = "/models/openjev-FP8/model.safetensors@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+HARNESS_JEV_QUANTIZATION = "fp8"
+
+[profiles.edge-local.transcriber]
+role = "transcriber"
+provider = "local"
+build_id = "/models/qwen3-vl-8b-instruct-q4.gguf@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+quantization = "q4"
+
+[[profiles.edge-local.panel]]
+role = "judge"
+provider = "local"
+build_id = "/models/qwen3-30b-a3b-q4.gguf@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+quantization = "q4"
+
+# --- connected configuration: Jev on OpenRouter ----------------------------------------------------
+# The Jev build is pinned: the wire slug is typesafe/jev-1.13, and the date pins what OpenRouter
+# reports serving (typesafe/jev-1.13-20260917). OPENROUTER_API_KEY comes from the environment only.
+[profiles.cloud-hosted]
+HARNESS_COST_CEILING = 50
+HARNESS_COST_CURRENCY = "USD"
+retention_setting = "zero-retention"
+HARNESS_DECISION_ENGINE = "jev"
+HARNESS_DECISION_PROVIDER = "openrouter-jev"
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
+
+[profiles.cloud-hosted.transcriber]
+role = "transcriber"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"
+
+[[profiles.cloud-hosted.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"
+
+# --- CI -------------------------------------------------------------------------------------------
+[profiles.dev-ci]
+HARNESS_COST_CEILING = 5
+HARNESS_COST_CURRENCY = "USD"
+HARNESS_DECISION_ENGINE = "jev"
+HARNESS_DECISION_PROVIDER = "openrouter-jev"
+HARNESS_JEV_BUILD = "openrouter/typesafe/jev-1.13@20260917"
+
+[profiles.dev-ci.transcriber]
+role = "transcriber"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-vl-8b-instruct@2026-06-01"
+
+[[profiles.dev-ci.panel]]
+role = "judge"
+provider = "openrouter"
+build_id = "openrouter/qwen/qwen3-30b-a3b@2026-06-01"

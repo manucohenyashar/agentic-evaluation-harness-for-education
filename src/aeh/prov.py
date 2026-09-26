@@ -2431,11 +2431,26 @@ def _env_positive_int(name: str, default: int) -> int:
     return value
 
 
-def _weights_name(build_id: str) -> str:
-    """The weights directory/file name of an edge build, digest and trailing slash removed:
-    `/models/openjev-FP8@sha256:ab` -> `openjev-FP8`."""
-    path = build_id.split("@sha256:", 1)[0].rstrip("/\\")
-    return path.replace("\\", "/").rsplit("/", 1)[-1]
+_GENERIC_WEIGHTS_STEMS = frozenset({"model", "pytorch_model", "consolidated", "weights"})
+
+
+def _weights_names(build_id: str) -> set[str]:
+    """The names an edge build's weights can be served under: the final path segment without
+    its weights suffix, plus its parent directory — so `/models/openjev-FP8/model.safetensors@
+    sha256:ab` (the resolved form FR-CONF-03 requires) matches vLLM serving `/models/openjev-FP8`."""
+    from aeh.conf import WEIGHTS_SUFFIXES
+
+    parts = build_id.split("@sha256:", 1)[0].replace("\\", "/").rstrip("/").split("/")
+    last = parts[-1]
+    for suffix in WEIGHTS_SUFFIXES:
+        if last.lower().endswith(suffix):
+            stem = last[: -len(suffix)]
+            # A generic shard name (`model.safetensors`) identifies nothing; its directory
+            # does. A named file (`openjev-Q4.gguf`) is its own identity.
+            if stem.lower() in _GENERIC_WEIGHTS_STEMS and len(parts) > 1 and parts[-2]:
+                return {parts[-2]}
+            return {stem, last}
+    return {last} if last else set()
 
 
 class _LoopbackDecisionProvider(_BaseDecisionProvider):
@@ -2511,7 +2526,7 @@ class OpenJevLocalProvider(_LoopbackDecisionProvider):
         if self._served_identity is not None and identity != self._served_identity:
             raise BuildChangedError(
                 f"OpenJev's served weights changed mid-run: {self._served_identity!r} -> {identity!r}.")
-        if _weights_name(identity) != _weights_name(model_ref.build_id):
+        if not (_weights_names(identity) & _weights_names(model_ref.build_id)):
             raise BuildChangedError(
                 f"OpenJev serves {identity!r}, but the run is configured for {model_ref.build_id!r} "
                 f"(FR-PROV-24).")
