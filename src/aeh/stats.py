@@ -1057,7 +1057,7 @@ STATS_STATEMENTS: dict[str, Statement] = {
     ),
     "select_run_verdicts": Statement(
         "SELECT w.criterion_id, v.judge_id, v.band, v.uncited, v.evidence_sufficient, "
-        "v.latency_ms FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
+        "v.latency_ms, v.scoring_engine FROM verdict v JOIN work_unit w ON w.work_id = v.work_id "
         "WHERE w.run_id = :run_id ORDER BY w.criterion_id, v.judge_id, v.work_id"
     ),
     "select_run_violation_counts": Statement(
@@ -2370,6 +2370,18 @@ class JudgeSignals:
 
     cells: Mapping[tuple[str, str], Mapping[str, Any]]
     alerts: tuple[str, ...] = ()
+    #: Jev design delta FR-STATS-25 / CT-STATS-24: the same verdict signals partitioned by the
+    #: engine that produced them, keyed `(criterion_id, judge_id, scoring_engine)` —
+    #: `scoring_engine` is `llm` or `decision` (a pre-delta NULL reads `llm`). Additive: `cells`
+    #: keeps its exact `(criterion, judge)` dimensionality (CT-JUDGE-16). A partition with no
+    #: verdicts is absent, never a row of zeros. `contract_violation_rate` lands wholly in the
+    #: `llm` partition: an engine's malformed or rejected response is never counted against the
+    #: arm judge (FR-JUDGE-31), so every counted violation is an LLM reply's.
+    by_engine: Mapping[tuple[str, str, str], Mapping[str, Any]] = field(default_factory=dict)
+    #: The run's decision-engine pre-screen outcome mix, read through
+    #: `aeh.judge.decision_engine_metrics` (never from `decision_prescreen` directly); `None`
+    #: for a run with no pre-screens.
+    decision_outcomes: Mapping[str, Any] | None = None
 
     def __iter__(self):
         return iter(self.cells)
@@ -2507,7 +2519,64 @@ def judge_signals(source: Any, run_id: str, *, durable: Any = None) -> JudgeSign
         total = by_criterion.get(criterion_id, 0.0)
         if total >= minimum and count > concentration * total:
             alerts.append(f"{JUDGE_VIOLATION_ALERT}: {criterion_id} / {judge_id}")
-    return JudgeSignals(cells=cells, alerts=tuple(alerts))
+    return JudgeSignals(cells=cells, alerts=tuple(alerts),
+                        by_engine=_signals_by_engine(verdicts, cache_hit_rate, violations),
+                        decision_outcomes=_decision_outcomes(handle, run_id))
+
+
+def _signals_by_engine(verdicts: Mapping[tuple[str, str], list[Any]], cache_hit_rate: float,
+                       violations: Mapping[tuple[str, str], float]
+                       ) -> dict[tuple[str, str, str], Mapping[str, Any]]:
+    """FR-STATS-25: every judge signal per `(criterion, judge, scoring_engine)`."""
+    partitions: dict[tuple[str, str, str], list[Any]] = {}
+    for (criterion_id, judge_id), rows in verdicts.items():
+        for row in rows:
+            engine = (row["scoring_engine"] if "scoring_engine" in row.keys() else None) or "llm"
+            partitions.setdefault((criterion_id, judge_id, engine), []).append(row)
+    for (criterion_id, judge_id), refused in violations.items():
+        if refused:  # a judge that only ever broke the contract still has an llm partition
+            partitions.setdefault((criterion_id, judge_id, "llm"), [])
+    out: dict[tuple[str, str, str], Mapping[str, Any]] = {}
+    for key in sorted(partitions):
+        rows = partitions[key]
+        landed = len(rows)
+        refused = violations.get(key[:2], 0.0) if key[2] == "llm" else 0.0
+        responses = landed + refused
+        histogram: dict[str, int] = {}
+        for row in rows:
+            histogram[str(row["band"])] = histogram.get(str(row["band"]), 0) + 1
+        latencies = [float(row["latency_ms"]) for row in rows if row["latency_ms"] is not None]
+        out[key] = {
+            "uncited_verdict_rate": (sum(1 for row in rows if row["uncited"]) / landed) if landed else 0.0,
+            "evidence_sufficient_false_rate": (sum(
+                1 for row in rows if row["evidence_sufficient"] is not None
+                and not row["evidence_sufficient"]) / landed) if landed else 0.0,
+            "contract_violation_rate": (refused / responses) if responses else 0.0,
+            "band_histogram": histogram,
+            "latency": {"p50_ms": _percentile(latencies, 0.50),
+                        "p95_ms": _percentile(latencies, 0.95)},
+            "prefix_cache_hit_rate": cache_hit_rate,
+            "verdicts": landed,
+        }
+    return out
+
+
+def _decision_outcomes(handle: Any, run_id: str) -> Mapping[str, Any] | None:
+    """The run's pre-screen outcome mix, through `M-JUDGE`'s contract-named metrics
+    (CT-JUDGE-28). `None` when the run has no pre-screens or predates the table."""
+    import sqlite3
+
+    from aeh.judge import decision_engine_metrics
+
+    try:
+        metrics = decision_engine_metrics(handle, run_id)
+    except sqlite3.OperationalError:
+        return None  # a store that predates the decision_prescreen table
+    if not metrics.decision_prescreens:
+        return None
+    import dataclasses as _dataclasses
+
+    return _dataclasses.asdict(metrics)  # every CT-JUDGE-28 field, equal to the source
 
 
 def _env_flag(name: str, default: bool) -> bool:
