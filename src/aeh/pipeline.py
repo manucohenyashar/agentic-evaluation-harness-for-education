@@ -471,7 +471,15 @@ def _decision_run_start_checks(run_config: Any, decision_provider: Any) -> None:
                 f"(FR-PIPE-12, FR-PROV-28).")
     verify_build = getattr(decision_provider, "verify_build", None)
     if callable(verify_build):
-        verify_build(engine.model)
+        # FR-CONF-28: placement `cpu` obliges the served device to be `cpu`.
+        from aeh.conf import hardware_policy_for
+
+        policy = hardware_policy_for(run_config)
+        placement = None if policy is None else policy.decision_coresident.get(engine.model.provider)
+        if placement == "cpu":
+            verify_build(engine.model, placement=placement)
+        else:
+            verify_build(engine.model)
 
 
 def _decision_summary(handle: Any, run_id: str) -> StageTrace:

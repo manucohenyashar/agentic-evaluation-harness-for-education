@@ -13,8 +13,15 @@
 prompt_template_v = "judge-prompt/2"
 
 # --- local configuration: OpenJev on loopback ------------------------------------------------------
-# unified-large, because unified-small cannot hold OpenJev beside the judge (FR-CONF-23). On
-# unified-small or discrete-gpu, use the openjev-small provider (#455) or HARNESS_DECISION_ENGINE = "off".
+# unified-large, because unified-small cannot hold OpenJev beside the judge (FR-CONF-28). On
+# unified-small or discrete-gpu, opt into the openjev-small provider (FR-CONF-27) or set
+# HARNESS_DECISION_ENGINE = "off". openjev-small is never chosen for you. To opt in, serve
+# tools/openjev_small_shim on 127.0.0.1:3001 (on discrete-gpu with OPENJEV_DEVICE=cpu) and set:
+#   HARNESS_DECISION_PROVIDER = "openjev-small"
+#   HARNESS_JEV_BUILD = "/models/openjev-small/qwen3.5-4b-nli-v5/model.safetensors@sha256:<hex>"
+#   HARNESS_JEV_QUANTIZATION = "bf16"
+# qwen3.5-4b-nli-v5 is the recommended build. qwen3.5-2b-nli-v5 is the fallback build for a machine
+# where 4B is too slow: name it here. It is never swapped in at runtime. Its default threshold is 0.85.
 [profiles.edge-local]
 HARNESS_HARDWARE_PROFILE = "unified-large"
 HARNESS_DECISION_ENGINE = "jev"
