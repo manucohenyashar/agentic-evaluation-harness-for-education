@@ -85,13 +85,15 @@ import json
 import logging
 import math
 import os
+import re
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Callable
 from decimal import Decimal
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Protocol, runtime_checkable
 
 from aeh.conf import ConfigurationError, ModelRef
@@ -138,6 +140,31 @@ __all__ = [
     "RetentionReport",
     "SamplingParams",
     "TransportError",
+    # the decision surface (Jev design delta §3.1)
+    "CHOICE_MAX_OPTIONS",
+    "ChoiceAnswer",
+    "ChoiceQuestion",
+    "DECISION_FIXTURE_SCHEMA",
+    "DECISION_KEY_SCHEME",
+    "Decision",
+    "DecisionCapabilities",
+    "DecisionCounters",
+    "DecisionProvider",
+    "DecisionRequest",
+    "DecisionRequestError",
+    "DecisionRequestRejectedError",
+    "NoulAnswer",
+    "NoulQuestion",
+    "PROBABILITY_SUM_TOLERANCE",
+    "SCORE_MAX_LEVELS",
+    "SCORE_MIN_LEVELS",
+    "ScoreAnswer",
+    "ScoreQuestion",
+    "decision_provider_for",
+    "decision_questions_document",
+    "decision_request_key",
+    "derived_confidence",
+    "parse_decision",
 ]
 
 LOGGER_NAME = "aeh.prov"
@@ -911,6 +938,11 @@ class RunCountersTracker:
         self._tokens_in = 0
         self._tokens_out = 0
         self._cached_prefix_tokens = 0
+        self._decision_calls = 0
+        self._decision_tokens_in = 0
+        self._decision_transport_retries = 0
+        self._decision_rate_limited_calls = 0
+        self._decision_actual_cost = Decimal(0)
         self._lock = threading.Lock()
 
     def on_retry(self) -> int:
@@ -931,6 +963,30 @@ class RunCountersTracker:
             self._tokens_in += tokens_in
             self._tokens_out += tokens_out
             self._cached_prefix_tokens += cached_prefix_tokens
+
+    def on_decision(self, *, tokens_in: int, transport_retries: int, rate_limited: bool,
+                    cost: Decimal | None) -> None:
+        """One completed `decide` call (FR-PROV-29). Kept apart from the six LLM counters so
+        a decision retry never moves `transport_retries`, whose values TC-PROV-18 pins."""
+        with self._lock:
+            self._decision_calls += 1
+            self._decision_tokens_in += tokens_in
+            self._decision_transport_retries += transport_retries
+            self._decision_rate_limited_calls += 1 if rate_limited else 0
+            if cost is not None:
+                self._decision_actual_cost += cost
+
+    def decision_snapshot(self) -> "DecisionCounters":
+        """CT-PROV-24's names. `decision_actual_cost` is what `M-ORCH` adds to the run's
+        `actual_cost`, so the ceiling check reads one figure."""
+        with self._lock:
+            return DecisionCounters(
+                decision_calls=self._decision_calls,
+                decision_tokens_in=self._decision_tokens_in,
+                decision_transport_retries=self._decision_transport_retries,
+                decision_rate_limited_calls=self._decision_rate_limited_calls,
+                decision_actual_cost=self._decision_actual_cost,
+            )
 
     def snapshot(self) -> RunCounters:
         with self._lock:
@@ -1575,6 +1631,462 @@ def provider_for(model_ref: ModelRef, **seams: Any) -> "InferenceProvider":
     raise ProviderUnavailableError(f"no shipped live transport for provider {name!r}")
 
 
+# --- the decision surface (Jev design delta §3.1, FR-PROV-16…20/25…27/29) -----------------------
+#
+# A second provider surface beside `InferenceProvider`: typed questions in, typed probabilistic
+# answers out. It exists for the decision engine (Jev) that `M-JUDGE` pre-screens the decision
+# seat with. Three rules from the design shape everything below:
+#
+# - **Refuse, never repair** (FR-PROV-20). A response whose distribution does not sum to one, or
+#   whose Score legend names a different level, is a `MalformedResponseError` — retryable per
+#   CT-PROV-06 like any structural parse failure. Renormalising it would hide an engine or wire
+#   defect behind a plausible-looking band.
+# - **One statistic for confidence** (FR-PROV-19). A reported confidence is used when present;
+#   otherwise, and always for a Noul, it is `(n·peak − 1)/(n − 1)` over the answer's own
+#   distribution. Consumers never see a missing confidence.
+# - **No substitution** (CT-PROV-21). A failing `decide` raises; choosing to ask an LLM instead is
+#   `M-JUDGE`'s decision on a *confidence* outcome, never this module's on a *failure*.
+#
+# **Deviation, recorded:** design FR-PROV-16 names the per-implementation limits method
+# `capabilities`. `RecordedFixtureProvider` serves both surfaces, and its `capabilities` already
+# returns the `InferenceProvider`'s `Capabilities` (CT-PROV-04), so the decision surface's method
+# is `decision_capabilities`. The decision-only live providers also answer to `capabilities`.
+
+#: A question key: lowercase letters and underscores, no digits — so a key can never carry a
+#: numeral into the request's rubric surface (FR-JUDGE-03, FR-PROV-17).
+_DECISION_KEY = re.compile(r"\A[a-z][a-z_]{0,31}\Z")
+
+#: Universal limits from the published object model (design §1.2). Per-implementation limits
+#: are tighter and live on `DecisionCapabilities` (`DecisionRequest.validate_for`).
+CHOICE_MAX_OPTIONS = 255
+SCORE_MIN_LEVELS = 2
+SCORE_MAX_LEVELS = 10
+#: Every shipped implementation declares 64 (FR-PROV-27/32), so the cap is universal and
+#: checked at construction (TC-PROV-23 j); `validate_for` still applies a tighter declared one.
+DECISION_MAX_QUESTIONS = 64
+#: FR-PROV-20: a distribution sums to 1 within this tolerance or the response is malformed.
+PROBABILITY_SUM_TOLERANCE = 1e-3
+
+DECISION_KEY_SCHEME = b"aeh.prov/decision-key/1"
+DECISION_FIXTURE_SCHEMA = "aeh.prov/decision-fixture/1"
+
+
+class DecisionRequestError(ValueError):
+    """A `DecisionRequest` that cannot be sent: a caller defect caught at construction (or at
+    `validate_for`), before anything leaves the process. A `ValueError`, not a `ProviderError`,
+    for the reason `PromptPayload` raises one: a malformed request is not a provider failure."""
+
+
+class DecisionRequestRejectedError(ProviderError):
+    """The engine refused the request (HTTP 400/422). **Not retryable** (CT-PROV-20): the same
+    bytes would be refused again. `M-JUDGE` treats it as a `rejected` pre-screen and falls back
+    to the LLM path; a harness that keeps producing rejected requests has a defect, which the
+    `decision_requests_rejected` alert surfaces."""
+
+    retryable = False
+
+
+def _check_key(key: Any) -> None:
+    if not isinstance(key, str) or not _DECISION_KEY.match(key):
+        raise DecisionRequestError(
+            f"question key {key!r} must match {_DECISION_KEY.pattern} — lowercase letters and "
+            f"underscores, no digits (FR-PROV-17)."
+        )
+
+
+def _check_text(value: Any, what: str, *, optional: bool = False) -> None:
+    if value is None and optional:
+        return
+    if not isinstance(value, str) or not value.strip():
+        raise DecisionRequestError(f"{what} must be a non-empty string, got {value!r}.")
+
+
+@dataclass(frozen=True)
+class ChoiceQuestion:
+    """Pick one of 2…255 unordered options. `options` is `((label, description | None), …)`."""
+
+    key: str
+    instructions: str
+    options: tuple[tuple[str, str | None], ...]
+
+    def __post_init__(self) -> None:
+        _check_key(self.key)
+        _check_text(self.instructions, f"{self.key}.instructions")
+        if not isinstance(self.options, tuple):
+            raise DecisionRequestError(f"{self.key}.options must be a tuple of (label, description) pairs.")
+        if not 2 <= len(self.options) <= CHOICE_MAX_OPTIONS:
+            raise DecisionRequestError(
+                f"Choice {self.key!r} has {len(self.options)} options; 2…{CHOICE_MAX_OPTIONS} are allowed.")
+        labels = []
+        for pair in self.options:
+            if not (isinstance(pair, tuple) and len(pair) == 2):
+                raise DecisionRequestError(f"{self.key}.options entries must be (label, description) pairs.")
+            _check_text(pair[0], f"{self.key} option label")
+            _check_text(pair[1], f"{self.key} option description", optional=True)
+            labels.append(pair[0])
+        if len(set(labels)) != len(labels):
+            raise DecisionRequestError(f"Choice {self.key!r} repeats an option label.")
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(label for label, _ in self.options)
+
+
+@dataclass(frozen=True)
+class ScoreQuestion:
+    """Place the state on an ordered scale of 2…10 level descriptions, lowest first."""
+
+    key: str
+    instructions: str
+    levels: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _check_key(self.key)
+        _check_text(self.instructions, f"{self.key}.instructions")
+        if not isinstance(self.levels, tuple):
+            raise DecisionRequestError(f"{self.key}.levels must be a tuple of level descriptions.")
+        if not SCORE_MIN_LEVELS <= len(self.levels) <= SCORE_MAX_LEVELS:
+            raise DecisionRequestError(
+                f"Score {self.key!r} has {len(self.levels)} levels; "
+                f"{SCORE_MIN_LEVELS}…{SCORE_MAX_LEVELS} are allowed.")
+        for level in self.levels:
+            _check_text(level, f"{self.key} level")
+
+
+@dataclass(frozen=True)
+class NoulQuestion:
+    """A yes/no statement; the answer is the probability it is true."""
+
+    key: str
+    instructions: str
+    when_true: str | None = None
+    when_false: str | None = None
+
+    def __post_init__(self) -> None:
+        _check_key(self.key)
+        _check_text(self.instructions, f"{self.key}.instructions")
+        _check_text(self.when_true, f"{self.key}.when_true", optional=True)
+        _check_text(self.when_false, f"{self.key}.when_false", optional=True)
+
+
+DecisionQuestion = ChoiceQuestion | ScoreQuestion | NoulQuestion
+
+
+@dataclass(frozen=True)
+class DecisionCapabilities:
+    """What a decision implementation declares about itself (FR-PROV-27, the CT-PROV-04
+    posture): declared, never discovered, stable for the run."""
+
+    max_context_tokens: int
+    max_choice_options: int
+    max_questions: int
+    cost_per_input_token: Decimal | None
+    deterministic: bool
+
+
+@dataclass(frozen=True)
+class DecisionRequest:
+    """The closed, frozen request (FR-PROV-17): a state and an ordered tuple of questions."""
+
+    state: str
+    questions: tuple[DecisionQuestion, ...]
+
+    def __post_init__(self) -> None:
+        _check_text(self.state, "DecisionRequest.state")
+        if not isinstance(self.questions, tuple) or not self.questions:
+            raise DecisionRequestError("DecisionRequest.questions must be a non-empty tuple.")
+        if len(self.questions) > DECISION_MAX_QUESTIONS:
+            raise DecisionRequestError(
+                f"{len(self.questions)} questions exceed the {DECISION_MAX_QUESTIONS}-question cap.")
+        keys = []
+        for question in self.questions:
+            if not isinstance(question, (ChoiceQuestion, ScoreQuestion, NoulQuestion)):
+                raise DecisionRequestError(
+                    f"DecisionRequest.questions holds a {type(question).__name__}; only "
+                    f"ChoiceQuestion, ScoreQuestion and NoulQuestion exist (FR-PROV-17).")
+            keys.append(question.key)
+        if len(set(keys)) != len(keys):
+            raise DecisionRequestError(f"DecisionRequest repeats a question key: {keys}.")
+
+    def validate_for(self, capabilities: DecisionCapabilities) -> None:
+        """The per-implementation half of FR-PROV-17: question count and Choice width against
+        the implementation's declared limits. Called by every `decide` before anything is sent."""
+        if len(self.questions) > capabilities.max_questions:
+            raise DecisionRequestError(
+                f"{len(self.questions)} questions exceed this implementation's "
+                f"max_questions={capabilities.max_questions}.")
+        for question in self.questions:
+            if isinstance(question, ChoiceQuestion) and len(question.options) > capabilities.max_choice_options:
+                raise DecisionRequestError(
+                    f"Choice {question.key!r} has {len(question.options)} options; this "
+                    f"implementation allows {capabilities.max_choice_options}.")
+
+
+@dataclass(frozen=True)
+class ChoiceAnswer:
+    choice: str
+    probabilities: Mapping[str, float]
+    confidence: float
+    confidence_source: str
+
+
+@dataclass(frozen=True)
+class ScoreAnswer:
+    """`probabilities[i]` is the probability of `levels[i]`. `score` is the probability-weighted
+    position; a consumer takes the band from the argmax, never from `score` (ADR-22)."""
+
+    score: float
+    probabilities: tuple[float, ...]
+    confidence: float
+    confidence_source: str
+
+
+@dataclass(frozen=True)
+class NoulAnswer:
+    p_true: float
+    confidence: float
+    confidence_source: str = "derived"
+
+
+DecisionAnswer = ChoiceAnswer | ScoreAnswer | NoulAnswer
+
+
+@dataclass(frozen=True)
+class Decision:
+    """One answered request (FR-PROV-18): exactly one answer per question key, typed as its
+    question. `cost` is null on edge-local and fixture (the CT-PROV-03 posture)."""
+
+    answers: Mapping[str, DecisionAnswer]
+    tokens_in: int
+    tokens_out: int
+    latency_ms: int
+    resolved_build: str
+    cost: Decimal | None
+
+
+def derived_confidence(probabilities: Sequence[float]) -> float:
+    """TypeSafe's published statistic, `(n·peak − 1)/(n − 1)` (FR-PROV-19). With `n = 2` over
+    `{p, 1 − p}` it is `|2p − 1|`, which is a Noul's confidence."""
+    values = list(probabilities)
+    n = len(values)
+    if n < 2:
+        raise ValueError("a confidence needs at least two outcomes")
+    return max(0.0, min(1.0, (n * max(values) - 1.0) / (n - 1)))
+
+
+def _number(value: Any, where: str) -> float:
+    """A JSON number in [0, 1], or a `MalformedResponseError`. Booleans are not numbers here."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise MalformedResponseError(f"{where} is {value!r}, not a number")
+    if not 0.0 <= float(value) <= 1.0:
+        raise MalformedResponseError(f"{where} = {value!r} lies outside [0, 1]")
+    return float(value)
+
+
+def _distribution(values: Sequence[float], where: str) -> None:
+    total = math.fsum(values)
+    if abs(total - 1.0) > PROBABILITY_SUM_TOLERANCE:
+        raise MalformedResponseError(
+            f"{where} sums to {total!r}, not 1 ± {PROBABILITY_SUM_TOLERANCE}; the answer is "
+            f"refused, never renormalised (FR-PROV-20)")
+
+
+def _confidence(answer: Mapping[str, Any], values: Sequence[float], where: str) -> tuple[float, str]:
+    reported = answer.get("confidence")
+    if reported is None:
+        return derived_confidence(values), "derived"
+    return _number(reported, f"{where}.confidence"), "reported"
+
+
+def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: str,
+                   latency_ms: int = 0, cost: Decimal | None = None) -> Decision:
+    """A §1.2-shaped response document to a validated `Decision`, or `MalformedResponseError`.
+
+    The only place a decision response is interpreted, shared by every implementation so the
+    fixture double refuses exactly what a live provider refuses (CT-PROV-18, CT-PROV-23)."""
+    if not isinstance(document, dict):
+        raise MalformedResponseError("the decision response is not a JSON object")
+    answers = document.get("answers")
+    if not isinstance(answers, dict):
+        raise MalformedResponseError("the decision response carries no 'answers' object")
+    expected = [question.key for question in request.questions]
+    if set(answers) != set(expected):
+        raise MalformedResponseError(
+            f"answer keys {sorted(answers)} do not equal question keys {sorted(expected)}")
+    parsed: dict[str, DecisionAnswer] = {}
+    for question in request.questions:
+        where = f"answers.{question.key}"
+        raw = answers[question.key]
+        if not isinstance(raw, dict):
+            raise MalformedResponseError(f"{where} is not an object")
+        kind = {ChoiceQuestion: "choice", ScoreQuestion: "score", NoulQuestion: "noul"}[type(question)]
+        if raw.get("type") != kind:
+            raise MalformedResponseError(f"{where}.type is {raw.get('type')!r}, the question is {kind!r}")
+        if isinstance(question, NoulQuestion):
+            p = _number(raw.get("noul"), f"{where}.noul")
+            parsed[question.key] = NoulAnswer(p_true=p, confidence=derived_confidence((p, 1.0 - p)))
+        elif isinstance(question, ChoiceQuestion):
+            probabilities = raw.get("probabilities")
+            if not isinstance(probabilities, dict) or set(probabilities) != set(question.labels):
+                raise MalformedResponseError(f"{where}.probabilities keys do not equal the options")
+            values = {label: _number(probabilities[label], f"{where}.probabilities.{label}")
+                      for label in question.labels}
+            _distribution(list(values.values()), f"{where}.probabilities")
+            choice = raw.get("choice")
+            if choice not in values:
+                raise MalformedResponseError(f"{where}.choice {choice!r} is not one of the options")
+            confidence, source = _confidence(raw, list(values.values()), where)
+            parsed[question.key] = ChoiceAnswer(choice, values, confidence, source)
+        else:
+            count = len(question.levels)
+            indices = [str(i) for i in range(count)]
+            probabilities = raw.get("probabilities")
+            if not isinstance(probabilities, dict) or set(probabilities) != set(indices):
+                raise MalformedResponseError(f"{where}.probabilities must cover exactly indices 0…{count - 1}")
+            legend = raw.get("legend")
+            # Required, not optional: the legend is the only evidence that index i means
+            # levels[i], and an off-by-one there is a plausible wrong band (RISK-62).
+            if not isinstance(legend, dict) or set(legend) != set(indices) or any(
+                    legend[str(i)] != question.levels[i] for i in range(count)):
+                raise MalformedResponseError(f"{where}.legend is missing or does not name the requested levels in order")
+            values = tuple(_number(probabilities[i], f"{where}.probabilities.{i}") for i in indices)
+            _distribution(values, f"{where}.probabilities")
+            score = raw.get("score")
+            if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
+                raise MalformedResponseError(f"{where}.score is {score!r}, not a number")
+            confidence, source = _confidence(raw, values, where)
+            parsed[question.key] = ScoreAnswer(float(score), values, confidence, source)
+    usage = document.get("usage") or {}
+    if not isinstance(usage, dict):
+        raise MalformedResponseError("the decision response 'usage' is not an object")
+    tokens = {}
+    for name in ("input_tokens", "output_tokens"):
+        value = usage.get(name, 0) or 0
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise MalformedResponseError(f"usage.{name} is {value!r}, not a non-negative integer")
+        tokens[name] = value
+    served = document.get("model") or document.get("provider")
+    return Decision(
+        answers=MappingProxyType(parsed),
+        tokens_in=tokens["input_tokens"],
+        tokens_out=tokens["output_tokens"],
+        latency_ms=int(latency_ms),
+        resolved_build=served if isinstance(served, str) and served else fallback_build,
+        cost=cost,
+    )
+
+
+def decision_questions_document(request: DecisionRequest) -> dict[str, Any]:
+    """The §1.2 `questions` object, in the caller's question order. The one encoder the live
+    providers build their bodies from, so every backend receives the same questions."""
+    out: dict[str, Any] = {}
+    for q in request.questions:
+        if isinstance(q, ChoiceQuestion):
+            out[q.key] = {"type": "choice", "instructions": q.instructions,
+                          "criteria": {label: desc for label, desc in q.options}}
+        elif isinstance(q, ScoreQuestion):
+            out[q.key] = {"type": "score", "instructions": q.instructions, "criteria": list(q.levels)}
+        else:
+            entry: dict[str, Any] = {"type": "noul", "instructions": q.instructions}
+            if q.when_true is not None or q.when_false is not None:
+                entry["criteria"] = {"true": q.when_true, "false": q.when_false}
+            out[q.key] = entry
+    return out
+
+
+def decision_request_key(request: DecisionRequest, model_ref: ModelRef) -> str:
+    """`sha256` over the full `DecisionRequest` and `ModelRef` (FR-PROV-25), framed as
+    `request_key` is. A distinct scheme tag, so no completion fixture can answer a decision."""
+    digest = hashlib.sha256()
+    digest.update(_frame(DECISION_KEY_SCHEME))
+    digest.update(_frame(b"state"))
+    _emit_framed(digest.update, request.state.encode("utf-8"))
+    digest.update(_frame(b"questions"))
+    digest.update(len(request.questions).to_bytes(_FRAME_WIDTH, "big"))
+    for q in request.questions:
+        if isinstance(q, ChoiceQuestion):
+            parts: tuple[Any, ...] = ("choice", q.key, q.instructions,
+                                      tuple(item for pair in q.options for item in pair))
+        elif isinstance(q, ScoreQuestion):
+            parts = ("score", q.key, q.instructions, q.levels)
+        else:
+            parts = ("noul", q.key, q.instructions, q.when_true, q.when_false)
+        for part in parts:
+            digest.update(_encode_scalar(part))
+    digest.update(_frame(b"model_ref"))
+    for name in _MODEL_REF_FIELDS:
+        digest.update(_frame(name.encode("utf-8")))
+        digest.update(_encode_scalar(getattr(model_ref, name)))
+    return "sha256:" + digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class DecisionCounters:
+    """FR-PROV-29 / CT-PROV-24: the decision counters, by their contract names."""
+
+    decision_calls: int
+    decision_tokens_in: int
+    decision_transport_retries: int
+    decision_rate_limited_calls: int
+    decision_actual_cost: Decimal
+
+
+@runtime_checkable
+class DecisionProvider(Protocol):
+    """FR-PROV-16. `decide` is synchronous and blocking; one call is one engine request."""
+
+    def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision: ...
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities: ...
+
+    def estimate_cost(self, plan: CallPlan) -> CostEstimate: ...
+
+    def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport: ...
+
+
+#: The declared limits of the fixture double: the widest published object model, so a request
+#: a live backend accepts is never refused by its double.
+_FIXTURE_DECISION_CAPABILITIES = DecisionCapabilities(
+    max_context_tokens=32_000, max_choice_options=CHOICE_MAX_OPTIONS, max_questions=64,
+    cost_per_input_token=None, deterministic=True)
+
+#: Decision provider names and the stories that ship them. Named so an unshipped one refuses
+#: with a reason rather than falling through to another backend (CT-PROV-21).
+_UNSHIPPED_DECISION_PROVIDERS = {
+    "openrouter-jev": "JevOpenRouterProvider (#442)",
+    "openjev": "OpenJevLocalProvider (#443)",
+    "openjev-small": "OpenJevSmallLocalProvider (#455)",
+}
+
+
+def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvider":
+    """The only construction path for a decision provider (FR-PROV-26), by `ModelRef.provider`.
+    Unknown names raise `ConfigurationError`; nothing is substituted."""
+    name = str(getattr(model_ref, "provider", "") or "")
+    if name == "fixture":
+        return RecordedFixtureProvider(**seams)
+    if name in _UNSHIPPED_DECISION_PROVIDERS:
+        raise ConfigurationError(
+            f"decision provider {name!r} is designed but not shipped yet: "
+            f"{_UNSHIPPED_DECISION_PROVIDERS[name]}.")
+    raise ConfigurationError(
+        f"no decision provider is named {name!r}; the decision providers are "
+        f"{sorted(['fixture', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
+
+
+#: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.
+_DECISION_ERRORS: dict[str, type[Exception]] = {
+    cls.__name__: cls for cls in (
+        ConfigurationError, DecisionRequestRejectedError, MalformedResponseError, TransportError, RateLimitedError,
+        ProviderUnavailableError, BuildChangedError, RetentionPolicyError)
+}
+
+
+def _decision_request_record(request: DecisionRequest, model_ref: ModelRef) -> dict[str, Any]:
+    return {"state": request.state, "questions": decision_questions_document(request),
+            "model_ref": {name: getattr(model_ref, name) for name in _MODEL_REF_FIELDS}}
+
+
 # --- the recorded-fixture implementation ------------------------------------------------------
 
 #: Bumping this makes every existing fixture file unreadable, which is the correct behaviour
@@ -1722,6 +2234,83 @@ class RecordedFixtureProvider:
         fast tier, leaving it to the nightly live runs alone.
         """
         return RetentionReport(confirmed=tuple(model_refs), unconfirmed=())
+
+    # -- the decision surface (FR-PROV-25) --------------------------------------------------
+
+    def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
+        """The recorded answer to this exact `DecisionRequest`, or raise. Never reaches the
+        network (CT-PROV-23). A stored answer passes through `parse_decision`, so a malformed
+        recording is refused exactly as a malformed live response would be (CT-PROV-18), and
+        a recording that declares an error raises that error by type."""
+        if not isinstance(request, DecisionRequest):
+            raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
+        request.validate_for(_FIXTURE_DECISION_CAPABILITIES)
+        key = decision_request_key(request, model_ref)
+        path = self._path_for(key)
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise FixtureMissingError(
+                f"no decision recording for request {key} under {self._fixture_dir}. The key "
+                f"covers the state, every question and the model ref (FR-PROV-25), so a "
+                f"changed request misses rather than being answered by a stale recording."
+            ) from None
+        try:
+            document = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise FixtureMissingError(f"the decision recording at {path} is not valid JSON ({exc}).") from None
+        if not isinstance(document, dict) or document.get("schema") != DECISION_FIXTURE_SCHEMA:
+            raise FixtureMissingError(
+                f"the recording at {path} is not a {DECISION_FIXTURE_SCHEMA} document.")
+        if document.get("key") != key or document.get("request") != _decision_request_record(request, model_ref):
+            raise FixtureMissingError(
+                f"the recording at {path} is keyed or stored for a different request; treated "
+                f"as a miss (the stale-fixture failure TC-PROV-14 guards).")
+        error = document.get("error")
+        if error is not None:
+            cls = _DECISION_ERRORS.get(str(error.get("type")) if isinstance(error, dict) else "")
+            if cls is None:
+                raise FixtureMissingError(f"the recording at {path} declares an unknown error {error!r}.")
+            raise cls(str(error.get("message") or f"recorded {cls.__name__}"))
+        response = document.get("response")
+        if isinstance(response, dict) and (response.get("usage") or {}).get("cost") is not None:
+            raise FixtureMissingError(
+                f"the recording at {path} stores a cost; fixture decisions are unbilled "
+                f"(the CT-PROV-03 posture), and record_decision refuses to write one.")
+        return parse_decision(response, request, fallback_build=model_ref.build_id,
+                              latency_ms=int(document.get("latency_ms", 0) or 0), cost=None)
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        """Declared, not discovered (FR-PROV-27): the widest published limits, unbilled."""
+        return _FIXTURE_DECISION_CAPABILITIES
+
+    def record_decision(self, request: DecisionRequest, model_ref: ModelRef,
+                        response: Mapping[str, Any] | None = None, *,
+                        error: tuple[str, str] | None = None, latency_ms: int = 0) -> str:
+        """Store a §1.2 response document (or a declared error, `(type_name, message)`) as the
+        answer to this exact request. Returns the key. Exactly one of `response`/`error`."""
+        if (response is None) == (error is None):
+            raise ValueError("record_decision takes exactly one of response= or error=")
+        if error is not None and error[0] not in _DECISION_ERRORS:
+            raise ValueError(f"unknown decision error type {error[0]!r}; one of {sorted(_DECISION_ERRORS)}")
+        if response is not None:
+            if (response.get("usage") or {}).get("cost") is not None:
+                raise ValueError("fixture decisions are unbilled; strip usage.cost before recording")
+            parse_decision(dict(response), request, fallback_build=model_ref.build_id)
+        key = decision_request_key(request, model_ref)
+        document = {
+            "schema": DECISION_FIXTURE_SCHEMA, "key": key,
+            "request": _decision_request_record(request, model_ref),
+            "latency_ms": int(latency_ms),
+        }
+        if response is not None:
+            document["response"] = dict(response)
+        else:
+            document["error"] = {"type": error[0], "message": error[1]}
+        self._fixture_dir.mkdir(parents=True, exist_ok=True)
+        path = self._path_for(key)
+        path.write_text(json.dumps(document, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        return key
 
     # -- the recording half ------------------------------------------------------------------
 
