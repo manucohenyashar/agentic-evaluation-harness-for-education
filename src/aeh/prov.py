@@ -2058,9 +2058,7 @@ _FIXTURE_DECISION_CAPABILITIES = DecisionCapabilities(
 
 #: Decision provider names and the stories that ship them. Named so an unshipped one refuses
 #: with a reason rather than falling through to another backend (CT-PROV-21).
-_UNSHIPPED_DECISION_PROVIDERS = {
-    "openjev-small": "OpenJevSmallLocalProvider (#455)",
-}
+_UNSHIPPED_DECISION_PROVIDERS: dict[str, str] = {}
 
 
 def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvider":
@@ -2073,13 +2071,15 @@ def decision_provider_for(model_ref: ModelRef, **seams: Any) -> "DecisionProvide
         return JevOpenRouterProvider(**seams)
     if name == "openjev":
         return OpenJevLocalProvider(**seams)
+    if name == "openjev-small":
+        return OpenJevSmallLocalProvider(**seams)
     if name in _UNSHIPPED_DECISION_PROVIDERS:
         raise ConfigurationError(
             f"decision provider {name!r} is designed but not shipped yet: "
             f"{_UNSHIPPED_DECISION_PROVIDERS[name]}.")
     raise ConfigurationError(
         f"no decision provider is named {name!r}; the decision providers are "
-        f"{sorted(['fixture', 'openrouter-jev', 'openjev', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
+        f"{sorted(['fixture', 'openrouter-jev', 'openjev', 'openjev-small', *_UNSHIPPED_DECISION_PROVIDERS])} (FR-PROV-26).")
 
 
 #: Every error a live decision provider can raise (FR-PROV-23), so the double can declare each.
@@ -2232,6 +2232,10 @@ class _BaseDecisionProvider:
     def _cost_per_input_token(self) -> Decimal | None:
         return None
 
+    def _prepare_document(self, document: Any) -> Any:
+        """The decoded response before validation; a provider may drop what it must not trust."""
+        return document
+
     def _decide_http(self, request: DecisionRequest, model_ref: ModelRef, url: str,
                      headers: dict[str, str], body: bytes, fallback_build: str) -> Decision:
         request.validate_for(self.decision_capabilities(model_ref))
@@ -2251,6 +2255,7 @@ class _BaseDecisionProvider:
                     document = json.loads(bytes(raw).decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                     raise MalformedResponseError(f"the decision response is not JSON: {exc}") from exc
+            document = self._prepare_document(document)
             usage = document.get("usage") if isinstance(document, dict) else None
             cost = None
             if self._billed and isinstance(usage, dict) and usage.get("cost") is not None:
@@ -2550,6 +2555,136 @@ class OpenJevLocalProvider(_LoopbackDecisionProvider):
         # The shim echoes only the served name, so the (probe-verified) ModelRef build is the
         # identity every answer reports (FR-PROV-24).
         return dataclasses.replace(decision, resolved_build=model_ref.build_id)
+
+
+OPENJEV_SMALL_BASE_URL_ENV = "HARNESS_OPENJEV_SMALL_BASE_URL"
+DEFAULT_OPENJEV_SMALL_BASE_URL = "http://127.0.0.1:3001"
+OPENJEV_SMALL_MODEL_NAME_ENV = "HARNESS_OPENJEV_SMALL_MODEL_NAME"
+DEFAULT_OPENJEV_SMALL_MODEL_NAME = "openjev-small"
+OPENJEV_SMALL_ALLOW_REMOTE_ENV = "HARNESS_OPENJEV_SMALL_ALLOW_REMOTE"
+OPENJEV_SMALL_MAX_STATE_TOKENS_ENV = "HARNESS_OPENJEV_SMALL_MAX_STATE_TOKENS"
+OPENJEV_SMALL_BUILD_PROBE_EVERY_ENV = "HARNESS_OPENJEV_SMALL_BUILD_PROBE_EVERY"
+OPENJEV_SMALL_TIMEOUT_S_ENV = "HARNESS_OPENJEV_SMALL_TIMEOUT_S"
+#: FR-PROV-32. Assumption: one ~8k-token encoder window minus the hypothesis and template
+#: budget (test plan Q-42); the shim's 422 is the backstop when the estimate is optimistic.
+OPENJEV_SMALL_MAX_STATE_TOKENS = 6_000
+#: Each option is a forward pass, so option sets cost linearly (FR-PROV-32).
+OPENJEV_SMALL_MAX_CHOICE_OPTIONS = 16
+
+
+def _small_build_identity(build_id: str) -> tuple[str, str]:
+    """`(subfolder, digest)` of an openjev-small build (FR-PROV-31, FR-CONF-27): the directory
+    holding a generic `model.safetensors`, else the final path segment, and the `@sha256:` pin."""
+    from aeh.conf import WEIGHTS_SUFFIXES
+
+    path, _, digest = build_id.partition("@sha256:")
+    parts = path.replace("\\", "/").rstrip("/").split("/")
+    last = parts[-1]
+    for suffix in WEIGHTS_SUFFIXES:
+        if (last.lower().endswith(suffix) and last[: -len(suffix)].lower() in _GENERIC_WEIGHTS_STEMS
+                and len(parts) > 1):
+            last = parts[-2]
+            break
+    return last, digest.strip().lower()
+
+
+class OpenJevSmallLocalProvider(_LoopbackDecisionProvider):
+    """OpenJevSmall on loopback: the opt-in `edge-local` decision engine for machines too small
+    to hold OpenJev beside the judge (FR-PROV-30…32, design §3.11).
+
+    A separate class from `OpenJevLocalProvider` — neither subclasses the other — with its own
+    base URL, allow-remote knob and one-window budget. Unlike OpenJev, the build **digest** is
+    verified: the shim hashes the loaded `model.safetensors` and reports it at `GET /v1/build`
+    (FR-PROV-36), probed at run start and every `HARNESS_OPENJEV_SMALL_BUILD_PROBE_EVERY` calls.
+    The engine emits no confidence, so any `confidence` a response carries is dropped and every
+    confidence is derived (CT-PROV-27)."""
+
+    _allow_remote_env = OPENJEV_SMALL_ALLOW_REMOTE_ENV
+
+    def __init__(self, *, base_url: str | None = None, allow_remote: bool | None = None,
+                 **seams: Any) -> None:
+        seams.setdefault("timeout_s", _env_positive_float(OPENJEV_SMALL_TIMEOUT_S_ENV, 60.0))
+        super().__init__(**seams)
+        self._base_url = (base_url or os.environ.get(OPENJEV_SMALL_BASE_URL_ENV)
+                          or DEFAULT_OPENJEV_SMALL_BASE_URL).rstrip("/")
+        self._check_loopback(self._base_url, allow_remote)
+        self._model_name = os.environ.get(OPENJEV_SMALL_MODEL_NAME_ENV) or DEFAULT_OPENJEV_SMALL_MODEL_NAME
+        self._verified: str | None = None
+        self._calls_since_probe = 0
+
+    def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
+        return DecisionCapabilities(
+            max_context_tokens=_env_positive_int(OPENJEV_SMALL_MAX_STATE_TOKENS_ENV, OPENJEV_SMALL_MAX_STATE_TOKENS),
+            max_choice_options=OPENJEV_SMALL_MAX_CHOICE_OPTIONS, max_questions=DECISION_MAX_QUESTIONS,
+            cost_per_input_token=None, deterministic=True)
+
+    @staticmethod
+    def resolved_build_for(model_ref: ModelRef) -> str:
+        """`openjev-small:<subfolder>@sha256:<digest>` — what every answer reports (FR-PROV-31)."""
+        subfolder, digest = _small_build_identity(model_ref.build_id)
+        return f"openjev-small:{subfolder}@sha256:{digest}"
+
+    def build_info(self) -> dict[str, str]:
+        """The shim's `GET /v1/build` document (FR-PROV-36)."""
+        response = self._transport.send(HttpRequest("GET", f"{self._base_url}/v1/build", {}, b""))
+        if response.status != 200:
+            raise ProviderUnavailableError(f"the openjev-small build probe got HTTP {response.status}")
+        try:
+            raw = response.body
+            document = raw if isinstance(raw, dict) else json.loads(bytes(raw).decode("utf-8"))
+            return {"subfolder": str(document["subfolder"]),
+                    "weights_sha256": str(document["weights_sha256"]).lower(),
+                    "device": str(document.get("device", ""))}
+        except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
+            raise MalformedResponseError(f"the openjev-small build probe is malformed: {exc}") from exc
+
+    def verify_build(self, model_ref: ModelRef, *, placement: str | None = None) -> str:
+        """FR-PROV-31: the served `weights_sha256` and subfolder must equal the `ModelRef`'s,
+        else `BuildChangedError` — the 2B build against a 4B ref included; nothing swaps builds.
+        With `placement == "cpu"` (FR-CONF-28) the served device must be `cpu`, else
+        `ConfigurationError`. Returns the resolved build."""
+        info = self.build_info()
+        subfolder, digest = _small_build_identity(model_ref.build_id)
+        if info["subfolder"] != subfolder or info["weights_sha256"] != digest:
+            raise BuildChangedError(
+                f"openjev-small serves {info['subfolder']}@sha256:{info['weights_sha256']}, but the run "
+                f"is configured for {subfolder}@sha256:{digest} (FR-PROV-31). A different build is "
+                f"chosen only by naming it in configuration.")
+        if placement == "cpu" and info["device"] != "cpu":
+            raise ConfigurationError(
+                f"openjev-small must run with placement 'cpu' on this hardware profile so the judge "
+                f"keeps the accelerator, but the shim reports device {info['device']!r} (FR-CONF-28). "
+                f"Restart it on CPU (OPENJEV_DEVICE=cpu).")
+        resolved = self.resolved_build_for(model_ref)
+        self._verified = resolved
+        self._calls_since_probe = 0
+        return resolved
+
+    def _prepare_document(self, document: Any) -> Any:
+        if isinstance(document, dict) and isinstance(document.get("answers"), dict):
+            answers = {k: ({f: v for f, v in a.items() if f != "confidence"} if isinstance(a, dict) else a)
+                       for k, a in document["answers"].items()}
+            document = {**document, "answers": answers}
+        return document
+
+    def decide(self, request: DecisionRequest, model_ref: ModelRef) -> Decision:
+        if not isinstance(request, DecisionRequest):
+            raise TypeError(f"decide takes a DecisionRequest, got {type(request).__name__}")
+        every = _env_positive_int(OPENJEV_SMALL_BUILD_PROBE_EVERY_ENV, 500)
+        if self._verified is not None and self._calls_since_probe >= every:
+            self.verify_build(model_ref)
+        body = json.dumps({"model": self._model_name, "state": request.state,
+                           "questions": decision_questions_document(request)},
+                          ensure_ascii=False).encode("utf-8")
+        expected = self.resolved_build_for(model_ref)
+        decision = self._decide_http(request, model_ref, f"{self._base_url}/v1/systemone",
+                                     {"Content-Type": "application/json"}, body, fallback_build=expected)
+        self._calls_since_probe += 1
+        if decision.resolved_build != expected:
+            raise BuildChangedError(
+                f"openjev-small answered as {decision.resolved_build!r}, but the run is configured for "
+                f"{expected!r} (FR-PROV-31).")
+        return decision
 
 # --- the recorded-fixture implementation ------------------------------------------------------
 

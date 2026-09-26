@@ -564,7 +564,8 @@ PROVIDER_MANAGED = "provider-managed"
 DECISION_ENGINES: tuple[str, ...] = ("jev", "off")
 #: FR-CONF-19: the decision provider each backend binds, first entry the default.
 DECISION_PROVIDERS_BY_PROFILE: Mapping[str, tuple[str, ...]] = MappingProxyType({
-    "edge-local": ("openjev",),
+    # FR-CONF-27: `openjev-small` is opt-in, never the default and never substituted.
+    "edge-local": ("openjev", "openjev-small"),
     "cloud-hosted": ("openrouter-jev",),
     "dev-ci": ("openrouter-jev",),
 })
@@ -1051,21 +1052,24 @@ HARDWARE_PROFILES: Mapping[str, HardwarePolicy] = MappingProxyType({
         concurrency_ceiling=4,
         quantization_target="q4",
         prefix_token_ceiling=2000,
-        # Assumption (FR-CONF-23): OpenJev fits beside the judge on 64 GB+. `unified-small` and
-        # `discrete-gpu` admit no engine here; #455 adds `openjev-small` to all three.
-        decision_coresident=MappingProxyType({"openjev": "shared"}),
+        # FR-CONF-28 (Assumption, pending NFR-SYS-16): per-engine placement. A provider absent
+        # from a profile's map is refused, and the refusal names what the map admits.
+        decision_coresident=MappingProxyType({"openjev": "shared", "openjev-small": "shared"}),
     ),
     "unified-small": HardwarePolicy(
         residency_policy=("judge",),
         concurrency_ceiling=2,
         quantization_target="q4",
         prefix_token_ceiling=1500,
+        decision_coresident=MappingProxyType({"openjev-small": "shared"}),
     ),
     "discrete-gpu": HardwarePolicy(
         residency_policy=("judge",),
         concurrency_ceiling=3,
         quantization_target="q4",
         prefix_token_ceiling=1500,
+        # HLD §8.1's one model in VRAM holds: the decision model runs from system RAM.
+        decision_coresident=MappingProxyType({"openjev-small": "cpu"}),
     ),
 })
 
@@ -2028,7 +2032,7 @@ def _resolve_decision_engine(cfg: Mapping[str, Any], backend_profile: str,
         alternatives = [f"'{name}'" for name in policy.decision_coresident] + ["HARNESS_DECISION_ENGINE=off"]
         raise ConfigurationError(
             f"hardware profile {hardware_profile!r} cannot hold decision provider {provider!r} "
-            f"beside the judge (FR-CONF-23). Admitted alternatives: {', '.join(alternatives)}.")
+            f"beside the judge (FR-CONF-23, FR-CONF-28). Admitted alternatives: {', '.join(alternatives)}.")
     default_threshold = Decimal(PROVIDER_DEFAULT_THRESHOLDS.get(provider, DEFAULT_CONFIDENCE_THRESHOLD))
     return DecisionEngine(
         model=model,
