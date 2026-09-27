@@ -88,7 +88,6 @@ def _prescreen(store, work_id):
 
 # --- TC-JUDGE-C22 (rung-2 arm) -----------------------------------------------------------------
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("p_suff, engine, gate", [(0.85, "decision", 0.85), (0.05, "llm", 0.05)],
                          ids=["looser-0.85-accepted", "stricter-0.05-falls-back"])
 def test_tc_judge_c22_the_sufficiency_gate_is_p_through_dispatch(p_suff, engine, gate, tmp_data_dir,
@@ -134,7 +133,6 @@ def test_tc_judge_c22_the_sufficiency_gate_is_p_through_dispatch(p_suff, engine,
 
 # --- TC-REQ-117 ----------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_req_117_a_score_without_jev_confidence_falls_back_after_one_decide(
         tmp_data_dir, make_fixture_provider, tmp_path) -> None:
     """CT-PROV-19 → M-JUDGE (design 1.8). The judge relies on the provider refusing a Jev answer

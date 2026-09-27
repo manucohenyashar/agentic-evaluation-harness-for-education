@@ -130,6 +130,8 @@ __all__ = [
     "KEY_SCHEME",
     "LOGGER_NAME",
     "MalformedResponseError",
+    "MissingConfidenceError",
+    "confidence_rule",
     "payload_bytes",
     "PromptPayload",
     "ProviderError",
@@ -228,6 +230,19 @@ class MalformedResponseError(ProviderError):
     """
 
     retryable = True
+
+
+class MissingConfidenceError(MalformedResponseError):
+    """A Jev build's Choice or Score answer carries no `confidence` (absent or `null`).
+
+    Design 1.8 (FR-PROV-19/20, CT-PROV-20): the confidence that decides whether Jev or the LLM
+    grades a unit is Jev's own, so the harness never derives one for a Jev build. Absence is a
+    property of the backend, not a transient fault, so it is **not retried**: it surfaces on
+    the first send, spending no retry budget and billing no second call. It is still a
+    `MalformedResponseError`, so every caller's fallback handling applies unchanged.
+    """
+
+    retryable = False
 
 
 class ProviderUnavailableError(ProviderError):
@@ -1121,6 +1136,11 @@ def dispatch_with_retries(
                 if counters is not None and attempt > 0:
                     counters.on_retry()
                 return parsed
+            except MissingConfidenceError:
+                # Not transient (design 1.8): surfaces after this one send.
+                if counters is not None and attempt > 0:
+                    counters.on_retry()
+                raise
             except MalformedResponseError as error:
                 last_error = error
                 _wait(resolved_clock, jittered_backoff(
@@ -1849,9 +1869,13 @@ class ScoreAnswer:
 
 @dataclass(frozen=True)
 class NoulAnswer:
+    """A Noul's confidence is its `p_true`, Jev's calibrated P(yes) (design 1.8, FR-PROV-19):
+    `confidence == p_true` on every returned answer. `confidence_source` is `"reported"` for a
+    Jev build and `"derived"` for `openjev-small`; it has no default."""
+
     p_true: float
     confidence: float
-    confidence_source: str = "derived"
+    confidence_source: str
 
 
 DecisionAnswer = ChoiceAnswer | ScoreAnswer | NoulAnswer
@@ -1897,15 +1921,33 @@ def _distribution(values: Sequence[float], where: str) -> None:
             f"refused, never renormalised (FR-PROV-20)")
 
 
-def _confidence(answer: Mapping[str, Any], values: Sequence[float], where: str) -> tuple[float, str]:
+#: FR-PROV-19's two confidence rules (design 1.8). `jev`: Choice/Score confidence is the
+#: engine's reported value and is required. `small`: `openjev-small` reports none, so the
+#: provider derives Choice/Score confidence and ignores any value the shim emits. Under both,
+#: a Noul's confidence is its `p`.
+CONFIDENCE_RULES = ("jev", "small")
+
+
+def confidence_rule(model_ref: Any) -> str:
+    """The FR-PROV-19 rule for `model_ref`: `small` for `openjev-small`, `jev` for every other
+    provider (`openrouter-jev`, `openjev`, and the fixture double standing in for either)."""
+    return "small" if getattr(model_ref, "provider", None) == "openjev-small" else "jev"
+
+
+def _confidence(answer: Mapping[str, Any], values: Sequence[float], where: str,
+                rule: str) -> tuple[float, str]:
+    if rule == "small":
+        return derived_confidence(values), "derived"
     reported = answer.get("confidence")
     if reported is None:
-        return derived_confidence(values), "derived"
+        raise MissingConfidenceError(
+            f"{where}.confidence is absent: a Jev build reports its own confidence and the "
+            f"harness never derives one (FR-PROV-19)")
     return _number(reported, f"{where}.confidence"), "reported"
 
 
 def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: str,
-                   latency_ms: int = 0, cost: Decimal | None = None) -> Decision:
+                   latency_ms: int = 0, cost: Decimal | None = None, rule: str = "jev") -> Decision:
     """A §1.2-shaped response document to a validated `Decision`, or `MalformedResponseError`.
 
     The only place a decision response is interpreted, shared by every implementation so the
@@ -1930,7 +1972,8 @@ def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: s
             raise MalformedResponseError(f"{where}.type is {raw.get('type')!r}, the question is {kind!r}")
         if isinstance(question, NoulQuestion):
             p = _number(raw.get("noul"), f"{where}.noul")
-            parsed[question.key] = NoulAnswer(p_true=p, confidence=derived_confidence((p, 1.0 - p)))
+            parsed[question.key] = NoulAnswer(p_true=p, confidence=p,
+                                              confidence_source="derived" if rule == "small" else "reported")
         elif isinstance(question, ChoiceQuestion):
             probabilities = raw.get("probabilities")
             if not isinstance(probabilities, dict) or set(probabilities) != set(question.labels):
@@ -1941,7 +1984,7 @@ def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: s
             choice = raw.get("choice")
             if choice not in values:
                 raise MalformedResponseError(f"{where}.choice {choice!r} is not one of the options")
-            confidence, source = _confidence(raw, list(values.values()), where)
+            confidence, source = _confidence(raw, list(values.values()), where, rule)
             parsed[question.key] = ChoiceAnswer(choice, values, confidence, source)
         else:
             count = len(question.levels)
@@ -1960,7 +2003,7 @@ def parse_decision(document: Any, request: DecisionRequest, *, fallback_build: s
             score = raw.get("score")
             if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score):
                 raise MalformedResponseError(f"{where}.score is {score!r}, not a number")
-            confidence, source = _confidence(raw, values, where)
+            confidence, source = _confidence(raw, values, where, rule)
             parsed[question.key] = ScoreAnswer(float(score), values, confidence, source)
     usage = document.get("usage") or {}
     if not isinstance(usage, dict):
@@ -2267,7 +2310,8 @@ class _BaseDecisionProvider:
                     # A NaN, infinite or negative cost would poison `decision_actual_cost` and
                     # the ceiling that reads it (TC-PROV-47).
                     raise MalformedResponseError(f"usage.cost must be a finite, non-negative decimal: {usage['cost']!r}")
-            return parse_decision(document, request, fallback_build=fallback_build, cost=cost)
+            return parse_decision(document, request, fallback_build=fallback_build, cost=cost,
+                                  rule=confidence_rule(model_ref))
 
         decision = dispatch_with_retries(
             self._transport, lambda: HttpRequest("POST", url, headers, body), parse,
@@ -2887,7 +2931,8 @@ class RecordedFixtureProvider:
                 f"the recording at {path} stores a cost; fixture decisions are unbilled "
                 f"(the CT-PROV-03 posture), and record_decision refuses to write one.")
         return parse_decision(response, request, fallback_build=model_ref.build_id,
-                              latency_ms=int(document.get("latency_ms", 0) or 0), cost=None)
+                              latency_ms=int(document.get("latency_ms", 0) or 0), cost=None,
+                              rule=confidence_rule(model_ref))
 
     def decision_capabilities(self, model_ref: ModelRef) -> DecisionCapabilities:
         """Declared, not discovered (FR-PROV-27): the widest published limits, unbilled."""
@@ -2905,7 +2950,8 @@ class RecordedFixtureProvider:
         if response is not None:
             if (response.get("usage") or {}).get("cost") is not None:
                 raise ValueError("fixture decisions are unbilled; strip usage.cost before recording")
-            parse_decision(dict(response), request, fallback_build=model_ref.build_id)
+            parse_decision(dict(response), request, fallback_build=model_ref.build_id,
+                           rule=confidence_rule(model_ref))
         key = decision_request_key(request, model_ref)
         document = {
             "schema": DECISION_FIXTURE_SCHEMA, "key": key,

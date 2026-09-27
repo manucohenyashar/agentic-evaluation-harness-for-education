@@ -1297,30 +1297,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # own behaviour, so the notice fires when `--contracts-only` passes the real pair, the first
     # of its three halves to need a script change. The other two halves (a removed case row
     # still reading as traced, and CI wiring) are re-checked at that moment, not proven then.
-    # --- TS-123 (#499): design 1.8, the confidence is Jev's own ------------------------------
-    #
-    # 1.8 changes what shipped code does, not what it is called, so no `symbol` can mark the
-    # moment #497 lands. `command` asks the behaviour: the probe exits 0 once the fixture
-    # double's `decide` gives a Noul its own value as confidence AND refuses a Score recorded
-    # without Jev's confidence under a Jev ref. Any error reads as unresolved, keeping the arms
-    # marked rather than letting a red P0 case into TEST_CMD.
-    "#497 Jev confidence is the engine's own (TS-123)": (
-        "command",
-        "python tests/support/jev_confidence_probe.py",
-        (
-            "tests/unit/prov/test_ts105_decision_surface.py::test_tc_prov_24_jev_rule_a_missing_confidence_is_refused_on_the_first_send",
-            "tests/unit/prov/test_ts105_decision_surface.py::test_tc_prov_24_jev_rule_a_noul_confidence_is_its_value",
-            "tests/unit/prov/test_ts105_decision_surface.py::test_tc_prov_24_small_rule_discards_a_shim_confidence_and_a_noul_is_its_value",
-            "tests/unit/prov/test_ts105_decision_surface.py::test_tc_prov_25_a_body_without_jev_confidence_is_refused_after_one_send",
-            "tests/unit/prov/test_ts105_decision_surface.py::test_tc_prov_30_the_fixture_rule_comes_from_the_model_ref_only",
-            "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c18_every_answer_carries_a_confidence_and_a_noul_its_value",
-            "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c19_the_confidence_is_the_engines_on_every_implementation",
-            "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c20_a_missing_jev_confidence_is_refused_after_one_send",
-            "tests/contract/prov/test_ct_openjev_small_clauses.py::test_tc_prov_c27_a_small_engine_noul_confidence_is_its_value",
-            "tests/integration/judge/test_ts123_confidence_through_dispatch.py::test_tc_judge_c22_the_sufficiency_gate_is_p_through_dispatch",
-            "tests/integration/judge/test_ts123_confidence_through_dispatch.py::test_tc_req_117_a_score_without_jev_confidence_falls_back_after_one_decide",
-        ),
-    ),
+    # "#497 Jev confidence is the engine's own (TS-123)" left with #497: the fixture double gives
+    # a Noul its own value and refuses a confidence-less Jev Score, the probe
+    # that keyed this entry was deleted with it, and TS-123's arms run green.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
