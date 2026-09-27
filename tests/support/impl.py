@@ -1300,6 +1300,27 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#497 Jev confidence is the engine's own (TS-123)" left with #497: the fixture double gives
     # a Noul its own value and refuses a confidence-less Jev Score, the probe
     # that keyed this entry was deleted with it, and TS-123's arms run green.
+    # --- TS-124 (#500): design 1.8, JevOpenRouterProvider through the TypeSafe SDK ------------
+    #
+    # #498 changes how an existing class sends, not what it is called, so no `symbol` marks it.
+    # `command` asks the behaviour: the probe exits 0 once a decision sent through the
+    # provider's public surface arrives at the transport stamped by the SDK
+    # (`X-TypeSafe-SDK`) on `/api/v1/systemone`.
+    "#498 JevOpenRouterProvider through the TypeSafe SDK (TS-124)": (
+        "command",
+        "python tests/support/sdk_path_probe.py",
+        (
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_48_the_wire_through_the_sdk",
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_49_one_send_per_attempt_and_our_loop_owns_retries",
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_50_values_are_read_from_the_raw_body",
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_51_every_sdk_failure_maps_to_a_harness_error",
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_51_a_bare_sdk_error_is_unavailability_with_its_cause",
+            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_54_the_per_call_routing_check",
+            "tests/unit/prov/test_ts106_jev_openrouter.py::test_tc_prov_26_the_exact_wire_request",
+            "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c24_the_counter_names",
+            "tests/integration/orch/test_ts111_orch_agg_grade.py::test_tc_orch_51_the_flush_writes_decision_provider_unreported",
+        ),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

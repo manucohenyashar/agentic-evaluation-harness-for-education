@@ -15,7 +15,7 @@ constructions the plan names.
 | TC-PROV-C21 | behaviour | No engine substitution: a raising `decide` never reaches any `complete`; a parsed Decision is never re-requested |
 | TC-PROV-C22 | behaviour | Local stays local; cloud never floats; `allow_fallbacks: false` in every body |
 | TC-PROV-C23 | behaviour | A fixture miss never reaches the network |
-| TC-PROV-C24 | observe | The five counter names, exactly |
+| TC-PROV-C24 | observe | *(Re-specified, design 1.8, TS-124 #500.)* The six counter names, exactly, `decision_provider_unreported` included |
 | TC-PROV-C25 | security | The decision model sits under the retention gate (rung 1; rung 3 is TC-PIPE-16) |
 """
 
@@ -304,15 +304,19 @@ def test_tc_prov_c23_a_fixture_miss_never_reaches_the_network(tmp_path, network_
 
 # --- TC-PROV-C24 -------------------------------------------------------------------------------
 
+@pytest.mark.writtenahead
 def test_tc_prov_c24_the_counter_names() -> None:
+    """Design 1.8 adds `decision_provider_unreported` (FR-PROV-43): the OpenRouter responses
+    that carried no `provider` field. A rename, or a counter dropped, goes red here."""
     names = {f.name for f in dataclasses.fields(DecisionCounters)}
     assert names == {"decision_calls", "decision_tokens_in", "decision_transport_retries",
-                     "decision_rate_limited_calls", "decision_actual_cost"}
+                     "decision_rate_limited_calls", "decision_actual_cost", "decision_provider_unreported"}
     snapshot = RunCountersTracker().decision_snapshot()
     assert isinstance(snapshot, DecisionCounters)
     assert {name: getattr(snapshot, name) for name in names} == {
         "decision_calls": 0, "decision_tokens_in": 0, "decision_transport_retries": 0,
-        "decision_rate_limited_calls": 0, "decision_actual_cost": Decimal(0)}
+        "decision_rate_limited_calls": 0, "decision_actual_cost": Decimal(0),
+        "decision_provider_unreported": 0}
     # `actual_cost` including `decision_actual_cost` is asserted at the flush: TC-ORCH-51.
 
 

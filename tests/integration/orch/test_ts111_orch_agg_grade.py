@@ -265,13 +265,16 @@ def test_tc_orch_53_engine_on_start_records_and_verifies_the_decision_model(tmp_
 class _CountingDecisions:
     """The replay double plus the CT-PROV-24 counters TC-PROV-34 hand-summed."""
 
-    def __init__(self, inner):
-        from aeh.prov import DecisionCounters
+    def __init__(self, inner, **extra):
+        from aeh.prov import RunCountersTracker
 
         self._inner = inner
-        self.decision_counters = DecisionCounters(decision_calls=3, decision_tokens_in=3600,
-                                                  decision_transport_retries=2, decision_rate_limited_calls=1,
-                                                  decision_actual_cost=Decimal("0.0001512"))
+        # From a fresh snapshot, so a counter added to `DecisionCounters` (design 1.8's
+        # `decision_provider_unreported`) needs no change here.
+        self.decision_counters = dataclasses.replace(
+            RunCountersTracker().decision_snapshot(), decision_calls=3, decision_tokens_in=3600,
+            decision_transport_retries=2, decision_rate_limited_calls=1,
+            decision_actual_cost=Decimal("0.0001512"), **extra)
 
     def complete(self, prompt, model_ref, params):
         """The first two LLM answers are billed at 0.01 each (the fixture's own cost is null)."""
@@ -304,5 +307,27 @@ def test_tc_orch_51_the_flush_writes_decision_counters_and_sums_actual_cost(tmp_
         assert metrics["decision_actual_cost"] == pytest.approx(0.0001512)
         # Two billed LLM answers (0.01 each) plus the decision spend: 0.02 + 0.0001512 (CT-PROV-24).
         assert metrics["actual_cost"] == pytest.approx(0.0201512), "actual_cost sums both surfaces"
+    finally:
+        world.store.close()
+
+
+@pytest.mark.writtenahead
+@pytest.mark.integration
+def test_tc_orch_51_the_flush_writes_decision_provider_unreported(tmp_path) -> None:
+    """Design 1.8 (FR-PROV-43, CT-PROV-24 amended): with a decision provider bound, the flush
+    writes `decision_provider_unreported` beside the other decision counters. Engine-off output
+    is unchanged because nothing is bound there (TC-REG-08 holds only `decision_prescreen_rows`)."""
+    from tests.support.pipe_world import drive_composed, jev_replay_world
+
+    world = jev_replay_world(tmp_path / "data")
+    try:
+        world.build_run()
+        world.start_run()
+        counting = _CountingDecisions(world.provider, decision_provider_unreported=2)
+        world.provider = counting
+        drive_composed(world, decision_provider=counting)
+        metrics = {r["metric"]: r["value"] for r in world.store.durable().query(
+            "SELECT metric, value FROM run_metrics WHERE run_id = :r", r=world.run_id)}
+        assert metrics.get("decision_provider_unreported") == 2
     finally:
         world.store.close()

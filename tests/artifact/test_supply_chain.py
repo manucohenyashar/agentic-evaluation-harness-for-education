@@ -71,6 +71,11 @@ REVIEWED_DEV_DEPENDENCIES: dict[str, str] = {
                   "console facts (TC-CONSOLE-40/41, SEC-12). Test-only: imported solely by "
                   "tests/support/console_browser.py, launching an installed Edge/Chrome by "
                   "channel, so no browser binary is downloaded",
+    "typesafe-sdk": "TS-124 (#500), design 1.8 ADR-28 (user decision 2026-09-27) — the TypeSafe "
+                    "SDK behind JevOpenRouterProvider, exact-pinned (NFR-PROV-10). Dev tier only "
+                    "here; production installs it through the `jev-cloud` extra, never the core "
+                    "(ADR-11). Imported solely inside aeh.prov (CT-PROV-29). Pulls httpx2, "
+                    "pydantic, pydantic-core, tenacity and typing-extensions",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

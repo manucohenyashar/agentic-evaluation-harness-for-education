@@ -2,11 +2,11 @@
 
 | Case | Asserted |
 |---|---|
-| TC-PROV-26 | The exact wire request: URL, auth, body keys, the unversioned model slug, the provider routing object and the per-type `criteria` encoding. A floating alias is refused with zero transport calls. `HARNESS_JEV_OPENROUTER_URL` moves only the URL |
+| TC-PROV-26 | *(Re-specified, design 1.8, TS-124 #500.)* The exact wire request through the TypeSafe SDK: `POST …/api/v1/systemone`, auth, body keys, the unversioned model slug, the provider routing object and the per-type `criteria` encoding. A floating alias is refused with zero transport calls. The alpha URL is now refused at construction (TC-PROV-48) |
 | TC-PROV-28 | FR-PROV-23's status table, for both live providers: retried classes, 429 with `Retry-After`, rejections carrying a bounded, state-free excerpt, credential and credit statuses. No message holds the API key |
 | TC-PROV-29 | Served-build identity: OpenRouter's `model` change raises `BuildChangedError` without a retry; OpenJev's vLLM probe runs at run start and every N calls, and a changed served path raises |
 | TC-PROV-33 | The retention gate: confirm, hedge, unreachable; a failed gate refuses `decide` with zero transport calls; OpenJev on loopback is confirmed |
-| TC-PROV-36 | **Live** (`@live`, E2, needs `OPENROUTER_API_KEY`): Choice, 4-level Score and two Nouls against `typesafe/jev-1.13`, and an invalid 11-level Score through a raw call |
+| TC-PROV-36 | *(Re-specified, design 1.8.)* **Live** (`@live`, E2, needs `OPENROUTER_API_KEY`), the `cloud-hosted` release gate: through the SDK on `/api/v1/systemone`, Choice/Score carry `confidence` (Q-J18), `usage.cost` is read from the raw body, the served `provider` is in the pinned order, a request pinned to a non-existent upstream is **refused** (Q-44), and an invalid 11-level Score through a raw call is rejected |
 """
 
 from __future__ import annotations
@@ -71,6 +71,7 @@ def _request() -> DecisionRequest:
 
 # --- TC-PROV-26 --------------------------------------------------------------------------------
 
+@pytest.mark.writtenahead
 def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
     monkeypatch.delenv("HARNESS_JEV_OPENROUTER_URL", raising=False)
     request = _request()
@@ -85,8 +86,10 @@ def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
                                      session_id="R1")
     provider.decide(request, JEV_REF)
     sent = transport.requests[0]
-    assert (sent.method, sent.url) == ("POST", "https://openrouter.ai/api/alpha/decisions")
-    assert sent.headers["Authorization"] == f"Bearer {API_KEY}"
+    headers = {str(k).lower(): str(v) for k, v in dict(sent.headers).items()}
+    assert (sent.method, sent.url) == ("POST", "https://openrouter.ai/api/v1/systemone")
+    assert headers.get("x-typesafe-sdk", "").startswith("typesafe-sdk/0.7.2"), "sent through the TypeSafe SDK"
+    assert headers["authorization"] == f"Bearer {API_KEY}"
     document = json.loads(sent.body)
     assert set(document) == {"model", "state", "questions", "provider", "session_id"}
     assert document["model"] == "typesafe/jev-1.13" and document["session_id"] == "R1"
@@ -105,11 +108,8 @@ def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
     with pytest.raises(ConfigurationError):
         JevOpenRouterProvider(api_key=API_KEY, transport=idle, clock=FrozenClock()).decide(request, floating)
     assert idle.requests == []
-    monkeypatch.setenv("HARNESS_JEV_OPENROUTER_URL", "https://openrouter.ai/api/v1/systemone")
-    moved = _Transport(_ok(body))
-    JevOpenRouterProvider(api_key=API_KEY, transport=moved, clock=FrozenClock(), session_id="R1").decide(request, JEV_REF)
-    assert moved.requests[0].url == "https://openrouter.ai/api/v1/systemone"
-    assert json.loads(moved.requests[0].body) == document
+    # Design 1.8 (ADR-28): the endpoint is the SDK's. The knob no longer moves it to the alpha
+    # Decisions API; that URL is refused at construction (TC-PROV-48).
 
 
 # --- TC-PROV-28 --------------------------------------------------------------------------------
@@ -268,10 +268,34 @@ def test_tc_prov_36_live_jev_on_openrouter() -> None:
     decision = provider.decide(request, JEV_REF)
     assert set(decision.answers) == {"concept", "band", "evidence_sufficient", "cite_a"}
     assert decision.resolved_build and "jev" in decision.resolved_build
+    # (a) Q-J18: Jev's own confidence arrives on Choice and Score (a missing one is refused, so
+    # reaching here proves it); (b) the raw body's cost reaches the Decision.
+    assert decision.answers["band"].confidence_source == "reported"
+    assert decision.answers["concept"].confidence_source == "reported"
+    # With the list price set to zero a derived cost would be 0, so a positive cost can only
+    # come from the raw body's `usage.cost`, which the SDK model drops.
+    os.environ["HARNESS_JEV_COST_PER_MTOK_IN"] = "0"
+    try:
+        priced = JevOpenRouterProvider(retention_answers=lambda build: "zero-retention").decide(request, JEV_REF)
+    finally:
+        del os.environ["HARNESS_JEV_COST_PER_MTOK_IN"]
+    assert priced.cost is not None and priced.cost > 0, "usage.cost is read from the raw body"
+    # (d) Q-44, the preference probe, sent raw so nothing in the harness can turn a served answer
+    # into a pass: pinned to an upstream that does not exist, with allow_fallbacks false, the
+    # endpoint must REFUSE with a 4xx. A 200 means it ignores the routing preferences, and a 5xx
+    # proves nothing; either blocks `cloud-hosted` release on this path.
+    probe = {"model": "typesafe/jev-1.13", "state": "x", "questions": {"ok": {"type": "noul", "instructions": "x"}},
+             "provider": {"order": ["no-such-upstream"], "allow_fallbacks": False, "data_collection": "deny",
+                          "zdr": True}}
+    refused = _DefaultTransport(30.0).send(HttpRequest(
+        "POST", "https://openrouter.ai/api/v1/systemone",
+        {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}", "Content-Type": "application/json"},
+        json.dumps(probe).encode()))
+    assert 400 <= refused.status < 500, f"the routing preferences were not honoured: HTTP {refused.status}"
     invalid = {"model": "typesafe/jev-1.13", "state": "x", "questions": {
         "band": {"type": "score", "instructions": "x", "criteria": list("abcdefghijk")}}}
     response = _DefaultTransport(30.0).send(HttpRequest(
-        "POST", "https://openrouter.ai/api/alpha/decisions",
+        "POST", "https://openrouter.ai/api/v1/systemone",
         {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}", "Content-Type": "application/json"},
         json.dumps(invalid).encode()))
     assert response.status in (400, 422)
