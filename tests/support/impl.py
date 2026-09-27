@@ -1319,6 +1319,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/unit/prov/test_ts106_jev_openrouter.py::test_tc_prov_26_the_exact_wire_request",
             "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c24_the_counter_names",
             "tests/integration/orch/test_ts111_orch_agg_grade.py::test_tc_orch_51_the_flush_writes_decision_provider_unreported",
+            # TS-125 (#501), keyed to the same story:
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_52_building_the_cloud_provider_loads_the_sdk_and_decisions_stay_harness_typed",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_ships_as_the_jev_cloud_extra_and_its_absence_is_refused_by_name",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_a_cloud_run_without_the_sdk_refuses_at_start_before_any_lease",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_sec_23_no_log_record_carries_student_text",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_c29_the_sdk_never_crosses_the_module_boundary",
+            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_c30_every_byte_passes_the_transport_with_no_sdk_retry",
         ),
     ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
