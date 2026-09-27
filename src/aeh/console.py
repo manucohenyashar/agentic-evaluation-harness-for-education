@@ -3370,6 +3370,15 @@ def render_conformance_surface(report: Any) -> str:
         panel = getattr(record, "panel_build_ref", "?")
         classification = getattr(record, "classification", "?")
         lines.append(f"Backend {profile}, panel {panel}: {classification}.")
+        # FR-CONFORM-12: an engine build whose injection-robustness flag is false is marked,
+        # informationally; nothing is gated on it (the weakness is accepted, Q-J14). Read off
+        # the record's figure, so the console gains no dependency edge (TC-CONSOLE-36).
+        figure = getattr(record, "figure", None) or {}
+        if figure.get("decision_engine_injection_robust") is False:
+            lines.append(
+                f"Decision engine build {panel}: not recommended (injection flip rate "
+                f"{figure.get('decision_injection_flip_rate')} against the LLM's "
+                f"{figure.get('llm_injection_flip_rate')}; informational)")
         for dimension in getattr(record, "unavailable_dimensions", ()) or ():
             lines.append(f"Dimension {dimension} unavailable for {profile}.")
     overall = getattr(report, "classification", None)
