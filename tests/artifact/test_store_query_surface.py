@@ -308,8 +308,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.orch:6275",
     "aeh.orch:6277",
     "aeh.orch:6243",
-    "aeh.orch:6614",
-    "aeh.orch:6654",
+    "aeh.orch:6616",
+    "aeh.orch:6656",
     # aeh.det's eight sites (#86's six, #87's two): the single-row score upsert in
     # `evaluate`, the batched score upsert in `evaluate_cohort`'s one Tier C
     # transaction, #87's re-derivation upsert in `rederive_for_key_change` (only
