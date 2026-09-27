@@ -200,7 +200,6 @@ def _decide_via(impl: str, document: dict, request: DecisionRequest, tmp_path: P
 JEV_RULE = ("openrouter-jev", "openjev", "fixture")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("impl", JEV_RULE)
 @pytest.mark.parametrize("row, document, request_", [
     ("a", _score_doc(), _score_request()),
@@ -232,7 +231,6 @@ def test_tc_prov_24_jev_rule_a_present_confidence_is_reported_unchanged(impl, tm
     assert (topic.answers["topic"].confidence, topic.answers["topic"].confidence_source) == (0.70, "reported")
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("impl", JEV_RULE)
 @pytest.mark.parametrize("p", [0.95, 0.5, 0.05], ids=["c", "d", "e"])
 def test_tc_prov_24_jev_rule_a_noul_confidence_is_its_value(impl, p, tmp_path) -> None:
@@ -269,7 +267,6 @@ def test_tc_prov_24_small_rule_choice_and_score_are_derived(tmp_path) -> None:
         assert answer.confidence == pytest.approx(expected, abs=1e-9) and answer.confidence_source == "derived"
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_24_small_rule_discards_a_shim_confidence_and_a_noul_is_its_value(tmp_path) -> None:
     """Small rule, rows b, g (a shim-emitted confidence is discarded: 0.8667 and 0.76, not 0.81
     and 0.70) and c, d, e (a Noul's confidence is `p`, derived)."""
@@ -307,7 +304,6 @@ def test_tc_prov_25_malformed_body_is_retried_then_refused(entry, monkeypatch) -
 _NO_CONFIDENCE = [b for b in jev_corpora.wire_bodies() if b["expect"]["outcome"] == "missing_confidence"]
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("entry", _NO_CONFIDENCE, ids=[b["id"] for b in _NO_CONFIDENCE])
 def test_tc_prov_25_a_body_without_jev_confidence_is_refused_after_one_send(entry, monkeypatch) -> None:
     """Design 1.8 (FR-PROV-20): F-JEV-WIRE's Choice/Score bodies without `confidence`, on the
@@ -381,7 +377,6 @@ def test_tc_prov_30_fixture_decide_replays_exactly_and_misses_loudly(tmp_path) -
         provider.decide(rejected, FX_REF)
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_30_the_fixture_rule_comes_from_the_model_ref_only(tmp_path) -> None:
     """Design 1.8 (FR-PROV-19's fixture rule): a recorded Score without `confidence` replays as
     `MalformedResponseError` under a Jev ref (`openrouter-jev`, `fixture`) and as the derived

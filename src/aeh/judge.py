@@ -2435,17 +2435,19 @@ class ScoringWorker:
         redelivered unit reproduces the same verdict without calling the engine again."""
         from types import MappingProxyType
 
-        from aeh.prov import Decision as _Decision, NoulAnswer, ScoreAnswer, derived_confidence
+        from aeh.prov import Decision as _Decision, NoulAnswer, ScoreAnswer
 
         probabilities = tuple(float(p) for p in json.loads(row["band_probabilities"]))
         p_suff = float(row["sufficiency_p"])
         answers: dict[str, Any] = {
             "band": ScoreAnswer(float(row["band_score"]), probabilities,
                                 float(row["band_confidence"]), "reported"),
-            "evidence_sufficient": NoulAnswer(p_suff, derived_confidence((p_suff, 1.0 - p_suff))),
+            # Design 1.8 (FR-PROV-19): a Noul's confidence is its `p`, never `|2p − 1|`, so the
+            # rebuilt gate equals the one the first dispatch passed.
+            "evidence_sufficient": NoulAnswer(p_suff, p_suff, "reported"),
         }
         for label, p in json.loads(row["cite_probabilities"] or "{}").items():
-            answers[f"cite_{label}"] = NoulAnswer(float(p), derived_confidence((float(p), 1.0 - float(p))))
+            answers[f"cite_{label}"] = NoulAnswer(float(p), float(p), "reported")
         return _Decision(MappingProxyType(answers), int(row["tokens_in"] or 0), 0,
                          int(row["latency_ms"] or 0), row["engine_build"], None)
 

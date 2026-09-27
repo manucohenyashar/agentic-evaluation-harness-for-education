@@ -636,7 +636,7 @@ CORPUS_DECISION_BUILD = (
 
 #: F-JEV-DECISIONS' outcome per judged cell (Jev test plan §4.4), keyed by the corpus
 #: submission id and criterion. `gate` is the reported band confidence; evidence sufficiency
-#: is answered at 0.99 (confidence 0.98), so `min(c_band, c_sufficient)` is `gate`.
+#: is answered at 0.99 (its confidence, design 1.8), so `min(c_band, c_sufficient)` is `gate`.
 #:
 #: Disclosed divergences from §4.4: F-DEV-PIPE's C1 has six bands, not four, and its cells
 #: carry two spans (`a`, `b`), so C1/S1 cites `a` and not `b` — §4.4's "cites a/c" needs three.

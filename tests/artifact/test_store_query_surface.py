@@ -361,10 +361,10 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # statements are the same three. Re-read from the walker, never hand-unioned.)
     # #361's durable write: `_record_contract_violations`' `tx.execute` of the declared
     # `JUDGE_STATEMENTS["add_contract_violations"]` upsert (FR-JUDGE-21).
-    "aeh.judge:2533",
-    "aeh.judge:2575",
-    "aeh.judge:2590",
-    "aeh.judge:2580",
+    "aeh.judge:2535",
+    "aeh.judge:2577",
+    "aeh.judge:2592",
+    "aeh.judge:2582",
     # #448 (Jev design delta FR-JUDGE-34): the decision-seat pre-screen row, one declared
     # JUDGE_STATEMENTS["insert_prescreen"] with keyword parameters, INSERT OR IGNORE on the work id.
     "aeh.judge:2406",

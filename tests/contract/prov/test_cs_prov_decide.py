@@ -144,7 +144,6 @@ def test_tc_prov_c18_the_accept_row_is_returned_as_sent(name, tmp_path) -> None:
     assert sum(decision.answers["band"].probabilities) == pytest.approx(1.0009, abs=1e-12), "never renormalised"
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name", IMPLEMENTATIONS)
 def test_tc_prov_c18_every_answer_carries_a_confidence_and_a_noul_its_value(name, tmp_path) -> None:
     """Extended for design 1.8: on every implementation, each answer in F-JEV-WIRE's
@@ -160,7 +159,6 @@ def test_tc_prov_c18_every_answer_carries_a_confidence_and_a_noul_its_value(name
 
 # --- TC-PROV-C19 -------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name", IMPLEMENTATIONS)
 def test_tc_prov_c19_the_confidence_is_the_engines_on_every_implementation(name, tmp_path, monkeypatch) -> None:
     """Safety-shaped (RISK-83). Design 1.8, CT-PROV-19 v2.0: every Jev-build implementation
@@ -232,7 +230,6 @@ def test_tc_prov_c20_the_error_table_on_every_implementation(name, status, error
     assert counters.decision_snapshot().decision_calls == 0, "a failed call is never accounted as a Decision"
 
 
-@pytest.mark.writtenahead
 @pytest.mark.parametrize("name", ["openrouter-jev", "openjev"])
 def test_tc_prov_c20_a_missing_jev_confidence_is_refused_after_one_send(name, tmp_path, monkeypatch) -> None:
     """Design 1.8 (CT-PROV-20 amended): a Jev Choice/Score answer without `confidence` surfaces

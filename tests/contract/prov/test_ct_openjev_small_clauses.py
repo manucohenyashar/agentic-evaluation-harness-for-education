@@ -74,7 +74,6 @@ def test_tc_prov_c27_every_confidence_is_derived() -> None:
         assert decision.answers["band"].confidence == pytest.approx((len(probs) * max(probs) - 1) / (len(probs) - 1))
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_c27_a_small_engine_noul_confidence_is_its_value() -> None:
     """Design 1.8 (CT-PROV-27 amended): an `openjev-small` Noul's confidence is its `p_yes`,
     labelled `derived`, where 1.6 gave `|2p − 1|`; a shim-emitted value never reaches the caller."""
