@@ -208,7 +208,9 @@ def test_tc_prov_41_translation_and_answers() -> None:
     decision = OpenJevSmallLocalProvider(transport=ShimTransport(FakeScorer(default=0.4)), clock=FrozenClock()).decide(request, REF)
     assert decision.answers["topic"].confidence_source == "derived"
     assert decision.answers["band"].confidence_source == "derived"
-    assert decision.answers["ok"].confidence == pytest.approx(abs(2 * decision.answers["ok"].p_true - 1))
+    # The small engine's Noul confidence (design 1.8: its `p`, derived) is TC-PROV-C27's, written
+    # ahead of #497 in tests/contract/prov/test_ct_openjev_small_clauses.py.
+    assert decision.answers["ok"].confidence_source == "derived"
 
 
 # --- TC-PROV-42 --------------------------------------------------------------------------------

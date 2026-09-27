@@ -236,7 +236,7 @@ def test_sec_19_the_api_key_leaks_nowhere(tmp_path, monkeypatch, caplog) -> None
                 if q["type"] == "score":
                     n = len(q["criteria"])
                     answers[k] = {"type": "score", "score": 0.0, "probabilities": {str(i): (1.0 if i == 0 else 0.0) for i in range(n)},
-                                  "legend": {str(i): lvl for i, lvl in enumerate(q["criteria"])}}
+                                  "legend": {str(i): lvl for i, lvl in enumerate(q["criteria"])}, "confidence": 1.0}
                 else:
                     answers[k] = {"type": "noul", "noul": 0.9}
             return HttpResponse(200, {}, json.dumps({"model": "typesafe/jev-1.13", "answers": answers,

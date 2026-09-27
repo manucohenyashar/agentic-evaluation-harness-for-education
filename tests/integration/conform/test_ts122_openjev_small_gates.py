@@ -50,9 +50,9 @@ class _PairDecider:
         peak = n - 1 if flipped else 1
         probs = tuple(0.94 if i == peak else 0.06 / (n - 1) for i in range(n))
         answers = {"band": ScoreAnswer(float(peak), probs, derived_confidence(probs), "derived"),
-                   "evidence_sufficient": NoulAnswer(0.97, 0.94)}
+                   "evidence_sufficient": NoulAnswer(0.97, 0.97, "derived")}
         for q in request.questions[2:]:
-            answers[q.key] = NoulAnswer(0.9, 0.8)
+            answers[q.key] = NoulAnswer(0.9, 0.9, "derived")
         return Decision(MappingProxyType(answers), 10, 0, 1, "openjev-small:x@sha256:y", None)
 
 

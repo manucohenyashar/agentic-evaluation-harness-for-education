@@ -3,7 +3,7 @@
 | Case | Clause | Asserted |
 |---|---|---|
 | TC-PROV-C26 | behaviour | Local, single-window: loopback-only construction, a separate class, and an over-window request refused by the shim before any scoring, never windowed (the rung-3 socket census is SEC-22 in TS-120) |
-| TC-PROV-C27 | data | Every answer type round-trips with `confidence_source == "derived"`; a shim that emits `confidence: 0.99` does not reach the caller |
+| TC-PROV-C27 | data | Every answer type round-trips with `confidence_source == "derived"`; a shim that emits `confidence: 0.99` does not reach the caller; *(re-specified, design 1.8)* Choice/Score carry the statistic and a Noul its own `p` |
 | TC-PROV-C28 | security | No `aeh` module imports the shim or torch; importing `aeh.prov` in a fresh interpreter loads no torch |
 | TC-CONF-C21 | behaviour | Property: `openjev` on `unified-small` is refused under 50 random configurations, never downgraded to `openjev-small` |
 | TC-CONFORM-C16 | observe | The injection report names the three figures and the validation record carries `decision_engine_injection_robust` |
@@ -69,7 +69,29 @@ def test_tc_prov_c27_every_confidence_is_derived() -> None:
         assert decision.answers["topic"].confidence_source == "derived"
         assert decision.answers["band"].confidence_source == "derived"
         assert decision.answers["band"].confidence != 0.99 and decision.answers["topic"].confidence != 0.99
-        assert decision.answers["ok"].confidence == pytest.approx(abs(2 * decision.answers["ok"].p_true - 1))
+        # The small rule's statistic over the answer's own probabilities (FR-PROV-19).
+        probs = decision.answers["band"].probabilities
+        assert decision.answers["band"].confidence == pytest.approx((len(probs) * max(probs) - 1) / (len(probs) - 1))
+
+
+@pytest.mark.writtenahead
+def test_tc_prov_c27_a_small_engine_noul_confidence_is_its_value() -> None:
+    """Design 1.8 (CT-PROV-27 amended): an `openjev-small` Noul's confidence is its `p_yes`,
+    labelled `derived`, where 1.6 gave `|2p − 1|`; a shim-emitted value never reaches the caller."""
+    request = DecisionRequest(state="s", questions=(NoulQuestion("ok", "Met?"),))
+
+    class LyingTransport(ShimTransport):
+        def send(self, request):  # noqa: ANN001
+            response = super().send(request)
+            body = json.loads(response.body)
+            for answer in body.get("answers", {}).values():
+                answer["confidence"] = 0.99
+            return HttpResponse(response.status, {}, json.dumps(body).encode())
+
+    for transport in (ShimTransport(FakeScorer(default=0.4)), LyingTransport(FakeScorer(default=0.4))):
+        answer = OpenJevSmallLocalProvider(transport=transport, clock=FrozenClock()).decide(request, REF).answers["ok"]
+        assert answer.confidence == answer.p_true and answer.confidence != 0.99
+        assert answer.confidence_source == "derived"
 
 
 def test_tc_prov_c28_torch_never_enters_the_harness() -> None:

@@ -96,11 +96,11 @@ def _off_config(panel=3):
 def _decision(probs, *, reported=None, p_suff=0.97, cites=None, n_spans=0):
     confidence = reported if reported is not None else derived_confidence(probs)
     answers = {"band": ScoreAnswer(sum(i * p for i, p in enumerate(probs)), tuple(probs), confidence,
-                                   "reported" if reported is not None else "derived"),
-               "evidence_sufficient": NoulAnswer(p_suff, abs(2 * p_suff - 1))}
+                                   "reported"),
+               "evidence_sufficient": NoulAnswer(p_suff, p_suff, "reported")}
     cites = cites if cites is not None else [0.9] * n_spans
     for i, c in enumerate(cites):
-        answers[f"cite_{'abcdefghijklmnopqrstuvwxyz'[i]}"] = NoulAnswer(c, abs(2 * c - 1))
+        answers[f"cite_{'abcdefghijklmnopqrstuvwxyz'[i]}"] = NoulAnswer(c, c, "reported")
     return Decision(MappingProxyType(answers), 120, 0, 250, "typesafe/jev-1.13", None)
 
 
