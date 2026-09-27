@@ -304,7 +304,6 @@ def test_tc_prov_c23_a_fixture_miss_never_reaches_the_network(tmp_path, network_
 
 # --- TC-PROV-C24 -------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_c24_the_counter_names() -> None:
     """Design 1.8 adds `decision_provider_unreported` (FR-PROV-43): the OpenRouter responses
     that carried no `provider` field. A rename, or a counter dropped, goes red here."""

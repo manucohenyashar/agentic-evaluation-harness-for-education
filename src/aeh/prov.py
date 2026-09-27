@@ -961,6 +961,7 @@ class RunCountersTracker:
         self._decision_transport_retries = 0
         self._decision_rate_limited_calls = 0
         self._decision_actual_cost = Decimal(0)
+        self._decision_provider_unreported = 0
         self._lock = threading.Lock()
 
     def on_retry(self) -> int:
@@ -994,6 +995,12 @@ class RunCountersTracker:
             if cost is not None:
                 self._decision_actual_cost += cost
 
+    def on_decision_provider_unreported(self) -> None:
+        """An OpenRouter decision response that carried no `provider` field (FR-PROV-43): the
+        per-call routing check could not run on it. Counted, not refused (the field is optional)."""
+        with self._lock:
+            self._decision_provider_unreported += 1
+
     def decision_snapshot(self) -> "DecisionCounters":
         """CT-PROV-24's names. `decision_actual_cost` is what `M-ORCH` adds to the run's
         `actual_cost`, so the ceiling check reads one figure."""
@@ -1004,6 +1011,7 @@ class RunCountersTracker:
                 decision_transport_retries=self._decision_transport_retries,
                 decision_rate_limited_calls=self._decision_rate_limited_calls,
                 decision_actual_cost=self._decision_actual_cost,
+                decision_provider_unreported=self._decision_provider_unreported,
             )
 
     def snapshot(self) -> RunCounters:
@@ -2078,6 +2086,8 @@ class DecisionCounters:
     decision_transport_retries: int
     decision_rate_limited_calls: int
     decision_actual_cost: Decimal
+    #: Design 1.8 (FR-PROV-43): OpenRouter responses with no `provider` field.
+    decision_provider_unreported: int = 0
 
 
 @runtime_checkable
@@ -2142,7 +2152,15 @@ def _decision_request_record(request: DecisionRequest, model_ref: ModelRef) -> d
 # --- the live decision providers (FR-PROV-21…24, FR-PROV-28) --------------------------------------
 
 JEV_OPENROUTER_URL_ENV = "HARNESS_JEV_OPENROUTER_URL"
-DEFAULT_JEV_OPENROUTER_URL = "https://openrouter.ai/api/alpha/decisions"
+#: Design 1.8 (ADR-28): the TypeSafe SDK's endpoint on OpenRouter. The SDK posts to
+#: `<base_url>/v1/systemone`, so the knob must name a URL ending in that path.
+DEFAULT_JEV_OPENROUTER_URL = "https://openrouter.ai/api/v1/systemone"
+JEV_SDK_PATH = "/v1/systemone"
+#: The pip extra that carries the SDK (FR-PROV-42); the core install never needs it (ADR-11).
+JEV_SDK_EXTRA = "jev-cloud"
+#: The SDK's logger. It logs request and response bodies at DEBUG (design §1.2), so the provider
+#: filters out everything below WARNING on it (NFR-PROV-11).
+TYPESAFE_SDK_LOGGER = "typesafe_sdk"
 JEV_OPENROUTER_PROVIDER_ENV = "HARNESS_JEV_OPENROUTER_PROVIDER"
 #: The upstream OpenRouter routes Jev to, pinned in `provider.order` (FR-PROV-11/21).
 #: Assumption: TypeSafe serves its own model; the knob exists for when that is not so.
@@ -2280,7 +2298,8 @@ class _BaseDecisionProvider:
         return document
 
     def _decide_http(self, request: DecisionRequest, model_ref: ModelRef, url: str,
-                     headers: dict[str, str], body: bytes, fallback_build: str) -> Decision:
+                     headers: dict[str, str], body: bytes, fallback_build: str,
+                     transport: Any = None) -> Decision:
         request.validate_for(self.decision_capabilities(model_ref))
         call_counters = RunCountersTracker()
         model_key = self._model_key(model_ref)
@@ -2314,7 +2333,8 @@ class _BaseDecisionProvider:
                                   rule=confidence_rule(model_ref))
 
         decision = dispatch_with_retries(
-            self._transport, lambda: HttpRequest("POST", url, headers, body), parse,
+            transport if transport is not None else self._transport,
+            lambda: HttpRequest("POST", url, headers, body), parse,
             policy=self._policy, clock=self._clock, rng=self._rng, counters=call_counters,
             build_watch=self._build_watch, model_key=model_key)
         with self._build_lock:
@@ -2356,12 +2376,119 @@ def _jev_wire_model(build_id: str) -> str:
     return slug
 
 
+class _BelowWarningFilter(logging.Filter):
+    """Drops every `typesafe_sdk` record below WARNING (NFR-PROV-11). A filter rather than a
+    level, so a later logging reconfiguration (an operator's `TYPESAFE_LOG_LEVEL=debug`, a
+    `dictConfig`) cannot bring the SDK's DEBUG body logging back and put student text in a log."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.WARNING
+
+
+def _load_typesafe_sdk() -> Any:
+    """Import the TypeSafe SDK, lazily and only from here (FR-PROV-39, CT-PROV-29): `import
+    aeh.prov` never loads it, and nothing outside this module ever imports it."""
+    try:
+        import typesafe_sdk
+    except ImportError:
+        raise ConfigurationError(
+            f"the openrouter-jev decision provider needs the TypeSafe SDK: install the "
+            f"'{JEV_SDK_EXTRA}' extra (pip install '.[{JEV_SDK_EXTRA}]') (FR-PROV-42).") from None
+    logger = logging.getLogger(TYPESAFE_SDK_LOGGER)
+    if not any(isinstance(f, _BelowWarningFilter) for f in logger.filters):
+        logger.addFilter(_BelowWarningFilter())
+    return typesafe_sdk
+
+
+def _sdk_response(status: int, headers: Any, body: Any) -> HttpResponse:
+    """An SDK error's status, headers and body as the `HttpResponse` the shared loop reads.
+    httpx2 lowercases header names, so `Retry-After` is restored under the name the loop reads."""
+    plain = {str(k): str(v) for k, v in dict(headers or {}).items()}
+    for name, value in list(plain.items()):
+        if name.lower() == "retry-after":
+            plain["Retry-After"] = value
+    if isinstance(body, bytes):
+        raw = body
+    elif isinstance(body, str):
+        raw = body.encode("utf-8")
+    else:
+        raw = json.dumps(body).encode("utf-8") if body is not None else b""
+    return HttpResponse(status, plain, raw)
+
+
+def _transport_adapter(transport: Transport) -> Any:
+    """An `httpx2.BaseTransport` whose `handle_request` calls the harness `Transport`, so every
+    byte the SDK sends passes the recordable seam (CT-PROV-10, FR-PROV-40). An error the harness
+    transport raises passes through the SDK unchanged, into the shared loop."""
+    import httpx2
+
+    class _Adapter(httpx2.BaseTransport):
+        def handle_request(self, request: Any) -> Any:
+            response = transport.send(HttpRequest(request.method, str(request.url),
+                                                  {str(k): str(v) for k, v in request.headers.items()},
+                                                  request.read()))
+            body = response.body
+            content = json.dumps(body).encode("utf-8") if isinstance(body, dict) else bytes(body)
+            return httpx2.Response(response.status, headers=dict(response.headers or {}),
+                                   content=content, request=request)
+
+    return _Adapter()
+
+
+class _SdkCall:
+    """One SDK `system_one` call, shaped as a `Transport` for the shared retry loop, which calls
+    `send` once per attempt. It returns the RAW response (§3.12.1: the SDK decodes, the raw bytes
+    decide), and maps every SDK error (FR-PROV-41), with the mapped error raised outside the
+    handler so no SDK error, or the body bytes it carries, is reachable from it."""
+
+    def __init__(self, client: Any, sdk: Any, state: str, questions: Any, model: str, extra_body: Any) -> None:
+        self._client, self._sdk = client, sdk
+        self._args = (state, questions)
+        self._model, self._extra = model, extra_body
+
+    def send(self, _request: HttpRequest) -> HttpResponse:
+        sdk = self._sdk
+        mapped: Exception | None = None
+        try:
+            result = self._client.system_one(*self._args, model=self._model, extra_body=self._extra)
+        except sdk.TypeSafeAPIResponseValidationError as error:
+            # 1. A body failing the SDK's schema (it carries HTTP 200): handed back raw, so the
+            # harness's own validation decides, including the no-retry missing-confidence rule.
+            return _sdk_response(error.status, error.headers, error.body)
+        except sdk.TypeSafeAPIConnectionError as error:
+            # 2. Connection and timeout errors (the SDK's own; the harness transport's errors
+            # pass through untouched).
+            mapped = TransportError(f"the decision engine could not be reached: {type(error).__name__}")
+        except sdk.TypeSafeAPIError as error:
+            # 3. Every other HTTP failure by its status, through the loop and FR-PROV-23's table.
+            # A status that table does not name is unavailability, never a leaked SDK type.
+            if error.status in (400, 401, 402, 403, 422, 429) or 500 <= error.status <= 599:
+                return _sdk_response(error.status, error.headers, error.body)
+            if error.status == 408:
+                # OpenRouter's request timeout: a transport failure (FR-PROV-23), retried.
+                mapped = TransportError("the decision engine timed out the request (HTTP 408)")
+            else:
+                mapped = ProviderUnavailableError(
+                    f"unexpected HTTP {error.status} from the decision engine (FR-PROV-41).")
+        except sdk.TypeSafeError as error:
+            raise ProviderUnavailableError(
+                f"the TypeSafe SDK failed: {type(error).__name__} (FR-PROV-41).") from error
+        if mapped is not None:
+            raise mapped
+        raw = result.raw_http_response
+        return HttpResponse(raw.status_code, {str(k): str(v) for k, v in raw.headers.items()}, raw.content)
+
+
 class JevOpenRouterProvider(_BaseDecisionProvider):
     """Jev on OpenRouter — the connected configuration's decision engine (FR-PROV-21).
 
-    POSTs typed questions to OpenRouter's Decisions API for a pinned Jev build, with the
-    upstream pinned, fallbacks disabled and zero-retention routing requested. Separate from the
-    local providers by design (user directive); it shares only `_BaseDecisionProvider`."""
+    Design 1.8 (FR-PROV-38…43, ADR-28): the request is sent through the TypeSafe SDK to
+    OpenRouter's `/api/v1/systemone`, for a pinned Jev build, with the upstream pinned,
+    fallbacks disabled and zero-retention routing requested. The SDK stays inside this class:
+    its HTTP goes through the injected `Transport` (an `httpx2` transport adapter), its retries
+    are off so the shared loop owns them, every kept value is read from the raw response body,
+    and every SDK error is mapped to a harness error. Separate from the local providers by
+    design (user directive); it shares only `_BaseDecisionProvider`."""
 
     _billed = True
 
@@ -2370,8 +2497,20 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
                  retention_answers: Callable[[str], str] | None = None, **seams: Any) -> None:
         seams.setdefault("timeout_s", _env_positive_float(JEV_TIMEOUT_S_ENV, DEFAULT_JEV_TIMEOUT_S))
         super().__init__(**seams)
-        self._api_key = api_key if api_key is not None else os.environ.get(OPENROUTER_API_KEY_ENV)
+        raw_key = api_key if api_key is not None else os.environ.get(OPENROUTER_API_KEY_ENV)
+        # Stripped here, so a pasted key with a trailing newline or blanks is treated as the key
+        # it is, and an all-blank one as absent (never handed to the SDK to reject).
+        self._api_key = raw_key.strip() if isinstance(raw_key, str) else raw_key
         self._url = url if url is not None else (os.environ.get(JEV_OPENROUTER_URL_ENV) or DEFAULT_JEV_OPENROUTER_URL)
+        if not self._url.rstrip("/").endswith(JEV_SDK_PATH):
+            raise ConfigurationError(
+                f"{JEV_OPENROUTER_URL_ENV} must name the TypeSafe SDK endpoint, a URL ending in "
+                f"{JEV_SDK_PATH} (default {DEFAULT_JEV_OPENROUTER_URL}); got {self._url!r} (ADR-28).")
+        self._sdk = _load_typesafe_sdk()
+        self._timeout_s = float(seams["timeout_s"])
+        self._client: Any = None
+        self._client_lock = threading.Lock()
+        self._unreported = threading.local()
         self._upstream = os.environ.get(JEV_OPENROUTER_PROVIDER_ENV) or DEFAULT_JEV_OPENROUTER_PROVIDER
         # FR-PROV-21: every request carries a session id. The composer passes the run id; a
         # provider built without one groups its own lifetime's calls under a fresh id.
@@ -2400,17 +2539,64 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         if not self._api_key:
             raise ConfigurationError(
                 f"JevOpenRouterProvider needs an API key: pass api_key= or set {OPENROUTER_API_KEY_ENV}.")
-        document: dict[str, Any] = {
-            "model": wire_model,
-            "state": request.state,
-            "questions": decision_questions_document(request),
+        extra_body = {
             "provider": {"order": [self._upstream], "allow_fallbacks": False,
                          "data_collection": "deny", "zdr": True},
+            "session_id": self._session_id,
         }
-        document["session_id"] = self._session_id
-        body = json.dumps(document, ensure_ascii=False).encode("utf-8")
-        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
-        return self._decide_http(request, model_ref, self._url, headers, body, fallback_build=wire_model)
+        call = _SdkCall(self._sdk_client(wire_model), self._sdk, request.state,
+                        decision_questions_document(request), wire_model, extra_body)
+        self._unreported.flag = False
+        # The shared loop drives the SDK call as its transport: one SDK call per attempt, our
+        # retry budget, `Retry-After`, status table and raw-body validation unchanged. Passed per
+        # call, never swapped onto `self`, so concurrent `decide`s cannot cross.
+        decision = self._decide_http(request, model_ref, self._url, {}, b"", fallback_build=wire_model,
+                                     transport=call)
+        if self._unreported.flag:
+            self._counters.on_decision_provider_unreported()
+        return decision
+
+    def _sdk_client(self, wire_model: str) -> Any:
+        """One `TypeSafeClient` per provider, every argument explicit so the SDK's
+        `TYPESAFE_API_KEY` / `TYPESAFE_BASE_URL` / `TYPESAFE_DEFAULT_MODEL` can never redirect
+        the request, change the key or select `jev-latest` (FR-PROV-38). Its HTTP goes through
+        the injected `Transport` and its own retries are off (FR-PROV-40)."""
+        with self._client_lock:
+            if self._client is None:
+                base_url = self._url.rstrip("/")[: -len(JEV_SDK_PATH)]
+                refused: str | None = None
+                try:
+                    self._client = self._sdk.TypeSafeClient(
+                        api_key=self._api_key, base_url=base_url, model=wire_model,
+                        retry=self._sdk.RetryPolicy(max_retries=0), timeout=self._timeout_s,
+                        transport=_transport_adapter(self._transport))
+                except self._sdk.TypeSafeError as error:
+                    # The SDK rejects a malformed key or timeout. Its message names the SDK's
+                    # own environment variable, which never applies here (FR-PROV-38), so the
+                    # refusal is restated, and raised outside the handler so no SDK error is
+                    # reachable from it (CT-PROV-29).
+                    refused = type(error).__name__
+                if refused is not None:
+                    raise ConfigurationError(
+                        f"the OpenRouter API key or HARNESS_JEV_TIMEOUT_S was refused by the TypeSafe "
+                        f"SDK ({refused}); check {OPENROUTER_API_KEY_ENV} (printable ASCII, no spaces).")
+            return self._client
+
+    def _prepare_document(self, document: Any) -> Any:
+        """FR-PROV-43, the per-call routing check, on the raw body: a response served by an
+        upstream outside the pinned `order` raises `RetentionPolicyError` (terminal, never
+        retried); an absent `provider` is counted as unreported, not refused."""
+        if isinstance(document, dict):
+            served = document.get("provider")
+            # Per attempt: only the attempt whose body is accepted decides the count.
+            self._unreported.flag = served is None
+            if served is None:
+                pass
+            elif str(served).strip().lower() != self._upstream.strip().lower():
+                raise RetentionPolicyError(
+                    f"the decision response was served by {served!r}, outside the pinned provider "
+                    f"order [{self._upstream!r}]; zero-retention routing is not assured (FR-PROV-43).")
+        return document
 
     def verify_retention(self, model_refs: Sequence[ModelRef]) -> RetentionReport:
         """Zero-retention confirmation for the decision model, fail-closed exactly as

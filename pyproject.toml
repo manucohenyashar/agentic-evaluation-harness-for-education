@@ -26,6 +26,10 @@ dependencies = []
 # "no network, no toolchain" a property of the install rather than of anyone's discipline.
 [project.optional-dependencies]
 live-ingest = ["pypdf>=6.0", "pypdfium2>=4.0"]
+# Design 1.8 (FR-PROV-42, ADR-28): the TypeSafe SDK behind the openrouter-jev decision provider,
+# exact-pinned (NFR-PROV-10). Only a cloud-hosted run with the Jev engine needs it; the core,
+# engine-off and edge-local installs never load it (CT-PROV-29).
+jev-cloud = ["typesafe-sdk==0.7.2"]
 
 # The installed command. `aeh.pipeline:main` lands with the M-PIPE composition story; the
 # entry point is declared ahead of it deliberately (the install succeeds and the name exists;

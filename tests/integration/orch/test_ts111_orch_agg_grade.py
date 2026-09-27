@@ -311,7 +311,6 @@ def test_tc_orch_51_the_flush_writes_decision_counters_and_sums_actual_cost(tmp_
         world.store.close()
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_orch_51_the_flush_writes_decision_provider_unreported(tmp_path) -> None:
     """Design 1.8 (FR-PROV-43, CT-PROV-24 amended): with a decision provider bound, the flush

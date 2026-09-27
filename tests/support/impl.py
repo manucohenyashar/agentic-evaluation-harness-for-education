@@ -1300,34 +1300,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#497 Jev confidence is the engine's own (TS-123)" left with #497: the fixture double gives
     # a Noul its own value and refuses a confidence-less Jev Score, the probe
     # that keyed this entry was deleted with it, and TS-123's arms run green.
-    # --- TS-124 (#500): design 1.8, JevOpenRouterProvider through the TypeSafe SDK ------------
-    #
-    # #498 changes how an existing class sends, not what it is called, so no `symbol` marks it.
-    # `command` asks the behaviour: the probe exits 0 once a decision sent through the
-    # provider's public surface arrives at the transport stamped by the SDK
-    # (`X-TypeSafe-SDK`) on `/api/v1/systemone`.
-    "#498 JevOpenRouterProvider through the TypeSafe SDK (TS-124)": (
-        "command",
-        "python tests/support/sdk_path_probe.py",
-        (
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_48_the_wire_through_the_sdk",
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_49_one_send_per_attempt_and_our_loop_owns_retries",
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_50_values_are_read_from_the_raw_body",
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_51_every_sdk_failure_maps_to_a_harness_error",
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_51_a_bare_sdk_error_is_unavailability_with_its_cause",
-            "tests/unit/prov/test_ts124_sdk_provider.py::test_tc_prov_54_the_per_call_routing_check",
-            "tests/unit/prov/test_ts106_jev_openrouter.py::test_tc_prov_26_the_exact_wire_request",
-            "tests/contract/prov/test_cs_prov_decide.py::test_tc_prov_c24_the_counter_names",
-            "tests/integration/orch/test_ts111_orch_agg_grade.py::test_tc_orch_51_the_flush_writes_decision_provider_unreported",
-            # TS-125 (#501), keyed to the same story:
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_52_building_the_cloud_provider_loads_the_sdk_and_decisions_stay_harness_typed",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_the_sdk_ships_as_the_jev_cloud_extra_and_its_absence_is_refused_by_name",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_53_a_cloud_run_without_the_sdk_refuses_at_start_before_any_lease",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_sec_23_no_log_record_carries_student_text",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_c29_the_sdk_never_crosses_the_module_boundary",
-            "tests/contract/prov/test_ts125_sdk_confinement.py::test_tc_prov_c30_every_byte_passes_the_transport_with_no_sdk_retry",
-        ),
-    ),
+    # "#498 JevOpenRouterProvider through the TypeSafe SDK (TS-124)" left with #498: the provider
+    # sends through the SDK, the probe that keyed the entry was deleted with it, and the TS-124
+    # (#500) and TS-125 (#501) arms run green.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

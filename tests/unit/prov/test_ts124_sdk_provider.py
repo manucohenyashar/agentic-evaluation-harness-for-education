@@ -108,7 +108,6 @@ def _mixed_body() -> dict:
         "plain": {"type": "noul", "noul": 0.9}, "framed": {"type": "noul", "noul": 0.2}}}
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_48_the_wire_through_the_sdk(monkeypatch) -> None:
     transport = _Transport(_ok(_mixed_body()))
     _provider(transport, session_id="R1").decide(_mixed_request(), JEV_REF)
@@ -159,7 +158,6 @@ def test_tc_prov_48_the_wire_through_the_sdk(monkeypatch) -> None:
 
 # --- TC-PROV-49 ----------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_49_one_send_per_attempt_and_our_loop_owns_retries() -> None:
     good = _ok(_good_body())
     one = _Transport(good)
@@ -189,7 +187,6 @@ def test_tc_prov_49_one_send_per_attempt_and_our_loop_owns_retries() -> None:
 
 # --- TC-PROV-50 ----------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_50_values_are_read_from_the_raw_body(monkeypatch) -> None:
     # At 1 USD per million input tokens the derived cost of 1,200 tokens is 0.0012, so only the
     # raw body's 0.0000504 can produce the asserted value (the SDK model drops `usage.cost`).
@@ -269,8 +266,7 @@ _TABLE = [
     pytest.param("timeout", lambda: _Transport(raise_error=TransportError("read timed out")),
                  ProviderUnavailableError, 3, id="timeout"),
 ]
-_TABLE = [row if type(row) is not tuple else pytest.param(*row, id=row[0], marks=pytest.mark.writtenahead)
-          for row in _TABLE]
+_TABLE = [row if type(row) is not tuple else pytest.param(*row, id=row[0]) for row in _TABLE]
 
 
 @pytest.mark.parametrize("row, make, error, sends", _TABLE)
@@ -295,7 +291,6 @@ def test_tc_prov_51_every_sdk_failure_maps_to_a_harness_error(row, make, error, 
         assert len(str(caught.value).encode()) < len(body.encode()), "at most 512 body bytes, never the whole body"
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_51_a_bare_sdk_error_is_unavailability_with_its_cause(monkeypatch) -> None:
     import typesafe_sdk
     from typesafe_sdk import TypeSafeError
@@ -312,7 +307,6 @@ def test_tc_prov_51_a_bare_sdk_error_is_unavailability_with_its_cause(monkeypatc
 
 # --- TC-PROV-54 ----------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_54_the_per_call_routing_check() -> None:
     listed = _Transport(_ok(_good_body(provider="typesafe")))
     _provider(listed).decide(jev_corpora.wire_request(), JEV_REF)

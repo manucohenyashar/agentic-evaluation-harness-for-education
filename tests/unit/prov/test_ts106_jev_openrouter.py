@@ -71,7 +71,6 @@ def _request() -> DecisionRequest:
 
 # --- TC-PROV-26 --------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
     monkeypatch.delenv("HARNESS_JEV_OPENROUTER_URL", raising=False)
     request = _request()
