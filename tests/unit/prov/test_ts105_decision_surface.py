@@ -3,9 +3,9 @@
 | Case | Asserted |
 |---|---|
 | TC-PROV-23 | `DecisionRequest` refuses each malformed shape by naming its rule, accepts each edge that is allowed, and `decide` is synchronous |
-| TC-PROV-24 | Confidence: reported when present, else `(n·peak−1)/(n−1)`, and `|2p−1|` for a Noul, hand-computed |
-| TC-PROV-25 | F-JEV-WIRE's malformed bodies: 3 transport calls, then `MalformedResponseError`, never renormalized; the 1.0009 body is accepted exactly as sent |
-| TC-PROV-30 | Fixture `decide` replays exactly, misses on one changed byte or on reordered questions with no socket touched, is not satisfied by a completion fixture, and raises a declared error by type |
+| TC-PROV-24 | *(Re-specified, design 1.8, TS-123 #499.)* Jev rule on `openrouter-jev`, `openjev` and the fixture double: Choice/Score confidence is Jev's reported value and is required (absent or `null` → `MalformedResponseError` after 1 send; present but invalid → 3 sends); a Noul's confidence is its value. Small rule under an `openjev-small` ref: Choice/Score derived, any shim value discarded, a Noul's confidence is its value |
+| TC-PROV-25 | F-JEV-WIRE's malformed bodies: 3 transport calls, then `MalformedResponseError`, never renormalized; the 1.0009 body is accepted exactly as sent; *(1.8)* a body without Jev's confidence: 1 send |
+| TC-PROV-30 | Fixture `decide` replays exactly, misses on one changed byte or on reordered questions with no socket touched, is not satisfied by a completion fixture, and raises a declared error by type; *(1.8)* its confidence rule comes from the `ModelRef` only |
 | TC-PROV-31 | `decision_provider_for` maps the three decision names and refuses everything else, the LLM provider names included |
 | TC-PROV-32 | Declared capabilities per implementation, and the OpenJev max-model-len knob |
 | TC-PROV-34 | Decision counters across OK, a 500 retry and a 429 retry, kept apart from the LLM counters in both directions. The `actual_cost` sum of both surfaces is M-ORCH's flush and is asserted by TC-ORCH-51 (TS-111) |
@@ -126,31 +126,167 @@ def _score_answer(probs, **extra):
                                  **extra}}}
 
 
-def test_tc_prov_24_confidence_is_reported_else_derived_by_hand() -> None:
-    probs = (0.05, 0.90, 0.05, 0.0)
-    derived = parse_decision(_score_answer(probs), _score_request(), fallback_build="x").answers["band"]
-    # (4 * 0.90 - 1) / 3 = 2.6 / 3 = 0.866666...
-    assert derived.confidence == pytest.approx(2.6 / 3, abs=1e-9)
-    assert derived.confidence_source == "derived"
-    assert isinstance(derived.probabilities, tuple) and derived.probabilities[1] == 0.90
-    reported = parse_decision(_score_answer(probs, confidence=0.81), _score_request(),
-                              fallback_build="x").answers["band"]
-    assert (reported.confidence, reported.confidence_source) == (0.81, "reported")
-    noul = _req([NoulQuestion("ok", "x")])
-    for p, expected in ((0.95, 0.90), (0.5, 0.0), (0.05, 0.90)):  # |2p - 1|
-        answer = parse_decision({"answers": {"ok": {"type": "noul", "noul": p}}}, noul,
-                                fallback_build="x").answers["ok"]
-        # A Noul has no reported confidence on the wire, so its answer carries no source
-        # field: `|2p - 1|` is the only value it can hold (CT-PROV-27).
-        assert answer.confidence == pytest.approx(expected, abs=1e-9)
-    choice = _req([ChoiceQuestion("topic", "x", (("billing", None), ("technical", None)))])
-    answer = parse_decision({"answers": {"topic": {"type": "choice", "choice": "billing",
-                                                   "probabilities": {"billing": 0.88, "technical": 0.12}}}},
-                            choice, fallback_build="x").answers["topic"]
-    # (2 * 0.88 - 1) / 1 = 0.76
-    assert answer.confidence == pytest.approx(0.76, abs=1e-9) and answer.confidence_source == "derived"
+# Re-specified for design 1.8 (plan 1.6 §5.8, FR-PROV-19). The *Jev rule* applies to
+# `openrouter-jev`, `openjev` and `fixture`: Choice/Score confidence is Jev's reported value and
+# is required; a Noul's confidence is its `p`. The *small rule* applies to `openjev-small`: the
+# provider derives Choice/Score confidence and a Noul's confidence is its `p`. Every row is
+# driven through `decide` (programmed transport, or the fixture double), never through the
+# parser alone, so the rule each implementation applies is what is asserted.
+
+SMALL_REF = ModelRef(role="decision", provider="openjev-small",
+                     build_id="/models/openjev-small/qwen3.5-4b-nli-v5/model.safetensors@sha256:" + "ef" * 32,
+                     quantization="bf16")
+_SCORE_PROBS = (0.05, 0.90, 0.05, 0.0)
+_CHOICE = _req([ChoiceQuestion("topic", "x", (("billing", None), ("technical", None)))])
+_CHOICE_PROBS = {"billing": 0.88, "technical": 0.12}
+_NOUL = _req([NoulQuestion("ok", "x")])
+
+
+def _doc(answers: dict) -> dict:
+    return {"model": "typesafe/jev-1.13", "answers": answers, "usage": {"input_tokens": 1, "output_tokens": 0}}
+
+
+def _score_doc(**extra) -> dict:
+    return _doc(_score_answer(_SCORE_PROBS, **extra)["answers"])
+
+
+def _choice_doc(**extra) -> dict:
+    return _doc({"topic": {"type": "choice", "choice": "billing", "probabilities": dict(_CHOICE_PROBS), **extra}})
+
+
+def _noul_doc(p: float) -> dict:
+    return _doc({"ok": {"type": "noul", "noul": p}})
+
+
+def _twin(request: DecisionRequest) -> dict:
+    """A well-formed, Jev-shaped document for `request`: what the double records first."""
+    answers = {}
+    for q in request.questions:
+        if isinstance(q, ScoreQuestion):
+            answers[q.key] = _score_answer(_SCORE_PROBS, confidence=0.9)["answers"]["band"]
+        elif isinstance(q, ChoiceQuestion):
+            answers[q.key] = {"type": "choice", "choice": "billing", "probabilities": dict(_CHOICE_PROBS),
+                              "confidence": 0.9}
+        else:
+            answers[q.key] = {"type": "noul", "noul": 0.9}
+    return _doc(answers)
+
+
+def _decide_via(impl: str, document: dict, request: DecisionRequest, tmp_path: Path, sent: list | None = None):
+    """`(decide result, transport sends)` for one implementation. The fixture double records a
+    well-formed twin and has `document` planted behind its back, so what it returns is the rule
+    it applies at `decide`, whatever it checks at record time."""
+    if impl in ("fixture", "fixture-small"):
+        ref = FX_REF if impl == "fixture" else SMALL_REF
+        fixture = RecordedFixtureProvider(fixture_dir=tmp_path / impl)
+        fixture.record_decision(request, ref, _twin(request))
+        path = fixture._path_for(decision_request_key(request, ref))
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        stored["response"] = document
+        path.write_text(json.dumps(stored), encoding="utf-8")
+        return fixture.decide(request, ref), 0
+    transport = _Transport(_ok(document))
+    if impl == "openrouter-jev":
+        provider, ref = JevOpenRouterProvider(api_key="k", transport=transport, clock=FrozenClock()), JEV_REF
+    else:
+        provider, ref = OpenJevLocalProvider(transport=transport, clock=FrozenClock()), OJ_REF
+    try:
+        return provider.decide(request, ref), len(transport.requests)
+    finally:
+        if sent is not None:
+            sent.append(len(transport.requests))
+
+
+JEV_RULE = ("openrouter-jev", "openjev", "fixture")
+
+
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("impl", JEV_RULE)
+@pytest.mark.parametrize("row, document, request_", [
+    ("a", _score_doc(), _score_request()),
+    ("f", _choice_doc(), _CHOICE),
+    ("h-null", _score_doc(confidence=None), _score_request()),
+], ids=["a", "f", "h-null"])
+def test_tc_prov_24_jev_rule_a_missing_confidence_is_refused_on_the_first_send(
+        impl, row, document, request_, tmp_path, monkeypatch) -> None:
+    """Rows a, f and h (`null`): a Jev build's Choice/Score answer whose `confidence` is absent or
+    `null` is `MalformedResponseError` after exactly one send. It is never given a derived value
+    (RISK-83), and never retried: absence is a property of the backend, not a transient fault."""
+    monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
+    sent: list[int] = []
     with pytest.raises(MalformedResponseError):
-        parse_decision(_score_answer(probs, confidence=1.2), _score_request(), fallback_build="x")
+        _decide_via(impl, document, request_, tmp_path, sent=sent)
+    if impl != "fixture":
+        assert sent == [1], f"row {row}: exactly one send, no retry"
+
+
+@pytest.mark.parametrize("impl", JEV_RULE)
+def test_tc_prov_24_jev_rule_a_present_confidence_is_reported_unchanged(impl, tmp_path) -> None:
+    """Rows b and g: Jev's reported value reaches the caller unchanged (0.81, not the derived
+    0.8667; 0.70, not the derived 0.76). Green on 1.6 code, which already preferred a reported
+    value, so this arm is not written ahead."""
+    band, _ = _decide_via(impl, _score_doc(confidence=0.81), _score_request(), tmp_path / "b")
+    assert (band.answers["band"].confidence, band.answers["band"].confidence_source) == (0.81, "reported")
+    assert isinstance(band.answers["band"].probabilities, tuple) and band.answers["band"].probabilities[1] == 0.90
+    topic, _ = _decide_via(impl, _choice_doc(confidence=0.70), _CHOICE, tmp_path / "g")
+    assert (topic.answers["topic"].confidence, topic.answers["topic"].confidence_source) == (0.70, "reported")
+
+
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("impl", JEV_RULE)
+@pytest.mark.parametrize("p", [0.95, 0.5, 0.05], ids=["c", "d", "e"])
+def test_tc_prov_24_jev_rule_a_noul_confidence_is_its_value(impl, p, tmp_path) -> None:
+    """Rows c, d, e: a Noul's confidence is its `noul` value, Jev's calibrated P(yes), reported
+    (row e: 0.05, where 1.6's `|2p − 1|` gave 0.90)."""
+    decision, _ = _decide_via(impl, _noul_doc(p), _NOUL, tmp_path)
+    answer = decision.answers["ok"]
+    assert answer.confidence == answer.p_true == p
+    assert answer.confidence_source == "reported"
+
+
+@pytest.mark.parametrize("impl", JEV_RULE)
+@pytest.mark.parametrize("bad, sends", [(1.2, 3), ("NaN", 3)], ids=["h-1.2", "h-NaN"])
+def test_tc_prov_24_jev_rule_a_present_but_invalid_confidence_is_retried_then_refused(
+        impl, bad, sends, tmp_path, monkeypatch) -> None:
+    """Row h: a confidence that is present but invalid keeps CT-PROV-06's retry-then-surface
+    behaviour (3 sends at `HARNESS_RETRY_MAX=3`), unlike an absent one."""
+    monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
+    sent: list[int] = []
+    with pytest.raises(MalformedResponseError):
+        _decide_via(impl, _score_doc(confidence=bad), _score_request(), tmp_path, sent=sent)
+    if impl != "fixture":
+        assert sent == [sends]
+
+
+def test_tc_prov_24_small_rule_choice_and_score_are_derived(tmp_path) -> None:
+    """Small rule, rows a, b, f, g, on the fixture double under an `openjev-small` ref (the real
+    provider carries the same rows in TC-PROV-C27): (4·0.90 − 1)/3 = 0.8667 and (2·0.88 − 1)/1
+    = 0.76, `derived`, with any shim-emitted `confidence` discarded."""
+    for label, document, request, key, expected in (
+            ("a", _score_doc(), _score_request(), "band", 2.6 / 3),
+            ("f", _choice_doc(), _CHOICE, "topic", 0.76)):
+        answer = _decide_via("fixture-small", document, request, tmp_path / label)[0].answers[key]
+        assert answer.confidence == pytest.approx(expected, abs=1e-9) and answer.confidence_source == "derived"
+
+
+@pytest.mark.writtenahead
+def test_tc_prov_24_small_rule_discards_a_shim_confidence_and_a_noul_is_its_value(tmp_path) -> None:
+    """Small rule, rows b, g (a shim-emitted confidence is discarded: 0.8667 and 0.76, not 0.81
+    and 0.70) and c, d, e (a Noul's confidence is `p`, derived)."""
+    band = _decide_via("fixture-small", _score_doc(confidence=0.81), _score_request(), tmp_path / "b")[0]
+    assert band.answers["band"].confidence == pytest.approx(2.6 / 3, abs=1e-9)
+    assert band.answers["band"].confidence_source == "derived"
+    topic = _decide_via("fixture-small", _choice_doc(confidence=0.70), _CHOICE, tmp_path / "g")[0]
+    assert topic.answers["topic"].confidence == pytest.approx(0.76, abs=1e-9)
+    for p in (0.95, 0.5, 0.05):
+        noul = _decide_via("fixture-small", _noul_doc(p), _NOUL, tmp_path / f"n{p}")[0].answers["ok"]
+        assert noul.confidence == noul.p_true == p and noul.confidence_source == "derived"
+    # Row h under the small rule: a shim confidence is ignored, not validated, so 1.2, "NaN" and
+    # null all give the derived 0.8667 rather than a refusal.
+    for bad in (1.2, "NaN", None):
+        band = _decide_via("fixture-small", _score_doc(confidence=bad), _score_request(), tmp_path / f"h{bad}")[0]
+        assert band.answers["band"].confidence == pytest.approx(2.6 / 3, abs=1e-9)
+        assert band.answers["band"].confidence_source == "derived"
 
 
 # --- TC-PROV-25 --------------------------------------------------------------------------------
@@ -166,6 +302,26 @@ def test_tc_prov_25_malformed_body_is_retried_then_refused(entry, monkeypatch) -
     with pytest.raises(MalformedResponseError):
         provider.decide(jev_corpora.wire_request(entry["request"]), JEV_REF)
     assert len(transport.requests) == 3
+
+
+_NO_CONFIDENCE = [b for b in jev_corpora.wire_bodies() if b["expect"]["outcome"] == "missing_confidence"]
+
+
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("entry", _NO_CONFIDENCE, ids=[b["id"] for b in _NO_CONFIDENCE])
+def test_tc_prov_25_a_body_without_jev_confidence_is_refused_after_one_send(entry, monkeypatch) -> None:
+    """Design 1.8 (FR-PROV-20): F-JEV-WIRE's Choice/Score bodies without `confidence`, on the
+    backend they were written for, raise `MalformedResponseError` after exactly one send, where
+    every other malformed row above takes the full budget of three."""
+    assert _NO_CONFIDENCE, "F-JEV-WIRE carries the missing-confidence rows"
+    monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
+    transport = _Transport(_ok(entry["body"]))
+    provider, ref = ((JevOpenRouterProvider(api_key="k", transport=transport, clock=FrozenClock()), JEV_REF)
+                     if entry["backend"] == "cloud" else
+                     (OpenJevLocalProvider(transport=transport, clock=FrozenClock()), OJ_REF))
+    with pytest.raises(MalformedResponseError):
+        provider.decide(jev_corpora.wire_request(entry["request"]), ref)
+    assert len(transport.requests) == entry["expect"]["sends"] == 1
 
 
 def test_tc_prov_25_sum_within_tolerance_is_returned_exactly_as_sent(monkeypatch) -> None:
@@ -186,7 +342,7 @@ def _decision_body(request: DecisionRequest) -> dict:
         if isinstance(q, ScoreQuestion):
             n = len(q.levels)
             answers[q.key] = {"type": "score", "score": 1.0, "probabilities": {str(i): (1.0 if i == 1 else 0.0) for i in range(n)},
-                              "legend": {str(i): l for i, l in enumerate(q.levels)}}
+                              "legend": {str(i): l for i, l in enumerate(q.levels)}, "confidence": 1.0}
         else:
             answers[q.key] = {"type": "noul", "noul": 0.9}
     return {"model": "jev-fixture", "answers": answers, "usage": {"input_tokens": 10, "output_tokens": 0}}
@@ -223,6 +379,32 @@ def test_tc_prov_30_fixture_decide_replays_exactly_and_misses_loudly(tmp_path) -
     provider.record_decision(rejected, FX_REF, error=("DecisionRequestRejectedError", "HTTP 422"))
     with pytest.raises(DecisionRequestRejectedError):
         provider.decide(rejected, FX_REF)
+
+
+@pytest.mark.writtenahead
+def test_tc_prov_30_the_fixture_rule_comes_from_the_model_ref_only(tmp_path) -> None:
+    """Design 1.8 (FR-PROV-19's fixture rule): a recorded Score without `confidence` replays as
+    `MalformedResponseError` under a Jev ref (`openrouter-jev`, `fixture`) and as the derived
+    0.8667 under an `openjev-small` ref. An extra `engine: "openjev-small"` field in the fixture
+    document changes nothing under a Jev ref: the rule is read from the `ModelRef`, never from a
+    second source that could disagree with it."""
+    request = _score_request()
+    for label, ref in (("jev", JEV_REF), ("fixture", FX_REF)):
+        fixture = RecordedFixtureProvider(fixture_dir=tmp_path / label)
+        fixture.record_decision(request, ref, _twin(request))
+        path = fixture._path_for(decision_request_key(request, ref))
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        stored["response"] = _score_doc()
+        path.write_text(json.dumps(stored), encoding="utf-8")
+        with pytest.raises(MalformedResponseError):
+            fixture.decide(request, ref)
+        stored["engine"] = "openjev-small"
+        stored["response"]["engine"] = "openjev-small"
+        path.write_text(json.dumps(stored), encoding="utf-8")
+        with pytest.raises(MalformedResponseError):
+            fixture.decide(request, ref)
+    small = _decide_via("fixture-small", _score_doc(), request, tmp_path / "small")[0].answers["band"]
+    assert small.confidence == pytest.approx(2.6 / 3, abs=1e-9) and small.confidence_source == "derived"
 
 
 # --- TC-PROV-31 --------------------------------------------------------------------------------
@@ -269,7 +451,7 @@ def test_tc_prov_34_decision_counters_are_their_own(monkeypatch) -> None:
     `actual_cost` (0.02 of LLM spend plus this) is summed by M-ORCH, not here."""
     monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
     request = jev_corpora.wire_request()
-    good = next(b for b in jev_corpora.wire_bodies() if b["id"] == "cloud-well-formed-derived")["body"]
+    good = next(b for b in jev_corpora.wire_bodies() if b["id"] == "cloud-well-formed-reported")["body"]
     body = {**good, "usage": {"input_tokens": 1200, "output_tokens": 0, "cost": 0.0000504}}
     transport = _Transport(
         _ok(body),
@@ -354,9 +536,10 @@ if given is not None:
         ScoreQuestion("band", "x", ("B", "D", "P", "E")),
         NoulQuestion("ok", "x")))
     _GOOD = json.dumps({"model": "typesafe/jev-1.13", "usage": {"input_tokens": 3, "output_tokens": 0}, "answers": {
-        "topic": {"type": "choice", "choice": "friction", "probabilities": {"friction": 0.7, "normal": 0.3}},
+        "topic": {"type": "choice", "choice": "friction", "probabilities": {"friction": 0.7, "normal": 0.3},
+                  "confidence": 0.4},
         "band": {"type": "score", "score": 2.0, "probabilities": {"0": 0.1, "1": 0.1, "2": 0.7, "3": 0.1},
-                 "legend": {"0": "B", "1": "D", "2": "P", "3": "E"}},
+                 "legend": {"0": "B", "1": "D", "2": "P", "3": "E"}, "confidence": 0.6},
         "ok": {"type": "noul", "noul": 0.8}}}).encode()
 
     @pytest.mark.property
@@ -387,7 +570,7 @@ def test_tc_prov_47_a_non_finite_or_negative_cost_is_malformed(cost, monkeypatch
     """Found in review of TS-105: `usage.cost` of NaN, ±Infinity or a negative number was
     accepted as `Decision.cost` and would poison `decision_actual_cost` and the ceiling."""
     monkeypatch.setenv("HARNESS_RETRY_MAX", "1")
-    good = next(b for b in jev_corpora.wire_bodies() if b["id"] == "cloud-well-formed-derived")["body"]
+    good = next(b for b in jev_corpora.wire_bodies() if b["id"] == "cloud-well-formed-reported")["body"]
     body = {**good, "usage": {"input_tokens": 10, "output_tokens": 0, "cost": cost}}
     provider = JevOpenRouterProvider(api_key="k", transport=_Transport(_ok(body)), clock=FrozenClock())
     with pytest.raises(MalformedResponseError):
@@ -404,7 +587,7 @@ def test_perf_14_provider_overhead_under_5ms_at_p95() -> None:
     request = _req(questions, state="### submission\n" + "the crate rests on the ramp. " * 830)
     body = {"model": "typesafe/jev-1.13-20260917", "answers": {
         q.key: ({"type": "score", "score": 1.0, "probabilities": {"0": 0.0, "1": 1.0, "2": 0.0, "3": 0.0},
-                 "legend": {"0": "a", "1": "b", "2": "c", "3": "d"}} if isinstance(q, ScoreQuestion)
+                 "legend": {"0": "a", "1": "b", "2": "c", "3": "d"}, "confidence": 1.0} if isinstance(q, ScoreQuestion)
                 else {"type": "noul", "noul": 0.9}) for q in questions},
         "usage": {"input_tokens": 8000, "output_tokens": 0}}
     response = _ok(body)

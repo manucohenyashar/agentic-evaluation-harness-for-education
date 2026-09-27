@@ -227,7 +227,8 @@ def test_tc_req_104_the_worker_uses_only_decide_and_capabilities(tmp_data_dir, m
                         probs = {str(i): (0.94 if i == 2 else round(0.06 / (n - 1), 6)) for i in range(n)}
                         probs["2"] = round(1 - sum(v for k, v in probs.items() if k != "2"), 6)
                         answers[key] = {"type": "score", "score": 2.0, "probabilities": probs,
-                                        "legend": {str(i): lvl for i, lvl in enumerate(q["criteria"])}}
+                                        "legend": {str(i): lvl for i, lvl in enumerate(q["criteria"])},
+                                        "confidence": (n * probs["2"] - 1) / (n - 1)}
                     else:
                         answers[key] = {"type": "noul", "noul": 0.97}
                 return HttpResponse(200, {}, json.dumps({"model": "typesafe/jev-1.13", "answers": answers,

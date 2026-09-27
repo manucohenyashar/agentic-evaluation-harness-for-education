@@ -40,7 +40,7 @@ import aeh.pkg  # noqa: F401
 import aeh.review  # noqa: F401
 import aeh.synth  # noqa: F401
 from aeh.judge import ScoringRequest, decision_request
-from aeh.prov import (ChoiceQuestion, DecisionRequest, NoulQuestion, RecordedFixtureProvider,
+from aeh.prov import (ChoiceQuestion, derived_confidence, DecisionRequest, NoulQuestion, RecordedFixtureProvider,
                       ScoreQuestion)
 from aeh.store import TIER_MIGRATIONS, Tier
 from harness.corpora import jev
@@ -116,9 +116,13 @@ def answer_document(request: DecisionRequest, answer: dict[str, Any], model: str
     for q in request.questions:
         if isinstance(q, ScoreQuestion):
             probs = answer["band_probabilities"]
+            # Design 1.8: a Jev build reports its own Score confidence, and the harness never
+            # derives one. The recorded value is numerically what 1.6 derived from these
+            # probabilities, so every hand count over F-JEV (24/40 accepted, 8/40 divergent) holds.
             answers[q.key] = {"type": "score", "score": round(sum(i * p for i, p in enumerate(probs)), 6),
                               "probabilities": {str(i): p for i, p in enumerate(probs)},
-                              "legend": {str(i): lvl for i, lvl in enumerate(q.levels)}}
+                              "legend": {str(i): lvl for i, lvl in enumerate(q.levels)},
+                              "confidence": derived_confidence(probs)}
         elif q.key == "evidence_sufficient":
             answers[q.key] = {"type": "noul", "noul": answer["sufficiency"]}
         else:

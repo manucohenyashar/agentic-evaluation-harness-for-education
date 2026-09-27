@@ -17,7 +17,8 @@
         "probabilities": {
           "friction": 0.9,
           "tension": 0.1
-        }
+        },
+        "confidence": 0.865
       },
       "band": {
         "type": "score",
@@ -33,7 +34,8 @@
           "1": "Developing",
           "2": "Proficient",
           "3": "Exemplary"
-        }
+        },
+        "confidence": 0.64
       },
       "evidence_sufficient": {
         "type": "noul",

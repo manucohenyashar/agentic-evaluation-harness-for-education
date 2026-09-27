@@ -62,6 +62,14 @@ def test_f_jev_wire_bodies_validate_exactly_as_labelled():
                 assert len(json.dumps(entry["body"]).encode()) >= expect["body_bytes"] - 50
                 assert expect["sentinel"] in json.dumps(entry["body"])
             continue
+        if expect["outcome"] == "missing_confidence":
+            # Design 1.8: a Jev Choice/Score answer without Jev's confidence. The label is checked
+            # against the body here; that a provider refuses it after one send is TC-PROV-25's.
+            answers = entry["body"]["answers"]
+            assert any(a.get("type") in ("choice", "score") and "confidence" not in a
+                       for a in answers.values()), entry["id"]
+            assert expect["error_type"] == "MalformedResponseError" and expect["sends"] == 1, entry["id"]
+            continue
         if expect["outcome"] == "malformed":
             with pytest.raises(MalformedResponseError):
                 parse_decision(entry["body"], request, fallback_build="x")

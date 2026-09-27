@@ -9,9 +9,9 @@ constructions the plan names.
 | Case | Clause | Asserted |
 |---|---|---|
 | TC-PROV-C17 | surface | `decide` is synchronous and returns a `Decision`; one call is one send; capabilities, estimate and verify_retention send nothing |
-| TC-PROV-C18 | data | TC-PROV-25's malformed shapes refused by all three; a malformed stored answer is refused by the double, not replayed |
-| TC-PROV-C19 | behaviour | TC-PROV-24's confidence rows on all three |
-| TC-PROV-C20 | error | TC-PROV-28's status table on all three (the double through declared errors); a failed call counts no decision |
+| TC-PROV-C18 | data | TC-PROV-25's malformed shapes refused by all three; a malformed stored answer is refused by the double, not replayed; *(extended, design 1.8)* every returned answer carries a confidence in [0, 1], never `None`, and a Noul's equals its `p` |
+| TC-PROV-C19 | behaviour | *(Re-specified, design 1.8, TS-123 #499.)* TC-PROV-24's Jev-rule rows on all three: no Jev-build implementation derives a confidence or keeps `|2p−1|` for a Noul |
+| TC-PROV-C20 | error | TC-PROV-28's status table on all three (the double through declared errors); a failed call counts no decision; *(1.8)* a missing Jev confidence is refused after exactly one send |
 | TC-PROV-C21 | behaviour | No engine substitution: a raising `decide` never reaches any `complete`; a parsed Decision is never re-requested |
 | TC-PROV-C22 | behaviour | Local stays local; cloud never floats; `allow_fallbacks: false` in every body |
 | TC-PROV-C23 | behaviour | A fixture miss never reaches the network |
@@ -35,6 +35,8 @@ from aeh.prov import (CallPlan, Decision, DecisionCounters, DecisionRequestRejec
                       RetentionPolicyError, RunCountersTracker, ScoreQuestion, DecisionRequest)
 from tests.support import jev_corpora
 from tests.support.clock import FrozenClock
+from tests.unit.prov.test_ts105_decision_surface import (_CHOICE, _NOUL, _choice_doc, _decide_via, _noul_doc,
+                                                         _score_doc, _score_request)
 
 pytestmark = pytest.mark.contract
 
@@ -88,7 +90,7 @@ def _decide_body(name, body, request, tmp_path):
 
 @pytest.mark.parametrize("name", IMPLEMENTATIONS)
 def test_tc_prov_c17_surface(name, tmp_path) -> None:
-    body = WIRE[f"{_wire_kind(name)}-well-formed-derived"]["body"]
+    body = WIRE[f"{_wire_kind(name)}-well-formed-reported"]["body"]
     decision, sends = _decide_body(name, body, jev_corpora.wire_request(), tmp_path)
     assert isinstance(decision, Decision)
     if name != "fixture":
@@ -117,7 +119,7 @@ def test_tc_prov_c18_malformed_shapes_refused_by_every_implementation(name, entr
     body = {**entry["body"], "usage": {"input_tokens": 1, "output_tokens": 0}}
     if name == "fixture":
         fixture = RecordedFixtureProvider(fixture_dir=tmp_path)
-        good = WIRE["edge-well-formed-derived"]["body"] if entry["request"] == "canonical" else None
+        good = WIRE["edge-well-formed-reported"]["body"] if entry["request"] == "canonical" else None
         if good is None:
             pytest.skip("the two-level row has no well-formed twin to record first")
         fixture.record_decision(request, FX_REF, good)
@@ -142,31 +144,43 @@ def test_tc_prov_c18_the_accept_row_is_returned_as_sent(name, tmp_path) -> None:
     assert sum(decision.answers["band"].probabilities) == pytest.approx(1.0009, abs=1e-12), "never renormalised"
 
 
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("name", IMPLEMENTATIONS)
+def test_tc_prov_c18_every_answer_carries_a_confidence_and_a_noul_its_value(name, tmp_path) -> None:
+    """Extended for design 1.8: on every implementation, each answer in F-JEV-WIRE's
+    well-formed body carries a float confidence in [0, 1] (never `None`), and every
+    `NoulAnswer.confidence == p_true` (1.6 gave the Nouls `|2p − 1|`: 0.88 and 0.76 here)."""
+    body = {**WIRE[f"{_wire_kind(name)}-well-formed-reported"]["body"], "usage": {"input_tokens": 1, "output_tokens": 0}}
+    decision, _ = _decide_body(name, body, jev_corpora.wire_request(), tmp_path)
+    for key, answer in decision.answers.items():
+        assert isinstance(answer.confidence, float) and 0.0 <= answer.confidence <= 1.0, key
+        if hasattr(answer, "p_true"):
+            assert answer.confidence == answer.p_true, key
+
+
 # --- TC-PROV-C19 -------------------------------------------------------------------------------
 
+@pytest.mark.writtenahead
 @pytest.mark.parametrize("name", IMPLEMENTATIONS)
-def test_tc_prov_c19_confidence_on_every_implementation(name, tmp_path) -> None:
-    request = DecisionRequest(state="s", questions=(ScoreQuestion("band", "x", ("B", "D", "P", "E")),
-                                                    NoulQuestion("ok", "x")))
-    base = {"model": "typesafe/jev-1.13", "usage": {"input_tokens": 1, "output_tokens": 0}}
-    score = {"type": "score", "score": 1.0, "probabilities": {"0": 0.05, "1": 0.90, "2": 0.05, "3": 0.0},
-             "legend": {"0": "B", "1": "D", "2": "P", "3": "E"}}
-    for i, (noul_p, expected_noul) in enumerate(((0.95, 0.90), (0.5, 0.0), (0.05, 0.90))):
-        body = {**base, "answers": {"band": score, "ok": {"type": "noul", "noul": noul_p}}}
-        decision, _ = _decide_body(name, body, request, tmp_path / f"n{i}")
-        assert decision.answers["band"].confidence == pytest.approx(2.6 / 3, abs=1e-9)  # (4·0.90−1)/3
-        assert decision.answers["band"].confidence_source == "derived"
-        assert decision.answers["ok"].confidence == pytest.approx(expected_noul, abs=1e-9)  # |2p−1|
-        assert decision.answers["ok"].confidence is not None
-    choice_request = DecisionRequest(state="s", questions=(__import__("aeh.prov", fromlist=["x"]).ChoiceQuestion(
-        "topic", "x", (("billing", None), ("technical", None))),))
-    choice_body = {**base, "answers": {"topic": {"type": "choice", "choice": "billing",
-                                                  "probabilities": {"billing": 0.88, "technical": 0.12}}}}
-    choice, _ = _decide_body(name, choice_body, choice_request, tmp_path / "c")
-    assert choice.answers["topic"].confidence == pytest.approx(0.76, abs=1e-9)  # (2·0.88 − 1)/1
-    reported = {**base, "answers": {"band": {**score, "confidence": 0.81}, "ok": {"type": "noul", "noul": 0.9}}}
-    decision, _ = _decide_body(name, reported, request, tmp_path / "r")
-    assert (decision.answers["band"].confidence, decision.answers["band"].confidence_source) == (0.81, "reported")
+def test_tc_prov_c19_the_confidence_is_the_engines_on_every_implementation(name, tmp_path, monkeypatch) -> None:
+    """Safety-shaped (RISK-83). Design 1.8, CT-PROV-19 v2.0: every Jev-build implementation
+    refuses a Choice or Score answer without Jev's confidence (row a would return 0.8667 under a
+    derived fallback) and gives a Noul its own value as confidence (row e would return 0.90
+    under `|2p − 1|`).
+
+    Adversarial construction (plan §6.11.6): restore `_confidence`'s "use the derived value when
+    `confidence` is absent" branch "for robustness against OpenRouter omitting it". The
+    missing-confidence arms go red on all three implementations, while every gate case whose
+    fixtures carry a confidence stays green."""
+    monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
+    for label, document, request in (("a", _score_doc(), _score_request()), ("f", _choice_doc(), _CHOICE)):
+        with pytest.raises(MalformedResponseError):
+            _decide_via(name, document, request, tmp_path / label)
+    for p in (0.95, 0.5, 0.05):
+        answer = _decide_via(name, _noul_doc(p), _NOUL, tmp_path / f"n{p}")[0].answers["ok"]
+        assert (answer.confidence, answer.confidence_source) == (p, "reported")
+    reported = _decide_via(name, _score_doc(confidence=0.81), _score_request(), tmp_path / "b")[0]
+    assert (reported.answers["band"].confidence, reported.answers["band"].confidence_source) == (0.81, "reported")
 
 
 # --- TC-PROV-C20 -------------------------------------------------------------------------------
@@ -218,6 +232,21 @@ def test_tc_prov_c20_the_error_table_on_every_implementation(name, status, error
     assert counters.decision_snapshot().decision_calls == 0, "a failed call is never accounted as a Decision"
 
 
+@pytest.mark.writtenahead
+@pytest.mark.parametrize("name", ["openrouter-jev", "openjev"])
+def test_tc_prov_c20_a_missing_jev_confidence_is_refused_after_one_send(name, tmp_path, monkeypatch) -> None:
+    """Design 1.8 (CT-PROV-20 amended): a Jev Choice/Score answer without `confidence` surfaces
+    as `MalformedResponseError` after exactly one send, with the retry budget untouched. Every
+    other malformed row keeps the budget of three (TC-PROV-C18 above), so a change that routes
+    this case through the retry loop (three billed sends) goes red here, and so does one that
+    stops retrying the others."""
+    monkeypatch.setenv("HARNESS_RETRY_MAX", "3")
+    sent: list[int] = []
+    with pytest.raises(MalformedResponseError):
+        _decide_via(name, _score_doc(), _score_request(), tmp_path, sent=sent)
+    assert sent == [1]
+
+
 # --- TC-PROV-C21 (safety property) -------------------------------------------------------------
 
 @pytest.mark.parametrize("name", ["openrouter-jev", "openjev"])
@@ -237,7 +266,7 @@ def test_tc_prov_c21_a_raising_decide_never_reaches_an_llm(name, status, monkeyp
     with pytest.raises(Exception):
         provider.decide(jev_corpora.wire_request(), ref)
     assert completes == []
-    good = _Transport(_ok(WIRE[f"{_wire_kind(name)}-well-formed-derived"]["body"]))
+    good = _Transport(_ok(WIRE[f"{_wire_kind(name)}-well-formed-reported"]["body"]))
     provider, ref = _live(name, good)
     provider.decide(jev_corpora.wire_request(), ref)
     assert len(good.requests) == 1, "a parsed Decision is never re-requested"
@@ -256,11 +285,11 @@ def test_tc_prov_c22_local_stays_local_and_cloud_never_floats(monkeypatch) -> No
     for base in ("http://127.0.0.1:3000", "http://localhost:3000", "http://[::1]:3000"):
         OpenJevLocalProvider(base_url=base)
     floating = dataclasses.replace(JEV_REF, build_id="~typesafe/jev-latest")
-    idle = _Transport(_ok(WIRE["cloud-well-formed-derived"]["body"]))
+    idle = _Transport(_ok(WIRE["cloud-well-formed-reported"]["body"]))
     with pytest.raises(ConfigurationError):
         JevOpenRouterProvider(api_key="k", transport=idle).decide(jev_corpora.wire_request(), floating)
     assert idle.requests == []
-    transport = _Transport(_ok(WIRE["cloud-well-formed-derived"]["body"]))
+    transport = _Transport(_ok(WIRE["cloud-well-formed-reported"]["body"]))
     provider = JevOpenRouterProvider(api_key="k", transport=transport, clock=FrozenClock())
     for _ in range(3):
         provider.decide(jev_corpora.wire_request(), JEV_REF)
@@ -296,7 +325,7 @@ def test_tc_prov_c25_the_decision_model_is_under_the_retention_gate() -> None:
     """Rung 1 here. At rung 2, TC-ORCH-53's unconfirmed arm (TS-111) refuses a cloud start whose
     decision model is unconfirmed, which is the arm the adversarial construction (a retention set
     built from `cfg.panel` only) turns red."""
-    transport = _Transport(_ok(WIRE["cloud-well-formed-derived"]["body"]))
+    transport = _Transport(_ok(WIRE["cloud-well-formed-reported"]["body"]))
     provider = JevOpenRouterProvider(api_key="k", transport=transport, clock=FrozenClock(),
                                      retention_answers=lambda build: "retention: standard")
     with pytest.raises(RetentionPolicyError):

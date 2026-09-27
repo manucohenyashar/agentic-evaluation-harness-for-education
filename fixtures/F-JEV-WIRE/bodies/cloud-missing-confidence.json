@@ -1,5 +1,5 @@
 {
-  "id": "cloud-well-formed-derived",
+  "id": "cloud-missing-confidence",
   "synthetic": true,
   "source": "synthetic from vendor documentation (Jev design delta §1.2); not a live capture",
   "backend": "cloud",
@@ -52,7 +52,8 @@
     }
   },
   "expect": {
-    "outcome": "valid",
-    "confidence_source": "derived"
+    "outcome": "missing_confidence",
+    "error_type": "MalformedResponseError",
+    "sends": 1
   }
 }

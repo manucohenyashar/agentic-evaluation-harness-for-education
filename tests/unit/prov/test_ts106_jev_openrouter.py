@@ -57,7 +57,7 @@ def _ok(body: dict) -> HttpResponse:
 
 
 def _good_body(model: str = "typesafe/jev-1.13") -> dict:
-    return {**WIRE["cloud-well-formed-derived"]["body"], "model": model}
+    return {**WIRE["cloud-well-formed-reported"]["body"], "model": model}
 
 
 def _request() -> DecisionRequest:
@@ -75,9 +75,10 @@ def test_tc_prov_26_the_exact_wire_request(monkeypatch) -> None:
     monkeypatch.delenv("HARNESS_JEV_OPENROUTER_URL", raising=False)
     request = _request()
     body = {"model": "typesafe/jev-1.13", "usage": {"input_tokens": 1, "output_tokens": 0}, "answers": {
-        "topic": {"type": "choice", "choice": "friction", "probabilities": {"friction": 0.9, "normal": 0.1}},
+        "topic": {"type": "choice", "choice": "friction", "probabilities": {"friction": 0.9, "normal": 0.1},
+                  "confidence": 0.8},
         "band": {"type": "score", "score": 2.0, "probabilities": {"0": 0.0, "1": 0.0, "2": 1.0, "3": 0.0},
-                 "legend": {"0": "B", "1": "D", "2": "P", "3": "E"}},
+                 "legend": {"0": "B", "1": "D", "2": "P", "3": "E"}, "confidence": 1.0},
         "plain": {"type": "noul", "noul": 0.9}, "framed": {"type": "noul", "noul": 0.2}}}
     transport = _Transport(_ok(body))
     provider = JevOpenRouterProvider(api_key=API_KEY, transport=transport, clock=FrozenClock(),

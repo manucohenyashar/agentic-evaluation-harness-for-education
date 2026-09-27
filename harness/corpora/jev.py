@@ -97,7 +97,9 @@ def _body(backend: str, answers: dict[str, Any], model: str | None = None) -> di
 
 
 def _malformed(mutate: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
-    answers = _good_answers(confidence=False)
+    # From a Jev-shaped body (design 1.8: Choice/Score carry Jev's `confidence`), so each row
+    # fails on its own defect and never first on the missing-confidence rule.
+    answers = _good_answers(confidence=True)
     mutate(answers)
     return answers
 
@@ -152,8 +154,10 @@ def wire_bodies() -> tuple[dict[str, Any], ...]:
 
     for backend in BACKENDS:
         tag = backend
-        add(f"{tag}-well-formed-derived", backend, 200, _body(backend, _good_answers(False)),
-            {"outcome": "valid", "confidence_source": "derived"})
+        # Design 1.8 (FR-PROV-19/20): a Jev build's Choice/Score answer without `confidence` is
+        # refused on the first send, never retried and never given a harness-derived value.
+        add(f"{tag}-missing-confidence", backend, 200, _body(backend, _good_answers(False)),
+            {"outcome": "missing_confidence", "error_type": "MalformedResponseError", "sends": 1})
         add(f"{tag}-well-formed-reported", backend, 200, _body(backend, _good_answers(True)),
             {"outcome": "valid", "confidence_source": "reported"})
     add("cloud-accept-sum-1-0009", "cloud", 200, _body("cloud", _malformed(
@@ -189,7 +193,7 @@ def wire_bodies() -> tuple[dict[str, Any], ...]:
         {"error": "state_exceeds_window", "detail": "the state exceeds one encoder window"},
         {"outcome": "error", "error_type": "DecisionRequestRejectedError", "retried": False})
     add("cloud-different-model", "cloud", 200,
-        _body("cloud", _good_answers(False), model="typesafe/jev-1.14-20261001"),
+        _body("cloud", _good_answers(True), model="typesafe/jev-1.14-20261001"),
         {"outcome": "valid", "resolved_build": "typesafe/jev-1.14-20261001",
          "note": "against a run that recorded jev-1.13-20260917 at start: BuildChangedError"})
     return tuple(out)

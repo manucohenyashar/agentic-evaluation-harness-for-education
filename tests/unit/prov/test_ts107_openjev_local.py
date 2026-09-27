@@ -30,7 +30,7 @@ OJ_REF = ModelRef(role="decision", provider="openjev",
                   quantization="fp8")
 JEV_REF = ModelRef(role="decision", provider="openrouter-jev",
                    build_id="openrouter/typesafe/jev-1.13@2026-09-01", quantization=None)
-GOOD = {**next(b for b in jev_corpora.wire_bodies() if b["id"] == "edge-well-formed-derived")["body"]}
+GOOD = {**next(b for b in jev_corpora.wire_bodies() if b["id"] == "edge-well-formed-reported")["body"]}
 
 
 class _Transport:

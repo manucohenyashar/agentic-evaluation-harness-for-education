@@ -4,8 +4,8 @@
   "seed": null,
   "generator": "harness.corpora.jev:wire_bodies",
   "description": "Synthetic decision-engine HTTP bodies for both backends (Jev test plan §4.4): well-formed answers, TC-PROV-25's malformed shapes, error statuses, a Retry-After 429 and a changed model. Synthetic, labelled so, until live captures replace them.",
-  "set_content_hash": "sha256:514f819b49dec7eefb12429a4f145d14fd199c021af95883e0c9100cac39a7f2",
-  "fixture_set_id": "F-JEV-WIRE@1+sha256:514f819b49dec7eefb12429a4f145d14fd199c021af95883e0c9100cac39a7f2",
+  "set_content_hash": "sha256:98617aae4f92fd79a69c56d1f3bee581a15b80bc00d1530e1df91cc9a30ec4e0",
+  "fixture_set_id": "F-JEV-WIRE@1+sha256:98617aae4f92fd79a69c56d1f3bee581a15b80bc00d1530e1df91cc9a30ec4e0",
   "synthetic": true,
   "requests": {
     "canonical": {
@@ -56,9 +56,9 @@
   },
   "submissions": [
     {
-      "id": "cloud-well-formed-derived",
-      "path": "bodies/cloud-well-formed-derived.json",
-      "content_hash": "sha256:4e2a78a5d87216943b1752ca0691f28a2f05bd1192beb16f12645af66412984e"
+      "id": "cloud-missing-confidence",
+      "path": "bodies/cloud-missing-confidence.json",
+      "content_hash": "sha256:9dc11a0b8d56295ee2cfeb0643af7eda944fd02be6e6bafabf4c8083ca2ab2b4"
     },
     {
       "id": "cloud-well-formed-reported",
@@ -66,9 +66,9 @@
       "content_hash": "sha256:ebf4079d61e21f228d4d0b76be1154b5b44cc6486a103fd2f1d184b035374485"
     },
     {
-      "id": "edge-well-formed-derived",
-      "path": "bodies/edge-well-formed-derived.json",
-      "content_hash": "sha256:02ad7c9b4c0d7ea1f2efb6b6d2cd9421c416c60f25d1e12e6e3921c4c8f588fc"
+      "id": "edge-missing-confidence",
+      "path": "bodies/edge-missing-confidence.json",
+      "content_hash": "sha256:ad5cac56015ab445b9c9cfe290e0f22b3826c37dfec4c396049a849d1038599a"
     },
     {
       "id": "edge-well-formed-reported",
@@ -78,52 +78,52 @@
     {
       "id": "cloud-accept-sum-1-0009",
       "path": "bodies/cloud-accept-sum-1-0009.json",
-      "content_hash": "sha256:e8b57a39eb11203f4bb7c26457841d635f0ccd27160da937282c5c4369000395"
+      "content_hash": "sha256:e13fb2bdb7679eec4988b7efb484649ea06c819ab6fd61cd2fdf22a2a4bf0cb6"
     },
     {
       "id": "cloud-malformed-missing_answer_key",
       "path": "bodies/cloud-malformed-missing_answer_key.json",
-      "content_hash": "sha256:67bc7dedc6fc26802d35e77018b0c45b1c1624b49f9098e752410ddf1cab5df5"
+      "content_hash": "sha256:9609ad106c076e478b87d5e62860ec74acd91a74d8ff33920fb2d80a6382c6bc"
     },
     {
       "id": "cloud-malformed-extra_answer_key",
       "path": "bodies/cloud-malformed-extra_answer_key.json",
-      "content_hash": "sha256:e4c3470de778bfde627a85c6b3e4a63c187baee29637088b9810b48959083913"
+      "content_hash": "sha256:adb244601c242990abb919bb3f0ffb7be56d0df43b24a6403f93a76837e1e680"
     },
     {
       "id": "cloud-malformed-answer_type_mismatch",
       "path": "bodies/cloud-malformed-answer_type_mismatch.json",
-      "content_hash": "sha256:1e779190060d6ec26df31dee289c707fe6d2e8805c792e49b8c3fea918453424"
+      "content_hash": "sha256:e91e74906c39fc73aab2d586e8f5d85b9724b2b9d275b0d751b54b3acd2cdf75"
     },
     {
       "id": "cloud-malformed-choice_keys_not_options",
       "path": "bodies/cloud-malformed-choice_keys_not_options.json",
-      "content_hash": "sha256:f41e9177a3dfbb7452e26aa8b2654527718121338a8ba55c91b764fe1d070975"
+      "content_hash": "sha256:ad06e26b04dd42cfd3a4a325b143bc80c6e7bdb8ec8ac2359937d3e8b73e7229"
     },
     {
       "id": "cloud-malformed-score_legend_mismatch",
       "path": "bodies/cloud-malformed-score_legend_mismatch.json",
-      "content_hash": "sha256:9007f2f05f6349e007cb9117e8d000c0a93c005345029b501a041a062c42d1ce"
+      "content_hash": "sha256:9a1dc876bf88c2d3c729589ab291528a855cefffcf2d8ae6882d453b3588e00b"
     },
     {
       "id": "cloud-malformed-negative_probability",
       "path": "bodies/cloud-malformed-negative_probability.json",
-      "content_hash": "sha256:97bd64ef141b331836435b98fa6b1e294b9841445cfbfde6f2ec4d2371ee4029"
+      "content_hash": "sha256:0f6e46d0f638fabd6d62db1006b59e4a93bee5471776b3ea8f792640023bdb89"
     },
     {
       "id": "cloud-malformed-sum_1_0011",
       "path": "bodies/cloud-malformed-sum_1_0011.json",
-      "content_hash": "sha256:416c793cf07bd2d2d88dea55a557ccd3976297e1df8a7f7d219a33af34fd6944"
+      "content_hash": "sha256:d91741934c541de84318c0e02515a7366f91fa291b79cf9acc1daea63077c3b3"
     },
     {
       "id": "cloud-malformed-sum_0_98",
       "path": "bodies/cloud-malformed-sum_0_98.json",
-      "content_hash": "sha256:dee202f883829303aa6169461a90678e6c2ab73abb335aa03f43b7281e6d1a42"
+      "content_hash": "sha256:174fc5b37e63b5f598996be8e3c44d0b354a2d1f03c9a08514fa3ff953a98cc4"
     },
     {
       "id": "cloud-malformed-noul_above_one",
       "path": "bodies/cloud-malformed-noul_above_one.json",
-      "content_hash": "sha256:548561cc45a321b8bd8f57080705609f2cc9bc4352730717d37d292f64cda8c7"
+      "content_hash": "sha256:b4a90e2c316ed41bc5d7b7711afc5dca2e2059ad8466cf4c438b3ba0def75598"
     },
     {
       "id": "cloud-malformed-score-indices-gap",
@@ -248,7 +248,7 @@
     {
       "id": "cloud-different-model",
       "path": "bodies/cloud-different-model.json",
-      "content_hash": "sha256:15cc7075f5a220216b4fb855653c75acd67e84a29fddb36a9f652dedbb623e7a"
+      "content_hash": "sha256:75e750905ae3155987dd78fa881358d14f9586f490dbeeeab48339c9971e9c6d"
     }
   ]
 }

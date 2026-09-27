@@ -18,7 +18,8 @@
           "friction": 0.91,
           "normal": 0.06,
           "gravity": 0.03
-        }
+        },
+        "confidence": 0.865
       },
       "band": {
         "type": "score",
@@ -34,7 +35,8 @@
           "1": "Emerging",
           "2": "Proficient",
           "3": "Exemplary"
-        }
+        },
+        "confidence": 0.64
       },
       "evidence_sufficient": {
         "type": "noul",

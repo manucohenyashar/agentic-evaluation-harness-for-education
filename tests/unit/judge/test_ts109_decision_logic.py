@@ -6,7 +6,7 @@
 | TC-JUDGE-31 | `decision_request`'s keys, level strings, field order and fence; the span sentinel appears in no question string; 0 and 26 spans |
 | TC-JUDGE-32 | Isolation: a numeral in a descriptor is refused; content strictness lets exemplar and submission numerals through; the scan refuses a hand-built numeral instruction; a fence marker in the submission is escaped |
 | TC-JUDGE-33 | Eligibility, in order: no band set, band count, spans, context at exactly 90% (both backends and both ratios), question count |
-| TC-JUDGE-34 | The gate decision table, hand-computed |
+| TC-JUDGE-34 | The gate decision table, hand-computed; *(re-specified, design 1.8, TS-123 #499)* built from Jev-shaped answers (reported band confidence, a Noul's confidence is its `p`), rows 1–14 |
 | TC-JUDGE-35 | The accepted verdict's construction: cited spans are the request's own, the exact inventory string, and the uncited form |
 | TC-JUDGE-44 | Every request in a (question, criterion) batch has the same state prefix and the same question strings |
 | FUZZ-10 | Property: the gate's invariants over random bands, spans, distributions and thresholds, and its purity |
@@ -64,10 +64,10 @@ def _request(spans: int = 3, bands=C4_BANDS, submission: str = "The crate stays 
 def _decision(probs, *, reported=None, p_suff=0.97, cites=(0.9, 0.49, 0.5), score=None) -> Decision:
     confidence = reported if reported is not None else derived_confidence(probs)
     answers = {"band": ScoreAnswer(score if score is not None else sum(i * p for i, p in enumerate(probs)),
-                                   tuple(probs), confidence, "reported" if reported is not None else "derived"),
-               "evidence_sufficient": NoulAnswer(p_suff, abs(2 * p_suff - 1))}
+                                   tuple(probs), confidence, "reported"),
+               "evidence_sufficient": NoulAnswer(p_suff, p_suff, "reported")}
     for i, c in enumerate(cites):
-        answers[f"cite_{LABELS[i]}"] = NoulAnswer(c, abs(2 * c - 1))
+        answers[f"cite_{LABELS[i]}"] = NoulAnswer(c, c, "reported")
     return Decision(MappingProxyType(answers), 100, 0, 90, "typesafe/jev-1.13", None)
 
 
@@ -210,27 +210,48 @@ def test_tc_judge_33_eligibility_rows_in_order() -> None:
 
 # --- TC-JUDGE-34 -------------------------------------------------------------------------------
 
+# Re-specified for design 1.8 (plan 1.6, §5.3): every answer is built as a Jev build returns
+# it, with the Score's REPORTED confidence and the sufficiency Noul's confidence equal to its `p`
+# (1.6's `|2p − 1|` is retired). `gate = min(c_band, p_suff)`. Rows 4, 5 and 10–14 are where
+# 1.6 and 1.8 disagree; the 1.6 outcome is noted on each.
 @pytest.mark.parametrize("row, decision, threshold, expected", [
-    # (4·0.94 − 1)/3 = 0.92; c_s = |2·0.97 − 1| = 0.94; gate 0.92 > 0.80.
-    (1, _decision([.02, .02, .94, .02]), "0.80", ("accepted", 2, True)),
+    # gate = min(0.92, 0.97) = 0.92 > 0.80.
+    (1, _decision([.02, .02, .94, .02], reported=0.92), "0.80", ("accepted", 2, True)),
     (2, _decision([.05, .05, .85, .05], reported=0.80, p_suff=0.995), "0.80", ("below_threshold", 0.80)),
-    (3, _decision([.02, .02, .94, .02], reported=0.8001, p_suff=0.90005), "0.80", ("accepted", 2, True)),
-    # (4·0.97 − 1)/3 = 0.96; c_s = |2·0.85 − 1| = 0.70; the gate is the minimum.
-    (4, _decision([.01, .01, .97, .01], p_suff=0.85), "0.80", ("below_threshold", 0.70)),
-    # c_s = |2·0.05 − 1| = 0.90: confident that the evidence is NOT sufficient.
-    (5, _decision([.01, .01, .97, .01], p_suff=0.05), "0.80", ("accepted", 2, False)),
+    # gate 0.8001: the band side of the strict boundary.
+    (3, _decision([.02, .02, .94, .02], reported=0.8001, p_suff=0.95), "0.80", ("accepted", 2, True)),
+    # gate = min(0.96, 0.85) = 0.85. 1.6: BelowGate(0.70) under |2·0.85 − 1|. The looser direction.
+    (4, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.85), "0.80", ("accepted", 2, True)),
+    # gate = min(0.96, 0.05) = 0.05. 1.6: Accepted with evidence_sufficient=False. The stricter direction.
+    (5, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.05), "0.80", ("below_threshold", 0.05)),
     (6, _decision([.5, .5, 0, 0], reported=0.90, p_suff=0.99), "0.80", ("argmax_tie",)),
-    (7, _decision([.02, .02, .94, .02]), "0.95", ("below_threshold", 0.92)),
+    (7, _decision([.02, .02, .94, .02], reported=0.92), "0.95", ("below_threshold", 0.92)),
     (8, _decision([.45, 0, 0, .55], reported=0.90, p_suff=0.99, score=1.65), "0.80", ("accepted", 3, True)),
+    # The strict boundary on the sufficiency side.
+    (10, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.80), "0.80", ("below_threshold", 0.80)),
+    # 1.6: BelowGate(0.6002).
+    (11, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.8001), "0.80", ("accepted", 2, True)),
+    # openjev-small's 0.85 default. 1.6: BelowGate(0.80).
+    (12, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.90), "0.85", ("accepted", 2, True)),
+    # 1.6: BelowGate(0.0) — the same outcome, a different gate value.
+    (13, _decision([.01, .01, .97, .01], reported=0.96, p_suff=0.50), "0.80", ("below_threshold", 0.50)),
+    # The derived statistic over these probabilities would be (4·0.40 − 1)/3 = 0.20; the gate
+    # reads Jev's reported 0.95 and never recomputes a confidence from probabilities.
+    (14, _decision([.30, .30, .40, 0], reported=0.95, p_suff=0.97), "0.80", ("accepted", 2, True)),
 ])
 def test_tc_judge_34_the_gate_table(row, decision, threshold, expected) -> None:
     out = gate_decision(decision, _request(), _engine(threshold))
     if expected[0] == "accepted":
         assert isinstance(out, Accepted), f"row {row}: {out}"
         assert out.result.band_ordinal == expected[1] and out.result.band == C4_BANDS[expected[1]][0]
-        assert out.result.evidence_sufficient is expected[2]
+        # Design 1.8: an accepted verdict always has sufficient evidence (p_suff > threshold ≥ 0.50).
+        assert out.result.evidence_sufficient is expected[2] is True
         if row == 1:
             assert out.result.self_confidence == pytest.approx(0.92, abs=1e-9)
+        gates = {1: 0.92, 3: 0.8001, 4: 0.85, 8: 0.90, 11: 0.8001, 12: 0.90, 14: 0.95}
+        assert out.gate == pytest.approx(gates[row], abs=1e-9), f"row {row}"
+        if row == 14:
+            assert out.result.self_confidence == pytest.approx(0.95, abs=1e-9)
     else:
         assert isinstance(out, BelowGate) and out.reason == expected[0], f"row {row}: {out}"
         if len(expected) > 1:
@@ -239,10 +260,11 @@ def test_tc_judge_34_the_gate_table(row, decision, threshold, expected) -> None:
 
 def test_tc_judge_34_row_9_two_band_criterion_index_is_ordinal() -> None:
     two = _request(0, bands=(("No", "not met"), ("Yes", "met")))
-    d = Decision(MappingProxyType({"band": ScoreAnswer(0.04, (.96, .04), derived_confidence((.96, .04)), "derived"),
-                                   "evidence_sufficient": NoulAnswer(0.99, 0.98)}), 1, 0, 1, "b", None)
+    d = Decision(MappingProxyType({"band": ScoreAnswer(0.04, (.96, .04), derived_confidence((.96, .04)), "reported"),
+                                   "evidence_sufficient": NoulAnswer(0.99, 0.99, "reported")}), 1, 0, 1, "b", None)
     out = gate_decision(d, two, _engine())
     assert isinstance(out, Accepted) and out.result.band_ordinal == 0 and out.result.band == "No"
+    assert out.result.evidence_sufficient is True
 
 
 # --- TC-JUDGE-35 -------------------------------------------------------------------------------
@@ -307,7 +329,8 @@ if given is not None:
         assert gate_decision(decision, request, engine) == first, "pure: equal inputs, equal outputs"
         assert decision_request(request, engine) == decision_request(request, engine)
         c_band = reported if reported is not None else derived_confidence(probs)
-        expected_gate = min(c_band, abs(2 * p_suff - 1))
+        # Design 1.8: the sufficiency Noul's confidence is its `p` (the double carries it so).
+        expected_gate = min(c_band, p_suff)
         if isinstance(first, Accepted):
             assert expected_gate > float(threshold)
             assert first.gate == pytest.approx(expected_gate, abs=1e-9)
