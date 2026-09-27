@@ -115,7 +115,6 @@ def test_tc_prov_52_the_harness_and_non_cloud_providers_load_no_sdk_module(tmp_p
     assert loaded == set(), f"loaded without a cloud provider: {sorted(loaded)}"
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_52_building_the_cloud_provider_loads_the_sdk_and_decisions_stay_harness_typed() -> None:
     loaded = _loaded_after("from aeh.prov import JevOpenRouterProvider\nJevOpenRouterProvider(api_key='k')")
     assert "typesafe_sdk" in loaded, "JevOpenRouterProvider is built on the TypeSafe SDK (FR-PROV-38)"
@@ -155,7 +154,6 @@ def test_tc_prov_53_the_core_install_stays_dependency_free_and_dev_pins_the_sdk(
     assert re.search(r"^typesafe-sdk==0\.7\.2\s*$", dev, re.M), "the dev tier pins the SDK exactly"
 
 
-@pytest.mark.writtenahead
 def test_tc_prov_53_the_sdk_ships_as_the_jev_cloud_extra_and_its_absence_is_refused_by_name(tmp_path) -> None:
     """FR-PROV-42: the extra `jev-cloud` exact-pins the SDK. With the SDK unimportable, building
     the cloud decision provider (what run start does, FR-PIPE-11) raises `ConfigurationError`
@@ -180,7 +178,6 @@ def test_tc_prov_53_the_sdk_ships_as_the_jev_cloud_extra_and_its_absence_is_refu
     assert others.returncode == 0 and others.stdout.strip() == "OK", others.stderr
 
 
-@pytest.mark.writtenahead
 @pytest.mark.integration
 def test_tc_prov_53_a_cloud_run_without_the_sdk_refuses_at_start_before_any_lease(tmp_path, monkeypatch) -> None:
     """The plan's run-level arm: with the SDK unimportable, `run_to_completion` for a
@@ -273,7 +270,6 @@ def _chain(error: BaseException) -> list[BaseException]:
     return seen
 
 
-@pytest.mark.writtenahead
 def test_sec_23_no_log_record_carries_student_text(caplog, monkeypatch) -> None:
     records, errors = _sdk_calls_under_capture(caplog, monkeypatch)
     formatter = logging.Formatter()
@@ -291,7 +287,6 @@ def test_sec_23_no_log_record_carries_student_text(caplog, monkeypatch) -> None:
 
 # --- TC-PROV-C29 ---------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_c29_the_sdk_never_crosses_the_module_boundary(caplog, monkeypatch) -> None:
     """Safety-shaped (RISK-88/89/90). Adversarial constructions (plan §6.11.6): (a) `from
     typesafe_sdk import Noul` at the top of `aeh/judge.py` fails the scan; (b) an unmapped SDK
@@ -318,7 +313,6 @@ def test_tc_prov_c29_the_sdk_never_crosses_the_module_boundary(caplog, monkeypat
 
 # --- TC-PROV-C30 ---------------------------------------------------------------------------------
 
-@pytest.mark.writtenahead
 def test_tc_prov_c30_every_byte_passes_the_transport_with_no_sdk_retry(monkeypatch) -> None:
     """Safety-shaped (RISK-85/86/87). Adversarial constructions: (a) the SDK's default retries
     left on put `X-TypeSafe-Retry-Count` on the second send; (b) `http_client=httpx2.Client()`

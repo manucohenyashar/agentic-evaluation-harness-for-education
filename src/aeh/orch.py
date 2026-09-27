@@ -6510,7 +6510,8 @@ class Orchestrator:
         decision_counters = getattr(self._decision_provider, "decision_counters", None)
         if decision_counters is not None:
             for name in ("decision_calls", "decision_tokens_in", "decision_transport_retries",
-                         "decision_rate_limited_calls", "decision_actual_cost"):
+                         "decision_rate_limited_calls", "decision_actual_cost",
+                         "decision_provider_unreported"):
                 metrics[name] = float(getattr(decision_counters, name))
             # CT-PROV-24 / FR-PROV-29: `actual_cost` is the sum of both surfaces.
             metrics["actual_cost"] = float(state["cost"] + decision_counters.decision_actual_cost)
