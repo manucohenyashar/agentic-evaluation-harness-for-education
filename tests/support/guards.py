@@ -146,6 +146,53 @@ class SocketGuard:
         )
 
 
+@contextmanager
+def loopback_census(guard: SocketGuard) -> Iterator[list[ConnectionAttempt]]:
+    """Inside an installed `guard`, let **loopback** connections through and record every
+    connection target; anything else is still recorded and refused.
+
+    For the cases whose oracle is an egress census over a real loopback server (Jev test plan
+    SEC-20, RES-23): the guard's strictness is kept for every non-loopback host, and the census
+    is the positive record that "every connect target is 127.0.0.1 / ::1"."""
+    if guard is None or not guard.installed:
+        raise AssertionError("loopback_census needs the installed network guard")
+    real = guard._originals
+    census: list[ConnectionAttempt] = []
+    saved = {"connect": socket.socket.connect, "create_connection": socket.create_connection,
+             "getaddrinfo": socket.getaddrinfo}
+
+    def _host(address: Any) -> Any:
+        return address[0] if isinstance(address, tuple) and address else address
+
+    def _connect(self_sock, address, *args, **kwargs):  # noqa: ANN001
+        census.append(ConnectionAttempt(api="socket.connect", address=address))
+        if not _is_local(_host(address)):
+            guard._record_and_raise("socket.connect", address)
+        return real["connect"](self_sock, address, *args, **kwargs)
+
+    def _create_connection(address, *args, **kwargs):  # noqa: ANN001
+        census.append(ConnectionAttempt(api="socket.create_connection", address=address))
+        if not _is_local(_host(address)):
+            guard._record_and_raise("socket.create_connection", address)
+        return real["create_connection"](address, *args, **kwargs)
+
+    def _getaddrinfo(host, port, *args, **kwargs):  # noqa: ANN001
+        if not _is_local(host):
+            census.append(ConnectionAttempt(api="socket.getaddrinfo", address=(host, port)))
+            guard._record_and_raise("socket.getaddrinfo", (host, port))
+        return real["getaddrinfo"](host, port, *args, **kwargs)
+
+    socket.socket.connect = _connect  # type: ignore[method-assign]
+    socket.create_connection = _create_connection  # type: ignore[assignment]
+    socket.getaddrinfo = _getaddrinfo  # type: ignore[assignment]
+    try:
+        yield census
+    finally:
+        socket.socket.connect = saved["connect"]  # type: ignore[method-assign]
+        socket.create_connection = saved["create_connection"]  # type: ignore[assignment]
+        socket.getaddrinfo = saved["getaddrinfo"]  # type: ignore[assignment]
+
+
 # --- the filesystem write audit ------------------------------------------------------------
 
 

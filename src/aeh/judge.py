@@ -2027,20 +2027,30 @@ def decision_request(request: ScoringRequest, engine: Any) -> DecisionRequest:
     return DecisionRequest(decision_fields(request), tuple(questions))
 
 
-#: The decision path's numeral scan (FR-JUDGE-25). The same boundary as TC-PKG-09's and the
-#: judge suite's: a *standalone* numeral (not a digit inside an identifier such as `C1`), and in
-#: content only one beside mark vocabulary.
-_DECISION_NUMERAL = re.compile(r"(?<![A-Za-z0-9-])\d+(?:[.,]\d+)?(?![A-Za-z0-9-])")
+#: The decision path's numeral scan (FR-JUDGE-25). A numeral counts only in a token with no
+#: letter in it. A token is a run of letters, digits and `_ . , -`. So identifiers and version
+#: strings (`C1`, `C1-2`, `level-2`, `qwen3.5-4b`, `gpt-4-0613`) are never numerals. Letter-free
+#: tokens (`4`, `1-4`, `.5`, `2.5`, `10/10`'s digits) are. In content a numeral counts only
+#: beside mark vocabulary. This is stricter than TC-PKG-09's pattern on ranges (`1-4`) and
+#: leading-point decimals (`.5`), which TC-JUDGE-32 row (d) requires.
+_DECISION_TOKEN = re.compile(r"[A-Za-z0-9_.,\-]+")
+_DECISION_NUMERAL = re.compile(r"\d+(?:[.,]\d+)?")
 _DECISION_MARK_CONTEXT = re.compile(
     r"points?\b|marks?\b|score\b|scale\b|maximum\b|max\b|out\s+of|%|/", re.IGNORECASE)
 _DECISION_MARK_WINDOW = 24
 
 
 def _offending_numeral(text: str, *, rubric: bool) -> str | None:
-    for match in _DECISION_NUMERAL.finditer(text):
+    for token in _DECISION_TOKEN.finditer(text):
+        if re.search(r"[A-Za-z_]", token.group()):
+            continue
+        match = _DECISION_NUMERAL.search(token.group())
+        if match is None:
+            continue
         if rubric:
             return match.group()
-        window = text[max(0, match.start() - _DECISION_MARK_WINDOW): match.end() + _DECISION_MARK_WINDOW]
+        start = token.start() + match.start()
+        window = text[max(0, start - _DECISION_MARK_WINDOW): start + len(match.group()) + _DECISION_MARK_WINDOW]
         if _DECISION_MARK_CONTEXT.search(window):
             return match.group()
     return None

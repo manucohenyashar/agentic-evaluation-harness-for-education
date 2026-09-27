@@ -2263,6 +2263,10 @@ class _BaseDecisionProvider:
                     cost = Decimal(str(usage["cost"]))
                 except Exception as exc:  # noqa: BLE001
                     raise MalformedResponseError(f"usage.cost is not a decimal: {usage['cost']!r}") from exc
+                if not cost.is_finite() or cost < 0:
+                    # A NaN, infinite or negative cost would poison `decision_actual_cost` and
+                    # the ceiling that reads it (TC-PROV-47).
+                    raise MalformedResponseError(f"usage.cost must be a finite, non-negative decimal: {usage['cost']!r}")
             return parse_decision(document, request, fallback_build=fallback_build, cost=cost)
 
         decision = dispatch_with_retries(
@@ -2372,7 +2376,13 @@ class JevOpenRouterProvider(_BaseDecisionProvider):
         unconfirmed: list[ModelRef] = []
         for ref in model_refs:
             if self._retention_answers is not None:
-                answer = self._retention_answers(ref.build_id)
+                try:
+                    answer = self._retention_answers(ref.build_id)
+                except (TransportError, ProviderUnavailableError, OSError) as error:
+                    # An unreachable confirmation source is an unconfirmed model, and it must
+                    # arm the refusal like any other: a raise here that escaped would leave
+                    # `decide` open (TC-PROV-33, RISK-64).
+                    answer = f"unreachable: {error}"
             else:
                 answer = None  # no confirmation source: unconfirmed, fail-closed
             (confirmed if _is_retention_confirmed(answer) else unconfirmed).append(ref)
