@@ -40,3 +40,7 @@ Pillow>=10.0
 # launches an installed Edge or Chrome by channel (`tests/support/console_browser.py`), so no
 # browser download is needed; without one the `browser` cases skip, naming what is missing.
 playwright>=1.40
+# Design 1.8 (FR-PROV-42): the TypeSafe SDK behind JevOpenRouterProvider. The core install
+# never needs it (ADR-11: pyproject `dependencies = []`, extra `jev-cloud`); the dev tier does,
+# so the SDK-path tests (TS-124/125) import it and fail on assertions, not on ImportError.
+typesafe-sdk==0.7.2
