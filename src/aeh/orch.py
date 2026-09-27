@@ -6512,6 +6512,8 @@ class Orchestrator:
             for name in ("decision_calls", "decision_tokens_in", "decision_transport_retries",
                          "decision_rate_limited_calls", "decision_actual_cost"):
                 metrics[name] = float(getattr(decision_counters, name))
+            # CT-PROV-24 / FR-PROV-29: `actual_cost` is the sum of both surfaces.
+            metrics["actual_cost"] = float(state["cost"] + decision_counters.decision_actual_cost)
         # TEXT rides the REAL-affinity column as TEXT: these are labels, not
         # measurements, and the EAV shape carries both.
         if state["resolved_build"]:
