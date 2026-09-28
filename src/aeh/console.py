@@ -3128,13 +3128,17 @@ class ConsoleApp:
             # could not be read" rather than as a number (`FR-CONSOLE-37`), and the figures
             # above, being the service's, would otherwise render happily over a missing table.
             self._read_cohort_files(_SELECT_RUN_QUEUE, queries, run_id=run_id)
+            # A group entry (`FR-REVIEW-05`) carries its items as `members`; the teacher's
+            # queue lists each item, never the group as one blank-submission row (#519: a
+            # group read as an item had no `submission_id` and hid its members).
             shown = tuple(
                 ReviewQueueItem(
                     submission_id=getattr(item, "submission_id", ""),
                     criterion_id=getattr(item, "criterion_id", ""),
                     kind="review_item",
                 )
-                for item in built.shown
+                for entry in built.shown
+                for item in (getattr(entry, "members", None) or (entry,))
             )
             queue = QueueContents(
                 flagged_total=built.flagged_total,
