@@ -777,6 +777,24 @@ class NoValidationData:
         self.interval_low = interval_low
         self.interval_high = interval_high
 
+    def _fields(self) -> dict[str, Any]:
+        return {name: value for name, value in (
+            ("reason", self.reason), ("n", self.n), ("excluded_count", self.excluded_count),
+            ("interval_low", self.interval_low), ("interval_high", self.interval_high),
+        ) if value is not None}
+
+    # copy, deepcopy and pickle rebuild through the keyword constructor, so a copy of an
+    # absence carrying context is its own instance and never lands on (or overwrites) the
+    # shared no-argument singleton; a copy of the singleton is the singleton.
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_rebuild_no_validation_data, (self._fields(),))
+
+    def __copy__(self) -> "NoValidationData":
+        return _rebuild_no_validation_data(self._fields())
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "NoValidationData":
+        return _rebuild_no_validation_data(self._fields())
+
     def __repr__(self) -> str:
         return "NoValidationData()" if self.reason is None else (
             f"NoValidationData(reason={self.reason!r})")
@@ -784,6 +802,12 @@ class NoValidationData:
     def __str__(self) -> str:
         return ("no validation data for this key" if self.reason is None
                 else f"no validation data ({self.reason})")
+
+
+def _rebuild_no_validation_data(fields: dict[str, Any]) -> NoValidationData:
+    """Pickle/copy reconstructor: the keyword constructor, so no field is ever set on the
+    shared singleton (no fields → the singleton itself)."""
+    return NoValidationData(**fields)
 
 
 @dataclass(frozen=True)
