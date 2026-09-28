@@ -805,7 +805,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SELECT criterion_id, submission_id FROM work_unit "
         "WHERE run_id = :run_id AND stage = 'extract' AND status != 'done'"
     ),
-    "select_work_unit": Statement(
+    "select_work_unit_row": Statement(
         "SELECT * FROM work_unit WHERE work_id = :work_id"
     ),
     # --- #362 (FR-ORCH-28/29/30): the per-cell composition phases -----------------------------
@@ -5437,7 +5437,7 @@ class Orchestrator:
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
             rows = cohort.query(
-                ORCH_STATEMENTS["select_work_unit"], work_id=work_id
+                ORCH_STATEMENTS["select_work_unit_row"], work_id=work_id
             )
             if rows:
                 return cohort, rows[0]
