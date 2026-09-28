@@ -8,6 +8,7 @@ only for failure injection elsewhere."*
 
 from __future__ import annotations
 
+
 import os
 import random
 from pathlib import Path
@@ -111,6 +112,10 @@ def network_guard(request: pytest.FixtureRequest):
 
 
 # --- the injected seams -------------------------------------------------------------------
+#: `pytester` runs TC-REG-10's guard against a real leaking test in an isolated session.
+pytest_plugins = ["pytester"]
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_setup(item):
     """`TC-REG-10` (TS-126, #537): snapshot `HARNESS_*` before any fixture of this test runs."""

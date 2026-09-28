@@ -7,8 +7,9 @@ corpus escalation budget were written to `os.environ` whenever a world was built
 how TC-INGEST-02/25/28/39, ADV-07 and TC-ORCH-36 came to fail by test order, and why the
 gate's `test_ct_ingest_v4_halting` cases flaked.
 
-Arm (a) builds each world without `monkeypatch` and asserts the builder's writes are undone
-by `restore_world_env`, the call the suite root makes after every test. Arm (b) is the
+Arm (a) builds each world without `monkeypatch` and asserts the builder records every write
+it made (`restore_world_env` undoes them; the suite root resets the same recorded names to
+their test-start values). Arm (b) is the
 suite-root guard in `tests/conftest.py` (the `pytest_runtest_setup`/`pytest_runtest_teardown` hooks, which also reset every world write to its test-start value), which runs around every test in
 the tree. The case here checks the guard is wired and that it restores a stray write.
 """
@@ -66,3 +67,29 @@ def test_tc_reg_10_b_the_suite_root_guard_is_active(request):
         "tests/conftest.py's pytest_runtest_setup hook took no HARNESS_* snapshot: nothing "
         "reports a leaked variable between tests"
     )
+
+
+_INNER = """
+import os
+
+
+def test_a_leaks():
+    os.environ["HARNESS_ZZ_TCREG10_LEAK"] = "1"
+
+
+def test_b_sees_a_clean_environment():
+    assert "HARNESS_ZZ_TCREG10_LEAK" not in os.environ
+"""
+
+
+def test_tc_reg_10_b_the_guard_names_a_leaking_test_and_undoes_the_leak(pytester, request):
+    """The guard itself, end to end: an isolated session carrying the suite root's two hooks
+    runs a test that leaks a HARNESS_* variable. The leaking test gets a teardown error naming
+    it, and the next test starts with the variable gone. Deleting either hook turns this red."""
+    pytester.makeconftest(
+        "from tests.conftest import pytest_runtest_setup, pytest_runtest_teardown  # noqa: F401\n")
+    pytester.makepyfile(test_inner=_INNER)
+    result = pytester.runpytest_inprocess("-p", "no:randomly", "-p", "no:cacheprovider")
+    result.assert_outcomes(passed=2, errors=1)
+    result.stdout.fnmatch_lines(["*test_inner.py::test_a_leaks left HARNESS_* variables changed*"])
+    assert "HARNESS_ZZ_TCREG10_LEAK" not in os.environ
