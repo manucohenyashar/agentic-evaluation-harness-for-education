@@ -1138,7 +1138,12 @@ AGG_STATEMENTS.update(AGG_SIGNAL_STATEMENTS)
 #: is the only writer of `criterion_score` (CT-AGG-18); M-REVIEW calls `record_review`.
 AGG_STATEMENTS.update({
     "record_review": Statement(
-        "UPDATE criterion_score SET band = :band, points = :points, routing = 'reviewed', "
+        # Points: the package's figure for the settled band when the caller has one; the row's
+        # own points when the band is unchanged (an accept keeps what the package scored);
+        # NULL when the band moved and no package figure is in hand (unknown, never a
+        # default-scale number).
+        "UPDATE criterion_score SET points = CASE WHEN :points IS NOT NULL THEN :points "
+        "WHEN band = :band THEN points ELSE NULL END, band = :band, routing = 'reviewed', "
         "state = 'final' WHERE run_id = :run_id AND submission_id = :submission_id "
         "AND criterion_id = :criterion_id"
     ),
