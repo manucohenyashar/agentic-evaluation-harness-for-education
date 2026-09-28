@@ -532,12 +532,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # Every one a declared `STATS_STATEMENTS` statement with keyword
     # parameters (FR-STORE-08); the module's other reads go through tier
     # handles, which are not census sites. Pinned from the walker.
-    "aeh.stats:3857",
-    "aeh.stats:3864",
-    "aeh.stats:3869",
-    "aeh.stats:3873",
-    "aeh.stats:3913",
-    "aeh.stats:4554",
+    "aeh.stats:3888",
+    "aeh.stats:3895",
+    "aeh.stats:3900",
+    "aeh.stats:3904",
+    "aeh.stats:3944",
+    "aeh.stats:4585",
     # The synth site is #97's line number: the single narrative INSERT, declared in
     # SYNTH_STATEMENTS with keyword parameters — the write the ADR-8 primary key
     # conflicts a duplicate on. The module's reads go through `store.cohort(...).query()`,
@@ -661,17 +661,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `record_shown` write what the BUILD decided (rank score, estimate, shown at) for the
     # items it showed, and `record_action` writes what the teacher then DID to one. Before
     # these the row said only that a cell had been flagged.
-    "aeh.review:1800",
-    "aeh.review:1806",
-    "aeh.review:1831",
-    "aeh.review:2827",
+    "aeh.review:1818",
+    "aeh.review:1824",
+    "aeh.review:1849",
+    "aeh.review:2845",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
     # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries (27 since #368), upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:3761",
+    "aeh.review:3784",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

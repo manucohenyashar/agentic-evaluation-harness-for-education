@@ -381,6 +381,12 @@ class Label:
     #: under the policy.
     routing: str | None = None
 
+    #: FR-REVIEW-23 (#514): the backend of the run the label judged. CT-STATS-04 excludes a
+    #: label recording none from every backend-scoped figure (`backend_not_recorded`), so the
+    #: default is the backend the shared scope (`stats_vocabulary`) asks for; a fixture about
+    #: another backend, or about an unattributed label, says so in one keyword.
+    backend_profile: str | None = "edge-local-q4"
+
 
 def agreeing_population(count: int = 40, *, bands: int = 4, disagree_every: int = 5,
                         prefix: str = "bl") -> list[Label]:

@@ -148,6 +148,9 @@ class _CollectedLabel:
     evaluation_mode = "judged"
     saw_system_output = 0
     routing = "queued"
+    #: FR-REVIEW-23 (#514): the backend `EMPTY_DATA_CALL`'s figure is scoped to; a label with
+    #: none is excluded from a backend-scoped figure (CT-STATS-04, `backend_not_recorded`).
+    backend_profile = "edge-local-q4"
     origin = "direct"
     system_band = "B3"
     actor = "teacher-1"

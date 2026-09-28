@@ -567,12 +567,14 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "label_type, band, evaluation_mode, saw_system_output, routing, origin, "
         "review_seconds, system_band, teacher_band, actor, timestamp, score_id, "
         "review_queue_action, new_points, cohort_id, "
-        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at) "
+        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at, "
+        "backend_profile) "
         "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
         ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
         ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
         ":score_id, :review_queue_action, :new_points, :cohort_id, "
-        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at)"
+        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at, "
+        ":backend_profile)"
     ),
     # #111's whole-grade read: the auto-accepted population the sample draws
     # from. The service's own fetch admits only the teacher's routings
@@ -605,7 +607,7 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
     #: models and the boundary table, so a re-ranked older run is ranked by the package
     #: as it stood then rather than as it stands now.
     "select_run_package": Statement(
-        "SELECT package_id, package_version_id, panel_config FROM run "
+        "SELECT package_id, package_version_id, panel_config, backend_profile FROM run "
         "WHERE run_id = :run_id"
     ),
     #: Each submission's current total, for boundary proximity. `is_current = 1` because
@@ -626,12 +628,14 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
         "criterion_id, label_type, band, evaluation_mode, saw_system_output, "
         "routing, origin, review_seconds, system_band, teacher_band, actor, "
         "timestamp, score_id, review_queue_action, new_points, cohort_id, "
-        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at) "
+        "package_version_id, assignment_type, band_distance, system_points, teacher_points, agreed, panel_config, recorded_at, "
+        "backend_profile) "
         "VALUES (:label_id, :run_id, :student_ref, :criterion_id, :label_type, "
         ":band, :evaluation_mode, :saw_system_output, :routing, :origin, "
         ":review_seconds, :system_band, :teacher_band, :actor, :timestamp, "
         ":score_id, :review_queue_action, :new_points, :cohort_id, "
-        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at)"
+        ":package_version_id, :assignment_type, :band_distance, :system_points, :teacher_points, :agreed, :panel_config, :recorded_at, "
+        ":backend_profile)"
     ),
 }
 
@@ -675,6 +679,20 @@ _DURABLE_010 = Migration(
 )
 
 TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_010,)
+
+# --- Tier D, migration 12 (#514, `FR-REVIEW-23`): which backend a label judged --------------------
+#
+# CT-STATS-04 forbids an agreement figure that pools two backends, and a label that does not
+# record its run's backend cannot be split by one. A pre-migration row stays NULL: not
+# attributable, so M-STATS excludes it from every backend-scoped figure and names the
+# exclusion `backend_not_recorded`. Not a student name (Tier D's standing rule).
+_DURABLE_012 = Migration(
+    version=12,
+    name="review_label_backend_profile",
+    statements=(Statement("ALTER TABLE label ADD COLUMN backend_profile TEXT"),),
+)
+
+TIER_MIGRATIONS[Tier.DURABLE] = TIER_MIGRATIONS[Tier.DURABLE] + (_DURABLE_012,)
 
 # --- Tier C, migration 26 (#367, `FR-REVIEW-20`): what the queue did, on the queue's own row --
 #
@@ -2886,6 +2904,10 @@ class ReviewService:
             "agreed": agreed,
             "panel_config": None,
             "recorded_at": label.timestamp or self._clock(),
+            # FR-REVIEW-23 / CT-REVIEW-25 (#514): the run's frozen backend profile. NULL
+            # when the run row cannot be read, which M-STATS excludes from every
+            # backend-scoped figure as `backend_not_recorded` rather than guessing.
+            "backend_profile": None,
         }
 
         cohort_id = self._writable_cohort()
@@ -2901,6 +2923,7 @@ class ReviewService:
             return facts
         facts["package_version_id"] = rows[0]["package_version_id"]
         facts["panel_config"] = rows[0]["panel_config"]
+        facts["backend_profile"] = rows[0]["backend_profile"] or None
         package_id = rows[0]["package_id"]
 
         try:
@@ -3808,6 +3831,9 @@ def _write_collected_label(
             ),
             panel_config=None,
             recorded_at=getattr(label, "timestamp", None),
+            # FR-REVIEW-23: this route carries no run, so the backend is whatever the
+            # collected label itself records, and NULL (not attributable) otherwise.
+            backend_profile=getattr(label, "backend_profile", None) or None,
         )
     return str(label_id)
 

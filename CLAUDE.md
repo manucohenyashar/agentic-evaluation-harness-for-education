@@ -131,8 +131,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.grade` the one before it (#103's `grade_superseded_at_and_append_only`, 19;
 #101's `grade_submission_grade_key` was 18),
 `aeh.judge` the one before it (#80's `judge_verdict_response_columns`, 17),
-`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.store` itself owns
-Durable's last migration (#375's `calib_dual_scored_roster`, 11 — it is M-CALIB's table, but
+`aeh.agg` the one before it (#92's `agg_confidence_columns`, 16), `aeh.review` owns
+Durable's last migration (#514's `review_label_backend_profile`, 12), `aeh.store` itself owns
+the one before it (#375's `calib_dual_scored_roster`, 11 — it is M-CALIB's table, but
 `TC-REQ-89` runs the console with `aeh.calib` absent, so no module the system must run WITHOUT
 may own a mandatory link in a chain; that is why this one is declared in `store.py` against the
 convention, and it stays there), `aeh.review` owns the one before it (#368's
