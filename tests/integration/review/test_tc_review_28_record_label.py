@@ -66,7 +66,7 @@ from aeh.pkg import PackageCatalog
 from aeh.review import open_review
 from aeh.store import Statement, open_store
 from tests.support.grade_vocabulary import write_criterion_scores
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.integration
 
@@ -136,13 +136,9 @@ def _act(world, action: str, new_band: str | None) -> None:
     tmp_data_dir, catalog, run_id = world
     # The REAL run id, not the cohort id. `_label_judgement_columns` resolves the package
     # through `select_run_package(run_id=...)`, so a cohort id there finds no run row and
-    # every package-derived column comes back NULL — with the label still written.
-    # `open_review` loads by COHORT (the rows it admits live on the cohort ledger), while
-    # `build_queue`'s run_id is what `_label_judgement_columns` resolves the package
-    # through. They are different identifiers and the case needs both: a cohort id in the
-    # second position finds no run row, and every package-derived column comes back NULL
-    # with the label still written.
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, catalog=catalog)
+    # every package-derived column comes back NULL — with the label still written. Since
+    # #515 `open_review` takes the run id too (FR-REVIEW-24) and finds the cohort itself.
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID), catalog=catalog)
     queue = service.build_queue(run_id, 60, record=False)
     entry = queue.shown[0]
     members = getattr(entry, "members", None)

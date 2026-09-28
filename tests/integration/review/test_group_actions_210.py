@@ -36,7 +36,7 @@ from aeh.store import open_store
 from tests.support import review_vocabulary as vocab
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.impl import REVIEW_MODULE, require
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration]
 
@@ -83,7 +83,7 @@ def _seed_and_open(tmp_data_dir):
             for i in range(PER_ITEM_ROWS)
         )
         write_criterion_scores(cohort, rows)
-        return open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+        return open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     finally:
         store.close()
 

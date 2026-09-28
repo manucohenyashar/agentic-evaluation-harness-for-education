@@ -176,8 +176,8 @@ def sweep_world(tmp_data_dir):
 def _service(world):
     """A run-scoped service over the stored rows.
 
-    **Not `open_review`, and that is a reported defect rather than a preference.**
-    `open_review(data_dir, run_id=X)` passes `cohort_ids=[run_id]` and leaves
+    **Not `open_review`, for a historical reason.** Until #515 (FR-REVIEW-24), which fixed what
+    follows, `open_review(data_dir, run_id=X)` passed `cohort_ids=[run_id]` and leaves
     `_service_from_store`'s own `run_id` as `None` (`review.py:3431`), so the parameter named
     `run_id` is used as the COHORT id and the scope falls through to
     `_newest_run_id(store, cohort_id)`. Two consequences, both measured here:

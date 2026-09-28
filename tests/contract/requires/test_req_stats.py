@@ -100,7 +100,7 @@ def test_tc_req_57_review_ranking_and_p_error_input_distinguish_no_data_from_a_z
     from aeh.store import open_store
     from tests.support import broken_stats_fixtures as broken
     from tests.support.grade_vocabulary import write_criterion_scores
-    from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+    from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
     never, zero = _histories()
     ranked = rank_queue_items(criteria={"C-ZERO": zero, "C-NEVER": never})
@@ -121,7 +121,7 @@ def test_tc_req_57_review_ranking_and_p_error_input_distinguish_no_data_from_a_z
     measured = stats.open_stats(data_dir=tmp_data_dir).criterion_override_history("C-ZERO")
     assert getattr(measured, "override_rate", None) == 0.0, f"fixture: M-STATS over the store reads {measured!r}"
 
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     try:
         rates = {row.criterion_id: row.historical_override_rate for row in service.scores(ORCH_COHORT_ID)}
     finally:

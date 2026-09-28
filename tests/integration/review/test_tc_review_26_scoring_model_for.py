@@ -50,7 +50,7 @@ import aeh.synth  # noqa: F401
 from aeh.review import ReviewError, _given, _StoredScoreRow, open_review
 from aeh.store import open_store
 from tests.support.grade_vocabulary import write_criterion_scores
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.integration
 
@@ -78,7 +78,7 @@ def review_world(tmp_data_dir):
         )
     finally:
         store.close()
-    return open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    return open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
 
 
 # --- TC-REVIEW-26 ---------------------------------------------------------------------------

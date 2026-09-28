@@ -181,6 +181,23 @@ class RetentionConfirmingProvider:
         return None
 
 
+def newest_run_id(data_dir: Any, cohort_id: str = ORCH_COHORT_ID) -> str:
+    """The id of the newest run stored in `cohort_id`, for callers that seeded one run and
+    now open it by run id (`open_review(run_id=...)`, FR-REVIEW-24 / #515: a cohort id is not
+    a run id). Read through M-ORCH's run registry; raises if the cohort holds no run."""
+    from aeh.orch import Orchestrator
+    from aeh.store import open_store
+
+    store = open_store(data_dir)
+    try:
+        handles = [h for h in Orchestrator(store).runs() if h.cohort_id == cohort_id]
+    finally:
+        store.close()
+    if not handles:
+        raise LookupError(f"cohort {cohort_id!r} holds no run")
+    return max(handles, key=lambda h: (h.started_at, h.run_id)).run_id
+
+
 def seed_run(
     store: Any,
     *,
