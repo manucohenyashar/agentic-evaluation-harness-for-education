@@ -1743,6 +1743,33 @@ class GradingService:
                 counts[STATE_INCOMPLETE] += 1
         return counts
 
+    def has_ungraded_scores(self, run_id: str) -> bool:
+        """Whether some submission of the run holds criterion scores but no current grade
+        row (FR-PIPE-16, #526): the killed-after-completion state
+        `NFR-PIPE-01` names, which `coverage` deliberately does not count (an uncomputed,
+        fully-scored submission is not yet a grade). Read-only."""
+        run = self._run_row(run_id)
+        cohort = self._store.cohort(run["cohort_id"])
+        current_ids = {
+            row["submission_id"]
+            for row in cohort.query(
+                GRADE_STATEMENTS["select_current_grades_for_run"], run_id=run["run_id"]
+            )
+        }
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_run_submissions"], cohort_id=run["cohort_id"]
+        ):
+            submission_id = row["submission_id"]
+            if submission_id in current_ids:
+                continue
+            if cohort.query(
+                GRADE_STATEMENTS["select_submission_scores"],
+                run_id=run["run_id"],
+                submission_id=submission_id,
+            ):
+                return True
+        return False
+
     def finalize_batch(self, run_id: str, actor: str) -> FinalizationRecord:
         """The ONE finalization action, batch-shaped (§3.14's Protocol member): it
         names its coverage first (`FR-GRADE-09`), settles every current provisional
