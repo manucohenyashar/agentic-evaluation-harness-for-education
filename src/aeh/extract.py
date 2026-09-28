@@ -52,9 +52,11 @@ reading):
   a shipped `WorkUnit` carries `submission_text=None` (the lease resolves identities,
   the assembler the words, `Orchestrator.lease`'s docstring), so transcript resolution
   is the assembler's act: the unit's text when set, else the current document's blob
-  decoded, via the `store` keyword. `criterion.text`/`evidence_type` stay empty at
-  assembly — the shipped unit carries no package text, and no consumer of the request
-  reads them yet.
+  decoded, via the `store` keyword. With a store, `criterion.text`/`evidence_type` are
+  read from the package version the unit's run pinned (#516, CT-PKG-01/06): the wording
+  is the question prompt, the construct and the band descriptors, and the evidence type
+  defaults to `textual_span` when the criterion declares none. Without a store they stay
+  empty.
 - The transcript is rendered **verbatim** when it already carries the shipped
   `M-INGEST` delimiters (a canonical artifact is pre-fenced) and wrapped in exactly
   one fence otherwise — the rendered prompt always fences the submission exactly once.
@@ -98,6 +100,7 @@ from aeh.orch import (
     _env_int,
 )
 from aeh.orch import _cohort_keys_on_filesystem
+from aeh.pkg import PackageCatalog
 from aeh.prov import PromptPayload, SamplingParams
 from aeh.prov import (
     BuildChangedError,
@@ -145,6 +148,12 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) --------------------
 
 EXTRACT_STATEMENTS: dict[str, Statement] = {
+    # #516 (CT-PKG-01/06): the package version the unit's run pinned, so the request's
+    # criterion is read from THAT version, never a later draft.
+    "select_unit_run_version": Statement(
+        "SELECT r.package_id, r.package_version_id FROM work_unit w "
+        "JOIN run r ON r.run_id = w.run_id WHERE w.work_id = :work_id"
+    ),
     "select_work_unit": Statement(
         "SELECT work_id, run_id, submission_id, criterion_id, stage, status, "
         "attempts, last_error FROM work_unit WHERE work_id = :work_id"
@@ -316,9 +325,8 @@ class DependencyEvidence:
 
 @dataclass(frozen=True)
 class Criterion:
-    """§3.8's `criterion` object. `text`/`evidence_type` are empty at assembly (the
-    shipped `WorkUnit` carries the criterion's identity, not its package text) —
-    disclosed in the module docstring."""
+    """§3.8's `criterion` object. `text`/`evidence_type` come from the run's pinned package
+    version when the assembler has a store (#516); see the module docstring."""
 
     criterion_id: str
     text: str
@@ -479,6 +487,82 @@ def _question_of(raw: Any) -> Question:
     )
 
 
+#: FR-SETUP-09's evidence type when a criterion declares none (the design's own example,
+#: detailed-design §3.8). A published package carries one per judged criterion.
+DEFAULT_EVIDENCE_TYPE = "textual_span"
+
+
+#: Per-store memo of the pinned criteria (#516, CT-PKG-15: a package version is loaded once
+#: per run, not once per unit). Keyed by the store object's identity, and holding the store
+#: itself so the id is never reused while the entry lives. A published version is immutable,
+#: so a cached entry never goes stale.
+_PINNED_CRITERIA: dict[int, tuple[Any, dict[tuple[str, str, str], Any]]] = {}
+
+
+def _pinned_criterion(store: Any, package_id: str, version: str, criterion_id: str
+                      ) -> tuple[str, str, dict[str, str] | None] | None:
+    held = _PINNED_CRITERIA.get(id(store))
+    if held is None or held[0] is not store:
+        if len(_PINNED_CRITERIA) >= 8:
+            _PINNED_CRITERIA.clear()
+        held = (store, {})
+        _PINNED_CRITERIA[id(store)] = held
+    memo = held[1]
+    key = (package_id, version, criterion_id)
+    if key not in memo:
+        prefix = (package_id, version)
+        if not any(k[:2] == prefix for k in memo):
+            catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+            questions = {str(row.get("question_id") or ""): row
+                         for row in catalog.questions(version)}
+            for row in catalog.criteria(version):
+                memo[(package_id, version, str(row.get("criterion_id")))] = (
+                    _criterion_parts(catalog, row, questions))
+        memo.setdefault(key, None)
+    return memo[key]
+
+
+def _criterion_parts(catalog: Any, criterion: Any, questions: dict[str, Any]
+                     ) -> tuple[str, str, dict[str, str] | None]:
+    parts: list[str] = []
+    if criterion.get("construct_tag"):
+        parts.append(f"construct: {criterion['construct_tag']}")
+    bands = [f"{row['band']}: {row.get('descriptor') or ''}".rstrip(": ").rstrip()
+             for row in catalog.bands(str(criterion.get("criterion_id")))]
+    if bands:
+        parts.append("bands: " + "; ".join(bands))
+    evidence_type = str(criterion.get("evidence_type") or DEFAULT_EVIDENCE_TYPE)
+    question = None
+    row = questions.get(str(criterion.get("question_id") or ""))
+    if row is not None and (row.get("prompt_text") or row.get("reference_solution")):
+        question = {"prompt_text": str(row.get("prompt_text") or ""),
+                    "reference_solution": str(row.get("reference_solution") or "")}
+    return "\n".join(parts), evidence_type, question
+
+
+def _criterion_of_run(store: Any, work_id: str, criterion_id: str
+                      ) -> tuple[str, str, dict[str, str] | None]:
+    """The criterion the unit's run pinned, as the extractor needs it (#516, CT-PKG-01/06):
+    wording built from what the package version declares (the construct the criterion
+    measures and each band's descriptor, in ordinal order), the criterion's
+    `evidence_type`, and the criterion's question (prompt and reference solution) when the
+    version declares one. Read through `PackageCatalog` from the run's own version, so a
+    later draft never changes a running unit's request. A unit whose run the store does not
+    hold keeps the empty criterion (the storeless assembly path)."""
+    version_row = None
+    for key in _cohort_keys_on_filesystem(store):
+        rows = store.cohort(key).query(
+            EXTRACT_STATEMENTS["select_unit_run_version"], work_id=work_id)
+        if rows:
+            version_row = rows[0]
+            break
+    if version_row is None:
+        return "", "", None
+    pinned = _pinned_criterion(store, str(version_row["package_id"]),
+                               str(version_row["package_version_id"]), criterion_id)
+    return pinned if pinned is not None else ("", "", None)
+
+
 def _current_document(store: Any, submission_id: str) -> Any:
     """The submission's CURRENT document row, from the ledger files.
 
@@ -589,10 +673,17 @@ def assemble_request(
             )
         head = _current_document(store, submission_id)
         transcript = document_bytes(store, head).decode("utf-8")
+    text, evidence_type, pinned_question = ("", "", None)
+    if store is not None:
+        text, evidence_type, pinned_question = _criterion_of_run(
+            store, work_id, str(criterion_id))
+    # The caller's `question=` wins; otherwise the question the pinned version declares, so
+    # the request never tells the extractor both that there is a question and that there
+    # is not (#516 review).
     return ExtractionRequest(
         work_id=work_id,
-        criterion=Criterion(criterion_id=criterion_id, text="", evidence_type=""),
-        question=_question_of(question),
+        criterion=Criterion(criterion_id=criterion_id, text=text, evidence_type=evidence_type),
+        question=_question_of(question if question is not None else pinned_question),
         dependency_evidence=tuple(
             _dependency_entry(entry)
             for entry in (dependency_evidence or ())
@@ -916,7 +1007,10 @@ class ExtractionWorker:
         head = _current_document(self._store, unit.submission_id)
         md_bytes = document_bytes(self._store, head)
         request = assemble_request(
-            dataclasses.replace(unit, submission_text=md_bytes.decode("utf-8"))
+            dataclasses.replace(unit, submission_text=md_bytes.decode("utf-8")),
+            # The store resolves the criterion from the run's pinned package version
+            # (#516); the transcript is already resolved above.
+            store=self._store,
         )
         payload = prompt_fields(request)
         params = SamplingParams(temperature=0.0)
