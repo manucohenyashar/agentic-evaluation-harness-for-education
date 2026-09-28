@@ -1774,13 +1774,18 @@ class GradingService:
         # column to attribute by), so the action records itself: one durable EAV
         # row, the same table every other stage's figures ride (CT-GRADE-18's
         # observability; `record_grade_signals` derives the rest).
-        with self._store.durable().transaction() as tx:
-            tx.execute(
-                GRADE_STATEMENTS["insert_run_metric"],
-                run_id=run_id,
-                metric="finalization_path_batch",
-                value=float(len(current)),
-            )
+        #
+        # A finalize that settled nothing (a repeat, a double-click, a second tab) writes
+        # nothing (FR-CONSOLE-02, #398): overwriting the figure with 0 would erase the
+        # count of the batch that actually settled the run.
+        if current:
+            with self._store.durable().transaction() as tx:
+                tx.execute(
+                    GRADE_STATEMENTS["insert_run_metric"],
+                    run_id=run_id,
+                    metric="finalization_path_batch",
+                    value=float(len(current)),
+                )
         return FinalizationRecord(
             finalized=len(current),
             coverage=named,

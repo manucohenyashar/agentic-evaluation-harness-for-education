@@ -214,9 +214,15 @@ _CONSOLE_BARE_MIGRATION_IMPORTS: frozenset[str] = frozenset(
 #:   words ("read at call time"), which is why the edge is declared rather than duplicated: a
 #:   console holding its own copy of the threshold would drift from the module that owns it,
 #:   and the qualifier would then disagree with the figure it qualifies (#357).
+#: - `aeh.setup` and `aeh.pipeline` — #398, declared contract amendment. `FR-CONSOLE-34`'s
+#:   action→door map names both: the three pre-lock actions go through `M-SETUP`'s
+#:   `confirm_inventory` / `set_answer_keys` / `read_back_rubric` (via
+#:   `setup_service_for_store`), and "start run" hands the run to `M-PIPE` on a server-owned
+#:   thread (`start_run_in_background`, `NFR-CONSOLE-08`). Both are imported inside the
+#:   action that needs them, never at module scope.
 _CONSOLE_SYMBOL_IMPORT_MODULES: frozenset[str] = frozenset(
-    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pkg", "aeh.review", "aeh.stats",
-     "aeh.store"}
+    {"aeh.conf", "aeh.det", "aeh.grade", "aeh.orch", "aeh.pipeline", "aeh.pkg", "aeh.review",
+     "aeh.setup", "aeh.stats", "aeh.store"}
 )
 
 

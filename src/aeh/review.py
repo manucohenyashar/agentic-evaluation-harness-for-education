@@ -339,6 +339,7 @@ import hashlib
 import itertools
 import os
 import random
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -549,6 +550,18 @@ _DURABLE_006 = Migration(
 #: store makes to the durable tier, keyword-parameterized. Registered in the
 #: module's own registry, the shape every other contributing module uses.
 REVIEW_STATEMENTS: dict[str, Statement] = {
+    # #398 / FR-CONSOLE-02: the reads that make a repeated action write nothing. A browser
+    # repeats a post with no replay flag, and a fresh console holds no memory of the first,
+    # so the durable label is the only place "this decision was already recorded" lives.
+    "select_label_for_decision": Statement(
+        "SELECT label_id FROM label WHERE run_id = :run_id AND score_id = :score_id "
+        "AND review_queue_action = :review_queue_action AND teacher_band = :teacher_band "
+        "ORDER BY label_id LIMIT 1"
+    ),
+    "select_blind_labels_for_run": Statement(
+        "SELECT label_id, student_ref, criterion_id FROM label "
+        "WHERE run_id = :run_id AND label_type = 'blind' ORDER BY label_id"
+    ),
     "insert_label": Statement(
         "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
         "label_type, band, evaluation_mode, saw_system_output, routing, origin, "
@@ -1853,6 +1866,13 @@ class ReviewService:
             raise ValueError("an edit names a band")
         item = self._as_item(item)
         self._check_not_stale(item)
+        teacher_band = item.proposed_band if action == "accept" else new_band
+        recorded = self._recorded_decision(item, action, teacher_band)
+        if recorded is not None:
+            # The same decision on the same score is already in the label store: a
+            # repeated post (double-click, second tab) writes nothing (FR-CONSOLE-02).
+            self._acted.add(item.score_id)
+            return recorded
         label = self._write_label(
             item,
             label_type=action,
@@ -2086,6 +2106,10 @@ class ReviewService:
                 "submit_blind records the criteria the flow posed, and a ref outside the "
                 "session is a judgement nobody was asked for"
             )
+        # A ref the label store already holds a blind label for is not written again
+        # (FR-CONSOLE-02, #398): a repeated submission from a fresh console holds no
+        # memory of the first, and a second blind label would be counted twice.
+        recorded = self._recorded_blind_labels(session.run_id)
         labels = [
             self._write_blind_label(
                 ref,
@@ -2095,6 +2119,7 @@ class ReviewService:
             )
             for ref in session.items
             if (band := bands.get(ref)) is not None
+            and (ref.submission_id, ref.criterion_id) not in recorded
         ]
         self._blind_submitted.add(session_id)
         run_id = session.run_id
@@ -2319,7 +2344,7 @@ class ReviewService:
         resolution of it (`CT-REVIEW-06`'s indirection is the queue's)."""
         row = self._row_for_ref(ref)
         label = LabelRecord(
-            label_id=f"label-{len(self._labels) + 1:04d}",
+            label_id=self._mint_label_id(),
             label_type="blind",
             saw_system_output=0,
             routing=str(getattr(row, "routing", "queued") or "queued")
@@ -2686,7 +2711,7 @@ class ReviewService:
             else None
         )
         label = LabelRecord(
-            label_id=f"label-{len(self._labels) + 1:04d}",
+            label_id=self._mint_label_id(),
             label_type=label_type,
             # A queue action happens with the system's band on the screen
             # (`CT-REVIEW-08`'s per-path values; the blind flow's earned 0 is #111's).
@@ -2725,6 +2750,35 @@ class ReviewService:
                 )
             self._persist_label(label, run_id, item)
         return label
+
+    def _mint_label_id(self) -> str:
+        """A label id. A store-backed service mints a globally unique one: every console
+        request builds a fresh service (#398), and a per-instance counter would mint
+        `label-0001` again and collide with the durable row an earlier request wrote. The
+        storeless double keeps the deterministic counter its rung-0 cases read."""
+        if self._store is not None:
+            return f"label-{uuid.uuid4().hex}"
+        return f"label-{len(self._labels) + 1:04d}"
+
+    def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
+        """The id of a durable label already recording this decision on this score, or
+        None. Only a store-backed service has a durable label store to consult."""
+        run_id = self._attribution_run()
+        if self._store is None or run_id is None or teacher_band is None:
+            return None
+        rows = self._store.durable().query(
+            REVIEW_STATEMENTS["select_label_for_decision"], run_id=run_id,
+            score_id=item.score_id, review_queue_action=action, teacher_band=teacher_band)
+        return str(rows[0]["label_id"]) if rows else None
+
+    def _recorded_blind_labels(self, run_id: str) -> set[tuple[str, str]]:
+        """`(submission, criterion)` refs that already carry a durable blind label."""
+        if self._store is None:
+            return set()
+        attributed = self._attribution_run() or run_id
+        rows = self._store.durable().query(
+            REVIEW_STATEMENTS["select_blind_labels_for_run"], run_id=attributed)
+        return {(str(row["student_ref"]), str(row["criterion_id"])) for row in rows}
 
     def _attribution_run(self) -> str | None:
         """The run a label written now attributes to (`NFR-REVIEW-04`): the

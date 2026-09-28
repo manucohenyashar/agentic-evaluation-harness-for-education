@@ -180,6 +180,7 @@ The base plans' strategy stands. Four rules are specific to this delta:
 | TC-REVIEW-33 | FR-REVIEW-22 (amended) | A Durable `label` row written with `cohort_id = 'run-XYZ'` (the pre-rule shape) for cohort `c-1`, whose other rows are purgeable | 2 | The purge of `c-1` fails closed (the precondition is not met), naming the unattributable label. No code path rewrites the row. A fresh label for an unresolvable run stores `NULL` | Exact | P1 |
 | TC-REVIEW-34 | FR-REVIEW-23 | A Durable store opened at chain 11, then migrated to 12. Labels recorded from an `edge-local` run and a `cloud-hosted` run. One pre-migration row | 2 | The column exists. Labels carry `'edge-local'` / `'cloud-hosted'`. The pre-migration row is `NULL`. `exclusion_reasons()` counts it under `backend_not_recorded`. `COMPLETE_SCHEMA_VERSIONS['durable'] == 12` | Exact | P0 |
 | TC-REVIEW-35 | FR-REVIEW-24 | Runs `R1` and `R2` in cohort `c-1` with different flagged rows. `open_review(run_id=R1)`, `open_review(run_id=R2)`, `open_review(run_id='run-nope')` | 2 | Each service holds only its own run's rows. The unknown run raises `UnknownRunError` naming `run-nope`, and the data dir's file listing is unchanged (no `run-nope` cohort file) | Exact + file listing | P0 |
+| TC-REVIEW-36 | FR-REVIEW-09 (regression, #398) | Two `review_service_over` services over one store, opened one after the other (the console builds one per request), each record an `edit` label | 2 | Both labels land, with distinct `label_id`s. Before #398 the per-instance counter minted `label-0001` twice and the second insert failed on the primary key | Exact | P0 |
 
 ### 5.4 M-PKG
 
@@ -339,6 +340,7 @@ No new UAT. UAT-09…12 are the teacher try-out on #157. Their precondition is t
 | FR-REVIEW-22 | TC-REVIEW-33, TC-REVIEW-29 |
 | FR-REVIEW-23 | TC-REVIEW-34, TC-REVIEW-C25 |
 | FR-REVIEW-24 | TC-REVIEW-35, TC-REVIEW-C24, TC-REQ-124 |
+| FR-REVIEW-09 (regression) | TC-REVIEW-36 |
 | FR-PKG-23 | TC-PKG-33, TC-PKG-C20 |
 | FR-INGEST-26 | TC-INGEST-52, TC-INGEST-55, TC-INGEST-C22 |
 | FR-INGEST-38 | TC-INGEST-54, TC-INGEST-39 |
