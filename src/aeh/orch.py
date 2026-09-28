@@ -122,6 +122,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import warnings
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
@@ -394,6 +395,12 @@ class WorkLedgerError(Exception):
     owns the ledger's meaning and its callers distinguish the two.
     """
 
+
+
+class CellPhaseError(WorkLedgerError, ValueError):
+    """`mark_cell_phase`'s refusal (FR-ORCH-28 amended, design 1.9 §3.9, #513): a
+    `WorkLedgerError`, the module's declared family, and still a `ValueError` so a caller
+    that caught the earlier bare `ValueError` keeps working."""
 
 class BrokenLineageError(WorkLedgerError):
     """A work unit's provenance does not reach a source document (#223, `FR-INGEST-01`).
@@ -1584,7 +1591,9 @@ def evaluate_alerts(
         # BOTH guards: statistically unusual against the baseline history, AND absolutely
         # low. A steady history has no deviation, which would otherwise make any dip at
         # all a three-sigma event.
-        if current < breach and current < knobs["cache_floor"]:
+        # FR-ORCH-32 (amended, design 1.9 §3.11, Q-D3): and the history was ABOVE the floor.
+        # A history already below it is a standing condition, not a collapse.
+        if current < breach and current < knobs["cache_floor"] and mean > knobs["cache_floor"]:
             fired.append(RunAlert(
                 ALERT_CACHE_COLLAPSE,
                 f"cache hit rate {current:.3f} is below both the history's "
@@ -2860,8 +2869,14 @@ class Orchestrator:
         transport: Any = None,
         executor: Any = None,
         decision_provider: Any = None,
+        wall_clock: Any = None,
     ) -> None:
         self._store = store
+        #: FR-ORCH-44 (design 1.9 §3.9, #513): every wall-time read of this orchestrator
+        #: (run start/complete, control rows, cell phases, the run wall-clock figure) goes
+        #: through this callable returning an aware `datetime`. Defaults to real UTC; the
+        #: lease clock is separate (`clock`).
+        self._wall_clock = wall_clock
         #: Jev design delta FR-ORCH-40: the decision provider whose `verify_retention` covers
         #: the decision model at a `cloud-hosted` run start. Optional; see
         #: `_verify_retention_at_start`.
@@ -3064,7 +3079,8 @@ class Orchestrator:
         from aeh.conf import log_run_start
 
         summary = log_run_start(cfg)
-        record_run_start(self._store, cfg, run_id=run_id, summary=summary)
+        record_run_start(self._store, cfg, run_id=run_id, summary=summary,
+                         recorded_at=self._wall_now())
         return run_id
 
     def _verify_retention_at_start(self, cfg: Any) -> Any:
@@ -3439,7 +3455,7 @@ class Orchestrator:
             tx.execute(
                 ORCH_STATEMENTS["transition_run_started"],
                 run_id=run_id,
-                started_at=_now(),
+                started_at=self._wall_now(),
             )
             won = int(tx.execute(ORCH_STATEMENTS["select_changes"])[0]["n"])
         if won:
@@ -3490,7 +3506,7 @@ class Orchestrator:
                 run_id=run_id,
                 action="pause",
                 reason=reason,
-                requested_at=_now(),
+                requested_at=self._wall_now(),
             )
         if status == "paused":
             # The requested state already holds: record the request as applied, change
@@ -3498,7 +3514,7 @@ class Orchestrator:
             with cohort.transaction() as tx:
                 tx.execute(
                     ORCH_STATEMENTS["mark_pauses_applied"],
-                    applied_at=_now(),
+                    applied_at=self._wall_now(),
                     run_id=run_id,
                 )
             return "paused"
@@ -3562,7 +3578,7 @@ class Orchestrator:
                         run_id=run_id,
                         action="resume",
                         reason=None,
-                        requested_at=_now(),
+                        requested_at=self._wall_now(),
                     )
                 status_after, _ = self._apply_control_rows(cohort, run_id)
                 if status_after == "running":
@@ -3660,7 +3676,7 @@ class Orchestrator:
                 with cohort.transaction() as tx:
                     tx.execute(
                         ORCH_STATEMENTS["mark_pauses_applied_before"],
-                        applied_at=_now(),
+                        applied_at=self._wall_now(),
                         run_id=run_id,
                         requested_at=control["requested_at"],
                     )
@@ -3679,7 +3695,7 @@ class Orchestrator:
             tx.execute(
                 ORCH_STATEMENTS["mark_control_applied"],
                 control_id=control_id,
-                applied_at=_now(),
+                applied_at=self._wall_now(),
             )
 
     def _transition_run(
@@ -3738,7 +3754,7 @@ class Orchestrator:
             run_id,
             to_status="complete",
             pause_reason=None,
-            completed_at=_now(),
+            completed_at=self._wall_now(),
             from_status="running",
         )
 
@@ -3921,7 +3937,9 @@ class Orchestrator:
         backwards, which is `CT-STORE-14`'s named failure. The comparison input is and
         stays `lease_expires_ticks`.
         """
-        return (clock.now() + timedelta(seconds=ttl_seconds)).isoformat()
+        # FR-ORCH-44: the wall expiry is a wall-time read, so an injected wall clock stamps it.
+        now = self._wall_clock() if self._wall_clock is not None else clock.now()
+        return (now + timedelta(seconds=ttl_seconds)).isoformat()
 
     def lease(self, worker_id: str, stage: str, n: int) -> Sequence[WorkUnit]:
         """Claim up to `n` pending units of one stage for `worker_id`, exclusively.
@@ -4801,6 +4819,11 @@ class Orchestrator:
                     "no band to widen)."
                 )
         elif len(key) == 2:
+            # CT-ORCH-26 / FR-ORCH-34 (amended): the two-element key is deprecated, and says so.
+            warnings.warn(
+                "enqueue_escalation's (submission_id, criterion_id) key is deprecated; pass "
+                "(run_id, submission_id, criterion_id) (FR-ORCH-34, CT-ORCH-26)",
+                DeprecationWarning, stacklevel=2)
             submission_id, criterion_id = key
             holding = list(tx.execute(
                 ORCH_STATEMENTS["select_pair_runs"],
@@ -4954,7 +4977,7 @@ class Orchestrator:
                 ),
                 run_id=run_id,
                 criterion_id=criterion_id,
-                tripped_at=_now(),
+                tripped_at=self._wall_now(),
                 detail=detail,
             )
             gates["breaker"] = f"TRIPPED and latched: {detail}"
@@ -4991,7 +5014,7 @@ class Orchestrator:
             submission_id=submission_id,
             criterion_id=criterion_id,
             expected_value=expected_value,
-            requested_at=_now(),
+            requested_at=self._wall_now(),
             detail=detail,
         )
         gates["request_row"] = (
@@ -5003,7 +5026,7 @@ class Orchestrator:
         tx.execute(
             ORCH_STATEMENTS["admit_request"],
             request_id=request_id,
-            admitted_at=_now(),
+            admitted_at=self._wall_now(),
             detail=detail,
         )
         gates["admission"] = (
@@ -5823,8 +5846,11 @@ class Orchestrator:
         from "aggregated, nothing since" — a count, not a flag, because the second aggregation
         is exactly what a re-scored cell needs.
         """
+        if int(units_consumed) < 0:
+            raise CellPhaseError(
+                f"units_consumed must be >= 0, got {units_consumed!r} (FR-ORCH-28)")
         if phase not in CELL_PHASES:
-            raise ValueError(
+            raise CellPhaseError(
                 f"{phase!r} is not a composition phase; the declared vocabulary is "
                 f"{CELL_PHASES} (FR-ORCH-28). The table's CHECK refuses it too — this "
                 "refusal is the one that names the phases."
@@ -5832,7 +5858,7 @@ class Orchestrator:
         tx.execute(
             ORCH_STATEMENTS["upsert_cell_phase"],
             run_id=run_id, submission_id=submission_id, criterion_id=criterion_id,
-            phase=phase, units_consumed=int(units_consumed), recorded_at=_now(),
+            phase=phase, units_consumed=int(units_consumed), recorded_at=self._wall_now(),
         )
 
     def run_handle(self, run_id: str) -> RunHandle:
@@ -6554,6 +6580,12 @@ class Orchestrator:
         rows = cohort.query(ORCH_STATEMENTS["select_run"], run_id=run_id)
         return rows[0] if rows else None
 
+    def _wall_now(self) -> str:
+        """The wall time this orchestrator writes and measures with (FR-ORCH-44)."""
+        if self._wall_clock is None:
+            return _now()
+        return self._wall_clock().isoformat()
+
     def _run_wall_clock_ms(self, cohort: Any, run_id: str) -> float:
         """`FR-ORCH-33`: elapsed since `run.started_at`, less every paused interval.
 
@@ -6567,7 +6599,7 @@ class Orchestrator:
         started_at = _mapping_get(run_row, "started_at") if run_row is not None else None
         if not started_at:
             return 0.0
-        now = _now()
+        now = self._wall_now()
         elapsed = _millis_between(started_at, now)
         paused = paused_milliseconds(
             cohort.query(ORCH_STATEMENTS["select_applied_control"], run_id=run_id),
@@ -6626,7 +6658,8 @@ class Orchestrator:
 
 
 def record_run_start(
-    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None
+    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None,
+    recorded_at: str | None = None,
 ) -> str:
     """Write the run-start audit record: the orchestrator's write of what graded this run.
 
@@ -6648,6 +6681,9 @@ def record_run_start(
     run start (`Orchestrator.create_run` does): storing that object rather than computing a
     second one makes the stored record literally the logged one. Omitted, the summary is
     computed here, as the repair path in `create_run`'s docstring needs.
+
+    `recorded_at` is the orchestrator's wall time (FR-ORCH-44) when `create_run` calls this;
+    omitted, the process wall clock stamps the row.
     """
     if summary is None:
         summary = config.profile_summary()
@@ -6658,7 +6694,7 @@ def record_run_start(
             ORCH_STATEMENTS["insert_audit_record"],
             audit_record_id=uuid.uuid4().hex,
             run_id=resolved_run_id,
-            recorded_at=_now(),
+            recorded_at=recorded_at if recorded_at is not None else _now(),
             profile_summary=summary.to_canonical_json(),
         )
     return resolved_run_id
