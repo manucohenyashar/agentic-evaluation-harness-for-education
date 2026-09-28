@@ -165,8 +165,17 @@ def test_tc_pipe_14_main_exits_1_on_an_invalid_knob(
     ]
 
     monkeypatch.setenv(name, bad)
+    before = sorted(p.relative_to(tmp_data_dir) for p in tmp_data_dir.rglob("*"))
     invalid_code = main(list(argv))
     invalid_output = "".join(capsys.readouterr())
+    # "Before any row is written": main opens the store and runs `recover` (which reclaims
+    # leases, a write) before it drives, so the refusal must land before the data directory
+    # is touched at all. A knob check placed after `recover` would pass every other assertion.
+    after = sorted(p.relative_to(tmp_data_dir) for p in tmp_data_dir.rglob("*"))
+    assert after == before, (
+        f"main refused {name}={bad!r} only after touching the data directory: {before} became "
+        f"{after}. The store was opened (and `recover` could write) before the knob was checked"
+    )
     assert invalid_code == 1, (
         f"main returned {invalid_code!r} for {name}={bad!r}; the plan pins exit 1 for a "
         "refused configuration (Q-14)"
