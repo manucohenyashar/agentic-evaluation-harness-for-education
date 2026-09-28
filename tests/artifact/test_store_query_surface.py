@@ -719,12 +719,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.console:2313",
     "aeh.console:2407",
     "aeh.console:3012",
-    "aeh.console:5444",
-    "aeh.console:5449",
-    "aeh.console:5480",
-    "aeh.console:5488",
-    "aeh.console:5472",
-    "aeh.console:5501",
+    "aeh.console:5477",
+    "aeh.console:5482",
+    "aeh.console:5513",
+    "aeh.console:5521",
+    "aeh.console:5505",
+    "aeh.console:5534",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the
