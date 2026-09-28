@@ -16,10 +16,16 @@ The case's oracle is an **artifact assertion on names and per-cap dimensionality
   — two rows whose adverse signals differ count under DIFFERENT keys, and the
   counts stay separate where a total-only counter would merge them into one
   number that can no longer tell an extraction problem from a panel problem. The
-  derivation reads exactly the four recorded integrity fields (`FR-AGG-13`): the
-  two unrecorded signals (`described_evidence`, `extractor_disagreement`) are the
-  design's own disclosed residual — a confidence they capped is not fully
-  re-derivable from the row, and their fired-counts are not derivable either;
+  derivation reads the recorded integrity fields (`FR-AGG-13`). **Re-specified by
+  #360/#389** (gap-fix test plan §5.0): the residual this docstring used to
+  disclose — that `described_evidence` and `extractor_disagreement` were not
+  recorded, so a confidence they capped was not re-derivable from the row — is
+  closed. `upsert_criterion_score` now binds all six signals
+  (`agg.py:1070`), and `TC-AGG-24` asserts they are stored. This case still
+  derives over the four it was written against, because a row whose `caps_fired`
+  predates the other two carries NULL in them and `adverse_signal_count` puts
+  them out of scope (`agg.py:572`) — the six-flag storage claim is TC-AGG-24's,
+  and duplicating it here would give one property two owners;
 - **the rate figures** (rung 3): the auto-accept rate derives from the stored
   `routing` column per criterion, and the escalation rate from the
   escalation-origin units `M-ORCH` inserts (`TC-AGG-C08`'s composition proved
@@ -62,8 +68,10 @@ _FOUR_BAND = criterion([band("B0", 0, 0.0), band("B1", 1, 1.0), band("B2", 2, 3.
                         band("B3", 3, 6.0)])
 _UNANIMOUS_TOP = panel(("B3", 3), ("B3", 3), ("B3", 3))
 
-#: The four integrity fields FR-AGG-13 records on the row — exactly the
-#: dimensions the per-cap derivation below may read.
+#: The four integrity fields this fixture's rows carry, and so the dimensions the
+#: per-cap derivation below reads. `FR-AGG-13` as amended records all six
+#: (`described_evidence`, `extractor_disagreement` since #360); those two are
+#: `TC-AGG-24`'s subject rather than this derivation's.
 RECORDED_SIGNALS = ("spans_verified", "evidence_present", "sufficiency_flag",
                     "ocr_overlap_risk")
 
@@ -211,11 +219,12 @@ def test_tc_agg_c15_the_caps_count_per_cap_and_the_keys_stay_separate(tmp_data_d
             f"{untouched} — a cap whose count moves without its signal is not "
             "counting the row (CT-AGG-15)"
         )
-        # The dimensionality the clause calls load-bearing: the four RECORDABLE
-        # caps count separately. The two signals FR-AGG-13 does not record on
-        # the row (`described_evidence`, `extractor_disagreement`) are the
-        # design's disclosed residual — their fired-counts are NOT derivable
-        # from the row, and this derivation claims only what the row carries.
+        # The dimensionality the clause calls load-bearing: the caps count
+        # separately, per signal. This derivation reads the four whose values
+        # this fixture's rows carry; `described_evidence` and
+        # `extractor_disagreement` ARE stored since #360 (the residual the
+        # module docstring used to disclose is closed), and the claim that all
+        # six are stored is `TC-AGG-24`'s — one property, one owner.
         # (The derivation iterates RECORDED_SIGNALS by construction, so no
         # invented-key assertion here would be falsifiable.)
     finally:

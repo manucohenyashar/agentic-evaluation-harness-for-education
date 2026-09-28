@@ -88,12 +88,14 @@ def test_tc_req_50_the_rollup_separation_follows_the_declared_mode_not_band_name
     """`TC-REQ-50` (`M-GRADE` → `M-DET`, CT-DET-02/03/06/07, CT-GRADE-12): a judged criterion whose
     rubric names its bands `correct`/`incorrect` (M-DET's names) is placed in the judged block, and
     the deterministic criterion in the deterministic block. The criterion IDs are neutral, so the
-    separation follows the package's declared kind (`kind = 'mcq'`), not band names or ID
+    separation follows the package's declared `evaluation_mode`, not band names or ID
     conventions. No field of the separated rollup combines the two.
 
-    Disclosed mismatch: the row asks for a separation "driven by the column" (`evaluation_mode`),
-    but `grade.py` records that no shipped schema carries that column on criteria, and classifies
-    by `kind`, the declared equivalent. This case asserts that equivalent."""
+    **Re-specified by #369/#386** (gap-fix test plan §5.0). The mismatch this docstring used to
+    disclose is closed: `criterion.evaluation_mode` now exists (Package migration 11) and
+    `grade.py` classifies on it rather than on `kind`. The metamorphic arm below is what makes
+    that a claim rather than a coincidence — with `kind` and `evaluation_mode` pointing opposite
+    ways, only one of the two readings can produce the expected rollup."""
     from aeh.grade import separated_rollup
     from aeh.pkg import GradePolicy, PackageCatalog
     from tests.support.grade_vocabulary import write_criterion_scores
@@ -122,6 +124,61 @@ def test_tc_req_50_the_rollup_separation_follows_the_declared_mode_not_band_name
     combined = [f.name for f in dataclasses.fields(rollup) if f.name not in ("judged", "deterministic")
                 and re.search(r"total|combined|overall|mean", f.name)]
     assert not combined, f"the separated rollup carries a combined figure: {combined}"
+
+
+def test_tc_req_50_a_judged_mcq_criterion_rolls_up_as_judged(tmp_data_dir):
+    """The metamorphic arm (#386): `kind='mcq'` with `evaluation_mode='judged'` rolls up JUDGED.
+
+    The case that tells the two readings apart. The package above has `kind` and
+    `evaluation_mode` agreeing, so it passes under the retired equivalence *and* under the
+    column. Here they disagree: an implementation still classifying on `kind` puts this
+    criterion in the deterministic block, where it is scored against an answer key it does not
+    have — RISK-57, arriving as a grade that looks plausible.
+
+    The companion direction (`kind='open'`, `evaluation_mode='deterministic'`) is
+    `TC-ORCH-48`'s at the enumeration door; this is the same contradiction at the rollup.
+    """
+    from aeh.grade import separated_rollup
+    from aeh.pkg import GradePolicy, PackageCatalog
+    from tests.support.grade_vocabulary import write_criterion_scores
+
+    submissions = ("S001",)
+    store = open_store(tmp_data_dir)
+    try:
+        _orch, run_id, version = seed_run(store, submissions=submissions, criteria=(
+            {"criterion_id": "CA", "kind": "open", "scoring_model": "atomic",
+             "evaluation_mode": "judged"},
+            # The contradiction: an MCQ shape the package declares as judged. A judged
+            # multiple-choice criterion is a package the design allows, and the retired
+            # equivalence made it unrepresentable.
+            {"criterion_id": "CB", "kind": "mcq", "scoring_model": "atomic",
+             "evaluation_mode": "judged"}))
+        PackageCatalog(store.package("pkg-orch"), package_id="pkg-orch").set_grade_policy(
+            version, GradePolicy(combination="weighted_sum"))
+        cohort = store.cohort(ORCH_COHORT_ID)
+        write_criterion_scores(
+            cohort,
+            [(s, "CA", "correct", 1.0, "auto") for s in submissions]
+            + [(s, "CB", "correct", 1.0, "auto") for s in submissions],
+        )
+        import aeh.grade as grade
+
+        grade.open_grade(store).compute_all(run_id)
+        rollup = separated_rollup(run_id, store)
+    finally:
+        store.close()
+
+    judged = {c.criterion_id for c in rollup.judged.criteria}
+    deterministic = {c.criterion_id for c in rollup.deterministic.criteria}
+    assert "CB" in judged, (
+        f"a criterion declared evaluation_mode='judged' landed in {('deterministic' if 'CB' in deterministic else 'neither')} "
+        "block. Its `kind` is 'mcq' and its declared mode is 'judged' — an implementation "
+        "reading `kind` scores it against an answer key it does not have (FR-PKG-22, RISK-57)"
+    )
+    assert "CB" not in deterministic
+    assert judged == {"CA", "CB"} and deterministic == set(), (
+        f"judged {judged}, deterministic {deterministic}"
+    )
 
 
 def test_tc_req_62_a_deterministic_label_is_excluded_by_its_evaluation_mode_column(tmp_data_dir):

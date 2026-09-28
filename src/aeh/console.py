@@ -2108,23 +2108,38 @@ class ConsoleApp:
         the same revision ledger an amendment writes — a grade the driver settles is
         readable back by submission id, which is what makes the amendment path runnable
         end to end without a store."""
-        self.perform("finalize batch", run_id=run_id, actor=actor)
-        self._audit.append(
-            f"finalized_by {actor} (actor as supplied by the form, not an authenticated "
-            "identity; the console keeps no accounts)"
-        )
+        outcome = self.perform("finalize batch", run_id=run_id, actor=actor)
+        on_store = getattr(self._store, "data_dir", None) is not None
+        # RISK-47: on a store, a batch M-GRADE refused (or a held action) did not settle, so the
+        # audit line and every grade say so. Only the storeless double has no door to refuse.
+        settled = outcome.dispatched or not on_store
+        if settled:
+            self._audit.append(
+                f"finalized_by {actor} (actor as supplied by the form, not an authenticated "
+                "identity; the console keeps no accounts)"
+            )
+        else:
+            self._audit.append(f"finalize batch not settled for {actor}: {outcome.detail}")
         grades: dict[str, GradeRecord] = {}
         window_open = self._review_windows.get(run_id) is not None
-        if getattr(self._store, "data_dir", None) is not None:
-            with contextlib.suppress(Exception):  # the real effect is grade-domain
-                GradingService(self._store).finalize_batch(run_id, actor)
+        if on_store:
+            # `#398` (`FR-CONSOLE-34`): the suppressed second `finalize_batch` that stood here
+            # is gone. `perform("finalize batch", …)` above already calls M-GRADE's door and
+            # already reports a refusal rather than swallowing it, so this call finalized the
+            # same run a SECOND time per screen render — which is what made a double-clicked
+            # post change `run_metrics` when `FR-CONSOLE-02` says a replay writes nothing.
+            #
+            # `contextlib.suppress(Exception)` was the worse half: a refusal from the owning
+            # module became a screen that rendered as though the batch had settled. The
+            # console reports what the door did, and the door is called once: a refused batch
+            # returns its grades provisional and writes no `finalized_by` audit line.
             for row in self._read_cohort_files(_SELECT_GRADES, [], run_id=run_id):
                 sid = str(_row_get(row, "submission_id"))
                 record = GradeRecord(
                     finalized_at=None,
                     revision=_row_get(row, "revision"),
                     bands=(),
-                    provisional=window_open,
+                    provisional=window_open or not settled,
                 )
                 grades[sid] = record
                 self._grade_ledger.setdefault(sid, []).append(record)
