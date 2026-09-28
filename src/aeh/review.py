@@ -1899,6 +1899,7 @@ class ReviewService:
             review_queue_action=action,
         )
         self._record_writes(item, action, label)
+        self._settle_score(item, label)
         self._acted.add(item.score_id)
         self._record_queue_action(item, action, label)
         self._record_action_emission([label])
@@ -2784,6 +2785,24 @@ class ReviewService:
             return f"label-{uuid.uuid4().hex}"
         return f"label-{len(self._labels) + 1:04d}"
 
+    def _settle_score(self, item: Any, label: LabelRecord) -> None:
+        """The reduction CT-REVIEW-06 audits, made real (#517): the teacher's band and points
+        land on the stored score row through M-AGG's writer (`record_review`), so M-GRADE's
+        next pass counts the criterion as reviewed. M-REVIEW writes no grade. A storeless
+        service has no score row to settle."""
+        if self._store is None:
+            return
+        row = self._rows_by_id.get(item.score_id)
+        run_id = getattr(row, "run_id", None)
+        cohort_id = self._writable_cohort()
+        if run_id is None or cohort_id is None or label.teacher_band is None:
+            return
+        from aeh.agg import record_review
+
+        with self._store.cohort(cohort_id).transaction() as tx:
+            record_review(tx, str(run_id), item.submission_id, item.criterion_id,
+                          label.teacher_band, label.new_points)
+
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
         """The id of the score's latest durable label when it records this same decision,
         or None. Only a store-backed service has a durable label store to consult."""
@@ -3411,6 +3430,8 @@ class _StoredScoreRow:
         self.score_id = f"{submission_id}:{criterion_id}"
         self.criterion_id = criterion_id
         self.submission_id = submission_id
+        #: The run the stored row belongs to, so a review settles THAT run's row (#517).
+        self.run_id = mapping.get("run_id")
         self.routing = mapping.get("routing")
         self.origin = mapping.get("origin", "escalation")
         self.evaluation_mode = mapping.get("evaluation_mode", "judged")

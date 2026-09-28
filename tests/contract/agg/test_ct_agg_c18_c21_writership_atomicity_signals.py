@@ -70,7 +70,9 @@ DECLARED_SIGNAL_FIELDS = {
 #: (`upsert_rederived_score`, `det.py:708`) — it lands on the same row and is M-DET's own,
 #: which is the clause's point rather than an exception to it.
 SANCTIONED_SCORE_WRITERS = {
-    "agg.py": ["upsert_criterion_score"],
+    # `record_review` (#517): the teacher's decision reaches the score row through M-AGG's
+    # own statement (routing `reviewed`), so M-REVIEW writes no criterion_score itself.
+    "agg.py": ["record_review", "upsert_criterion_score"],
     "det.py": ["upsert_det_criterion_score", "upsert_rederived_score"],
 }
 

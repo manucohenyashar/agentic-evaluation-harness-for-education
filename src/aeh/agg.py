@@ -1132,6 +1132,18 @@ AGG_SIGNAL_STATEMENTS: dict[str, Statement] = {
 }
 AGG_STATEMENTS.update(AGG_SIGNAL_STATEMENTS)
 
+#: #517 (CT-REVIEW-06, FR-AGG-07): the teacher's decision reaches the score row. `reviewed` is
+#: the routing value M-AGG never assigns to its own aggregations; it records that a reviewer
+#: acted, with the band and points the reviewer settled on. Declared here because this module
+#: is the only writer of `criterion_score` (CT-AGG-18); M-REVIEW calls `record_review`.
+AGG_STATEMENTS.update({
+    "record_review": Statement(
+        "UPDATE criterion_score SET band = :band, points = :points, routing = 'reviewed', "
+        "state = 'final' WHERE run_id = :run_id AND submission_id = :submission_id "
+        "AND criterion_id = :criterion_id"
+    ),
+})
+
 
 @dataclass(frozen=True)
 class AggregationSignals:
@@ -1227,6 +1239,20 @@ def aggregation_signals(handle: Any, run_id: str) -> AggregationSignals:
 def _stored_signal(value: Any) -> int | None:
     """One integrity signal as the row stores it: 0/1, or `NULL` for "not measured"."""
     return None if value is None else int(bool(value))
+
+
+def record_review(
+    tx: Any, run_id: str, submission_id: str, criterion_id: str, band: str,
+    points: float | None,
+) -> None:
+    """Record a teacher's review decision on the stored score row (#517, CT-REVIEW-06): the
+    band and points the reviewer settled on, routing `reviewed`, state `final`. M-GRADE's next
+    pass counts the criterion as reviewed, no longer provisional. Runs in the caller's
+    transaction, like `write_score`, and never opens one; a non-transaction is refused."""
+    if not callable(getattr(tx, "execute", None)):
+        raise TypeError("record_review needs the caller's open transaction")
+    tx.execute(AGG_STATEMENTS["record_review"], run_id=run_id, submission_id=submission_id,
+               criterion_id=criterion_id, band=band, points=points)
 
 
 def write_score(
