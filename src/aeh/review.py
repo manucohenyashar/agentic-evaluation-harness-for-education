@@ -553,10 +553,9 @@ REVIEW_STATEMENTS: dict[str, Statement] = {
     # #398 / FR-CONSOLE-02: the reads that make a repeated action write nothing. A browser
     # repeats a post with no replay flag, and a fresh console holds no memory of the first,
     # so the durable label is the only place "this decision was already recorded" lives.
-    "select_label_for_decision": Statement(
-        "SELECT label_id FROM label WHERE run_id = :run_id AND score_id = :score_id "
-        "AND review_queue_action = :review_queue_action AND teacher_band = :teacher_band "
-        "ORDER BY label_id LIMIT 1"
+    "select_latest_label_for_score": Statement(
+        "SELECT label_id, review_queue_action, teacher_band FROM label "
+        "WHERE run_id = :run_id AND score_id = :score_id ORDER BY rowid DESC LIMIT 1"
     ),
     "select_blind_labels_for_run": Statement(
         "SELECT label_id, student_ref, criterion_id FROM label "
@@ -2676,6 +2675,12 @@ class ReviewService:
 
     def _check_not_stale(self, item: ReviewItem) -> None:
         current = self._versions.get(item.score_id)
+        if current is None and self._store is not None:
+            # A store-backed service (one per console request, #398) compares against the
+            # stored row it loaded: that row is the current version of the score.
+            stored = [row for row in self._rows if _score_id_of(row) == item.score_id]
+            if stored:
+                current = int(getattr(stored[0], "version", 1) or 1)
         if current is not None and current != item.version:
             raise StaleReviewItemError(
                 f"score {item.score_id!r} is stale: it was superseded by an escalation "
@@ -2761,15 +2766,19 @@ class ReviewService:
         return f"label-{len(self._labels) + 1:04d}"
 
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
-        """The id of a durable label already recording this decision on this score, or
-        None. Only a store-backed service has a durable label store to consult."""
+        """The id of the score's latest durable label when it records this same decision,
+        or None. Only a store-backed service has a durable label store to consult."""
         run_id = self._attribution_run()
         if self._store is None or run_id is None or teacher_band is None:
             return None
         rows = self._store.durable().query(
-            REVIEW_STATEMENTS["select_label_for_decision"], run_id=run_id,
-            score_id=item.score_id, review_queue_action=action, teacher_band=teacher_band)
-        return str(rows[0]["label_id"]) if rows else None
+            REVIEW_STATEMENTS["select_latest_label_for_score"], run_id=run_id,
+            score_id=item.score_id)
+        # Only the LATEST decision on the score counts as "already recorded": edit B3, then
+        # B1, then B3 again is three decisions, and the third must land.
+        if rows and rows[0]["review_queue_action"] == action                 and rows[0]["teacher_band"] == teacher_band:
+            return str(rows[0]["label_id"])
+        return None
 
     def _recorded_blind_labels(self, run_id: str) -> set[tuple[str, str]]:
         """`(submission, criterion)` refs that already carry a durable blind label."""
@@ -3441,7 +3450,10 @@ class _StoredScoreRow:
         self.ocr_overlap_risk = mapping.get("ocr_overlap_risk")
         self.described_evidence = mapping.get("described_evidence")
         self.extractor_disagreement = mapping.get("extractor_disagreement")
-        self.version = 1
+        # The score's version as the store records it: the panel depth. An escalation
+        # widens the panel (1 -> 3 -> 5) and re-scores the row, which is exactly the
+        # supersession CT-REVIEW-15's stale refusal is about (#398).
+        self.version = int(mapping.get("judge_count") or 1)
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:

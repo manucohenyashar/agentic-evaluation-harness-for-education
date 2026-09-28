@@ -1793,6 +1793,17 @@ class GradingService:
             settled_at=settled_at,
         )
 
+    def current_amendments(self, run_id: str, submission_id: str) -> dict[str, float]:
+        """The override map the submission's CURRENT grade revision records (its
+        `amendments` JSON), `{}` when it has none or no current grade exists. A caller that
+        must not repeat an amendment (a console double-post, #398 / FR-CONSOLE-02) reads it
+        first: `amend` itself audits every call, which is right for a human action and
+        wrong for a replayed request."""
+        run = self._run_row(run_id)
+        rows = self._store.cohort(run["cohort_id"]).query(
+            GRADE_STATEMENTS["select_current_grade"], run_id=run_id, submission_id=submission_id)
+        return _amendment_map(rows[0]["amendments"]) if rows else {}
+
     def amend(
         self,
         run_id: str,
