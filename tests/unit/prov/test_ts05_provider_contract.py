@@ -417,8 +417,10 @@ def open_store_less_fixture():
     import os
     import tempfile
 
-    os.environ.setdefault("HARNESS_FIXTURE_DIR", tempfile.mkdtemp())
-    return prov_module.RecordedFixtureProvider(fixture_dir=os.environ["HARNESS_FIXTURE_DIR"])
+    # An explicit directory rather than a write to HARNESS_FIXTURE_DIR, which leaked into every
+    # later test in the process (TC-REG-10).
+    return prov_module.RecordedFixtureProvider(
+        fixture_dir=os.environ.get("HARNESS_FIXTURE_DIR") or tempfile.mkdtemp())
 
 
 # --- TC-PROV-12: estimate_cost is pure and hand-computed (P1) --------------------------------------

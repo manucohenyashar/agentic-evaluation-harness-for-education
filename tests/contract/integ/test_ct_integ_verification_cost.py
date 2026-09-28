@@ -66,6 +66,16 @@ _REPS = 3
 _INNER = 20
 _EXPONENT_WINDOW = (0.5, 1.5)
 _BUDGET = 1.01  # the design's own "under 1%"
+
+#: Test plan 1.7 §5.0 (TS-126, #537): NFR-INTEG-01's "under 1% of run wall clock" is defined
+#: at PERF-06's full-run scale (the share's denominator is the whole run). A micro-workload
+#: timed with verification on and off is not that clause, and it flaked about two runs in four
+#: on a clean tree. So this arm binds only on a known machine (`HARNESS_PERF_GATE`, as PERF-12
+#: does), and PERF-06 is the measurement of record.
+_AT_RUN_SCALE_ONLY = pytest.mark.skipif(
+    not os.environ.get("HARNESS_PERF_GATE"),
+    reason="NFR-INTEG-01 is measured at full-run scale by PERF-06; set HARNESS_PERF_GATE to bind this arm",
+)
 _COVERAGE_UNITS = 12
 
 
@@ -208,6 +218,7 @@ def test_tc_integ_c12_verification_is_linear_in_total_span_bytes(tmp_data_dir):
     )
 
 
+@_AT_RUN_SCALE_ONLY
 @pytest.mark.slow
 def test_tc_integ_c12_verification_adds_under_one_percent_to_run_wall_clock(
         tmp_data_dir):
