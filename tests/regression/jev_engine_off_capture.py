@@ -17,6 +17,11 @@ existed at `fb12d1e`, the last commit before any Jev delta code:
 - **The assertions** (`test_jev_engine_off_regression.py`), at HEAD with
   `HARNESS_DECISION_ENGINE=off`.
 
+**Re-blessed at #516 (2026-09-28), consciously.** Extraction requests now carry the criterion
+the run pinned (they carried an empty one before, design 1.9 §5.1 R4), so the 12 extraction
+fixture keys moved. Every other value, the verdict rows included, is byte-identical to the
+`fb12d1e` capture: the new file is the old one with those 12 keys replaced, checked by diff.
+
 Every value in the snapshot is deterministic across drives (three captures at `fb12d1e` were
 byte-identical). Two things are projected. Measured latency is dropped. A wall-clock stamp
 (`*_at`) is reduced to whether it is set, because set-versus-null is behaviour and the instant

@@ -338,9 +338,9 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # artifact read `M-EXTRACT` shares with `M-JUDGE`, ~48 lines — landed above the
     # sites; the statements are the same three. Re-read from the walker, never
     # hand-unioned.)
-    "aeh.extract:985",
-    "aeh.extract:990",
-    "aeh.extract:992",
+    "aeh.extract:1044",
+    "aeh.extract:1049",
+    "aeh.extract:1051",
     # The judge sites are #80's line numbers (moved from #79's 1453/1458/1460 by the
     # response-contract work above them: the v17 migration block, the prose-assessment
     # gate, the amendment payload, the extended dispatch loop — then re-pinned once
