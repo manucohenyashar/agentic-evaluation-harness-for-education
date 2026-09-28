@@ -113,6 +113,7 @@ from aeh.review import (
     record_label,
 )
 from aeh.stats import NO_NEW_VALIDATION_EVIDENCE, open_stats
+from tests.support.orch_run import newest_run_id
 
 pytestmark = [pytest.mark.e2e, pytest.mark.slow]
 
@@ -264,7 +265,7 @@ def test_tc_e2e_03_review_morning_shows_its_residual_and_collects_its_evidence(
 
     service = open_review(
         world.data_dir,
-        run_id=E2E_COHORT_ID,
+        run_id=newest_run_id(world.data_dir, E2E_COHORT_ID),
         actor="teacher",
         catalog=world.catalog,
         review_blind_reserve_minutes=BLIND_RESERVE_MINUTES,
@@ -604,7 +605,8 @@ def test_tc_e2e_03_teacher_does_none_of_it_and_the_absence_is_honest(
     # administration's honest record of the absence (FR-REVIEW-13), and it is
     # idempotent - skipping twice skips once.
     service = open_review(
-        world.data_dir, run_id=E2E_COHORT_ID, actor="teacher", seed=14404)
+        world.data_dir, run_id=newest_run_id(world.data_dir, E2E_COHORT_ID), actor="teacher",
+        seed=14404)
     report = service.skip_blind_sample(E2E_COHORT_ID)
     assert report.reported is True
     assert report.current_figure is None, (

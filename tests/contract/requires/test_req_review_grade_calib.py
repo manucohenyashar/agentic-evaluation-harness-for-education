@@ -38,7 +38,7 @@ from aeh.review import open_review
 from aeh.store import open_store
 from tests.contract.grade._drive import current_grades, graded_run, set_boundaries
 from tests.support.grade_vocabulary import write_criterion_scores
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -83,7 +83,7 @@ def test_tc_req_53_a_review_action_reduces_provisional_through_criterion_score_a
     grades_before = _rows(_cohort_file(tmp_data_dir), "SELECT * FROM submission_grade ORDER BY submission_id")
     assert [g["criteria_provisional"] for g in grades_before] == [1, 1], f"fixture: {grades_before}"
 
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     queue = service.build_queue(run_id=ORCH_COHORT_ID, budget_minutes=30)
     target = next(item for item in queue.shown if getattr(item, "score_id", "") == "S1:C1")
     grade_calls: list[str] = []
@@ -141,7 +141,7 @@ def test_tc_req_55_grade_boundary_risk_reaches_the_review_ranking(tmp_data_dir):
         f"fixture: M-GRADE must flag S-NEAR only: {grades}")
     assert grades["S-NEAR"]["score_low"] <= grades["S-NEAR"]["total"] <= grades["S-NEAR"]["score_high"]
 
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     try:
         queue = service.build_queue(run_id=ORCH_COHORT_ID, budget_minutes=30)
     finally:
@@ -178,7 +178,7 @@ def test_tc_req_59_labels_from_the_real_flows_carry_the_columns_admissibility_re
                                + [(s, "C1", b, 0.0, "provisional") for s, b in zip(subs[3:], ("B1", "B3", "B5"))])
     finally:
         store.close()
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, seed=7)
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID), seed=7)
     try:
         queue = service.build_queue(run_id=ORCH_COHORT_ID, budget_minutes=60)
         (group,) = [entry for entry in queue.shown if not hasattr(entry, "score_id")]
@@ -299,12 +299,12 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     monkeypatch.setattr(sqlite3, "connect", spying_connect)
     forbidden = ("criterion_score", "verdict", "narrative", "submission_grade", "review_queue")
 
-    control = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+    control = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     control.build_queue(run_id=ORCH_COHORT_ID, budget_minutes=30)
     control.close()
     assert any("criterion_score" in s.lower() for s in seen), "control: the spy captured no score read"
 
-    review = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, seed=3)
+    review = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID), seed=3)
     session = review.blind_sample(run_id=ORCH_COHORT_ID, n=15)
     seen.clear()
     store = open_store(tmp_data_dir)

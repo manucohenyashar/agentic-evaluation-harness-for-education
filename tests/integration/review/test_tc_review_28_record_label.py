@@ -66,7 +66,7 @@ from aeh.pkg import PackageCatalog
 from aeh.review import open_review
 from aeh.store import Statement, open_store
 from tests.support.grade_vocabulary import write_criterion_scores
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = pytest.mark.integration
 
@@ -142,7 +142,7 @@ def _act(world, action: str, new_band: str | None) -> None:
     # through. They are different identifiers and the case needs both: a cohort id in the
     # second position finds no run row, and every package-derived column comes back NULL
     # with the label still written.
-    service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID, catalog=catalog)
+    service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID), catalog=catalog)
     queue = service.build_queue(run_id, 60, record=False)
     entry = queue.shown[0]
     members = getattr(entry, "members", None)

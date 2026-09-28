@@ -42,7 +42,7 @@ from tests.support import broken_review_fixtures as broken
 from tests.support import review_vocabulary as vocab
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.impl import CONSOLE_MODULE, REVIEW_MODULE, require
-from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.orch_run import newest_run_id, ORCH_COHORT_ID, seed_run
 
 pytestmark = [pytest.mark.integration]
 
@@ -426,7 +426,7 @@ def test_tc_review_01_the_store_backed_queue_carries_the_same_header_and_sweep(t
                 for i in range(1, PINNED_FLAGGED_ITEMS + 1)
             ],
         )
-        service = open_review(tmp_data_dir, run_id=ORCH_COHORT_ID)
+        service = open_review(tmp_data_dir, run_id=newest_run_id(tmp_data_dir, ORCH_COHORT_ID))
     finally:
         store.close()
 

@@ -3465,6 +3465,10 @@ def _row_mapping(row: Any) -> dict[str, Any]:
         return dict(row)
 
 
+class UnknownRunError(LookupError):
+    """`open_review` was given a run id no store holds (FR-REVIEW-24). Nothing was created."""
+
+
 def open_review(
     data_dir: Path | str,
     *,
@@ -3489,14 +3493,28 @@ def open_review(
     every label is held in memory and persisted to Tier D's ``label`` table
     (this module's Durable 6 migration adds the columns), attributed to the
     ``run_id`` named here.
+
+    FR-REVIEW-24 / CT-REVIEW-24 (#515): ``run_id`` is resolved to its cohort through
+    M-ORCH's run registry (``Orchestrator.run_handle``) and the service holds that run's
+    rows only, whatever other runs share the cohort. An unknown run raises
+    ``UnknownRunError`` naming it, and no cohort file is created (the run id is never
+    used as a cohort key).
     """
+    from aeh.orch import Orchestrator, RunNotFoundError
     from aeh.store import open_store as _open_store
 
     store = _open_store(Path(data_dir))
     try:
+        try:
+            handle = Orchestrator(store).run_handle(run_id)
+        except RunNotFoundError:
+            raise UnknownRunError(
+                f"no stored run is named {run_id!r}: open_review takes a run id, and none of "
+                "this data directory's cohorts holds it (FR-REVIEW-24)") from None
         return _service_from_store(
             store,
-            cohort_ids=[run_id],
+            cohort_ids=[handle.cohort_id],
+            run_id=run_id,
             actor=actor,
             clock=clock,
             catalog=catalog,
