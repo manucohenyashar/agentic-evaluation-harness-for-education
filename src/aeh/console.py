@@ -3942,6 +3942,18 @@ def render_agreement_block(
         figure_population = getattr(figure, "population_scope_id", None)
         if figure_population:
             scope = f" for population {figure_population}"
+        # CT-STATS-03/04, FR-CONSOLE-10 (#521): a figure that DECLARES its scope fields but
+        # carries none of them (no population, no backend, no panel build) is scopeless. It
+        # is not rendered as "scoped to this population and backend", and its number is not
+        # shown, because a number without a scope cannot be read as anyone's agreement.
+        scope_fields = ("population_scope_id", "backend_profile", "panel_build_ref")
+        if all(hasattr(figure, name) for name in scope_fields) and not any(
+                getattr(figure, name) for name in scope_fields):
+            return (
+                f"Blind labels for this administration{scope}: this agreement figure names no "
+                "population, backend or panel build, so it is not shown. An agreement figure "
+                "is only readable against the population and backend it was measured on."
+            )
     if kappa is None and alpha is None:
         return (
             f"Blind labels for this administration{scope}: {NO_NEW_VALIDATION_EVIDENCE}. "
