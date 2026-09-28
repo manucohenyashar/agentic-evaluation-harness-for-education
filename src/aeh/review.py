@@ -364,6 +364,7 @@ __all__ = [
     "BLIND_SAMPLE_RANGE",
     "WHOLE_GRADE_SAMPLE_RANGE",
     "ReviewError",
+    "UnknownRunError",
     "StaleReviewItemError",
     "ReviewItem",
     "ReviewGroup",
@@ -3503,6 +3504,12 @@ def open_review(
     from aeh.orch import Orchestrator, RunNotFoundError
     from aeh.store import open_store as _open_store
 
+    # No cohort file at all means no run anywhere: refuse BEFORE opening the store, whose
+    # open lays out the data directory's skeleton (CT-REVIEW-24: nothing is created).
+    if not any(Path(data_dir, "cohorts").glob("*.sqlite")):
+        raise UnknownRunError(
+            f"no stored run is named {run_id!r}: this data directory holds no cohort "
+            "(FR-REVIEW-24)")
     store = _open_store(Path(data_dir))
     try:
         try:
