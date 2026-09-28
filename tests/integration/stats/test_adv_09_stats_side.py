@@ -254,12 +254,14 @@ def test_tc_stats_25_no_raw_row_bypassing_the_producer_is_admitted(
             connection.execute(
                 "INSERT INTO label (label_id, run_id, student_ref, criterion_id, "
                 "label_type, band, evaluation_mode, saw_system_output, routing, "
-                "origin, system_band, teacher_band, actor, cohort_id) "
+                "origin, system_band, teacher_band, actor, cohort_id, backend_profile) "
                 "VALUES (?, '', '', 'C-01', ?, '1', ?, ?, 'queued', 'direct', "
-                "'1', '4', '', NULL)",
+                "'1', '4', '', NULL, ?)",
+                # FR-REVIEW-23 (#514): the forged rows record the backend the figure is
+                # scoped to, so admissibility alone is what must keep them out.
                 (label_id, class_fields["label_type"],
                  class_fields["evaluation_mode"],
-                 class_fields["saw_system_output"]),
+                 class_fields["saw_system_output"], CALL["backend_profile"]),
             )
         connection.commit()
     finally:

@@ -618,7 +618,17 @@ def _is_admissible(label: Any) -> bool:
     )
 
 
-def exclusion_reasons(labels: Any) -> dict[str, int]:
+#: FR-REVIEW-23 / CT-STATS-04 (#514): an admissible label that records no backend is not
+#: attributable to one, so a backend-scoped figure excludes it under this name.
+BACKEND_NOT_RECORDED = "backend_not_recorded"
+
+
+def _label_backend(label: Any) -> str | None:
+    return getattr(label, "backend_profile", None) or None
+
+
+def exclusion_reasons(labels: Any, backend_profile: str | None = None,
+                      criterion_id: str | None = None) -> dict[str, int]:
     """Why each excluded label was excluded, by name (`FR-STATS-22`, seam 4).
 
     A bare ``excluded_count`` says how many labels are not evidence; this says what is wrong
@@ -644,6 +654,16 @@ def exclusion_reasons(labels: Any) -> dict[str, int]:
         else:
             key = "not_blind_or_not_judged"
         reasons[key] = reasons.get(key, 0) + 1
+    if backend_profile is not None:
+        # A backend-scoped read (#514): admissible labels no backend can claim are excluded
+        # from it, and said so, rather than pooled into whichever backend was asked for.
+        # Keyed like the figure: within `criterion_id` when one is named.
+        unattributed = sum(1 for label in labels or ()
+                           if _is_admissible(label) and _label_backend(label) is None
+                           and (criterion_id is None
+                                or getattr(label, "criterion_id", "") == criterion_id))
+        if unattributed:
+            reasons[BACKEND_NOT_RECORDED] = unattributed
     return reasons
 
 
@@ -1076,6 +1096,9 @@ class _StoredLabel:
         self.routing = mapping.get("routing")
         self.origin = mapping.get("origin")
         self.cohort_id = mapping.get("cohort_id")
+        # FR-REVIEW-23 (#514): the backend the label's run used; NULL on pre-migration rows,
+        # which a backend-scoped figure excludes as `backend_not_recorded` (CT-STATS-04).
+        self.backend_profile = mapping.get("backend_profile") or None
 
 
 def _row_mapping(row: Any) -> dict[str, Any]:
@@ -1156,6 +1179,14 @@ def agreement(
         for label in admissible
         if criterion_id is None or getattr(label, "criterion_id", "") == criterion_id
     ]
+    if backend_profile is not None:
+        # CT-STATS-04 (#514): a figure stamped with a backend is computed over that
+        # backend's labels only. A label recording no backend is not attributable: it is
+        # left out and reported by `exclusion_reasons(backend_profile=...)` as
+        # `backend_not_recorded`. `excluded_count` stays the INADMISSIBLE count
+        # (TC-STATS-05), and another backend's label is simply keyed out.
+        population = [label for label in population
+                      if _label_backend(label) == backend_profile]
     if not population:
         return NoValidationData(
             reason="no_blind_labels", n=0, excluded_count=excluded_count
@@ -4803,14 +4834,15 @@ class ValidationStats:
         self._data_dir = data_dir
         self._last_recomputation_seconds = 0.0
 
-    def exclusion_reasons(self) -> dict[str, int]:
+    def exclusion_reasons(self, backend_profile: str | None = None,
+                          criterion_id: str | None = None) -> dict[str, int]:
         """Why this population's excluded labels were excluded, by name (`FR-STATS-22`).
 
         The figures carry `excluded_count`, a number; this is the same exclusion read as
         causes, so "20 excluded" is actionable. Bound here because `_labels` is private:
         a consumer holding a figure reaches the breakdown through the stats object it came
         from, never by re-filtering a population it cannot see."""
-        return exclusion_reasons(self._labels)
+        return exclusion_reasons(self._labels, backend_profile, criterion_id)
 
     def admissible_labels(self) -> list[Any]:
         """The admissible population — the single filter's application

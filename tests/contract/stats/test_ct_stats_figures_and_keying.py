@@ -17,6 +17,8 @@ function offers cannot be produced by a consumer who wants one.
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from tests.support import broken_stats_fixtures as broken
@@ -155,14 +157,16 @@ def test_tc_stats_c04_every_emitted_statistic_echoes_the_scope_it_was_asked_for(
     `CT-PKG-17` says population scopes are free text per installation, nobody downstream can tell.
     """
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
-    stats = build_stats(labels=broken.agreeing_population())
-
     asked = {
         "population_scope_id": "y10-2026-autumn",
         "backend_profile": "hosted-openrouter",
         "panel_build_ref": "aa11bb",
         "scoring_model": "holistic",
     }
+    # FR-REVIEW-23 (#514): the labels record the backend the figure is asked for, since a
+    # backend-scoped figure counts only that backend's labels (CT-STATS-04).
+    stats = build_stats(labels=[dataclasses.replace(label, backend_profile=asked["backend_profile"])
+                                for label in broken.agreeing_population()])
     figure = _figure(
         stats,
         scope=asked["population_scope_id"],
