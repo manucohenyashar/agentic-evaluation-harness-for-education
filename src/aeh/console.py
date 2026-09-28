@@ -176,7 +176,7 @@ import tempfile
 import threading
 import time
 import uuid
-from dataclasses import dataclass, fields as dataclass_fields
+from dataclasses import dataclass, fields as dataclass_fields, replace as dataclass_replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html import escape
@@ -190,6 +190,7 @@ from aeh.orch import Orchestrator
 from aeh.pkg import PackageCatalog
 from aeh.review import (
     BLIND_SAMPLE_RANGE,
+    StaleReviewItemError,
     review_service_over,
     REVIEW_BLIND_RESERVE_MINUTES,
     REVIEW_DEFAULT_BANDS,
@@ -612,6 +613,14 @@ _SELECT_GRADES = (
     "criteria_total, criteria_auto, criteria_reviewed, criteria_provisional, "
     "criteria_missing, boundary_at_risk, score_low, score_high "
     "FROM submission_grade WHERE run_id = :run_id ORDER BY submission_id"
+)
+#: The export's rows (#398): the CURRENT revision of each grade, with the delivery stamp
+#: the provisional flag is read from. `submission_grade` is a cohort-tier table, so this is
+#: read across the cohort files, never from Tier D.
+_SELECT_EXPORT_GRADES = (
+    "SELECT submission_id, revision, state, total, policy_version, finalized_at "
+    "FROM submission_grade WHERE run_id = :run_id AND is_current = 1 "
+    "ORDER BY submission_id"
 )
 #: One revision of one grade, off the append-only submission_grade history (`FR-GRADE-09`):
 #: the superseded revision stays readable after an amendment writes the next one.
@@ -1258,6 +1267,13 @@ class GradeRecord:
     provisional: bool = False
 
 
+class _RefreshRequired(Exception):
+    """Raised inside a real-store action when the owning module refused because the
+    teacher's view is stale (`M-REVIEW`'s `StaleReviewItemError`, CT-REVIEW-15). `perform`
+    turns it into `refused=True, refresh_required=True`: the §3.19 rule's refusal plus the
+    refresh it owes, never a silent drop (`FR-CONSOLE-02`)."""
+
+
 class ProvenanceRefused(Exception):
     """The export gate refused (`FR-CONSOLE-23` / R71): the package carries real student
     text, and the console will not emit it. Raised, not returned — an export that fails
@@ -1346,6 +1362,12 @@ class ConsoleApp:
         self._review_windows: dict[str, float] = {}
         self._grade_ledger: dict[str, list[GradeRecord]] = {}
         self._gate_outcomes: dict[str, str] = {}
+        #: "start run"'s server-owned workers, by run id (NFR-CONSOLE-08). Held so a test
+        #: or an operator can join one; the thread itself outlives any request.
+        self._run_threads: dict[str, Any] = {}
+        #: The run configuration "start run" resolves from, set by the serving layer from
+        #: its cfg (`ConsoleServer`); `None` resolves from the environment alone.
+        self.run_config: dict[str, Any] | None = None
 
     # -- lifecycle -----------------------------------------------------------------------------------
 
@@ -2121,7 +2143,10 @@ class ConsoleApp:
         else:
             self._audit.append(f"finalize batch not settled for {actor}: {outcome.detail}")
         grades: dict[str, GradeRecord] = {}
-        window_open = self._review_windows.get(run_id) is not None
+        window_open = (
+            self._review_window_hours(run_id) not in (None, 0) if on_store
+            else self._review_windows.get(run_id) is not None
+        )
         if on_store:
             # `#398` (`FR-CONSOLE-34`): the suppressed second `finalize_batch` that stood here
             # is gone. `perform("finalize batch", …)` above already calls M-GRADE's door and
@@ -2142,7 +2167,6 @@ class ConsoleApp:
                     provisional=window_open or not settled,
                 )
                 grades[sid] = record
-                self._grade_ledger.setdefault(sid, []).append(record)
             return grades
         finalized_at = None if window_open else _now()
         for index in range(headless_batch_size()):
@@ -2231,7 +2255,11 @@ class ConsoleApp:
                 detail="held after the read stage; the write stage is suspended",
             )
         rows = _rows_for(action, params)
-        written, detail, dispatched = self._write_rows(action, rows, params)
+        try:
+            written, detail, dispatched = self._write_rows(action, rows, params)
+        except _RefreshRequired as stale:
+            return ControlOutcome(rows_written=(), refused=True, refresh_required=True,
+                                  dispatched=False, detail=str(stale))
         self._applied[action] = written
         return ControlOutcome(rows_written=written, refused=False, dispatched=dispatched,
                               detail=detail)
@@ -2327,6 +2355,23 @@ class ConsoleApp:
             run_id = params.get("run_id")
             actor = params.get("actor")
             if run_id and actor and getattr(self._store, "data_dir", None) is not None:
+                window = self._review_window_hours(str(run_id))
+                # Known limit (reported on #398/#385): the deferral does not check whether
+                # the window has lapsed. TC-CONSOLE-22's fixture issues its grades at a fixed
+                # past date, so a lapse check would read its "mid-window" finalize as lapsed.
+                # After a real lapse M-GRADE's own pass (compute_all, or recover at the next
+                # start) settles the grades.
+                if window:
+                    # FR-CONSOLE-22 / FR-GRADE-11: an open review window delays
+                    # finalization. The teacher's click is recorded as not settled, the
+                    # grades stay provisional and export normally, and M-GRADE settles
+                    # them automatically at the lapse (FR-GRADE-10).
+                    return (
+                        f"the {window}-hour review window delays finalization of run "
+                        f"{run_id}: grades stay provisional and export normally, and "
+                        "M-GRADE settles them when the window lapses",
+                        False,
+                    )
                 try:
                     GradingService(self._store).finalize_batch(run_id, actor)
                 except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
@@ -2413,11 +2458,408 @@ class ConsoleApp:
                     "correction as done",
                     False,
                 )
+        if action == "set review window":
+            return self._set_review_window_effect(params)
+        if action == "amend a finalized grade":
+            return self._amend_effect(params)
+        if action == "review action":
+            return self._review_effect(params)
+        if action == "blind-sample submission":
+            return self._blind_effect(params)
+        if action == "start run":
+            return self._start_run_effect(params)
+        if action == "export/import package":
+            return self._export_effect(params)
+        if action == "approve exemplar paraphrases at export":
+            # FR-CONSOLE-34: present-and-unavailable. The paraphrase approval flow is
+            # Phase 3.5; the console says so rather than claiming an approval happened.
+            return (
+                "approving exemplar paraphrases is not available until Phase 3.5; nothing "
+                "was approved and nothing was written",
+                False,
+            )
+        if action in PRE_LOCK_ACTIONS:
+            return self._setup_effect(action, params)
         return (
             "no row the schema admits and no landed domain effect: the owning module "
             "performs this write when its story lands, and the console claims nothing",
             False,
         )
+
+    # -- #398: every Phase-1 action reaches the module that owns its effect -------------------
+
+    def _run_row(self, run_id: str) -> dict[str, Any] | None:
+        """The run row (cohort, package, version, status) from whichever cohort file holds it."""
+        cohort_key = self._cohort_for_run(run_id)
+        if cohort_key is None:
+            return None
+        rows = list(self._store.cohort(cohort_key).query(
+            "SELECT run_id, cohort_id, package_id, package_version_id, status FROM run "
+            "WHERE run_id = :run_id", run_id=run_id))
+        return dict(rows[0]) if rows else None
+
+    def _catalog(self, package_id: str) -> PackageCatalog:
+        return PackageCatalog(self._store.package(package_id), package_id=package_id)
+
+    def _review_window_hours(self, run_id: str) -> int | None:
+        """The stored window for the run's package version (FR-PKG-19), read from M-PKG."""
+        row = self._run_row(run_id)
+        if row is None:
+            return None
+        try:
+            return self._catalog(str(row["package_id"])).grade_policy(
+                str(row["package_version_id"])).review_window_hours
+        except Exception:  # noqa: BLE001 — a read view renders the absence
+            return None
+
+    def _set_review_window_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        run_id = str(params.get("run_id") or "")
+        raw = params.get("review_window_hours", params.get("hours"))
+        if not run_id or raw is None:
+            return "set review window names no run or no hours; nothing was written", False
+        row = self._run_row(run_id)
+        if row is None:
+            return f"no cohort ledger holds run {run_id!r}; nothing was written", False
+        try:
+            hours = float(raw)
+            if hours != int(hours):
+                raise ValueError(f"{raw!r} is not a whole number of hours")
+            changed = self._catalog(str(row["package_id"])).set_review_window(
+                str(row["package_version_id"]), int(hours))
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-PKG refused the review window for run {run_id}: {exc} — nothing was "
+                "written",
+                False,
+            )
+        return (
+            f"review window {int(hours)} h stored on package version "
+            f"{row['package_version_id']} through M-PKG"
+            + ("" if changed else " (it already held that value; nothing changed)"),
+            True,
+        )
+
+    def _amend_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        submission_id = str(params.get("submission_id") or params.get("submission_ref") or "")
+        criterion_id = str(params.get("criterion_id") or "")
+        band = params.get("new_band", params.get("band"))
+        actor = str(params.get("actor") or "operator")
+        if not submission_id or not criterion_id or not band:
+            return (
+                "amend a finalized grade names no submission, criterion or band; nothing "
+                "was written",
+                False,
+            )
+        run_id = str(params.get("run_id") or "")
+        finalized = self._read_cohort_files(
+            "SELECT run_id FROM submission_grade WHERE submission_id = :submission_id "
+            "AND is_current = 1 AND finalized_at IS NOT NULL", [],
+            submission_id=submission_id)
+        runs = [str(_row_get(r, "run_id")) for r in finalized]
+        if run_id:
+            runs = [r for r in runs if r == run_id]
+        if not runs:
+            return (
+                f"no finalized grade for {submission_id!r} to amend; finalize the batch "
+                "first — nothing was written",
+                False,
+            )
+        if len(set(runs)) > 1:
+            return (
+                f"{submission_id!r} holds finalized grades in several runs "
+                f"({sorted(set(runs))}); name the run to amend — nothing was written",
+                False,
+            )
+        run_id = runs[0]
+        row = self._run_row(run_id)
+        if row is None:
+            return f"no cohort ledger holds run {run_id!r}; nothing was written", False
+        grading = GradingService(self._store)
+        try:
+            catalog = self._catalog(str(row["package_id"]))
+            catalog.criteria(str(row["package_version_id"]))  # pins the band cache to the run
+            points = catalog.points_for_band(criterion_id, str(band))
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-PKG refused the band {band!r} for {criterion_id}: {exc} — nothing was "
+                "written",
+                False,
+            )
+        effective = grading.effective_points(run_id, submission_id, criterion_id)
+        if effective is not None and float(effective) == float(points):
+            # The current revision already carries this exact override: a repeated post
+            # (double-click, second tab) writes nothing, not even an audit row
+            # (FR-CONSOLE-02).
+            return (
+                f"{submission_id}'s grade already carries {criterion_id} = {band}; nothing "
+                "changed",
+                True,
+            )
+        before = self._current_revision(submission_id, run_id)
+        try:
+            revision = grading.amend(
+                run_id, submission_id, {criterion_id: points}, actor,
+                str(params.get("reason") or "amended from the console"))
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            # CT-CONSOLE-26: dispatched means the effect row exists. M-GRADE writes the
+            # revision and its Tier D audit row in two tiers (no cross-tier atomicity,
+            # CT-STORE-03), so a failure after the revision landed is reported as landed.
+            after = self._current_revision(submission_id, run_id)
+            if after is not None and after != before:
+                return (
+                    f"the amendment of {submission_id} landed as revision {after}, but "
+                    f"M-GRADE then failed: {exc}",
+                    True,
+                )
+            return (
+                f"M-GRADE refused the amendment of {submission_id}: {exc} — nothing was "
+                "written",
+                False,
+            )
+        return (
+            f"grade for {submission_id} amended through M-GRADE: {criterion_id} to "
+            f"{band} ({points} points), revision {getattr(revision, 'revision', '?')}",
+            True,
+        )
+
+    def _current_revision(self, submission_id: str, run_id: str) -> int | None:
+        rows = self._read_cohort_files(
+            "SELECT revision FROM submission_grade WHERE submission_id = :submission_id "
+            "AND run_id = :run_id AND is_current = 1", [],
+            submission_id=submission_id, run_id=run_id)
+        return int(_row_get(rows[0], "revision")) if rows else None
+
+    def _review_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        run_id = str(params.get("run_id") or "")
+        submission_id = str(params.get("submission_id") or params.get("submission_ref") or "")
+        criterion_id = str(params.get("criterion_id") or "")
+        band = params.get("new_band", params.get("band"))
+        if not run_id or not submission_id or not criterion_id:
+            return (
+                "review action names no run, submission or criterion; nothing was written",
+                False,
+            )
+        service = self._review_service(run_id)
+        if service is None:
+            return f"M-REVIEW cannot open run {run_id!r}; nothing was written", False
+        items = [
+            item for item in service.rank_queue_items(run_id)
+            if item.submission_id == submission_id and item.criterion_id == criterion_id
+        ]
+        if not items:
+            return (
+                f"{submission_id}/{criterion_id} is not in run {run_id}'s review queue "
+                "(M-REVIEW admits it nowhere); nothing was written",
+                False,
+            )
+        item = items[0]
+        if params.get("revision") is not None:
+            # The score version the teacher's page showed (its panel depth). M-REVIEW's
+            # stale check compares it with the stored row's (CT-REVIEW-15); the console
+            # never decides staleness itself.
+            item = dataclass_replace(item, version=int(params["revision"]))
+        decision = str(params.get("decision") or "")
+        if not decision:
+            decision = "accept" if band in (None, "", item.proposed_band) else "edit"
+        try:
+            label_id = service.act(
+                item, decision, new_band=None if decision == "accept" else band)
+        except StaleReviewItemError as exc:
+            raise _RefreshRequired(
+                f"M-REVIEW refused the review of {submission_id}/{criterion_id}: {exc}"
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-REVIEW refused the review of {submission_id}/{criterion_id}: {exc} — "
+                "nothing was written",
+                False,
+            )
+        return (
+            f"review {decision} of {submission_id}/{criterion_id} recorded through "
+            f"M-REVIEW as label {label_id}",
+            True,
+        )
+
+    def _blind_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        run_id = str(params.get("run_id") or "")
+        submission_id = str(params.get("submission_id") or params.get("submission_ref") or "")
+        criterion_id = str(params.get("criterion_id") or "")
+        band = params.get("band", params.get("new_band"))
+        if not run_id or not submission_id or not criterion_id or not band:
+            return (
+                "blind-sample submission names no run, submission, criterion or band; "
+                "nothing was written",
+                False,
+            )
+        service = self._review_service(run_id)
+        if service is None:
+            return f"M-REVIEW cannot open run {run_id!r}; nothing was written", False
+        try:
+            session = service.blind_sample(run_id)
+            drawn = [ref for ref in session.items
+                     if ref.submission_id == submission_id and ref.criterion_id == criterion_id]
+            if not drawn:
+                return (
+                    f"{submission_id}/{criterion_id} is not in run {run_id}'s blind draw; "
+                    "a band for a criterion the flow never posed is a judgement nobody "
+                    "made — nothing was written",
+                    False,
+                )
+            labels = service.submit_blind(session.session_id, {drawn[0]: str(band)})
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return (
+                f"M-REVIEW refused the blind label for {submission_id}/{criterion_id}: "
+                f"{exc} — nothing was written",
+                False,
+            )
+        return (
+            f"blind label for {submission_id}/{criterion_id} recorded through M-REVIEW "
+            f"({', '.join(labels) or 'already recorded'})",
+            True,
+        )
+
+    def _start_run_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        from aeh.pipeline import start_run_in_background
+
+        run_id = str(params.get("run_id") or "") or None
+        cohort_id = str(params.get("cohort_id") or "")
+        package_version = str(params.get("package_version") or "")
+        if run_id is not None:
+            row = self._run_row(run_id)
+            if row is None:
+                return f"no cohort ledger holds run {run_id!r}; nothing was started", False
+            cohort_id, package_version = str(row["cohort_id"]), str(row["package_version_id"])
+        if not cohort_id or not package_version:
+            return (
+                "start run names no run, or no cohort and package version; nothing was "
+                "started",
+                False,
+            )
+        if cohort_id not in self._cohort_keys():
+            # Opening an unknown cohort would CREATE its tier file.
+            return f"no cohort {cohort_id!r} is stored; nothing was started", False
+        config = params.get("config")
+        if not isinstance(config, dict):
+            config = effective_config(dict(getattr(self, "run_config", None) or {}))
+        try:
+            started, thread = start_run_in_background(
+                self._store, cohort_id=cohort_id, package_version_id=package_version,
+                config=config, run_id=run_id)
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return f"M-ORCH refused to start the run: {exc} — nothing was started", False
+        self._run_threads[started] = thread
+        return (
+            f"run {started} started on a server-owned worker thread; it continues if the "
+            "browser closes, and `aeh recover` resumes it after a restart",
+            True,
+        )
+
+    def _export_effect(self, params: dict[str, Any]) -> tuple[str, bool]:
+        package_version = str(params.get("package_version") or "")
+        package_id = str(params.get("package_id") or "") or self._package_of(package_version)
+        if not package_version or not self._known_package(package_id):
+            return "export names no stored package version; nothing was exported", False
+        if not re.fullmatch(r"[A-Za-z0-9_.@-]+", package_version) or ".." in package_version:
+            return f"{package_version!r} is not a package version id; nothing was exported", False
+        data_dir = getattr(self._store, "data_dir", None)
+        dest = Path(data_dir, "exports", f"{package_version}.aehpkg")
+        partial = dest.with_suffix(".aehpkg.partial")
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            catalog = PackageCatalog(self._store.package(package_id), package_id=package_id,
+                                     blobs=self._store.blobs())
+            # Written beside the destination and moved into place only on success, so a
+            # failed export never truncates the previous good one.
+            report = catalog.export(package_version, partial)
+            os.replace(partial, dest)
+        except Exception as exc:  # noqa: BLE001 — M-PKG's refusal (ExportBlockedError) included
+            with contextlib.suppress(OSError):
+                partial.unlink()
+            return (
+                f"M-PKG refused the export of {package_version}: {exc} — nothing was "
+                "exported",
+                False,
+            )
+        return (
+            f"package version {package_version} exported through M-PKG to {dest.name} "
+            f"(content hash {getattr(report, 'content_hash', '?')[:12]})",
+            True,
+        )
+
+    def _package_of(self, package_version: str) -> str:
+        data_dir = getattr(self._store, "data_dir", None)
+        if not package_version or data_dir is None:
+            return ""
+        for path in sorted(Path(data_dir, "packages").glob("*.pkg.sqlite")):
+            package_id = path.name.removesuffix(".pkg.sqlite")
+            try:
+                rows = list(self._store.package(package_id).query(
+                    "SELECT package_version_id FROM package_version "
+                    "WHERE package_version_id = :v", v=package_version))
+            except Exception:  # noqa: BLE001
+                continue
+            if rows:
+                return package_id
+        return ""
+
+    def _known_package(self, package_id: str) -> bool:
+        """Whether Tier P holds this package. Opening an unknown id would CREATE a file
+        (the never-create rule `_tier` states), so a form-supplied id is checked first."""
+        data_dir = getattr(self._store, "data_dir", None)
+        return bool(package_id) and data_dir is not None and Path(
+            data_dir, "packages", f"{package_id}.pkg.sqlite").exists()
+
+    def _setup_effect(self, action: str, params: dict[str, Any]) -> tuple[str, bool]:
+        """The three pre-lock setup actions, through `M-SETUP` (`setup.py`)."""
+        from aeh.setup import setup_service_for_store
+
+        package_version = str(params.get("package_version") or "")
+        package_id = str(params.get("package_id") or "") or self._package_of(package_version)
+        if not self._known_package(package_id):
+            return f"{action} names no stored package; nothing was written", False
+        catalog = self._catalog(package_id)
+        model_ref = params.get("model_ref")
+        cohort_id = str(params.get("cohort_id") or "") or None
+        if action == "accept or correct rubric read-back" and (
+                self._provider is None or not isinstance(model_ref, ModelRef) or not cohort_id):
+            return (
+                "reading the rubric back needs the setup model and the cohort holding the "
+                "documents: this console holds no provider, no setup model reference or no "
+                "cohort, so nothing was read or written",
+                False,
+            )
+        service = setup_service_for_store(self._store, package_id, provider=self._provider,
+                                          model_ref=model_ref, cohort_id=cohort_id)
+        try:
+            if action == "approve question inventory":
+                version = catalog.draft_version()
+                if version is None:
+                    return (
+                        f"package {package_id!r} has no draft version to confirm; nothing "
+                        "was written",
+                        False,
+                    )
+                proposal = catalog.proposal(version) or {}
+                proposal_id = str(params.get("proposal_id") or proposal.get("proposal_id") or "")
+                service.confirm_inventory(proposal_id)
+                detail = f"question inventory of {version} confirmed through M-SETUP"
+            elif action == "supply answer keys":
+                keys = params.get("answer_keys")
+                if not isinstance(keys, dict):
+                    criterion_id = str(params.get("criterion_id") or "")
+                    key = params.get("answer_key")
+                    if not criterion_id or key is None:
+                        return "supply answer keys names no keys; nothing was written", False
+                    keys = {criterion_id: [key] if isinstance(key, str) else list(key)}
+                service.set_answer_keys(keys)
+                detail = f"answer keys for {sorted(keys)} stored through M-SETUP"
+            else:
+                readback = service.read_back_rubric(str(params.get("rubric_doc") or ""),
+                                                    str(params.get("assessment_doc") or ""))
+                detail = f"rubric read back through M-SETUP: {readback!r:.120}"
+        except Exception as exc:  # noqa: BLE001 — a refusal is the honest outcome
+            return f"M-SETUP refused {action}: {exc} — nothing was written", False
+        return detail, True
 
     def _correct_answer_key(
         self, cohort_key: str, run_id: str, criterion_id: str, raw_key: Any
@@ -3010,7 +3452,7 @@ class ConsoleApp:
                 for sid in sorted(self._grade_ledger)
                 for record in self._grade_ledger[sid][-1:]
             )
-        grades = self._read(_SELECT_GRADES, queries, run_id=run_id)
+        grades = self._read_cohort_files(_SELECT_EXPORT_GRADES, queries, run_id=run_id)
         return tuple(
             GradeRecord(
                 finalized_at=_row_get(row, "finalized_at"),
@@ -3074,7 +3516,27 @@ class ConsoleApp:
         `finalized_at` is the record of when the batch was delivered, and an amendment is
         a later correction, not a re-delivery — and the correction lands as a **new
         revision** on the append-only history. The superseded revision stays readable
-        (`FR-CONSOLE-21`; the differential `CT-CONSOLE-15` asserts)."""
+        (`FR-CONSOLE-21`; the differential `CT-CONSOLE-15` asserts).
+
+        On a store the amendment is M-GRADE's (`GradingService.amend`, #398): the new
+        revision is in the ledger, readable by any console, and a refusal raises
+        `KeyError` carrying M-GRADE's reason. The in-memory history below is only the
+        storeless audit double's."""
+        if getattr(self._store, "data_dir", None) is not None:
+            outcome = self.perform(
+                "amend a finalized grade", submission_ref=submission_ref,
+                criterion_id=criterion_id, new_band=new_band, actor=actor)
+            if not outcome.dispatched:
+                raise KeyError(outcome.detail)
+            self._audit.append(
+                f"amended_by {actor} (actor as supplied by the form, not an authenticated "
+                f"identity): submission {submission_ref}, criterion {criterion_id} to band "
+                f"{new_band}; {outcome.detail}"
+            )
+            current = self.grade_revision(submission_ref=submission_ref)
+            if current is None:
+                raise KeyError(f"the amendment of {submission_ref!r} left no current grade")
+            return current
         delivered = self._grade_ledger.get(submission_ref, [])
         if not delivered:
             raise KeyError(
@@ -3108,14 +3570,19 @@ class ConsoleApp:
         (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
         from one that was skipped (`R71`), so the outcome is written whether the gate
         passed or refused."""
+        # Not yet written through the store (#398 disclosure): Tier D's `audit_record` is
+        # the wrong home, because M-STATS' `promote` sources unclaimed audit rows. Where the
+        # outcome persists is the export-gate story's (design 1.9 §5.1 R16).
         self._gate_outcomes[package_version] = outcome
         self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
     def set_review_window(self, run_id: str = "r-unaddressed", *, hours: float) -> ControlOutcome:
         """Set the review window: one `grade_policy.review_window_hours` row, and the
         console's own record that finalization for this run is delayed, never withheld
-        (`FR-CONSOLE-22`)."""
-        self._review_windows[run_id] = hours
+        (`FR-CONSOLE-22`). On a store the window is M-PKG's column only (#398); the
+        in-memory record is the storeless audit double's."""
+        if getattr(self._store, "data_dir", None) is None:
+            self._review_windows[run_id] = hours
         return self.perform(
             "set review window", run_id=run_id, review_window_hours=hours
         )
@@ -3603,11 +4070,17 @@ def export_package(
         contains_real_student_text=contains_real_student_text,
         actor=actor,
     )
-    app.perform(
+    exported = app.perform(
         "export/import package",
         package_version=package_version,
         actor=actor,
     )
+    if getattr(app._store, "data_dir", None) is not None and not exported.dispatched:
+        # On a real store the export is M-PKG's: a refusal there is the gate's outcome,
+        # never "passed" (#398).
+        refused = f"refused: {exported.detail}"
+        app.record_gate_outcome(package_version, refused)
+        raise ProvenanceRefused(f"{package_version}: {refused} (FR-CONSOLE-23)")
     app.record_gate_outcome(package_version, f"provenance gate {outcome}")
     return ExportOutcome(
         package_version=package_version,
@@ -4686,6 +5159,8 @@ class ConsoleServer:
         self._store = store
         self._run_id = run_id
         self.app = build_console(store=store, bind_address=str(self.bind_address))
+        # "start run" resolves the run configuration the server was started with.
+        self.app.run_config = self._effective()
         self._httpd = _ConsoleHTTPServer(
             (host, int(resolved_port)), _ConsoleRequestHandler, self
         )

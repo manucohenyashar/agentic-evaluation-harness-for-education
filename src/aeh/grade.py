@@ -1774,19 +1774,52 @@ class GradingService:
         # column to attribute by), so the action records itself: one durable EAV
         # row, the same table every other stage's figures ride (CT-GRADE-18's
         # observability; `record_grade_signals` derives the rest).
-        with self._store.durable().transaction() as tx:
-            tx.execute(
-                GRADE_STATEMENTS["insert_run_metric"],
-                run_id=run_id,
-                metric="finalization_path_batch",
-                value=float(len(current)),
-            )
+        #
+        # A finalize that settled nothing (a repeat, a double-click, a second tab) writes
+        # nothing (FR-CONSOLE-02, #398): overwriting the figure with 0 would erase the
+        # count of the batch that actually settled the run.
+        if current:
+            with self._store.durable().transaction() as tx:
+                tx.execute(
+                    GRADE_STATEMENTS["insert_run_metric"],
+                    run_id=run_id,
+                    metric="finalization_path_batch",
+                    value=float(len(current)),
+                )
         return FinalizationRecord(
             finalized=len(current),
             coverage=named,
             actor=actor,
             settled_at=settled_at,
         )
+
+    def current_amendments(self, run_id: str, submission_id: str) -> dict[str, float]:
+        """The override map the submission's CURRENT grade revision records (its
+        `amendments` JSON), `{}` when it has none or no current grade exists. A caller that
+        must not repeat an amendment (a console double-post, #398 / FR-CONSOLE-02) reads it
+        first: `amend` itself audits every call, which is right for a human action and
+        wrong for a replayed request."""
+        run = self._run_row(run_id)
+        rows = self._store.cohort(run["cohort_id"]).query(
+            GRADE_STATEMENTS["select_current_grade"], run_id=run_id, submission_id=submission_id)
+        return _amendment_map(rows[0]["amendments"]) if rows else {}
+
+    def effective_points(self, run_id: str, submission_id: str, criterion_id: str) -> float | None:
+        """The points the current grade counts for one criterion: the current revision's
+        amendment override when it records one, else the stored score's points, else
+        `None`. A console that must not repeat an amendment (#398) compares with this:
+        `amend` audits every call, the no-op ones included."""
+        recorded = self.current_amendments(run_id, submission_id)
+        if criterion_id in recorded:
+            return recorded[criterion_id]
+        run = self._run_row(run_id)
+        for row in self._store.cohort(run["cohort_id"]).query(
+                GRADE_STATEMENTS["select_submission_scores"], run_id=run_id,
+                submission_id=submission_id):
+            if row["criterion_id"] == criterion_id:
+                value = _row_value(row, "points")
+                return None if value is None else float(value)
+        return None
 
     def amend(
         self,

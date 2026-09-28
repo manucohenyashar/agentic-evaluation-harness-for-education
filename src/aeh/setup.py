@@ -1661,6 +1661,27 @@ def _readback_from_row(v: PackageVersionId, row: Mapping[str, Any]) -> RubricRea
     )
 
 
+def setup_service_for_store(
+    store: Any, package_id: str, *, provider: Any = None, model_ref: Any = None,
+    cohort_id: str | None = None,
+) -> "SetupService":
+    """A `SetupService` over a real store's package (the console's setup door, #398).
+
+    The rubric read-back reads stored documents through `M-INGEST`, so when a `cohort_id`
+    and a model are given an `Ingestor` over that cohort is bound. It only reads documents:
+    no page is rasterized or sanitized here, so those seams stay unbound. Without them, the
+    confirm and answer-key steps still work, since they call no model."""
+    from aeh.ingest import Ingestor
+    from aeh.prov import SamplingParams
+
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    ingestor = None
+    if cohort_id and provider is not None and model_ref is not None:
+        ingestor = Ingestor(store.cohort(cohort_id), store.blobs(), provider, model_ref,
+                            SamplingParams(temperature=0.0), None, sanitizer=None)
+    return SetupService(catalog, ingestor, provider, model_ref)
+
+
 class SetupService:
     """M-SETUP's Stage A, end to end, from code (`CT-SETUP-11`'s headless driver).
 

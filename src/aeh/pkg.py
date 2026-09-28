@@ -28,6 +28,7 @@ from __future__ import annotations
 import atexit
 import hashlib
 import hmac
+import dataclasses
 import json
 import logging
 import math
@@ -3186,6 +3187,23 @@ class PackageCatalog:
                        policy=json.dumps(policy.to_dict(), sort_keys=True),
                        review_window_hours=policy.review_window_hours)
         self._invalidate()
+
+    def set_review_window(self, v: PackageVersionId, hours: int | None) -> bool:
+        """Set `grade_policy.review_window_hours` on version `v` (`FR-PKG-19`, ADR-3; the
+        console's "set review window" door, #398 / test plan Q-22). Returns whether
+        anything changed.
+
+        It goes through `set_grade_policy`, so it is under the same lock: ADR-3 puts the
+        window inside the §6.2 lock, version-pinned with the rest of the policy, so a
+        published version refuses (`PublishedVersionImmutableError`) and the sanctioned
+        vehicle is a new version. `hours` is validated by `GradePolicy` (a non-negative
+        int, or `None` for finalize-on-completion). Setting the stored value again writes
+        nothing (`FR-CONSOLE-02`: a repeated post changes the ledger once)."""
+        current = self.grade_policy(v)
+        if current.review_window_hours == hours and self.grade_policy_declared(v):
+            return False
+        self.set_grade_policy(v, dataclasses.replace(current, review_window_hours=hours))
+        return True
 
     def grade_policy(self, v: PackageVersionId) -> GradePolicy:
         """The executed policy as a structured object (`FR-PKG-14`): parsed from the
