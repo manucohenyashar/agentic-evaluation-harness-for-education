@@ -1804,6 +1804,23 @@ class GradingService:
             GRADE_STATEMENTS["select_current_grade"], run_id=run_id, submission_id=submission_id)
         return _amendment_map(rows[0]["amendments"]) if rows else {}
 
+    def effective_points(self, run_id: str, submission_id: str, criterion_id: str) -> float | None:
+        """The points the current grade counts for one criterion: the current revision's
+        amendment override when it records one, else the stored score's points, else
+        `None`. A console that must not repeat an amendment (#398) compares with this:
+        `amend` audits every call, the no-op ones included."""
+        recorded = self.current_amendments(run_id, submission_id)
+        if criterion_id in recorded:
+            return recorded[criterion_id]
+        run = self._run_row(run_id)
+        for row in self._store.cohort(run["cohort_id"]).query(
+                GRADE_STATEMENTS["select_submission_scores"], run_id=run_id,
+                submission_id=submission_id):
+            if row["criterion_id"] == criterion_id:
+                value = _row_value(row, "points")
+                return None if value is None else float(value)
+        return None
+
     def amend(
         self,
         run_id: str,

@@ -679,18 +679,6 @@ _UPDATE_QUARANTINE_RESOLUTION = (
     "UPDATE submission SET ingest_status = :status, quarantined = 0 "
     "WHERE submission_id = :submission_id"
 )
-#: `record_gate_outcome`'s durable record (FR-CONSOLE-23, #398): one Tier D audit row per
-#: gate decision, keyed `export-gate:<package version>`, so the outcome survives the tab
-#: and any console reads it back.
-_INSERT_GATE_OUTCOME = (
-    "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, profile_summary, "
-    "package_version_id) VALUES (:audit_record_id, :run_id, :recorded_at, "
-    ":profile_summary, :package_version_id)"
-)
-_SELECT_GATE_OUTCOME = (
-    "SELECT profile_summary FROM audit_record WHERE run_id = :run_id "
-    "ORDER BY recorded_at DESC, rowid DESC LIMIT 1"
-)
 _SELECT_SUBMISSION_EXISTS = (
     "SELECT submission_id FROM submission WHERE submission_id = :submission_id"
 )
@@ -2597,7 +2585,8 @@ class ConsoleApp:
                 "written",
                 False,
             )
-        if grading.current_amendments(run_id, submission_id).get(criterion_id) == points:
+        effective = grading.effective_points(run_id, submission_id, criterion_id)
+        if effective is not None and float(effective) == float(points):
             # The current revision already carries this exact override: a repeated post
             # (double-click, second tab) writes nothing, not even an audit row
             # (FR-CONSOLE-02).
@@ -3405,14 +3394,6 @@ class ConsoleApp:
         # session, is the figure a later reader checks first (`FR-CONSOLE-23`): the
         # table read above says what the package's record holds, this says the gate ran.
         gate_outcome = self._gate_outcomes.get(package_version)
-        if gate_outcome is None and getattr(self._store, "data_dir", None) is not None:
-            try:
-                stored = list(self._store.durable().query(
-                    _SELECT_GATE_OUTCOME, run_id=f"export-gate:{package_version}"))
-            except Exception:  # noqa: BLE001 — a read view renders the absence
-                stored = []
-            if stored:
-                gate_outcome = json.loads(stored[0]["profile_summary"]).get("export_gate")
         if gate_outcome is not None:
             outcome = gate_outcome
         return ValidationRecord(
@@ -3589,20 +3570,10 @@ class ConsoleApp:
         (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
         from one that was skipped (`R71`), so the outcome is written whether the gate
         passed or refused."""
-        if getattr(self._store, "data_dir", None) is not None:
-            with self._store.durable().transaction() as tx:
-                tx.execute(
-                    _INSERT_GATE_OUTCOME,
-                    audit_record_id=uuid.uuid4().hex,
-                    run_id=f"export-gate:{package_version}",
-                    recorded_at=_now(),
-                    profile_summary=json.dumps(
-                        {"export_gate": outcome, "package_version": package_version},
-                        sort_keys=True),
-                    package_version_id=package_version,
-                )
-        else:
-            self._gate_outcomes[package_version] = outcome
+        # Not yet written through the store (#398 disclosure): Tier D's `audit_record` is
+        # the wrong home, because M-STATS' `promote` sources unclaimed audit rows. Where the
+        # outcome persists is the export-gate story's (design 1.9 §5.1 R16).
+        self._gate_outcomes[package_version] = outcome
         self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
     def set_review_window(self, run_id: str = "r-unaddressed", *, hours: float) -> ControlOutcome:
@@ -4099,11 +4070,17 @@ def export_package(
         contains_real_student_text=contains_real_student_text,
         actor=actor,
     )
-    app.perform(
+    exported = app.perform(
         "export/import package",
         package_version=package_version,
         actor=actor,
     )
+    if getattr(app._store, "data_dir", None) is not None and not exported.dispatched:
+        # On a real store the export is M-PKG's: a refusal there is the gate's outcome,
+        # never "passed" (#398).
+        refused = f"refused: {exported.detail}"
+        app.record_gate_outcome(package_version, refused)
+        raise ProvenanceRefused(f"{package_version}: {refused} (FR-CONSOLE-23)")
     app.record_gate_outcome(package_version, f"provenance gate {outcome}")
     return ExportOutcome(
         package_version=package_version,

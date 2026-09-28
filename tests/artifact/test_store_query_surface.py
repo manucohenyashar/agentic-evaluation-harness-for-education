@@ -603,17 +603,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.grade:1671",
     "aeh.grade:1765",
     "aeh.grade:1783",
-    "aeh.grade:1904",
-    "aeh.grade:1930",
-    "aeh.grade:1936",
-    "aeh.grade:2011",
-    "aeh.grade:2292",
-    "aeh.grade:2297",
-    "aeh.grade:2281",
-    "aeh.grade:2672",
-    "aeh.grade:2666",
-    "aeh.grade:2677",
-    "aeh.grade:3160",
+    "aeh.grade:1921",
+    "aeh.grade:1947",
+    "aeh.grade:1953",
+    "aeh.grade:2028",
+    "aeh.grade:2309",
+    "aeh.grade:2314",
+    "aeh.grade:2298",
+    "aeh.grade:2689",
+    "aeh.grade:2683",
+    "aeh.grade:2694",
+    "aeh.grade:3177",
     # The integ sites, **twelve until `#432` and four after it**. The module's write SET is
     # unchanged (`CT-INTEG-04` pins it); what changed is that one `verify` now issues its
     # cohort-tier routing writes from a single batched loop instead of from six separate
@@ -716,18 +716,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console:2325",
-    "aeh.console:2419",
-    "aeh.console:3023",
-    "aeh.console:5463",
+    "aeh.console:2313",
+    "aeh.console:2407",
+    "aeh.console:3012",
+    "aeh.console:5440",
+    "aeh.console:5445",
+    "aeh.console:5476",
+    "aeh.console:5484",
     "aeh.console:5468",
-    "aeh.console:5499",
-    "aeh.console:5507",
-    "aeh.console:5491",
-    "aeh.console:5520",
-    # #398: record_gate_outcome's Tier D audit row (FR-CONSOLE-23), a literal INSERT with
-    # keyword parameters, one transaction.
-    "aeh.console:3594",
+    "aeh.console:5497",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the
