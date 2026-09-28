@@ -3939,9 +3939,42 @@ def render_agreement_block(
         n = getattr(figure, "n", None)
         degenerate = getattr(figure, "degenerate_band_shape", None)
         band_count = getattr(figure, "band_count", None)
-        figure_population = getattr(figure, "population_scope_id", None)
-        if figure_population:
-            scope = f" for population {figure_population}"
+    # CT-STATS-03/04, FR-CONSOLE-10 (#521): the scope the figure itself carries, read the
+    # same way from a mapping or an object. A figure that DECLARES its scope fields and
+    # fills none of them (no population, no backend, no panel build) is scopeless: its
+    # number is not shown, because a number without a scope cannot be read as anyone's
+    # agreement. A partly scoped figure claims only the scope it names. A figure shape
+    # that declares no scope field at all (the storeless standing figure) keeps the
+    # standing wording.
+    scope_fields = ("population_scope_id", "backend_profile", "panel_build_ref")
+
+    def _declares(name: str) -> bool:
+        return name in figure if isinstance(figure, dict) else hasattr(figure, name)
+
+    def _scope_field(name: str) -> Any:
+        return figure.get(name) if isinstance(figure, dict) else getattr(figure, name, None)
+
+    declared = any(_declares(name) for name in scope_fields)
+    figure_population = _scope_field("population_scope_id")
+    figure_backend = _scope_field("backend_profile")
+    figure_panel = _scope_field("panel_build_ref")
+    if figure_population:
+        scope = f" for population {figure_population}"
+    if declared and (kappa is not None or alpha is not None) and not (
+            figure_population or figure_backend or figure_panel):
+        return (
+            f"Blind labels for this administration{scope}: this agreement figure names no "
+            "population, backend or panel build, so it is not shown. An agreement figure "
+            "is only readable against the population and backend it was measured on."
+        )
+    if not declared or (figure_population and figure_backend):
+        scoped = "scoped to this population and backend"
+    elif figure_population:
+        scoped = "scoped to this population; the backend it was measured on is not recorded"
+    elif figure_backend:
+        scoped = "scoped to this backend; the population it was measured on is not recorded"
+    else:
+        scoped = "not scoped to a population or backend (panel build only)"
     if kappa is None and alpha is None:
         return (
             f"Blind labels for this administration{scope}: {NO_NEW_VALIDATION_EVIDENCE}. "
@@ -3972,8 +4005,8 @@ def render_agreement_block(
             "rubric declares."
         )
     return (
-        f"Agreement{scope}: {named}, {size}, chance-corrected and scoped to this "
-        f"population and backend{provenance}; atomic and holistic criteria are "
+        f"Agreement{scope}: {named}, {size}, chance-corrected and "
+        f"{scoped}{provenance}; atomic and holistic criteria are "
         f"reported separately and never merged.{too_few}{degeneracy}"
     )
 
