@@ -3079,7 +3079,8 @@ class Orchestrator:
         from aeh.conf import log_run_start
 
         summary = log_run_start(cfg)
-        record_run_start(self._store, cfg, run_id=run_id, summary=summary)
+        record_run_start(self._store, cfg, run_id=run_id, summary=summary,
+                         recorded_at=self._wall_now())
         return run_id
 
     def _verify_retention_at_start(self, cfg: Any) -> Any:
@@ -3936,7 +3937,9 @@ class Orchestrator:
         backwards, which is `CT-STORE-14`'s named failure. The comparison input is and
         stays `lease_expires_ticks`.
         """
-        return (clock.now() + timedelta(seconds=ttl_seconds)).isoformat()
+        # FR-ORCH-44: the wall expiry is a wall-time read, so an injected wall clock stamps it.
+        now = self._wall_clock() if self._wall_clock is not None else clock.now()
+        return (now + timedelta(seconds=ttl_seconds)).isoformat()
 
     def lease(self, worker_id: str, stage: str, n: int) -> Sequence[WorkUnit]:
         """Claim up to `n` pending units of one stage for `worker_id`, exclusively.
@@ -4820,7 +4823,7 @@ class Orchestrator:
             warnings.warn(
                 "enqueue_escalation's (submission_id, criterion_id) key is deprecated; pass "
                 "(run_id, submission_id, criterion_id) (FR-ORCH-34, CT-ORCH-26)",
-                DeprecationWarning, stacklevel=3)
+                DeprecationWarning, stacklevel=2)
             submission_id, criterion_id = key
             holding = list(tx.execute(
                 ORCH_STATEMENTS["select_pair_runs"],
@@ -6655,7 +6658,8 @@ class Orchestrator:
 
 
 def record_run_start(
-    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None
+    store: Any, config: Any, *, run_id: str | None = None, summary: Any = None,
+    recorded_at: str | None = None,
 ) -> str:
     """Write the run-start audit record: the orchestrator's write of what graded this run.
 
@@ -6677,6 +6681,9 @@ def record_run_start(
     run start (`Orchestrator.create_run` does): storing that object rather than computing a
     second one makes the stored record literally the logged one. Omitted, the summary is
     computed here, as the repair path in `create_run`'s docstring needs.
+
+    `recorded_at` is the orchestrator's wall time (FR-ORCH-44) when `create_run` calls this;
+    omitted, the process wall clock stamps the row.
     """
     if summary is None:
         summary = config.profile_summary()
@@ -6687,7 +6694,7 @@ def record_run_start(
             ORCH_STATEMENTS["insert_audit_record"],
             audit_record_id=uuid.uuid4().hex,
             run_id=resolved_run_id,
-            recorded_at=_now(),
+            recorded_at=recorded_at if recorded_at is not None else _now(),
             profile_summary=summary.to_canonical_json(),
         )
     return resolved_run_id
