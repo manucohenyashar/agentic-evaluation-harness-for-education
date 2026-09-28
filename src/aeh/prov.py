@@ -970,11 +970,12 @@ class RunCountersTracker:
             self._transport_retries += 1
             return self._transport_retries
 
-    def on_rate_limited(self, waited_s: float) -> None:
-        """The call was throttled at least once — counted once per call, with the whole
-        wait it incurred accumulated under `rate_limit_wait_s`."""
+    def on_rate_limited(self, waited_s: float, *, first_for_call: bool = True) -> None:
+        """The call was throttled at least once — counted once per call (`first_for_call`),
+        with every wait it incurred accumulated under `rate_limit_wait_s` (FR-PROV-12)."""
         with self._lock:
-            self._rate_limited_calls += 1
+            if first_for_call:
+                self._rate_limited_calls += 1
             self._rate_limit_wait_s += waited_s
 
     def on_usage(self, tokens_in: int, tokens_out: int, cached_prefix_tokens: int) -> None:
@@ -1099,6 +1100,7 @@ def dispatch_with_retries(
     resolved_clock = clock if clock is not None else SystemClock()
     resolved_rng = rng if rng is not None else random.Random()
     last_error: Exception | None = None
+    throttled = False
 
     for attempt in range(resolved_policy.max_attempts):
         try:
@@ -1122,7 +1124,9 @@ def dispatch_with_retries(
                 if governor is not None:
                     governor.on_rate_limited()
                 if counters is not None:
-                    counters.on_rate_limited(wait)
+                    # A call throttled twice is ONE rate-limited call (FR-PROV-12, #538).
+                    counters.on_rate_limited(wait, first_for_call=not throttled)
+                throttled = True
                 last_error = RateLimitedError(
                     f"HTTP 429 from the provider (attempt {attempt + 1})")
                 _wait(resolved_clock, wait)
