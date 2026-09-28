@@ -235,7 +235,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # aeh.agg's one site (#360): `write_score`'s `tx.execute` of the declared
     # `AGG_STATEMENTS["upsert_criterion_score"]`, keyword-parameterized, in the
     # caller's transaction (FR-AGG-15, CT-AGG-19).
-    "aeh.agg:1255",
+    "aeh.agg:1286",
+    "aeh.agg:1259",
     # aeh.orch's sites: #57's four (the run-row insert, the ledger's batched
     # unit insert with the `SELECT changes()` read in that same
     # transaction — the insert is `OR IGNORE`, so the ledger's own count of what the
@@ -664,14 +665,14 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.review:1818",
     "aeh.review:1824",
     "aeh.review:1849",
-    "aeh.review:2845",
+    "aeh.review:2880",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
     # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries (27 since #368), upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:3784",
+    "aeh.review:3821",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the

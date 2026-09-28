@@ -344,7 +344,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 # The label store's own schema: this module owns Tier D's last migration (the
@@ -1888,7 +1888,10 @@ class ReviewService:
         recorded = self._recorded_decision(item, action, teacher_band)
         if recorded is not None:
             # The same decision on the same score is already in the label store: a
-            # repeated post (double-click, second tab) writes nothing (FR-CONSOLE-02).
+            # repeated post (double-click, second tab) writes no second label
+            # (FR-CONSOLE-02). The settle is re-applied, and it is idempotent: a first post
+            # whose label landed but whose settle failed is repaired by the retry (#517).
+            self._settle_band(item, teacher_band)
             self._acted.add(item.score_id)
             return recorded
         label = self._write_label(
@@ -1899,6 +1902,7 @@ class ReviewService:
             review_queue_action=action,
         )
         self._record_writes(item, action, label)
+        self._settle_score(item, label)
         self._acted.add(item.score_id)
         self._record_queue_action(item, action, label)
         self._record_action_emission([label])
@@ -1927,6 +1931,7 @@ class ReviewService:
                 via_group=True,
             )
             self._record_writes(member, action, label)
+            self._settle_score(member, label)
             self._acted.add(member.score_id)
             self._record_queue_action(member, action, label)
             labels.append(label)
@@ -2784,6 +2789,36 @@ class ReviewService:
             return f"label-{uuid.uuid4().hex}"
         return f"label-{len(self._labels) + 1:04d}"
 
+    def _settle_score(self, item: Any, label: LabelRecord) -> None:
+        """The reduction CT-REVIEW-06 audits, made real (#517): the teacher's band lands on
+        the stored score row through M-AGG's writer (`record_review`), so M-GRADE's next pass
+        counts the criterion as reviewed. M-REVIEW writes no grade. A storeless service has
+        no score row to settle."""
+        self._settle_band(item, label.teacher_band)
+
+    def _settle_band(self, item: Any, band: Any) -> None:
+        """Settle one score row on `band`. The points are the run's PACKAGE figure for the
+        band (never the service's default display scale, which M-GRADE would then sum): an
+        unchanged band keeps the row's own points, a moved band takes the package's points
+        for it, or NULL where the package figure cannot be read. Idempotent."""
+        if self._store is None or band is None:
+            return
+        row = self._rows_by_id.get(item.score_id)
+        run_id = getattr(row, "run_id", None)
+        cohort_id = self._writable_cohort()
+        if run_id is None or cohort_id is None:
+            return
+        points = None
+        if str(band) != str(getattr(row, "proposed_band", None)):
+            probe = SimpleNamespace(system_band=None, teacher_band=band,
+                                    criterion_id=item.criterion_id, timestamp=None)
+            points = self._label_judgement_columns(probe, str(run_id))["teacher_points"]
+        from aeh.agg import record_review
+
+        with self._store.cohort(cohort_id).transaction() as tx:
+            record_review(tx, str(run_id), item.submission_id, item.criterion_id,
+                          str(band), points)
+
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
         """The id of the score's latest durable label when it records this same decision,
         or None. Only a store-backed service has a durable label store to consult."""
@@ -3411,6 +3446,8 @@ class _StoredScoreRow:
         self.score_id = f"{submission_id}:{criterion_id}"
         self.criterion_id = criterion_id
         self.submission_id = submission_id
+        #: The run the stored row belongs to, so a review settles THAT run's row (#517).
+        self.run_id = mapping.get("run_id")
         self.routing = mapping.get("routing")
         self.origin = mapping.get("origin", "escalation")
         self.evaluation_mode = mapping.get("evaluation_mode", "judged")
