@@ -3841,7 +3841,33 @@ class Orchestrator:
             self._provider.estimate_cost(self._unit_from_row(unit_row)),
             unit_row["run_id"],
         )
-        return Decimal("0") if figure is None else figure
+        llm = Decimal("0") if figure is None else figure
+        # FR-ORCH-41 / CT-ORCH-31 (#522, ADR-33): a decision-seat claim also accrues the
+        # per-seat decision figure — the conservative 100%-fallback charge FR-ORCH-37's
+        # estimate uses — so a cloud decision engine cannot carry a run past its ceiling.
+        # Engine off, or no decision provider bound: nothing is added (NFR-SYS-14).
+        return llm + self._decision_seat_figure(cohort, unit_row)
+
+    def _decision_seat_figure(self, cohort: Any, unit_row: Any) -> Decimal:
+        """The per-seat decision figure a claim of `unit_row` accrues, or zero when the unit
+        is not a decision seat (a score unit judged by the first arm of a run that froze a
+        decision engine), when no decision provider is bound, or when the engine is
+        unbilled."""
+        if self._decision_provider is None:
+            return Decimal("0")
+        if _mapping_get(unit_row, "stage") != STAGE_SCORE:
+            return Decimal("0")
+        run_row = self._run_row_in(cohort, unit_row["run_id"])
+        try:
+            record = json.loads(_mapping_get(run_row, "panel_config") or "{}")
+        except (TypeError, ValueError):
+            return Decimal("0")
+        arms = record.get("arms") or []
+        if not record.get("decision_engine") or not arms:
+            return Decimal("0")
+        if _mapping_get(unit_row, "judge_id") != arms[0]:
+            return Decimal("0")
+        return self._decision_per_seat_cost(1)
 
     def _run_cost_estimate(self, cohort: Any, run_id: str) -> Decimal | None:
         """The run's estimated cost: the sum of its units' seam figures (`FR-ORCH-15`).
@@ -3888,6 +3914,13 @@ class Orchestrator:
                     if row["stage"] == STAGE_SCORE and row["judge_id"] == arms[0])
         if not seats:
             return Decimal("0")
+        return self._decision_per_seat_cost(seats)
+
+    def _decision_per_seat_cost(self, seats: int) -> Decimal:
+        """The decision provider's `estimate_cost` over `seats` calls of
+        `HARNESS_ORCH_DECISION_TOKENS_PER_SEAT` input tokens (output is free); zero when the
+        engine is unbilled. One definition for the start estimate (FR-ORCH-37) and the
+        claim-time charge (FR-ORCH-41)."""
         from aeh.prov import CallPlan
 
         tokens = _env_int(DECISION_TOKENS_PER_SEAT_ENV, DECISION_TOKENS_PER_SEAT_DEFAULT)
