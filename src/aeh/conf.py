@@ -2097,6 +2097,17 @@ def rehydrate_run_config(
         raise ConfigurationError(
             f"run_row must be a Mapping, got {type(run_row).__name__}."
         )
+    # #527: a row M-ORCH wrote carries the whole persisted config in `run_config` (its own
+    # `panel_config`/`provider_config` columns keep the forms M-ORCH reads). Read from it when
+    # present; a row that is already `to_persisted_dict()`-shaped is read as it stands.
+    raw_run_config = run_row.get("run_config")
+    if isinstance(raw_run_config, str) and raw_run_config.strip():
+        try:
+            raw_run_config = json.loads(raw_run_config)
+        except ValueError:
+            raise ConfigurationError("run row's run_config is not JSON.") from None
+    if isinstance(raw_run_config, Mapping):
+        run_row = raw_run_config
     panel_config = run_row.get("panel_config")
     provider_config = run_row.get("provider_config")
     for name, section in (("panel_config", panel_config), ("provider_config", provider_config)):

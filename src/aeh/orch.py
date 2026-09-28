@@ -692,13 +692,26 @@ TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     ), key=lambda m: m.version
 ))
 
+# --- Tier C, migration 31 (#527, CT-CONF-06 / FR-CONF-15): the frozen RunConfig, whole ------------
+#
+# `panel_config`/`provider_config` carry the forms M-ORCH reads (build ids, the arms), not the
+# refs' providers, quantizations or the transcriber, so `rehydrate_run_config` could not read a
+# run back. The whole `to_persisted_dict()` goes beside them; NULL on rows written before.
+_ORCH_RUN_CONFIG = Migration(
+    version=31,
+    name="orch_run_config",
+    statements=(Statement("ALTER TABLE run ADD COLUMN run_config TEXT"),),
+)
+TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (_ORCH_RUN_CONFIG,)
+
 
 ORCH_STATEMENTS: dict[str, Statement] = {
     "insert_run": Statement(
         "INSERT INTO run (run_id, cohort_id, package_version_id, package_id, "
-        "panel_config, backend_profile, provider_config, prompt_template_v, status) "
+        "panel_config, backend_profile, provider_config, prompt_template_v, status, "
+        "run_config) "
         "VALUES (:run_id, :cohort_id, :package_version_id, :package_id, :panel_config, "
-        ":backend_profile, :provider_config, :prompt_template_v, 'pending')"
+        ":backend_profile, :provider_config, :prompt_template_v, 'pending', :run_config)"
     ),
     # The run-row read carries the lifecycle columns #61 added (`cost_estimate`,
     # `cost_spend`, `pause_reason`) beside the frozen backend snapshot — the ceiling is
@@ -3102,6 +3115,11 @@ class Orchestrator:
                     backend_profile=cfg.backend_profile,
                     provider_config=provider_config,
                     prompt_template_v=cfg.prompt_template_v,
+                    # CT-CONF-06 / FR-CONF-15 (#527): the whole frozen RunConfig, in the
+                    # serialization `rehydrate_run_config` reads back. Beside, not instead of,
+                    # the three columns M-ORCH itself reads (their forms are pinned by
+                    # TC-REG-08/09).
+                    run_config=_persisted_run_config(cfg),
                 )
         except sqlite3.IntegrityError as error:
             # Named, not raw: the two ways this write is refused are caller mistakes
@@ -3605,6 +3623,7 @@ class Orchestrator:
         """
         if run_id is not None:
             cohort, row = self._find_run(run_id)
+            _refuse_profile_switch(row)
             if row["status"] not in ("complete", "failed"):
                 # The explicit resume is a control row like any other (`CT-ORCH-13` —
                 # a resume request is effected by WRITING the row and letting the
@@ -6814,6 +6833,31 @@ class Orchestrator:
 
 
 # --- the audit record (TC-CONF-17's producer) ---------------------------------------------------
+
+
+def _persisted_run_config(cfg: Any) -> str | None:
+    """The run's frozen `RunConfig` as `to_persisted_dict()` serializes it (CT-CONF-06), or
+    None for a config double that has no serializer."""
+    persisted = getattr(cfg, "to_persisted_dict", None)
+    if not callable(persisted):
+        return None
+    return json.dumps(persisted(), sort_keys=True, default=str, separators=_JSON_SEPARATORS)
+
+
+def _refuse_profile_switch(row: Any) -> None:
+    """FR-CONF-15 / FR-ORCH-16 (#527): an explicit resume under a current configuration that
+    names a different `HARNESS_PROFILE` than the run froze is refused with
+    `BackendMismatchError`, naming both. A resume under no named profile replays the run's
+    own frozen backend, which is the resume-same-backend rule."""
+    from aeh.conf import BackendMismatchError, effective_config
+
+    current = effective_config({}).get("HARNESS_PROFILE")
+    frozen = _mapping_get(row, "backend_profile")
+    if current and frozen and str(current) != str(frozen):
+        raise BackendMismatchError(
+            f"run {row['run_id']} froze backend_profile {frozen!r} and the current "
+            f"configuration names {current!r}: a resumed run keeps its own backend, so it is "
+            "not resumed under another (FR-CONF-15, FR-ORCH-16)")
 
 
 def record_run_start(
