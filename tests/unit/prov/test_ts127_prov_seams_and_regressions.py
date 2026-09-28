@@ -89,29 +89,66 @@ def _retry_budget(monkeypatch):
 # --- TC-PROV-55 (FR-PROV-15) ----------------------------------------------------------------------
 
 
-def test_tc_prov_55_injected_seams_are_behaviour_neutral_and_on_dispatch_fires_per_call():
-    """(a) Two builds over the same programmed 429→200 responses give the same completion and
-    counters, whether or not `on_dispatch` is given. (b) `on_dispatch` fires once per model
-    call (1 for a call answered 429 then 200). (c) Backoff waits land on the injected clock, not real time."""
+def _throttled_now() -> HttpResponse:
+    """A 429 asking for no wait, so a default build (real clock) costs no real time."""
+    return HttpResponse(429, {"Retry-After": "0"}, b"slow down")
+
+
+def _zero_retention(build: str) -> str:
+    return "zero-retention"
+
+
+def test_tc_prov_55_openrouter_injected_seams_are_behaviour_neutral():
+    """(a) A default build (only the programmed transport; real clock, no retention answers,
+    no observer) and an injected build (transport, fake clock, `retention_answers`,
+    `on_dispatch`) over the same 429→200 give the same completion and counters.
+    (b) `on_dispatch` fires once per model call (1 for a call answered 429 then 200)."""
+    default = OpenRouterProvider(api_key="k", base_url="http://or/v1",
+                                 transport=_Transport(_throttled_now(), _completion()))
     dispatched: list = []
-    results = []
-    for observer in (None, dispatched.append):
-        clock = _CountingClock()
-        provider = OpenRouterProvider(api_key="k", base_url="http://or/v1",
-                                      transport=_Transport(_throttled(), _completion()),
-                                      clock=clock, retention_answers=lambda build: "yes",
-                                      on_dispatch=observer)
-        started = time.monotonic()
-        completion = provider.complete(_payload(), _ref(), SamplingParams(temperature=0.0))
-        results.append((completion.text, provider.counters, clock.waited))
-        assert time.monotonic() - started < 1.0, "backoff slept in real time, not on the injected clock"
-    assert results[0] == results[1], (
-        f"supplying on_dispatch changed the outcome: {results[0]!r} vs {results[1]!r} (FR-PROV-15: "
-        "the seams are behaviour-neutral)"
-    )
+    injected = OpenRouterProvider(api_key="k", base_url="http://or/v1",
+                                  transport=_Transport(_throttled_now(), _completion()),
+                                  clock=_CountingClock(), retention_answers=_zero_retention,
+                                  on_dispatch=dispatched.append)
+    assert injected.verify_retention([_ref()]).confirmed == (_ref(),)
+    outcomes = [(p.complete(_payload(), _ref(), SamplingParams(temperature=0.0)).text, p.counters)
+                for p in (default, injected)]
+    assert outcomes[0] == outcomes[1], (
+        f"the injected seams changed the outcome: {outcomes[0]!r} vs {outcomes[1]!r} "
+        "(FR-PROV-15: the seams are behaviour-neutral)")
     # FR-PROV-15: "once per dispatched model call" — the call, not each attempt of it.
-    assert len(dispatched) == 1, f"on_dispatch fired {len(dispatched)} times for one call (429 then 200); expected 1"
-    assert results[0][2], "a 429 with Retry-After recorded no wait on the injected clock"
+    assert len(dispatched) == 1, (
+        f"on_dispatch fired {len(dispatched)} times for one call (429 then 200); expected 1")
+
+
+def test_tc_prov_55_jev_injected_seams_are_behaviour_neutral():
+    """(a) for `JevOpenRouterProvider`: a default build and one with an injected clock and
+    `retention_answers` return the same decision and the same counters over 429→200."""
+    outcomes = []
+    for seams in ({}, {"clock": _CountingClock(), "retention_answers": _zero_retention}):
+        counters = RunCountersTracker()
+        provider = JevOpenRouterProvider(api_key="sk-or-TEST",
+                                         transport=_Transport(_throttled_now(), _good()),
+                                         counters=counters, **seams)
+        if seams:
+            assert provider.verify_retention([JEV_REF]).confirmed == (JEV_REF,)
+        decision = provider.decide(jev_corpora.wire_request(), JEV_REF)
+        outcomes.append((decision.answers if hasattr(decision, "answers") else decision,
+                         counters.decision_snapshot()))
+    assert outcomes[0] == outcomes[1], (
+        f"the injected seams changed the decision outcome: {outcomes[0]!r} vs {outcomes[1]!r}")
+
+
+def test_tc_prov_55_backoff_waits_on_the_injected_clock():
+    """(c) A 429 asking for 2 s is waited on the injected clock: recorded there, no real sleep."""
+    clock = _CountingClock()
+    provider = OpenRouterProvider(api_key="k", base_url="http://or/v1",
+                                  transport=_Transport(_throttled(), _completion()),
+                                  clock=clock, retention_answers=_zero_retention)
+    started = time.monotonic()
+    provider.complete(_payload(), _ref(), SamplingParams(temperature=0.0))
+    assert time.monotonic() - started < 1.0, "backoff slept in real time, not on the injected clock"
+    assert clock.waited == [2.0], f"the injected clock recorded {clock.waited!r}; expected the 2 s Retry-After"
 
 
 # --- TC-PROV-56 (FR-PROV-12 amended) --------------------------------------------------------------
@@ -158,6 +195,7 @@ def _unreported() -> HttpResponse:
 
 @pytest.mark.parametrize("key", ["sk or with space", "   "])
 def test_tc_prov_57_a_malformed_key_is_a_configuration_error_with_no_send(key):
+    pytest.importorskip("typesafe_sdk")  # the plan's precondition: the SDK is installed
     transport = _Transport(_good())
     with pytest.raises(ConfigurationError) as caught:
         _jev(transport, api_key=key).decide(jev_corpora.wire_request(), JEV_REF)
@@ -176,15 +214,25 @@ def test_tc_prov_58_a_408_is_retried():
     assert counters.decision_snapshot().decision_transport_retries == 1
 
 
+def _malformed_unreported() -> HttpResponse:
+    """A 200 that lacks `provider` (so the routing check runs and sees it unreported) and then
+    fails later validation (no `answers`): a retried attempt whose body is never accepted."""
+    body = {k: v for k, v in WIRE["cloud-well-formed-reported"]["body"].items()
+            if k not in ("provider", "answers")}
+    body["model"] = "typesafe/jev-1.13"
+    return HttpResponse(200, {}, json.dumps(body).encode("utf-8"))
+
+
 @pytest.mark.parametrize("first, second, expected", [
-    ("unavailable_unreported", "good", 0),
+    ("malformed_unreported", "good", 0),
     ("unreported", None, 1),
 ])
 def test_tc_prov_59_the_unreported_flag_is_per_attempt(first, second, expected):
     """A failed attempt whose body lacked `provider` does not count; a served answer that
-    lacked it does."""
+    lacked it does. Arm 1's first attempt reaches the routing check (a 200, parsed) and is
+    then rejected, so a flag that stuck across attempts would count it (#538 review)."""
     responses = {
-        "unavailable_unreported": HttpResponse(503, {}, b'{"error": {"message": "busy"}}'),
+        "malformed_unreported": _malformed_unreported(),
         "good": _good(),
         "unreported": _unreported(),
     }
