@@ -4319,8 +4319,9 @@ class _StatementRegistry(dict):
         self._admit(dict(*args, **kwargs), self._registering_module())
 
     def setdefault(self, name: str, statement: Statement) -> Statement:  # type: ignore[override]
-        if name not in self:
-            self._admit({name: statement}, self._registering_module())
+        # A conflicting setdefault is a conflicting registration too: returning the other
+        # module's SQL silently would be the same defect with the first writer winning.
+        self._admit({name: statement}, self._registering_module())
         return self[name]
 
     def __ior__(self, other: Any) -> "_StatementRegistry":  # type: ignore[override]
