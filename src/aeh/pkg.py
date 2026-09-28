@@ -715,29 +715,75 @@ PROVENANCE_VOCABULARY: tuple[str, ...] = ("synthetic", "paraphrased", "real_verb
 # headline across populations) is made unrepresentable in the query surface.
 
 
-class NoValidationData:
-    """The explicit result for a validation key with no matching row (`FR-PKG-09`).
+#: `NoValidationData.reason`'s declared values (base design §3.16's `Literal`, CT-STATS-03).
+#: `None` is the package catalog's own "no row for this key" answer (`FR-PKG-09`).
+NO_DATA_REASONS: tuple[str, ...] = (
+    "no_blind_labels",
+    "no_data_for_population",
+    "no_data_for_backend",
+)
 
-    Distinguishable **in type** from a zero or a low figure — a caller that renders it as
-    `0.0` has reintroduced the failure this requirement exists to prevent. Not an
-    exception: "no data" is a normal state of a brand-new package version, and the
-    console displays it as its own thing (`FR-CONSOLE-24`)."""
+
+class NoValidationData:
+    """The absence of validation evidence, as a value: ONE type for the whole system
+    (`FR-PKG-09`, `FR-STATS-04`, CT-STATS-26 — design 1.9 §3.13, #512).
+
+    Defined here, in the lower module, and re-exported by `aeh.stats`, so
+    `aeh.stats.NoValidationData is aeh.pkg.NoValidationData` and one `isinstance` check
+    recognises every absence value either module returns (before #512 each module had its
+    own class, and a check on one missed the other: TC-REQ-61, TC-REQ-83).
+
+    Not a null, not a zero, not a sentinel float (`CT-STATS-03`): the value is **not
+    numerically coercible by any route**. `float()`, arithmetic, threshold comparison,
+    percent formatting and multiplication each raise, because the class defines none of the
+    dunders those probes reach. A plain object is the whole defence. The console displays it
+    as its own thing (`FR-CONSOLE-24`).
+
+    `reason` is one of `NO_DATA_REASONS`, or `None` for the catalog's "no row for this key".
+    What *was* measured travels with the absence as context (`n`, `excluded_count`, the
+    interval where one applies), so "20 labels excluded, no figure" is reportable rather
+    than a bare message (`CT-REVIEW-08` step 4, `TC-STATS-C01`).
+
+    Called with no arguments it returns one shared instance, so `result is
+    NoValidationData()` stays a type-level test of the catalog's answer (`FR-PKG-09`)."""
 
     _instance: "NoValidationData | None" = None
 
-    def __new__(cls) -> "NoValidationData":
-        # A singleton keeps every absent-key answer the same object: `result is
-        # NoValidationData()` is a second, type-level way to test, and equality across
-        # calls is free.
+    def __new__(cls, **kwargs: Any) -> "NoValidationData":
+        if kwargs:
+            return super().__new__(cls)
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    def __init__(
+        self,
+        *,
+        reason: str | None = None,
+        n: int | None = None,
+        excluded_count: int | None = None,
+        interval_low: float | None = None,
+        interval_high: float | None = None,
+    ) -> None:
+        if reason is not None and reason not in NO_DATA_REASONS:
+            raise ValueError(
+                f"reason must be one of {NO_DATA_REASONS}, got {reason!r}. "
+                "The Literal is part of the type: a reason outside it is not "
+                "representable (CT-STATS-03)."
+            )
+        self.reason = reason
+        self.n = n
+        self.excluded_count = excluded_count
+        self.interval_low = interval_low
+        self.interval_high = interval_high
+
     def __repr__(self) -> str:
-        return "NoValidationData()"
+        return "NoValidationData()" if self.reason is None else (
+            f"NoValidationData(reason={self.reason!r})")
 
     def __str__(self) -> str:
-        return "no validation data for this key"
+        return ("no validation data for this key" if self.reason is None
+                else f"no validation data ({self.reason})")
 
 
 @dataclass(frozen=True)

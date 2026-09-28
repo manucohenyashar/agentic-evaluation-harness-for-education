@@ -345,11 +345,7 @@ STATS_MIN_N_FOR_HEADLINE = 30
 #: The three declared absence reasons (`CT-STATS-03`). Declared here as data
 #: so ``NoValidationData``'s constructor validates against the transcription
 #: rather than a convention.
-_NO_DATA_REASONS: tuple[str, ...] = (
-    "no_blind_labels",
-    "no_data_for_population",
-    "no_data_for_backend",
-)
+# `_NO_DATA_REASONS` is `aeh.pkg.NO_DATA_REASONS` (imported below): one absence type (#512).
 
 #: The normal distribution's two-sided 95% critical value. A named constant
 #: rather than an inline 1.96 so the interval's provenance is one line.
@@ -718,57 +714,11 @@ class AgreementFigure:
         return "band"
 
 
-class NoValidationData:
-    """The absence of validation evidence, as a value (`FR-STATS-04`).
-
-    Not a null, not a zero, not a sentinel float (`CT-STATS-03`): a distinct
-    type whose ``reason`` is one of the three declared literals —
-    ``no_blind_labels`` (nobody collected blind labels here),
-    ``no_data_for_population`` (this population was never administered),
-    ``no_data_for_backend`` (this backend was never measured). Returning a
-    plausible-looking number instead would be the most damaging possible
-    failure in the system, which is why the distinction lives in the type
-    system rather than in a convention (`TC-STATS-C03`).
-
-    The value is **not numerically coercible by any route**: ``float()``,
-    arithmetic, threshold comparison, percent formatting and multiplication
-    each raise, so a package with no evidence cannot advertise ``0.00``
-    through a call site that kept working (`CT-STATS-03`'s adversarial
-    construction is precisely a ``float`` subclass — this class defines none
-    of the dunders those probes reach). A plain object is the whole defence.
-
-    What *was* measured travels with the absence as context attributes —
-    ``n``, ``excluded_count``, and the interval where one applies — so a run
-    whose labels are all operational reports "20 labels excluded, no figure"
-    rather than a bare message (`CT-REVIEW-08` step 4's non-silent exclusion;
-    `TC-STATS-C01`'s rung-2 pin reads ``n`` off the absence value itself).
-    """
-
-    def __init__(
-        self,
-        *,
-        reason: Literal[
-            "no_blind_labels", "no_data_for_population", "no_data_for_backend"
-        ],
-        n: int | None = None,
-        excluded_count: int | None = None,
-        interval_low: float | None = None,
-        interval_high: float | None = None,
-    ) -> None:
-        if reason not in _NO_DATA_REASONS:
-            raise ValueError(
-                f"reason must be one of {_NO_DATA_REASONS}, got {reason!r}. "
-                "The Literal is part of the type: a reason outside it is not "
-                "representable (CT-STATS-03)."
-            )
-        self.reason = reason
-        self.n = n
-        self.excluded_count = excluded_count
-        self.interval_low = interval_low
-        self.interval_high = interval_high
-
-    def __repr__(self) -> str:
-        return f"NoValidationData(reason={self.reason!r})"
+# `NoValidationData` is `aeh.pkg.NoValidationData`, re-exported (CT-STATS-26, #512): one
+# absence type for the whole system, so an `isinstance` check on either module's name
+# recognises every absence value. See the class docstring in `aeh.pkg`.
+from aeh.pkg import NO_DATA_REASONS as _NO_DATA_REASONS  # noqa: E402
+from aeh.pkg import NoValidationData  # noqa: E402,F401
 
 
 # --- the statistics (the design fixes the names; the shapes are disclosed) -------------------------
