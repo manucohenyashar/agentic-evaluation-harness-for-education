@@ -1246,6 +1246,11 @@ def main(argv: "Sequence[str] | None" = None) -> int:
                     terminate()
             return EXIT_OK
 
+        # TC-PIPE-14: a malformed knob is refused before the store is opened. `recover` below
+        # can reclaim leases, which is a write, so validating only inside `run_to_completion`
+        # would refuse the knob after rows had already changed.
+        _int_knob(MAX_PASSES_ENV, None, minimum=1)
+        _int_knob(PASS_SLEEP_MS_ENV, 0, minimum=0)
         config = effective_config(_load_config_file(args.config))
         store = _open_store(args.data_dir)
         try:
