@@ -128,18 +128,10 @@ def _timed_verify(tmp_data_dir, docs, *, disabled: bool) -> float:
     return best
 
 
-def test_tc_integ_11_verification_adds_under_one_percent_to_wall_clock(tmp_data_dir):
-    """`TC-INTEG-11`'s differential oracle — enabled against disabled, the delta under
-    the design's 1%: verification is affordable precisely because it is bounded, and
-    the case holds the design to its own number."""
-    docs = _workload(n_sentences=200, n_units=20)
-    enabled = _timed_verify(tmp_data_dir / "enabled", docs, disabled=False)
-    disabled = _timed_verify(tmp_data_dir / "disabled", docs, disabled=True)
-    assert enabled <= disabled * _DIFFERENTIAL_BUDGET, (
-        f"verification took {enabled:.4f}s against a disabled baseline of "
-        f"{disabled:.4f}s — a {_DIFFERENTIAL_BUDGET:.0%} budget (NFR-INTEG-01) that a "
-        "model call or an accidental I/O path inside the pure check would blow"
-    )
+# `TC-INTEG-11`'s under-1% arm is retired into PERF-06
+# (`tests/perf/test_perf_06_zero_model_stages_full_run.py`), test plan 1.7 §5.0, TS-126 (#537):
+# NFR-INTEG-01 defines the 1% at full-run scale, and this micro-workload ratio flaked on a
+# clean tree while measuring a different quantity.
 
 
 def test_tc_integ_11_verification_scales_with_total_span_bytes(tmp_data_dir):

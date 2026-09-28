@@ -92,6 +92,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from aeh.agg import aggregate, should_escalate
+from tests.support.env_hygiene import set_world_env
 from aeh.conf import CohortRef, ModelRef, resolve_run_config
 from aeh.det import DeterministicEvaluator
 from aeh.extract import ExtractionWorker, assemble_request, prompt_fields
@@ -559,10 +560,8 @@ class SynthWorld:
         record_as_you_go: bool = True,
     ) -> None:
         for name, value in WORLD_ENV.items():
-            if monkeypatch is not None:
-                monkeypatch.setenv(name, value)
-            else:
-                os.environ[name] = value
+            # Restored after the test when no monkeypatch is given (TC-REG-10).
+            set_world_env(name, value, monkeypatch)
         self.monkeypatch = monkeypatch
         self.data_dir = data_dir
         self.fixture_dir = fixture_dir
@@ -1261,7 +1260,4 @@ _SCORE_UPSERT = (
 def _set_env(monkeypatch: Any, name: str, value: str) -> None:
     """Set one call-time knob through the test's monkeypatch when it is given, else
     the process environment - the env-gated knobs are read at call time (seam 3)."""
-    if monkeypatch is not None:
-        monkeypatch.setenv(name, value)
-    else:
-        os.environ[name] = value
+    set_world_env(name, value, monkeypatch)

@@ -8,6 +8,8 @@ only for failure injection elsewhere."*
 
 from __future__ import annotations
 
+
+import os
 import random
 from pathlib import Path
 
@@ -110,6 +112,56 @@ def network_guard(request: pytest.FixtureRequest):
 
 
 # --- the injected seams -------------------------------------------------------------------
+#: `pytester` runs TC-REG-10's guard against a real leaking test in an isolated session.
+pytest_plugins = ["pytester"]
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_setup(item):
+    """`TC-REG-10` (TS-126, #537): snapshot `HARNESS_*` before any fixture of this test runs."""
+    from tests.support.env_hygiene import harness_env_snapshot
+
+    item._harness_env_before = harness_env_snapshot()
+    yield
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_teardown(item, nextitem):
+    """`TC-REG-10`: after EVERY fixture of this test has torn down (monkeypatch included), no `HARNESS_*` variable differs
+    from the snapshot. A difference is undone and reported as this test's teardown error,
+    naming the keys. A leaked knob is read at call time by every later test, which is how ten
+    integration cases came to pass or fail by test order (design 1.9 §5.2).
+
+    A module-scoped world sets its knobs during the first test's setup, after the snapshot;
+    they are reset here at that test's teardown, so they never outlive it."""
+    outcome = yield
+    from tests.support.env_hygiene import harness_env_snapshot, take_world_env_names
+
+    before = getattr(item, "_harness_env_before", None)
+    if before is None:
+        return
+    # World builders' writes made without monkeypatch are reset to the test-start value here,
+    # after every fixture: whichever order monkeypatch and a module-scoped world wrote in,
+    # nothing they set outlives the test.
+    for key in take_world_env_names():
+        if key in before:
+            os.environ[key] = before[key]
+        else:
+            os.environ.pop(key, None)
+    after = harness_env_snapshot()
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    for key in changed:
+        if key in before:
+            os.environ[key] = before[key]
+        else:
+            os.environ.pop(key, None)
+    if changed and outcome.excinfo is None:
+        raise AssertionError(
+            f"{item.nodeid} left HARNESS_* variables changed: {changed}. Set knobs through "
+            "monkeypatch (or tests.support.env_hygiene.set_world_env) so they are restored; "
+            "a leaked knob changes every later test in the process (TC-REG-10).")
+
+
 @pytest.fixture(autouse=True)
 def random_arm_deterministic(monkeypatch: pytest.MonkeyPatch):
     """Pin the escalation random arm's draw rate to 0 for every test (#60, `FR-ORCH-11`).

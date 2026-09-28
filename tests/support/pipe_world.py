@@ -39,6 +39,7 @@ corpus.
 
 from __future__ import annotations
 
+from tests.support.env_hygiene import set_world_env
 import json
 import random
 import re
@@ -225,10 +226,8 @@ class PipeWorld(SynthWorld):
         # reason `CORPUS_ESCALATION_BUDGET` gives: at the shipped default M-ORCH defers this
         # cohort's widened pairs and the run can never reach a pending count of zero.
         monkeypatch = kwargs.get("monkeypatch")
-        if monkeypatch is not None:
-            monkeypatch.setenv(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET)
-        else:
-            os.environ[ESCALATION_BUDGET_ENV] = CORPUS_ESCALATION_BUDGET
+        # Restored after the test when no monkeypatch is given (TC-REG-10).
+        set_world_env(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET, monkeypatch)
         with pinned_uuid4():
             self._construct(data_dir, fixture_dir, **kwargs)
 
@@ -428,10 +427,8 @@ class JevSynthWorld(SynthWorld):
         self.decision_outcomes: dict[tuple[str, str], dict[str, Any]] = {}
         self.uniform_panel_ordinal = None
         self._fixture_dir_for_cfg = str(fixture_dir)
-        if monkeypatch is not None:
-            monkeypatch.setenv(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET)
-        else:
-            os.environ[ESCALATION_BUDGET_ENV] = CORPUS_ESCALATION_BUDGET
+        # Restored after the test when no monkeypatch is given (TC-REG-10).
+        set_world_env(ESCALATION_BUDGET_ENV, CORPUS_ESCALATION_BUDGET, monkeypatch)
         with pinned_uuid4():
             super().__init__(data_dir, fixture_dir, n_submissions=JEV_SYNTH_COUNT,
                              cohort_id="coh-jev-synth", run_id="run-jev-synth",

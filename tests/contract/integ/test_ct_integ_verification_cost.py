@@ -66,6 +66,7 @@ _REPS = 3
 _INNER = 20
 _EXPONENT_WINDOW = (0.5, 1.5)
 _BUDGET = 1.01  # the design's own "under 1%"
+
 _COVERAGE_UNITS = 12
 
 
@@ -208,20 +209,10 @@ def test_tc_integ_c12_verification_is_linear_in_total_span_bytes(tmp_data_dir):
     )
 
 
-@pytest.mark.slow
-def test_tc_integ_c12_verification_adds_under_one_percent_to_run_wall_clock(
-        tmp_data_dir):
-    """`TC-INTEG-C12` — the budget: the same workload with verification enabled
-    and disabled, the delta under the design's 1%. The disable knob is the
-    #75-declared seam; the arm order and the POP are the #75 review's."""
-    docs = _workload(n_sentences=200)
-    enabled = _timed_verify(tmp_data_dir / "enabled", docs, disabled=False)
-    disabled = _timed_verify(tmp_data_dir / "disabled", docs, disabled=True)
-    assert enabled <= disabled * _BUDGET, (
-        f"verification took {enabled:.4f}s against a disabled baseline of "
-        f"{disabled:.4f}s — over the 1% budget (NFR-INTEG-01) the clause says makes "
-        "every-unit verification affordable"
-    )
+# `TC-INTEG-C12`'s under-1% arm is retired into PERF-06
+# (`tests/perf/test_perf_06_zero_model_stages_full_run.py`), test plan 1.7 §5.0, TS-126 (#537):
+# NFR-INTEG-01 defines the 1% at full-run scale, and this micro-workload ratio flaked on a
+# clean tree while measuring a different quantity.
 
 
 def test_tc_integ_c12_no_unit_verification_needs_a_model_call(tmp_data_dir,

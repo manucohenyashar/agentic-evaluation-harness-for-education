@@ -84,29 +84,35 @@ def test_tc_store_c18_shuffled_order_changes_no_correct_reader(tmp_data_dir, mon
         shuffler = ShufflingQuery(seed=20260906)
         if store_kind == "shuffling":
             shuffler.install()
-            monkeypatch.undo = shuffler.uninstall  # restored even on failure
+        try:
+            _read_and_assert(handle, store_kind)
+        finally:
+            # Uninstalled even on failure. (It used to overwrite `monkeypatch.undo`, which
+            # disabled pytest's own restore and leaked HARNESS_* knobs: TC-REG-10.)
+            if store_kind == "shuffling":
+                shuffler.uninstall()
+            store.close()
 
-        # The orderless read: a correct caller reads a SET (or counts), never an order.
-        rows = handle.query(statement(
-            "SELECT student_ref FROM roster", issue=ISSUE))
-        found = {row[0] for row in rows}
-        assert found == {"ref-1", "ref-2", "ref-3"}, (
-            f"TC-STORE-C18 ({store_kind}): the orderless read lost rows under the shim: "
-            f"{found}. The non-promise is about ORDER, not presence — if shuffling changes "
-            "membership, the shim is broken, not the reader."
-        )
-        # The sanctioned escape: a stated ORDER BY is unaffected by the shim.
-        ordered = handle.query(statement(
-            "SELECT student_ref FROM roster ORDER BY student_ref", issue=ISSUE))
-        assert [row[0] for row in ordered] == ["ref-1", "ref-2", "ref-3"], (
-            f"TC-STORE-C18 ({store_kind}): a stated ORDER BY did not hold under the shim. "
-            "The escape is the clause's whole point — callers needing an order state it, "
-            "and it holds."
-        )
-        if store_kind == "shuffling":
-            shuffler.uninstall()
-            monkeypatch.undo = lambda: None
-        store.close()
+
+def _read_and_assert(handle, store_kind: str) -> None:
+    """The reads TC-STORE-C18 asserts: sets for an orderless read, exact order for ORDER BY."""
+    # The orderless read: a correct caller reads a SET (or counts), never an order.
+    rows = handle.query(statement(
+        "SELECT student_ref FROM roster", issue=ISSUE))
+    found = {row[0] for row in rows}
+    assert found == {"ref-1", "ref-2", "ref-3"}, (
+        f"TC-STORE-C18 ({store_kind}): the orderless read lost rows under the shim: "
+        f"{found}. The non-promise is about ORDER, not presence — if shuffling changes "
+        "membership, the shim is broken, not the reader."
+    )
+    # The sanctioned escape: a stated ORDER BY is unaffected by the shim.
+    ordered = handle.query(statement(
+        "SELECT student_ref FROM roster ORDER BY student_ref", issue=ISSUE))
+    assert [row[0] for row in ordered] == ["ref-1", "ref-2", "ref-3"], (
+        f"TC-STORE-C18 ({store_kind}): a stated ORDER BY did not hold under the shim. "
+        "The escape is the clause's whole point — callers needing an order state it, "
+        "and it holds."
+    )
 
 
 def test_tc_store_c18_no_cross_tier_join_or_referential_integrity(tmp_data_dir):

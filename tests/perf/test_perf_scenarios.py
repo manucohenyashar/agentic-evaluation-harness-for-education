@@ -142,10 +142,8 @@ SCENARIOS: dict[str, Scenario] = {s.perf_id: s for s in (
                     r"if gate_seconds >= INTEGRITY_SHARE_CEILING \* run_seconds:",
                     r"if per_call >= AGGREGATION_PER_CALL_CEILING_S:",
                     r"if deterministic\.total >= DETERMINISTIC_PASS_CEILING_S:")),
-            Holder("tests/integration/integ/test_integ_perf.py",
-                   "test_tc_integ_11_verification_adds_under_one_percent_to_wall_clock",
-                   (r"^_DIFFERENTIAL_BUDGET = 1\.01\b",
-                    r"assert enabled <= disabled \* _DIFFERENTIAL_BUDGET,")),
+            # TC-INTEG-11's micro-workload under-1% arm was retired into the full-run case above
+            # (test plan 1.7 §5.0, TS-126/#537): NFR-INTEG-01's 1% is defined at run scale.
             Holder("tests/unit/agg/test_aggregation_perf.py",
                    "test_tc_agg_20_five_thousand_two_hundred_fifty_aggregations_add_negligible_wall_clock",
                    (r"^_PER_CALL_CEILING_SECONDS = 0\.001\b", r"assert per_call < _PER_CALL_CEILING_SECONDS,")),
