@@ -661,17 +661,17 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # `record_shown` write what the BUILD decided (rank score, estimate, shown at) for the
     # items it showed, and `record_action` writes what the teacher then DID to one. Before
     # these the row said only that a cell had been flagged.
-    "aeh.review:1799",
-    "aeh.review:1805",
-    "aeh.review:1830",
-    "aeh.review:2826",
+    "aeh.review:1800",
+    "aeh.review:1806",
+    "aeh.review:1831",
+    "aeh.review:2827",
     # #115's collection route: the second durable write this module owns —
     # `_write_collected_label`'s single `tx.execute` in its transaction body,
     # passing `REVIEW_STATEMENTS["upsert_label"]`, a declared statement with
     # keyword parameters (FR-STORE-08, design §3.3). The same 19 columns
     # `insert_label` carries (27 since #368), upserted so a collected label can be re-keyed
     # into another cohort's administration. Pinned from the walker.
-    "aeh.review:3754",
+    "aeh.review:3761",
     # The #122/#126 console sites: one — the control row `perform` writes into the
     # run's cohort ledger (`_INSERT_RUN_CONTROL`, keyword-parameterized, the row the
     # orchestrator reads on its own schedule per CT-ORCH-13; re-pinned when the
