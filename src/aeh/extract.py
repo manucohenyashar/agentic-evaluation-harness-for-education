@@ -492,13 +492,63 @@ def _question_of(raw: Any) -> Question:
 DEFAULT_EVIDENCE_TYPE = "textual_span"
 
 
-def _criterion_of_run(store: Any, work_id: str, criterion_id: str) -> tuple[str, str]:
+#: Per-store memo of the pinned criteria (#516, CT-PKG-15: a package version is loaded once
+#: per run, not once per unit). Keyed by the store object's identity, and holding the store
+#: itself so the id is never reused while the entry lives. A published version is immutable,
+#: so a cached entry never goes stale.
+_PINNED_CRITERIA: dict[int, tuple[Any, dict[tuple[str, str, str], Any]]] = {}
+
+
+def _pinned_criterion(store: Any, package_id: str, version: str, criterion_id: str
+                      ) -> tuple[str, str, dict[str, str] | None] | None:
+    held = _PINNED_CRITERIA.get(id(store))
+    if held is None or held[0] is not store:
+        if len(_PINNED_CRITERIA) >= 8:
+            _PINNED_CRITERIA.clear()
+        held = (store, {})
+        _PINNED_CRITERIA[id(store)] = held
+    memo = held[1]
+    key = (package_id, version, criterion_id)
+    if key not in memo:
+        prefix = (package_id, version)
+        if not any(k[:2] == prefix for k in memo):
+            catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+            questions = {str(row.get("question_id") or ""): row
+                         for row in catalog.questions(version)}
+            for row in catalog.criteria(version):
+                memo[(package_id, version, str(row.get("criterion_id")))] = (
+                    _criterion_parts(catalog, row, questions))
+        memo.setdefault(key, None)
+    return memo[key]
+
+
+def _criterion_parts(catalog: Any, criterion: Any, questions: dict[str, Any]
+                     ) -> tuple[str, str, dict[str, str] | None]:
+    parts: list[str] = []
+    if criterion.get("construct_tag"):
+        parts.append(f"construct: {criterion['construct_tag']}")
+    bands = [f"{row['band']}: {row.get('descriptor') or ''}".rstrip(": ").rstrip()
+             for row in catalog.bands(str(criterion.get("criterion_id")))]
+    if bands:
+        parts.append("bands: " + "; ".join(bands))
+    evidence_type = str(criterion.get("evidence_type") or DEFAULT_EVIDENCE_TYPE)
+    question = None
+    row = questions.get(str(criterion.get("question_id") or ""))
+    if row is not None and (row.get("prompt_text") or row.get("reference_solution")):
+        question = {"prompt_text": str(row.get("prompt_text") or ""),
+                    "reference_solution": str(row.get("reference_solution") or "")}
+    return "\n".join(parts), evidence_type, question
+
+
+def _criterion_of_run(store: Any, work_id: str, criterion_id: str
+                      ) -> tuple[str, str, dict[str, str] | None]:
     """The criterion the unit's run pinned, as the extractor needs it (#516, CT-PKG-01/06):
-    wording built from what the package version declares (the question's prompt, the
-    construct the criterion measures, and each band's descriptor, in ordinal order), and
-    the criterion's `evidence_type`. Read through `PackageCatalog` from the run's own
-    version, so a later draft never changes a running unit's request. A unit whose run the
-    store does not hold keeps the empty criterion (the storeless assembly path)."""
+    wording built from what the package version declares (the construct the criterion
+    measures and each band's descriptor, in ordinal order), the criterion's
+    `evidence_type`, and the criterion's question (prompt and reference solution) when the
+    version declares one. Read through `PackageCatalog` from the run's own version, so a
+    later draft never changes a running unit's request. A unit whose run the store does not
+    hold keeps the empty criterion (the storeless assembly path)."""
     version_row = None
     for key in _cohort_keys_on_filesystem(store):
         rows = store.cohort(key).query(
@@ -507,29 +557,10 @@ def _criterion_of_run(store: Any, work_id: str, criterion_id: str) -> tuple[str,
             version_row = rows[0]
             break
     if version_row is None:
-        return "", ""
-    package_id = str(version_row["package_id"])
-    version = str(version_row["package_version_id"])
-    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
-    criterion = next((row for row in catalog.criteria(version)
-                      if row.get("criterion_id") == criterion_id), None)
-    if criterion is None:
-        return "", ""
-    parts: list[str] = []
-    question_id = str(criterion.get("question_id") or "")
-    if question_id:
-        for row in catalog.questions(version):
-            if str(row.get("question_id") or "") == question_id and row.get("prompt_text"):
-                parts.append(f"question: {row['prompt_text']}")
-                break
-    if criterion.get("construct_tag"):
-        parts.append(f"construct: {criterion['construct_tag']}")
-    bands = [f"{row['band']}: {row.get('descriptor') or ''}".rstrip(": ").rstrip()
-             for row in catalog.bands(criterion_id)]
-    if bands:
-        parts.append("bands: " + "; ".join(bands))
-    evidence_type = str(criterion.get("evidence_type") or DEFAULT_EVIDENCE_TYPE)
-    return "\n".join(parts), evidence_type
+        return "", "", None
+    pinned = _pinned_criterion(store, str(version_row["package_id"]),
+                               str(version_row["package_version_id"]), criterion_id)
+    return pinned if pinned is not None else ("", "", None)
 
 
 def _current_document(store: Any, submission_id: str) -> Any:
@@ -642,13 +673,17 @@ def assemble_request(
             )
         head = _current_document(store, submission_id)
         transcript = document_bytes(store, head).decode("utf-8")
-    text, evidence_type = ("", "")
+    text, evidence_type, pinned_question = ("", "", None)
     if store is not None:
-        text, evidence_type = _criterion_of_run(store, work_id, str(criterion_id))
+        text, evidence_type, pinned_question = _criterion_of_run(
+            store, work_id, str(criterion_id))
+    # The caller's `question=` wins; otherwise the question the pinned version declares, so
+    # the request never tells the extractor both that there is a question and that there
+    # is not (#516 review).
     return ExtractionRequest(
         work_id=work_id,
         criterion=Criterion(criterion_id=criterion_id, text=text, evidence_type=evidence_type),
-        question=_question_of(question),
+        question=_question_of(question if question is not None else pinned_question),
         dependency_evidence=tuple(
             _dependency_entry(entry)
             for entry in (dependency_evidence or ())
