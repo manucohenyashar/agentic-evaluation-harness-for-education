@@ -551,6 +551,21 @@ _DURABLE_006 = Migration(
 #: store makes to the durable tier, keyword-parameterized. Registered in the
 #: module's own registry, the shape every other contributing module uses.
 REVIEW_STATEMENTS: dict[str, Statement] = {
+    # #518 (CT-REVIEW-07): after a blind sitting is submitted, each blind label records the
+    # system's band from the stored score, plus the judgement columns derived from it. The
+    # sitting itself never reached the score (CT-REVIEW-09); this runs after it has ended.
+    # #518 review: the blind labels of a run that still lack the system band — the ones a
+    # failed join left behind — so any later submit or resubmit repairs them.
+    "select_unbanded_blind_labels": Statement(
+        "SELECT label_id, student_ref, criterion_id, teacher_band FROM label "
+        "WHERE run_id = :run_id AND label_type = 'blind' AND system_band IS NULL "
+        "ORDER BY label_id"
+    ),
+    "set_blind_system_band": Statement(
+        "UPDATE label SET system_band = :system_band, agreed = :agreed, "
+        "band_distance = :band_distance, system_points = :system_points "
+        "WHERE label_id = :label_id AND label_type = 'blind' AND system_band IS NULL"
+    ),
     # #398 / FR-CONSOLE-02: the reads that make a repeated action write nothing. A browser
     # repeats a post with no replay flag, and a fresh console holds no memory of the first,
     # so the durable label is the only place "this decision was already recorded" lives.
@@ -2116,6 +2131,9 @@ class ReviewService:
                 "blind_sample() returned are the submission's ids"
             )
         if session_id in self._blind_submitted:
+            # The sitting has ended; a join a first submit could not finish is repaired
+            # here before the resubmit is refused (#518 review; idempotent).
+            self._join_blind_system_bands(session)
             raise ReviewError(
                 f"blind session {session_id!r} was already submitted: a sitting answers once, "
                 "and a second submission would double-write the labels an agreement figure "
@@ -2133,18 +2151,20 @@ class ReviewService:
         # (FR-CONSOLE-02, #398): a repeated submission from a fresh console holds no
         # memory of the first, and a second blind label would be counted twice.
         recorded = self._recorded_blind_labels(session.run_id)
-        labels = [
-            self._write_blind_label(
+        written = [
+            (ref, self._write_blind_label(
                 ref,
                 band,
                 interrupted=interrupted,
                 review_seconds=review_seconds,
-            )
+            ))
             for ref in session.items
             if (band := bands.get(ref)) is not None
             and (ref.submission_id, ref.criterion_id) not in recorded
         ]
+        labels = [label for _ref, label in written]
         self._blind_submitted.add(session_id)
+        self._join_blind_system_bands(session)
         run_id = session.run_id
         self._blind_answered[run_id] = self._blind_answered.get(run_id, 0) + len(labels)
         self._record_action_emission(labels)
@@ -2818,6 +2838,42 @@ class ReviewService:
         with self._store.cohort(cohort_id).transaction() as tx:
             record_review(tx, str(run_id), item.submission_id, item.criterion_id,
                           str(band), points)
+
+    def _join_blind_system_bands(self, session: Any) -> None:
+        """CT-REVIEW-07 for blind labels (#518): every stored label carries both bands.
+
+        A blind label is written with `system_band = NULL`, because the sitting must not reach
+        the score row while the teacher answers (CT-REVIEW-09). Once the sitting is submitted,
+        each label records the band of the score it judged, read from the rows this service
+        loaded, with `agreed`, `band_distance` and `system_points` recomputed the same way
+        `_label_judgement_columns` computes them at write time. The in-memory records the
+        sitting produced keep `system_band = None`. A storeless service has no stored rows.
+
+        The join reads the run's blind labels that still lack the band from the store, not
+        just this call's labels, so a join that failed after the labels landed is repaired by
+        the next submit or resubmit (the UPDATE is guarded, so this is idempotent)."""
+        if self._store is None:
+            return
+        attributed = self._attribution_run() or session.run_id
+        pending = self._store.durable().query(
+            REVIEW_STATEMENTS["select_unbanded_blind_labels"], run_id=attributed)
+        updates = []
+        for stored in pending:
+            row = self._rows_by_id.get(f"{stored['student_ref']}:{stored['criterion_id']}")
+            band = getattr(row, "proposed_band", None) if row is not None else None
+            if band is None:
+                continue
+            probe = SimpleNamespace(system_band=band, teacher_band=stored["teacher_band"],
+                                    criterion_id=stored["criterion_id"], timestamp=None)
+            columns = self._label_judgement_columns(probe, attributed)
+            updates.append(dict(label_id=stored["label_id"], system_band=band,
+                                agreed=columns["agreed"], band_distance=columns["band_distance"],
+                                system_points=columns["system_points"]))
+        if not updates:
+            return
+        with self._store.durable().transaction() as tx:
+            for update in updates:
+                tx.execute(REVIEW_STATEMENTS["set_blind_system_band"], **update)
 
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
         """The id of the score's latest durable label when it records this same decision,
