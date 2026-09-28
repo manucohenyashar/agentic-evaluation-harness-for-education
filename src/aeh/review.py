@@ -340,6 +340,7 @@ import itertools
 import os
 import random
 import uuid
+import dataclasses
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -551,6 +552,14 @@ _DURABLE_006 = Migration(
 #: store makes to the durable tier, keyword-parameterized. Registered in the
 #: module's own registry, the shape every other contributing module uses.
 REVIEW_STATEMENTS: dict[str, Statement] = {
+    # #518 (CT-REVIEW-07): after a blind sitting is submitted, each blind label records the
+    # system's band from the stored score, plus the judgement columns derived from it. The
+    # sitting itself never reached the score (CT-REVIEW-09); this runs after it has ended.
+    "set_blind_system_band": Statement(
+        "UPDATE label SET system_band = :system_band, agreed = :agreed, "
+        "band_distance = :band_distance, system_points = :system_points "
+        "WHERE label_id = :label_id AND label_type = 'blind' AND system_band IS NULL"
+    ),
     # #398 / FR-CONSOLE-02: the reads that make a repeated action write nothing. A browser
     # repeats a post with no replay flag, and a fresh console holds no memory of the first,
     # so the durable label is the only place "this decision was already recorded" lives.
@@ -2133,18 +2142,20 @@ class ReviewService:
         # (FR-CONSOLE-02, #398): a repeated submission from a fresh console holds no
         # memory of the first, and a second blind label would be counted twice.
         recorded = self._recorded_blind_labels(session.run_id)
-        labels = [
-            self._write_blind_label(
+        written = [
+            (ref, self._write_blind_label(
                 ref,
                 band,
                 interrupted=interrupted,
                 review_seconds=review_seconds,
-            )
+            ))
             for ref in session.items
             if (band := bands.get(ref)) is not None
             and (ref.submission_id, ref.criterion_id) not in recorded
         ]
+        labels = [label for _ref, label in written]
         self._blind_submitted.add(session_id)
+        self._join_blind_system_bands(written, session)
         run_id = session.run_id
         self._blind_answered[run_id] = self._blind_answered.get(run_id, 0) + len(labels)
         self._record_action_emission(labels)
@@ -2818,6 +2829,35 @@ class ReviewService:
         with self._store.cohort(cohort_id).transaction() as tx:
             record_review(tx, str(run_id), item.submission_id, item.criterion_id,
                           str(band), points)
+
+    def _join_blind_system_bands(self, written: Sequence[tuple[Any, LabelRecord]], session: Any) -> None:
+        """CT-REVIEW-07 for blind labels (#518): every stored label carries both bands.
+
+        A blind label is written with `system_band = NULL`, because the sitting must not reach
+        the score row while the teacher answers (CT-REVIEW-09). Once the sitting is submitted,
+        each label records the band of the score it judged, read from the rows this service
+        loaded, with `agreed`, `band_distance` and `system_points` recomputed the same way
+        `_label_judgement_columns` computes them at write time. The in-memory records the
+        sitting produced keep `system_band = None`. A storeless service has no stored rows."""
+        if self._store is None or not written:
+            return
+        attributed = self._attribution_run() or session.run_id
+        updates = []
+        for ref, label in written:
+            row = self._rows_by_id.get(f"{ref.submission_id}:{ref.criterion_id}")
+            band = getattr(row, "proposed_band", None) if row is not None else None
+            if band is None:
+                continue
+            columns = self._label_judgement_columns(
+                dataclasses.replace(label, system_band=band), attributed)
+            updates.append(dict(label_id=label.label_id, system_band=band,
+                                agreed=columns["agreed"], band_distance=columns["band_distance"],
+                                system_points=columns["system_points"]))
+        if not updates:
+            return
+        with self._store.durable().transaction() as tx:
+            for update in updates:
+                tx.execute(REVIEW_STATEMENTS["set_blind_system_band"], **update)
 
     def _recorded_decision(self, item: Any, action: str, teacher_band: Any) -> str | None:
         """The id of the score's latest durable label when it records this same decision,
