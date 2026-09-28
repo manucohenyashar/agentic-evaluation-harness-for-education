@@ -54,6 +54,12 @@ def test_tc_reg_08_engine_off_run_equals_the_fb12d1e_baseline(head_snapshot) -> 
         for column in _NEW_VERDICT_COLUMNS:
             row.pop(column, None)
     now["tables"]["verdict"].sort(key=lambda r: json.dumps(r, sort_keys=True))
+    # #524 (FR-PIPE-18): cohort migration 30 adds `criterion_score.state_reason`, which is
+    # NULL on every row an ordinary run writes. Asserted NULL, then projected like the verdict
+    # columns above: an additive column that carries nothing on this path.
+    for row in now["tables"].get("criterion_score", []):
+        assert row.pop("state_reason", None) is None, (
+            f"an engine-off criterion_score row carries a state_reason: {row!r}")
     for section in ("status", "work_ids", "run_row", "profile_summary", "fixture_keys", "trace",
                     "decision_prescreen_rows"):
         assert now[section] == golden[section], (

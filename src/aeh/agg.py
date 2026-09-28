@@ -139,7 +139,9 @@ __all__ = [
     "CriterionScore",
     "EmptyVerdictsError",
     "EscalationDecision",
+    "EVEN_PANEL_AFTER_QUARANTINE",
     "EvenPanelError",
+    "aggregate_even_panel_after_quarantine",
     "PanelCorrelationError",
     "aggregate",
     "AGG_STATEMENTS",
@@ -392,6 +394,10 @@ class CriterionScore:
     #: FR id that required them, so a consumer reading the row alone can tell a
     #: discarded second verdict from a never-run one.
     notes: tuple[str, ...] = ()
+    #: FR-PIPE-18 (#524): why the row carries its `state` when the cause is not the state
+    #: itself, recorded on the row (`criterion_score.state_reason`, cohort migration 30).
+    #: Today one value: `even_panel_after_quarantine`. `None` everywhere else.
+    state_reason: str | None = None
     #: The four recorded integrity inputs (`FR-AGG-13`), passed through exactly
     #: as received — including `None` ("not measured"), which is adverse
     #: fail-closed wherever the figure is consumed. Recorded so the confidence
@@ -1086,11 +1092,11 @@ AGG_STATEMENTS: dict[str, Statement] = {
         "modal_band, band_spread, points, judge_count, agreement, confidence, "
         "confidence_base, spans_verified, evidence_present, sufficiency_flag, "
         "ocr_overlap_risk, described_evidence, extractor_disagreement, caps_fired, "
-        "routing, state) VALUES (:run_id, :submission_id, :criterion_id, :band, "
-        ":modal_band, :band_spread, :points, :judge_count, :agreement, :confidence, "
+        "routing, state, state_reason) VALUES (:run_id, :submission_id, :criterion_id, "
+        ":band, :modal_band, :band_spread, :points, :judge_count, :agreement, :confidence, "
         ":confidence_base, :spans_verified, :evidence_present, :sufficiency_flag, "
         ":ocr_overlap_risk, :described_evidence, :extractor_disagreement, :caps_fired, "
-        ":routing, :state) "
+        ":routing, :state, :state_reason) "
         "ON CONFLICT (run_id, submission_id, criterion_id) DO UPDATE SET "
         "band = excluded.band, modal_band = excluded.modal_band, "
         "band_spread = excluded.band_spread, points = excluded.points, "
@@ -1103,7 +1109,7 @@ AGG_STATEMENTS: dict[str, Statement] = {
         "described_evidence = excluded.described_evidence, "
         "extractor_disagreement = excluded.extractor_disagreement, "
         "caps_fired = excluded.caps_fired, routing = excluded.routing, "
-        "state = excluded.state"
+        "state = excluded.state, state_reason = excluded.state_reason"
     ),
 }
 
@@ -1307,6 +1313,41 @@ def write_score(
         caps_fired=json.dumps(list(score.caps_fired)),
         routing=score.routing,
         state=score.state,
+        state_reason=getattr(score, "state_reason", None),
+    )
+
+
+#: FR-PIPE-18 (#524): the `state_reason` of a cell whose widened panel was left even by a
+#: quarantined arm and whose replacement arm was refused.
+EVEN_PANEL_AFTER_QUARANTINE = "even_panel_after_quarantine"
+
+
+def aggregate_even_panel_after_quarantine(
+    verdicts: Sequence[Any], criterion: Any, signals: Any, *, config: Any = None,
+) -> CriterionScore:
+    """The score of a cell an even panel left ungradeable (FR-PIPE-18, CT-PIPE-12, ADR-34).
+
+    Quarantine left the widened panel even and its replacement arm was refused (budget or
+    breaker). An even panel is never aggregated as one (FR-AGG-03), so the row states what
+    the panel could not do: `ungradeable_by_panel`, routed `provisional` so review admits
+    it, with `state_reason = even_panel_after_quarantine`. The band shown to the reviewer is
+    the median of the panel before its last-landed verdict (an odd panel, never a rounded
+    even median), and the reviewer's decision is what settles the row."""
+    if len(verdicts) < 2 or len(verdicts) % 2:
+        raise EvenPanelError(
+            f"aggregate_even_panel_after_quarantine is for an even panel of two or more; got "
+            f"{len(verdicts)} verdict(s)")
+    base = aggregate(verdicts[:-1], criterion, signals, config=config)
+    return replace(
+        base,
+        routing="provisional",
+        state="ungradeable_by_panel",
+        state_reason=EVEN_PANEL_AFTER_QUARANTINE,
+        notes=base.notes + (
+            "even panel after quarantine, replacement arm refused: ungradeable_by_panel, "
+            "routed to review; band shown is the odd panel before the last-landed verdict "
+            "(FR-PIPE-18)",
+        ),
     )
 
 
@@ -1716,6 +1757,20 @@ _AGG_CONFIDENCE_COLUMNS = Migration(
 
 TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
     TIER_MIGRATIONS[Tier.COHORT] + (_AGG_CONFIDENCE_COLUMNS,), key=lambda m: m.version
+))
+
+# --- Tier C, migration 30 (#524, `FR-PIPE-18`): why a row carries its state ---------------------
+#
+# An `ungradeable_by_panel` row can come from the criterion breaker or from an even panel whose
+# replacement arm was refused; the reviewer must be able to tell which. NULL on every other row.
+_AGG_STATE_REASON = Migration(
+    version=30,
+    name="agg_criterion_score_state_reason",
+    statements=(Statement("ALTER TABLE criterion_score ADD COLUMN state_reason TEXT"),),
+)
+
+TIER_MIGRATIONS[Tier.COHORT] = tuple(sorted(
+    TIER_MIGRATIONS[Tier.COHORT] + (_AGG_STATE_REASON,), key=lambda m: m.version
 ))
 
 
