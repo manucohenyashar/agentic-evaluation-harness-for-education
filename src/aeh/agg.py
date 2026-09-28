@@ -112,7 +112,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Sequence
 
-from aeh.pkg import PackageError, points_for_band
+from aeh.pkg import NoValidationData, PackageError, points_for_band
 from aeh.store import (
     Migration,
     MigrationError,
@@ -1523,6 +1523,11 @@ def should_escalate(
     # 4. The criterion's override history — contested, escalated before, or
     # unmeasured (weighted low, never read as a zero — CT-STATS-09).
     override_rate = _row_field(history, "override_rate")
+    if isinstance(history, NoValidationData):
+        # CT-STATS-09 / FR-AGG-08 (#520): M-STATS answers "no override data" with its absence
+        # value, which carries no `override_rate` at all. It is the no-data case, weighted
+        # low, never skipped as if the field were simply missing.
+        override_rate = None
     if override_rate is not _AGG_ABSENT:
         if override_rate is None:
             concern += no_data_weight
