@@ -182,18 +182,18 @@ TIER_MIGRATIONS[Tier.COHORT] = TIER_MIGRATIONS[Tier.COHORT] + (
 # --- the runtime statements (declared, never assembled — FR-STORE-08, SEC-15) ---------------------
 
 SYNTH_STATEMENTS: dict[str, Statement] = {
-    "select_score_units": Statement(
+    "select_synth_score_units": Statement(
         "SELECT work_id, criterion_id, status FROM work_unit "
         "WHERE run_id = :run_id AND submission_id = :submission_id AND stage = 'score'"
     ),
     "select_verdicts": Statement(
         "SELECT verdict_id, work_id, judge_id, band FROM verdict WHERE work_id = :work_id"
     ),
-    "select_evidence": Statement(
+    "select_synth_evidence": Statement(
         "SELECT evidence_id, work_id, document_id, payload FROM evidence "
         "WHERE work_id = :work_id"
     ),
-    "select_document": Statement(
+    "select_synth_document": Statement(
         "SELECT document_id, submission_id, markdown FROM document "
         "WHERE document_id = :document_id"
     ),
@@ -654,7 +654,7 @@ class SynthesisWorker:
             if unit["criterion_id"] not in criterion_ids:
                 continue
             for row in cohort.query(
-                SYNTH_STATEMENTS["select_evidence"], work_id=unit["work_id"]
+                SYNTH_STATEMENTS["select_synth_evidence"], work_id=unit["work_id"]
             ):
                 if row["payload"] is not None:
                     texts.extend(_payload_span_texts(row["payload"]))
@@ -664,7 +664,7 @@ class SynthesisWorker:
                     continue
                 seen_documents.add(document_id)
                 documents = cohort.query(
-                    SYNTH_STATEMENTS["select_document"], document_id=document_id
+                    SYNTH_STATEMENTS["select_synth_document"], document_id=document_id
                 )
                 if not documents or documents[0]["submission_id"] != submission_id:
                     LOGGER.error(
@@ -840,7 +840,7 @@ class SynthesisWorker:
         units = [
             dict(row)
             for row in cohort.query(
-                SYNTH_STATEMENTS["select_score_units"],
+                SYNTH_STATEMENTS["select_synth_score_units"],
                 run_id=run_id,
                 submission_id=submission_id,
             )
@@ -909,7 +909,7 @@ class SynthesisWorker:
             units = [
                 dict(row)
                 for row in cohort.query(
-                    SYNTH_STATEMENTS["select_score_units"],
+                    SYNTH_STATEMENTS["select_synth_score_units"],
                     run_id=run_id,
                     submission_id=submission_id,
                 )

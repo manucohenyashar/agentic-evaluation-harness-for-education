@@ -422,12 +422,12 @@ JUDGE_STATEMENTS: dict[str, Statement] = {
         "SELECT work_id, run_id, submission_id, criterion_id, stage, status, "
         "attempts, last_error FROM work_unit WHERE work_id = :work_id"
     ),
-    "select_run": Statement(
+    "select_judge_run": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, panel_config, "
         "backend_profile, provider_config, prompt_template_v, status, started_at, "
         "completed_at FROM run WHERE run_id = :run_id"
     ),
-    "select_evidence": Statement(
+    "select_judge_run_evidence": Statement(
         "SELECT e.evidence_id, e.payload "
         "FROM evidence e JOIN work_unit w ON w.work_id = e.work_id "
         "WHERE w.run_id = :run_id AND w.submission_id = :submission_id "
@@ -1476,7 +1476,7 @@ def _evidence_spans(cohort: Any, run_id: str, submission_id: str, criterion_id: 
     back verbatim from the payload's own JSON: the request re-checks the span schema
     and forwards them unchanged."""
     rows = cohort.query(
-        JUDGE_STATEMENTS["select_evidence"],
+        JUDGE_STATEMENTS["select_judge_run_evidence"],
         run_id=run_id,
         submission_id=submission_id,
         criterion_id=criterion_id,
@@ -1549,7 +1549,7 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
             run_id = cohort.query(
                 JUDGE_STATEMENTS["select_work_unit"], work_id=work_id
             )[0]["run_id"]
-        run_rows = cohort.query(JUDGE_STATEMENTS["select_run"], run_id=run_id)
+        run_rows = cohort.query(JUDGE_STATEMENTS["select_judge_run"], run_id=run_id)
         if run_rows:
             criterion, question = _rubric_of(store, run_rows[0], str(criterion_id))
             evidence = _evidence_spans(cohort, str(run_id), str(submission_id), str(criterion_id))

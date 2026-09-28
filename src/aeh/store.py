@@ -4276,7 +4276,60 @@ def store_metrics(store: SqliteStore) -> dict[str, Any]:
 # Every entry today is free of the search shapes; the registry's own first entry rule is that
 # it stays that way.
 
-STATEMENTS: Mapping[str, Statement] = {
+class StatementConflictError(ValueError):
+    """A statement name registered a second time with different SQL (FR-STORE-16, CT-STORE-19).
+
+    Raised at import by the module whose registration conflicts, naming both modules. The
+    registry is left exactly as it was: a name has one SQL text whatever the import order."""
+
+
+class _StatementRegistry(dict):
+    """The shared `STATEMENTS` registry: one SQL text per name (FR-STORE-16, ADR-32).
+
+    `aeh.det`, `aeh.grade`, `aeh.ingest` and `aeh.pkg` merge their statements into this one
+    dictionary at import. Before #511 a name two of them declared differently resolved to
+    whichever module imported last (TC-REG-07 was one such crash). A registration that reuses
+    a name with different SQL now raises `StatementConflictError` and changes nothing; a
+    byte-identical re-registration is allowed, so importing twice is harmless."""
+
+    def __init__(self, entries: Mapping[str, Statement], owner: str) -> None:
+        super().__init__(entries)
+        self._owners = dict.fromkeys(entries, owner)
+
+    @staticmethod
+    def _registering_module() -> str:
+        # Frame 0 is this helper, 1 the registry method, 2 the registering code.
+        return str(sys._getframe(2).f_globals.get("__name__", "<unknown>"))
+
+    def _admit(self, entries: Mapping[str, Statement], owner: str) -> None:
+        for name, statement in entries.items():
+            if name in self and str(self[name]) != str(statement):
+                raise StatementConflictError(
+                    f"statement {name!r} is already registered by {self._owners.get(name)} "
+                    f"with different SQL; {owner} must register its statement under a "
+                    "different name (FR-STORE-16: one SQL text per statement name)")
+        for name, statement in entries.items():
+            dict.__setitem__(self, name, statement)
+            self._owners.setdefault(name, owner)
+
+    def __setitem__(self, name: str, statement: Statement) -> None:
+        self._admit({name: statement}, self._registering_module())
+
+    def update(self, *args: Any, **kwargs: Any) -> None:  # type: ignore[override]
+        self._admit(dict(*args, **kwargs), self._registering_module())
+
+    def setdefault(self, name: str, statement: Statement) -> Statement:  # type: ignore[override]
+        # A conflicting setdefault is a conflicting registration too: returning the other
+        # module's SQL silently would be the same defect with the first writer winning.
+        self._admit({name: statement}, self._registering_module())
+        return self[name]
+
+    def __ior__(self, other: Any) -> "_StatementRegistry":  # type: ignore[override]
+        self._admit(dict(other), self._registering_module())
+        return self
+
+
+STATEMENTS: Mapping[str, Statement] = _StatementRegistry({
     # -- schema-version bookkeeping (the migration machinery) ---------------------------------
     "create_schema_version_table": _SCHEMA_VERSION_TABLE,
     "select_applied_versions": _SELECT_APPLIED_VERSIONS,
@@ -4328,4 +4381,4 @@ STATEMENTS: Mapping[str, Statement] = {
         for migration in migrations
         for index, statement in enumerate(migration.statements)
     },
-}
+}, owner=__name__)

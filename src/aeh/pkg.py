@@ -1920,7 +1920,7 @@ PKG_STATEMENTS.update({
         "INSERT INTO question_option (package_version_id, question_id, option_id, "
         "ordinal, label) VALUES (:v, :question_id, :option_id, :ordinal, :label)"
     ),
-    "select_question_options": Statement(
+    "select_version_question_options": Statement(
         "SELECT question_id, option_id, ordinal, label FROM question_option "
         "WHERE package_version_id = :v ORDER BY question_id, ordinal"
     ),

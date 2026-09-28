@@ -2504,7 +2504,7 @@ CALIB_STATEMENTS: dict[str, Statement] = {
         "VALUES (:cohort_id, :r0, :r1, :paper_id, :criterion_id, "
         ":r0_band, :r1_band, :recorded_at)"
     ),
-    "select_roster": Statement(
+    "select_calib_roster": Statement(
         "SELECT paper_id, criterion_id, r0_band, r1_band FROM calib_roster "
         "WHERE cohort_id = :cohort_id AND r0 = :r0 AND r1 = :r1 "
         "ORDER BY paper_id, criterion_id"
@@ -2690,7 +2690,7 @@ def _roster_from_store(cohort_id: str, *, r0: str, r1: str) -> _ClassRoster | No
     try:
         rows = [
             dict(row) for row in store.durable().query(
-                CALIB_STATEMENTS["select_roster"], cohort_id=cohort_id, r0=r0, r1=r1
+                CALIB_STATEMENTS["select_calib_roster"], cohort_id=cohort_id, r0=r0, r1=r1
             )
         ]
     except sqlite3.OperationalError:

@@ -71,7 +71,7 @@ DECLARED_SIGNAL_FIELDS = {
 #: which is the clause's point rather than an exception to it.
 SANCTIONED_SCORE_WRITERS = {
     "agg.py": ["upsert_criterion_score"],
-    "det.py": ["upsert_criterion_score", "upsert_rederived_score"],
+    "det.py": ["upsert_det_criterion_score", "upsert_rederived_score"],
 }
 
 #: Every other module that could reach the table. `pipeline.py` is on the list because

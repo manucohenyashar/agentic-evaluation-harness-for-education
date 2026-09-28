@@ -73,14 +73,15 @@ def test_tc_reg_07_the_document_head_read_still_carries_the_transcript() -> None
 
 
 def test_tc_reg_07_the_two_declarations_really_do_differ() -> None:
-    """The positive control: `aeh.det` still declares the same NAME with different columns.
+    """The positive control: `aeh.det`'s document-head read still differs from `aeh.ingest`'s.
 
-    Without this the two cases above could pass on a tree where the conflict had quietly gone
-    away, and would then be asserting nothing. If this ever fails because the names were made
-    distinct, that is the better fix and these cases retire with it.
+    Since #511 (FR-STORE-16) the two carry different NAMES (`select_det_document_head`), so the
+    collision can no longer happen; this keeps asserting that the texts really differ, which is
+    why the distinct name is needed. Without it the cases above could pass on a tree where the
+    difference had quietly gone away, and would then be asserting nothing.
     """
     ingest_sql = aeh.ingest.INGEST_STATEMENTS["select_document_head"].sql
-    det_sql = aeh.det.DET_STATEMENTS["select_document_head"].sql
+    det_sql = aeh.det.DET_STATEMENTS["select_det_document_head"].sql
     assert ingest_sql != det_sql, (
         "aeh.det and aeh.ingest now declare select_document_head identically; the collision "
         "this case guards is gone and the guard can go with it")

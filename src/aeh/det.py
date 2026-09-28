@@ -628,7 +628,7 @@ _DET_AUDIT_SEPARATION = Migration(
 
 
 DET_STATEMENTS: dict[str, Statement] = {
-    "select_run": Statement(
+    "select_det_run": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id FROM run "
         "WHERE run_id = :run_id"
     ),
@@ -653,17 +653,17 @@ DET_STATEMENTS: dict[str, Statement] = {
     ),
     # M-INGEST's head-document query shape: page replacements append newer
     # documents, so the head is the last row.
-    "select_document_head": Statement(
+    "select_det_document_head": Statement(
         "SELECT document_id, submission_id, content_hash, parent_doc_id, "
         "created_at FROM document WHERE submission_id = :submission_id "
         "ORDER BY created_at, document_id"
     ),
-    "select_regions": Statement(
+    "select_det_regions": Statement(
         "SELECT region_id, document_id, element_kind, region_kind, retraction, "
         "content_state, selection_state, selection FROM document_region "
         "WHERE document_id = :document_id ORDER BY position"
     ),
-    "upsert_criterion_score": Statement(
+    "upsert_det_criterion_score": Statement(
         "INSERT INTO criterion_score (run_id, submission_id, criterion_id, band, "
         "modal_band, band_spread, points, judge_count, agreement, state, routing) "
         "VALUES (:run_id, :submission_id, :criterion_id, :band, :band, 0, :points, "
@@ -719,7 +719,7 @@ DET_STATEMENTS: dict[str, Statement] = {
         "judge_count = excluded.judge_count, agreement = excluded.agreement, "
         "state = excluded.state, routing = excluded.routing"
     ),
-    "insert_audit_record": Statement(
+    "insert_det_audit_record": Statement(
         "INSERT INTO audit_record (audit_record_id, run_id, recorded_at, "
         "profile_summary, submission_id, criterion_id, final_points, decided_by, "
         "package_version_id, evaluation_mode, panel_config, prompt_template_v, "
@@ -994,7 +994,7 @@ class DeterministicEvaluator:
         )
         with cohort_handle.transaction() as tx:
             tx.execute(
-                DET_STATEMENTS["upsert_criterion_score"],
+                DET_STATEMENTS["upsert_det_criterion_score"],
                 run_id=run_id,
                 submission_id=submission_id,
                 criterion_id=criterion_id,
@@ -1111,7 +1111,7 @@ class DeterministicEvaluator:
         with cohort_handle.transaction() as tx:
             for submission_id, criterion, outcome, points in scored:
                 tx.execute(
-                    DET_STATEMENTS["upsert_criterion_score"],
+                    DET_STATEMENTS["upsert_det_criterion_score"],
                     run_id=run_id,
                     submission_id=submission_id,
                     criterion_id=criterion["criterion_id"],
@@ -1403,7 +1403,7 @@ class DeterministicEvaluator:
         index of run ids would be bookkeeping the ledger forbids)."""
         for key in self._cohort_keys_for(self._store):
             rows = self._store.cohort(key).query(
-                DET_STATEMENTS["select_run"], run_id=run_id
+                DET_STATEMENTS["select_det_run"], run_id=run_id
             )
             if rows:
                 return rows[0]
@@ -1456,7 +1456,7 @@ class DeterministicEvaluator:
                 if outcome.band == BAND_UNRESOLVED:
                     continue
                 tx.execute(
-                    DET_STATEMENTS["insert_audit_record"],
+                    DET_STATEMENTS["insert_det_audit_record"],
                     audit_record_id=uuid.uuid4().hex,
                     run_id=run["run_id"],
                     recorded_at=_now(),
@@ -1582,13 +1582,13 @@ class DeterministicEvaluator:
         and one regions query — the shape the cohort pass needs to stay a
         single pass (`NFR-DET-01`)."""
         documents = cohort_handle.query(
-            DET_STATEMENTS["select_document_head"], submission_id=submission_id
+            DET_STATEMENTS["select_det_document_head"], submission_id=submission_id
         )
         if not documents:
             return {}
         head = documents[-1]
         regions = cohort_handle.query(
-            DET_STATEMENTS["select_regions"], document_id=head["document_id"]
+            DET_STATEMENTS["select_det_regions"], document_id=head["document_id"]
         )
         mine: dict[str, list[Any]] = {}
         for row in regions:

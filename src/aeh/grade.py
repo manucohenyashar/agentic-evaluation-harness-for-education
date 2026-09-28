@@ -762,7 +762,7 @@ def _with_amendments(rows: Iterable[Any], overrides: Mapping[str, float]) -> lis
 
 GRADE_STATEMENTS: dict[str, Statement] = {
     # Tier R reads — the run row, the run's submissions, one submission's scores.
-    "select_run": Statement(
+    "select_grade_run": Statement(
         "SELECT run_id, cohort_id, package_version_id, package_id, status FROM run "
         "WHERE run_id = :run_id"
     ),
@@ -1168,7 +1168,7 @@ class GradingService:
         precedent)."""
         for key in self._cohort_keys():
             cohort = self._store.cohort(key)
-            rows = cohort.query(GRADE_STATEMENTS["select_run"], run_id=run_id)
+            rows = cohort.query(GRADE_STATEMENTS["select_grade_run"], run_id=run_id)
             if rows:
                 return cohort, rows[0]
         raise GradeError(
