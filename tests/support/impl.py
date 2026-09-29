@@ -1361,6 +1361,38 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",
         ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",),
     ),
+    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S2 says 'No parts have been uploaded' and S3 'Questions read back: 0' over a dropped table.
+    "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]\" \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]\"",
+        ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]', 'tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]',),
+    ),
+    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S3 reads the hard-coded pkg-mconsole tier, so every real package shows 0 questions with nothing to edit.
+    "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows",
+        ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows',),
+    ),
+    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): the console's review service binds no package catalog, so M-REVIEW refuses the run's own band names.
+    "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded",
+        ('tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label', 'tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded'),
+    ),
+    # Found by TS-91, owned by NO issue yet (needs one from /plan-to-issues): the declared
+    # blind-flow plan still reads the removed blind_sample table (FR-CONSOLE-35).
+    "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_the_blind_flow_plan_names_no_removed_table",
+        ("tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_the_blind_flow_plan_names_no_removed_table",),
+    ),
+    # Found by TS-99, owned by NO issue yet (needs one from /plan-to-issues): M-PIPE's hooks
+    # cost 3.9 ms/unit at 10 submissions and 9.3 ms/unit at 40, against NFR-PIPE-02's 0.25 ms.
+    "unowned: composition adds at most 0.25 ms per unit (TS-99 PERF-11)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
+        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
