@@ -1732,7 +1732,12 @@ class ConsoleApp:
         # listing) or from the standing names.
         files = params.get("files")
         cohort_id = params.get("cohort_id")
-        if not files and cohort_id and getattr(self._store, "data_dir", None) is not None:
+        if (not files and cohort_id and getattr(self._store, "data_dir", None) is not None
+                and str(cohort_id) not in self._cohort_keys()):
+            # An id naming no existing cohort file: nothing was uploaded to it, and reading it
+            # must not create one (#531 review).
+            files = ()
+        elif not files and cohort_id and getattr(self._store, "data_dir", None) is not None:
             # FR-CONSOLE-27 (#531): on a real store, the parts the upload recorded, in the
             # assembled (filename-tier) order; nothing at all when nothing was uploaded.
             from aeh.pipeline import uploaded_parts
@@ -4904,6 +4909,7 @@ def upload_scans(
     size_bytes: int = 0,
     stream: Any = None,
     filename: str = "",
+    record: bool = True,
 ) -> UploadOutcome:
     """The upload handler (`FR-CONSOLE-04`, `NFR-CONSOLE-06`). Long work never happens
     here: the handler walks the declared size in chunk-sized steps and dispatches, and
@@ -4979,13 +4985,11 @@ def upload_scans(
                 ),
             )
     store = getattr(app, "_store", None) if app is not None else None
-    if (store is not None and stream is not None and filename
-            and getattr(store, "data_dir", None) is not None):
+    if record and stream is not None and filename and blob_refs:
         # FR-CONSOLE-27 (#531): a real store records what arrived, so S2 can show the
-        # teacher the order of THEIR upload before transcription.
-        from aeh.pipeline import record_upload
-
-        record_upload(store, cohort_id, filename, blob_refs[0])
+        # teacher the order of THEIR upload before transcription. The HTTP route passes
+        # record=False and records only once the whole body has arrived.
+        _record_upload_part(app, cohort_id, filename, blob_refs[0])
     if store is not None and hasattr(store, "writes"):
         # The audit double: record the intake row the way `perform` records its rows,
         # so the declared-field contract covers the upload's write too.
@@ -5007,6 +5011,20 @@ def upload_scans(
 
 def _chunk_ref(chunk: bytes) -> str:
     return "sha256:" + hashlib.sha256(chunk).hexdigest()
+
+
+def _record_upload_part(app: Any, cohort_id: str, filename: str, blob_ref: str) -> None:
+    """Record one uploaded part through M-INGEST (via M-PIPE, the console's declared seam), and
+    only for a cohort whose ledger file already exists: the id arrives from a request, and a
+    free-form id must never name a file (a traversal, or a stray cohort) (#531 review)."""
+    store = getattr(app, "_store", None) if app is not None else None
+    if store is None or getattr(store, "data_dir", None) is None:
+        return
+    if cohort_id not in app._cohort_keys():
+        return
+    from aeh.pipeline import record_upload
+
+    record_upload(store, cohort_id, filename, blob_ref)
 
 
 def _stage_chunk(chunk: bytes, app: Any) -> None:
@@ -5257,6 +5275,7 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
             size_bytes=length,
             stream=reader,
             filename=str(query.get("filename", "")),
+            record=False,
         )
         if reader.consumed != length:
             # A client that disconnected mid-body: the staged chunks are a truncated document,
@@ -5267,6 +5286,10 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
                 "text/plain; charset=utf-8", close=True,
             )
             return
+        if outcome.dispatched and outcome.blob_refs and query.get("filename"):
+            # The whole body arrived: only now is the part recorded (#531 review).
+            _record_upload_part(self._console.app, str(query.get("cohort_id", "")),
+                                str(query.get("filename")), str(outcome.blob_refs[0]))
         body = json.dumps({
             "dispatched": bool(outcome.dispatched),
             "blob_refs": [str(ref) for ref in outcome.blob_refs],
