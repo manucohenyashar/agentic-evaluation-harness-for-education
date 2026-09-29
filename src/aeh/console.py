@@ -182,7 +182,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from html import escape
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
-from typing import Any, Callable, Iterator, NamedTuple
+from typing import Any, Callable, Iterator, Mapping, NamedTuple
 
 from aeh.conf import CohortRef, ModelRef, effective_config, resolve_run_config
 from aeh.grade import GradingService, rollup_findings
@@ -939,6 +939,52 @@ _PROVENANCE_FOOTER = (
     f"· rubric version {GRADE_PROVENANCE['rubric_version']} "
     f"· backend profile {GRADE_PROVENANCE['backend_profile']}"
 )
+
+#: FR-CONSOLE-40 (#533): the run's persisted `ProfileSummary` (M-ORCH's run-start audit
+#: record) and the newest run that holds a package version or a submission's scores.
+_SELECT_RUN_PROFILE_SUMMARY = (
+    "SELECT profile_summary FROM audit_record WHERE run_id = :run_id "
+    "AND profile_summary IS NOT NULL ORDER BY recorded_at LIMIT 1"
+)
+_SELECT_NEWEST_RUN_FOR_VERSION = (
+    "SELECT run_id, COALESCE(started_at, '') AS started_at FROM run "
+    "WHERE package_version_id = :package_version_id "
+    "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1"
+)
+#: The run S13's scores come from (`_SELECT_SCORES`' own subselect), so the provenance line
+#: names the run whose scores are shown (#533 review).
+_SELECT_NEWEST_RUN_FOR_SUBMISSION = (
+    "SELECT run_id FROM criterion_score WHERE submission_id = :submission_id "
+    "AND run_id = (SELECT run_id FROM run "
+    "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1) LIMIT 1"
+)
+_NO_PROVENANCE = (
+    "provenance: no run has produced these grades yet, so there is no package, rubric or "
+    "backend to name"
+)
+
+
+def _provenance_from(row: Mapping[str, Any], summary: Mapping[str, Any] | None) -> str:
+    """The provenance line of one run (FR-CONSOLE-40): the run row's package version and
+    rubric revision, and the persisted summary's backend profile and panel, plus the decision
+    engine and build when the summary carries one. Credential-free by construction: the
+    summary holds build identities only (CT-CONF-10)."""
+    version = str(row.get("package_version_id") or "")
+    rubric = version.rpartition("@")[2] or version
+    parts = [f"package version {version}", f"rubric version {rubric}"]
+    if summary:
+        parts.append(f"backend profile {summary.get('backend_profile')}")
+        panel = [str(ref.get("build_id")) for ref in summary.get("panel") or ()
+                 if isinstance(ref, Mapping)]
+        if panel:
+            parts.append("panel " + ", ".join(panel))
+        engine = summary.get("decision_engine")
+        if isinstance(engine, Mapping):
+            parts.append(f"decision engine {engine.get('provider')} {engine.get('build_id')}")
+    else:
+        parts.append("backend profile not recorded for this run")
+    return " · ".join(parts)
+
 
 #: The standing agreement figure the rollup renders on the audit double and the
 #: storeless default build (`data_dir is None`, the same discriminator `_write_rows`
@@ -1917,6 +1963,7 @@ class ConsoleApp:
             left=contents.residual_provisional,
             budget_minutes=contents.budget_minutes,
             entries=_review_queue_entries(contents.shown),
+            provenance=self._provenance_line(run_id=run_id),
         )
 
     def _render_sample(self, queries: list[str]) -> str:
@@ -2002,7 +2049,7 @@ class ConsoleApp:
             + self._render_rubric_findings(run_id, queries)
             + _section("finalization", audit or "Nothing has been finalized for this run yet.")
             + self._render_key_correction(run_id, queries)
-            + _section("provenance", _PROVENANCE_FOOTER)
+            + _section("provenance", self._provenance_line(run_id=run_id))
             + _band_section(run_id)
         )
 
@@ -2172,7 +2219,7 @@ class ConsoleApp:
         name = self._student_name or ref or "this student"
         return (
             _section("student", f"Student record for {escape(name)}.")
-            + _section("provenance", _PROVENANCE_FOOTER)
+            + _section("provenance", self._provenance_line(submission_id=ref))
             + _section(
                 "pattern-check",
                 "Narratives on this page are presented as pattern-checked only — the "
@@ -2215,7 +2262,7 @@ class ConsoleApp:
                 f"Validation record: {escape(record.provenance_gate_outcome)}. The gate's "
                 "outcome is written to the validation record whether it passes or refuses.",
             )
-            + _section("provenance", _PROVENANCE_FOOTER)
+            + _section("provenance", self._provenance_line(package_version=package_version))
             + _band_section(package_version)
         )
 
@@ -2611,6 +2658,39 @@ class ConsoleApp:
             "SELECT run_id, cohort_id, package_id, package_version_id, status FROM run "
             "WHERE run_id = :run_id", run_id=run_id))
         return dict(rows[0]) if rows else None
+
+    def _provenance_line(self, *, run_id: str | None = None, submission_id: str | None = None,
+                         package_version: str | None = None) -> str:
+        """FR-CONSOLE-40 / CT-CONSOLE-29 (#533): the provenance under a grade, from the run
+        that produced it — named directly, or the newest run holding the submission's
+        scores or the package version. The storeless audit double keeps `GRADE_PROVENANCE`;
+        a real store with no such run says so instead of printing a constant."""
+        if getattr(self._store, "data_dir", None) is None:
+            return _PROVENANCE_FOOTER
+        log: list[str] = []
+        if run_id is None and submission_id:
+            rows = self._read_cohort_files(_SELECT_NEWEST_RUN_FOR_SUBMISSION, log,
+                                           submission_id=submission_id)
+            run_id = str(_row_get(rows[-1], "run_id")) if rows else None
+        if run_id is None and package_version:
+            rows = self._read_cohort_files(_SELECT_NEWEST_RUN_FOR_VERSION, log,
+                                           package_version_id=package_version)
+            if rows:
+                # One newest row per cohort file: the newest across them all.
+                newest = max(rows, key=lambda row: (str(_row_get(row, "started_at") or ""),
+                                                    str(_row_get(row, "run_id"))))
+                run_id = str(_row_get(newest, "run_id"))
+        row = self._run_row(run_id) if run_id else None
+        if row is None:
+            return _NO_PROVENANCE
+        summary = None
+        found = self._read(_SELECT_RUN_PROFILE_SUMMARY, log, run_id=run_id)
+        if found:
+            try:
+                summary = json.loads(str(_row_get(found[0], "profile_summary")))
+            except (TypeError, ValueError):
+                summary = None
+        return _provenance_from(row, summary if isinstance(summary, Mapping) else None)
 
     def _catalog(self, package_id: str) -> PackageCatalog:
         return PackageCatalog(self._store.package(package_id), package_id=package_id)
@@ -4714,6 +4794,7 @@ def _review_queue_body(
     left: int,
     budget_minutes: int | None,
     entries: str,
+    provenance: str = _PROVENANCE_FOOTER,
 ) -> str:
     """The review screen's body, shared by the route and the module-level renderer:
     header first (invariant 8), then the budget line, then group actions above the
@@ -4726,7 +4807,7 @@ def _review_queue_body(
         + '<div data-role="group-actions"><p>Group actions: accept a group\'s proposed '
         "band for every member at once, or open the group to act per item.</p></div>"
         + '<section data-role="queue-items">' + entries + "</section>"
-        + _section("provenance", _PROVENANCE_FOOTER)
+        + _section("provenance", provenance)
         + _band_section("this run")
     )
 
@@ -4765,6 +4846,7 @@ def render_review_queue(
                     left=queue.residual_provisional,
                     budget_minutes=queue.budget_minutes,
                     entries=_review_queue_entries(queue.shown),
+                    provenance=_service_provenance(source, run_id),
                 )
                 + _section(
                     "build-trace",
@@ -4786,10 +4868,21 @@ def render_review_queue(
                 left=contents.flagged_total - len(contents.shown),
                 budget_minutes=contents.budget_minutes,
                 entries=_review_queue_entries(contents.shown),
+                provenance=source._provenance_line(run_id=run_id),
             ),
         ),
         queries=view.queries,
     )
+
+
+def _service_provenance(service: Any, run_id: str) -> str:
+    """The provenance line for a queue a `ReviewService` built (FR-CONSOLE-40, #533 review):
+    from the producing run when the service holds a real store, the storeless double's value
+    otherwise."""
+    store = getattr(service, "_store", None)
+    if store is None or getattr(store, "data_dir", None) is None:
+        return _PROVENANCE_FOOTER
+    return build_console(store=store)._provenance_line(run_id=run_id)
 
 
 def review_queue_header(page: Any) -> dict[str, int]:
