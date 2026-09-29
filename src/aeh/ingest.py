@@ -4829,6 +4829,13 @@ class Ingestor:
             component is not False for component in components.values()) else "mismatch"
         return signal, components
 
+    def _head_inventory(self, document_id: str) -> set[str]:
+        """A lineage head's question inventory: its regions' `element_kind` set without the
+        page-furniture sentinels (`text`, `graphic`) — FR-INGEST-38's comparison set."""
+        return {row["element_kind"] for row in self._handle.query(
+                    INGEST_STATEMENTS["select_regions"], document_id=document_id)
+                if row["element_kind"] not in ("text", "graphic")}
+
     @staticmethod
     def _assessment_heads(assessments: Sequence[Any]) -> list[Any]:
         """The HEAD of each assessment lineage: rows no other assessment row
@@ -4858,10 +4865,23 @@ class Ingestor:
         assessments = self._handle.query(
             INGEST_STATEMENTS["select_assessment_documents"])
         heads = self._assessment_heads(assessments)
-        if len(heads) != 1:
+        if not heads:
             return "absent", {"reason": (
-                f"the store holds {len(heads)} assessment lineages — the semantic "
-                "signal needs exactly one to compare against")}
+                "the store holds 0 assessment lineages — the semantic signal needs one "
+                "to compare against")}
+        if len(heads) > 1:
+            # FR-INGEST-38 (#376): several papers in one store. The reference is the head
+            # whose question inventory equals the run's package-declared question set — the
+            # paper this run is for; `absent` when zero or several heads qualify.
+            declared = {row["question_id"] for row in package_catalog.criteria(package_version)}
+            qualifying = [head for head in heads
+                          if self._head_inventory(head["document_id"]) == declared]
+            if len(qualifying) != 1:
+                return "absent", {"reason": (
+                    f"the store holds {len(heads)} assessment lineages and "
+                    f"{len(qualifying)} of them match the package's declared questions — "
+                    "the semantic signal needs exactly one")}
+            heads = qualifying
         assessment = heads[0]
 
         def _region_text(row: Any) -> str:
@@ -5031,10 +5051,13 @@ class Ingestor:
 
     def _v4_build_proposal(self, regions: Sequence[Any],
                            markdown: str) -> dict:
-        """FR-INGEST-26: a mismatch PROPOSES ranked candidates and never applies
-        one. Candidates are the store's assessment artifacts, ranked by identifier
-        affinity, question-inventory overlap and whole-paper lexical affinity — the
-        same deterministic measures V4 itself runs. This builds the record only;
+        """FR-INGEST-26 (amended, #376 / D4): a mismatch PROPOSES ranked candidates and never
+        applies one. Candidates are the lineage heads whose question inventory EQUALS the
+        submission's (the per-candidate structural match), ranked by a per-candidate
+        `semantic` value (the lexical affinity of the head's text with the submission's),
+        descending, ties broken by `assessment_document_id` ascending (CT-INGEST-22). The
+        list may be empty. With a single lineage in the store, that one head is the
+        candidate, as before. This builds the record only;
         the row is written in the same transaction as the gates it belongs to. The
         proposal row is the schema distinction the plan's oracle asserts: nothing
         here writes another assessment onto the submission."""
@@ -5048,8 +5071,9 @@ class Ingestor:
         # Candidates are lineage HEADS: a corrected assessment is two rows and one
         # paper — ranking the stale pre-correction row alongside its own head would
         # offer the human the same assessment twice.
-        for row in self._assessment_heads(self._handle.query(
-                INGEST_STATEMENTS["select_assessment_documents"])):
+        heads = self._assessment_heads(self._handle.query(
+            INGEST_STATEMENTS["select_assessment_documents"]))
+        for row in heads:
             candidate_id = self._extract_assessment_identifier(row["markdown"])
             identifier_affinity = (
                 1.0 if printed is not None and candidate_id is not None
@@ -5058,17 +5082,23 @@ class Ingestor:
                 INGEST_STATEMENTS["select_regions"],
                 document_id=row["document_id"])
             candidate_questions = {region["element_kind"]
-                                   for region in candidate_regions}
+                                   for region in candidate_regions
+                                   if region["element_kind"] not in ("text", "graphic")}
             union = submitted_questions | candidate_questions
             inventory_affinity = (
                 len(submitted_questions & candidate_questions) / len(union)
                 if union else 0.0)
+            if len(heads) > 1 and candidate_questions != submitted_questions:
+                # D4: among several papers only a structurally matching head is a candidate;
+                # a store with ONE lineage keeps its single candidate (#376's second criterion).
+                continue
             lexical_affinity = _v4_lexical_affinity(row["markdown"], markdown)
             score = (0.5 * identifier_affinity + 0.25 * inventory_affinity
                      + 0.25 * lexical_affinity)
             candidates.append({
                 "assessment_document_id": row["document_id"],
                 "identifier": candidate_id,
+                "semantic": round(lexical_affinity, 4),
                 "score": round(score, 4),
                 "components": {
                     "identifier": identifier_affinity,
@@ -5076,7 +5106,8 @@ class Ingestor:
                     "lexical": round(lexical_affinity, 4),
                 },
             })
-        candidates.sort(key=lambda candidate: -candidate["score"])
+        candidates.sort(key=lambda candidate: (-candidate["semantic"],
+                                               candidate["assessment_document_id"]))
         return {"proposal_id": f"prp-{uuid.uuid4().hex[:12]}",
                 "candidates": candidates}
 
