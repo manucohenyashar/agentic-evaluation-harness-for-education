@@ -1743,6 +1743,22 @@ class GradingService:
                 counts[STATE_INCOMPLETE] += 1
         return counts
 
+    def has_criterion_scores(self, run_id: str) -> bool:
+        """Whether any submission of the run holds a criterion score (FR-PIPE-16, #526): a
+        run with none has nothing to grade, and recovery leaves it alone. Read-only."""
+        run = self._run_row(run_id)
+        cohort = self._store.cohort(run["cohort_id"])
+        for row in cohort.query(
+            GRADE_STATEMENTS["select_run_submissions"], cohort_id=run["cohort_id"]
+        ):
+            if cohort.query(
+                GRADE_STATEMENTS["select_submission_scores"],
+                run_id=run["run_id"],
+                submission_id=row["submission_id"],
+            ):
+                return True
+        return False
+
     def has_ungraded_scores(self, run_id: str) -> bool:
         """Whether some submission of the run holds criterion scores but no current grade
         row (FR-PIPE-16, #526): the killed-after-completion state

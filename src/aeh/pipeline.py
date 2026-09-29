@@ -1084,6 +1084,8 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
         # FR-PIPE-16 / CT-PIPE-11 (#526): a complete run holding criterion scores with no
         # current grade (killed between completion and grading) is graded here too. A run
         # with no scores at all is left alone; a second recover finds every grade current.
+        if not grading.has_criterion_scores(handle.run_id):
+            continue
         if _grades_all_final(grading, handle.run_id) and not grading.has_ungraded_scores(
                 handle.run_id):
             continue
