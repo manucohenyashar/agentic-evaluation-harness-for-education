@@ -193,7 +193,6 @@ def test_adv_15_the_blind_sample_never_shows_a_decision_band_or_confidence(jev_s
 NAME = "Zelda Quartermaine"
 
 
-@pytest.mark.writtenahead
 def test_sec_19_a_units_roster_name_never_reaches_the_request(tmp_path, monkeypatch, caplog):
     from types import SimpleNamespace
 

@@ -1325,14 +1325,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
     # "#454 TS-139 TC-REQ-126 promote's verdict under the run's key" left with #454's fix:
     # the verdict is filed under the run's key and validation_for returns it.
-    # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues):
-    # judge.assemble pseudonymizes the transcript but not the evidence spans the request
-    # carries, and M-ORCH never fills a unit's student_name (no tier holds a roster name).
-    "unowned: a unit's roster name reaches no request (TS-129 SEC-19)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",
-        ("tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",),
-    ),
+    # "unowned: a unit's roster name reaches no request (TS-129 SEC-19)" left with #593's
+    # fix: assembly now replaces the name in every evidence span, not only the transcript.
     # Found by TS-97 (#391), owned by NO issue yet (needs one from /plan-to-issues): M-CONSOLE
     # never reads `run.pause_reason`, so S7 shows a paused run with no reason (CT-PIPE-04).
     "unowned: S7 shows the pause reason (TS-97 TC-REQ-99)": (
