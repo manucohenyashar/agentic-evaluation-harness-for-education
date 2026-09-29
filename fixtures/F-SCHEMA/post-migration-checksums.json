@@ -66,6 +66,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -208,9 +218,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v2": {
@@ -280,6 +291,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -422,9 +443,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v3": {
@@ -494,6 +516,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -636,9 +668,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v4": {
@@ -708,6 +741,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -850,9 +893,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v5": {
@@ -922,6 +966,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -1064,9 +1118,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v6": {
@@ -1136,6 +1191,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -1278,9 +1343,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v7": {
@@ -1350,6 +1416,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -1492,9 +1568,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v8": {
@@ -1564,6 +1641,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -1706,9 +1793,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v9": {
@@ -1778,6 +1866,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -1920,9 +2018,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v10": {
@@ -1992,6 +2091,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -2134,9 +2243,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v11": {
@@ -2206,6 +2316,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -2348,9 +2468,10 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "package@v12": {
@@ -2420,6 +2541,16 @@
       ],
       "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
     },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "grade_boundary": {
       "rows": 0,
       "columns": [
@@ -2562,9 +2693,460 @@
         "n",
         "expected_mean",
         "expected_sd",
-        "expected_histogram"
+        "expected_histogram",
+        "decision_engine_noninferior"
       ],
-      "checksum": "d23a87f7f32db9825c254cdba435a36202f9e4b3249117bb52c20c0bfde36c64"
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
+    }
+  },
+  "package@v13": {
+    "band": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "criterion": {
+      "rows": 2,
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag",
+        "answer_key",
+        "evidence_type",
+        "band_justification",
+        "multi_select",
+        "partial_credit",
+        "evaluation_mode"
+      ],
+      "checksum": "dd1a758187a9140a776629839b7f17dce3819fd246bbe4b6957fd68ac8cde61e"
+    },
+    "criterion_dependency": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec"
+    },
+    "elicitation_history": {
+      "rows": 0,
+      "columns": [
+        "elicitation_id",
+        "package_version_id",
+        "question",
+        "options_offered",
+        "answer_given",
+        "resulting_edit",
+        "asked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "exemplar": {
+      "rows": 1,
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance",
+        "blob_hash"
+      ],
+      "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
+    },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_boundary": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "grade",
+        "scaled_floor"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_policy": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "policy",
+        "review_window_hours"
+      ],
+      "checksum": "b03a7dd22bfbb3919ce32b9b49f60d2a2df89538455f49bda581eb03424869e6"
+    },
+    "mcq_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option_id",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "package": {
+      "rows": 1,
+      "columns": [
+        "package_id",
+        "created_at",
+        "contains_real_student_text"
+      ],
+      "checksum": "0c06bb8920d9c05b105661a0ec03c2ead24be777326406d167cd365927506d79"
+    },
+    "package_version": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab"
+    },
+    "question": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "question_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_classification": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "classification",
+        "decomposition_basis",
+        "source",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_proposal": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_readback": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "rubric_doc_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_step_record": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "step_id",
+        "status",
+        "payload",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "validation_record": {
+      "rows": 1,
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n",
+        "expected_mean",
+        "expected_sd",
+        "expected_histogram",
+        "decision_engine_noninferior"
+      ],
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
+    }
+  },
+  "package@v14": {
+    "band": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "ordinal",
+        "band",
+        "points",
+        "descriptor"
+      ],
+      "checksum": "e75b97ade11cc76a39359926e47dbd59babe634ab904e695e5ef9a71eeb8f212"
+    },
+    "criterion": {
+      "rows": 2,
+      "columns": [
+        "criterion_id",
+        "package_version_id",
+        "question_id",
+        "kind",
+        "max_points",
+        "band_count",
+        "scoring_model",
+        "construct_tag",
+        "answer_key",
+        "evidence_type",
+        "band_justification",
+        "multi_select",
+        "partial_credit",
+        "evaluation_mode"
+      ],
+      "checksum": "dd1a758187a9140a776629839b7f17dce3819fd246bbe4b6957fd68ac8cde61e"
+    },
+    "criterion_dependency": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "depends_on"
+      ],
+      "checksum": "d5b1876775ef79d08708e67582e091a5857215a1939241aa50c4ec50890e4bec"
+    },
+    "elicitation_history": {
+      "rows": 0,
+      "columns": [
+        "elicitation_id",
+        "package_version_id",
+        "question",
+        "options_offered",
+        "answer_given",
+        "resulting_edit",
+        "asked_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "exemplar": {
+      "rows": 1,
+      "columns": [
+        "exemplar_id",
+        "package_version_id",
+        "criterion_id",
+        "band",
+        "provenance",
+        "blob_hash"
+      ],
+      "checksum": "f715a4b07bce8bbd4fa033c11f915d7f10cb5279d5f5fee334180c38f5a02b74"
+    },
+    "export_gate_outcome": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "outcome",
+        "actor",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_boundary": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "grade",
+        "scaled_floor"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "grade_policy": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "policy",
+        "review_window_hours"
+      ],
+      "checksum": "b03a7dd22bfbb3919ce32b9b49f60d2a2df89538455f49bda581eb03424869e6"
+    },
+    "mcq_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option_id",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "package": {
+      "rows": 1,
+      "columns": [
+        "package_id",
+        "created_at",
+        "contains_real_student_text"
+      ],
+      "checksum": "0c06bb8920d9c05b105661a0ec03c2ead24be777326406d167cd365927506d79"
+    },
+    "package_version": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "package_id",
+        "revision",
+        "locked",
+        "parent_version_id",
+        "published_by",
+        "published_at"
+      ],
+      "checksum": "57b1da4ff5058bcdd3b80fcb0fd833c1d5f2bb917338ace8766bc22b90e5acab"
+    },
+    "question": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "ordinal",
+        "prompt_text",
+        "question_type",
+        "max_points",
+        "reference_solution",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "question_option": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "question_id",
+        "option_id",
+        "ordinal",
+        "label"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_classification": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "classification",
+        "decomposition_basis",
+        "source",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_proposal": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "proposal_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at",
+        "confirmed_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_readback": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "rubric_doc_id",
+        "assessment_doc_id",
+        "payload",
+        "template_version",
+        "model_ref",
+        "attempts",
+        "created_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "setup_step_record": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "step_id",
+        "status",
+        "payload",
+        "recorded_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "validation_record": {
+      "rows": 1,
+      "columns": [
+        "validation_record_id",
+        "package_version_id",
+        "backend_profile",
+        "panel_build_ref",
+        "recorded_at",
+        "criterion_id",
+        "population_scope_id",
+        "scoring_model",
+        "agreement",
+        "n",
+        "expected_mean",
+        "expected_sd",
+        "expected_histogram",
+        "decision_engine_noninferior"
+      ],
+      "checksum": "8c690525d7443a559fe53a229226cb29b34e510f19d21f2bcac566f5a2d99712"
     }
   },
   "cohort@v1": {
@@ -2638,7 +3220,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -2769,7 +3376,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -2851,6 +3459,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -2876,9 +3494,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -2972,7 +3592,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3103,7 +3748,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3185,6 +3831,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -3210,9 +3866,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -3306,7 +3964,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3437,7 +4120,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3519,6 +4203,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -3544,9 +4238,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -3640,7 +4336,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3771,7 +4492,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -3853,6 +4575,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -3878,9 +4610,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -3974,7 +4708,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -4105,7 +4864,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -4187,6 +4947,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -4212,9 +4982,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -4308,7 +5080,32 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -4439,7 +5236,8 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
@@ -4521,6 +5319,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -4546,9 +5354,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -4642,9 +5452,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -4773,9 +5608,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -4855,6 +5691,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -4880,9 +5726,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -4976,9 +5824,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -5107,9 +5980,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -5189,6 +6063,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -5214,9 +6098,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -5310,9 +6196,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -5441,9 +6352,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -5523,6 +6435,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -5548,9 +6470,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -5644,9 +6568,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -5775,9 +6724,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -5857,6 +6807,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -5882,9 +6842,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -5978,9 +6940,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -6109,9 +7096,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -6191,6 +7179,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -6216,9 +7214,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -6312,9 +7312,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -6443,9 +7468,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -6525,6 +7551,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -6550,9 +7586,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -6646,9 +7684,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -6777,9 +7840,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -6859,6 +7923,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -6884,9 +7958,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -6980,9 +8056,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -7111,9 +8212,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -7193,6 +8295,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -7218,9 +8330,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -7314,9 +8428,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -7445,9 +8584,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -7527,6 +8667,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -7552,9 +8702,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -7648,9 +8800,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -7779,9 +8956,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -7861,6 +9039,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -7886,9 +9074,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -7982,9 +9172,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -8113,9 +9328,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -8195,6 +9411,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -8220,9 +9446,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -8316,9 +9544,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -8447,9 +9700,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -8529,6 +9783,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -8554,9 +9818,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -8650,9 +9916,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "e08f9061cb1babf1ed05434bca25a3b92b4ed0a9eba5a2ab227be704017e6f91"
+      "checksum": "bd1fc61cbb3ed65abb2128a340a567807fe85e1b58eec6bfd14bc2f88e9ba868"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -8781,9 +10072,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -8863,6 +10155,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -8888,9 +10190,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -8984,9 +10288,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -9115,9 +10444,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -9197,6 +10527,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -9222,9 +10562,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -9318,9 +10660,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -9449,9 +10816,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -9531,6 +10899,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -9556,9 +10934,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -9652,9 +11032,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -9783,9 +11188,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -9865,6 +11271,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -9890,9 +11306,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -9986,9 +11404,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -10117,9 +11560,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -10199,6 +11643,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -10224,9 +11678,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -10320,9 +11776,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -10451,9 +11932,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -10533,6 +12015,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -10558,9 +12050,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -10654,9 +12148,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -10785,9 +12304,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -10867,6 +12387,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -10892,9 +12422,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -10988,9 +12520,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -11119,9 +12676,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -11201,6 +12759,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -11226,9 +12794,11 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
-        "latency_ms"
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -11322,9 +12892,34 @@
         "band_spread",
         "described_evidence",
         "extractor_disagreement",
-        "caps_fired"
+        "caps_fired",
+        "state_reason"
       ],
-      "checksum": "9fb48b945250d53d3e0688d60d90ff5fc43e8f866edca3ad7e7abfc8e98a56bc"
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "document": {
       "rows": 1,
@@ -11453,9 +13048,10 @@
         "completed_at",
         "cost_estimate",
         "cost_spend",
-        "pause_reason"
+        "pause_reason",
+        "run_config"
       ],
-      "checksum": "f6bb69663fd3c5c47bb429eab83e83883052b6187a26ad33053bf4fdef6225da"
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
     },
     "run_control": {
       "rows": 0,
@@ -11535,6 +13131,16 @@
       ],
       "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
     "v4_cohort_breaker": {
       "rows": 0,
       "columns": [
@@ -11560,9 +13166,1871 @@
         "evidence_sufficient",
         "uncited",
         "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v28": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cell_phase": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "phase",
+        "units_consumed",
+        "recorded_at",
+        "panel_state"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk",
+        "run_id",
+        "modal_band",
+        "band_spread",
+        "described_evidence",
+        "extractor_disagreement",
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content",
+        "question_id"
+      ],
+      "checksum": "0484083c87b839798707d27bf4c5d5bc8bc35662c61356af8e346a91d1a0ed41"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build",
         "latency_ms"
       ],
-      "checksum": "32d4066bd7a5179286a71c22f37337cc0077ff0cae9383c1da65810d1e0761df"
+      "checksum": "42a4ddd3686cf2b60bf150b0c2025332d81c30876939cf57ec82907b1e9b4c32"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason",
+        "run_id",
+        "rank_score",
+        "est_seconds",
+        "shown_at",
+        "action",
+        "new_band",
+        "new_points",
+        "acted_at"
+      ],
+      "checksum": "7b17083ae3f2565c1a432aded32c763cd8ad5cf1528541a78b816152617a5b79"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason",
+        "run_config"
+      ],
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited",
+        "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v29": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cell_phase": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "phase",
+        "units_consumed",
+        "recorded_at",
+        "panel_state"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk",
+        "run_id",
+        "modal_band",
+        "band_spread",
+        "described_evidence",
+        "extractor_disagreement",
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content",
+        "question_id"
+      ],
+      "checksum": "0484083c87b839798707d27bf4c5d5bc8bc35662c61356af8e346a91d1a0ed41"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build",
+        "latency_ms"
+      ],
+      "checksum": "42a4ddd3686cf2b60bf150b0c2025332d81c30876939cf57ec82907b1e9b4c32"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason",
+        "run_id",
+        "rank_score",
+        "est_seconds",
+        "shown_at",
+        "action",
+        "new_band",
+        "new_points",
+        "acted_at"
+      ],
+      "checksum": "7b17083ae3f2565c1a432aded32c763cd8ad5cf1528541a78b816152617a5b79"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason",
+        "run_config"
+      ],
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited",
+        "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v30": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cell_phase": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "phase",
+        "units_consumed",
+        "recorded_at",
+        "panel_state"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk",
+        "run_id",
+        "modal_band",
+        "band_spread",
+        "described_evidence",
+        "extractor_disagreement",
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content",
+        "question_id"
+      ],
+      "checksum": "0484083c87b839798707d27bf4c5d5bc8bc35662c61356af8e346a91d1a0ed41"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build",
+        "latency_ms"
+      ],
+      "checksum": "42a4ddd3686cf2b60bf150b0c2025332d81c30876939cf57ec82907b1e9b4c32"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason",
+        "run_id",
+        "rank_score",
+        "est_seconds",
+        "shown_at",
+        "action",
+        "new_band",
+        "new_points",
+        "acted_at"
+      ],
+      "checksum": "7b17083ae3f2565c1a432aded32c763cd8ad5cf1528541a78b816152617a5b79"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason",
+        "run_config"
+      ],
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited",
+        "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v31": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cell_phase": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "phase",
+        "units_consumed",
+        "recorded_at",
+        "panel_state"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk",
+        "run_id",
+        "modal_band",
+        "band_spread",
+        "described_evidence",
+        "extractor_disagreement",
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content",
+        "question_id"
+      ],
+      "checksum": "0484083c87b839798707d27bf4c5d5bc8bc35662c61356af8e346a91d1a0ed41"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build",
+        "latency_ms"
+      ],
+      "checksum": "42a4ddd3686cf2b60bf150b0c2025332d81c30876939cf57ec82907b1e9b4c32"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason",
+        "run_id",
+        "rank_score",
+        "est_seconds",
+        "shown_at",
+        "action",
+        "new_band",
+        "new_points",
+        "acted_at"
+      ],
+      "checksum": "7b17083ae3f2565c1a432aded32c763cd8ad5cf1528541a78b816152617a5b79"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason",
+        "run_config"
+      ],
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited",
+        "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
+    },
+    "work_unit": {
+      "rows": 1,
+      "columns": [
+        "work_id",
+        "submission_id",
+        "stage",
+        "status",
+        "run_id",
+        "criterion_id",
+        "judge_id",
+        "origin",
+        "attempts",
+        "last_error",
+        "lease_owner",
+        "lease_expires_ticks",
+        "lease_expires_at",
+        "done_ticks"
+      ],
+      "checksum": "011497d64dd6ffa3803fe3d8824c47e0229463b53c385735839a8866d92b1217"
+    }
+  },
+  "cohort@v32": {
+    "assessment_match_proposal": {
+      "rows": 0,
+      "columns": [
+        "proposal_id",
+        "submission_id",
+        "v4_match",
+        "candidates",
+        "signals",
+        "proposed_at",
+        "resolved_at",
+        "resolution"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cell_phase": {
+      "rows": 0,
+      "columns": [
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "phase",
+        "units_consumed",
+        "recorded_at",
+        "panel_state"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "circuit_breaker": {
+      "rows": 0,
+      "columns": [
+        "breaker_id",
+        "run_id",
+        "criterion_id",
+        "kind",
+        "tripped_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "cohort": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "consent_class",
+        "created_at"
+      ],
+      "checksum": "bde478b715809ffd614e8d00a2ea40ffe31b6cf9bdf60fe1b8ff3a07cc7d2cf4"
+    },
+    "criterion_score": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "criterion_id",
+        "band",
+        "points",
+        "judge_count",
+        "agreement",
+        "state",
+        "routing",
+        "confidence",
+        "confidence_base",
+        "spans_verified",
+        "evidence_present",
+        "sufficiency_flag",
+        "ocr_overlap_risk",
+        "run_id",
+        "modal_band",
+        "band_spread",
+        "described_evidence",
+        "extractor_disagreement",
+        "caps_fired",
+        "state_reason"
+      ],
+      "checksum": "801d7503ae34e1288828505cc8b31c74935e2879a94f9d8111f556cc26583c38"
+    },
+    "decision_prescreen": {
+      "rows": 0,
+      "columns": [
+        "work_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "engine_build",
+        "outcome",
+        "reason",
+        "gate_confidence",
+        "band_confidence",
+        "sufficiency_p",
+        "argmax_band",
+        "band_probabilities",
+        "band_score",
+        "cite_probabilities",
+        "threshold",
+        "tokens_in",
+        "latency_ms",
+        "cost"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "document": {
+      "rows": 1,
+      "columns": [
+        "document_id",
+        "submission_id",
+        "content_hash",
+        "markdown",
+        "transcriber_ref",
+        "prompt_template_version",
+        "kind",
+        "parent_doc_id",
+        "source_blobs",
+        "pages_with_text_layer",
+        "text_layer_divergence",
+        "created_at"
+      ],
+      "checksum": "0210594c2d46953c68ced327ad35826a8982ab7ae46f9bb9874213a6311e8ec9"
+    },
+    "document_region": {
+      "rows": 1,
+      "columns": [
+        "region_id",
+        "document_id",
+        "page_no",
+        "element_kind",
+        "region_kind",
+        "description",
+        "retraction",
+        "ocr_conf",
+        "content_state",
+        "selection_state",
+        "selection",
+        "crop_ref",
+        "source_hash",
+        "page_index",
+        "position",
+        "is_untrusted_content",
+        "description_secondary",
+        "content",
+        "question_id"
+      ],
+      "checksum": "0484083c87b839798707d27bf4c5d5bc8bc35662c61356af8e346a91d1a0ed41"
+    },
+    "escalation_request": {
+      "rows": 0,
+      "columns": [
+        "request_id",
+        "run_id",
+        "submission_id",
+        "criterion_id",
+        "expected_value",
+        "admitted",
+        "requested_at",
+        "admitted_at",
+        "detail"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "evidence": {
+      "rows": 1,
+      "columns": [
+        "evidence_id",
+        "work_id",
+        "document_id",
+        "payload",
+        "resolved_build",
+        "latency_ms"
+      ],
+      "checksum": "42a4ddd3686cf2b60bf150b0c2025332d81c30876939cf57ec82907b1e9b4c32"
+    },
+    "narrative": {
+      "rows": 1,
+      "columns": [
+        "narrative_id",
+        "submission_id",
+        "criterion_id",
+        "run_id",
+        "level",
+        "question_id",
+        "text",
+        "citations",
+        "score_claim_flag"
+      ],
+      "checksum": "93d10b64252b3f7a88889240cca7feaa7a272558775ec042ebd38510179dcfe3"
+    },
+    "review_queue": {
+      "rows": 1,
+      "columns": [
+        "queue_id",
+        "submission_id",
+        "criterion_id",
+        "reason",
+        "run_id",
+        "rank_score",
+        "est_seconds",
+        "shown_at",
+        "action",
+        "new_band",
+        "new_points",
+        "acted_at"
+      ],
+      "checksum": "7b17083ae3f2565c1a432aded32c763cd8ad5cf1528541a78b816152617a5b79"
+    },
+    "roster": {
+      "rows": 1,
+      "columns": [
+        "cohort_id",
+        "student_ref"
+      ],
+      "checksum": "c6d060d924581f9009bd5ceb881f211eb9c5c77dc3ad0d88a471cf36d6bdeab0"
+    },
+    "run": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "cohort_id",
+        "package_version_id",
+        "package_id",
+        "panel_config",
+        "backend_profile",
+        "provider_config",
+        "prompt_template_v",
+        "status",
+        "started_at",
+        "completed_at",
+        "cost_estimate",
+        "cost_spend",
+        "pause_reason",
+        "run_config"
+      ],
+      "checksum": "3331cbdca2768aa5be6744ab02fe16a044fdd28b1254c09d83ac3da60f1186ba"
+    },
+    "run_control": {
+      "rows": 0,
+      "columns": [
+        "control_id",
+        "run_id",
+        "action",
+        "reason",
+        "requested_at",
+        "applied_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "submission": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "cohort_id",
+        "student_ref",
+        "v0_integrity",
+        "v1_pages",
+        "v2_structure",
+        "v3_identity",
+        "v4_match",
+        "ingest_status",
+        "quarantined",
+        "v4_signals"
+      ],
+      "checksum": "2d0f26bc33665a91009f22682d44fa0f4b42b1e3bd83c6e03a20592e80feb20a"
+    },
+    "submission_grade": {
+      "rows": 1,
+      "columns": [
+        "submission_id",
+        "revision",
+        "run_id",
+        "is_current",
+        "state",
+        "grade",
+        "total",
+        "policy_version",
+        "answer_key_ref",
+        "package_version_id",
+        "computed_at",
+        "finalized_at",
+        "criteria_total",
+        "criteria_auto",
+        "criteria_reviewed",
+        "criteria_provisional",
+        "criteria_missing",
+        "boundary_at_risk",
+        "score_low",
+        "score_high",
+        "missing_criteria",
+        "amendments",
+        "superseded_at"
+      ],
+      "checksum": "528f58912e2125ce37f9cad46e8c4ef9f0714ffac167031329be58ee5568c858"
+    },
+    "token_cluster": {
+      "rows": 0,
+      "columns": [
+        "cluster_id",
+        "cohort_id",
+        "token",
+        "resolution",
+        "resolved_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "unresolved_token": {
+      "rows": 0,
+      "columns": [
+        "token",
+        "region_id",
+        "document_id"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "upload_part": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "filename",
+        "blob_ref",
+        "received_at"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "v4_cohort_breaker": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "tripped_at",
+        "rate",
+        "flagged",
+        "ingested",
+        "finding"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "verdict": {
+      "rows": 1,
+      "columns": [
+        "verdict_id",
+        "work_id",
+        "judge_id",
+        "band",
+        "band_ordinal",
+        "self_confidence",
+        "cited_spans",
+        "evidence_sufficient",
+        "uncited",
+        "evidence_assessment",
+        "latency_ms",
+        "scoring_engine",
+        "engine_build"
+      ],
+      "checksum": "f76467f00b08ceb03f420ebcee8884d78aa99815a13f8bfbd5f7019c8abcd988"
     },
     "work_unit": {
       "rows": 1,
@@ -11662,9 +15130,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -11805,9 +15274,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -11948,9 +15418,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12091,9 +15562,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12234,9 +15706,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12377,9 +15850,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12520,9 +15994,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12663,9 +16138,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12806,9 +16282,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -12949,9 +16426,10 @@
         "teacher_points",
         "agreed",
         "panel_config",
-        "recorded_at"
+        "recorded_at",
+        "backend_profile"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,
@@ -13092,9 +16570,154 @@
         "teacher_points",
         "agreed",
         "panel_config",
+        "recorded_at",
+        "backend_profile"
+      ],
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
+    },
+    "mcq_item_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "option",
+        "chosen",
+        "is_key"
+      ],
+      "checksum": "f7c404699ef0b26fa1f8489347545ee1d08e90ad65f050c81f5312dc10e39d77"
+    },
+    "mcq_item_summary": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "n",
+        "correct_rate",
+        "blank_count",
+        "unresolved_count"
+      ],
+      "checksum": "ded35fdc3d32374c421dcee64cd1909607a0c58dc4b7b227bc3847a5abc39667"
+    },
+    "package_validation": {
+      "rows": 0,
+      "columns": [
+        "package_version_id",
+        "cohort_id",
+        "recorded_at",
+        "cohorts_used",
+        "operational_count",
+        "blind_count",
+        "n",
+        "agreement_kappa",
+        "weakest_per_population",
+        "surface_proxy_flags",
+        "message"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "run_metrics": {
+      "rows": 1,
+      "columns": [
+        "run_id",
+        "metric",
+        "value",
+        "submission_id",
+        "criterion_id",
+        "judge_id"
+      ],
+      "checksum": "89e7b85b55e0eefb7a33f72e61142e951f750d37dc7ada114cd8025f7267f9f2"
+    },
+    "store_lease_clock": {
+      "rows": 0,
+      "columns": [
+        "id",
+        "ticks",
+        "wall_clock"
+      ],
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "durable@v12": {
+    "audit_record": {
+      "rows": 1,
+      "columns": [
+        "audit_record_id",
+        "run_id",
+        "recorded_at",
+        "profile_summary",
+        "submission_id",
+        "criterion_id",
+        "final_points",
+        "decided_by",
+        "package_version_id",
+        "evaluation_mode",
+        "panel_config",
+        "prompt_template_v",
+        "answer_key_ref",
+        "selection_read",
+        "cohort_id"
+      ],
+      "checksum": "5945712bb3c676a04ec65871b1f4efc0adb827cea103060178b6894c1b4aeeae"
+    },
+    "calib_roster": {
+      "rows": 0,
+      "columns": [
+        "cohort_id",
+        "r0",
+        "r1",
+        "paper_id",
+        "criterion_id",
+        "r0_band",
+        "r1_band",
         "recorded_at"
       ],
-      "checksum": "7d681d2d45193d29fcff97f6b3854559a2d104415b4ef8e9d6ea45840007db1d"
+      "checksum": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "criterion_stats": {
+      "rows": 1,
+      "columns": [
+        "package_version_id",
+        "criterion_id",
+        "backend_profile",
+        "panel_build_ref",
+        "n",
+        "cohort_id"
+      ],
+      "checksum": "cbd2f26b4d225073f84331f883701c2112c1889554c69d6341d38838f1fb10c8"
+    },
+    "label": {
+      "rows": 1,
+      "columns": [
+        "label_id",
+        "run_id",
+        "student_ref",
+        "criterion_id",
+        "label_type",
+        "band",
+        "evaluation_mode",
+        "saw_system_output",
+        "routing",
+        "origin",
+        "review_seconds",
+        "system_band",
+        "teacher_band",
+        "actor",
+        "timestamp",
+        "score_id",
+        "review_queue_action",
+        "new_points",
+        "cohort_id",
+        "package_version_id",
+        "assignment_type",
+        "band_distance",
+        "system_points",
+        "teacher_points",
+        "agreed",
+        "panel_config",
+        "recorded_at",
+        "backend_profile"
+      ],
+      "checksum": "28e862ea74f36465f10c968a8e0ed5375463edc04705993de161ba944174fbaa"
     },
     "mcq_item_stats": {
       "rows": 1,

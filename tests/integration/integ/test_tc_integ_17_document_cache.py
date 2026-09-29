@@ -19,11 +19,10 @@ read count at 1 and still burn the CPU the cache exists to save — sha256 over 
 document is the expensive half. The shipped code is explicit that "a cached entry is one whose
 hash has already been checked against its own bytes", so both are counted.
 
-**Arm (c) asserts the refusal and its reason, not the exception type.** The plan says
-`IntegrityError`; `src/aeh/integ.py` declares no such class and `_document_cache_entries`
-raises `ValueError`. Pinning either side would settle a decision nobody has taken, so this
-follows the `TC-ORCH-40` precedent: assert what both readings agree on — the call is refused,
-the message names the knob and its value — and #380 reports the type question. The refusal
+**Arm (c) asserts the refusal's type and its reason.** The type question #380 raised (the plan
+said `IntegrityError`, the module raises `ValueError`) was settled by design 1.9 §3.9 / T5: the
+refusal is a `ValueError` naming `HARNESS_INTEG_DOCUMENT_CACHE_ENTRIES` (re-specified by TS-128,
+#539). The message must also name the rejected value, so the operator can fix it. The refusal
 matters more than its class: a `0` bound would **disable the cache silently**, which is the
 exact shape of a performance regression nobody notices until a run takes all night.
 
@@ -193,12 +192,8 @@ def test_tc_integ_17_arm_b_an_lru_bound_of_two_evicts_the_least_recently_used(
 def test_tc_integ_17_arm_c_an_unusable_cache_bound_is_refused_at_call_time(
     monkeypatch, value
 ):
-    """Arm (c) — `"0"`, `"-1"` and `"x"` each refuse, naming the knob and the value.
-
-    The exception *type* is deliberately not asserted (see the file docstring): the plan says
-    `IntegrityError`, the module declares no such class and raises `ValueError`, and #380
-    reports that rather than a test picking a winner. What both readings agree on is asserted
-    in full — the call is refused, and the message is legible enough to fix.
+    """Arm (c) — `"0"`, `"-1"` and `"x"` each raise `ValueError`, naming the knob and the value
+    (design 1.9 §3.9 / T5, re-specified by TS-128).
 
     "At call time" is itself the requirement: the knob is read on every cache write, so an
     operator who exports a bad value gets a refusal on the next gate call rather than a
@@ -206,7 +201,7 @@ def test_tc_integ_17_arm_c_an_unusable_cache_bound_is_refused_at_call_time(
     """
     monkeypatch.setenv(INTEG_DOCUMENT_CACHE_ENTRIES_ENV, value)
 
-    with pytest.raises(Exception) as caught:
+    with pytest.raises(ValueError) as caught:
         _document_cache_entries()
 
     message = str(caught.value)
