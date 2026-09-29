@@ -957,6 +957,9 @@ def run_to_completion(
         except Exception:  # noqa: BLE001 - a terminal run refuses a pause; the status stands
             pass
         handle = orch.run_handle(run_id)
+        if decision_provider is not None:
+            # CT-PIPE-08: with an engine configured, every result carries its summary.
+            stages.append(_decision_summary(handle, run_id))
         return RunResult(
             run_id=run_id,
             status=handle.status,
