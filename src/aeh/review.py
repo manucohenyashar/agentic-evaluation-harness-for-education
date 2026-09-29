@@ -1394,7 +1394,11 @@ def _itemize(row: Any, knobs: Mapping[str, float]) -> ReviewItem:
         band_options=tuple(getattr(row, "band_options", ()) or ()),
         proposed_points=_opt_float(getattr(row, "proposed_points", None)),
         max_points=_opt_float(getattr(row, "max_points", None)),
-        narrative=getattr(row, "narrative", None),
+        # CT-SYNTH-01/03 (#534): a narrative M-SYNTH flagged for a score claim is withheld,
+        # read together with its flag; an unflagged one is shown exactly as M-SYNTH wrote it
+        # (M-REVIEW does not re-check the text).
+        narrative=(None if getattr(row, "score_claim_flag", 0)
+                   else getattr(row, "narrative", None)),
         evidence_spans=tuple(getattr(row, "evidence_spans", ()) or ()),
         reason=str(getattr(row, "reason", None) or "flagged for review"),
         est_seconds=_est_seconds_of(row, knobs["default_est_seconds"]),
