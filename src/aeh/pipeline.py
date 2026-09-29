@@ -99,6 +99,7 @@ from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
 from aeh.agg import (
+    EvenPanelError,
     aggregate,
     aggregate_even_panel_after_quarantine,
     should_escalate,
@@ -114,6 +115,7 @@ from aeh.orch import (
     DECISION_HALTED_BY_BREAKER,
     ESCALATION_ARM_PREFIX,
     REPLACEMENT_INSERTED,
+    REPLACEMENT_NOT_APPLICABLE,
     STAGE_EXTRACT,
     STAGE_SCORE,
     Orchestrator,
@@ -622,6 +624,12 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             with handle.cohort.transaction() as tx:
                 replacement = orch.enqueue_replacement_arm(
                     tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                if replacement.decision == REPLACEMENT_NOT_APPLICABLE:
+                    # By the ledger's own count nothing was quarantined: an even panel
+                    # reached another way is a defect, and it pauses the run.
+                    raise EvenPanelError(
+                        f"cell {cell.submission_id}/{cell.criterion_id} holds an even panel "
+                        f"of {len(verdicts)} with no quarantined unit (FR-PIPE-18)")
                 if replacement.decision == REPLACEMENT_INSERTED:
                     detail.append(
                         f"{cell.submission_id}/{cell.criterion_id}: even panel of "
@@ -651,7 +659,9 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             # #524): a replacement arm, or `ungradeable_by_panel`. An even panel reached any
             # other way still raises here, which pauses the run as a composition fault: that
             # is a defect signal, and FR-PIPE-05's "never with an even panel" stands.
-            fallback=len(verdicts) == 2,
+            # "after a terminal failure": two verdicts with nothing quarantined is an even
+            # panel reached some other way, a defect that must pause (TC-PIPE-23(c)).
+            fallback=len(verdicts) == 2 and quarantined > 0,
             breaker_tripped=cell.criterion_id in latched,
         )
         with handle.cohort.transaction() as tx:

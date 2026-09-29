@@ -610,7 +610,8 @@ def test_tc_store_27_migrations_28_and_29_and_the_pin(tmp_path) -> None:
 
     names = {m.version: m.name for m in TIER_MIGRATIONS[Tier.COHORT]}
     assert names[28] == "judge_decision_prescreen" and names[29] == "judge_verdict_engine"
-    assert COMPLETE_SCHEMA_VERSIONS[Tier.COHORT] == 29
+    # The pin is the chain's head; later migrations (#524's 30, ...) move it past 29.
+    assert COMPLETE_SCHEMA_VERSIONS[Tier.COHORT] == max(names) >= 29
     claude = (Path(__file__).resolve().parents[3] / "CLAUDE.md").read_text(encoding="utf-8")
     assert "judge_decision_prescreen" in claude and "judge_verdict_engine" in claude
     code = (

@@ -2422,6 +2422,9 @@ def _content_id(kind: str, *parts: str) -> str:
 REPLACEMENT_INSERTED = "inserted"
 REPLACEMENT_ALREADY_REQUESTED = "already_requested"
 REPLACEMENT_REFUSED = "refused"
+#: The pair has no quarantined score unit: an even panel this path did not cause, which the
+#: caller treats as the defect it is (FR-PIPE-18: EvenPanelError still pauses).
+REPLACEMENT_NOT_APPLICABLE = "not_applicable"
 
 
 @dataclass(frozen=True)
@@ -4943,9 +4946,11 @@ class Orchestrator:
 
         Inserts, in the caller's transaction, one further escalation arm (the next arm the
         pair does not carry, `_extension_arms` — never re-adding one, FR-ORCH-39) so the
-        panel returns to odd. At most once per cell per quarantine: the request row is
-        content-addressed on the pair's quarantined count, so a repeat for the same
-        quarantine inserts nothing. Refused, with nothing written, when the criterion's
+        panel returns to odd. **One replacement per cell** (ADR-34): the request row is
+        content-addressed on the pair, so a repeat inserts nothing and reports
+        `already_requested`, and a replacement that is itself quarantined leaves the cell to
+        the caller's `ungradeable_by_panel` path rather than starting a chain (the escalation
+        rate counts cells, so a chain would never meet the budget). Refused, with nothing written, when the criterion's
         breaker has latched or the run's observed escalation rate is above
         `ORCH_ESCALATION_BUDGET` (FR-ORCH-13/14): a replacement is an escalation and is
         rationed like one. The key is the `(run_id, submission_id, criterion_id)` triple."""
@@ -4972,14 +4977,15 @@ class Orchestrator:
                                         reason, quarantined, gates)
 
         if quarantined == 0:
-            return report(REPLACEMENT_REFUSED, "no quarantined score unit: nothing to replace")
+            return report(REPLACEMENT_NOT_APPLICABLE,
+                          "no quarantined score unit: this even panel is not quarantine's")
         request_id = _content_id(_CONTENT_ID_KIND_REPLACEMENT, run_id, submission_id,
-                                 criterion_id, str(quarantined))
+                                 criterion_id)
         if int(tx.execute(ORCH_STATEMENTS["select_request_exists"],
                           request_id=request_id)[0]["n"]):
-            gates["idempotence"] = "a replacement for this quarantine was already requested"
+            gates["idempotence"] = "this cell already had its replacement arm"
             return report(REPLACEMENT_ALREADY_REQUESTED,
-                          "a replacement arm for this quarantine already exists")
+                          "this cell already had its one replacement arm (ADR-34)")
         latch = tx.execute(
             ORCH_STATEMENTS["select_breaker"], run_id=run_id, criterion_id=criterion_id)
         if latch:
@@ -4994,7 +5000,7 @@ class Orchestrator:
                           f"escalation budget exhausted: observed rate {rate:.4f} above "
                           f"{budget} (FR-ORCH-14)")
         (arm,) = _extension_arms(self._panel_arms(row["panel_config"]), prior, count=1)
-        detail = json.dumps({"replacement_for_quarantine": quarantined, "arm": arm},
+        detail = json.dumps({"replacement_after_quarantined": quarantined, "arm": arm},
                             sort_keys=True)
         tx.execute(
             ORCH_STATEMENTS["insert_escalation_request"], request_id=request_id,

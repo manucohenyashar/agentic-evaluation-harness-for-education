@@ -7,7 +7,7 @@ captures were byte-identical). Here the same capture runs at HEAD and is compare
 
 | Case | Asserted |
 |---|---|
-| TC-REG-08 | F-DEV-PIPE through `run_to_completion`, engine off. Every §4.3 artifact equals the golden: work ids; run row; profile summary; every fixture key the run hits, `decide` included (none at fb12d1e); no `decision_prescreen` row; the `evidence`, `verdict`, `criterion_score` and `submission_grade` rows; and the `RunResult` trace. The only permitted differences are NFR-SYS-14's two schema-level exceptions, `verdict.scoring_engine` and `verdict.engine_build`, which are projected out |
+| TC-REG-08 | F-DEV-PIPE through `run_to_completion`, engine off. Every §4.3 artifact equals the golden: work ids; run row; profile summary; every fixture key the run hits, `decide` included (none at fb12d1e); no `decision_prescreen` row; the `evidence`, `verdict`, `criterion_score` and `submission_grade` rows; and the `RunResult` trace. The only permitted differences are NFR-SYS-14's two schema-level exceptions, `verdict.scoring_engine` and `verdict.engine_build`, which are projected out (plus #524's additive `criterion_score.state_reason`, asserted NULL on every engine-off row and projected) |
 | TC-REG-09 | For a fixed 3-judge `cloud-hosted` config and a fixed `edge-local` config, each is byte-equal to the capture: `compute_panel_build_ref`, `ProfileSummary.to_canonical_json()`, `panel_config_json`, `to_persisted_dict()`, and the `panel_config` / `provider_config` the run row gets from `create_run`. The cloud row carries `retention_verified` |
 
 TC-REG-09 goes red the moment any change adds `"decision_engine": null` to an engine-off

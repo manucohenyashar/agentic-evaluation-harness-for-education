@@ -1331,22 +1331,25 @@ def aggregate_even_panel_after_quarantine(
     breaker). An even panel is never aggregated as one (FR-AGG-03), so the row states what
     the panel could not do: `ungradeable_by_panel`, routed `provisional` so review admits
     it, with `state_reason = even_panel_after_quarantine`. The band shown to the reviewer is
-    the median of the panel before its last-landed verdict (an odd panel, never a rounded
-    even median), and the reviewer's decision is what settles the row."""
+    the panel's LOWER median — the median of the odd panel left when the highest-ordinal
+    verdict is set aside — which is independent of verdict order and never rounds an even
+    median up; `judge_count` stays the panel's true size. The reviewer's decision is what
+    settles the row."""
     if len(verdicts) < 2 or len(verdicts) % 2:
         raise EvenPanelError(
             f"aggregate_even_panel_after_quarantine is for an even panel of two or more; got "
             f"{len(verdicts)} verdict(s)")
-    base = aggregate(verdicts[:-1], criterion, signals, config=config)
+    ordered = sorted(verdicts, key=_verdict_ordinal)
+    base = aggregate(ordered[:-1], criterion, signals, config=config)
     return replace(
         base,
+        judge_count=len(verdicts),
         routing="provisional",
         state="ungradeable_by_panel",
         state_reason=EVEN_PANEL_AFTER_QUARANTINE,
         notes=base.notes + (
             "even panel after quarantine, replacement arm refused: ungradeable_by_panel, "
-            "routed to review; band shown is the odd panel before the last-landed verdict "
-            "(FR-PIPE-18)",
+            "routed to review; band shown is the panel's lower median (FR-PIPE-18)",
         ),
     )
 
