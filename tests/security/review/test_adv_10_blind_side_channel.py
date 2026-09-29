@@ -313,15 +313,22 @@ def test_adv_10_output_is_unreachable_by_direct_url_probing_and_link_traversal(
             "the flow's own screen rendered nothing recognisable, so the probe battery "
             "would be scanning pages with no blind flow in them"
         )
-        # The trace half is live only over pages that issued queries: the durable tier
-        # exists (touched in seeding), so the flow screen's read path ran and logged —
-        # the non-vacuity anchor the contract sibling carries. Without it the trace
-        # scan would sweep empty tuples and assert nothing.
-        assert queried >= 1, (
-            f"no probed page issued a query, so the trace half of the oracle swept "
-            "nothing — the byte scan below would be the only oracle and a page that "
-            "fetched the answer and hid it would pass"
-        )
+        # Re-specified (TS-128, design 1.9 §5.3): the trace half's non-vacuity anchor. The
+        # blind flow's pages need not query at all (a flow that reads nothing is the safest
+        # flow), so "some probed page queried" was an anchor on the wrong pages and went red
+        # on a flow doing its job. The anchor is a page that DOES read the score table on
+        # this same store — the run's S12 grade view: its render must be traced, and the
+        # scan must flag that read. That proves the trace is live here, so the blind pages'
+        # empty or clean traces above are evidence rather than silence.
+        from aeh.console import SCREENS
+
+        grade = app.render(SCREENS["S12"], id=_RUN)
+        assert grade.queries, (
+            "the S12 grade view issued no traced query on this store, so the query trace "
+            "is not live and the blind sweep's trace half proves nothing")
+        assert _scan("/grade-view-anchor", "", grade.queries), (
+            f"the grade view read the store ({grade.queries[:3]}...) but the scan flagged "
+            "nothing: the forbidden-table half would miss a blind page that did the same")
         # The link walk is live: every console page carries the shell's stylesheet
         # href, so the extractor found an edge and the closure swept it. A pattern
         # that stopped matching would silently reduce the traversal to the battery.

@@ -89,11 +89,18 @@ def test_tc_req_29_a_quarantined_extraction_is_not_an_empty_one_at_the_judge(tmp
     from aeh.judge import ScoringWorker
     from aeh.orch import STAGE_EXTRACT
     from tests.support.extract_vocabulary import extractor_ref, sampling_params, span_completion
+    from tests.support.orch_run import PLAIN_TRANSCRIPT
 
     store = open_store(tmp_data_dir)
     try:
         provider = _provider(tmp_data_dir)
-        orchestrator, _run, _v = _drive.seed_world(store, submissions=("SYN-001", "SYN-002"))
+        # Distinct documents (TS-128, Q-47): the extraction request is content-addressed and
+        # carries no submission identity, so with one shared transcript the reply recorded for
+        # SYN-001 also answered SYN-002 whenever SYN-001 was leased first (work-id order, which
+        # moves with the minted run id): SYN-002 then completed instead of striking out.
+        orchestrator, _run, _v = _drive.seed_world(
+            store, submissions=("SYN-001", "SYN-002"),
+            texts=(PLAIN_TRANSCRIPT, PLAIN_TRANSCRIPT + " The second student wrote something else."))
         worker = ExtractionWorker(store, provider, extractor_ref())
         for _ in range(8):
             batch = orchestrator.lease("w-req-29", STAGE_EXTRACT, 8)

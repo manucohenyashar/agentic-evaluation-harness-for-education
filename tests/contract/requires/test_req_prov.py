@@ -158,16 +158,23 @@ def test_tc_req_14_a_terminal_provider_error_pauses_the_run_without_a_fallback(
     """`TC-REQ-14` (`M-ORCH` → `M-PROV`, CT-PROV-07/08/09, CT-ORCH-12): the run's single
     model-call seam raises a terminal error from M-PROV's taxonomy.
 
-    1. **It surfaces rather than degrades.** The dispatch pass raises the error, and no score unit
-       is completed by anything else, because there is no second seam to fall back to.
-    2. **It maps to pause.** `pause(run_id, cause=error)` moves the run to `paused` with a rendered
-       reason, and leaves the frozen provider snapshot untouched.
+    1. **It surfaces rather than degrades.** No score unit is completed by anything else,
+       because there is no second seam to fall back to; the unit goes back to `pending` with no
+       attempt counted.
+    2. **It maps to pause.** The dispatch pass itself pauses the run with a reason naming the
+       error class (FR-ORCH-30), and leaves the frozen provider snapshot untouched.
     3. **Paused means no dispatch.** A further pass calls the seam no more.
     4. **The estimate precedes dispatch.** With a provider seam that prices units, `start`
        writes a cost estimate before any unit is dispatched.
 
-    Disclosed shape: the dispatch loop surfaces the terminal error, and the driver holding the
-    batch calls `pause(cause=...)`, as `TC-E2E-02`'s provider-unavailable variant does."""
+    Re-specified (TS-128, #539): the case asserted that `progress()` RAISES the error for the
+    driver to pause on. FR-ORCH-30 (gap-fix design) moved the pause inside the dispatch pass:
+    `ProviderUnavailableError` and `BuildChangedError` requeue the unit without an attempt, call
+    `pause(run_id, cause=error)` and stop the pass, and `progress()` returns (TC-ORCH-43 pins
+    the same on the executor path). The closeout plan's re-specification (record
+    `integrity_pre` first) misdiagnosed the red: FR-ORCH-30 leaves the `transport=` path's gate
+    unchanged, and the seam WAS reached. The four properties stand; only the shape of (1)-(2)
+    follows the design."""
     import aeh.prov as prov
     from decimal import Decimal
 
@@ -205,16 +212,15 @@ def test_tc_req_14_a_terminal_provider_error_pauses_the_run_without_a_fallback(
         for stage in ("extract", "deterministic"):
             for unit in orchestrator.lease("w-req-14", stage, 64):
                 orchestrator.complete(unit.work_id)
-        with pytest.raises(error_cls) as caught:
-            orchestrator.progress(run_id)
+        orchestrator.progress(run_id)  # FR-ORCH-30: returns, having paused the run
         calls_at_error = TerminalSeam.calls
-        status = orchestrator.pause(run_id, cause=caught.value)
-        try:
-            orchestrator.progress(run_id)
-        except error_cls:
-            pass
+        orchestrator.progress(run_id)
         row = cohort.query("SELECT status, pause_reason, provider_config FROM run WHERE run_id = :r",
                            r=run_id)[0]
+        # Every score unit, including the ones the faulted pass handed out, is back to
+        # `pending` with no attempt counted: none left `leased`, none struck (FR-ORCH-30).
+        score_units = [tuple(r) for r in cohort.query(
+            "SELECT status, attempts FROM work_unit WHERE run_id = :r AND stage = 'score'", r=run_id)]
         scored_done = cohort.query(
             "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r AND stage = 'score' "
             "AND status = 'done'", r=run_id)[0]["n"]
@@ -225,8 +231,11 @@ def test_tc_req_14_a_terminal_provider_error_pauses_the_run_without_a_fallback(
         problems.append("fixture: the dispatch never reached the seam")
     if scored_done:
         problems.append(f"{scored_done} score unit(s) completed although the only provider failed")
-    if status != "paused" or row["status"] != "paused" or not row["pause_reason"]:
-        problems.append(f"pause(cause={terminal}) left the run {row['status']!r}, reason {row['pause_reason']!r}")
+    if row["status"] != "paused" or terminal not in (row["pause_reason"] or ""):
+        problems.append(f"the {terminal} left the run {row['status']!r}, reason {row['pause_reason']!r}")
+    if not score_units or set(score_units) != {("pending", 0)}:
+        problems.append(f"after the outage the score units are {sorted(set(score_units))}, not all pending "
+                        "with no attempt counted (FR-ORCH-30)")
     if row["provider_config"] != before["provider_config"]:
         problems.append("the pause changed the run's frozen provider snapshot")
     if TerminalSeam.calls > calls_at_error:
