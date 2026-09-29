@@ -401,8 +401,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     "aeh.ingest:4302",
     "aeh.ingest:4538",
     "aeh.ingest:4550",
-    "aeh.ingest:5091",
-    "aeh.ingest:5114",
+    "aeh.ingest:5132",
+    "aeh.ingest:5155",
     "aeh.ingest:2124",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
