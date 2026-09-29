@@ -2850,6 +2850,29 @@ class PackageCatalog:
             return NoValidationData()
         return dict(rows[0])
 
+    def baselines_for(
+        self, v: PackageVersionId, *, backend_profile: str, panel_build_ref: str,
+        population_scope_id: str = "",
+    ) -> dict[str, Any]:
+        """`baseline_for` for every criterion of `v`, each under its OWN declared scoring model
+        (FR-PIPE-15, #525): the caller names the run's part of the key, and the package
+        supplies the criterion's part, so no consumer branches on the model (CT-AGG-09)."""
+        out: dict[str, Any] = {}
+        for row in self.criteria(v):
+            model = str((row["scoring_model"] if "scoring_model" in row.keys() else "") or "")
+            baseline = self.baseline_for(
+                v, str(row["criterion_id"]), population_scope_id, backend_profile,
+                panel_build_ref, model)
+            if isinstance(baseline, NoValidationData) and model:
+                # The undimensioned model key is the one `record_validation_baseline` writes by
+                # default (promote names no model), so it is read when the criterion's own
+                # model key holds nothing (#525 review).
+                baseline = self.baseline_for(
+                    v, str(row["criterion_id"]), population_scope_id, backend_profile,
+                    panel_build_ref, "")
+            out[str(row["criterion_id"])] = baseline
+        return out
+
     def baseline_for(
         self, v: PackageVersionId, criterion_id: str, population_scope_id: str,
         backend_profile: str, panel_build_ref: str, scoring_model: str = "",

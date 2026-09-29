@@ -2813,6 +2813,10 @@ class RunHandle:
     #: When the run started, or `""` if it never did. A caller picking "the latest run" needs
     #: this: `run_id` is `run-<uuid4 hex>`, so id order is not time order.
     started_at: str = ""
+    #: The panel build the run froze (FR-CONF-07), from its persisted provider config: one
+    #: part of the six-part validation key a composition layer reads baselines under
+    #: (FR-PIPE-15, #525). `""` when the row predates the field.
+    panel_build_ref: str = ""
 
 
 class PackageCatalogProtocol(Protocol):
@@ -6051,6 +6055,7 @@ class Orchestrator:
             pause_reason=row["pause_reason"],
             backend_profile=str(row["backend_profile"] or ""),
             started_at=str(row["started_at"] or ""),
+            panel_build_ref=_panel_build_ref_of(row),
         )
 
     def unit_status(self, work_id: str) -> str:
@@ -6858,6 +6863,15 @@ def _refuse_profile_switch(row: Any) -> None:
             f"run {row['run_id']} froze backend_profile {frozen!r} and the current "
             f"configuration names {current!r}: a resumed run keeps its own backend, so it is "
             "not resumed under another (FR-CONF-15, FR-ORCH-16)")
+
+
+def _panel_build_ref_of(row: Any) -> str:
+    """The run's frozen `panel_build_ref`, read from its persisted provider config."""
+    try:
+        config = json.loads(_mapping_get(row, "provider_config") or "{}")
+    except (TypeError, ValueError):
+        return ""
+    return str(config.get("panel_build_ref") or "") if isinstance(config, dict) else ""
 
 
 def record_run_start(
