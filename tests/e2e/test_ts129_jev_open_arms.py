@@ -4,15 +4,18 @@
 |---|---|
 | TC-E2E-05 | Over F-JEV-SYNTH (engine on, base panel of one): every escalated cell's stored `agreement` equals ordinal α hand-computed from its verdicts on the declared scale, and its `confidence` equals the design formula applied by hand to the row's own flags; the accepted decision verdicts' gate confidences are the ones the engine returned; the review queue's flagged total is the number of routed cells |
 | ADV-15 | The blind sample over an engine-on run can draw a decision-seat cell, and what the blind flow holds or renders carries no decision band and no decision confidence |
-| SEC-19 | A student's name written on the script ("Zelda Quartermaine") reaches no decide request and no log record (written ahead, owned by no issue yet: see below) |
+| SEC-19 | A unit carrying the student's roster name ("Zelda Quartermaine"), whose script also carries that name, is assembled into a request with the name replaced by the `student_ref`; no log record carries it |
 
-**SEC-19 is red, and it is a real privacy defect.** Pseudonymization at assembly
-(`judge._pseudonymize(transcript, student_name, student_ref)`) replaces the name the UNIT carries,
-and M-ORCH enumerates every unit with `student_name = None` ("the ledger holds neither"), while no
-tier stores a display name at all. So nothing ever tells the boundary what to replace: a name the
-student writes inside an answer reaches every decide request and nearly every judge prompt — on the
-cloud-hosted profile, the model provider. The plan's "roster display names" have no home in this
-schema, so the arm puts the sentinel where a real name does arrive: on the script.
+**SEC-19 is red: two defects, owned by no issue yet (they need issues from /plan-to-issues).**
+(1) Even when the unit carries the student's roster name, `judge.assemble` replaces it in the
+transcript only: the extracted EVIDENCE SPANS the request carries keep it, so the name reaches the
+scoring and decide requests. (2) In the shipped system M-ORCH enumerates every unit with `student_name = None` ("the ledger holds neither")
+and no tier stores a roster display name, so the boundary never receives a name to replace: a name a
+student writes on the script reaches the decide requests and the judge prompts (measured: 6 of 6 and
+48 of 54 on F-DEV-PIPE with a signed answer). That missing roster-name plumbing is the second defect. The arm
+feeds the boundary the roster name the design says it receives, so a design-conformant fix of both
+turns it green; it does not ask for free-text redaction of names the roster does not hold, which
+`judge.py` §3.2 rejects.
 """
 
 from __future__ import annotations
@@ -67,7 +70,24 @@ def jev_synth(tmp_path_factory):
         decisions.append(decision)
         return decision
 
-    world.provider.decide = decide
+    def distinct(decision):
+        """Every score answer's gate confidence made unique (still above any gate), so the
+        stored verdicts can only match if each carries ITS decision's value."""
+        import dataclasses
+
+        from aeh.prov import ScoreAnswer
+
+        answers = {}
+        for key, answer in decision.answers.items():
+            if isinstance(answer, ScoreAnswer):
+                assigned.append(round(0.951 + 0.0001 * len(assigned), 4))
+                answer = dataclasses.replace(answer, confidence=assigned[-1])
+            answers[key] = answer
+        return dataclasses.replace(decision, answers=answers)
+
+    assigned: list[float] = []
+    world.assigned_confidences = assigned
+    world.provider.decide = lambda request, model_ref: distinct(decide(request, model_ref))
     try:
         world.build_run()
         world.start_run()
@@ -109,15 +129,12 @@ def test_tc_e2e_05_the_gate_confidences_are_the_engines(jev_synth):
     world, _result, decisions, _root = jev_synth
     stored = sorted(float(r[0]) for r in world.handle.query(
         "SELECT self_confidence FROM verdict WHERE scoring_engine = 'decision'"))
-    from aeh.prov import ScoreAnswer
-
-    returned = [float(a.confidence) for d in decisions for a in d.answers.values()
-                if isinstance(a, ScoreAnswer)]
-    assert stored, "fixture: no decision verdict"
-    assert set(stored) <= set(returned), (
-        f"accepted verdicts carry gate confidences {sorted(set(stored))} the engine never returned "
-        f"({sorted(set(returned))})")
-    assert len(stored) <= len(returned), (len(stored), len(returned))
+    assigned = world.assigned_confidences
+    assert stored and len(set(assigned)) == len(assigned), "fixture: no distinct confidences assigned"
+    assert len(set(stored)) == len(stored), f"two verdicts carry one gate confidence: {stored}"
+    assert set(stored) <= set(assigned), (
+        f"accepted verdicts carry gate confidences {sorted(set(stored) - set(assigned))} the engine "
+        "never returned")
 
 
 def test_tc_e2e_05_the_review_queue_holds_every_routed_cell(jev_synth):
@@ -163,7 +180,12 @@ def test_adv_15_the_blind_sample_never_shows_a_decision_band_or_confidence(jev_s
         for value in confidences:
             assert value not in text and f"{float(value) * 100:g}%" not in text, (
                 f"the blind flow carries a decision confidence {value}")
-    assert "band" not in data.lower() or "bands" in data.lower(), data
+    import re as _re
+
+    keys = set(_re.findall(r"'([a-z_]+)':", data))
+    assert not keys & {"band", "system_band", "proposed_band", "decision_band", "self_confidence",
+                       "confidence", "scoring_engine"}, f"the blind session holds system output: {keys}"
+    assert not _re.search(r"\b(selected|checked)\b", html), "the blind flow pre-selects a band"
 
 
 # --- SEC-19 ---------------------------------------------------------------------------------
@@ -172,7 +194,11 @@ NAME = "Zelda Quartermaine"
 
 
 @pytest.mark.writtenahead
-def test_sec_19_a_name_on_the_script_reaches_no_decide_request_or_log(tmp_path, monkeypatch, caplog):
+def test_sec_19_a_units_roster_name_never_reaches_the_request(tmp_path, monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    from aeh import judge
+
     real_render = dev_pipe.render_band
     monkeypatch.setattr(dev_pipe, "render_band",
                         lambda cid, o: real_render(cid, o) + (f" Signed, {NAME}." if cid == "C1" else ""))
@@ -183,18 +209,24 @@ def test_sec_19_a_name_on_the_script_reaches_no_decide_request_or_log(tmp_path, 
     (tmp_path / "fx").mkdir()
     world = pipe_world.PipeWorld(root, tmp_path / "fx", record_as_you_go=True, decision_engine=True,
                                  monkeypatch=monkeypatch)
-    requests: list[str] = []
-    inner = world.provider.decide
-    world.provider.decide = lambda request, model_ref: requests.append(repr(request)) or inner(request, model_ref)
     try:
         world.build_run()
         world.start_run()
         pipe_world.drive_composed(world)
+        row = world.handle.query(
+            "SELECT w.work_id, w.run_id, w.stage, w.submission_id, w.criterion_id, w.judge_id, "
+            "s.student_ref FROM work_unit w JOIN submission s ON s.submission_id = w.submission_id "
+            "WHERE w.stage = 'score' AND w.criterion_id = 'C1' LIMIT 1")[0]
+        unit = SimpleNamespace(work_id=row["work_id"], run_id=row["run_id"], stage="score",
+                               student_ref=row["student_ref"], student_name=NAME,
+                               submission_id=row["submission_id"], criterion_id="C1",
+                               submission_text=None, judge=row["judge_id"], attempt=0)
         stored = [str(r[0]) for r in world.handle.query("SELECT markdown FROM document")]
+        request = judge.assemble(unit, store=world.store)
     finally:
         world.store.close()
     assert any(NAME in m for m in stored), "fixture: the name never reached the stored script"
-    assert requests, "fixture: no decide request was made"
-    leaked = sum(NAME in r for r in requests)
-    assert leaked == 0, f"the student's name reached {leaked} of {len(requests)} decide requests (NFR-PROV-08)"
+    text = repr(request)
+    assert NAME not in text, "the unit's roster name reached the assembled request (NFR-PROV-08)"
+    assert row["student_ref"] in text, "the request does not carry the student_ref in the name's place"
     assert NAME not in caplog.text, "the student's name reached a log record"

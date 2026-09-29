@@ -1338,13 +1338,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
             "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
         ),
     ),
-    # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues): the
-    # pseudonymization boundary replaces only the unit's student_name, which M-ORCH always
-    # leaves None, so a name written on a script reaches every decide request (NFR-PROV-08).
-    "unowned: a name on the script reaches no decide request (TS-129 SEC-19)": (
+    # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues):
+    # judge.assemble pseudonymizes the transcript but not the evidence spans the request
+    # carries, and M-ORCH never fills a unit's student_name (no tier holds a roster name).
+    "unowned: a unit's roster name reaches no request (TS-129 SEC-19)": (
         "command",
-        "python -m pytest -q -p no:cacheprovider tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_name_on_the_script_reaches_no_decide_request_or_log",
-        ("tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_name_on_the_script_reaches_no_decide_request_or_log",),
+        "python -m pytest -q -p no:cacheprovider tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",
+        ("tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",),
     ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
