@@ -1430,6 +1430,17 @@ class ConsoleApp:
             return None
         return self._store.package(package_id)
 
+    def _gate_catalog(self, package_version: str) -> Any:
+        """The `PackageCatalog` of the package `package_version` names, when its file exists
+        on this console's store (the same never-create rule as `_package_handle_for`)."""
+        handle = self._package_handle_for(package_version)
+        package_id = str(package_version or "").rpartition("@")[0]
+        if handle is None or not package_id or getattr(self._store, "data_dir", None) is None:
+            return None
+        from aeh.pkg import PackageCatalog
+
+        return PackageCatalog(handle, package_id=package_id)
+
     def _read(self, query: str, log: list[str], **params: Any) -> list[Any]:
         """One read-only query against the durable tier, recorded on the page's query
         log. Reads are the whole of what a render does (§11.7: every view is a query)."""
@@ -3398,6 +3409,15 @@ class ConsoleApp:
         # session, is the figure a later reader checks first (`FR-CONSOLE-23`): the
         # table read above says what the package's record holds, this says the gate ran.
         gate_outcome = self._gate_outcomes.get(package_version)
+        if gate_outcome is None:
+            # FR-CONSOLE-23 (#528): the outcome a gate recorded in the package's own store,
+            # so a console that did not run the gate reads it too.
+            catalog = self._gate_catalog(package_version)
+            if catalog is not None:
+                try:
+                    gate_outcome = catalog.export_gate_outcome(package_version)
+                except Exception:  # noqa: BLE001 — a read view renders what it can
+                    gate_outcome = None
         if gate_outcome is not None:
             outcome = gate_outcome
         return ValidationRecord(
@@ -3574,9 +3594,12 @@ class ConsoleApp:
         (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
         from one that was skipped (`R71`), so the outcome is written whether the gate
         passed or refused."""
-        # Not yet written through the store (#398 disclosure): Tier D's `audit_record` is
-        # the wrong home, because M-STATS' `promote` sources unclaimed audit rows. Where the
-        # outcome persists is the export-gate story's (design 1.9 §5.1 R16).
+        # Written to the package's own store (#528, design 1.9 §5.1 R16): Tier D's
+        # `audit_record` is the wrong home, because M-STATS' `promote` sources unclaimed audit
+        # rows. The in-memory copy stays for the storeless console.
+        catalog = self._gate_catalog(package_version)
+        if catalog is not None:
+            catalog.record_export_gate_outcome(package_version, outcome)
         self._gate_outcomes[package_version] = outcome
         self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
