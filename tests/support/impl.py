@@ -1360,6 +1360,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "command",
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",
         ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",),
+    ),
     # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S2 says 'No parts have been uploaded' and S3 'Questions read back: 0' over a dropped table.
     "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)": (
         "command",
