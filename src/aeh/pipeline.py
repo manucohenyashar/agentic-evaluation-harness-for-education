@@ -630,110 +630,123 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     latched = {trip.criterion_id for trip in orch.tripped_breakers(handle.run_id)}
     detail: list[str] = []
     escalated = 0
-    for cell in cells:
-        signals = gate.verify(handle.run_id, cell.submission_id, cell.criterion_id)
-        verdicts = verdicts_for(
-            handle.cohort, handle.run_id, cell.submission_id, cell.criterion_id)
-        terminal_units = counts.get(cell, (len(verdicts), len(verdicts)))[0]
-        if not verdicts:
-            # Every score unit of this cell is terminal and none produced a verdict — they
-            # were all quarantined. `aggregate` refuses an empty panel outright
-            # (`EmptyVerdictsError`, `CT-AGG-12`: an empty verdict set is never a zero), and it
-            # is right to: there is nothing to average. `CT-PIPE-02` already allows for this
-            # cell — "exactly one `criterion_score` row **or** a quarantined extract/score
-            # unit" — so the honest outcome is no score at all.
-            #
-            # The phase is still recorded, and that is the part that matters: without it
-            # `ready_cells` reports this cell ready on every later pass and the run would spin
-            # until `max_passes`, re-deciding nothing.
-            with handle.cohort.transaction() as tx:
-                orch.mark_cell_phase(
-                    tx, handle.run_id, cell.submission_id, cell.criterion_id,
-                    "aggregated", units_consumed=terminal_units,
+    current: Any = None
+    try:
+        for cell in cells:
+            current = cell
+            signals = gate.verify(handle.run_id, cell.submission_id, cell.criterion_id)
+            verdicts = verdicts_for(
+                handle.cohort, handle.run_id, cell.submission_id, cell.criterion_id)
+            terminal_units = counts.get(cell, (len(verdicts), len(verdicts)))[0]
+            if not verdicts:
+                # Every score unit of this cell is terminal and none produced a verdict — they
+                # were all quarantined. `aggregate` refuses an empty panel outright
+                # (`EmptyVerdictsError`, `CT-AGG-12`: an empty verdict set is never a zero), and it
+                # is right to: there is nothing to average. `CT-PIPE-02` already allows for this
+                # cell — "exactly one `criterion_score` row **or** a quarantined extract/score
+                # unit" — so the honest outcome is no score at all.
+                #
+                # The phase is still recorded, and that is the part that matters: without it
+                # `ready_cells` reports this cell ready on every later pass and the run would spin
+                # until `max_passes`, re-deciding nothing.
+                with handle.cohort.transaction() as tx:
+                    orch.mark_cell_phase(
+                        tx, handle.run_id, cell.submission_id, cell.criterion_id,
+                        "aggregated", units_consumed=terminal_units,
+                    )
+                detail.append(
+                    f"{cell.submission_id}/{cell.criterion_id}: no verdicts from "
+                    f"{terminal_units} terminal unit(s) - all quarantined, no score written"
                 )
-            detail.append(
-                f"{cell.submission_id}/{cell.criterion_id}: no verdicts from "
-                f"{terminal_units} terminal unit(s) - all quarantined, no score written"
+                continue
+            criterion = _criterion_value(
+                catalog, view, handle.package_version_id, cell.criterion_id)
+            baseline, history = ((None, None) if store is None
+                                 else _escalation_inputs(store, handle, catalog, criterion))
+            quarantined = quarantines.get(cell, 0)
+            if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
+                # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
+                # Ask M-ORCH for one replacement arm and leave the cell unaggregated; when the
+                # arm is refused, the cell is `ungradeable_by_panel` and goes to review. The run
+                # does not pause. (An even panel reached any other way still raises below.)
+                with handle.cohort.transaction() as tx:
+                    replacement = orch.enqueue_replacement_arm(
+                        tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                    if replacement.decision == REPLACEMENT_NOT_APPLICABLE:
+                        # By the ledger's own count nothing was quarantined: an even panel
+                        # reached another way is a defect, and it pauses the run.
+                        raise EvenPanelError(
+                            f"cell {cell.submission_id}/{cell.criterion_id} holds an even panel "
+                            f"of {len(verdicts)} with no quarantined unit (FR-PIPE-18)")
+                    if replacement.decision == REPLACEMENT_INSERTED:
+                        detail.append(
+                            f"{cell.submission_id}/{cell.criterion_id}: even panel of "
+                            f"{len(verdicts)} after {quarantined} quarantined arm(s) -> "
+                            f"replacement arm {replacement.arm}")
+                        continue
+                    score = aggregate_even_panel_after_quarantine(verdicts, criterion, signals)
+                    write_score(tx, handle.run_id, cell.submission_id, score, signals)
+                    orch.mark_cell_phase(
+                        tx, handle.run_id, cell.submission_id, cell.criterion_id,
+                        "aggregated", units_consumed=terminal_units,
+                    )
+                detail.append(
+                    f"{cell.submission_id}/{cell.criterion_id}: even panel after quarantine, "
+                    f"replacement refused ({replacement.reason}) -> ungradeable_by_panel")
+                continue
+            score = aggregate(
+                verdicts, criterion, signals,
+                # `FR-PIPE-05`: exactly two verdicts after a terminal failure. An earlier draft
+                # widened this to any even count, which was INERT — `agg.aggregate` reads
+                # `fallback and len(verdicts) == 2` and its own docstring says "any other even
+                # size still raises `EvenPanelError`". The widened form changed nothing while the
+                # comment above it claimed to cover the 4-verdict case, which is the sort of false
+                # rationale this file has had to correct twice already.
+                #
+                # A 4-verdict panel reached through quarantine is handled above (FR-PIPE-18,
+                # #524): a replacement arm, or `ungradeable_by_panel`. An even panel reached any
+                # other way still raises here, which pauses the run as a composition fault: that
+                # is a defect signal, and FR-PIPE-05's "never with an even panel" stands.
+                # "after a terminal failure": two verdicts with nothing quarantined is an even
+                # panel reached some other way, a defect that must pause (TC-PIPE-23(c)).
+                fallback=len(verdicts) == 2 and quarantined > 0,
+                breaker_tripped=cell.criterion_id in latched,
             )
-            continue
-        criterion = _criterion_value(
-            catalog, view, handle.package_version_id, cell.criterion_id)
-        baseline, history = ((None, None) if store is None
-                             else _escalation_inputs(store, handle, catalog, criterion))
-        quarantined = quarantines.get(cell, 0)
-        if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
-            # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
-            # Ask M-ORCH for one replacement arm and leave the cell unaggregated; when the
-            # arm is refused, the cell is `ungradeable_by_panel` and goes to review. The run
-            # does not pause. (An even panel reached any other way still raises below.)
             with handle.cohort.transaction() as tx:
-                replacement = orch.enqueue_replacement_arm(
-                    tx, (handle.run_id, cell.submission_id, cell.criterion_id))
-                if replacement.decision == REPLACEMENT_NOT_APPLICABLE:
-                    # By the ledger's own count nothing was quarantined: an even panel
-                    # reached another way is a defect, and it pauses the run.
-                    raise EvenPanelError(
-                        f"cell {cell.submission_id}/{cell.criterion_id} holds an even panel "
-                        f"of {len(verdicts)} with no quarantined unit (FR-PIPE-18)")
-                if replacement.decision == REPLACEMENT_INSERTED:
-                    detail.append(
-                        f"{cell.submission_id}/{cell.criterion_id}: even panel of "
-                        f"{len(verdicts)} after {quarantined} quarantined arm(s) -> "
-                        f"replacement arm {replacement.arm}")
-                    continue
-                score = aggregate_even_panel_after_quarantine(verdicts, criterion, signals)
                 write_score(tx, handle.run_id, cell.submission_id, score, signals)
+                decision = should_escalate(
+                    score=score, criterion=criterion, history=history, baseline=baseline)
+                escalates = bool(getattr(decision, "escalate", False))
+                if escalates:
+                    reports = orch.enqueue_escalation(
+                        tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                    # A widening the breaker halted did not escalate anything; counting it would
+                    # make the trace claim work that was refused (`FR-ORCH-13`).
+                    if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
+                        escalated += 1
+                    if any(getattr(r, "decision", None) == DECISION_HALTED_BY_BREAKER
+                           for r in reports):
+                        # The breaker latched inside this transaction; every later cell of the
+                        # same criterion in this pass must see it.
+                        latched.add(cell.criterion_id)
                 orch.mark_cell_phase(
                     tx, handle.run_id, cell.submission_id, cell.criterion_id,
                     "aggregated", units_consumed=terminal_units,
                 )
             detail.append(
-                f"{cell.submission_id}/{cell.criterion_id}: even panel after quarantine, "
-                f"replacement refused ({replacement.reason}) -> ungradeable_by_panel")
-            continue
-        score = aggregate(
-            verdicts, criterion, signals,
-            # `FR-PIPE-05`: exactly two verdicts after a terminal failure. An earlier draft
-            # widened this to any even count, which was INERT — `agg.aggregate` reads
-            # `fallback and len(verdicts) == 2` and its own docstring says "any other even
-            # size still raises `EvenPanelError`". The widened form changed nothing while the
-            # comment above it claimed to cover the 4-verdict case, which is the sort of false
-            # rationale this file has had to correct twice already.
-            #
-            # A 4-verdict panel reached through quarantine is handled above (FR-PIPE-18,
-            # #524): a replacement arm, or `ungradeable_by_panel`. An even panel reached any
-            # other way still raises here, which pauses the run as a composition fault: that
-            # is a defect signal, and FR-PIPE-05's "never with an even panel" stands.
-            # "after a terminal failure": two verdicts with nothing quarantined is an even
-            # panel reached some other way, a defect that must pause (TC-PIPE-23(c)).
-            fallback=len(verdicts) == 2 and quarantined > 0,
-            breaker_tripped=cell.criterion_id in latched,
-        )
-        with handle.cohort.transaction() as tx:
-            write_score(tx, handle.run_id, cell.submission_id, score, signals)
-            decision = should_escalate(
-                score=score, criterion=criterion, history=history, baseline=baseline)
-            escalates = bool(getattr(decision, "escalate", False))
-            if escalates:
-                reports = orch.enqueue_escalation(
-                    tx, (handle.run_id, cell.submission_id, cell.criterion_id))
-                # A widening the breaker halted did not escalate anything; counting it would
-                # make the trace claim work that was refused (`FR-ORCH-13`).
-                if any(int(getattr(r, "units_inserted", 0) or 0) for r in reports):
-                    escalated += 1
-                if any(getattr(r, "decision", None) == DECISION_HALTED_BY_BREAKER
-                       for r in reports):
-                    # The breaker latched inside this transaction; every later cell of the
-                    # same criterion in this pass must see it.
-                    latched.add(cell.criterion_id)
-            orch.mark_cell_phase(
-                tx, handle.run_id, cell.submission_id, cell.criterion_id,
-                "aggregated", units_consumed=terminal_units,
+                f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
+                f"{len(verdicts)} verdicts" + (" -> escalated" if escalates else "")
             )
-        detail.append(
-            f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
-            f"{len(verdicts)} verdicts" + (" -> escalated" if escalates else "")
-        )
+    except (ProviderUnavailableError, BuildChangedError):
+        # Not faults: `run_to_completion` lets these two through to the stored status by type.
+        raise
+    except Exception as error:
+        if current is None:
+            raise
+        # TC-PIPE-13 (#595): the fault names the cell it was working on, so an operator
+        # can tell which (submission, criterion) broke. The exception itself is carried
+        # unchanged, and the run's pause reason stays its type and text.
+        raise _CellFault(error, current.submission_id, current.criterion_id) from error
     if escalated:
         detail.append(f"{escalated} cell(s) escalated")
     return StageTrace("aggregate", units=len(cells), done=len(cells), detail=tuple(detail))
@@ -931,7 +944,30 @@ def run_to_completion(
 
     # `FR-PIPE-02`: the deterministic score rows must exist before the dispatch walk closes
     # their units, and that walk closes them directly without calling the evaluator.
-    det = DeterministicEvaluator(store).evaluate_cohort(run_id)
+    #
+    # Inside the same fault discipline as every hook (#594): an exception here pauses the run
+    # as a composition fault and returns a `RunResult` (FR-PIPE-01, seam 1), never a traceback.
+    try:
+        det = DeterministicEvaluator(store).evaluate_cohort(run_id)
+    except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
+        fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
+        stages.append(StageTrace("deterministic", detail=(fault,)))
+        try:
+            orch.pause(run_id, fault)
+        except Exception:  # noqa: BLE001 - a terminal run refuses a pause; the status stands
+            pass
+        handle = orch.run_handle(run_id)
+        if decision_provider is not None:
+            # CT-PIPE-08: with an engine configured, every result carries its summary.
+            stages.append(_decision_summary(handle, run_id))
+        return RunResult(
+            run_id=run_id,
+            status=handle.status,
+            pause_reason=fault,
+            stages=tuple(stages),
+            grades_computed=0,
+            grades_final=0,
+        )
     evaluations = int(getattr(det, "evaluations", 0) or 0)
     stages.append(StageTrace(
         "deterministic", units=evaluations, done=evaluations,
@@ -958,11 +994,16 @@ def run_to_completion(
             handle = orch.run_handle(run_id)
             break
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed
+            cell = None
+            if isinstance(error, _CellFault):
+                cell = f"cell {error.submission_id}/{error.criterion_id}"
+                error = error.error
             fault = f"{_FAULT_PREFIX}{type(error).__name__}: {error}"
             # Drain first: the pass that faulted may still have extracted and scored, and a
             # trace that dropped that work would under-report what the run actually did.
             stages.extend(_drain(executor))
-            stages.append(StageTrace("aggregate", detail=(fault,)))
+            stages.append(StageTrace(
+                "aggregate", detail=(fault,) if cell is None else (fault, f"{fault} at {cell}")))
             break
 
         stages.extend(_drain(executor))
@@ -1186,6 +1227,20 @@ def _grades_all_final(grading: Any, run_id: str) -> bool:
 #: `FR-PIPE-08`'s exit codes. Changing this mapping is a breaking change to `CT-PIPE-01`.
 #: The marker a composition fault carries in `RunResult.pause_reason`.
 _FAULT_PREFIX = "composition fault: "
+
+
+class _CellFault(Exception):
+    """An exception out of the aggregate hook, with the cell it was raised on (#595).
+
+    Internal to this module: `run_to_completion` unwraps it, so the pause reason carries the
+    original exception's type and text exactly as before, and only the stage detail gains the
+    cell."""
+
+    def __init__(self, error: BaseException, submission_id: str, criterion_id: str) -> None:
+        super().__init__(str(error))
+        self.error = error
+        self.submission_id = submission_id
+        self.criterion_id = criterion_id
 
 EXIT_OK = 0
 EXIT_ERROR = 1
