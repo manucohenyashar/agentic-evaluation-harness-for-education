@@ -83,6 +83,8 @@ INGEST_STATUSES = ("ok", "low_confidence_ocr", "unreadable", "incomplete",
 INGEST_OWNED_TABLES = frozenset({
     "document", "document_region", "submission", "unresolved_token",
     "token_cluster", "assessment_match_proposal", "v4_cohort_breaker",
+    # #531 (FR-CONSOLE-27): the upload record, intake data M-INGEST owns.
+    "upload_part",
 })
 
 #: The score-bearing tables the module must never touch (CT-INGEST-09/17): the

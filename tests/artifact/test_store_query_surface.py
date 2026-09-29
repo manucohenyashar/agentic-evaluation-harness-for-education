@@ -382,27 +382,28 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (#144's re-pin: `select_document_head` gained its `markdown` column, one
     # statement line grown to two above every site; the statements are the same
     # fifteen. Re-read from the walker, never hand-unioned.)
-    "aeh.ingest:3143",
-    "aeh.ingest:3154",
-    "aeh.ingest:3177",
-    "aeh.ingest:3845",
-    "aeh.ingest:3868",
-    "aeh.ingest:3895",
-    "aeh.ingest:3927",
+    "aeh.ingest:3204",
+    "aeh.ingest:3215",
+    "aeh.ingest:3238",
+    "aeh.ingest:3906",
+    "aeh.ingest:3929",
+    "aeh.ingest:3956",
+    "aeh.ingest:3988",
     # #355's per-kind split (FR-INGEST-36): `resolve_selection_region` writes a matched
     # option's selection and state together, and `update_region_text` (below) replaces the
     # content of a region that resolved to no declared option — both declared statements,
     # keyword-parameterized.
-    "aeh.ingest:4043",
-    "aeh.ingest:4044",
-    "aeh.ingest:4079",
-    "aeh.ingest:4097",
-    "aeh.ingest:4102",
-    "aeh.ingest:4241",
-    "aeh.ingest:4477",
-    "aeh.ingest:4489",
-    "aeh.ingest:5030",
-    "aeh.ingest:5053",
+    "aeh.ingest:4104",
+    "aeh.ingest:4105",
+    "aeh.ingest:4140",
+    "aeh.ingest:4158",
+    "aeh.ingest:4163",
+    "aeh.ingest:4302",
+    "aeh.ingest:4538",
+    "aeh.ingest:4550",
+    "aeh.ingest:5091",
+    "aeh.ingest:5114",
+    "aeh.ingest:2124",
     # The pkg sites are #230's line numbers (the verbatim revision copy and the
     # copied-counts statement shifted the module; the tripwire diff being the
     # line move plus one net-new site). Lines moved again with #91's module-level
@@ -533,8 +534,8 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # note landed in the refusal's contributor text and the durable tier's
     # migration registration moved both sites; the statements are the same
     # two. Re-read from the walker, never hand-unioned.)
-    "aeh.store:1997",
-    "aeh.store:2792",
+    "aeh.store:2004",
+    "aeh.store:2799",
     # The #118 stats sites: `promote`'s Tier D record — the unclaimed-audits
     # sourcing read, the label claim (the record's own declared statement),
     # the two post-claim cohort reads — plus the per-criterion figures write
@@ -727,15 +728,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console:2384",
-    "aeh.console:2478",
-    "aeh.console:3083",
-    "aeh.console:5587",
-    "aeh.console:5631",
-    "aeh.console:5615",
-    "aeh.console:5623",
-    "aeh.console:5592",
-    "aeh.console:5644",
+    "aeh.console:2399",
+    "aeh.console:2493",
+    "aeh.console:3098",
+    "aeh.console:5627",
+    "aeh.console:5671",
+    "aeh.console:5655",
+    "aeh.console:5663",
+    "aeh.console:5632",
+    "aeh.console:5684",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the

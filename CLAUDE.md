@@ -118,8 +118,9 @@ eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.inges
 `aeh.pkg` owns Package's last migration — #528's `pkg_export_gate_outcome`, 13; #373's `pkg_validation_baseline` was 12; #369's
 `pkg_criterion_evaluation_mode` was 11 — and
 `aeh.det`'s `det_selection_policy_columns` is 10),
-`aeh.orch` owns Cohort's last migration (#527's `orch_run_config`, 31),
-`aeh.agg` the one before it (#524's `agg_criterion_score_state_reason`, 30),
+`aeh.ingest` owns Cohort's last migration (#531's `ingest_upload_part`, 32),
+`aeh.orch` the one before it (#527's `orch_run_config`, 31),
+`aeh.agg` the one before that (#524's `agg_criterion_score_state_reason`, 30),
 `aeh.judge` the one before that (#448's `judge_verdict_engine`, 29) and the one before that
 (#448's `judge_decision_prescreen`, 28),
 `aeh.ingest` the one before that (#373's `ingest_region_question_owner`, 27),

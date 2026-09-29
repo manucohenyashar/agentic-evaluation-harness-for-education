@@ -697,6 +697,21 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
 # --- completion hooks -----------------------------------------------------------------------
 
 
+def record_upload(store: Any, cohort_id: str, filename: str, blob_ref: str) -> None:
+    """The console's door to M-INGEST's upload record (FR-CONSOLE-27, #531): the console's
+    declared seams include this module, not `aeh.ingest` (TC-CONSOLE-36). No SQL here."""
+    from aeh.ingest import record_upload_part
+
+    record_upload_part(store, cohort_id, filename, blob_ref)
+
+
+def uploaded_parts(store: Any, cohort_id: str) -> tuple[str, ...]:
+    """The cohort's uploaded parts in assembled order, from M-INGEST (FR-CONSOLE-27, #531)."""
+    from aeh.ingest import upload_parts_in_order
+
+    return upload_parts_in_order(store, cohort_id)
+
+
 def _submissions_of(orch: Any, run_id: str) -> tuple[str, ...]:
     """Every submission the run enumerated, in enumeration order, without reading the ledger.
 
