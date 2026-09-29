@@ -1403,6 +1403,13 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_the_blind_flow_plan_names_no_removed_table",
         ("tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_the_blind_flow_plan_names_no_removed_table",),
     ),
+    # Found by TS-99, owned by NO issue yet (needs one from /plan-to-issues): M-PIPE's hooks
+    # cost 3.9 ms/unit at 10 submissions and 9.3 ms/unit at 40, against NFR-PIPE-02's 0.25 ms.
+    "unowned: composition adds at most 0.25 ms per unit (TS-99 PERF-11)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
+        ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
