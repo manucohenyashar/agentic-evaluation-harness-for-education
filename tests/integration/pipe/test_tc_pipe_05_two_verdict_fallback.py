@@ -41,7 +41,14 @@ def _is_target(prompt, model_ref) -> bool:
 def _drive(root: Path, monkeypatch, failures: int | None):
     """Drive F-DEV-PIPE with the target arm answering illegally `failures` times (None: always)."""
     calls: list[tuple[str, int, bool]] = []
-    real_aggregate = pipeline.aggregate
+    written: list[tuple[str, str, int]] = []
+    real_aggregate, real_write = pipeline.aggregate, pipeline.write_score
+
+    def write_score(tx, run_id, submission_id, score, signals):
+        written.append((submission_id, str(score.criterion_id), int(score.judge_count)))
+        return real_write(tx, run_id, submission_id, score, signals)
+
+    monkeypatch.setattr(pipeline, "write_score", write_score)
 
     def spy(verdicts, criterion, signals, **kwargs):
         calls.append((str(criterion.criterion_id), len(verdicts), bool(kwargs.get("fallback"))))
@@ -71,13 +78,15 @@ def _drive(root: Path, monkeypatch, failures: int | None):
                           "AND criterion_id = 'C1' AND judge_id = ?", (ARM,)).fetchall()
         scores = {(r["submission_id"], r["criterion_id"]): dict(r) for r in c.execute(
             "SELECT * FROM criterion_score WHERE run_id = ?", (world.run_id,))}
-    return result, struck["n"], units, scores, calls
+    # S1 is the corpus's absent-C1 submission (ordinal 0): the target cell's owner.
+    (s1,) = {sid for (sid, cid), row in scores.items() if cid == "C1" and row["band"] == "absent"}
+    return result, struck["n"], units, scores, calls, written, s1
 
 
 def test_tc_pipe_05_two_verdicts_after_a_quarantine_fall_back_to_one(tmp_path, monkeypatch):
-    result, struck, units, scores, calls = _drive(tmp_path / "w", monkeypatch, failures=None)
+    result, struck, units, scores, calls, written, s1 = _drive(tmp_path / "w", monkeypatch, failures=None)
     quarantined = [u["submission_id"] for u in units if u["status"] == "quarantined"]
-    assert len(quarantined) == 1 and struck >= 2, f"fixture: quarantined {quarantined} after {struck} strikes"
+    assert quarantined == [s1] and struck >= 2, f"fixture: quarantined {quarantined} after {struck} strikes"
     cell = (quarantined[0], "C1")
     assert ("C1", 2, True) in calls, f"aggregate was not called with fallback=True over 2 verdicts: {calls}"
     row = scores[cell]
@@ -89,10 +98,10 @@ def test_tc_pipe_05_two_verdicts_after_a_quarantine_fall_back_to_one(tmp_path, m
 
 
 def test_tc_pipe_05_variant_a_successful_re_request_keeps_the_full_panel(tmp_path, monkeypatch):
-    result, struck, units, scores, calls = _drive(tmp_path / "w", monkeypatch, failures=1)
+    result, struck, units, scores, calls, written, s1 = _drive(tmp_path / "w", monkeypatch, failures=1)
     assert struck == 1 and not [u for u in units if u["status"] == "quarantined"], (struck, units)
-    s1 = [u["submission_id"] for u in units]
     assert ("C1", 2, True) not in calls, f"a fallback aggregation ran with no quarantine: {calls}"
-    three = [r for (sid, cid), r in scores.items() if cid == "C1" and sid in s1 and r["judge_count"] == 3]
-    assert three, f"no C1 cell kept its 3-verdict panel: {scores}"
+    target = [n for sid, cid, n in written if (sid, cid) == (s1, "C1")]
+    assert target == [3], f"S1's C1 cell was written with judge counts {target}, not once over 3"
+    assert scores[(s1, "C1")]["judge_count"] == 3, scores[(s1, "C1")]
     assert result.status == "complete" and result.pause_reason is None, result.pause_reason
