@@ -1333,6 +1333,34 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",
         ("tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",),
     ),
+    # Found by TS-97 (#391), owned by NO issue yet (needs one from /plan-to-issues): M-CONSOLE
+    # never reads `run.pause_reason`, so S7 shows a paused run with no reason (CT-PIPE-04).
+    "unowned: S7 shows the pause reason (TS-97 TC-REQ-99)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",
+        ("tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",),
+    ),
+    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
+    # _synthesize hands SynthesisWorker the raw provider, so synthesis bypasses GovernedProvider (ADR-14).
+    "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",
+        ("tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",),
+    ),
+    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
+    # evaluate_cohort runs outside run_to_completion's fault handling, so its exception escapes the driver.
+    "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",
+        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",),
+    ),
+    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
+    # the aggregate stage's fault detail carries the exception only, never the cell.
+    "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",
+        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

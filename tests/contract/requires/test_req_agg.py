@@ -85,7 +85,7 @@ def test_tc_req_17_the_escalation_decision_is_pure_and_commits_with_its_result(
                            routing="queued", confidence=0.3, confidence_base=0.3,
                            spans_verified=1, evidence_present=1, sufficiency_flag=0,
                            ocr_overlap_risk=0)
-                inserted = [r.units_inserted for r in Orchestrator(store).enqueue_escalation(tx, ("S001", "C01"))]
+                inserted = [r.units_inserted for r in Orchestrator(store).enqueue_escalation(tx, (run_id, "S001", "C01"))]
                 raise RuntimeError("induced failure after the score and the escalation")
         scores = cohort.query("SELECT COUNT(*) AS n FROM criterion_score")[0]["n"]
         units_after = cohort.query("SELECT COUNT(*) AS n FROM work_unit")[0]["n"]

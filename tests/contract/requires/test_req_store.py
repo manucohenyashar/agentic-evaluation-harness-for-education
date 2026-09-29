@@ -468,14 +468,20 @@ def test_tc_req_05_a_document_and_its_regions_commit_atomically_under_a_kill(tmp
 
 _SCORE_KILLED = """
 import os, sys
+from types import SimpleNamespace
+from aeh.agg import CriterionScore, write_score
+from aeh.orch import Orchestrator
 from aeh.store import open_store
-from tests.support.e2e_world import _SCORE_UPSERT
 store = open_store(sys.argv[1])
+run_id = Orchestrator(store).runs()[0].run_id
+score = CriterionScore(criterion_id="C01", band="met", ordinal=1, points=1.0, modal_band="met",
+                       band_spread=0, judge_count=3, agreement=1.0, agreement_degenerate=False,
+                       histogram={"met": 3}, state="final", routing="auto")
+signals = SimpleNamespace(spans_verified=True, evidence_present=True, sufficiency_flag=False,
+                          ocr_overlap_risk=False, described_evidence=False,
+                          extractor_disagreement=False, caps_fired=())
 with store.cohort("c-2026-7B-orch").transaction() as tx:
-    tx.execute(_SCORE_UPSERT, sid="S001", cid="C01", band="met", points=1.0, judge_count=3,
-               agreement=1.0, state="final", routing="auto", confidence=0.9,
-               confidence_base=0.9, spans_verified=1, evidence_present=1,
-               sufficiency_flag=0, ocr_overlap_risk=0)
+    write_score(tx, run_id, "S001", score, signals)  # M-AGG's writer: score and signals, one row
     os._exit(4)  # killed after the score-with-signals write, before the commit
 """
 
@@ -508,19 +514,35 @@ def test_tc_req_26_integrity_signals_and_their_score_row_are_one_atomic_write(tm
         store.close()
     assert left == 0, "a killed score-with-signals write left a row behind"
 
-    import re as _re
+    # Re-based (gap-fix plan: "the score row is written by `write_score` inside the same
+    # transaction as the signals"): the writer is M-AGG's `write_score`, and its ONE statement
+    # carries every signal column beside the score.
+    from types import SimpleNamespace
 
-    writers = []
-    for module in sorted((REPO_ROOT / "src" / "aeh").glob("*.py")):
-        text = module.read_text(encoding="utf-8")
-        for match in _re.finditer(r"INSERT(?:\s+OR\s+\w+)?\s+INTO\s+criterion_score\s*\(([^)]*)\)", text):
-            if "spans_verified" in match.group(1):
-                writers.append(module.name)
-    assert writers, (
-        "no shipped module writes a criterion_score row carrying the integrity signals, so "
-        "nothing in src makes the signals and their score one write. [When written: the only "
-        "src writer of criterion_score is det.py (deterministic rows, no signal columns); the "
-        "aggregation walk that writes signals with the score lives in tests/support/e2e_world.py.]")
+    from aeh.agg import CriterionScore, write_score
+
+    statements: list[str] = []
+
+    class _Tx:
+        def execute(self, statement, **params):
+            statements.append(str(statement))
+            return []
+
+    write_score(_Tx(), "run-x", "S001", CriterionScore(
+        criterion_id="C01", band="met", ordinal=1, points=1.0, modal_band="met", band_spread=0,
+        judge_count=3, agreement=1.0, agreement_degenerate=False, histogram={"met": 3},
+        state="final", routing="auto"), SimpleNamespace(
+        spans_verified=True, evidence_present=True, sufficiency_flag=False, ocr_overlap_risk=False,
+        described_evidence=False, extractor_disagreement=False, caps_fired=()))
+    writes = [s for s in statements if "criterion_score" in s and "INSERT" in s.upper()]
+    assert len(writes) == 1 and signals <= set(_re_words(writes[0])), (
+        f"write_score did not write the score and its signals in one statement: {statements}")
+
+
+def _re_words(sql: str) -> list[str]:
+    import re
+
+    return re.findall(r"[a-z_]+", sql)
 
 
 # -- TC-REQ-35 ----------------------------------------------------------------------------------
