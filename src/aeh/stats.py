@@ -3175,7 +3175,19 @@ REVIEW_OVERRIDE_MIN_N_DEFAULT = 5
 
 
 def _override_min_n() -> int:
-    return _env_int(REVIEW_OVERRIDE_MIN_N_ENV, REVIEW_OVERRIDE_MIN_N_DEFAULT)
+    """The minimum n, read the way M-REVIEW reads the same knob (a number, at least 1), so
+    the two layers can never disagree on the threshold or one refuse what the other took."""
+    raw = os.environ.get(REVIEW_OVERRIDE_MIN_N_ENV, "").strip()
+    if not raw:
+        return REVIEW_OVERRIDE_MIN_N_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{REVIEW_OVERRIDE_MIN_N_ENV}={raw!r} is not a number") from None
+    if not value >= 1:
+        raise ValueError(f"{REVIEW_OVERRIDE_MIN_N_ENV}={raw!r} must be at least 1")
+    return int(value)
 
 
 @dataclass(frozen=True)
@@ -4212,11 +4224,14 @@ def criterion_disagreement_rate(
     disagreement is `system_band != teacher_band`, i.e. `agreed = 0` (FR-REVIEW-21). The same
     minimum-n rule and no-data reasons as FR-STATS-24; never `0.0` for no data (CT-STATS-09)."""
     _require_str_or_none("criterion_disagreement_rate", criterion_id=criterion_id)
+    # EVERY label carrying both bands: blind labels and the queue's own decisions alike.
+    # ("Operational" is a category, not a stored label_type: the review flow stores
+    # accept/edit/override, and filtering on the word would leave this figure inert on a
+    # real store, the outcome ADR-30 rejected; #433 review.)
     pairs = [
         (_system_side(label), getattr(label, "teacher_band", None))
         for label in self._labels
         if (getattr(label, "criterion_id", "") or "") == criterion_id
-        and getattr(label, "label_type", "") in ("blind", "operational")
     ]
     pairs = [(system, teacher) for system, teacher in pairs
              if system is not None and teacher is not None]
