@@ -96,6 +96,7 @@ def test_tc_req_120_a_short_lineage_is_no_data_and_weighted_as_such(tmp_path, mo
         pipe_world.drive_composed(world)
     finally:
         world.store.close()
+    assert spy.of("C1"), "no C1 decision was made"
     for call in spy.of("C1"):
         assert isinstance(call.history, pkg.NoValidationData), call.history
         assert "criterion override history: no data" in call.decision.reasons, call.decision.reasons
@@ -151,18 +152,37 @@ def test_tc_req_122_b_a_replacement_arm_is_deferred_by_the_budget_like_any_escal
     store = open_store(tmp_data_dir)
     try:
         orch, run_id, cohort = _widened_cell(store)
-        _quarantine(tmp_data_dir, run_id, _arms(cohort, run_id)[-1])
+        arms = _arms(cohort, run_id)
+        # Every existing arm terminal first: the widening's own pending units must not be what
+        # puts S1/C1 in the report, or the case would pass with no replacement at all.
         with cohort.transaction() as tx:
-            assert orch.enqueue_replacement_arm(tx, (run_id, "S1", "C1")).decision == REPLACEMENT_INSERTED
-        within = orch.escalation_budget_state(run_id)
+            tx.execute("UPDATE work_unit SET status = 'done' WHERE run_id = :r AND stage = 'score' "
+                       "AND status = 'pending'", r=run_id)
+        _quarantine(tmp_data_dir, run_id, arms[-1])
         monkeypatch.setattr(Orchestrator, "_escalation_rate", lambda self, ex, run: (10, 9, 0.9))
         monkeypatch.setenv(ESCALATION_BUDGET_ENV, "0.5")
+        before = orch.escalation_budget_state(run_id)
+        with cohort.transaction() as tx:
+            assert orch_real_enqueue(orch, tx, (run_id, "S1", "C1")).decision == REPLACEMENT_INSERTED
         over = orch.escalation_budget_state(run_id)
     finally:
         store.close()
-    assert "S1/C1" not in within.provisional_pairs, within
+    assert "S1/C1" not in before.provisional_pairs, f"fixture: S1/C1 deferred before any replacement: {before}"
     assert "S1/C1" in over.provisional_pairs, (
-        f"over budget, the report does not defer the replaced cell: {over.provisional_pairs}")
+        f"over budget, the report does not defer the replacement's cell: {over.provisional_pairs}")
+
+
+def orch_real_enqueue(orch, tx, key):
+    """The replacement inserted as if within budget: its own refusal gate is not under test here
+    (TC-ORCH-C33 pins it), the report's treatment of the inserted arm is."""
+    import aeh.orch as orch_mod
+
+    real_rate = orch_mod.Orchestrator._escalation_rate
+    try:
+        orch_mod.Orchestrator._escalation_rate = lambda self, ex, run: (10, 0, 0.0)
+        return orch.enqueue_replacement_arm(tx, key)
+    finally:
+        orch_mod.Orchestrator._escalation_rate = real_rate
 
 
 # --- TC-REQ-123 -----------------------------------------------------------------------------

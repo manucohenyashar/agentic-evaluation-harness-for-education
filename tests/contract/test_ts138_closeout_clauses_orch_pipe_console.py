@@ -267,14 +267,17 @@ def test_tc_pipe_c11_recover_leaves_no_complete_run_ungraded(tmp_path, monkeypat
 @pytest.mark.integration
 @pytest.mark.parametrize("budget", ["available", "exhausted"])
 def test_tc_pipe_c12_one_quarantined_arm_never_pauses_the_run(tmp_path, monkeypatch, budget):
-    if budget == "exhausted":
-        real = Orchestrator.enqueue_replacement_arm
+    decisions: list[str] = []
+    real = Orchestrator.enqueue_replacement_arm
 
-        def exhausted(self, tx, key):
+    def replacement(self, tx, key):
+        if budget == "exhausted":
             monkeypatch.setenv(ESCALATION_BUDGET_ENV, "0.0")
-            return real(self, tx, key)
+        report = real(self, tx, key)
+        decisions.append(report.decision)
+        return report
 
-        monkeypatch.setattr(Orchestrator, "enqueue_replacement_arm", exhausted)
+    monkeypatch.setattr(Orchestrator, "enqueue_replacement_arm", replacement)
     root = tmp_path / "w"
     world = _world(root, monkeypatch)
     try:
@@ -286,6 +289,8 @@ def test_tc_pipe_c12_one_quarantined_arm_never_pauses_the_run(tmp_path, monkeypa
         "fixture: nothing was quarantined")
     assert result.status == "complete" and result.pause_reason is None, (
         f"{budget}: {result.status} / {result.pause_reason} (CT-PIPE-12)")
+    expected = REPLACEMENT_REFUSED if budget == "exhausted" else REPLACEMENT_INSERTED
+    assert expected in decisions, f"{budget}: the replacement decisions were {decisions}, not {expected}"
     assert _cohort_rows(root, "SELECT work_id FROM work_unit WHERE status IN ('pending', 'leased')") == [], (
         "the run completed around an open unit")
 
