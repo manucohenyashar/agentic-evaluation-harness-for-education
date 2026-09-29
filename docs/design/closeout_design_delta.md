@@ -8,10 +8,11 @@
 - The parked issues #376, #433, #434 and #454, whose comments each asked for a design decision.
 - The "known and reported, not fixed" sections of merged PRs #438, #439, #495, #496, #507 and #508, and the review findings recorded on #377, #378, #379, #380 and #389.
 - The full non-live suite run on `main` @ `a0fded4` (2026-09-27): 40 failed, 3961 passed. §5 classifies every failure.
+- v1.9.1: the "written ahead, owned by no issue" findings of the close-out test PRs #585–#591 (§5.4). Each is a red `writtenahead` test keyed `unowned: …` in `WRITTEN_AHEAD_BLOCKERS` (`tests/support/impl.py`).
 
 **Code baseline validated against:** `main` @ `a0fded4`, `src/aeh/*.py` (§8).
 
-**Version:** 1.9-delta  **Date:** 2026-09-27  **Status:** Draft, for review before `/create-test-plan`.
+**Version:** 1.9.1-delta  **Date:** 2026-09-29  **Status:** Draft, for review before `/create-test-plan`.
 **Author:** `/detailed-design-generator`, delta mode.
 
 ## Revision history
@@ -19,6 +20,7 @@
 | Version | Date | Change | Author |
 |---|---|---|---|
 | 1.9-delta | 2026-09-27 | **Backlog close-out.** <br>• **Five decisions** that parked issues were waiting on (D1–D5, §2): override rate gets two names (ADR-30); FR-REVIEW-22's historical backfill is withdrawn (ADR-31); `decision_engine_noninferior` gets its own Package-tier column; D-3's multi-lineage proposal is made consistent with the V4 decision table; the stranded FR-PROV-15 edit of 2026-09-02 is adopted. <br>• **Twelve gaps** that merged PRs disclosed but no issue tracked (G1–G12, §3). Among them: escalation's anomaly and history limbs never fire in production; eleven statement names carry conflicting SQL; the mid-run cost ceiling ignores decision spend; the grade footer is a hard-coded constant that names neither the run's profile nor its engine. <br>• **§5 classifies every red test on `main`.** 25 are product defects against clauses that already exist, so they need stories rather than requirements. 10 are one test-support environment leak. The remaining 5 are stale fixtures, one nondeterministic test, one golden and one vacuous oracle, all to triage. <br>• **New IDs:** FR-PROV-15; FR-STATS-28/29; FR-REVIEW-23/24; FR-PKG-23; FR-INGEST-38; FR-STORE-16; FR-ORCH-41…44; FR-PIPE-15…18; FR-CONSOLE-40; CT-STATS-25/26; CT-REVIEW-24/25; CT-PKG-20; CT-INGEST-22; CT-STORE-19; CT-ORCH-31…34; CT-PIPE-10…13; CT-CONSOLE-29; ADR-30…34. <br>• **Amended:** FR-PROV-12, FR-STATS-24, FR-REVIEW-18/21/22, FR-INGEST-26, FR-ORCH-28/32/34, CT-STATS-09. <br>• **No ID is renumbered.** Every amendment is classified under base §4.7 in §7.2. | `/detailed-design-generator` |
+| 1.9.1-delta | 2026-09-29 | **Ten more defects, §5.4 (R21–R30).** The close-out test stories (TS-83, TS-91, TS-93, TS-96, TS-97, TS-99, TS-129) each found a real defect against a clause that already exists and wrote its case red, under `writtenahead`. Every row has its case, so no new requirement, clause or ID is added. One of them is a privacy defect (R21) and one is a performance defect (R30). Landing order: §7.4 step 10. | `/detailed-design-generator` |
 
 ---
 
@@ -370,6 +372,27 @@ TC-INGEST-02; TC-INGEST-25 [b], [d]; TC-INGEST-28 ×4; TC-INGEST-39; ADV-07; TC-
 | TC-STORE-04 | Post-migration checksums differ from `fixtures/F-SCHEMA/post-migration-checksums.json` | A migration since the golden (Cohort 28/29, #484) changed data. Decide: re-bless consciously, or a data-changing migration defect |
 | ADV-10 | "no probed page issued a query", so the trace half of the oracle swept nothing | Oracle made vacuous by a console change. Re-point it at pages that query |
 
+### 5.4 Defects the close-out test stories found (v1.9.1, stories, no new requirement)
+
+Same shape as §5.1: each row cites the red case, the clause it proves broken and the code site, checked at `main` @ `d23db98` (after #591). Every case is marked `@pytest.mark.writtenahead` and registered in `WRITTEN_AHEAD_BLOCKERS` under the key in the last column. **The fixing story removes the marker (never the test) and replaces the `unowned:` key's entry**, per CLAUDE.md. None needs a `type:test` issue.
+
+| Row | Failing case | Clause / requirement broken | Owner | Defect (from the test's own diagnosis) | Registry key (`unowned: …`) |
+|---|---|---|---|---|---|
+| R21 | SEC-19 (`tests/e2e/test_ts129_jev_open_arms.py`) | NFR-PROV-08, CT-PROV-25 | `M-JUDGE`, `M-ORCH` | **Privacy, high severity.** `judge.assemble` (`judge.py:1494`) pseudonymizes the transcript through `_pseudonymize` (`judge.py:1380`) but not the evidence spans the request carries. And M-ORCH enumerates every unit with `student_name=None` (`orch.py:5557`), because no tier stores a roster display name, so the boundary never has a name to replace. A student's name written on the script reaches decide requests and judge prompts; on the cloud profile, the model provider. The fix needs both halves: a roster name the unit carries, and replacement over every text field of the request | a unit's roster name reaches no request (TS-129 SEC-19) |
+| R22 | TC-PIPE-C06 rung 3 (`tests/contract/pipe/test_cs_pipe_clauses.py`) | CT-PIPE-06, ADR-14 | `M-PIPE` | `_synthesize` builds `SynthesisWorker(store, provider, ref)` (`pipeline.py:785`) over the raw provider, so synthesis calls bypass `GovernedProvider`: no cost accrual, no ceiling, no cache-collapse signal | synthesis calls pass the governor (TS-93 TC-PIPE-C06) |
+| R23 | TC-PIPE-02 variant a (`tests/integration/pipe/test_ts83_composition.py`) | FR-PIPE-01, CT-PIPE-04 | `M-PIPE` | `run_to_completion` (`pipeline.py:875`) calls `DeterministicEvaluator.evaluate_cohort` (`pipeline.py:934`) outside its fault handling, so an exception there escapes the driver as a traceback. It should pause the run with a composition fault and return a `RunResult` (seam 1) | a deterministic fault pauses the run (TS-83 TC-PIPE-02) |
+| R24 | TC-PIPE-13 (`tests/integration/pipe/test_ts83_composition.py`) | FR-PIPE-01 (error handling) | `M-PIPE` | The `aggregate` stage's fault trace (`pipeline.py:965`) carries the exception text only, never the (submission, criterion) cell, so an operator cannot tell which cell broke | the aggregate fault detail names the cell (TS-83 TC-PIPE-13) |
+| R25 | TC-REQ-99 (`tests/contract/requires/test_ts97_requires_delta.py`) | CT-PIPE-04 (Requires row M-CONSOLE → M-PIPE) | `M-CONSOLE` | M-CONSOLE never reads `run.pause_reason`, so S7 (`console.py:1864`) shows a paused run with no reason | S7 shows the pause reason (TS-97 TC-REQ-99) |
+| R26 | TC-CONSOLE-44 rows 8 and 9 (`tests/integration/console/test_ts91_action_sweep.py`) | FR-CONSOLE-34, CT-PKG-01 | `M-CONSOLE`/`M-REVIEW` | The console builds its review service in `_review_service` (`console.py:1544`) through `review_service_over` (`review.py:3189`), which binds no package catalog. M-REVIEW then maps bands on `REVIEW_DEFAULT_BANDS` and refuses every band name the run's package declares, so the console can neither accept a review item nor record a blind label for such a package | a console review accept records a label (TS-91 TC-CONSOLE-44 row 8) |
+| R27 | TC-CONSOLE-C28 [S2] (`tests/integration/console/test_ts91_console_screens.py`) | CT-CONSOLE-28 (safety property) | `M-CONSOLE` | S2 catches any read error as `files = ()` (`console.py:1813`, `:1822`) and renders "No parts have been uploaded" over a table it could not read: an absence rendered where the truth is "could not be read" | S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28) — the [S2] half |
+| R28 | TC-CONSOLE-45 S3 editable rows; TC-CONSOLE-C28 [S3] (same module) | FR-CONSOLE-35, CT-CONSOLE-28, HLD §11.5 | `M-CONSOLE` | S3 reads its package through `_tier("package")`, which is hard-coded to `pkg-mconsole` (`console.py:1470`, `:1477`). For every real package it shows "Questions read back from the package: 0" and no editable field, so the teacher cannot see or correct the proposal the screen exists to confirm; and a dropped table also reads as 0 | S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45); the [S3] half of the R27 key |
+| R29 | TC-CONSOLE-45 blind-flow plan (same module) | FR-CONSOLE-35 | `M-CONSOLE` | The declared blind-flow query plan `_BLIND_FLOW_QUERIES` (`console.py:4933`) still reads the `blind_sample` table, which no tier declares since #111 moved the draw into `ReviewService.blind_sample` (the console's own comment at `console.py:1978` says so) | the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45) |
+| R30 | PERF-11 (`tests/perf/test_perf_11_composition_overhead.py`) | NFR-PIPE-02 | `M-PIPE` | Composition (hooks and readiness queries) adds 3.9 ms per unit at 10 submissions and 9.3 ms at 40, against the 0.25 ms budget (5% of NFR-ORCH-01's 5 ms), and the cost grows with the run's size: a per-unit query that scans the run. The fixing story finds the scan; the case's two sizes are its oracle for "does not grow" | composition adds at most 0.25 ms per unit (TS-99 PERF-11) |
+
+**R27 and R28 share one registry key.** The S2 and S3 parametrizations of TC-CONSOLE-C28 sit under a single entry, so whichever lands second removes it; the first narrows its command to the remaining half.
+
+**Two plan/design conflicts, not defects.** The same PR found two TC-CONSOLE-44 arms that contradict the design, and asserted the design. Neither is a story: row 4 ("set review window" succeeds for a run) contradicts ADR-3's locked policy on a published version, and row 6 (a resume on a completed run is refused) contradicts CT-ORCH-13 and CT-ORCH-03. They are Q-C5 and Q-C6 (§9), for `/create-test-plan` to reconcile the sweep table.
+
 ---
 
 ## 6. Findings for `/create-test-plan` (test-side, no design change)
@@ -462,6 +485,7 @@ TC-INGEST-02; TC-INGEST-25 [b], [d]; TC-INGEST-28 ×4; TC-INGEST-39; ADV-07; TC-
 7. **M-CONSOLE:** #398's remainder (R15), R16, R17, R19, R20, R10, FR-CONSOLE-40 (R2).
 8. **M-INGEST:** FR-INGEST-38 with the FR-INGEST-26 amendment (#376).
 9. **Remaining defects:** R3, R6, R7, and the §5.3 triage outcomes.
+10. **v1.9.1 defects (§5.4):** R21 first (privacy), then R23 and R24 together (both in `run_to_completion`'s fault path), R22, R30, then M-CONSOLE's R26, R28, R27, R29, R25. R26 has a soft dependency on R9 (labels carry both bands): both change what a label records.
 
 ---
 
@@ -484,6 +508,7 @@ TC-INGEST-02; TC-INGEST-25 [b], [d]; TC-INGEST-28 ×4; TC-INGEST-39; ADV-07; TC-
 | `_submissions_of` unions judged stages only | `pipeline.py:659-671` |
 | FR-PROV-15's seams exist in code | `prov.py:642`, `:1490-1504`, `:931`, `:1337` |
 | Environment leak in world builders | `tests/support/e2e_world.py:170-174, 562-565`, `pipe_world.py:227-231` |
+| v1.9.1 (§5.4) code sites, at `main` @ `d23db98` | `judge.py:1380, 1494`; `orch.py:5557`; `pipeline.py:785, 875, 934, 965`; `console.py:1470, 1477, 1544, 1813, 1822, 1864, 1978, 4933`; `review.py:3189` |
 
 ---
 
@@ -495,6 +520,8 @@ TC-INGEST-02; TC-INGEST-25 [b], [d]; TC-INGEST-28 ×4; TC-INGEST-39; ADV-07; TC-
 | Q-C2 | Should a promotion mid-run refresh escalation inputs (FR-PIPE-15)? | No: fixed per run, so a run's policy cannot drift |
 | Q-C3 | Should FR-ORCH-41 refund the difference between the charged and the actual decision cost to `cost_spend`? | No: `cost_spend` is a guard, not a bill, and `actual_cost` carries the truth (ADR-33) |
 | Q-C4 | TC-STORE-04's golden (§5.3): re-bless, or treat as a data-changing migration defect? | Triage decides. A re-bless must cite the migration that changed the data |
+| Q-C5 | TC-CONSOLE-44 row 4 expects "set review window" to succeed on a run's version, but every run's version is published and ADR-3 locks the window with the policy. Should a run's window be adjustable after all (Q-22)? | No: the design stands, and the test asserts the refusal. The sweep table needs reconciling |
+| Q-C6 | TC-CONSOLE-44 row 6 expects a resume on a completed run to be refused, but control rows queue (CT-ORCH-13) and resuming a completed run is a no-op (CT-ORCH-03). Should the console refuse it up front? | No: the design stands, and the test asserts a queued no-op |
 
 ---
 
@@ -506,4 +533,4 @@ The design is stage 1 of 4. Next:
 /create-test-plan docs/design/
 ```
 
-The `CT-*` clauses added here (CT-STATS-25/26, CT-REVIEW-24/25, CT-PKG-20, CT-INGEST-22, CT-STORE-19, CT-ORCH-31…34, CT-PIPE-10…13, CT-CONSOLE-29) are the contract, integration and regression layer. Each clause is one assertion. Each new `Requires` row in §4 is one integration case between a named pair. §5.1's twenty rows already have their cases, so `/plan-to-issues` turns them into defect stories whose acceptance test is the existing case. `/create-test-plan` should take §6 as its reconciliation input.
+The `CT-*` clauses added here (CT-STATS-25/26, CT-REVIEW-24/25, CT-PKG-20, CT-INGEST-22, CT-STORE-19, CT-ORCH-31…34, CT-PIPE-10…13, CT-CONSOLE-29) are the contract, integration and regression layer. Each clause is one assertion. Each new `Requires` row in §4 is one integration case between a named pair. §5.1's twenty rows and §5.4's ten (R21–R30) already have their cases, so `/plan-to-issues` turns them into defect stories whose acceptance test is the existing case. `/create-test-plan` should take §6 as its reconciliation input.
