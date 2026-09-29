@@ -179,8 +179,10 @@ def test_tc_pipe_02_variant_a_deterministic_fault_completes_no_unit(tmp_path, mo
 def test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping(tmp_path, monkeypatch):
     """Written ahead, owned by no issue yet: `run_to_completion` calls `evaluate_cohort` outside
     its fault handling, so the exception escapes the driver instead of pausing the run with a
-    composition fault (gap-fix design, M-PIPE *Error handling*: "never swallowed", "the run
-    pauses")."""
+    composition fault. The error rule names hooks, and `evaluate_cohort` is a pre-dispatch step;
+    the expectation rests on FR-PIPE-01 ("returns a `RunResult`" whose status is the stored
+    status) and seam 1 (a structured result, never a traceback), which an escaping exception
+    breaks."""
     from aeh.det import DeterministicEvaluator
 
     def fault(self, *args, **kwargs):

@@ -65,6 +65,7 @@ def test_fuzz_09_a_resolved_selection_mark_always_carries_its_selection(kinds, r
                                                    filenames={source: "scan.md"})
             catalog, version = _seed_options(store)
             clusters = [c for c in ingestor.clusters(COHORT) if c.token == TOKEN]
+            assert clusters, f"kinds {kinds}: the unresolved token formed no cluster"
             if clusters:
                 try:
                     ingestor.resolve_cluster(clusters[0].cluster_id, resolution,

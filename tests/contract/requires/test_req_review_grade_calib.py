@@ -336,9 +336,10 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
         queue = service.build_queue(run_id=run_id, budget_minutes=int(budget.group(1)))
     finally:
         service.close()
+    shown = sum(len(getattr(e, "members", None) or (e,)) for e in queue.shown)  # S9 counts members
     assert tuple(int(x) for x in figures.groups()) == (
-        queue.flagged_total, len(queue.shown), queue.residual_provisional), (
-        f"S9 shows {figures.groups()} but build_queue says {(queue.flagged_total, len(queue.shown), queue.residual_provisional)}")
+        queue.flagged_total, shown, queue.residual_provisional), (
+        f"S9 shows {figures.groups()} but build_queue says {(queue.flagged_total, shown, queue.residual_provisional)}")
 
 
 _FINALIZE_WITHOUT_CONSOLE = textwrap.dedent("""
