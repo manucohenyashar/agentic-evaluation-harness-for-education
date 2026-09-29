@@ -24,7 +24,6 @@ import inspect
 import json
 import os
 import random
-import re
 import sqlite3
 import subprocess
 import sys
@@ -35,6 +34,7 @@ import pytest
 import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch  # noqa: F401,E401
 import aeh.pkg, aeh.review, aeh.synth  # noqa: F401,E401
 from aeh import pkg, review, stats
+from aeh.conf import ModelRef
 from aeh.store import open_store
 from tests.support import broken_stats_fixtures as broken
 from tests.support.grade_vocabulary import write_criterion_scores
@@ -108,16 +108,27 @@ def test_tc_review_c24_an_unknown_run_leaves_a_bare_data_dir_bare(tmp_data_dir):
     assert sorted(p.name for p in data.iterdir()) == ["durable.sqlite"]
 
 
+def _cloud_cfg():
+    from aeh.conf import CohortRef, resolve_run_config
+    from tests.support.conf_builders import hosted_cfg
+
+    panel = tuple(ModelRef(role="judge", provider="openrouter",
+                           build_id=f"openrouter/judge-{i}@2026-01-01", quantization=None)
+                  for i in range(3))
+    return resolve_run_config(hosted_cfg("cloud-hosted", panel=panel),
+                              CohortRef(cohort_id=ORCH_COHORT_ID, consent_class="synthetic"))
+
+
 def test_tc_review_c25_both_write_paths_record_a_backend(tmp_data_dir):
     store = open_store(tmp_data_dir)
     try:
         _o, run_id, _v = seed_run(store, submissions=("S1",), criteria=(
-            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
+            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},), cfg=_cloud_cfg())
         write_criterion_scores(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 0.0, "provisional")])
     finally:
         store.close()
     review.record_label(data_dir=tmp_data_dir, label=dataclasses.replace(
-        _label(1, "C1"), backend_profile="cloud-hosted"))
+        _label(1, "C1"), backend_profile="edge-local"))  # not the run's profile
     service = review.open_review(tmp_data_dir, run_id=run_id)
     try:
         queue = service.build_queue(run_id=run_id, budget_minutes=600)
@@ -127,8 +138,9 @@ def test_tc_review_c25_both_write_paths_record_a_backend(tmp_data_dir):
         service.close()
     with sqlite3.connect(Path(tmp_data_dir) / "durable.sqlite") as c:
         backends = dict(c.execute("SELECT label_id, backend_profile FROM label").fetchall())
-    assert backends["LC11"] == "cloud-hosted", backends
-    assert backends[acted] == "edge-local", f"the act path wrote {backends[acted]!r}, not the run's"
+    assert backends["LC11"] == "edge-local", backends
+    assert backends[acted] == "cloud-hosted", (
+        f"the act path wrote {backends[acted]!r}, not the run's frozen cloud-hosted")
 
 
 # --- M-PKG ----------------------------------------------------------------------------------
@@ -147,15 +159,30 @@ def test_tc_pkg_c20_the_verdict_column_has_one_writer(tmp_data_dir):
     with pytest.raises(sqlite3.IntegrityError):
         pkg.record_noninferiority(tmp_data_dir, package_version_id=version, criterion_id="C1",
                                   verdict="maybe")
-    writers = []
-    for path in sorted((REPO / "src" / "aeh").glob("*.py")):
-        for literal in re.findall(r'"((?:UPDATE|INSERT)[^"]*)"', path.read_text(encoding="utf-8")):
-            if "decision_engine_noninferior" in literal:
-                writers.append(path.name)
-    text = (REPO / "src" / "aeh" / "pkg.py").read_text(encoding="utf-8")
-    assert set(writers) == {"pkg.py"}, writers
-    assert text.count("decision_engine_noninferior = :verdict") == 1
-    assert '"insert_validation_noninferiority"' in text and '"update_validation_noninferiority"' in text
+    # Every declared statement of every module, by its assembled text (a multi-literal INSERT
+    # is one Statement here, whatever its source spelling).
+    import importlib
+    import pkgutil
+
+    import aeh
+    from aeh.store import Statement
+
+    writers, seen = set(), set()
+    for info in pkgutil.iter_modules(aeh.__path__):
+        module = importlib.import_module(f"aeh.{info.name}")
+        for attr, registry in vars(module).items():
+            if not attr.endswith("STATEMENTS") or not isinstance(registry, dict) or id(registry) in seen:
+                continue
+            seen.add(id(registry))
+            for name, statement in registry.items():
+                sql = " ".join(str(statement).split()).upper()
+                if isinstance(statement, Statement) and sql.startswith(("INSERT", "UPDATE", "REPLACE"))                         and "DECISION_ENGINE_NONINFERIOR" in sql:
+                    writers.add((name, sql))
+    names = {name for name, _sql in writers}
+    assert names == {"insert_validation_noninferiority", "update_validation_noninferiority"}, (
+        f"statements writing decision_engine_noninferior: {sorted(names)} (CT-PKG-20: one writer)")
+    assert len(writers) == 2, "a writer name carries two SQL texts"
+    assert names <= set(pkg.PKG_STATEMENTS), "the writer statements are not M-PKG's own"
 
 
 # --- M-INGEST -------------------------------------------------------------------------------

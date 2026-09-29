@@ -113,3 +113,24 @@ def test_tc_ingest_55_b_matching_heads_only_ordered_by_semantic_then_id(tmp_data
         assert ids == sorted(ids), f"equal semantic values must be ordered by id ascending: {ids}"
     finally:
         fx.close()
+
+
+def test_tc_ingest_54_b_the_score_is_computed_against_the_matching_head(tmp_path):
+    """(b)'s score equals (a)'s: the non-matching Beta head changes nothing, so the reference
+    really is Alpha, not merely "some head"."""
+    scores = {}
+    for name, papers in (("one", (("Alpha", ("Q1", "Q2")),)),
+                         ("two", (("Alpha", ("Q1", "Q2")), ("Beta", ("Q4", "Q5"))))):
+        data = tmp_path / name
+        for sub in ("packages", "cohorts", "blobs"):
+            (data / sub).mkdir(parents=True, exist_ok=True)
+        fx = _Papers(data, f"ts136-54b-{name}")
+        try:
+            for printed, questions in papers:
+                fx.put_paper(f"Assessment {printed}", questions)
+            scores[name] = _semantic(fx)["score"]
+        finally:
+            fx.close()
+    assert scores["two"] == scores["one"], (
+        f"with a second, non-matching head the semantic score moved ({scores}): it was not "
+        "computed against the head matching the package (FR-INGEST-38)")

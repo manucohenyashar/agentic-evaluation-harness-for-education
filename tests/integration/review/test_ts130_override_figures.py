@@ -10,6 +10,15 @@
 | TC-REVIEW-35 | FR-REVIEW-24 | one service per run in a shared cohort; an unknown run raises `UnknownRunError` and creates no file |
 
 Implemented by #433, #514, #515 and #434's decision (all merged), so these land green.
+
+Disclosed:
+- **TC-REVIEW-33.** The plan's refusal "naming the unattributable label" is not what M-STORE
+  says: it names the unmet gate ("no label rows for cohort …"), never the row. The case asserts
+  the labels gate is the ONLY unmet one (the cohort's audit and stats rows are seeded). Its NULL
+  arm goes through the collection route (`record_label(data_dir=, label=)` with no cohort).
+- **TC-REVIEW-34 and TC-PKG-33 (TS-131).** Both open a fresh store at the current chain and
+  write the NULL row by hand; neither migrates a store opened at the previous pin, so "a
+  pre-migration row survives as NULL" is asserted over the NULL's reading, not the migration.
 TC-STATS-31 arms 2 and 4 were re-keyed by #433 itself (both markers removed when it landed).
 """
 
@@ -110,7 +119,8 @@ def test_tc_stats_37_disagreement_rate_counts_every_two_band_label(tmp_data_dir,
         store.close()
     assert set(stored) == {"C1", "C2"}, stored
     assert (stored["C1"].n, stored["C1"].disagreements) == (6, 2), stored["C1"]
-    assert isinstance(stored["C2"], NoValidationData), stored["C2"]
+    assert stored["C1"].rate == pytest.approx(1 / 3), stored["C1"]
+    assert isinstance(stored["C2"], NoValidationData) and stored["C2"].reason == "below_min_n", stored["C2"]
     assert "system_band !=" not in inspect.getsource(review), (
         "aeh.review derives a disagreement of its own (FR-REVIEW-18 amended: M-STATS alone)")
 
@@ -184,16 +194,31 @@ def test_tc_review_33_a_pre_rule_label_never_lets_a_purge_pass(tmp_data_dir):
                   "evaluation_mode, saw_system_output, routing, origin, cohort_id) VALUES "
                   "('pre-rule', ?, 'S1', 'C1', 'blind', 'B1', 'judged', 0, 'queued', 'direct', ?)",
                   (run_id, run_id))
+        # The cohort's other promotion rows, so the pre-rule label is the ONLY thing between
+        # this cohort and a purge (without them the audit and stats gates refuse on their own).
+        c.execute("INSERT INTO audit_record (audit_record_id, run_id, recorded_at, profile_summary, "
+                  "cohort_id) VALUES ('a-1', ?, '2026-09-01T00:00:00Z', 'edge-local', ?)",
+                  (run_id, ORCH_COHORT_ID))
+        c.execute("INSERT INTO criterion_stats (package_version_id, criterion_id, backend_profile, "
+                  "panel_build_ref, n, cohort_id) VALUES (?, 'C1', 'edge-local', '', 5, ?)",
+                  (_v, ORCH_COHORT_ID))
     store = open_store(tmp_data_dir)
     try:
-        with pytest.raises(PurgePreconditionError):
+        with pytest.raises(PurgePreconditionError) as refused:
             store.purge_cohort(ORCH_COHORT_ID)
     finally:
         store.close()
+    unmet = str(refused.value).split("Unmet gates:", 1)[1].split(". Promotion", 1)[0]
+    assert unmet.strip().startswith("labels") and "audit" not in unmet and "statistics" not in unmet, (
+        f"the purge must be refused on the labels gate alone: {unmet}")
     with sqlite3.connect(durable) as c:
         assert c.execute("SELECT cohort_id FROM label WHERE label_id = 'pre-rule'").fetchone() == (run_id,), (
             "a code path rewrote the pre-rule row (FR-REVIEW-22 amended: no backfill)")
         assert Path(tmp_data_dir, "cohorts", f"{ORCH_COHORT_ID}.sqlite").exists(), "the refused purge deleted"
+    # A fresh label whose cohort cannot be resolved stores NULL, never a run id.
+    review.record_label(data_dir=tmp_data_dir, label=_label(1, "C1"))
+    with sqlite3.connect(durable) as c:
+        assert c.execute("SELECT cohort_id FROM label WHERE label_id = 'L-C1-1'").fetchone() == (None,)
 
 
 # --- TC-REVIEW-34 ---------------------------------------------------------------------------

@@ -11,6 +11,10 @@ may already be re-leased — by the console's own worker — by the time the req
 case therefore asserts the property the ordering is about: the DEAD worker's lease is gone before
 the first request is served.
 
+The lease row is read twice: at the port announcement, and after the first `GET /` is
+answered. A console that served while recovering concurrently can still slip past both reads
+if recovery wins the race; the plan's oracle cannot observe that ordering from outside.
+
 The fetch runs inside `loopback_census`: the guard stays strict for every non-loopback host.
 """
 
@@ -18,9 +22,11 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -40,6 +46,13 @@ def _env(**extra: str) -> dict[str, str]:
     return {**os.environ, "PYTHONPATH": os.pathsep.join([str(REPO / "src"), str(REPO)]), **extra}
 
 
+def _lease_owner(data_dir, work_id: str):
+    with sqlite3.connect(Path(data_dir) / "cohorts" / f"{ORCH_COHORT_ID}.sqlite") as c:
+        row = c.execute("SELECT lease_owner FROM work_unit WHERE work_id = ?", (work_id,)).fetchone()
+    assert row is not None, f"unit {work_id[:12]} is missing"
+    return row[0]
+
+
 def test_tc_pipe_09_a_cli_recover_reports_the_reclaimed_lease(abandoned_lease, tmp_data_dir):
     _store, run_id, _unit = abandoned_lease
     done = subprocess.run([sys.executable, "-m", "aeh", "recover", "--data-dir", str(tmp_data_dir)],
@@ -56,27 +69,28 @@ def test_tc_pipe_09_b_the_console_reclaims_before_it_accepts(abandoned_lease, tm
     process = subprocess.Popen(
         [sys.executable, "-m", "aeh", "console", "--data-dir", str(tmp_data_dir)],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=_env(CONSOLE_PORT="0", PYTHONUNBUFFERED="1"))
+    lines: queue.Queue = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(x) for x in process.stdout], daemon=True).start()
     try:
         deadline = time.monotonic() + 60
         port = None
-        while time.monotonic() < deadline and port is None:
-            line = process.stdout.readline()
-            if not line:
-                if process.poll() is not None:
-                    pytest.fail("the console exited before reporting its port")
-                continue
+        while port is None:
+            try:
+                line = lines.get(timeout=max(0.1, deadline - time.monotonic()))
+            except queue.Empty:
+                pytest.fail("the console never reported its port")
             if "listening on port" in line:
                 port = int(line.split("listening on port", 1)[1].split()[0])
-        assert port, "the console never reported its port"
+        # Read at the announcement, before any request: the socket accepts from here on.
+        at_announce = _lease_owner(tmp_data_dir, unit.work_id)
+        assert at_announce != "worker-dead", (
+            f"the dead worker still held unit {unit.work_id[:12]} when the port was announced")
         with loopback_census(network_guard) as census,                 urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=30) as response:
             assert response.status == 200
         assert census, "the fetch made no loopback connection"
 
-        with sqlite3.connect(Path(tmp_data_dir) / "cohorts" / f"{ORCH_COHORT_ID}.sqlite") as c:
-            owner = c.execute("SELECT status, lease_owner FROM work_unit WHERE work_id = ?",
-                              (unit.work_id,)).fetchone()
-        assert owner is not None
-        assert owner[1] != "worker-dead", (
+        owner = _lease_owner(tmp_data_dir, unit.work_id)
+        assert owner != "worker-dead", (
             f"the dead worker still holds unit {unit.work_id[:12]} after the console answered: "
             f"{owner} — recovery must run before the socket accepts (FR-PIPE-09)")
     finally:

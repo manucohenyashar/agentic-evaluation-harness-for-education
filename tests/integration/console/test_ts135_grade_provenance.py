@@ -28,9 +28,10 @@ from tests.support.orch_run import orch_cfg, seed_cohort, seed_package
 
 pytestmark = pytest.mark.integration
 
-JEV_BUILD = "openrouter/typesafe/jev-1.13@2026-09-17"
+JEV_BUILD = "typesafe/jev-1.13@2026-09-17"
 SENTINEL = "sk-or-SENTINEL-ts135-0000"
 JEV_URL = "https://jev.example.invalid/api/v1/systemone"
+JEV_CONFIDENCE = "0.9731"
 CRITERIA = [{"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"}]
 
 
@@ -82,6 +83,16 @@ def two_runs(tmp_data_dir, monkeypatch):
         "c-ts135-b", version_b, _cloud_engine_config())
     write_criterion_scores(store.cohort("c-ts135-a"), [("SA1", "C1", "B1", 1.0, "provisional")])
     write_criterion_scores(store.cohort("c-ts135-b"), [("SB1", "C1", "B1", 1.0, "provisional")])
+    # A Jev verdict carrying a distinctive confidence, so "no confidence figure" can fail.
+    Orchestrator(store, provider=_Seam(), decision_provider=decider).enumerate_units(run_b)
+    cohort_b = store.cohort("c-ts135-b")
+    (unit,) = cohort_b.query("SELECT work_id, judge_id FROM work_unit WHERE run_id = :r "
+                             "AND stage = 'score' LIMIT 1", r=run_b)
+    with cohort_b.transaction() as tx:
+        tx.execute("INSERT INTO verdict (verdict_id, work_id, judge_id, band, band_ordinal, "
+                   "self_confidence, scoring_engine, engine_build) VALUES "
+                   "('v-ts135', :w, :j, 'B1', 0, :conf, 'decision', :build)",
+                   w=unit["work_id"], j=unit["judge_id"], conf=float(JEV_CONFIDENCE), build=JEV_BUILD)
     try:
         yield store, (run_a, "SA1", version_a), (run_b, "SB1", version_b)
     finally:
@@ -97,6 +108,8 @@ def test_tc_console_50_every_grade_view_names_its_own_run(two_runs):
         assert f"package version {version_a}" in html, f"A's {screen} does not name {version_a}"
         assert "backend profile edge-local" in html, f"A's {screen} does not name edge-local"
         assert "decision engine" not in html, f"A's {screen} carries an engine line (engine off)"
+        assert f"rubric version {version_a.rpartition('@')[2]}" in html, (
+            f"A's {screen} does not name its rubric version")
     for screen, html in pages_b.items():
         assert f"package version {version_b}" in html, f"B's {screen} does not name {version_b}"
         assert "backend profile cloud-hosted" in html, f"B's {screen} does not name cloud-hosted"
@@ -107,6 +120,8 @@ def test_tc_console_50_every_grade_view_names_its_own_run(two_runs):
         lowered = html.lower()
         assert "confidence" not in lowered and "probability" not in lowered, (
             f"{screen} renders a confidence or probability figure (UAT-12's negative half)")
+        for figure in (JEV_CONFIDENCE, "97.31", "97.3%", "97%"):
+            assert figure not in html, f"{screen} renders B's Jev confidence as {figure!r}"
     storeless = build_console().render(SCREENS["S12"], id="r-unaddressed").html
     assert GRADE_PROVENANCE["backend_profile"] in storeless, (
         "the storeless double no longer renders GRADE_PROVENANCE")

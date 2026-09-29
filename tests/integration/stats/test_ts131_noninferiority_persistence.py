@@ -14,7 +14,12 @@ Disclosed adaptations:
 - **TC-STATS-38's rung.** The partitioning of F-STATS-JEV's labels into engines is TC-STATS-33/35's
   (TS-119). This case pins FR-STATS-29's wiring on a real store: `promote` persists the verdict
   `decision_engine_noninferior` computes, with `agreement_by_engine` answering the plan's
-  figures, and writes nothing for an engine-off administration.
+  figures, and writes nothing for an engine-off administration. The 59-vs-60 minimum lives in
+  `agreement_by_engine`, stubbed here; it is pinned by TS-119 (`test_ts119_engine_measurement`).
+  Arm (c)'s "every other column byte-identical" is a twin comparison: the same administration
+  promoted with the verdict step removed leaves every package-tier row the same.
+- **TC-PKG-33's migration arm.** The case opens a fresh store at pin 14; it does not migrate a
+  store opened at 13, so "a pre-migration row reads `None`" is asserted over an unwritten row.
 """
 
 from __future__ import annotations
@@ -109,18 +114,51 @@ def test_tc_stats_38_promote_stores_the_verdict_for_an_engine_on_administration(
         "llm_engine_off": stats.EngineAgreement("llm_engine_off", 60, 0.74, False),
     })
     update = stats.open_stats(data_dir=tmp_data_dir).promote(ORCH_COHORT_ID, package_version=version)
-    assert expected in _stored_verdicts(tmp_data_dir, version), _stored_verdicts(tmp_data_dir, version)
+    stored = _stored_verdicts(tmp_data_dir, version)
+    assert {v for v in stored if v is not None} == {expected}, stored
     assert update.noninferiority_outcomes.get("C1") == f"recorded {expected if expected != 'true' else True}", (
         update.noninferiority_outcomes)
 
 
-def test_tc_stats_38_c_an_engine_off_administration_stores_nothing(tmp_data_dir, monkeypatch):
+def _package_rows(data_dir, version: str) -> dict[str, list[tuple]]:
+    """Every row of every table in the package's file, minus minted ids, version-derived
+    columns and timestamps (the twin's ids differ by construction)."""
+    package_id = version.rpartition("@")[0]
+    out: dict[str, list[tuple]] = {}
+    with sqlite3.connect(Path(data_dir) / "packages" / f"{package_id}.pkg.sqlite") as c:
+        c.row_factory = sqlite3.Row
+        tables = [r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type = 'table'")]
+        for table in sorted(tables):
+            rows = c.execute(f"SELECT * FROM {table}").fetchall()
+            out[table] = sorted(
+                tuple((k, row[k]) for k in row.keys()
+                      if not k.endswith(("_id", "_at", "_hash", "_ref")) and k not in ("version",))
+                for row in rows)
+    return out
+
+
+def test_tc_stats_38_c_an_engine_off_administration_stores_nothing(tmp_data_dir, tmp_path, monkeypatch):
+    # The twin: the same engine-off administration promoted with the verdict step removed.
+    # Every column of every row must come out the same, the verdict column included (NULL).
+    twin = tmp_path / "twin"
+    for sub in ("packages", "cohorts", "blobs"):
+        (twin / sub).mkdir(parents=True, exist_ok=True)
+    twin_run, twin_version = _draft(twin)
+    _administration(twin, twin_run, engine_on=False)
+    with monkeypatch.context() as m:
+        m.setattr(stats, "_record_noninferiority_verdicts", lambda *a, **k: {})
+        stats.open_stats(data_dir=twin).promote(ORCH_COHORT_ID, package_version=twin_version)
+
     run_id, version = _draft(tmp_data_dir)
     _administration(tmp_data_dir, run_id, engine_on=False)
     called = []
     monkeypatch.setattr(stats, "agreement_by_engine",
                         lambda *a, **k: called.append(1) or {})
     update = stats.open_stats(data_dir=tmp_data_dir).promote(ORCH_COHORT_ID, package_version=version)
+    mine, theirs = _package_rows(tmp_data_dir, version), _package_rows(twin, twin_version)
+    assert mine == theirs, (
+        "an engine-off promote changed a package-tier row the verdict step does not own: "
+        f"{sorted(t for t in mine if mine[t] != theirs.get(t))}")
     assert not called, "an engine-off promote measured engine agreement"
     assert all(value is None for value in _stored_verdicts(tmp_data_dir, version)), (
         "an engine-off administration wrote a verdict (NFR-SYS-14: the column stays NULL)")
