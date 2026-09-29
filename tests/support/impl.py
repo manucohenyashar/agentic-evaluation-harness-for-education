@@ -1323,6 +1323,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
     # longer completes around a cell awaiting aggregation, the refused row stands on the odd
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
+    # "#454 TS-139 TC-REQ-126 promote's verdict under the run's key" left with #454's fix:
+    # the verdict is filed under the run's key and validation_for returns it.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
