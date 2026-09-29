@@ -40,10 +40,12 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import queue
 import re
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -194,7 +196,7 @@ def test_tc_pipe_20_b_no_baseline_passes_no_data_and_raises_no_anomaly(tmp_path,
         result = pipe_world.drive_composed(world)
     finally:
         world.store.close()
-    assert result.status == "complete", result.pause_reason
+    assert result.status == "complete" and result.pause_reason is None, result.pause_reason
     assert spy.calls, "should_escalate was never called"
     for call in spy.calls:
         assert call.baseline is not None and call.history is not None, call
@@ -261,9 +263,10 @@ def test_tc_pipe_20_d_a_mid_run_baseline_waits_for_the_next_run(tmp_path, monkey
 
 def test_tc_pipe_20_e_pipeline_executes_no_sql():
     code = (REPO / "src" / "aeh" / "pipeline.py").read_text(encoding="utf-8")
-    for pattern in (r"\bimport sqlite3\b", r"\.execute\(", r"\.query\(", r"\bStatement\(",
-                    r"\"(?:SELECT|INSERT|UPDATE|DELETE)\s"):
-        assert not re.search(pattern, code), f"aeh/pipeline.py matches {pattern!r} (CT-PIPE-05)"
+    for pattern in (r"\bimport sqlite3\b", r"\.execute(?:many|script)?\(", r"\.query\(",
+                    r"\bStatement\(", r"[\"'](?:SELECT|INSERT|UPDATE|DELETE|REPLACE)\s"):
+        assert not re.search(pattern, code, re.IGNORECASE), (
+            f"aeh/pipeline.py matches {pattern!r} (CT-PIPE-05)")
 
 
 # --- TC-PIPE-21 -----------------------------------------------------------------------------
@@ -279,7 +282,7 @@ def test_tc_pipe_21_a_recover_grades_a_complete_run_left_without_grades(tmp_path
     world = _world(root, monkeypatch)
     try:
         result = pipe_world.drive_composed(world)
-        assert result.status == "complete", result.pause_reason
+        assert result.status == "complete" and result.pause_reason is None, result.pause_reason
         submissions = {r[0] for r in _cohort_rows(
             root, "SELECT DISTINCT submission_id FROM criterion_score WHERE run_id = ?", world.run_id)}
         assert len(submissions) == dev_pipe.DEV_PIPE_COUNT
@@ -350,7 +353,7 @@ def test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated(tmp_p
             root, "SELECT DISTINCT submission_id FROM criterion_score WHERE run_id = ?", world.run_id))
     finally:
         world.store.close()
-    assert result.status == "complete", result.pause_reason
+    assert result.status == "complete" and result.pause_reason is None, result.pause_reason
     assert len(submissions) == 2, submissions
     assert sorted(offered) == submissions, f"M-SYNTH was offered {offered}, not each of {submissions} once"
     narrated = {r[0] for r in _cohort_rows(root, "SELECT DISTINCT submission_id FROM narrative")}
@@ -410,7 +413,7 @@ def test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel(tmp_path, monkeypa
     assert [r["status"] for r in replacement] == ["done"], (
         f"the replacement arm for {cell} is {[tuple(r) for r in replacement]}, not one done unit "
         "(FR-PIPE-18)")
-    assert result.status == "complete", result.pause_reason
+    assert result.status == "complete" and result.pause_reason is None, result.pause_reason
     assert _scores(root, world.run_id)[cell]["judge_count"] == 5, (
         f"cell {cell} did not re-aggregate over 5 verdicts")
 
@@ -434,11 +437,12 @@ def test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete
         world.store.close()
     cell = _quarantined_cell(root, world.run_id)
     scores = _scores(root, world.run_id)
-    assert result.status == "complete", f"the run is {result.status}: {result.pause_reason} (CT-PIPE-12)"
+    assert result.status == "complete" and result.pause_reason is None, (
+        f"the run is {result.status}: {result.pause_reason} (CT-PIPE-12)")
     row = scores[cell]
     assert (row["state"], row["state_reason"]) == ("ungradeable_by_panel", "even_panel_after_quarantine"), (
         f"cell {cell}: {dict(row)}")
-    assert row["routing"] != "auto", f"cell {cell} was not routed to review: {row['routing']!r}"
+    assert row["routing"] == "provisional", f"cell {cell} was not routed to review: {row['routing']!r}"
     others = {k: r["state"] for k, r in scores.items() if k != cell}
     assert set(others.values()) == {"final"}, f"other cells are not all final: {others}"
 
@@ -498,16 +502,17 @@ def test_res_25_recover_after_a_kill_between_complete_and_grading(tmp_path):
            "PYTHONUNBUFFERED": "1"}
     child = subprocess.Popen([sys.executable, "-c", _KILL_BEFORE_GRADING, str(root)], cwd=str(REPO),
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+    lines: queue.Queue = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(x) for x in child.stdout], daemon=True).start()
     try:
         deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            line = child.stdout.readline()
+        while True:
+            try:
+                line = lines.get(timeout=max(0.1, deadline - time.monotonic()))
+            except queue.Empty:
+                pytest.fail("the run never reached grading")
             if "GRADING" in line:
                 break
-            if not line and child.poll() is not None:
-                pytest.fail("the run exited before it reached grading")
-        else:
-            pytest.fail("the run never reached grading")
         child.kill()  # TerminateProcess on Windows, SIGKILL on POSIX
         child.wait(timeout=30)
     finally:
