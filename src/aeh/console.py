@@ -662,6 +662,13 @@ _SELECT_QUARANTINE = (
     "SELECT submission_id, ingest_status FROM submission "
     "WHERE quarantined = 1 ORDER BY submission_id"
 )
+#: FR-CONSOLE-29 (#530): the stored crops M-INGEST kept for a parked submission's regions
+#: (a described region, an unreadable mark where one was cropped), as content hashes.
+_SELECT_SUBMISSION_CROPS = (
+    "SELECT r.crop_ref AS crop_ref, r.region_kind AS region_kind FROM document_region r "
+    "JOIN document d ON d.document_id = r.document_id "
+    "WHERE d.submission_id = :submission_id AND r.crop_ref IS NOT NULL ORDER BY r.region_id"
+)
 _SELECT_COHORT_QUARANTINE = (
     "SELECT submission_id, ingest_status FROM submission "
     "WHERE cohort_id = :cohort_id AND quarantined = 1"
@@ -1815,12 +1822,21 @@ class ConsoleApp:
         items = []
         for row in rows:
             submission = _row_get(row, "submission_id")
+            # FR-CONSOLE-29 (#530): the item's OWN stored crops, by content hash, never a
+            # static placeholder. An item with no stored crop (a V4 mismatch has no mark)
+            # shows no image and says so.
+            crops = self._read_cohort_files(
+                _SELECT_SUBMISSION_CROPS, queries, submission_id=submission)
+            figures = "".join(
+                f'<figure data-role="mark"><img src="/blobs/{escape(str(_row_get(crop, "crop_ref")))}" '
+                f'alt="stored crop of the {escape(str(_row_get(crop, "region_kind")))} region">'
+                f"<figcaption>The stored crop of the "
+                f"{escape(str(_row_get(crop, 'region_kind')))} region.</figcaption></figure>"
+                for crop in crops
+            ) or "<p>No stored crop for this item: there is no mark or region to show.</p>"
             items.append(
                 f'<div class="quarantine-item"><p>{escape(str(submission))} — parked for '
-                "operator triage.</p>"
-                '<figure data-role="mark"><img src="/assets/mark-crop.png" '
-                'alt="crop of the unreadable answer mark">'
-                "<figcaption>The unreadable mark, as a crop.</figcaption></figure></div>"
+                "operator triage.</p>" + figures + "</div>"
             )
         body = (
             '<section data-role="quarantine">' + "".join(items) + "</section>"
