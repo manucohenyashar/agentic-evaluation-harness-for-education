@@ -11,9 +11,9 @@
 | TC-PIPE-21 (a) | A complete run's `submission_grade` rows deleted: `recover` grades every submission; a second `recover` writes no new revision |
 | TC-PIPE-21 (b) | A `complete` run with no criterion scores is not graded |
 | TC-PIPE-22 | MCQ-only package, 2 submissions: M-SYNTH is offered each exactly once, and each gets a narrative row (written ahead: #523) |
-| TC-PIPE-23 (a) | One widened arm quarantined, budget available: the replacement arm runs and the cell aggregates over 5 verdicts (written ahead: #524, reopened) |
-| TC-PIPE-23 (b) | Budget exhausted at the replacement: the cell is `ungradeable_by_panel` / `even_panel_after_quarantine`, routed to review; the run is `complete`; every other cell is final (written ahead: #524, reopened) |
-| TC-PIPE-23 (c) | Two verdicts with no quarantine (a double over `verdicts_for`): the run pauses (written ahead: #524, reopened) |
+| TC-PIPE-23 (a) | One widened arm quarantined, budget available: the replacement arm runs and the cell aggregates over 5 verdicts |
+| TC-PIPE-23 (b) | Budget exhausted at the replacement: the cell is `ungradeable_by_panel` / `even_panel_after_quarantine`, routed to review; the run is `complete`; every other cell is final |
+| TC-PIPE-23 (c) | Two verdicts with no quarantine (a double over `verdicts_for`): the run pauses |
 | RES-25 | The process is killed (`TerminateProcess`) between `complete` and grading; `python -m aeh recover --data-dir D` exits 0 and every submission is graded |
 
 Disclosed fixture choices:
@@ -379,7 +379,8 @@ def _quarantine_one_widened_arm(world):
             if key == target[0]:
                 return dataclasses.replace(inner(prompt, model_ref, params), text="not a verdict")
         if model_ref.build_id == "escalation-arm-6":
-            model_ref = dataclasses.replace(model_ref, build_id="escalation-arm-4")
+            # The corpus's own arm-4 identity: a derived arm-6 ref differs in more than its build.
+            model_ref = pipe_world.corpus_refs()["judge_refs"]["escalation-arm-4"]
         return inner(prompt, model_ref, params)
 
     world.provider.complete = complete
@@ -397,7 +398,6 @@ def _scores(root: Path, run_id: str):
         root, "SELECT * FROM criterion_score WHERE run_id = ?", run_id)}
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel(tmp_path, monkeypatch):
     root = tmp_path / "w"
     world = _world(root, monkeypatch)
@@ -418,7 +418,6 @@ def test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel(tmp_path, monkeypa
         f"cell {cell} did not re-aggregate over 5 verdicts")
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete(
         tmp_path, monkeypatch):
     real = Orchestrator.enqueue_replacement_arm
@@ -447,7 +446,6 @@ def test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete
     assert set(others.values()) == {"final"}, f"other cells are not all final: {others}"
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run(tmp_path, monkeypatch):
     real = pipeline.verdicts_for
     shortened: list[tuple[str, str]] = []

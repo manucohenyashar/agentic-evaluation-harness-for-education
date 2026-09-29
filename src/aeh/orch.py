@@ -846,6 +846,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_cell_unit_counts": Statement(
         "SELECT submission_id, criterion_id, stage, "
         "SUM(CASE WHEN status IN ('done', 'quarantined') THEN 1 ELSE 0 END) AS terminal, "
+        "SUM(CASE WHEN status = 'quarantined' THEN 1 ELSE 0 END) AS quarantined, "
         "COUNT(*) AS total FROM work_unit WHERE run_id = :run_id "
         "GROUP BY submission_id, criterion_id, stage"
     ),
@@ -3814,6 +3815,8 @@ class Orchestrator:
             ORCH_STATEMENTS["select_run_open_units"], run_id=run_id
         )[0]["n"]:
             return
+        if self._awaiting_aggregation(cohort, run_id):
+            return
         self._transition_run(
             cohort,
             run_id,
@@ -5077,6 +5080,31 @@ class Orchestrator:
             )
         )
         named = None if judges is None else tuple(_judge_id_of(j) for j in judges)
+        # A cell whose quarantine a replacement arm answered (FR-ORCH-43, #524) carries the
+        # quarantined unit beside the arm that replaced it: an even unit count over an odd live
+        # panel. It is already escalated (the replacement is escalation-origin), so this is
+        # step 2's no-op; step 1's parity check would misread the replaced unit as corruption.
+        # A caller naming judges still goes through the plan's validation below.
+        replacement_id = _content_id(_CONTENT_ID_KIND_REPLACEMENT, run_id, submission_id,
+                                     criterion_id)
+        if named is None and int(tx.execute(ORCH_STATEMENTS["select_request_exists"],
+                                            request_id=replacement_id)[0]["n"]):
+            live = len(prior) - int(tx.execute(
+                ORCH_STATEMENTS["select_pair_quarantined_score_units"], run_id=run_id,
+                submission_id=submission_id, criterion_id=criterion_id)[0]["n"])
+            gates["plan"] = (
+                f"{len(prior)} units, a quarantine answered by a replacement (FR-ORCH-43): the "
+                f"live panel is {live}; no further widening")
+            gates["idempotence"] = "the replaced panel stands"
+            processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+            return self._escalation_report(
+                tx, row, submission_id, criterion_id, DECISION_ADMITTED,
+                prior_judges=prior, added_judges=(), judge_count=live,
+                units_inserted=0, expected_value=expected_value,
+                escalation_rate=rate, processed_results=processed,
+                escalated_results=escalated, budget=budget,
+                breaker_tripped=False, gates=gates,
+            )
         target = escalation_plan(prior, add_judges=named, panel_arms=arms)
         additions = target[len(prior):]
         gates["plan"] = (
@@ -6197,6 +6225,20 @@ class Orchestrator:
             )
         return counts
 
+    def cell_quarantined_counts(self, run_id: str, stage: str) -> dict["CellKey", int]:
+        """Each cell's QUARANTINED unit count for one stage, from the ledger (#524).
+
+        The composition layer needs it to tell a panel quarantine left even (FR-PIPE-18's
+        replacement, FR-PIPE-05's fallback) from an even panel reached any other way, which is
+        a defect and pauses. It cannot be inferred from verdicts: a `done` unit with no verdict
+        is not a quarantine. Cells with none are omitted. Read-only."""
+        cohort, _run_row = self._find_run(run_id)
+        return {
+            CellKey(str(row["submission_id"]), str(row["criterion_id"])): int(row["quarantined"])
+            for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id)
+            if str(row["stage"]) == stage and int(row["quarantined"] or 0)
+        }
+
     def ready_cells(self, run_id: str, hook: str) -> tuple["CellKey", ...]:
         """The cells ready for one composition hook (`FR-ORCH-29`), in ledger order.
 
@@ -6217,6 +6259,11 @@ class Orchestrator:
                 f"{READY_HOOKS} (FR-ORCH-29)."
             )
         cohort, _run_row = self._find_run(run_id)
+        return self._ready_cells_in(cohort, run_id, hook)
+
+    def _ready_cells_in(self, cohort: Any, run_id: str, hook: str,
+                        phase_rows: Any = None) -> tuple["CellKey", ...]:
+        """`ready_cells` over an already-resolved cohort (the completion probe's door)."""
         counts: dict[tuple[str, str], dict[str, tuple[int, int]]] = {}
         for row in cohort.query(ORCH_STATEMENTS["select_cell_unit_counts"], run_id=run_id):
             key = (str(row["submission_id"]), str(row["criterion_id"]))
@@ -6224,7 +6271,9 @@ class Orchestrator:
                 int(row["terminal"] or 0), int(row["total"] or 0)
             )
         phases: dict[tuple[str, str], dict[str, int]] = {}
-        for row in cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id):
+        if phase_rows is None:
+            phase_rows = cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)
+        for row in phase_rows:
             key = (str(row["submission_id"]), str(row["criterion_id"]))
             phases.setdefault(key, {})[str(row["phase"])] = int(row["units_consumed"] or 0)
         stage = STAGE_EXTRACT if hook == "integrity_pre" else STAGE_SCORE
@@ -6240,6 +6289,23 @@ class Orchestrator:
             elif "aggregated" not in marked or terminal > marked["aggregated"]:
                 ready.append(CellKey(*key))
         return tuple(ready)
+
+    def _awaiting_aggregation(self, cohort: Any, run_id: str) -> bool:
+        """Whether a composition layer still owes a cell its aggregation (#524).
+
+        A run driven through the composition hooks records cell phases (`mark_cell_phase`),
+        and its aggregate hook decides, AFTER the last unit closes, whether a cell needs more
+        units: an escalation (FR-ORCH-09) or a replacement arm (FR-ORCH-43). Completing the
+        run first would strand those units — the claim pass skips a `complete` run and
+        FR-ORCH-25 has no edge back to `running` — and a hook fault could no longer pause it.
+        So while any cell is ready for `aggregate`, the run is not complete; the hook's
+        sanctioned closer (`resume`) re-probes once it has run. A run with no phase recorded
+        at all is not composition-driven and completes on its units alone, as before.
+        """
+        phases = cohort.query(ORCH_STATEMENTS["select_cell_phases"], run_id=run_id)
+        if not phases:
+            return False
+        return bool(self._ready_cells_in(cohort, run_id, "aggregate", phases))
 
     def _cells_with_integrity_pre(self, cohort: Any, run_id: str) -> set[tuple[str, str]]:
         """The cells whose `integrity_pre` phase is recorded — the Sweep-2 gate's extra
