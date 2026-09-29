@@ -147,6 +147,12 @@ PERCENT_AGREEMENT_NAMES: tuple[str, ...] = (
     "agreement_rate", "percent_agree",
 )
 
+#: FR-STATS-28's surface (design 1.9 D1): a disagreement rate for the review ranking, which the
+#: design names and scopes away from validity (CT-STATS-25). Excluded from the percent sweep.
+RANKING_DISAGREEMENT_NAMES: tuple[str, ...] = (
+    "criterion_disagreement_rate", "stored_disagreement_rates", "CriterionDisagreement",
+)
+
 #: The figure's four scope dimensions (`CT-STATS-04`: *"keyed by population scope, backend
 #: profile, panel build ref, and scoring model"*).
 SCOPE_KEY_DIMENSIONS: tuple[str, ...] = (

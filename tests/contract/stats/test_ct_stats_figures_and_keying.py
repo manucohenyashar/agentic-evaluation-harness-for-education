@@ -72,6 +72,9 @@ def test_tc_stats_c02_the_figure_declares_exactly_the_fields_the_design_names():
         name
         for name in vocab.public_surface(require(STATS_MODULE, issue="#115"))
         if any(term in name.lower() for term in vocab.PERCENT_AGREEMENT_NAMES)
+        # FR-STATS-28 (design 1.9, #433): the disagreement rate is the review RANKING's input,
+        # named by the design; it is not a validity figure and never stands in for kappa.
+        and name not in vocab.RANKING_DISAGREEMENT_NAMES
     ]
     assert percent == [], (
         f"{percent} emit a raw percent agreement. FR-STATS-02: no percent figure without its "

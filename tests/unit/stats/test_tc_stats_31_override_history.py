@@ -163,7 +163,6 @@ def test_tc_stats_31_an_inadmissible_label_never_enters_the_figure():
 # --- The two arms #433 has to land ----------------------------------------------------------
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_31_arm_2_a_population_below_the_minimum_is_no_data():
     """Arm 2 — four labels: `NoValidationData`, because four teachers are not a rate.
 
@@ -185,7 +184,6 @@ def test_tc_stats_31_arm_2_a_population_below_the_minimum_is_no_data():
     )
 
 
-@pytest.mark.writtenahead
 def test_tc_stats_31_arm_4_the_review_ranking_consumes_this_figure(tmp_path):
     """Arm 4 — `FR-REVIEW-18`'s eighth input reads this figure rather than staying `None`.
 
@@ -231,6 +229,16 @@ def test_tc_stats_31_arm_4_the_review_ranking_consumes_this_figure(tmp_path):
             store.cohort(ORCH_COHORT_ID),
             [("S001", CRITERION, "B1", 6.0, "provisional")],
         )
+        # #433: the history the docstring names, stored — five judged labels, two of which put
+        # the teacher's band elsewhere. Without them there is no history to read and the
+        # input is honestly no-data, which is not what this arm is about.
+        from aeh.review import record_label
+        from tests.support import broken_stats_fixtures as broken
+
+        for index in range(5):
+            record_label(data_dir=data_dir, label=broken.Label(
+                label_id=f"hist-{index}", criterion_id=CRITERION, band=2,
+                teacher_band=3 if index < 2 else 2, origin="override" if index < 2 else "accept"))
         service = _service_from_store(
             store, cohort_ids=[ORCH_COHORT_ID], run_id=run_id,
         )
