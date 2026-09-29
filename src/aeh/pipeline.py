@@ -657,22 +657,14 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
 
 
 def _submissions_of(orch: Any, run_id: str) -> tuple[str, ...]:
-    """Every submission the run enumerated, in ledger order, without reading the ledger.
+    """Every submission the run enumerated, in enumeration order, without reading the ledger.
 
-    The union of both judged stages' cells. **This does not cover every package**: a
-    submission whose criteria are ALL deterministic has neither extract nor score units, so it
-    is never offered to synthesis at all. An earlier draft of this docstring stated the hole
-    and then claimed the union closed it, which it does not. The reference and F-DEV-PIPE
-    packages both carry open criteria so the gap is not reachable there; closing it needs a
-    per-run submission list `M-ORCH` does not currently expose. Reported rather than hidden.
-
-    `M-ORCH` counts the cells; `CT-PIPE-05` forbids this module counting for itself.
+    FR-PIPE-17 / CT-PIPE-13 (#523): `M-ORCH`'s own per-run list (`Orchestrator.submissions`,
+    FR-ORCH-42), so a submission whose criteria are all deterministic, which has neither
+    extract nor score units, is still offered to synthesis. `CT-PIPE-05` forbids this module
+    reading the ledger itself.
     """
-    seen: dict[str, None] = {}
-    for stage in (STAGE_EXTRACT, STAGE_SCORE):
-        for cell in orch.cell_unit_counts(run_id, stage):
-            seen.setdefault(cell.submission_id, None)
-    return tuple(seen)
+    return tuple(orch.submissions(run_id))
 
 
 def _synthesize(store: Any, provider: Any, run_config: Any, orch: Any, handle: Any,
