@@ -727,15 +727,15 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # (Third re-pin, still #127's: review fixes added the correction's grain
     # pre-checks and its completed-before-refusal progress disclosure above the
     # tail sites — moving the seven tail sites down again; same statements.)
-    "aeh.console:2358",
-    "aeh.console:2452",
-    "aeh.console:3057",
-    "aeh.console:5542",
-    "aeh.console:5586",
-    "aeh.console:5570",
-    "aeh.console:5578",
-    "aeh.console:5547",
-    "aeh.console:5599",
+    "aeh.console:2384",
+    "aeh.console:2478",
+    "aeh.console:3083",
+    "aeh.console:5587",
+    "aeh.console:5631",
+    "aeh.console:5615",
+    "aeh.console:5623",
+    "aeh.console:5592",
+    "aeh.console:5644",
     # aeh.calib's four sites are #138's, all keyword-parameterized inside a
     # `Tx.execute` transaction: the two test-fixture builders' one-time
     # package-row seed (`_build_published_package`'s INSERT and the
