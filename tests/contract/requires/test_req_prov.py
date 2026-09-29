@@ -219,9 +219,8 @@ def test_tc_req_14_a_terminal_provider_error_pauses_the_run_without_a_fallback(
                            r=run_id)[0]
         # Every score unit, including the ones the faulted pass handed out, is back to
         # `pending` with no attempt counted: none left `leased`, none struck (FR-ORCH-30).
-        struck_or_held = cohort.query(
-            "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r AND stage = 'score' "
-            "AND (status = 'leased' OR attempts > 0)", r=run_id)[0]["n"]
+        score_units = [tuple(r) for r in cohort.query(
+            "SELECT status, attempts FROM work_unit WHERE run_id = :r AND stage = 'score'", r=run_id)]
         scored_done = cohort.query(
             "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :r AND stage = 'score' "
             "AND status = 'done'", r=run_id)[0]["n"]
@@ -234,8 +233,9 @@ def test_tc_req_14_a_terminal_provider_error_pauses_the_run_without_a_fallback(
         problems.append(f"{scored_done} score unit(s) completed although the only provider failed")
     if row["status"] != "paused" or terminal not in (row["pause_reason"] or ""):
         problems.append(f"the {terminal} left the run {row['status']!r}, reason {row['pause_reason']!r}")
-    if struck_or_held:
-        problems.append(f"{struck_or_held} score unit(s) left leased or struck by the outage (FR-ORCH-30)")
+    if not score_units or set(score_units) != {("pending", 0)}:
+        problems.append(f"after the outage the score units are {sorted(set(score_units))}, not all pending "
+                        "with no attempt counted (FR-ORCH-30)")
     if row["provider_config"] != before["provider_config"]:
         problems.append("the pause changed the run's frozen provider snapshot")
     if TerminalSeam.calls > calls_at_error:
