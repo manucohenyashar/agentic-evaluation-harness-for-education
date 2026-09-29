@@ -316,6 +316,7 @@ __all__ = [
     "criterion_disagreement_rate",
     "CriterionDisagreement",
     "stored_disagreement_rates",
+    "stored_override_histories",
     "REVIEW_OVERRIDE_MIN_N_ENV",
     "describe_revision_gate",
     "drift_check",
@@ -4329,6 +4330,34 @@ def stored_disagreement_rates(
             labels.append(label)
     stats = ValidationStats(labels)
     return {criterion: stats.criterion_disagreement_rate(criterion) for criterion in criteria}
+
+
+def _lineage_stats(store: Any, package_version_id: str) -> tuple["ValidationStats", list[str]]:
+    """A `ValidationStats` over one package lineage's stored labels (a label naming a version
+    of the same package, or recording no version), and the version's criteria."""
+    from aeh.pkg import PackageCatalog
+
+    package_id = str(package_version_id).rpartition("@")[0]
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    criteria = [str(row["criterion_id"]) for row in catalog.criteria(package_version_id)]
+    lineage_prefix = f"{package_id}@"
+    labels = []
+    for row in store.durable().query(STATS_STATEMENTS["select_labels_all"]):
+        label = _StoredLabel(_row_mapping(row))
+        version = label._row.get("package_version_id")
+        if version is None or str(version).startswith(lineage_prefix):
+            labels.append(label)
+    return ValidationStats(labels), criteria
+
+
+def stored_override_histories(
+    store: Any, package_version_id: str
+) -> dict[str, "CriterionOverrideHistory | NoValidationData"]:
+    """FR-STATS-24's figure per criterion of `package_version_id`, over the package lineage's
+    stored labels, read through M-STATS alone: M-PIPE's escalation `history` input
+    (FR-PIPE-15, #525)."""
+    stats, criteria = _lineage_stats(store, package_version_id)
+    return {criterion: stats.criterion_override_history(criterion) for criterion in criteria}
 
 
 def narrative_quality(self: "ValidationStats", cohort_id: str | None = None) -> NarrativeQualityReport:

@@ -555,7 +555,47 @@ def _integrity_pre_hook(orch: Any, handle: Any, gate: Any) -> StageTrace:
     return StageTrace("integrity_pre", units=len(cells), done=len(cells), detail=tuple(detail))
 
 
-def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) -> StageTrace:
+#: FR-PIPE-15 (#525): each run's escalation inputs, read ONCE and kept for the run's
+#: lifetime, so a promotion landing mid-run is not seen until the next run (Q-45).
+_ESCALATION_INPUTS: dict[tuple[str, str], dict[str, tuple[Any, Any]]] = {}
+
+
+def _escalation_inputs(store: Any, handle: Any, catalog: Any, criterion: Any) -> tuple[Any, Any]:
+    """(baseline, history) for one criterion of the run, through each owner's public surface
+    (CT-PIPE-05: no SQL here). The baseline is `PackageCatalog.baselines_for` under the run's
+    key (its frozen backend profile and panel build); the
+    history is M-STATS' FR-STATS-24 figure over the package lineage. The criterion's own
+    part of the key comes from the package (`baselines_for`), never from this module. A `NoValidationData`
+    from either owner is passed as is, never `None` (CT-PIPE-10)."""
+    from aeh.stats import stored_override_histories
+
+    # Keyed by the store's data directory AND the run: two stores in one process (every
+    # test world) may reuse a run id, and one must never answer for the other (#525 review).
+    cache_key = (str(getattr(store, "data_dir", id(store))), handle.run_id)
+    cached = _ESCALATION_INPUTS.get(cache_key)
+    if cached is None:
+        # Every criterion's pair at once, on the run's first read (Q-45: fixed for the run).
+        if len(_ESCALATION_INPUTS) >= 64:
+            _ESCALATION_INPUTS.clear()
+        histories = stored_override_histories(store, handle.package_version_id)
+        baselines = catalog.baselines_for(
+            handle.package_version_id, backend_profile=handle.backend_profile,
+            panel_build_ref=getattr(handle, "panel_build_ref", ""))
+        cached = {criterion_id: (baseline, histories.get(criterion_id))
+                  for criterion_id, baseline in baselines.items()}
+        _ESCALATION_INPUTS[cache_key] = cached
+    baseline, history = cached.get(str(criterion.criterion_id), (None, None))
+    from aeh.pkg import NoValidationData
+
+    if baseline is None:
+        baseline = NoValidationData()
+    if history is None:
+        history = NoValidationData(reason="no_blind_labels", n=0)
+    return baseline, history
+
+
+def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
+                    store: Any = None) -> StageTrace:
     """`FR-PIPE-04`: verify, read verdicts, aggregate, then ONE transaction for the rest.
 
     The order is the requirement's, and the single transaction is the half that matters: the
@@ -615,6 +655,8 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             continue
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
+        baseline, history = ((None, None) if store is None
+                             else _escalation_inputs(store, handle, catalog, criterion))
         quarantined = terminal_units - len(verdicts)
         if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
             # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
@@ -667,7 +709,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
         with handle.cohort.transaction() as tx:
             write_score(tx, handle.run_id, cell.submission_id, score, signals)
             decision = should_escalate(
-                score=score, criterion=criterion, history=None, baseline=None)
+                score=score, criterion=criterion, history=history, baseline=baseline)
             escalates = bool(getattr(decision, "escalate", False))
             if escalates:
                 reports = orch.enqueue_escalation(
@@ -905,7 +947,7 @@ def run_to_completion(
         try:
             report = orch.progress(run_id)
             pre = _integrity_pre_hook(orch, handle, gate)
-            agg = _aggregate_hook(orch, handle, gate, catalog, view)
+            agg = _aggregate_hook(orch, handle, gate, catalog, view, store)
         except (ProviderUnavailableError, BuildChangedError):
             # Defensive only. `FR-ORCH-30` absorbs both per future inside `_run_model_batch`
             # and pauses the run there, so neither normally reaches this frame; if one ever
