@@ -115,7 +115,7 @@ The tier migration chains in `TIER_MIGRATIONS` are concatenated **at import time
 modules that own the schema they add. Before the first store open in any process, import all
 eleven contributors: `import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch, aeh.pkg, aeh.review, aeh.synth` —
 `import aeh.pkg` alone is not enough (Tier P's chain is short by `aeh.det`'s migration without it;
-`aeh.pkg` owns Package's last migration — #373's `pkg_validation_baseline`, 12; #369's
+`aeh.pkg` owns Package's last migration — #528's `pkg_export_gate_outcome`, 13; #373's `pkg_validation_baseline` was 12; #369's
 `pkg_criterion_evaluation_mode` was 11 — and
 `aeh.det`'s `det_selection_policy_columns` is 10),
 `aeh.orch` owns Cohort's last migration (#527's `orch_run_config`, 31),

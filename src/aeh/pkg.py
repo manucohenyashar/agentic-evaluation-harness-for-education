@@ -161,6 +161,11 @@ _PEEK_PACKAGES = "SELECT package_id FROM package"
 #: -wal/-shm sidecars (they do not travel in the archive, and a WAL header cannot even be
 #: inspected through an in-memory copy). The pragma checkpoints and rewrites the header.
 _SNAPSHOT_JOURNAL_MODE = "PRAGMA journal_mode=DELETE"
+#: #528: the export gate's outcomes are this installation's record of its own gate runs, not
+#: part of the package; the exported copy carries none (an importer would otherwise read a
+#: stale refusal), and is compacted so two exports of one package stay byte-identical.
+_SNAPSHOT_CLEAR_GATE_OUTCOMES = "DELETE FROM export_gate_outcome"
+_SNAPSHOT_VACUUM = "VACUUM"
 
 
 def _zip_entry(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
@@ -2137,6 +2142,39 @@ _PKG_VALIDATION_BASELINE = Migration(
     ),
 )
 
+# --- Tier P, migration 13 (#528, `FR-CONSOLE-23`): the export gate's outcome, recorded ---------
+#
+# A provenance gate whose result is not recorded is indistinguishable from one that was skipped
+# (R71). The outcome lives beside the package it gated, append-only (the latest row is the
+# current outcome), never in Tier D's `audit_record`, which M-STATS' promote sources.
+_PKG_EXPORT_GATE_OUTCOME = Migration(
+    version=13,
+    name="pkg_export_gate_outcome",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE export_gate_outcome (
+                package_version_id TEXT NOT NULL REFERENCES package_version(package_version_id),
+                outcome TEXT NOT NULL,
+                actor TEXT,
+                recorded_at TEXT NOT NULL
+            )
+            """
+        ),
+    ),
+)
+
+PKG_STATEMENTS.update({
+    "insert_export_gate_outcome": Statement(
+        "INSERT INTO export_gate_outcome (package_version_id, outcome, actor, recorded_at) "
+        "VALUES (:v, :outcome, :actor, :recorded_at)"
+    ),
+    "select_export_gate_outcome": Statement(
+        "SELECT outcome FROM export_gate_outcome WHERE package_version_id = :v "
+        "ORDER BY rowid DESC LIMIT 1"
+    ),
+})
+
 STATEMENTS.update(PKG_STATEMENTS)
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
@@ -2150,6 +2188,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_SETUP_CLASSIFICATION,)
     + (_PKG_CRITERION_EVALUATION_MODE,)
     + (_PKG_VALIDATION_BASELINE,)
+    + (_PKG_EXPORT_GATE_OUTCOME,)
 )
 
 # Durable v8 — #118's promotion record. M-PKG is the seam `aeh.stats.promote` stores its
@@ -3025,6 +3064,25 @@ class PackageCatalog:
         cached = self._cache_current()
         return cached["bands"].get(criterion_id, ())
 
+    def record_export_gate_outcome(
+        self, v: PackageVersionId, outcome: str, *, actor: str | None = None,
+        recorded_at: str | None = None,
+    ) -> None:
+        """Record the provenance gate's outcome for version `v` (FR-CONSOLE-23, #528):
+        append-only, the latest row is the version's current outcome."""
+        if not isinstance(outcome, str) or not outcome.strip():
+            raise ValueError("an export gate outcome is a non-empty sentence")
+        stamp = recorded_at or datetime.now(timezone.utc).isoformat()
+        with self._handle.transaction() as tx:
+            tx.execute(PKG_STATEMENTS["insert_export_gate_outcome"], v=v, outcome=outcome,
+                       actor=actor, recorded_at=stamp)
+
+    def export_gate_outcome(self, v: PackageVersionId) -> str | None:
+        """The latest recorded provenance-gate outcome for `v`, or None when the gate has
+        never run for it (FR-CONSOLE-23, #528)."""
+        rows = self._handle.query(PKG_STATEMENTS["select_export_gate_outcome"], v=v)
+        return str(rows[0]["outcome"]) if rows else None
+
     def points_for_band(self, criterion_id: str, band: str) -> float:
         """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee).
 
@@ -3547,6 +3605,9 @@ class PackageCatalog:
                 copy = sqlite3.connect(snapshot)
                 try:
                     source.backup(copy)
+                    copy.execute(_SNAPSHOT_CLEAR_GATE_OUTCOMES)
+                    copy.commit()
+                    copy.execute(_SNAPSHOT_VACUUM)
                     copy.execute(_SNAPSHOT_JOURNAL_MODE)
                     copy.commit()
                 finally:

@@ -1430,6 +1430,17 @@ class ConsoleApp:
             return None
         return self._store.package(package_id)
 
+    def _gate_catalog(self, package_version: str) -> Any:
+        """The `PackageCatalog` of the package `package_version` names, when its file exists
+        on this console's store (the same never-create rule as `_package_handle_for`)."""
+        handle = self._package_handle_for(package_version)
+        package_id = str(package_version or "").rpartition("@")[0]
+        if handle is None or not package_id or getattr(self._store, "data_dir", None) is None:
+            return None
+        from aeh.pkg import PackageCatalog
+
+        return PackageCatalog(handle, package_id=package_id)
+
     def _read(self, query: str, log: list[str], **params: Any) -> list[Any]:
         """One read-only query against the durable tier, recorded on the page's query
         log. Reads are the whole of what a render does (§11.7: every view is a query)."""
@@ -3398,6 +3409,15 @@ class ConsoleApp:
         # session, is the figure a later reader checks first (`FR-CONSOLE-23`): the
         # table read above says what the package's record holds, this says the gate ran.
         gate_outcome = self._gate_outcomes.get(package_version)
+        if gate_outcome is None:
+            # FR-CONSOLE-23 (#528): the outcome a gate recorded in the package's own store,
+            # so a console that did not run the gate reads it too.
+            catalog = self._gate_catalog(package_version)
+            if catalog is not None:
+                try:
+                    gate_outcome = catalog.export_gate_outcome(package_version)
+                except Exception:  # noqa: BLE001 — a read view renders what it can
+                    gate_outcome = None
         if gate_outcome is not None:
             outcome = gate_outcome
         return ValidationRecord(
@@ -3569,15 +3589,26 @@ class ConsoleApp:
         )
         return corrected
 
-    def record_gate_outcome(self, package_version: str, outcome: str) -> None:
+    def record_gate_outcome(self, package_version: str, outcome: str,
+                            actor: str | None = None) -> None:
         """Record the provenance gate's outcome for the validation record
         (`FR-CONSOLE-23`): a gate whose result is not recorded is indistinguishable
         from one that was skipped (`R71`), so the outcome is written whether the gate
         passed or refused."""
-        # Not yet written through the store (#398 disclosure): Tier D's `audit_record` is
-        # the wrong home, because M-STATS' `promote` sources unclaimed audit rows. Where the
-        # outcome persists is the export-gate story's (design 1.9 §5.1 R16).
+        # Written to the package's own store (#528, design 1.9 §5.1 R16): Tier D's
+        # `audit_record` is the wrong home, because M-STATS' `promote` sources unclaimed audit
+        # rows. The in-memory copy stays for the storeless console.
         self._gate_outcomes[package_version] = outcome
+        catalog = self._gate_catalog(package_version)
+        if catalog is not None:
+            try:
+                catalog.record_export_gate_outcome(package_version, outcome, actor=actor)
+            except Exception as error:  # noqa: BLE001 — e.g. a version the package lacks
+                # The refusal must still surface as the gate's refusal, never as a raw
+                # database error; the audit line says the outcome was not stored.
+                self._audit.append(
+                    f"provenance gate outcome for {package_version} not stored: "
+                    f"{type(error).__name__}")
         self._audit.append(f"provenance gate for {package_version}: {outcome}")
 
     def set_review_window(self, run_id: str = "r-unaddressed", *, hours: float) -> ControlOutcome:
@@ -4096,7 +4127,7 @@ def export_package(
             f"refused: the package carries real student text, so the export did not "
             "happen and no student text left the building"
         )
-        app.record_gate_outcome(package_version, outcome)
+        app.record_gate_outcome(package_version, outcome, actor=actor)
         raise ProvenanceRefused(
             f"{package_version}: {outcome} (FR-CONSOLE-23; the export gate is screen S14)"
         )
@@ -4116,9 +4147,9 @@ def export_package(
         # On a real store the export is M-PKG's: a refusal there is the gate's outcome,
         # never "passed" (#398).
         refused = f"refused: {exported.detail}"
-        app.record_gate_outcome(package_version, refused)
+        app.record_gate_outcome(package_version, refused, actor=actor)
         raise ProvenanceRefused(f"{package_version}: {refused} (FR-CONSOLE-23)")
-    app.record_gate_outcome(package_version, f"provenance gate {outcome}")
+    app.record_gate_outcome(package_version, f"provenance gate {outcome}", actor=actor)
     return ExportOutcome(
         package_version=package_version,
         contains_real_student_text=False,
