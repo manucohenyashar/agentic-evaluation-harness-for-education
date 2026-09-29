@@ -354,6 +354,11 @@ SCREENS: dict[str, str] = {
     "S14": "/packages/{version}/export-gate",
 }
 BLOCKING_SCREENS = frozenset({"S3", "S4"})
+#: CT-CONSOLE-07 (#532): M-SETUP's blocking steps, and the screen each renders on. The
+#: console's blocking set is derived from M-SETUP's enumeration; a blocking step with no
+#: screen here is still counted, under its own step id. `BLOCKING_SCREENS` stays the
+#: storeless double's answer (no store, no setup to ask).
+SETUP_STEP_SCREENS = {"inventory": "S3", "answer_keys": "S4"}
 OPERATOR_SCREENS = frozenset({"S6", "S7", "S8"})
 
 #: The route tables, verbatim from the settled vocabulary, plus the provenance gate —
@@ -1557,8 +1562,31 @@ class ConsoleApp:
         return dict(SCREENS)
 
     def blocking_screens(self) -> tuple[str, ...]:
-        """The two screens that block run start (§11.5's ⛔ headings), and only those."""
-        return tuple(screen for screen in SCREENS if screen in BLOCKING_SCREENS)
+        """The screens that block run start (§11.5's ⛔ headings), derived from M-SETUP's
+        own enumeration of blocking steps (CT-CONSOLE-07, #532): on a real store holding a
+        package, one entry per blocking step `SetupService.steps()` reports, in its order.
+        With no store or no package there is no setup to ask, and the declared pair
+        answers."""
+        steps = self._setup_blocking_steps()
+        if steps is None:
+            return tuple(screen for screen in SCREENS if screen in BLOCKING_SCREENS)
+        return tuple(SETUP_STEP_SCREENS.get(step_id, step_id) for step_id in steps)
+
+    def _setup_blocking_steps(self) -> tuple[str, ...] | None:
+        data_dir = getattr(self._store, "data_dir", None)
+        if data_dir is None:
+            return None
+        packages = sorted(Path(data_dir, "packages").glob("*.pkg.sqlite"))
+        if not packages:
+            return None
+        from aeh.setup import setup_service_for_store
+
+        package_id = packages[0].name.removesuffix(".pkg.sqlite")
+        try:
+            progress = setup_service_for_store(self._store, package_id).steps()
+        except Exception:  # noqa: BLE001 — no readable setup: the declared pair answers
+            return None
+        return tuple(step.step_id for step in progress.steps if step.blocking)
 
     def routes(self) -> dict[str, tuple[str, ...]]:
         """The role-scoped route tables. AuthN is absent deliberately; no auth route exists."""
