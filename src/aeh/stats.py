@@ -973,7 +973,7 @@ STATS_STATEMENTS: dict[str, Statement] = {
         "UPDATE label SET cohort_id = :cohort_id WHERE cohort_id IS NULL"
     ),
     "select_unclaimed_audits": Statement(
-        "SELECT package_version_id, profile_summary, panel_config "
+        "SELECT run_id, package_version_id, profile_summary, panel_config "
         "FROM audit_record WHERE cohort_id IS NULL"
     ),
     # The per-criterion figures the record carries, one row per
@@ -3121,6 +3121,10 @@ class ValidationUpdate:
     #: would return its counters and a success status over a baseline that was never
     #: stored, leaving `should_escalate`'s input no-data with nothing anywhere saying so.
     baseline_outcomes: Mapping[str, str] = field(default_factory=dict)
+    #: FR-STATS-29 (#454): per criterion, what the non-inferiority write did — the verdict
+    #: recorded, or why nothing was (a published version, no cohort file). Empty for an
+    #: engine-off administration, which writes nothing.
+    noninferiority_outcomes: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -4062,8 +4066,16 @@ def promote(
     # FR-STATS-29 (#454): when the run froze a decision engine (its persisted profile summary
     # names one), the engine non-inferiority verdict per criterion is written through
     # FR-PKG-23. An engine-off run writes nothing, so the column stays NULL (NFR-SYS-14).
-    if any('"decision_engine"' in str(row.get("profile_summary") or "") for row in audits):
-        _record_noninferiority_verdicts(
+    # Only THIS administration's runs decide: the unclaimed-audit read spans every
+    # administration, and an older engine-on run must not make an engine-off promote write a
+    # verdict (or overwrite a recorded 'false') (#454 review).
+    administration_runs = {str(getattr(label, "_row", {}).get("run_id"))
+                           for label in population
+                           if getattr(label, "_row", {}).get("run_id")}
+    noninferiority_outcomes: dict[str, str] = {}
+    if any('"decision_engine"' in str(row.get("profile_summary") or "")
+           for row in audits if str(row.get("run_id")) in administration_runs):
+        noninferiority_outcomes = _record_noninferiority_verdicts(
             data_dir, administration_key, package_version_id, per_criterion, admissible,
             backend_profile, panel_build_ref)
 
@@ -4092,12 +4104,13 @@ def promote(
         surface_proxy_flags=flags,
         message=message,
         baseline_outcomes=baseline_outcomes,
+        noninferiority_outcomes=noninferiority_outcomes,
     )
 
 
 def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_version_id: str,
                                     criteria: Iterable[str], admissible: Sequence[Any],
-                                    backend_profile: str, panel_build_ref: str) -> None:
+                                    backend_profile: str, panel_build_ref: str) -> dict[str, str]:
     """FR-STATS-29 (#454): NFR-STATS-06's verdict per criterion, from FR-STATS-26's per-engine
     agreement over the administration's admissible labels, each label's partition read from
     the cohort's own verdicts (`engine_partition`). Written onto the criterion's validation
@@ -4106,7 +4119,9 @@ def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_versi
     from aeh.store import open_store
 
     if not cohort_id or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
-        return
+        return {criterion: "not recorded: the administration has no cohort file to read "
+                           "engine partitions from" for criterion in criteria}
+    outcomes: dict[str, str] = {}
     store = open_store(data_dir)
     try:
         handle = store.cohort(cohort_id)
@@ -4123,12 +4138,15 @@ def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_versi
             labels = [label for label in admissible
                       if (getattr(label, "criterion_id", "") or "") == criterion]
             verdict = decision_engine_noninferior(agreement_by_engine(labels, partition_of))
-            _pkg.record_noninferiority(
+            written = _pkg.record_noninferiority(
                 data_dir, package_version_id=package_version_id, criterion_id=criterion,
                 verdict=verdict, backend_profile=backend_profile,
                 panel_build_ref=panel_build_ref)
+            outcomes[criterion] = (f"recorded {verdict}" if written.recorded
+                                   else f"not recorded: {written.reason}")
     finally:
         store.close()
+    return outcomes
 
 
 def _record_sourcing(

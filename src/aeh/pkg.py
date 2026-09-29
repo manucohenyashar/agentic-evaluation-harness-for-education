@@ -1710,7 +1710,7 @@ PKG_STATEMENTS.update({
     # the insert trigger refuses regardless.
     "select_validation": Statement(
         "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
-        "scoring_model, agreement, n FROM validation_record "
+        "scoring_model, agreement, n, decision_engine_noninferior FROM validation_record "
         "WHERE package_version_id = :v AND agreement IS NOT NULL "
         "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
         "AND population_scope_id = :population_scope_id "
@@ -1773,6 +1773,14 @@ PKG_STATEMENTS.update({
     ),
     # FR-PKG-23 (#454): the engine non-inferiority verdict on the validation record's row
     # under the six-part key (FR-PKG-08); NULL means not measured.
+    "select_validation_noninferiority": Statement(
+        "SELECT decision_engine_noninferior FROM validation_record "
+        "WHERE package_version_id = :v AND criterion_id = :criterion_id "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
     "update_validation_noninferiority": Statement(
         "UPDATE validation_record SET decision_engine_noninferior = :verdict "
         "WHERE package_version_id = :v AND criterion_id = :criterion_id "
@@ -2466,10 +2474,9 @@ def record_noninferiority(
     `'insufficient_data'`. Same refusals as `record_validation_baseline`: the version not in
     this data directory, or a published version (its records are frozen, FR-PKG-04), each
     returned rather than raised, with the reason."""
+    # The column's CHECK is the one authority on the domain (TC-PKG-33): a value outside it
+    # surfaces as the database's IntegrityError, never as a quiet refusal.
     stored = ("true" if verdict is True else "false" if verdict is False else str(verdict))
-    if stored not in NONINFERIORITY_VERDICTS:
-        raise PackageError(
-            f"a non-inferiority verdict is one of {NONINFERIORITY_VERDICTS}, got {verdict!r}")
     directory = Path(data_dir) / "packages"
     if not directory.is_dir():
         return BaselineWrite(False, BASELINE_NO_PACKAGES)
@@ -2498,8 +2505,10 @@ def record_noninferiority(
                     connection.execute(
                         PKG_STATEMENTS["insert_validation_noninferiority"], parameters)
                 connection.commit()
-            except sqlite3.IntegrityError:
+            except sqlite3.IntegrityError as error:
                 connection.rollback()
+                if "CHECK constraint failed" in str(error):
+                    raise  # a verdict outside the declared domain is a caller's error
                 return BaselineWrite(False, BASELINE_PUBLISHED)
             return BaselineWrite(True, BASELINE_RECORDED)
         finally:
@@ -3196,6 +3205,21 @@ class PackageCatalog:
         never run for it (FR-CONSOLE-23, #528)."""
         rows = self._handle.query(PKG_STATEMENTS["select_export_gate_outcome"], v=v)
         return str(rows[0]["outcome"]) if rows else None
+
+    def noninferiority_for(
+        self, v: PackageVersionId, *, criterion_id: str, population_scope_id: str = "",
+        backend_profile: str = "", panel_build_ref: str = "", scoring_model: str = "",
+    ) -> str | None:
+        """FR-PKG-23 (#454): the recorded engine non-inferiority verdict on the criterion's
+        validation record row — `'true'`, `'false'` or `'insufficient_data'` — or `None`
+        when it was never measured (no row, or NULL). Independent of whether the row also
+        carries an agreement figure: a promote records the verdict on its own."""
+        rows = self._handle.query(
+            PKG_STATEMENTS["select_validation_noninferiority"], v=v, criterion_id=criterion_id,
+            population_scope_id=population_scope_id, backend_profile=backend_profile,
+            panel_build_ref=panel_build_ref, scoring_model=scoring_model)
+        return str(rows[0]["decision_engine_noninferior"]) if rows and rows[0][
+            "decision_engine_noninferior"] is not None else None
 
     def points_for_band(self, criterion_id: str, band: str) -> float:
         """The band→points mapping, monotone in ordinal (`FR-PKG-06`'s guarantee).
