@@ -757,12 +757,12 @@ KNOWN_EXECUTE_SITES: frozenset[str] = frozenset({
     # CALIB_STATEMENTS and keyword-parameterized, in one transaction — the comparison's
     # previous roster is deleted and the new cells inserted, so a re-registration replaces
     # rather than accumulates and a roster is never half-written.
-    "aeh.calib:2713",
-    "aeh.calib:2720",
-    "aeh.calib:2991",
-    "aeh.calib:3205",
-    "aeh.calib:3236",
-    "aeh.calib:3246",
+    "aeh.calib:2732",
+    "aeh.calib:2739",
+    "aeh.calib:3010",
+    "aeh.calib:3224",
+    "aeh.calib:3255",
+    "aeh.calib:3265",
 
 })
 
