@@ -13,15 +13,8 @@ swallowed as a duplicate of RA's — two cohorts marked by one panel widening, a
 run's widened panel silently never exists. That coexistence is asserted here as its own case,
 because arm (a) alone does not reach it.
 
-**Arm (b)'s "a deprecation is recorded (warning)" is NOT implemented, and this is reported
-rather than asserted away.** The shipped `enqueue_escalation` documents the two-element form
-as deprecated in its docstring and raises `WorkLedgerError` when the form is ambiguous, but it
-emits no `DeprecationWarning` and writes no deprecation row — `src/aeh/orch.py` contains no
-`warnings.warn` at all. So the arm asserts the half that *is* shipped (the form resolves to
-the single open run and enqueues there), and #379 reports the missing signal. Asserting
-`pytest.warns(DeprecationWarning)` would put a permanently red test in a suite whose
-implementing issues are all closed; asserting nothing would let the plan claim coverage that
-does not exist.
+**Arm (b)'s deprecation warning is shipped** (#513, FR-ORCH-34 amended) and asserted with
+`pytest.warns(DeprecationWarning)`.
 
 **Arm (c)'s rollback is asserted over the caller's transaction, not just the raise.** The
 requirement is `CT-ORCH-08`'s atomicity read across the boundary: the widened units are
@@ -122,9 +115,8 @@ def test_tc_orch_47_arm_a_the_three_element_key_widens_only_its_own_run(two_runs
 def test_tc_orch_47_arm_b_the_deprecated_pair_key_resolves_a_single_open_run(tmp_data_dir):
     """Arm (b) — `(S1, C1)` with exactly one open run resolves to it and enqueues there.
 
-    The deprecation *signal* is not asserted: the shipped module emits none (see the file
-    docstring). What is asserted is that the compatibility path still works, which is the
-    reason the form is deprecated rather than removed.
+    Re-specified by the close-out plan (FR-ORCH-34 amended, #513): the form still resolves,
+    which is why it is deprecated rather than removed, AND it emits a `DeprecationWarning`.
     """
     store = open_store(tmp_data_dir)
     try:
@@ -133,8 +125,10 @@ def test_tc_orch_47_arm_b_the_deprecated_pair_key_resolves_a_single_open_run(tmp
         )
         orchestrator.enumerate_units(run_a)
 
-        with store.cohort(ORCH_COHORT_ID).transaction() as tx:
-            reports = orchestrator.enqueue_escalation(tx, (SUBMISSION, CRITERION))
+        # Re-specified (FR-ORCH-34 amended, #513): the two-element key is deprecated, and says so.
+        with pytest.warns(DeprecationWarning):
+            with store.cohort(ORCH_COHORT_ID).transaction() as tx:
+                reports = orchestrator.enqueue_escalation(tx, (SUBMISSION, CRITERION))
 
         assert len(reports) == 1
         counts = _escalations(store)
