@@ -279,6 +279,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from aeh.det import EVALUATION_MODE_DETERMINISTIC
@@ -1977,6 +1978,48 @@ _PANEL_BUILDS: set[str] = set()
 #: Each off-panel build's bound construction session, by build key.
 _OFF_PANEL_SESSIONS: dict[str, _BackTranslationSession] = {}
 
+#: #536 (CT-PROV-08): an `InferenceProvider` bound for an off-panel build. The gate asks it
+#: through `complete()`; a bound recorded session is served through the same call.
+_OFF_PANEL_PROVIDERS: dict[str, Any] = {}
+
+#: The angles a construction probes when the checker is a live provider (a recorded session
+#: carries its own).
+_BACK_TRANSLATION_ANGLES: tuple[str, ...] = (
+    "probing the top band's boundary",
+    "probing the bottom band's boundary",
+    "a response the clarified descriptor reads differently",
+)
+
+
+class _RecordedSessionProvider:
+    """A recorded construction session served as an `InferenceProvider` (`CT-PROV-10`): each
+    `complete()` answers one angle's recorded attempt as JSON, so the gate's one dispatch
+    path is `complete()` whether the transport is recorded or live."""
+
+    def __init__(self, session: "_BackTranslationSession") -> None:
+        self._by_angle = {attempt.angle: attempt for attempt in session.attempts}
+        self.angles = tuple(attempt.angle for attempt in session.attempts)
+
+    def complete(self, payload: Any, model_ref: Any, sampling: Any) -> Any:
+        angle = dict(payload.fields).get("angle", "")
+        attempt = self._by_angle.get(angle)
+        text = json.dumps({"response": getattr(attempt, "response", None),
+                           "divergence_note": getattr(attempt, "divergence_note", None)})
+        return SimpleNamespace(text=text)
+
+
+def unbind_off_panel_provider(ref: "OffPanelModelRef") -> None:
+    """Remove a provider bound for `ref`'s build (#536 review): a module-level binding must be
+    undoable, or it outlives the caller that made it."""
+    _OFF_PANEL_PROVIDERS.pop(ref.build_key, None)
+
+
+def bind_off_panel_provider(ref: "OffPanelModelRef", provider: Any) -> None:
+    """Bind the `InferenceProvider` the back-translation gate asks for `ref`'s build (#536,
+    CT-PROV-08). The provider stays the only egress point (CT-PROV-15)."""
+    _OFF_PANEL_PROVIDERS[ref.build_key] = provider
+
+
 #: Each registered cohort's roster, by cohort id.
 _CLASS_ROSTERS: dict[str, _ClassRoster] = {}
 
@@ -2234,19 +2277,26 @@ def back_translate(r0: str, r1: str, off_panel: OffPanelModelRef | None = None) 
             "the adversarial search, so the gate would pass by construction "
             "(CT-CALIB-08, NFR-CALIB-04)"
         )
-    session = _OFF_PANEL_SESSIONS.get(off_panel.build_key)
-    if session is None:
+    provider = _OFF_PANEL_PROVIDERS.get(off_panel.build_key)
+    angles = _BACK_TRANSLATION_ANGLES
+    if provider is None:
+        session = _OFF_PANEL_SESSIONS.get(off_panel.build_key)
+        if session is not None:
+            provider = _RecordedSessionProvider(session)
+            angles = provider.angles
+    if provider is None:
         raise OffPanelUnavailable(
             f"no construction transport is bound for the off-panel build "
             f"{off_panel.provider}/{off_panel.build_id}: the gate never invents one "
             "(CT-CALIB-02's off_panel_model_unavailable mode)"
         )
+    constructions = _construct_through_provider(provider, off_panel, r0, r1, angles)
     attempts = tuple(
         f"{attempt.angle}: "
         + ("constructed a divergent response" if attempt.response is not None else "no construction")
-        for attempt in session.attempts
+        for attempt in constructions
     )
-    constructed = session.constructed
+    constructed = next((a for a in constructions if a.response is not None), None)
     if constructed is None:
         return GateResult(
             gate="back_translation",
@@ -2283,6 +2333,57 @@ def back_translate(r0: str, r1: str, off_panel: OffPanelModelRef | None = None) 
             "rather than shipping with a note (CT-CALIB-02, CT-CALIB-08)",
         ),
     )
+
+
+def _construct_through_provider(provider: Any, off_panel: "OffPanelModelRef", r0: str, r1: str,
+                                angles: Sequence[str]) -> tuple["_ConstructionAttempt", ...]:
+    """Ask the off-panel checker, through `InferenceProvider.complete()`, once per angle, for a
+    student response on which R0 and R1 would assign different scores (#536, CT-PROV-08).
+    An unavailable provider surfaces as `OffPanelUnavailable`, and nothing falls back to
+    another model: the gate ends at R0 like every other enumerated failure."""
+    from aeh.conf import ModelRef
+    from aeh.prov import PromptPayload, ProviderError, SamplingParams
+
+    ref = ModelRef(role="off_panel", provider=off_panel.provider, build_id=off_panel.build_id,
+                   quantization=None)
+    out: list[_ConstructionAttempt] = []
+    for angle in angles:
+        payload = PromptPayload(fields=(
+            ("task", "construct a student response on which the two rubric versions would "
+                     "assign different scores; answer JSON {response, divergence_note}, with "
+                     "response null when no such response exists"),
+            ("r0", r0), ("r1", r1), ("angle", angle),
+        ))
+        try:
+            completion = provider.complete(payload, ref, SamplingParams(temperature=0.0))
+        except ProviderError as error:
+            raise OffPanelUnavailable(
+                f"the off-panel checker {off_panel.provider}/{off_panel.build_id} is "
+                f"unavailable ({type(error).__name__}): the gate does not fall back to another "
+                "model (CT-PROV-08, CT-CALIB-02)") from error
+        text = str(getattr(completion, "text", "") or "").strip()
+        if text.startswith("```"):
+            # A fenced block (```json ... ```) is the usual shape of a model's JSON answer.
+            text = text.strip("`").strip()
+            if text[:4].lower() == "json":
+                text = text[4:].strip()
+        try:
+            answer = json.loads(text)
+        except ValueError:
+            answer = None
+        if not isinstance(answer, dict):
+            # An answer the gate cannot read is not "no construction": reading it that way
+            # would pass the revision on the checker's silence. It ends at R0 like every
+            # other unavailable checker (#536 review, CT-CALIB-02).
+            raise OffPanelUnavailable(
+                f"the off-panel checker {off_panel.provider}/{off_panel.build_id} answered "
+                f"the {angle!r} angle with something that is not the requested JSON object")
+        response = answer.get("response")
+        note = answer.get("divergence_note")
+        out.append(_ConstructionAttempt(
+            angle=angle, response=response if isinstance(response, str) and response else None,
+            divergence_note=note if isinstance(note, str) else None))
+    return tuple(out)
 
 
 # --- the version pin (FR-CALIB-11, §6.7, CT-CALIB-09) ------------------------------------------------
