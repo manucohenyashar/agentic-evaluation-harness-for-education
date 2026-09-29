@@ -4059,6 +4059,14 @@ def promote(
         # `ValidationUpdate.baseline_outcomes` below.
         baseline_outcomes[criterion] = written.reason
 
+    # FR-STATS-29 (#454): when the run froze a decision engine (its persisted profile summary
+    # names one), the engine non-inferiority verdict per criterion is written through
+    # FR-PKG-23. An engine-off run writes nothing, so the column stays NULL (NFR-SYS-14).
+    if any('"decision_engine"' in str(row.get("profile_summary") or "") for row in audits):
+        _record_noninferiority_verdicts(
+            data_dir, administration_key, package_version_id, per_criterion, admissible,
+            backend_profile, panel_build_ref)
+
     _pkg.record_promotion(
         data_dir,
         package_version_id=package_version_id,
@@ -4085,6 +4093,42 @@ def promote(
         message=message,
         baseline_outcomes=baseline_outcomes,
     )
+
+
+def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_version_id: str,
+                                    criteria: Iterable[str], admissible: Sequence[Any],
+                                    backend_profile: str, panel_build_ref: str) -> None:
+    """FR-STATS-29 (#454): NFR-STATS-06's verdict per criterion, from FR-STATS-26's per-engine
+    agreement over the administration's admissible labels, each label's partition read from
+    the cohort's own verdicts (`engine_partition`). Written onto the criterion's validation
+    record row (FR-PKG-23). M-STATS never switches engines (CT-CONF-14)."""
+    from aeh import pkg as _pkg
+    from aeh.store import open_store
+
+    if not cohort_id or not Path(data_dir, "cohorts", f"{cohort_id}.sqlite").exists():
+        return
+    store = open_store(data_dir)
+    try:
+        handle = store.cohort(cohort_id)
+
+        def partition_of(label: Any) -> str | None:
+            row = getattr(label, "_row", {}) or {}
+            run_id, student_ref = row.get("run_id"), row.get("student_ref")
+            if not run_id or not student_ref:
+                return None
+            return engine_partition(handle, str(run_id), str(student_ref),
+                                    str(getattr(label, "criterion_id", "") or ""))
+
+        for criterion in sorted(criteria):
+            labels = [label for label in admissible
+                      if (getattr(label, "criterion_id", "") or "") == criterion]
+            verdict = decision_engine_noninferior(agreement_by_engine(labels, partition_of))
+            _pkg.record_noninferiority(
+                data_dir, package_version_id=package_version_id, criterion_id=criterion,
+                verdict=verdict, backend_profile=backend_profile,
+                panel_build_ref=panel_build_ref)
+    finally:
+        store.close()
 
 
 def _record_sourcing(

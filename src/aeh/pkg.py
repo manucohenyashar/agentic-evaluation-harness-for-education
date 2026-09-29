@@ -1771,6 +1771,23 @@ PKG_STATEMENTS.update({
         "AND panel_build_ref = :panel_build_ref "
         "AND scoring_model = :scoring_model"
     ),
+    # FR-PKG-23 (#454): the engine non-inferiority verdict on the validation record's row
+    # under the six-part key (FR-PKG-08); NULL means not measured.
+    "update_validation_noninferiority": Statement(
+        "UPDATE validation_record SET decision_engine_noninferior = :verdict "
+        "WHERE package_version_id = :v AND criterion_id = :criterion_id "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
+    "insert_validation_noninferiority": Statement(
+        "INSERT INTO validation_record (validation_record_id, package_version_id, "
+        "criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n, recorded_at, decision_engine_noninferior) VALUES "
+        "(hex(randomblob(8)), :v, :criterion_id, :population_scope_id, :backend_profile, "
+        ":panel_build_ref, :scoring_model, NULL, NULL, datetime('now'), :verdict)"
+    ),
     "insert_validation_baseline": Statement(
         "INSERT INTO validation_record (validation_record_id, package_version_id, "
         "criterion_id, population_scope_id, backend_profile, panel_build_ref, "
@@ -2177,6 +2194,22 @@ PKG_STATEMENTS.update({
     ),
 })
 
+# --- Tier P, migration 14 (#454, `FR-PKG-23`): the engine non-inferiority verdict ---------------
+#
+# NFR-STATS-06's verdict needs a column of its own: the record's JSON columns are keyed
+# documents consumers parse, and reusing one would break their readers. NULL = not measured
+# (an engine-off run writes nothing), distinct from 'insufficient_data' (measured, too few).
+_PKG_DECISION_ENGINE_NONINFERIOR = Migration(
+    version=14,
+    name="pkg_decision_engine_noninferior",
+    statements=(
+        Statement(
+            "ALTER TABLE validation_record ADD COLUMN decision_engine_noninferior TEXT "
+            "CHECK (decision_engine_noninferior IN ('true', 'false', 'insufficient_data'))"
+        ),
+    ),
+)
+
 STATEMENTS.update(PKG_STATEMENTS)
 TIER_MIGRATIONS[Tier.PACKAGE] = (
     TIER_MIGRATIONS[Tier.PACKAGE]
@@ -2191,6 +2224,7 @@ TIER_MIGRATIONS[Tier.PACKAGE] = (
     + (_PKG_CRITERION_EVALUATION_MODE,)
     + (_PKG_VALIDATION_BASELINE,)
     + (_PKG_EXPORT_GATE_OUTCOME,)
+    + (_PKG_DECISION_ENGINE_NONINFERIOR,)
 )
 
 # Durable v8 — #118's promotion record. M-PKG is the seam `aeh.stats.promote` stores its
@@ -2410,6 +2444,67 @@ def _population_mean_and_sd(weighted: Mapping[int, int]) -> tuple[float, float]:
         count * (ordinal - mean) ** 2 for ordinal, count in weighted.items()
     ) / total
     return mean, math.sqrt(variance)
+
+
+#: FR-PKG-23's stored spellings of NFR-STATS-06's verdict.
+NONINFERIORITY_VERDICTS: tuple[str, ...] = ("true", "false", "insufficient_data")
+
+
+def record_noninferiority(
+    data_dir: Path | str,
+    *,
+    package_version_id: str,
+    criterion_id: str,
+    verdict: bool | str,
+    population_scope_id: str = _BASELINE_UNDIMENSIONED,
+    backend_profile: str = _BASELINE_UNDIMENSIONED,
+    panel_build_ref: str = _BASELINE_UNDIMENSIONED,
+    scoring_model: str = _BASELINE_UNDIMENSIONED,
+) -> BaselineWrite:
+    """FR-PKG-23 (#454): write NFR-STATS-06's engine non-inferiority verdict onto the criterion's
+    validation record row under the six-part key. `verdict` is `True`, `False` or
+    `'insufficient_data'`. Same refusals as `record_validation_baseline`: the version not in
+    this data directory, or a published version (its records are frozen, FR-PKG-04), each
+    returned rather than raised, with the reason."""
+    stored = ("true" if verdict is True else "false" if verdict is False else str(verdict))
+    if stored not in NONINFERIORITY_VERDICTS:
+        raise PackageError(
+            f"a non-inferiority verdict is one of {NONINFERIORITY_VERDICTS}, got {verdict!r}")
+    directory = Path(data_dir) / "packages"
+    if not directory.is_dir():
+        return BaselineWrite(False, BASELINE_NO_PACKAGES)
+    for database_path in sorted(directory.glob("*.pkg.sqlite")):
+        connection = sqlite3.connect(str(database_path))
+        connection.row_factory = sqlite3.Row
+        try:
+            try:
+                present = connection.execute(
+                    PKG_STATEMENTS["select_version_present"], {"v": package_version_id}
+                ).fetchall()
+            except sqlite3.OperationalError:
+                continue
+            if not present:
+                continue
+            parameters = {
+                "v": package_version_id, "criterion_id": criterion_id,
+                "population_scope_id": population_scope_id, "backend_profile": backend_profile,
+                "panel_build_ref": panel_build_ref, "scoring_model": scoring_model,
+                "verdict": stored,
+            }
+            try:
+                cursor = connection.execute(
+                    PKG_STATEMENTS["update_validation_noninferiority"], parameters)
+                if cursor.rowcount == 0:
+                    connection.execute(
+                        PKG_STATEMENTS["insert_validation_noninferiority"], parameters)
+                connection.commit()
+            except sqlite3.IntegrityError:
+                connection.rollback()
+                return BaselineWrite(False, BASELINE_PUBLISHED)
+            return BaselineWrite(True, BASELINE_RECORDED)
+        finally:
+            connection.close()
+    return BaselineWrite(False, BASELINE_NO_SUCH_VERSION)
 
 
 def record_validation_baseline(
