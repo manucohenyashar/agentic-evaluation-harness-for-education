@@ -1478,7 +1478,7 @@ def current_schema_version(tier: Tier) -> int:
 #: tail. #363's `integ_read_indexes` moved Cohort 24→25 — `aeh.integ` holds it now.)
 COMPLETE_SCHEMA_VERSIONS: Mapping[Tier, int] = {
     Tier.PACKAGE: 13,
-    Tier.COHORT: 31,
+    Tier.COHORT: 32,
     Tier.DURABLE: 12,
 }
 
@@ -1602,6 +1602,9 @@ _COHORT_PURGE_ORDER: tuple[str, ...] = (
     "run",
     "assessment_match_proposal", "v4_cohort_breaker",
     "unresolved_token", "token_cluster", "document_region", "document", "submission",
+    # #531 (FR-CONSOLE-27): what an upload delivered — file names and blob addresses of a
+    # cohort's scans, purged with the cohort.
+    "upload_part",
     "roster", "cohort",
 )
 _PURGE_DELETES: Mapping[str, Statement] = {
@@ -1649,6 +1652,8 @@ _PURGE_DELETES: Mapping[str, Statement] = {
     # FK points at.
     "assessment_match_proposal": Statement("DELETE FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("DELETE FROM v4_cohort_breaker"),
+    # #531: the upload record names the cohort's scan files and their blobs.
+    "upload_part": Statement("DELETE FROM upload_part"),
     "cohort": Statement("DELETE FROM cohort"),
 }
 
@@ -1703,6 +1708,8 @@ _PURGE_BLOB_HASH_SCANS: Mapping[str, Statement] = {
     "run": Statement("SELECT * FROM run"),
     "assessment_match_proposal": Statement("SELECT * FROM assessment_match_proposal"),
     "v4_cohort_breaker": Statement("SELECT * FROM v4_cohort_breaker"),
+    # #531: `blob_ref` is a content address, so the blob sweep reads it.
+    "upload_part": Statement("SELECT * FROM upload_part"),
     "unresolved_token": Statement("SELECT * FROM unresolved_token"),
     "token_cluster": Statement("SELECT * FROM token_cluster"),
     "document_region": Statement("SELECT * FROM document_region"),

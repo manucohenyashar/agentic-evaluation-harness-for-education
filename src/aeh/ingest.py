@@ -45,6 +45,7 @@ import re
 import sqlite3
 import time
 import uuid
+from datetime import datetime, timezone
 import zlib
 from dataclasses import dataclass, field
 from typing import Any, Sequence
@@ -2068,6 +2069,39 @@ INGEST_STATEMENTS: dict[str, Statement] = {
         "WHERE s.cohort_id = :cohort_id AND r.description_secondary IS NOT NULL"
     ),
 }
+# --- Tier C, migration 32 (#531, `FR-CONSOLE-27`): what an upload delivered ---------------------
+#
+# The upload handler staged the bytes and recorded nothing, so the page order S2 asks a teacher
+# to check before transcription could only be invented. One row per uploaded part: its name (the
+# filename tier orders by it), the content address of its first chunk, and when it arrived.
+_INGEST_UPLOAD_PART = Migration(
+    version=32,
+    name="ingest_upload_part",
+    statements=(
+        Statement(
+            """
+            CREATE TABLE upload_part (
+                cohort_id TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                blob_ref TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                PRIMARY KEY (cohort_id, filename, blob_ref)
+            )
+            """
+        ),
+    ),
+)
+
+INGEST_STATEMENTS.update({
+    "insert_upload_part": Statement(
+        "INSERT OR IGNORE INTO upload_part (cohort_id, filename, blob_ref, received_at) "
+        "VALUES (:cohort_id, :filename, :blob_ref, :received_at)"
+    ),
+    "select_upload_parts": Statement(
+        "SELECT filename FROM upload_part WHERE cohort_id = :cohort_id ORDER BY rowid"
+    ),
+})
+
 STATEMENTS.update(INGEST_STATEMENTS)
 TIER_MIGRATIONS[Tier.COHORT] = (
     TIER_MIGRATIONS[Tier.COHORT]
@@ -2076,7 +2110,34 @@ TIER_MIGRATIONS[Tier.COHORT] = (
     + (_INGEST_TOKEN_CLUSTERS,)
     + (_INGEST_GATE_COLUMNS,)
     + (_INGEST_V4_MATCH,)
+    + (_INGEST_UPLOAD_PART,)
 )
+
+
+def record_upload_part(store: Any, cohort_id: str, filename: str, blob_ref: str,
+                       received_at: str | None = None) -> None:
+    """Record one uploaded part of a cohort's scans (FR-CONSOLE-27, #531): its filename, the
+    content address of its first chunk, and when it arrived. Idempotent per
+    (cohort, filename, blob)."""
+    stamp = received_at or datetime.now(timezone.utc).isoformat()
+    with store.cohort(cohort_id).transaction() as tx:
+        tx.execute(INGEST_STATEMENTS["insert_upload_part"], cohort_id=cohort_id,
+                   filename=filename, blob_ref=blob_ref, received_at=stamp)
+
+
+def upload_parts_in_order(store: Any, cohort_id: str) -> tuple[str, ...]:
+    """The cohort's uploaded parts in assembled order: the filename tier's natural order
+    (`page-2` before `page-10`, part 1 before part 2), the same key assembly orders by. Two
+    names at the same position keep the order they arrived in (assembly itself refuses
+    them, FR-INGEST-31; this is only the list shown before it). Empty when nothing was
+    uploaded."""
+    names: list[str] = []
+    for row in store.cohort(cohort_id).query(INGEST_STATEMENTS["select_upload_parts"],
+                                             cohort_id=cohort_id):
+        name = str(row["filename"])
+        if name not in names:
+            names.append(name)
+    return tuple(sorted(names, key=_natural_key))
 
 
 # --- the ingestor ---------------------------------------------------------------------------------

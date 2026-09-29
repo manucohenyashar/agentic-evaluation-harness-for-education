@@ -1731,7 +1731,17 @@ class ConsoleApp:
         # rendered. The uploaded set comes from the caller (the ingestion report's own
         # listing) or from the standing names.
         files = params.get("files")
-        if not files:
+        cohort_id = params.get("cohort_id")
+        if not files and cohort_id and getattr(self._store, "data_dir", None) is not None:
+            # FR-CONSOLE-27 (#531): on a real store, the parts the upload recorded, in the
+            # assembled (filename-tier) order; nothing at all when nothing was uploaded.
+            from aeh.pipeline import uploaded_parts
+
+            try:
+                files = uploaded_parts(self._store, str(cohort_id))
+            except Exception:  # noqa: BLE001 — a read view never invents a list
+                files = ()
+        elif not files and getattr(self._store, "data_dir", None) is None:
             files = (
                 "scan-001.pdf",
                 "scan-002.pdf",
@@ -1739,8 +1749,8 @@ class ConsoleApp:
             )
         order = "".join(
             f"<li>Page {index + 1}: {escape(str(name))}</li>"
-            for index, name in enumerate(files)
-        )
+            for index, name in enumerate(files or ())
+        ) or "<li>No parts have been uploaded for this cohort yet.</li>"
         return (
             _section(
                 "upload-format",
@@ -4969,6 +4979,13 @@ def upload_scans(
                 ),
             )
     store = getattr(app, "_store", None) if app is not None else None
+    if (store is not None and stream is not None and filename
+            and getattr(store, "data_dir", None) is not None):
+        # FR-CONSOLE-27 (#531): a real store records what arrived, so S2 can show the
+        # teacher the order of THEIR upload before transcription.
+        from aeh.pipeline import record_upload
+
+        record_upload(store, cohort_id, filename, blob_refs[0])
     if store is not None and hasattr(store, "writes"):
         # The audit double: record the intake row the way `perform` records its rows,
         # so the declared-field contract covers the upload's write too.
