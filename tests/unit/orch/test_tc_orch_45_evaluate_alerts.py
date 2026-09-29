@@ -172,6 +172,22 @@ def test_tc_orch_45_cache_collapse_needs_the_minimum_history(history, expected):
     assert _names(metrics={"cache_hit_rate": 0.1}, cache_history=history) == expected
 
 
+@pytest.mark.parametrize(
+    ("history", "expected"),
+    [
+        ((0.4, 0.4, 0.4), []),
+        ((0.8, 0.8, 0.8), [ALERT_CACHE_COLLAPSE]),
+    ],
+    ids=["row8-a-low-steady-history-is-no-collapse", "row8b-a-fall-from-a-high-history-fires"],
+)
+def test_tc_orch_45_row_8_cache_collapse_needs_a_history_above_the_floor(history, expected):
+    """Row 8 / 8b (FR-ORCH-32 amended, #513): the same current rate, 0.39. Against a steady
+    history of 0.4 there is no collapse: a history already at the floor has nothing to fall
+    from (the rule needs mean > floor). Against a history of 0.8 it fires. An implementation
+    without the floor condition fires on both."""
+    assert _names(metrics={"cache_hit_rate": 0.39}, cache_history=history) == expected
+
+
 # --- row 9: every condition at once --------------------------------------------------------
 
 
