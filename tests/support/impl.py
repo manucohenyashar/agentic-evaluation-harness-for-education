@@ -1347,20 +1347,8 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",
         ("tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",),
     ),
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # evaluate_cohort runs outside run_to_completion's fault handling, so its exception escapes the driver.
-    "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",
-        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",),
-    ),
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # the aggregate stage's fault detail carries the exception only, never the cell.
-    "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",
-        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",),
-    ),
+    # "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)" left with #594's fix.
+    # "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)" left with #595's fix.
     # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S2 says 'No parts have been uploaded' and S3 'Questions read back: 0' over a dropped table.
     "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)": (
         "command",

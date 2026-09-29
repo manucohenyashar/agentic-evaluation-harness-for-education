@@ -167,7 +167,7 @@ def test_tc_pipe_02_variant_a_deterministic_fault_completes_no_unit(tmp_path, mo
         try:
             pipe_world.drive_composed(world)
         except RuntimeError:
-            pass  # escaping the driver is the arm below, owned by no issue yet
+            pass  # a pause instead of an escape is the arm below (#594)
     finally:
         world.store.close()
     assert _rows(root, "SELECT 1 FROM work_unit WHERE stage = 'deterministic' AND status = 'done'") == [], (
@@ -175,10 +175,9 @@ def test_tc_pipe_02_variant_a_deterministic_fault_completes_no_unit(tmp_path, mo
     assert _orphans(root, world.run_id)["deterministic"] == 0
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: `run_to_completion` calls `evaluate_cohort` outside
-    its fault handling, so the exception escapes the driver instead of pausing the run with a
+    """Written ahead; green since #594. `run_to_completion` used to call `evaluate_cohort` outside
+    its fault handling, so the exception escaped the driver instead of pausing the run with a
     composition fault. The error rule names hooks, and `evaluate_cohort` is a pre-dispatch step;
     the expectation rests on FR-PIPE-01 ("returns a `RunResult`" whose status is the stored
     status) and seam 1 (a structured result, never a traceback), which an escaping exception
@@ -453,9 +452,8 @@ def test_tc_pipe_13_a_hook_fault_pauses_and_is_named(tmp_path, monkeypatch):
     assert any("KeyError" in d for s in agg for d in s.detail), [s.detail for s in agg]
 
 
-@pytest.mark.writtenahead
 def test_tc_pipe_13_the_fault_detail_names_the_cell(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: the aggregate stage's fault detail carries only the
+    """Written ahead; green since #595. The aggregate stage's fault detail used to carry only the
     exception, never the cell the hook was working on (TC-PIPE-13: "the aggregate stage detail
     names the cell")."""
     real = pipeline.verdicts_for
