@@ -1081,7 +1081,13 @@ def recover(store: Any, *, clock: Any = None) -> RecoveryReport:
     grading = open_grade(store, clock=clock) if clock is not None else open_grade(store)
     regraded: list[str] = []
     for handle in orchestrator.runs(("complete",)):
-        if _grades_all_final(grading, handle.run_id):
+        # FR-PIPE-16 / CT-PIPE-11 (#526): a complete run holding criterion scores with no
+        # current grade (killed between completion and grading) is graded here too. A run
+        # with no scores at all is left alone; a second recover finds every grade current.
+        if not grading.has_criterion_scores(handle.run_id):
+            continue
+        if _grades_all_final(grading, handle.run_id) and not grading.has_ungraded_scores(
+                handle.run_id):
             continue
         grading.compute_all(handle.run_id)
         regraded.append(handle.run_id)
@@ -1103,11 +1109,10 @@ def _grades_all_final(grading: Any, run_id: str) -> bool:
     report as final and `FR-PIPE-07`'s whole third step would never fire. It is precisely
     because the stored state is stale that recovery has to re-grade.
 
-    A run with **no grades at all** reads as settled here, and that is a narrow judgement
-    rather than an obvious one: its criterion scores may well exist and grading simply never
-    ran, which is the killed-after-completion state `NFR-PIPE-01` is about. It is safe only
-    because `run_to_completion`'s own `complete` branch grades such a run; `aeh recover`
-    alone would leave it ungraded. Recorded as a known edge rather than defended as correct.
+    A run with **no grades at all** reads as settled here. Its criterion scores may still
+    exist with grading never run (the killed-after-completion state `NFR-PIPE-01` names);
+    `recover` asks `GradingService.has_ungraded_scores` for that case separately (FR-PIPE-16,
+    #526), so this predicate stays about the grades that exist.
     """
     by_state = dict(getattr(grading.coverage(run_id), "grades_by_state", {}) or {})
     total = sum(int(n) for n in by_state.values())
