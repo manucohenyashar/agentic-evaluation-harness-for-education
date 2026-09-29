@@ -1320,19 +1320,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
         ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
     ),
-    # #524 (reopened by TS-134): (a) the replacement unit is inserted but the running
-    # dispatcher never leases it and the run completes around it; (b) the refused path writes
-    # judge_count = 4, which the criterion_score CHECK refuses; (c) a missing verdict is read
-    # as a quarantine, so an even panel with none aggregates instead of pausing.
-    "#524 TS-134 TC-PIPE-23 even panel after quarantine": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
-        (
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel",
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete",
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
-        ),
-    ),
+    # "#524 TS-134 TC-PIPE-23 even panel after quarantine" left with #524's fix: the run no
+    # longer completes around a cell awaiting aggregation, the refused row stands on the odd
+    # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "

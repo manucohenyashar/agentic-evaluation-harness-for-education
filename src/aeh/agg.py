@@ -1333,8 +1333,10 @@ def aggregate_even_panel_after_quarantine(
     it, with `state_reason = even_panel_after_quarantine`. The band shown to the reviewer is
     the panel's LOWER median — the median of the odd panel left when the highest-ordinal
     verdict is set aside — which is independent of verdict order and never rounds an even
-    median up; `judge_count` stays the panel's true size. The reviewer's decision is what
-    settles the row."""
+    median up. `judge_count` is that odd panel's size: CT-AGG-03 admits only 0 or an odd count
+    (the store's CHECK refuses anything else), and its own rule for a panel left at two is the
+    same — discard a verdict rather than adjudicate between two (FR-AGG-09/12). The set-aside
+    verdict stays in the ledger. The reviewer's decision is what settles the row."""
     if len(verdicts) < 2 or len(verdicts) % 2:
         raise EvenPanelError(
             f"aggregate_even_panel_after_quarantine is for an even panel of two or more; got "
@@ -1343,7 +1345,6 @@ def aggregate_even_panel_after_quarantine(
     base = aggregate(ordered[:-1], criterion, signals, config=config)
     return replace(
         base,
-        judge_count=len(verdicts),
         routing="provisional",
         state="ungradeable_by_panel",
         state_reason=EVEN_PANEL_AFTER_QUARANTINE,

@@ -608,6 +608,9 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     """
     cells = orch.ready_cells(handle.run_id, "aggregate")
     counts = orch.cell_unit_counts(handle.run_id, STAGE_SCORE)
+    # The ledger's own quarantine count (#524): a missing verdict is not a quarantine, and an
+    # even panel with nothing quarantined is a defect that must pause (TC-PIPE-23(c)).
+    quarantines = orch.cell_quarantined_counts(handle.run_id, STAGE_SCORE)
     # `FR-PIPE-04` step 3 spells `aggregate(..., breaker_tripped=..., fallback=...)`, and the
     # flag is not cosmetic: a criterion whose breaker latched must score `provisional` /
     # `ungradeable_by_panel` rather than `auto` / `final` (`FR-ORCH-13`, `CT-ORCH-16`). The
@@ -657,7 +660,7 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
             catalog, view, handle.package_version_id, cell.criterion_id)
         baseline, history = ((None, None) if store is None
                              else _escalation_inputs(store, handle, catalog, criterion))
-        quarantined = terminal_units - len(verdicts)
+        quarantined = quarantines.get(cell, 0)
         if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
             # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
             # Ask M-ORCH for one replacement arm and leave the cell unaggregated; when the
