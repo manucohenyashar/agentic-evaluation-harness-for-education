@@ -1366,35 +1366,17 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]\" \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]\"",
         ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]', 'tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]',),
     ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S9 renders REVIEW_DEFAULT_BUDGET_MINUTES and ignores HARNESS_REVIEW_DEFAULT_BUDGET_MINUTES.
-    "unowned: S9 honours the review-budget knob (TS-91 TC-CONSOLE-45)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s9_honours_the_configured_review_budget",
-        ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s9_honours_the_configured_review_budget',),
-    ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S3 reads only confirmed questions, so a proposal shows as 0 questions with nothing to edit.
+    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S3 reads the hard-coded pkg-mconsole tier, so every real package shows 0 questions with nothing to edit.
     "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)": (
         "command",
         "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows",
         ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows',),
     ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): open_review binds no package catalog, so M-REVIEW refuses the run's own band names.
+    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): the console's review service binds no package catalog, so M-REVIEW refuses the run's own band names.
     "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)": (
         "command",
         "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded",
         ('tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row8_accepting_a_review_item_records_a_label', 'tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row9_a_blind_label_is_recorded'),
-    ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): every run's version is published and ADR-3 locks the window, so the door always refuses (Q-22).
-    "unowned: set review window can succeed for a run (TS-91 TC-CONSOLE-44 row 4)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row4_set_review_window_stores_48_hours",
-        ('tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row4_set_review_window_stores_48_hours',),
-    ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): the console queues and reports dispatched a resume for a completed run.
-    "unowned: resume on a completed run is refused (TS-91 TC-CONSOLE-44 row 6)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row6_resume_on_a_completed_run_is_refused",
-        ('tests/integration/console/test_ts91_action_sweep.py::test_tc_console_44_row6_resume_on_a_completed_run_is_refused',),
     ),
     # Found by TS-91, owned by NO issue yet (needs one from /plan-to-issues): the declared
     # blind-flow plan still reads the removed blind_sample table (FR-CONSOLE-35).

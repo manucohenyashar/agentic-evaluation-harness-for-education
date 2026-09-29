@@ -12,6 +12,19 @@ succeeds and once where it refuses.
 The actions are HLD §11.8's, as `CONTROL_SURFACE_ACTIONS` names them. Setup actions run over the
 Stage A chain (`stage_chain`); run-time actions over a completed F-DEV-PIPE run.
 
+Disclosed (arms not as the sweep table states them, each with its reason):
+- Row 3's success arm (a scripted read-back through the console) is M-SETUP's TC-SETUP-C05/C06.
+- Row 4's success arm and row 6's refusal arm contradict the design and are asserted as the design
+  says: a run's version is published and immutable, so "set review window" is refused for a run
+  (ADR-3, FR-PKG-01); and a resume on a completed run is a queued control row the orchestrator
+  treats as a no-op (CT-ORCH-13, CT-ORCH-03). Both are for the plan owner.
+- Row 9's refusal ("sampling after the quota is exhausted") and row 13's import arms are not
+  reachable through the console: the blind draw has no quota state, and the console's action only
+  exports. Row 11's refusal ("an unresolved gate") has no implementation: `finalize_batch` never
+  refuses, so the arm uses an unknown run. Row 12's refusal amends an unknown submission (a
+  completed run's grades settle final on completion, so no provisional grade exists).
+- C26's biconditional is therefore asserted over the arms that exist, not all 14 x 2.
+
 Written ahead, keyed 'unowned' (each needs an issue): arms where the console's behaviour contradicts
 the sweep table are marked `writtenahead` individually, with the reason in the test's docstring.
 """
@@ -157,18 +170,20 @@ def test_tc_console_44_row4_set_review_window_refuses_negative_hours(tmp_path, m
     _refused_by(bad, owner)
 
 
-@pytest.mark.writtenahead
-def test_tc_console_44_row4_set_review_window_stores_48_hours(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: the plan's success arm stores 48 h "on the run's
-    version" (Q-22), but every run's version is published and ADR-3 locks the window with the
-    rest of the policy, so M-PKG refuses; the door can never succeed for a run."""
+def test_tc_console_44_row4_a_runs_published_version_refuses_a_window_change(tmp_path, monkeypatch):
+    """The plan's success arm (48 h "on the run's version", Q-22) contradicts the design: every
+    run's version is published and ADR-3 puts the window inside the locked policy, so M-PKG refuses
+    and the console says so (a plan-owner question, not a code defect)."""
+    from aeh.pkg import PackageCatalog
+
     root = tmp_path / "w"
     world = _pipe_world(root, monkeypatch)
+    owner = _Owner(monkeypatch, PackageCatalog, "set_review_window")
     try:
-        ok = build_console(store=world.store).perform("set review window", run_id=world.run_id, hours=48)
+        outcome = build_console(store=world.store).perform("set review window", run_id=world.run_id, hours=48)
     finally:
         world.store.close()
-    assert ok.dispatched, ok
+    _refused_by(outcome, owner)
 
 
 def test_tc_console_44_row5_start_run(tmp_path, monkeypatch):
@@ -212,17 +227,23 @@ def test_tc_console_44_row6_pause_queues_a_control_row(tmp_path, monkeypatch):
                                    world.run_id), ok
 
 
-@pytest.mark.writtenahead
-def test_tc_console_44_row6_resume_on_a_completed_run_is_refused(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: the console queues a resume row for a COMPLETED run
-    and reports it dispatched; the sweep's refusal arm expects it refused (nothing can resume)."""
+def test_tc_console_44_row6_a_resume_on_a_completed_run_is_queued_and_changes_nothing(tmp_path, monkeypatch):
+    """The plan's refusal arm contradicts the design: a control row queues and the orchestrator
+    honours it on its own schedule (CT-ORCH-13), and resuming a completed run is a no-op
+    (CT-ORCH-03). So the row is written (C26 holds: dispatched with its effect) and the run stays
+    complete."""
+    from aeh.orch import Orchestrator
+
     root = tmp_path / "w"
     world = _pipe_world(root, monkeypatch)
     try:
         outcome = build_console(store=world.store).perform("pause/resume", run_id=world.run_id, state="running")
+        Orchestrator(world.store).resume()
     finally:
         world.store.close()
-    assert not outcome.dispatched, outcome
+    assert outcome.dispatched and _rows(root, "SELECT 1 FROM run_control WHERE run_id = ? AND action = 'resume'",
+                                        world.run_id), outcome
+    assert _rows(root, "SELECT status FROM run WHERE run_id = ?", world.run_id)[0]["status"] == "complete"
 
 
 def test_tc_console_44_row7_resolve_quarantine_item(tmp_path, monkeypatch):
@@ -236,6 +257,7 @@ def test_tc_console_44_row7_resolve_quarantine_item(tmp_path, monkeypatch):
     finally:
         world.store.close()
     assert not stale.dispatched and "sub-nobody" in stale.detail, stale
+    assert not _rows(root, "SELECT 1 FROM submission WHERE submission_id = 'sub-nobody'"), "the refusal wrote"
     assert ok.dispatched, ok
     assert _rows(root, "SELECT ingest_status FROM submission WHERE submission_id = ?", sid)[0][0] == "incomplete"
 
@@ -263,8 +285,9 @@ def test_tc_console_44_row8_review_action(tmp_path, monkeypatch):
 
 @pytest.mark.writtenahead
 def test_tc_console_44_row8_accepting_a_review_item_records_a_label(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: `open_review` binds no package catalog, so M-REVIEW
-    maps bands on `REVIEW_DEFAULT_BANDS` and refuses a band the run's package declares
+    """Written ahead, owned by no issue yet: the console's review service
+    (`review_service_over`, via `_review_service`) binds no package catalog, so M-REVIEW maps
+    bands on `REVIEW_DEFAULT_BANDS` and refuses a band the run's package declares
     ("the declared band set carries no band 'secure'"): no review of an F-DEV-PIPE item, whose
     band names are its own, can be accepted from the console."""
     root = tmp_path / "w"
@@ -285,13 +308,22 @@ def test_tc_console_44_row8_accepting_a_review_item_records_a_label(tmp_path, mo
 def test_tc_console_44_row10_correct_an_answer_key(tmp_path, monkeypatch):
     root = tmp_path / "w"
     world = _pipe_world(root, monkeypatch)
+    scores = lambda: [tuple(r) for r in _rows(root, "SELECT submission_id, band FROM criterion_score "  # noqa: E731
+                                                    "WHERE run_id = ? AND criterion_id = 'C3' ORDER BY 1", world.run_id)]
+    before = scores()
     try:
         app = build_console(store=world.store)
         bad = app.perform("correct an answer key after a run", run_id=world.run_id,
                           criterion_id="C-nowhere", answer_key=["A"])
+        mid = scores()
+        ok = app.perform("correct an answer key after a run", run_id=world.run_id,
+                         criterion_id="C3", answer_key=["A"])
     finally:
         world.store.close()
     assert not bad.dispatched and "C-nowhere" in bad.detail, bad
+    assert mid == before, "a refused correction re-derived scores"
+    assert ok.dispatched and "re-derived" in ok.detail, ok
+    assert scores() != before, "the corrected key re-derived nothing for this run"
 
 
 def test_tc_console_44_row11_finalize_batch(tmp_path, monkeypatch):
@@ -306,7 +338,7 @@ def test_tc_console_44_row11_finalize_batch(tmp_path, monkeypatch):
         ok = app.perform("finalize batch", run_id=world.run_id, actor="teacher")
     finally:
         world.store.close()
-    assert not bad.dispatched, bad
+    assert not bad.dispatched and "run-nowhere" in bad.detail, bad
     assert ok.dispatched, ok
     states = {r["state"] for r in _rows(root, "SELECT state FROM submission_grade WHERE run_id = ? "
                                               "AND is_current = 1", world.run_id)}
@@ -322,7 +354,7 @@ def test_tc_console_44_row13_export(tmp_path, monkeypatch):
         ok = app.perform("export/import package", package_version=world.version)
     finally:
         world.store.close()
-    assert not bad.dispatched, bad
+    assert not bad.dispatched and not (root / "exports" / "pkg-nowhere@000.aehpkg").exists(), bad
     assert ok.dispatched and (root / "exports" / f"{world.version}.aehpkg").exists(), ok
 
 
@@ -338,6 +370,29 @@ def test_tc_console_44_row14_purge_before_promotion_is_refused(tmp_path, monkeyp
         world.store.close()
     _refused_by(bad, owner)
     assert (root / "cohorts" / f"{pipe_world.PIPE_COHORT_ID}.sqlite").exists(), "a refused purge deleted"
+
+
+def test_tc_console_44_row14_purge_after_promotion_removes_the_cohort(tmp_path, monkeypatch):
+    root = tmp_path / "w"
+    world = _pipe_world(root, monkeypatch)
+    cohort_file = root / "cohorts" / f"{pipe_world.PIPE_COHORT_ID}.sqlite"
+    with sqlite3.connect(root / "durable.sqlite") as c:  # the three promotion gates, met
+        c.execute("INSERT INTO audit_record (audit_record_id, run_id, recorded_at, profile_summary, cohort_id) "
+                  "VALUES ('a-p', ?, '2026-09-01T00:00:00Z', 'edge-local', ?)", (world.run_id, world.cohort_id))
+        c.execute("INSERT INTO criterion_stats (package_version_id, criterion_id, backend_profile, panel_build_ref, "
+                  "n, cohort_id) VALUES (?, 'C1', 'edge-local', '', 5, ?)", (world.version, world.cohort_id))
+        c.execute("INSERT INTO label (label_id, run_id, student_ref, criterion_id, label_type, band, evaluation_mode, "
+                  "saw_system_output, routing, origin, cohort_id) VALUES ('l-p', ?, 'P-0001', 'C1', 'blind', 'B1', "
+                  "'judged', 0, 'queued', 'blind_sample', ?)", (world.run_id, world.cohort_id))
+    try:
+        ok = build_console(store=world.store).perform("purge cohort", cohort_id=world.cohort_id)
+    finally:
+        world.store.close()
+    assert ok.dispatched, ok
+    # FR-STORE-07 empties Tiers C and R and keeps the migrated file (schema_version survives).
+    with sqlite3.connect(cohort_file) as c:
+        left = c.execute("SELECT COUNT(*) FROM submission").fetchone()[0]
+    assert left == 0, f"a purge reported done left {left} submissions in the cohort file"
 
 
 def test_tc_console_44_row15_exemplar_paraphrases_are_unavailable(tmp_path, monkeypatch):
@@ -368,8 +423,9 @@ def test_tc_console_44_row3_rubric_read_back_without_a_setup_model_is_refused(ch
 
 @pytest.mark.writtenahead
 def test_tc_console_44_row9_a_blind_label_is_recorded(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet (the row-8 cause): `open_review` binds no package
-    catalog, so every blind band the run's package declares is refused on the default scale."""
+    """Written ahead, owned by no issue yet (the row-8 cause): the console's review service binds
+    no package catalog, so every blind band the run's package declares is refused on the default
+    scale."""
     from harness.corpora import dev_pipe
 
     root = tmp_path / "w"
@@ -433,9 +489,11 @@ _ADV14 = [
 @pytest.mark.parametrize("action, owner, method, build", _ADV14, ids=[a[0] for a in _ADV14])
 def test_adv_14_a_raising_door_is_reported_refused(tmp_path, monkeypatch, action, owner, method, build):
     """ADV-14: the owning door raises `RuntimeError("x")`; the console reports `dispatched=False`
-    with the text, and the effect is absent. Disclosed: the door raises on entry rather than
-    after a partial write — every door here writes in its own transaction, so a raise before its
-    commit and a raise on entry leave the same ledger, which is what is compared."""
+    with the text. Disclosed: (1) seven of the fourteen actions — the ones whose effect goes through
+    a single owning method; pause/resume and resolve-quarantine write the console's own row, and the
+    setup, blind and correction doors are exercised in their sweep rows. (2) The door raises on
+    ENTRY, so "no partial effect" is shown only for a door that never started; a raise after a
+    partial write inside the door's transaction is not constructed here."""
     import importlib
 
     from harness.corpora import dev_pipe

@@ -5,16 +5,18 @@
 | TC-PKG-C19 | CT-PKG-19 | the base version, a revision child and an import each hold no criterion whose `evaluation_mode` is NULL or outside `('judged', 'deterministic')` |
 | TC-REVIEW-C21 | CT-REVIEW-21 | two store-form queued scores identical but for `band_spread` (0 vs 2), each with one adverse input: the spread-2 row ranks first and both EVs are positive |
 | TC-REVIEW-C22 | CT-REVIEW-22 | two scores with equal inputs, one holistic and one atomic: the holistic ranks first |
-| TC-REVIEW-C23 | CT-REVIEW-23 | every label written by the collection route carries a key of the Cohort `cohort` table, never a run id; a purge of the cohort leaves its labels in Tier D and removes the cohort file |
+| TC-REVIEW-C23 | CT-REVIEW-23 | every label written by the review service carries a key of the Cohort `cohort` table, never a run id (the purge half is TC-CONSOLE-44 row 14's) |
 | TC-STATS-C22 | CT-STATS-22 | every `judge_signals` cell carries exactly `JUDGE_SIGNAL_FIELDS`, and the alert is named `judge_contract_violations_concentrated` |
-| TC-STATS-C23 | CT-STATS-23 | 30 blind labels plus 30 flag-NULL labels whose teacher band equals the system band: the κ M-PKG records equals Cohen's κ hand-computed over the 30 blind labels, with n = 30 |
+| TC-STATS-C23 | CT-STATS-23 | the store refuses a NULL blind flag outright; and over 30 blind labels plus 30 flag-NULL labels (in memory) the figure is Cohen's κ hand-computed over the 30 blind labels, with n = 30 |
 
 Disclosed:
 - **TC-REVIEW-C23** drops "after migration": design 1.9 withdrew FR-REVIEW-22's historical backfill
   (ADR-31), so a pre-rule row keeps its run id by design; TC-REVIEW-33 pins that it never lets a
   purge pass.
-- **TC-STATS-C23** asserts M-PKG's recorded κ (the figure the console's rollup reads through
-  `promotion_record`, #529); rung 0 is TC-STATS-29's.
+- **TC-STATS-C23.** The plan's rung-3 store (30 labels with a NULL flag) cannot be built:
+  `label.saw_system_output` is NOT NULL, which the case asserts as the defence in depth. The
+  admission half therefore runs over in-memory labels through M-STATS' own figure; rung 0 is
+  TC-STATS-29's.
 """
 
 from __future__ import annotations

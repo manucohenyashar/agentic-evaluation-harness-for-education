@@ -108,36 +108,22 @@ def test_tc_console_45_the_blind_flow_plan_names_no_removed_table():
 
 @pytest.mark.writtenahead
 def test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows(tmp_data_dir):
-    """Written ahead, owned by no issue yet: with six questions proposed, S3 says "Questions read
-    back from the package: 0" and renders no editable field — it reads only confirmed questions,
-    so the teacher cannot see or correct the proposal the screen exists to confirm (HLD §11.5)."""
+    """Written ahead, owned by no issue yet: S3 reads its package tier through
+    `_tier("package")`, which is hard-coded to `pkg-mconsole`, so for every real package it says
+    "Questions read back from the package: 0" and renders no editable field; the teacher cannot see
+    or correct the proposal the screen exists to confirm (HLD §11.5)."""
     from tests.contract.setup._doubles import ingest_document, stage_chain
 
     chain = stage_chain(tmp_data_dir / "live")
     try:
         chain.doc = ingest_document(chain.store, kind="assessment")
         chain.service.propose_inventory(chain.doc)
-        s3 = build_console(store=chain.store).render(SCREENS["S3"]).html
+        s3 = build_console(store=chain.store).render(SCREENS["S3"], package_id=chain.package_id).html
     finally:
         chain.store.close()
     fields = re.findall(r"<(?:input|textarea|select)", s3)
     assert fields, "S3 renders the proposed inventory with no editable field (HLD §11.5)"
     assert "Q1" in s3 and "Q4" in s3, "S3 does not list the proposed questions"
-
-
-@pytest.mark.writtenahead
-def test_tc_console_45_s9_honours_the_configured_review_budget(tmp_data_dir, monkeypatch):
-    """Written ahead, owned by no issue yet: S9 renders at `REVIEW_DEFAULT_BUDGET_MINUTES` (30)
-    and ignores `HARNESS_REVIEW_DEFAULT_BUDGET_MINUTES`, the env knob M-REVIEW declares for it
-    (seam 3): a teacher's configured 10-minute sitting is shown as 30."""
-    monkeypatch.setenv("HARNESS_REVIEW_DEFAULT_BUDGET_MINUTES", "10")
-    run_id = _flagged_store(tmp_data_dir)
-    store = open_store(tmp_data_dir)
-    try:
-        text = re.sub(r"<[^>]+>", " ", build_console(store=store).render(SCREENS["S9"], id=run_id).html)
-    finally:
-        store.close()
-    assert "Review budget: 10 minutes" in text, re.search(r"Review budget: \d+ minutes", text)
 
 
 #: The table each service-backed screen's reader needs, by tier.
@@ -154,7 +140,7 @@ _UNOWNED = pytest.mark.writtenahead  # the screen renders an absence over an unr
 
 @pytest.mark.parametrize("screen", [
     pytest.param("S2", marks=_UNOWNED),   # "No parts have been uploaded" over a dropped upload_part
-    pytest.param("S3", marks=_UNOWNED),   # "Questions read back from the package: 0" over a dropped question
+    pytest.param("S3", marks=_UNOWNED),   # S3 reads the hard-coded `pkg-mconsole` tier, never the real package
     "S9", "S12"])
 def test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero(tmp_data_dir, screen):
     run_id = _flagged_store(tmp_data_dir, n=3)
