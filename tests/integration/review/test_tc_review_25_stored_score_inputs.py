@@ -11,7 +11,7 @@ The plan's sweep, one case per line:
 | `scoring_model` | criterion `holistic` in the run's version | `"holistic"` |
 | `criterion_weight` | grade-policy weight 2.5 | 2.5 |
 | `historical_override_rate` | 4 judgments, 1 override (n = 4 < 5) | `None` |
-| `historical_override_rate` | 5 judgments, 2 overrides | 0.4 — **blocked on #433** |
+| `historical_override_rate` | 5 judgments, 2 overrides | 0.4 — pinned by TC-REVIEW-32 (TS-130) |
 | `grade_boundary_delta` | total 69.5, nearest boundary 70 | 0.5 |
 | `est_seconds` | atomic / holistic, knobs unset | 45 / 90 |
 | run filter | run RB has `band_spread = 3` for the same pair | R's row still reads 2 |
@@ -32,11 +32,10 @@ against the model-free default, a spread of 2 against nothing at all.
 rows for the same `(submission, criterion)`. A read that dropped `run_id` would rank run R by
 run RB's panel spread — a number that is real, plausible, and about a different run.
 
-**`historical_override_rate`'s second row is `writtenahead` on #433.** The input is inert:
-`_ScoreRowContext` is never constructed with `override_rates`, so the rate is `None` for every
-store-backed row whatever the history holds. The `n = 4` row therefore passes today for the
-wrong reason and the `n = 5` row cannot pass at all — see
-`tests/unit/stats/test_tc_stats_31_override_history.py`, which carries the blocker entry.
+**`historical_override_rate`.** #433 wired the input (M-STATS' `stored_disagreement_rates`, the
+eighth ranking input). The `n = 4` row here pins the below-minimum absence; the stored-rate rows
+(0.6 / 0.0 / no data) and their effect on the order are TC-REVIEW-32's, in
+`tests/integration/review/test_ts130_override_figures.py`.
 
 **Isolation: rung 2** — a real store, a real package with weights, models and a boundary
 table, and the rows the service actually built.
@@ -380,10 +379,8 @@ def test_tc_review_25_an_override_rate_below_the_minimum_is_absent(sweep_world):
     Four teachers who overrode once are not a 25% override rate; they are four teachers, and
     `CT-STATS-09`'s no-data figure applies rather than a number.
 
-    **This passes today for the wrong reason** — the input is inert, so it is `None` for every
-    row whatever the history holds (#433). It is kept because `None` is the right answer for
-    this row either way, and its companion (`n = 5` → 0.4) is the case that cannot pass;
-    `tests/unit/stats/test_tc_stats_31_override_history.py` carries it and the blocker entry.
+    The input is live since #433; the stored-rate rows above the minimum are TC-REVIEW-32's
+    (TS-130).
     """
     row = _rows(sweep_world)[HOLISTIC]
 
