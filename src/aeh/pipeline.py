@@ -737,6 +737,9 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
                 f"{cell.submission_id}/{cell.criterion_id}: {score.band} over "
                 f"{len(verdicts)} verdicts" + (" -> escalated" if escalates else "")
             )
+    except (ProviderUnavailableError, BuildChangedError):
+        # Not faults: `run_to_completion` lets these two through to the stored status by type.
+        raise
     except Exception as error:
         if current is None:
             raise
