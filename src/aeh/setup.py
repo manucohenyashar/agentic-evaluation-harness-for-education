@@ -104,6 +104,7 @@ from aeh.pkg import (
     GradePolicy,
     PackageCatalog,
     PackageDraft,
+    PackageError,
     PackageVersionId,
     QUESTION_TYPES,
     default_evaluation_mode,
@@ -1297,12 +1298,12 @@ def _parse_readback_reply(
         if not isinstance(raw_bands, list):
             raise _ReplyError(f"criterion {criterion_id!r}: bands must be a list.")
         band_count = raw.get("band_count", len(raw_bands) or SETUP_DEFAULT_BAND_COUNT)
-        if (not isinstance(band_count, int) or isinstance(band_count, bool)
-                or band_count < 2 or band_count > 6 or band_count % 2 != 0):
+        # The band set's shape (even, 2..6: FR-SETUP-04 / FR-PKG-06) is the catalog's rule and
+        # is refused by the catalog's own write (CT-PKG-04, #535); a second copy here would
+        # drift from it. The reply only has to say which count it asks for.
+        if not isinstance(band_count, int) or isinstance(band_count, bool):
             raise _ReplyError(
-                f"criterion {criterion_id!r}: band_count {band_count!r} is odd or "
-                "outside 2..6 (FR-SETUP-04). The even count removes the safe middle "
-                "band a hesitant judge retreats to (design §5.10, R40)."
+                f"criterion {criterion_id!r}: band_count {band_count!r} is not a whole number."
             )
         justification = raw.get("justification", "")
         if justification is None:
@@ -2348,6 +2349,25 @@ class SetupService:
                 "status": "proposed",
                 "criteria": [_criterion_to_dict(criterion) for criterion in criteria],
             }
+            # The catalog's own write first (#535): it enforces the band set's shape
+            # (CT-PKG-04), atomically. A refusal there is a failed attempt, exactly like a
+            # malformed reply, so the budget retries and then degrades; and nothing else is
+            # written for a reply the catalog refused (no classification row, no
+            # confirmation charged).
+            try:
+                self._catalog.write_readback(
+                    v, rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
+                    criteria=[_criterion_record(criterion) for criterion in criteria],
+                    payload=json.dumps(body, sort_keys=True),
+                    template_version=SETUP_READBACK_TEMPLATE_V,
+                    model_ref=completion.resolved_build, attempts=attempt,
+                    created_at=_now(),
+                )
+            except PackageError as error:
+                last_error = f"attempt {attempt}: the catalog refused the read back: {error}"
+                LOGGER.warning("rubric read-back attempt %d/%d refused by the catalog: %s",
+                               attempt, budget, error)
+                continue
             # The read back is a classification surface too (#52): every criterion
             # whose scoring model the §5.3 table (or the reply's declared model)
             # produced gets its `source='default'` row NOW, so the R62 audit table
@@ -2374,14 +2394,6 @@ class SetupService:
                     "cap (FR-SETUP-07, NFR-SETUP-01)", len(borderline), v,
                     ", ".join(borderline), SETUP_MAX_CONFIRMATIONS,
                 )
-            self._catalog.write_readback(
-                v, rubric_doc_id=rubric_doc, assessment_doc_id=assessment_doc,
-                criteria=[_criterion_record(criterion) for criterion in criteria],
-                payload=json.dumps(body, sort_keys=True),
-                template_version=SETUP_READBACK_TEMPLATE_V,
-                model_ref=completion.resolved_build, attempts=attempt,
-                created_at=_now(),
-            )
             LOGGER.info(
                 "read the rubric back for version %s from documents %s/%s: %d "
                 "criterion(s) in %d attempt(s), prompt %s",
