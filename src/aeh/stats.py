@@ -4043,6 +4043,11 @@ def promote(
             continue
         counts = histograms.setdefault(criterion, {})
         counts[str(band)] = counts.get(str(band), 0) + 1
+    # The run's own key parts (#454 reopened): `_record_sourcing` hands back the audit row's
+    # whole profile summary and panel config, which are provenance, not key values. A record a
+    # run's reader must find (FR-PKG-08's six-part key) is filed under the summary's
+    # `backend_profile` and `panel_build_ref`, the values `run_handle` reports.
+    key_backend, key_panel = _run_key_parts(backend_profile, panel_build_ref)
     baseline_outcomes: dict[str, str] = {}
     for criterion in sorted(per_criterion):
         histogram = histograms.get(criterion)
@@ -4056,8 +4061,8 @@ def promote(
             package_version_id=package_version_id,
             criterion_id=criterion,
             band_histogram=histogram,
-            backend_profile=backend_profile,
-            panel_build_ref=panel_build_ref,
+            backend_profile=key_backend,
+            panel_build_ref=key_panel,
         )
         # The reason travels whether or not the write landed. This module logs nothing
         # (it has no logger, by long standing), so the returned record IS the disclosure:
@@ -4078,7 +4083,7 @@ def promote(
            for row in audits if str(row.get("run_id")) in administration_runs):
         noninferiority_outcomes = _record_noninferiority_verdicts(
             data_dir, administration_key, package_version_id, per_criterion, admissible,
-            backend_profile, panel_build_ref)
+            key_backend, key_panel)
 
     _pkg.record_promotion(
         data_dir,
@@ -4148,6 +4153,22 @@ def _record_noninferiority_verdicts(data_dir: Any, cohort_id: str, package_versi
     finally:
         store.close()
     return outcomes
+
+
+def _run_key_parts(profile_summary: str, panel_config: str) -> tuple[str, str]:
+    """(backend_profile, panel_build_ref) out of a persisted profile summary (#454 reopened).
+
+    The summary is the JSON `M-CONF`'s `ProfileSummary` persists; it carries both key parts
+    by name. A summary that is not that JSON (the literal ``unrecorded``, a bare profile
+    name from an older audit row) is passed through as the backend with the panel config as
+    given, which is the reading this module had before."""
+    try:
+        summary = json.loads(profile_summary)
+    except (TypeError, ValueError):
+        return profile_summary, panel_config
+    if not isinstance(summary, dict) or not summary.get("backend_profile"):
+        return profile_summary, panel_config
+    return str(summary["backend_profile"]), str(summary.get("panel_build_ref") or "")
 
 
 def _record_sourcing(

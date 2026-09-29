@@ -1718,6 +1718,21 @@ PKG_STATEMENTS.update({
         "AND panel_build_ref = :panel_build_ref "
         "AND scoring_model = :scoring_model"
     ),
+    # `validation_for`'s read (FR-PKG-23, #454 reopened): the same key, and a row that carries
+    # an agreement figure OR a recorded engine verdict. `promote` records the verdict on a row
+    # of its own, and FR-PKG-23 says `validation_for` returns it as a field; a baseline-only
+    # row (neither) stays out, for the reason the note below gives.
+    "select_validation_record": Statement(
+        "SELECT criterion_id, population_scope_id, backend_profile, panel_build_ref, "
+        "scoring_model, agreement, n, decision_engine_noninferior FROM validation_record "
+        "WHERE package_version_id = :v "
+        "AND (agreement IS NOT NULL OR decision_engine_noninferior IS NOT NULL) "
+        "AND (:criterion_id IS NULL OR criterion_id = :criterion_id) "
+        "AND population_scope_id = :population_scope_id "
+        "AND backend_profile = :backend_profile "
+        "AND panel_build_ref = :panel_build_ref "
+        "AND scoring_model = :scoring_model"
+    ),
     # `agreement IS NOT NULL` since `#373`: a `ManifestEntry` IS an agreement claim
     # (`FR-PKG-21`), and `manifest()` casts `float(agreement)` / `int(n)` unconditionally.
     # `record_validation_baseline` writes a row that carries a distribution and NO
@@ -2840,7 +2855,7 @@ class PackageCatalog:
         """`FR-PKG-09`: the record for one key, or `NoValidationData` — **distinguishable
         in type** from a zero or a low figure. No aggregate exists anywhere on this
         surface (`CT-PKG-07`): the caller names the key, the catalog answers the key."""
-        rows = self._handle.query(PKG_STATEMENTS["select_validation"],
+        rows = self._handle.query(PKG_STATEMENTS["select_validation_record"],
                                   v=v, criterion_id=criterion_id,
                                   population_scope_id=population_scope_id,
                                   backend_profile=backend_profile,
