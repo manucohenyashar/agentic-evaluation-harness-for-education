@@ -662,6 +662,22 @@ _SELECT_QUARANTINE = (
     "SELECT submission_id, ingest_status FROM submission "
     "WHERE quarantined = 1 ORDER BY submission_id"
 )
+#: FR-CONSOLE-29 (#530): the stored crops M-INGEST kept for a parked submission's regions
+#: (a described region, an unreadable mark where one was cropped), as content hashes.
+_SELECT_SUBMISSION_CROPS = (
+    "SELECT r.crop_ref AS crop_ref, r.region_kind AS region_kind FROM document_region r "
+    "JOIN document d ON d.document_id = r.document_id "
+    "WHERE d.submission_id = :submission_id AND r.crop_ref IS NOT NULL "
+    # The CURRENT document only: a revision supersedes its parent, whose regions stay in the
+    # ledger for the record but are not what the operator is looking at (#530 review).
+    "AND d.document_id NOT IN (SELECT parent_doc_id FROM document "
+    "WHERE parent_doc_id IS NOT NULL) ORDER BY r.region_id"
+)
+#: The crop route's allow-list: a content address is served only when some region's stored
+#: crop names it, so `/blobs/<ref>` is never a read of an arbitrary stored file (#530 review).
+_SELECT_CROP_REF_KNOWN = (
+    "SELECT COUNT(*) AS n FROM document_region WHERE crop_ref = :crop_ref"
+)
 _SELECT_COHORT_QUARANTINE = (
     "SELECT submission_id, ingest_status FROM submission "
     "WHERE cohort_id = :cohort_id AND quarantined = 1"
@@ -1815,12 +1831,22 @@ class ConsoleApp:
         items = []
         for row in rows:
             submission = _row_get(row, "submission_id")
+            # FR-CONSOLE-29 (#530): the item's OWN stored crops, by content hash, never a
+            # static placeholder. An item with no stored crop (a V4 mismatch has no mark)
+            # shows no image and says so.
+            crops = self._read_cohort_files(
+                _SELECT_SUBMISSION_CROPS, queries, submission_id=submission)
+            figures = "".join(
+                f'<figure data-role="mark"><img src="/blobs/{escape(str(_row_get(crop, "crop_ref")))}" '
+                f'alt="stored crop of the {escape(str(_row_get(crop, "region_kind")))} region">'
+                f"<figcaption>The stored crop of the "
+                f"{escape(str(_row_get(crop, 'region_kind')))} region.</figcaption></figure>"
+                for crop in crops
+            ) or ("<p>No stored crop for this item. M-INGEST keeps crops for described "
+                  "regions; an item with no stored crop shows none rather than a stand-in.</p>")
             items.append(
                 f'<div class="quarantine-item"><p>{escape(str(submission))} — parked for '
-                "operator triage.</p>"
-                '<figure data-role="mark"><img src="/assets/mark-crop.png" '
-                'alt="crop of the unreadable answer mark">'
-                "<figcaption>The unreadable mark, as a crop.</figcaption></figure></div>"
+                "operator triage.</p>" + figures + "</div>"
             )
         body = (
             '<section data-role="quarantine">' + "".join(items) + "</section>"
@@ -5094,6 +5120,22 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
         that does not require trusting a body the server has already declined to accept."""
         self._respond(404, b"not found\n", "text/plain; charset=utf-8", close=True)
 
+    def _serve_crop(self, crop_ref: str) -> None:
+        """S8's crop image (FR-CONSOLE-29, #530): served only when a stored region's
+        `crop_ref` names it, so the route never becomes a read of any other stored file."""
+        app = self._console.app
+        known = False
+        try:
+            known = any(int(_row_get(row, "n") or 0) for row in app._read_cohort_files(
+                _SELECT_CROP_REF_KNOWN, [], crop_ref=crop_ref))
+            data = app._store.blobs().get(crop_ref) if known else None
+        except Exception:  # noqa: BLE001 — an unreadable crop is a 404, never a 500 with detail
+            data = None
+        if not known or not data:
+            self._not_found()
+            return
+        self._respond(200, bytes(data), "image/png")
+
     def do_GET(self) -> None:  # noqa: N802 — the stdlib's dispatch name
         parsed = urlsplit(self.path)
         route = parsed.path
@@ -5104,6 +5146,9 @@ class _ConsoleRequestHandler(BaseHTTPRequestHandler):
                 self._not_found()
                 return
             self._respond(200, body, "text/css; charset=utf-8")
+            return
+        if route.startswith("/blobs/"):
+            self._serve_crop(route[len("/blobs/"):])
             return
         if not _known_route(route):
             self._not_found()
