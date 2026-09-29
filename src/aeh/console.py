@@ -947,12 +947,16 @@ _SELECT_RUN_PROFILE_SUMMARY = (
     "AND profile_summary IS NOT NULL ORDER BY recorded_at LIMIT 1"
 )
 _SELECT_NEWEST_RUN_FOR_VERSION = (
-    "SELECT run_id FROM run WHERE package_version_id = :package_version_id "
+    "SELECT run_id, COALESCE(started_at, '') AS started_at FROM run "
+    "WHERE package_version_id = :package_version_id "
     "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1"
 )
+#: The run S13's scores come from (`_SELECT_SCORES`' own subselect), so the provenance line
+#: names the run whose scores are shown (#533 review).
 _SELECT_NEWEST_RUN_FOR_SUBMISSION = (
     "SELECT run_id FROM criterion_score WHERE submission_id = :submission_id "
-    "ORDER BY rowid DESC LIMIT 1"
+    "AND run_id = (SELECT run_id FROM run "
+    "ORDER BY COALESCE(started_at, '') DESC, run_id DESC LIMIT 1) LIMIT 1"
 )
 _NO_PROVENANCE = (
     "provenance: no run has produced these grades yet, so there is no package, rubric or "
@@ -2671,7 +2675,11 @@ class ConsoleApp:
         if run_id is None and package_version:
             rows = self._read_cohort_files(_SELECT_NEWEST_RUN_FOR_VERSION, log,
                                            package_version_id=package_version)
-            run_id = str(_row_get(rows[-1], "run_id")) if rows else None
+            if rows:
+                # One newest row per cohort file: the newest across them all.
+                newest = max(rows, key=lambda row: (str(_row_get(row, "started_at") or ""),
+                                                    str(_row_get(row, "run_id"))))
+                run_id = str(_row_get(newest, "run_id"))
         row = self._run_row(run_id) if run_id else None
         if row is None:
             return _NO_PROVENANCE
@@ -4838,6 +4846,7 @@ def render_review_queue(
                     left=queue.residual_provisional,
                     budget_minutes=queue.budget_minutes,
                     entries=_review_queue_entries(queue.shown),
+                    provenance=_service_provenance(source, run_id),
                 )
                 + _section(
                     "build-trace",
@@ -4859,10 +4868,21 @@ def render_review_queue(
                 left=contents.flagged_total - len(contents.shown),
                 budget_minutes=contents.budget_minutes,
                 entries=_review_queue_entries(contents.shown),
+                provenance=source._provenance_line(run_id=run_id),
             ),
         ),
         queries=view.queries,
     )
+
+
+def _service_provenance(service: Any, run_id: str) -> str:
+    """The provenance line for a queue a `ReviewService` built (FR-CONSOLE-40, #533 review):
+    from the producing run when the service holds a real store, the storeless double's value
+    otherwise."""
+    store = getattr(service, "_store", None)
+    if store is None or getattr(store, "data_dir", None) is None:
+        return _PROVENANCE_FOOTER
+    return build_console(store=store)._provenance_line(run_id=run_id)
 
 
 def review_queue_header(page: Any) -> dict[str, int]:
