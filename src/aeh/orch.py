@@ -6104,7 +6104,10 @@ class Orchestrator:
         persists them with `flush_metrics`. The frozen ceiling is a claim-time check (ADR-33)
         and this wrapper does not re-apply it per call; a post-dispatch caller charges its
         actual cost with `charge_post_dispatch` and asks `post_dispatch_ceiling_reached`
-        before each call.
+        before each unit of its own work (synthesis: each submission). The check comes
+        before a submission, not before each call, so the submission that reaches the
+        ceiling can pass it by its own calls; the claim path, which knows its figure in
+        advance, never does.
         """
         _cohort, run_row = self._find_run(run_id)
         inner = provider if provider is not None else self._provider

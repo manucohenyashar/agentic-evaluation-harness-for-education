@@ -112,3 +112,56 @@ def test_tc_reg_12_c_synthesis_stops_at_the_ceiling_and_grading_still_runs(tmp_p
     assert len(charged) == 1, f"synthesis ran {len(charged)} submission(s) past the ceiling"
     assert synth and any("synthesis stopped before" in d for d in synth[0].detail), synth
     assert result.status == "complete" and result.grades_computed > 0, result
+
+
+def test_tc_reg_12_d_a_real_ceiling_charges_the_measured_synthesis_cost_and_stops(tmp_path, monkeypatch):
+    """No stubbed orchestrator: a frozen ceiling, synthesis answers that cost 0.01 each, and the
+    run's spend grows by exactly what synthesis was charged until the ceiling stops it."""
+    import dataclasses
+
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    with sqlite3.connect(_db(root)) as c:
+        cfg = json.loads(c.execute("SELECT provider_config FROM run WHERE run_id = ?",
+                                   (world.run_id,)).fetchone()[0])
+        cfg["cost_ceiling"] = "0.025"
+        c.execute("UPDATE run SET provider_config = ?, cost_spend = '0' WHERE run_id = ?",
+                  (json.dumps(cfg), world.run_id))
+    inner = world.provider.complete
+    synth_calls: list[Decimal] = []
+
+    def priced(prompt, ref, params):
+        answer = inner(prompt, ref, params)
+        if getattr(ref, "role", "") == "synthesizer":
+            synth_calls.append(Decimal("0.01"))
+            return dataclasses.replace(answer, cost=Decimal("0.01"))
+        return answer
+
+    world.provider.complete = priced
+    # Dispatch units are estimated at zero, so every cent of spend here is synthesis's.
+    world.provider.estimate_cost = lambda unit: Decimal("0")
+    at_synthesis: list[Decimal] = []
+    real_governed = Orchestrator.governed_provider
+
+    def governed(self, run_id, provider=None):
+        with sqlite3.connect(_db(root)) as c:
+            at_synthesis.append(Decimal(c.execute("SELECT cost_spend FROM run WHERE run_id = ?",
+                                                  (run_id,)).fetchone()[0]))
+        return real_governed(self, run_id, provider)
+
+    monkeypatch.setattr(Orchestrator, "governed_provider", governed)
+    try:
+        result = pipe_world.drive_composed(world)
+    finally:
+        world.store.close()
+    with sqlite3.connect(_db(root)) as c:
+        spend = Decimal(c.execute("SELECT cost_spend FROM run WHERE run_id = ?",
+                                  (world.run_id,)).fetchone()[0])
+    assert at_synthesis and synth_calls, f"fixture: synthesis never ran under the ceiling: {result.status} {result.pause_reason}"
+    assert at_synthesis[0] < Decimal("0.025"), f"fixture: dispatch alone spent {at_synthesis[0]}"
+    assert spend - at_synthesis[0] == sum(synth_calls), (
+        f"synthesis charged {spend - at_synthesis[0]} for calls costing {sum(synth_calls)}")
+    assert spend >= Decimal("0.025"), spend
+    synth = [s for s in result.stages if s.stage == "synthesize"]
+    assert any("synthesis stopped before" in d for d in synth[0].detail), synth[0].detail
+    assert result.status == "complete" and result.grades_computed > 0, result
