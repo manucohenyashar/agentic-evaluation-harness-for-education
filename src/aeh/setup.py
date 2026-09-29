@@ -1297,12 +1297,12 @@ def _parse_readback_reply(
         if not isinstance(raw_bands, list):
             raise _ReplyError(f"criterion {criterion_id!r}: bands must be a list.")
         band_count = raw.get("band_count", len(raw_bands) or SETUP_DEFAULT_BAND_COUNT)
-        if (not isinstance(band_count, int) or isinstance(band_count, bool)
-                or band_count < 2 or band_count > 6 or band_count % 2 != 0):
+        # The band set's shape (even, 2..6: FR-SETUP-04 / FR-PKG-06) is the catalog's rule and
+        # is refused by the catalog's own write (CT-PKG-04, #535); a second copy here would
+        # drift from it. The reply only has to say which count it asks for.
+        if not isinstance(band_count, int) or isinstance(band_count, bool):
             raise _ReplyError(
-                f"criterion {criterion_id!r}: band_count {band_count!r} is odd or "
-                "outside 2..6 (FR-SETUP-04). The even count removes the safe middle "
-                "band a hesitant judge retreats to (design §5.10, R40)."
+                f"criterion {criterion_id!r}: band_count {band_count!r} is not a whole number."
             )
         justification = raw.get("justification", "")
         if justification is None:
