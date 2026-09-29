@@ -724,6 +724,8 @@ PROVENANCE_VOCABULARY: tuple[str, ...] = ("synthetic", "paraphrased", "real_verb
 #: `None` is the package catalog's own "no row for this key" answer (`FR-PKG-09`).
 NO_DATA_REASONS: tuple[str, ...] = (
     "no_blind_labels",
+    # FR-STATS-24 (amended) / FR-STATS-28 (#433): labels exist, but fewer than the minimum n.
+    "below_min_n",
     "no_data_for_population",
     "no_data_for_backend",
 )

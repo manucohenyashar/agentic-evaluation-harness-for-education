@@ -302,8 +302,11 @@ def test_tc_stats_c09_a_criterion_with_no_history_returns_no_data_rather_than_a_
     build_stats = require(STATS_MODULE, "build_stats", issue="#115")
     NoValidationData = require(STATS_MODULE, "NoValidationData", issue="#115")
 
+    # Five reviews: the minimum n below which a rate is no data (FR-STATS-24 amended, #433),
+    # so "reviewed" here means reviewed enough to be a rate.
     stats = build_stats(
-        labels=[broken.Label(label_id="rev-1", criterion_id="C-02", origin="override")]
+        labels=[broken.Label(label_id=f"rev-{i}", criterion_id="C-02", origin="override")
+                for i in range(1, 6)]
     )
 
     reviewed = stats.criterion_override_history(criterion_id="C-02")

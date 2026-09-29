@@ -313,6 +313,10 @@ __all__ = [
     "compression_check",
     "criterion_figures",
     "criterion_override_history",
+    "criterion_disagreement_rate",
+    "CriterionDisagreement",
+    "stored_disagreement_rates",
+    "REVIEW_OVERRIDE_MIN_N_ENV",
     "describe_revision_gate",
     "drift_check",
     "latest_mvvp",
@@ -3154,6 +3158,27 @@ class CriterionOverrideHistory:
 
 
 @dataclass(frozen=True)
+class CriterionDisagreement:
+    """One criterion's disagreement rate (FR-STATS-28, #433): over every blind or
+    operational label that carries both bands, how many put the teacher's band somewhere
+    other than the system's. The review ranking's eighth input (FR-REVIEW-18)."""
+    criterion_id: str
+    n: int
+    disagreements: int
+    rate: float
+
+
+#: FR-STATS-24 (amended) / FR-STATS-28: below this many labels a rate is no data. Read at call
+#: time, so a deployment can move it without a code change (seam 3).
+REVIEW_OVERRIDE_MIN_N_ENV = "HARNESS_REVIEW_OVERRIDE_MIN_N"
+REVIEW_OVERRIDE_MIN_N_DEFAULT = 5
+
+
+def _override_min_n() -> int:
+    return _env_int(REVIEW_OVERRIDE_MIN_N_ENV, REVIEW_OVERRIDE_MIN_N_DEFAULT)
+
+
+@dataclass(frozen=True)
 class NarrativeQualityReport:
     """The narrative-quality figures, reported **separately** from
     criterion-score agreement (`FR-STATS-12`, `CT-STATS-14`): the citation
@@ -4164,16 +4189,69 @@ def criterion_override_history(
     ]
     if not population:
         return NoValidationData(reason="no_blind_labels", n=0)
+    n = len(population)
+    if n < _override_min_n():
+        # FR-STATS-24 (amended, #433): four teachers who overrode once are not a 25% rate.
+        return NoValidationData(reason="below_min_n", n=n)
     override_count = sum(
         1 for label in population if getattr(label, "origin", None) == "override"
     )
-    n = len(population)
     return CriterionOverrideHistory(
         criterion_id=criterion_id,
         n=n,
         override_count=override_count,
         override_rate=override_count / n,
     )
+
+
+def criterion_disagreement_rate(
+    self: "ValidationStats", criterion_id: str
+) -> "CriterionDisagreement | NoValidationData":
+    """FR-STATS-28 (#433): the criterion's disagreement rate over EVERY blind or operational
+    label carrying both bands (not only the admissible blind ones FR-STATS-24 reads). A
+    disagreement is `system_band != teacher_band`, i.e. `agreed = 0` (FR-REVIEW-21). The same
+    minimum-n rule and no-data reasons as FR-STATS-24; never `0.0` for no data (CT-STATS-09)."""
+    _require_str_or_none("criterion_disagreement_rate", criterion_id=criterion_id)
+    pairs = [
+        (_system_side(label), getattr(label, "teacher_band", None))
+        for label in self._labels
+        if (getattr(label, "criterion_id", "") or "") == criterion_id
+        and getattr(label, "label_type", "") in ("blind", "operational")
+    ]
+    pairs = [(system, teacher) for system, teacher in pairs
+             if system is not None and teacher is not None]
+    n = len(pairs)
+    if n == 0:
+        return NoValidationData(reason="no_blind_labels", n=0)
+    if n < _override_min_n():
+        return NoValidationData(reason="below_min_n", n=n)
+    disagreements = sum(1 for system, teacher in pairs if str(system) != str(teacher))
+    return CriterionDisagreement(criterion_id=criterion_id, n=n, disagreements=disagreements,
+                                 rate=disagreements / n)
+
+
+def stored_disagreement_rates(
+    store: Any, package_version_id: str
+) -> dict[str, "CriterionDisagreement | NoValidationData"]:
+    """FR-STATS-28's store-backed reader (#433): one entry per criterion of
+    `package_version_id`, over the stored labels of that package's lineage (a label whose
+    `package_version_id` names a version of the same package), plus labels that record no
+    version at all (the collection route writes none), read through M-STATS alone."""
+    from aeh.pkg import PackageCatalog
+
+    package_id = str(package_version_id).rpartition("@")[0]
+    catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+    criteria = [str(row["criterion_id"]) for row in catalog.criteria(package_version_id)]
+    rows = store.durable().query(STATS_STATEMENTS["select_labels_all"])
+    lineage_prefix = f"{package_id}@"
+    labels = []
+    for row in rows:
+        label = _StoredLabel(_row_mapping(row))
+        version = label._row.get("package_version_id")
+        if version is None or str(version).startswith(lineage_prefix):
+            labels.append(label)
+    stats = ValidationStats(labels)
+    return {criterion: stats.criterion_disagreement_rate(criterion) for criterion in criteria}
 
 
 def narrative_quality(self: "ValidationStats", cohort_id: str | None = None) -> NarrativeQualityReport:
@@ -4877,6 +4955,7 @@ class ValidationStats:
     promote = promote
     aggregate = aggregate
     criterion_override_history = criterion_override_history
+    criterion_disagreement_rate = criterion_disagreement_rate
     narrative_quality = narrative_quality
     operational_signal = operational_signal
     observability_counters = observability_counters

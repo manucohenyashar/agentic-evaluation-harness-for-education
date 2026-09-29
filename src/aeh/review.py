@@ -3470,11 +3470,25 @@ def _run_row_context(
         # The queue stays ordered; it is simply ordered by fewer inputs.
         pass
 
+    # FR-REVIEW-18 (amended) / FR-STATS-28 (#433): the eighth input is M-STATS' disagreement
+    # rate for the run's package version; M-REVIEW derives no rate of its own. A no-data
+    # answer is carried as `None`, which P(error) already treats as no data, never 0.0.
+    override_rates: dict[str, float | None] = {}
+    try:
+        from aeh.stats import CriterionDisagreement, stored_disagreement_rates
+
+        for criterion_id, figure in stored_disagreement_rates(store, version_id).items():
+            override_rates[criterion_id] = (
+                figure.rate if isinstance(figure, CriterionDisagreement) else None)
+    except Exception:
+        override_rates = {}
+
     return _ScoreRowContext(
         weights=weights,
         models=models,
         boundary_deltas=boundary_deltas,
         knobs=knobs,
+        override_rates=override_rates,
     )
 
 

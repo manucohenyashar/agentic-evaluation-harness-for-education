@@ -46,8 +46,9 @@ def label(criterion_id, system_band, teacher_band, *, backend="edge-local", orig
 
 
 def _histories():
-    """A criterion nobody reviewed, and a criterion reviewed four times with no override."""
-    reviewed = [label("C-ZERO", "b1", "b1", i=i) for i in range(4)]
+    """A criterion nobody reviewed, and a criterion reviewed five times (the minimum n,
+    FR-STATS-24 amended, #433) with no override."""
+    reviewed = [label("C-ZERO", "b1", "b1", i=i) for i in range(5)]
     s = ValidationStats(reviewed)
     return s.criterion_override_history("C-NEVER"), s.criterion_override_history("C-ZERO")
 
@@ -115,7 +116,8 @@ def test_tc_req_57_review_ranking_and_p_error_input_distinguish_no_data_from_a_z
                                                               ("S1", "C-ZERO", "B3", 50.0, "provisional")])
     finally:
         store.close()
-    for i in range(4):
+    # Five: the minimum n below which a rate is no data (FR-STATS-24 amended, #433).
+    for i in range(5):
         record_label(data_dir=tmp_data_dir, label=broken.Label(label_id=f"z{i}", criterion_id="C-ZERO",
                                                               band=2, teacher_band=2, origin="blind_sample"))
     measured = stats.open_stats(data_dir=tmp_data_dir).criterion_override_history("C-ZERO")
