@@ -2276,6 +2276,23 @@ TIER_MIGRATIONS[Tier.DURABLE] = tuple(sorted(
 ))
 
 
+#: #529 (FR-CONSOLE-24): one administration's validation record, read back.
+_SELECT_PROMOTION_RECORD = Statement(
+    "SELECT package_version_id, cohort_id, blind_count, n, agreement_kappa, recorded_at "
+    "FROM package_validation WHERE package_version_id = :package_version_id "
+    "AND cohort_id = :cohort_id"
+)
+
+
+def promotion_record(store: Any, *, package_version_id: str, cohort_id: str) -> dict[str, Any] | None:
+    """The validation record `record_promotion` wrote for one administration (one
+    `package_version_id`, one `cohort_id`), or None when that administration has none
+    (FR-CONSOLE-24, #529). Read-only, through the store's durable tier."""
+    rows = store.durable().query(_SELECT_PROMOTION_RECORD, package_version_id=package_version_id,
+                                 cohort_id=cohort_id)
+    return dict(rows[0]) if rows else None
+
+
 def record_promotion(
     data_dir: Path | str,
     *,

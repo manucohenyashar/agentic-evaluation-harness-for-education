@@ -1902,7 +1902,13 @@ class ConsoleApp:
         # presentation. A real store renders the absence sentence too until the console
         # reads `M-STATS`'s validation record: a kappa this module cannot verify is not
         # one it may print.
-        if self._blind_labels == 0 or getattr(self._store, "data_dir", None) is not None:
+        if getattr(self._store, "data_dir", None) is not None:
+            # FR-CONSOLE-24 (#529): a real store shows THIS administration's own validation
+            # record when one exists (its cohort, its package version), and the absence
+            # sentence only when none does or it holds no blind labels. Never another
+            # administration's figure (RISK-08).
+            agreement = self._rollup_agreement(run_id)
+        elif self._blind_labels == 0:
             agreement = render_agreement_block(no_new_evidence=True, population=run_id)
         else:
             agreement = render_agreement_block(
@@ -1930,6 +1936,34 @@ class ConsoleApp:
             + _section("provenance", _PROVENANCE_FOOTER)
             + _band_section(run_id)
         )
+
+    def _rollup_agreement(self, run_id: str) -> str:
+        """S12's agreement block on a real store (FR-CONSOLE-24, #529)."""
+        row = self._run_row(run_id)
+        record = None
+        if row is not None:
+            from aeh.pkg import promotion_record
+
+            try:
+                record = promotion_record(
+                    self._store, package_version_id=str(row["package_version_id"]),
+                    cohort_id=str(row["cohort_id"]))
+            except sqlite3.OperationalError as error:
+                # Only a store that has no validation table yet is an honest absence; any
+                # other fault is a fault, not "no evidence" (FR-CONSOLE-37).
+                if "no such table" not in str(error):
+                    raise
+                record = None
+        if (record is None or not record.get("blind_count")
+                or record.get("agreement_kappa") is None):
+            return render_agreement_block(no_new_evidence=True, population=run_id)
+        # The record is keyed by (package version, cohort): the cohort is its population, and
+        # it records no backend, so the figure says so rather than claiming one (#529 review).
+        return render_agreement_block(
+            figure={"kappa": record["agreement_kappa"], "n": record.get("n"),
+                    "population_scope_id": str(row["cohort_id"]), "backend_profile": None,
+                    "panel_build_ref": None},
+            population=run_id, package_version=str(row["package_version_id"]))
 
     def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
         """S12's findings block (§3.19): the criteria the panel could not apply, read
