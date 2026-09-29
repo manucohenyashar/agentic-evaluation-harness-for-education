@@ -1948,13 +1948,21 @@ class ConsoleApp:
                 record = promotion_record(
                     self._store, package_version_id=str(row["package_version_id"]),
                     cohort_id=str(row["cohort_id"]))
-            except Exception:  # noqa: BLE001 — a read view renders the absence it can prove
+            except sqlite3.OperationalError as error:
+                # Only a store that has no validation table yet is an honest absence; any
+                # other fault is a fault, not "no evidence" (FR-CONSOLE-37).
+                if "no such table" not in str(error):
+                    raise
                 record = None
         if (record is None or not record.get("blind_count")
                 or record.get("agreement_kappa") is None):
             return render_agreement_block(no_new_evidence=True, population=run_id)
+        # The record is keyed by (package version, cohort): the cohort is its population, and
+        # it records no backend, so the figure says so rather than claiming one (#529 review).
         return render_agreement_block(
-            figure={"kappa": record["agreement_kappa"], "n": record.get("n")},
+            figure={"kappa": record["agreement_kappa"], "n": record.get("n"),
+                    "population_scope_id": str(row["cohort_id"]), "backend_profile": None,
+                    "panel_build_ref": None},
             population=run_id, package_version=str(row["package_version_id"]))
 
     def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
