@@ -2008,6 +2008,12 @@ class _RecordedSessionProvider:
         return SimpleNamespace(text=text)
 
 
+def unbind_off_panel_provider(ref: "OffPanelModelRef") -> None:
+    """Remove a provider bound for `ref`'s build (#536 review): a module-level binding must be
+    undoable, or it outlives the caller that made it."""
+    _OFF_PANEL_PROVIDERS.pop(ref.build_key, None)
+
+
 def bind_off_panel_provider(ref: "OffPanelModelRef", provider: Any) -> None:
     """Bind the `InferenceProvider` the back-translation gate asks for `ref`'s build (#536,
     CT-PROV-08). The provider stays the only egress point (CT-PROV-15)."""
@@ -2355,12 +2361,25 @@ def _construct_through_provider(provider: Any, off_panel: "OffPanelModelRef", r0
                 f"the off-panel checker {off_panel.provider}/{off_panel.build_id} is "
                 f"unavailable ({type(error).__name__}): the gate does not fall back to another "
                 "model (CT-PROV-08, CT-CALIB-02)") from error
+        text = str(getattr(completion, "text", "") or "").strip()
+        if text.startswith("```"):
+            # A fenced block (```json ... ```) is the usual shape of a model's JSON answer.
+            text = text.strip("`").strip()
+            if text[:4].lower() == "json":
+                text = text[4:].strip()
         try:
-            answer = json.loads(getattr(completion, "text", "") or "{}")
+            answer = json.loads(text)
         except ValueError:
-            answer = {}
-        response = answer.get("response") if isinstance(answer, dict) else None
-        note = answer.get("divergence_note") if isinstance(answer, dict) else None
+            answer = None
+        if not isinstance(answer, dict):
+            # An answer the gate cannot read is not "no construction": reading it that way
+            # would pass the revision on the checker's silence. It ends at R0 like every
+            # other unavailable checker (#536 review, CT-CALIB-02).
+            raise OffPanelUnavailable(
+                f"the off-panel checker {off_panel.provider}/{off_panel.build_id} answered "
+                f"the {angle!r} angle with something that is not the requested JSON object")
+        response = answer.get("response")
+        note = answer.get("divergence_note")
         out.append(_ConstructionAttempt(
             angle=angle, response=response if isinstance(response, str) and response else None,
             divergence_note=note if isinstance(note, str) else None))
