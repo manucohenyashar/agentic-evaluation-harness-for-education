@@ -5084,18 +5084,22 @@ class Orchestrator:
         # quarantined unit beside the arm that replaced it: an even unit count over an odd live
         # panel. It is already escalated (the replacement is escalation-origin), so this is
         # step 2's no-op; step 1's parity check would misread the replaced unit as corruption.
+        # A caller naming judges still goes through the plan's validation below.
         replacement_id = _content_id(_CONTENT_ID_KIND_REPLACEMENT, run_id, submission_id,
                                      criterion_id)
-        if int(tx.execute(ORCH_STATEMENTS["select_request_exists"],
-                          request_id=replacement_id)[0]["n"]):
+        if named is None and int(tx.execute(ORCH_STATEMENTS["select_request_exists"],
+                                            request_id=replacement_id)[0]["n"]):
+            live = len(prior) - int(tx.execute(
+                ORCH_STATEMENTS["select_pair_quarantined_score_units"], run_id=run_id,
+                submission_id=submission_id, criterion_id=criterion_id)[0]["n"])
             gates["plan"] = (
-                f"{len(prior)} units, one quarantined and replaced (FR-ORCH-43): the live "
-                f"panel is {len(prior) - 1}; no further widening")
+                f"{len(prior)} units, a quarantine answered by a replacement (FR-ORCH-43): the "
+                f"live panel is {live}; no further widening")
             gates["idempotence"] = "the replaced panel stands"
             processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
             return self._escalation_report(
                 tx, row, submission_id, criterion_id, DECISION_ADMITTED,
-                prior_judges=prior, added_judges=(), judge_count=len(prior) - 1,
+                prior_judges=prior, added_judges=(), judge_count=live,
                 units_inserted=0, expected_value=expected_value,
                 escalation_rate=rate, processed_results=processed,
                 escalated_results=escalated, budget=budget,
