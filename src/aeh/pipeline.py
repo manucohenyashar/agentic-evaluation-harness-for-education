@@ -98,7 +98,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping, Sequence
 
-from aeh.agg import aggregate, should_escalate, write_score
+from aeh.agg import (
+    EvenPanelError,
+    aggregate,
+    aggregate_even_panel_after_quarantine,
+    should_escalate,
+    write_score,
+)
 from aeh.conf import ModelRef, effective_config
 from aeh.det import DeterministicEvaluator
 from aeh.extract import ExtractionWorker
@@ -108,6 +114,8 @@ from aeh.judge import JudgmentError, ScoringWorker, verdicts_for
 from aeh.orch import (
     DECISION_HALTED_BY_BREAKER,
     ESCALATION_ARM_PREFIX,
+    REPLACEMENT_INSERTED,
+    REPLACEMENT_NOT_APPLICABLE,
     STAGE_EXTRACT,
     STAGE_SCORE,
     Orchestrator,
@@ -607,6 +615,37 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             continue
         criterion = _criterion_value(
             catalog, view, handle.package_version_id, cell.criterion_id)
+        quarantined = terminal_units - len(verdicts)
+        if len(verdicts) % 2 == 0 and len(verdicts) > 2 and quarantined > 0:
+            # FR-PIPE-18 / CT-PIPE-12 (#524, ADR-34): quarantine left a widened panel even.
+            # Ask M-ORCH for one replacement arm and leave the cell unaggregated; when the
+            # arm is refused, the cell is `ungradeable_by_panel` and goes to review. The run
+            # does not pause. (An even panel reached any other way still raises below.)
+            with handle.cohort.transaction() as tx:
+                replacement = orch.enqueue_replacement_arm(
+                    tx, (handle.run_id, cell.submission_id, cell.criterion_id))
+                if replacement.decision == REPLACEMENT_NOT_APPLICABLE:
+                    # By the ledger's own count nothing was quarantined: an even panel
+                    # reached another way is a defect, and it pauses the run.
+                    raise EvenPanelError(
+                        f"cell {cell.submission_id}/{cell.criterion_id} holds an even panel "
+                        f"of {len(verdicts)} with no quarantined unit (FR-PIPE-18)")
+                if replacement.decision == REPLACEMENT_INSERTED:
+                    detail.append(
+                        f"{cell.submission_id}/{cell.criterion_id}: even panel of "
+                        f"{len(verdicts)} after {quarantined} quarantined arm(s) -> "
+                        f"replacement arm {replacement.arm}")
+                    continue
+                score = aggregate_even_panel_after_quarantine(verdicts, criterion, signals)
+                write_score(tx, handle.run_id, cell.submission_id, score, signals)
+                orch.mark_cell_phase(
+                    tx, handle.run_id, cell.submission_id, cell.criterion_id,
+                    "aggregated", units_consumed=terminal_units,
+                )
+            detail.append(
+                f"{cell.submission_id}/{cell.criterion_id}: even panel after quarantine, "
+                f"replacement refused ({replacement.reason}) -> ungradeable_by_panel")
+            continue
         score = aggregate(
             verdicts, criterion, signals,
             # `FR-PIPE-05`: exactly two verdicts after a terminal failure. An earlier draft
@@ -616,11 +655,13 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any) 
             # comment above it claimed to cover the 4-verdict case, which is the sort of false
             # rationale this file has had to correct twice already.
             #
-            # A 4-verdict panel IS reachable — a widened five-arm panel with one arm
-            # quarantined — and it raises, which pauses the run as a composition fault. That
-            # is fail-closed and satisfies FR-PIPE-05's "never with an even panel"; making
-            # such a cell complete instead would need a rule M-AGG does not have.
-            fallback=len(verdicts) == 2,
+            # A 4-verdict panel reached through quarantine is handled above (FR-PIPE-18,
+            # #524): a replacement arm, or `ungradeable_by_panel`. An even panel reached any
+            # other way still raises here, which pauses the run as a composition fault: that
+            # is a defect signal, and FR-PIPE-05's "never with an even panel" stands.
+            # "after a terminal failure": two verdicts with nothing quarantined is an even
+            # panel reached some other way, a defect that must pause (TC-PIPE-23(c)).
+            fallback=len(verdicts) == 2 and quarantined > 0,
             breaker_tripped=cell.criterion_id in latched,
         )
         with handle.cohort.transaction() as tx:

@@ -756,7 +756,7 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     # FR-ORCH-42 (#523): every submission the run enumerated, in enumeration order (first
     # unit written), whatever its criteria's evaluation modes: a deterministic-only
     # submission has only `deterministic` units and is still listed.
-    "select_run_submissions": Statement(
+    "select_run_enumerated_submissions": Statement(
         "SELECT submission_id FROM work_unit WHERE run_id = :run_id "
         "GROUP BY submission_id ORDER BY MIN(rowid)"
     ),
@@ -1023,6 +1023,16 @@ ORCH_STATEMENTS: dict[str, Statement] = {
         "SELECT 1 FROM work_unit WHERE run_id = :run_id "
         "AND submission_id = :submission_id AND criterion_id = :criterion_id "
         "AND stage = 'score' LIMIT 1"
+    ),
+    # FR-ORCH-43 (#524): the pair's quarantined score units — how many arms quarantine
+    # has cost the panel — and whether a content-addressed request row already exists.
+    "select_pair_quarantined_score_units": Statement(
+        "SELECT COUNT(*) AS n FROM work_unit WHERE run_id = :run_id "
+        "AND submission_id = :submission_id AND criterion_id = :criterion_id "
+        "AND stage = 'score' AND status = 'quarantined'"
+    ),
+    "select_request_exists": Statement(
+        "SELECT COUNT(*) AS n FROM escalation_request WHERE request_id = :request_id"
     ),
     "admit_request": Statement(
         "UPDATE escalation_request SET admitted = 1, admitted_at = :admitted_at, "
@@ -2391,6 +2401,7 @@ DECISION_HALTED_BY_BREAKER = "halted_by_breaker"
 #: digest so these cannot collide with anything else keyed by bare sha256.
 _CONTENT_ID_KIND_REQUEST = "escalation_request"
 _CONTENT_ID_KIND_BREAKER = "criterion_breaker"
+_CONTENT_ID_KIND_REPLACEMENT = "replacement_arm"
 
 
 def _content_id(kind: str, *parts: str) -> str:
@@ -2404,6 +2415,30 @@ def _content_id(kind: str, *parts: str) -> str:
         digest.update(b"\x1f")
         digest.update(part.encode())
     return digest.hexdigest()
+
+
+#: FR-ORCH-43's decisions: one arm inserted, a request already made for this quarantine
+#: (nothing inserted), or refused (budget or breaker).
+REPLACEMENT_INSERTED = "inserted"
+REPLACEMENT_ALREADY_REQUESTED = "already_requested"
+REPLACEMENT_REFUSED = "refused"
+#: The pair has no quarantined score unit: an even panel this path did not cause, which the
+#: caller treats as the defect it is (FR-PIPE-18: EvenPanelError still pauses).
+REPLACEMENT_NOT_APPLICABLE = "not_applicable"
+
+
+@dataclass(frozen=True)
+class ReplacementArmReport:
+    """What one `enqueue_replacement_arm` did (FR-ORCH-43, CT-ORCH-33, seam 4)."""
+
+    run_id: str
+    submission_id: str
+    criterion_id: str
+    decision: str
+    arm: str | None
+    reason: str
+    quarantined: int
+    gates: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -4903,6 +4938,81 @@ class Orchestrator:
             ),
         )
 
+    def enqueue_replacement_arm(
+        self, tx: Any, criterion_score_key: Sequence[str],
+    ) -> ReplacementArmReport:
+        """FR-ORCH-43 / CT-ORCH-33 (#524, ADR-34): one replacement arm for a panel quarantine
+        left even.
+
+        Inserts, in the caller's transaction, one further escalation arm (the next arm the
+        pair does not carry, `_extension_arms` — never re-adding one, FR-ORCH-39) so the
+        panel returns to odd. **One replacement per cell** (ADR-34): the request row is
+        content-addressed on the pair, so a repeat inserts nothing and reports
+        `already_requested`, and a replacement that is itself quarantined leaves the cell to
+        the caller's `ungradeable_by_panel` path rather than starting a chain (the escalation
+        rate counts cells, so a chain would never meet the budget). Refused, with nothing written, when the criterion's
+        breaker has latched or the run's observed escalation rate is above
+        `ORCH_ESCALATION_BUDGET` (FR-ORCH-13/14): a replacement is an escalation and is
+        rationed like one. The key is the `(run_id, submission_id, criterion_id)` triple."""
+        key = tuple(str(part) for part in criterion_score_key)
+        if len(key) != 3:
+            raise EscalationPlanError(
+                f"enqueue_replacement_arm takes the (run_id, submission_id, criterion_id) "
+                f"triple, got {key!r}")
+        run_id, submission_id, criterion_id = key
+        row = self._run_row(run_id)
+        pair = dict(run_id=run_id, submission_id=submission_id, criterion_id=criterion_id)
+        prior = tuple(r["judge_id"] for r in tx.execute(
+            ORCH_STATEMENTS["select_pair_score_judges"], **pair))
+        if not prior:
+            raise EscalationPlanError(
+                f"run {run_id!r}'s ledger holds no score panel for "
+                f"({submission_id!r}, {criterion_id!r}): nothing to replace")
+        quarantined = int(tx.execute(
+            ORCH_STATEMENTS["select_pair_quarantined_score_units"], **pair)[0]["n"])
+        gates: dict[str, str] = {"panel": f"{len(prior)} arm(s), {quarantined} quarantined"}
+
+        def report(decision: str, reason: str, arm: str | None = None) -> ReplacementArmReport:
+            return ReplacementArmReport(run_id, submission_id, criterion_id, decision, arm,
+                                        reason, quarantined, gates)
+
+        if quarantined == 0:
+            return report(REPLACEMENT_NOT_APPLICABLE,
+                          "no quarantined score unit: this even panel is not quarantine's")
+        request_id = _content_id(_CONTENT_ID_KIND_REPLACEMENT, run_id, submission_id,
+                                 criterion_id)
+        if int(tx.execute(ORCH_STATEMENTS["select_request_exists"],
+                          request_id=request_id)[0]["n"]):
+            gates["idempotence"] = "this cell already had its replacement arm"
+            return report(REPLACEMENT_ALREADY_REQUESTED,
+                          "this cell already had its one replacement arm (ADR-34)")
+        latch = tx.execute(
+            ORCH_STATEMENTS["select_breaker"], run_id=run_id, criterion_id=criterion_id)
+        if latch:
+            gates["breaker"] = f"latched {latch[0]['tripped_at']}"
+            return report(REPLACEMENT_REFUSED,
+                          f"criterion breaker latched for {criterion_id} (FR-ORCH-13)")
+        budget = _env_float(ESCALATION_BUDGET_ENV, ORCH_ESCALATION_BUDGET, low=0.0, high=1.0)
+        processed, escalated, rate = self._escalation_rate(tx.execute, run_id)
+        gates["budget"] = f"observed rate {rate:.4f} ({escalated}/{processed}) vs {budget}"
+        if rate > budget:
+            return report(REPLACEMENT_REFUSED,
+                          f"escalation budget exhausted: observed rate {rate:.4f} above "
+                          f"{budget} (FR-ORCH-14)")
+        (arm,) = _extension_arms(self._panel_arms(row["panel_config"]), prior, count=1)
+        detail = json.dumps({"replacement_after_quarantined": quarantined, "arm": arm},
+                            sort_keys=True)
+        tx.execute(
+            ORCH_STATEMENTS["insert_escalation_request"], request_id=request_id,
+            expected_value=None, requested_at=self._wall_now(), detail=detail, **pair)
+        inserted = self._insert_escalation_units(tx, row, submission_id, criterion_id, (arm,))
+        tx.execute(ORCH_STATEMENTS["admit_request"], request_id=request_id,
+                   admitted_at=self._wall_now(), detail=detail)
+        if inserted:
+            self._invalidate_order_cache(run_id)
+        gates["insert"] = f"{arm} ({inserted} unit(s) inserted into the caller's transaction)"
+        return report(REPLACEMENT_INSERTED, "panel returned to odd", arm)
+
     def _enqueue_escalation_locked(
         self,
         tx: Any,
@@ -6038,7 +6148,7 @@ class Orchestrator:
         `RunNotFoundError` for an unknown run."""
         cohort, _run_row = self._find_run(run_id)
         return tuple(str(row["submission_id"]) for row in cohort.query(
-            ORCH_STATEMENTS["select_run_submissions"], run_id=run_id))
+            ORCH_STATEMENTS["select_run_enumerated_submissions"], run_id=run_id))
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
         """`(terminal, total)` units per cell for one stage — the count a phase is computed over.
