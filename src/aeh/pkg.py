@@ -161,6 +161,11 @@ _PEEK_PACKAGES = "SELECT package_id FROM package"
 #: -wal/-shm sidecars (they do not travel in the archive, and a WAL header cannot even be
 #: inspected through an in-memory copy). The pragma checkpoints and rewrites the header.
 _SNAPSHOT_JOURNAL_MODE = "PRAGMA journal_mode=DELETE"
+#: #528: the export gate's outcomes are this installation's record of its own gate runs, not
+#: part of the package; the exported copy carries none (an importer would otherwise read a
+#: stale refusal), and is compacted so two exports of one package stay byte-identical.
+_SNAPSHOT_CLEAR_GATE_OUTCOMES = "DELETE FROM export_gate_outcome"
+_SNAPSHOT_VACUUM = "VACUUM"
 
 
 def _zip_entry(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
@@ -3600,6 +3605,9 @@ class PackageCatalog:
                 copy = sqlite3.connect(snapshot)
                 try:
                     source.backup(copy)
+                    copy.execute(_SNAPSHOT_CLEAR_GATE_OUTCOMES)
+                    copy.commit()
+                    copy.execute(_SNAPSHOT_VACUUM)
                     copy.execute(_SNAPSHOT_JOURNAL_MODE)
                     copy.commit()
                 finally:
