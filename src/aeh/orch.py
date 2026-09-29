@@ -753,6 +753,13 @@ ORCH_STATEMENTS: dict[str, Statement] = {
     "select_run_work_ids": Statement(
         "SELECT work_id FROM work_unit WHERE run_id = :run_id"
     ),
+    # FR-ORCH-42 (#523): every submission the run enumerated, in enumeration order (first
+    # unit written), whatever its criteria's evaluation modes: a deterministic-only
+    # submission has only `deterministic` units and is still listed.
+    "select_run_submissions": Statement(
+        "SELECT submission_id FROM work_unit WHERE run_id = :run_id "
+        "GROUP BY submission_id ORDER BY MIN(rowid)"
+    ),
     "select_submissions": Statement(
         "SELECT submission_id, student_ref, ingest_status FROM submission "
         "WHERE cohort_id = :cohort_id ORDER BY submission_id"
@@ -6023,6 +6030,15 @@ class Orchestrator:
                     started_at=str(row["started_at"] or ""),
                 ))
         return tuple(found)
+
+    def submissions(self, run_id: str) -> tuple[str, ...]:
+        """FR-ORCH-42 / CT-ORCH-32 (#523): every submission `run_id` enumerated, in
+        enumeration order, whatever its criteria's evaluation modes — deterministic-only
+        submissions included — and never another run's. Read-only. Raises
+        `RunNotFoundError` for an unknown run."""
+        cohort, _run_row = self._find_run(run_id)
+        return tuple(str(row["submission_id"]) for row in cohort.query(
+            ORCH_STATEMENTS["select_run_submissions"], run_id=run_id))
 
     def cell_unit_counts(self, run_id: str, stage: str) -> dict["CellKey", tuple[int, int]]:
         """`(terminal, total)` units per cell for one stage — the count a phase is computed over.
