@@ -50,6 +50,7 @@ S1_C1 = "I did not get to th"
 
 
 def _world(root: Path, monkeypatch):
+    monkeypatch.setenv("HARNESS_PIPE_MAX_PASSES", "300")
     world = pipe_world.replay_world(root, monkeypatch=monkeypatch)
     world.build_run()
     world.start_run()
@@ -189,9 +190,14 @@ def test_tc_pipe_c05_rung_0_no_sql_in_the_composition_layer():
              and n.func.attr in ("execute", "executemany", "executescript")]
     assert not calls, f"aeh/pipeline.py executes SQL: {calls}"
     imports = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-    assert "sqlite3" not in imports
+    imports |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    assert "sqlite3" not in imports, imports
+    statements = [n.lineno for n in ast.walk(tree) if isinstance(n, ast.Call)
+                  and getattr(n.func, "id", getattr(n.func, "attr", None)) == "Statement"]
+    assert not statements, f"aeh/pipeline.py builds a Statement at lines {statements}"
+    import re as _re
     literals = [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)
-                and n.value.lstrip().upper().startswith(("SELECT ", "INSERT ", "UPDATE ", "DELETE ", "CREATE "))]
+                and _re.match(r"\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|REPLACE)\s", n.value, _re.IGNORECASE)]
     assert not literals, literals
     from tests.artifact.test_store_query_surface import KNOWN_EXECUTE_SITES
     assert not [s for s in KNOWN_EXECUTE_SITES if s.startswith("aeh.pipeline:")]
@@ -275,6 +281,36 @@ def test_tc_pipe_c06_rung_3_every_model_call_comes_from_a_stage_worker(tmp_path,
     assert callers, "fixture: no model call was made"
     assert set(callers) <= {"aeh.extract", "aeh.judge", "aeh.synth"}, (
         f"model calls made from {sorted(set(map(str, callers)))} (CT-PIPE-06)")
+
+
+@pytest.mark.integration
+@pytest.mark.writtenahead
+def test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor(tmp_path, monkeypatch):
+    """Written ahead, owned by no issue yet: `_synthesize` hands `SynthesisWorker` the raw provider,
+    so synthesis calls bypass `GovernedProvider` (no accrual, no ceiling) — ADR-14 puts EVERY call
+    through a worker holding the governed provider (CT-PIPE-06)."""
+    from collections import Counter
+
+    import aeh.orch as orch
+
+    governed: Counter = Counter()
+    real_governed = orch.GovernedProvider.complete
+
+    def counted(self, payload, model_ref=None, params=None):
+        governed[getattr(model_ref, "role", "?")] += 1
+        return real_governed(self, payload, model_ref, params)
+
+    monkeypatch.setattr(orch.GovernedProvider, "complete", counted)
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    raw: Counter = Counter()
+    inner = world.provider.complete
+    world.provider.complete = lambda prompt, ref, params: raw.update([ref.role]) or inner(prompt, ref, params)
+    try:
+        assert pipe_world.drive_composed(world).status == "complete"
+    finally:
+        world.store.close()
+    assert raw and governed == raw, f"calls at the provider {dict(raw)} vs through the governor {dict(governed)}"
 
 
 # --- TC-PIPE-C07 ----------------------------------------------------------------------------

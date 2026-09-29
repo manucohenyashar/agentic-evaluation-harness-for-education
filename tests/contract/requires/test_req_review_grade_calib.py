@@ -274,10 +274,8 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
 
     Disclosed: the console's S11 renders fixed text today and lists none of the drawn refs, so the
     SQL and band checks on it hold because it reads nothing. The load-bearing checks are the
-    declared flow plan and M-REVIEW's session boundary. CT-REVIEW-01/04 (the queue is
-    minute-budgeted and states its residual) are not asserted here: the console's S9 header reads
-    "Flagged for review: 0" over a store with two provisional scores, so it does not render
-    M-REVIEW's figures at all. That is recorded as a finding in the PR."""
+    declared flow plan and M-REVIEW's session boundary. Re-based (FR-CONSOLE-35, #519): S9's
+    header figures are asserted equal to `build_queue`'s at the budget S9 states."""
     from aeh.console import SCREENS, blind_flow, build_console
 
     store = open_store(tmp_data_dir)
@@ -323,6 +321,24 @@ def test_tc_req_77_the_console_blind_flow_has_no_query_path_to_system_output(tmp
     assert session.items, "fixture: the blind draw is empty"
     assert session.readable_tables() == frozenset({"submission", "criterion"})
     assert not re.search(r"\bB[245]\b", json.dumps(session.available_data(), default=str))
+
+    # Re-based (FR-CONSOLE-35): the S9 header figures ARE `build_queue`'s, at the budget S9 states.
+    store = open_store(tmp_data_dir)
+    try:
+        s9 = re.sub(r"<[^>]+>", " ", build_console(store=store).render(SCREENS["S9"], id=run_id).html)
+    finally:
+        store.close()
+    figures = re.search(r"Flagged for review: (\d+)\. Shown: (\d+) items?\. Left provisional: (\d+)", s9)
+    budget = re.search(r"Review budget: (\d+) minutes", s9)
+    assert figures and budget, f"S9 does not state its header figures: {s9[:400]}"
+    service = open_review(tmp_data_dir, run_id=run_id)
+    try:
+        queue = service.build_queue(run_id=run_id, budget_minutes=int(budget.group(1)))
+    finally:
+        service.close()
+    assert tuple(int(x) for x in figures.groups()) == (
+        queue.flagged_total, len(queue.shown), queue.residual_provisional), (
+        f"S9 shows {figures.groups()} but build_queue says {(queue.flagged_total, len(queue.shown), queue.residual_provisional)}")
 
 
 _FINALIZE_WITHOUT_CONSOLE = textwrap.dedent("""

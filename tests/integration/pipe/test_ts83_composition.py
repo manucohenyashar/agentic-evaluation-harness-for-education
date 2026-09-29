@@ -51,6 +51,7 @@ S1_C1 = "I did not get to th"
 
 
 def _world(root: Path, monkeypatch):
+    monkeypatch.setenv("HARNESS_PIPE_MAX_PASSES", "300")  # a regression that never settles fails, never hangs
     world = pipe_world.replay_world(root, monkeypatch=monkeypatch)
     world.build_run()
     world.start_run()
@@ -65,6 +66,13 @@ def _rows(root: Path, sql: str, *params):
 
 def _field(prompt, name) -> str:
     return str(dict(prompt.fields).get(name))
+
+
+def _s1(root: Path) -> str:
+    """S1's minted submission id: the document whose C1 region holds S1's corpus text."""
+    (row,) = _rows(root, "SELECT DISTINCT d.submission_id FROM document d JOIN document_region r ON "
+                         "r.document_id = d.document_id WHERE r.content LIKE ?", f"%{S1_C1}%")
+    return row[0]
 
 
 # --- TC-PIPE-02 -----------------------------------------------------------------------------
@@ -116,10 +124,76 @@ def test_tc_pipe_02_no_unit_is_done_without_its_payload(tmp_path, monkeypatch, f
         return
     assert faulted, "fixture: the fault never fired"
     unit = _rows(root, "SELECT status FROM work_unit WHERE run_id = ? AND stage = 'score' AND judge_id = ? "
-                       "AND criterion_id = 'C1' AND status != 'done'", world.run_id, faulted[0])
-    assert unit, f"the faulted unit by {faulted[0]} is done although its worker raised after the call"
+                       "AND criterion_id = 'C1' AND submission_id = ?", world.run_id, faulted[0], _s1(root))
+    assert len(unit) == 1 and unit[0]["status"] != "done", (
+        f"S1's C1 unit by {faulted[0]} is {[tuple(u) for u in unit]} although its worker raised after the call")
     assert result.status == "paused" and result.pause_reason.startswith(
         "composition fault: RuntimeError: after-call"), (result.status, result.pause_reason)
+
+
+def test_tc_pipe_02_variant_an_extract_fault_after_the_call_leaves_its_unit_not_done(tmp_path, monkeypatch):
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    inner = world.provider.complete
+    fired: list[bool] = []
+
+    def complete(prompt, model_ref, params):
+        reply = inner(prompt, model_ref, params)
+        if model_ref.role == "extractor" and S1_C1 in _field(prompt, "submission") and not fired:
+            fired.append(True)
+            raise RuntimeError("after-call")
+        return reply
+
+    world.provider.complete = complete
+    try:
+        result = pipe_world.drive_composed(world)
+    finally:
+        world.store.close()
+    assert fired, "fixture: no extraction of S1 was made"
+    assert _orphans(root, world.run_id) == {"extract": 0, "score": 0, "deterministic": 0}
+    assert result.status == "paused" and "RuntimeError" in (result.pause_reason or ""), result
+
+
+def test_tc_pipe_02_variant_a_deterministic_fault_completes_no_unit(tmp_path, monkeypatch):
+    from aeh.det import DeterministicEvaluator
+
+    def fault(self, *args, **kwargs):
+        raise RuntimeError("inside evaluate")
+
+    monkeypatch.setattr(DeterministicEvaluator, "evaluate_cohort", fault)
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    try:
+        try:
+            pipe_world.drive_composed(world)
+        except RuntimeError:
+            pass  # escaping the driver is the arm below, owned by no issue yet
+    finally:
+        world.store.close()
+    assert _rows(root, "SELECT 1 FROM work_unit WHERE stage = 'deterministic' AND status = 'done'") == [], (
+        "a deterministic unit is done although its evaluation raised")
+    assert _orphans(root, world.run_id)["deterministic"] == 0
+
+
+@pytest.mark.writtenahead
+def test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping(tmp_path, monkeypatch):
+    """Written ahead, owned by no issue yet: `run_to_completion` calls `evaluate_cohort` outside
+    its fault handling, so the exception escapes the driver instead of pausing the run with a
+    composition fault (gap-fix design, M-PIPE *Error handling*: "never swallowed", "the run
+    pauses")."""
+    from aeh.det import DeterministicEvaluator
+
+    def fault(self, *args, **kwargs):
+        raise RuntimeError("inside evaluate")
+
+    monkeypatch.setattr(DeterministicEvaluator, "evaluate_cohort", fault)
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    try:
+        result = pipe_world.drive_composed(world)
+    finally:
+        world.store.close()
+    assert result.status == "paused" and result.pause_reason.startswith("composition fault: RuntimeError")
 
 
 # --- TC-PIPE-03 -----------------------------------------------------------------------------
@@ -375,3 +449,29 @@ def test_tc_pipe_13_a_hook_fault_pauses_and_is_named(tmp_path, monkeypatch):
     assert result.pause_reason == "composition fault: KeyError: 'C9'", result.pause_reason
     agg = [s for s in result.stages if s.stage == "aggregate" and s.detail]
     assert any("KeyError" in d for s in agg for d in s.detail), [s.detail for s in agg]
+
+
+@pytest.mark.writtenahead
+def test_tc_pipe_13_the_fault_detail_names_the_cell(tmp_path, monkeypatch):
+    """Written ahead, owned by no issue yet: the aggregate stage's fault detail carries only the
+    exception, never the cell the hook was working on (TC-PIPE-13: "the aggregate stage detail
+    names the cell")."""
+    real = pipeline.verdicts_for
+    raised: list[tuple[str, str]] = []
+
+    def verdicts_for(cohort, run_id, submission_id, criterion_id):
+        if not raised:
+            raised.append((submission_id, criterion_id))
+            raise KeyError("C9")
+        return real(cohort, run_id, submission_id, criterion_id)
+
+    monkeypatch.setattr(pipeline, "verdicts_for", verdicts_for)
+    root = tmp_path / "w"
+    world = _world(root, monkeypatch)
+    try:
+        result = pipe_world.drive_composed(world)
+    finally:
+        world.store.close()
+    sid, cid = raised[0]
+    details = [d for s in result.stages if s.stage == "aggregate" for d in s.detail]
+    assert any(sid in d and cid in d for d in details), details

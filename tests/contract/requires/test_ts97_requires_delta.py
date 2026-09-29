@@ -14,9 +14,15 @@
 | TC-REQ-102 | M-PIPE → M-CONF | `main` composes its configuration through `environment_snapshot` (spy) |
 
 Disclosed:
-- **TC-REQ-90** also names "calls `resume` with no arguments" and "surfaces `PackageIntegrityError` as
-  exit 1". `run_to_completion` calls `resume(run_id)` as its sanctioned closer (a no-op on a
-  running run), so the no-argument form is not its usage; the exit-1 mapping is TC-PIPE-10's.
+- **TC-REQ-90** also names "calls `resume` with no arguments". `run_to_completion` calls
+  `resume(run_id)` as its sanctioned closer (a no-op on a running run), so the no-argument form is
+  not its usage. `fail` and `unit_status` are in the surface: a strike is recorded through
+  M-ORCH's own door, which is the owner marking its unit, not M-PIPE. The exit-1 arm drives
+  `main(["run", ...])` with `create_run` refusing (the store is real; the refusal is injected).
+- **For the plan owner (TC-REQ-100/101/102):** the plan rows say "`os.environ` does not appear
+  in `console.py`" and "`evaluate(...)` then `complete()`". Neither matches the design text this
+  code implements (seam-3 knobs read `os.environ`; `evaluate_cohort` is the recorded door). The
+  cases pin the clause's intent and flag the rows for re-wording rather than weakening silently.
 - **TC-REQ-100 / 102.** `os.environ` does appear in `console.py` and `pipeline.py`, for seam-3
   knobs (`CONSOLE_*`, `HARNESS_PIPE_*`), which are not run configuration. The clause's point —
   the RUN configuration enters only through the snapshot — is what is asserted.
@@ -53,6 +59,9 @@ COMPOSITION_SURFACE = {
     "mark_cell_phase", "enqueue_escalation", "enqueue_replacement_arm", "resume", "pause", "runs",
     "submissions", "tripped_breakers", "escalation_budget_state", "record_pause_reason",
     "has_queued_resume", "cohort_ref", "create_run", "start", "sweep_expired_leases",
+    # A judge strike is recorded through M-ORCH's own door (the unit's owner marks it, never
+    # M-PIPE); `unit_status` is the read that tells a struck-out extraction from an empty one.
+    "fail", "unit_status",
 }
 
 
@@ -102,13 +111,54 @@ def test_tc_req_90_m_pipe_uses_only_the_composition_surface(tmp_path, monkeypatc
         monkeypatch.setattr(Orchestrator, name, spy)
     root = tmp_path / "w"
     world = _world(root, monkeypatch)
+    inner = world.provider.complete
+    struck: list[str] = []
+
+    def complete(prompt, model_ref, params):  # one prompt always illegal: the strike path runs
+        reply = inner(prompt, model_ref, params)
+        key = repr(sorted(dict(prompt.fields).items()))
+        if model_ref.role == "judge" and (not struck or key == struck[0]):
+            struck[:1] = [key]
+            return dataclasses.replace(reply, text="not a verdict")
+        return reply
+
+    world.provider.complete = complete
     try:
         assert pipe_world.drive_composed(world).status == "complete"
     finally:
         world.store.close()
+    assert "fail" in used, "fixture: the strike path never ran"
     assert used and used <= COMPOSITION_SURFACE, f"M-PIPE used {sorted(used - COMPOSITION_SURFACE)}"
     assert bound and all(bound), "M-PIPE drove an orchestrator with no executor bound (CT-ORCH-22)"
     assert keys and all(len(k) == 3 for k in keys), f"escalation keys: {keys} (CT-ORCH-26)"
+
+
+def test_tc_req_90_a_package_integrity_refusal_exits_1(tmp_path, monkeypatch, capsys):
+    import aeh.conf as conf
+    from aeh.pkg import PackageIntegrityError
+
+    root = tmp_path / "w"
+    world = pipe_world.replay_world(root, monkeypatch=monkeypatch)  # built, no run yet
+    try:
+        resolved = world.resolved if hasattr(world, "resolved") else None
+        world.build_run()
+        resolved = world.resolved
+        with sqlite3.connect(root / "cohorts" / f"{pipe_world.PIPE_COHORT_ID}.sqlite") as c:
+            c.execute("DELETE FROM work_unit")
+            c.execute("DELETE FROM run")
+    finally:
+        world.store.close()
+    monkeypatch.setattr(conf, "resolve_run_config", lambda cfg, cohort: resolved)
+
+    def refuse(self, *args, **kwargs):
+        raise PackageIntegrityError("version v, criterion C1, band B9, run r: the package is not whole")
+
+    monkeypatch.setattr(Orchestrator, "create_run", refuse)
+    code = pipeline.main(["run", "--data-dir", str(root), "--cohort", pipe_world.PIPE_COHORT_ID,
+                          "--package-version", world.version])
+    err = capsys.readouterr().err
+    assert code == 1, f"main returned {code} for a PackageIntegrityError (CT-ORCH-25: exit 1)"
+    assert "PackageIntegrityError" in err, err
 
 
 # --- TC-REQ-91 / TC-REQ-92 ------------------------------------------------------------------
@@ -322,8 +372,44 @@ def test_tc_req_100_the_console_composes_config_through_the_snapshot(monkeypatch
     composed = conf.effective_config({})
     assert calls, "effective_config did not read the environment through environment_snapshot"
     assert composed.get("HARNESS_PROFILE") == "edge-local"
-    assert "effective_config(" in Path(console.__file__).read_text(encoding="utf-8")
     assert _resolve_calls_with_environ(Path(console.__file__)) == []
+
+
+@pytest.mark.integration
+def test_tc_req_100_the_console_start_door_resolves_through_the_snapshot(tmp_path, monkeypatch):
+    """The console's own "start run" door, given no config, composes one through the snapshot and
+    hands `resolve_run_config` that composed dict (never `os.environ` itself)."""
+    import os
+
+    import aeh.conf as conf
+    from aeh.console import build_console
+
+    snapshots: list[object] = []
+    handed: list[object] = []
+    real_snapshot, real_resolve = conf.environment_snapshot, conf.resolve_run_config
+
+    def snapshot(*a, **k):
+        result = real_snapshot(*a, **k)
+        snapshots.append(result)
+        return result
+
+    def resolve(cfg, cohort):
+        handed.append(cfg)
+        raise conf.ConfigurationError("stop here: the composition is what is asserted")
+
+    monkeypatch.setattr(conf, "environment_snapshot", snapshot)
+    monkeypatch.setattr(conf, "resolve_run_config", resolve)
+    root = tmp_path / "w"
+    world = pipe_world.replay_world(root, monkeypatch=monkeypatch)
+    world.build_run()
+    try:
+        build_console(store=world.store).perform("start run", run_id=world.run_id)
+    finally:
+        world.store.close()
+    assert snapshots, "the start door never read the environment through environment_snapshot"
+    assert handed and handed[0] is not os.environ and isinstance(handed[0], dict), handed
+    assert all(handed[0].get(k) == v for k, v in snapshots[-1].items()), (
+        "resolve_run_config was not handed the snapshot's keys (CT-CONF-05)")
 
 
 def test_tc_req_102_main_composes_config_through_the_snapshot(tmp_path, monkeypatch):
@@ -388,13 +474,19 @@ def test_tc_req_97_s9_renders_the_services_order_verbatim(tmp_path, monkeypatch)
     finally:
         world.store.close()
     assert len(shown) >= 3, f"fixture: the queue shows {len(shown)} item(s)"
-    position = 0
+    starts, position = [], 0
     for item in shown:
         found = html.find(str(item.submission_id), position)
         assert found >= 0, (
             f"S9 does not render {item.submission_id}/{item.criterion_id} after the previous row: "
             "the console reordered M-REVIEW's queue (CT-REVIEW-04)")
+        starts.append(found)
         position = found + 1
+    for index, item in enumerate(shown):
+        row = html[starts[index]:starts[index + 1] if index + 1 < len(starts) else len(html)]
+        assert f"/ {item.criterion_id}" in row, (
+            f"S9's row {index} is not {item.submission_id}/{item.criterion_id}: the console reordered "
+            "the queue within a submission (CT-REVIEW-04)")
 
 
 # --- TC-REQ-98 ------------------------------------------------------------------------------
@@ -528,3 +620,37 @@ def test_tc_req_103_review_reads_the_runs_own_package_version(tmp_data_dir):
     assert rows["C1"].scoring_model == "atomic", (
         f"the review row for a run on {v1} reads scoring_model {rows['C1'].scoring_model!r}: "
         "not the run's own version")
+
+
+@pytest.mark.integration
+def test_tc_req_103_a_run_on_the_older_of_two_versions_is_not_read_as_the_first(tmp_data_dir):
+    """The mirror: the run is on v2 (the newer), so a reader that always takes the FIRST version
+    fails here where the v1 case above would not catch it."""
+    from aeh import review
+    from aeh.pkg import PackageCatalog
+    from aeh.store import open_store
+    from tests.support.grade_vocabulary import write_criterion_scores
+    from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_run
+
+    store = open_store(tmp_data_dir)
+    try:
+        orch, _run1, v1 = seed_run(store, submissions=("S1",), criteria=(
+            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
+        package_id = v1.rpartition("@")[0]
+        catalog = PackageCatalog(store.package(package_id), package_id=package_id)
+        v2 = catalog.create_version(v1)
+        catalog.update_criterion_field(v2, "C1", "scoring_model", "holistic")
+        catalog.publish(v2, approved_by="the package owner") if hasattr(catalog, "publish") else None
+        run2 = orch.create_run(ORCH_COHORT_ID, v2, orch_cfg())
+        orch.enumerate_units(run2)
+        orch.start(run2)
+        write_criterion_scores(store.cohort(ORCH_COHORT_ID), [("S1", "C1", "B1", 1.0, "provisional")])
+    finally:
+        store.close()
+    service = review.open_review(tmp_data_dir, run_id=run2)
+    try:
+        rows = {str(r.criterion_id): r for r in service._rows}
+    finally:
+        service.close()
+    assert rows["C1"].scoring_model == "holistic", (
+        f"the review row for a run on {v2} reads {rows['C1'].scoring_model!r}, not v2's holistic")

@@ -149,7 +149,8 @@ with cohort.transaction() as tx:
                agreement=0.5, state="provisional_unreviewed", routing="queued", confidence=0.4,
                confidence_base=0.4, spans_verified=1, evidence_present=1, sufficiency_flag=0,
                ocr_overlap_risk=0)
-    reports = orchestrator.enqueue_escalation(tx, ("S001", "C01"))
+    run_id = orchestrator.runs()[0].run_id  # CT-ORCH-26: the key names its run
+    reports = orchestrator.enqueue_escalation(tx, (run_id, "S001", "C01"))
     print(json.dumps([r.units_inserted for r in reports]), flush=True)
     if sys.argv[2] == "kill":
         os._exit(5)

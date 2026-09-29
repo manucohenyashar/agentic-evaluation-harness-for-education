@@ -17,9 +17,12 @@ run's, with no duplicate escalation units.
 | grading | on the second submission's grade computation (one of three done) |
 
 Projection (the plan's §4.3 tables, by content, since the pinned mint gives both worlds the same
-submission ids): `criterion_score` (band, points, judge_count, state), current `submission_grade`
-(grade, total, state), the narratives' (submission, level, question) set, and escalation units per
-cell. Leases held at the kill are expired with `HARNESS_ORCH_LEASE_SECONDS=1` and a 1.2 s wait,
+submission ids): evidence rows per extract cell, verdicts (judge, band) per cell, `criterion_score`
+(band, points, judge_count, state), current `submission_grade` (grade, total, state), `review_queue`
+membership, the narratives' (submission, level, question) set, and escalation units per cell.
+Disclosed: `run_metrics` (Durable tier) is not compared. A killed unit's model call is legitimately
+repeated on resume and its counters record both calls, so "no duplicated per-unit counts" has no
+exact oracle over those columns; the no-duplicate property is asserted over the ledger's own rows. Leases held at the kill are expired with `HARNESS_ORCH_LEASE_SECONDS=1` and a 1.2 s wait,
 so `recover` reclaims them as it would after a real kill.
 """
 
@@ -52,6 +55,15 @@ def _projection(root: Path, run_id: str) -> dict:
                 "AND is_current = 1", (run_id,)).fetchall()),
             "narratives": sorted(c.execute(
                 "SELECT DISTINCT submission_id, level, question_id FROM narrative").fetchall()),
+            "evidence": sorted(c.execute(
+                "SELECT w.submission_id, w.criterion_id, COUNT(e.work_id) FROM work_unit w LEFT JOIN "
+                "evidence e ON e.work_id = w.work_id WHERE w.run_id = ? AND w.stage = 'extract' "
+                "GROUP BY 1, 2", (run_id,)).fetchall()),
+            "verdicts": sorted(c.execute(
+                "SELECT w.submission_id, w.criterion_id, v.judge_id, v.band FROM verdict v JOIN work_unit w "
+                "ON w.work_id = v.work_id WHERE w.run_id = ?", (run_id,)).fetchall()),
+            "review_queue": sorted(c.execute(
+                "SELECT submission_id, criterion_id FROM review_queue WHERE run_id = ?", (run_id,)).fetchall()),
             "escalations": sorted(c.execute(
                 "SELECT submission_id, criterion_id, COUNT(*) FROM work_unit WHERE run_id = ? "
                 "AND origin = 'escalation' GROUP BY 1, 2", (run_id,)).fetchall()),
@@ -113,6 +125,7 @@ def uninterrupted(tmp_path_factory):
 def test_tc_pipe_11_a_kill_at_each_boundary_recovers_to_the_same_result(
         tmp_path, monkeypatch, uninterrupted, boundary):
     monkeypatch.setenv(LEASE_SECONDS_ENV, "1")
+    monkeypatch.setenv("HARNESS_PIPE_MAX_PASSES", "300")
     root = tmp_path / "w"
     world = pipe_world.replay_world(root, monkeypatch=monkeypatch)
     world.build_run()
