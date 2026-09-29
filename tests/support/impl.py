@@ -1303,6 +1303,36 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "#498 JevOpenRouterProvider through the TypeSafe SDK (TS-124)" left with #498: the provider
     # sends through the SDK, the probe that keyed the entry was deleted with it, and the TS-124
     # (#500) and TS-125 (#501) arms run green.
+    # --- TS-134 (#545), M-PIPE close-out ---------------------------------------------------
+    #
+    # Keyed `command` on the written-ahead tests themselves: each blocker is a behaviour of
+    # code that already exists, so the only honest signal is the case going green.
+    # #525 (needs-attention): no baseline can reach a published version (FR-PKG-04), which is
+    # every version a run uses. The arm's shape may move with #525's decision.
+    "#525 TS-134 TC-PIPE-20(a') the baseline writer reaches the run's version": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",
+        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_20_a_prime_the_baseline_reaches_the_runs_version_through_its_writer",),
+    ),
+    # #523 (needs-attention): an MCQ-only submission is offered to M-SYNTH but gets no narrative.
+    "#523 TS-134 TC-PIPE-22 an MCQ-only paper is narrated": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",
+        ("tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_22_an_mcq_only_paper_is_offered_to_synthesis_and_narrated",),
+    ),
+    # #524 (reopened by TS-134): (a) the replacement unit is inserted but the running
+    # dispatcher never leases it and the run completes around it; (b) the refused path writes
+    # judge_count = 4, which the criterion_score CHECK refuses; (c) a missing verdict is read
+    # as a quarantine, so an even panel with none aggregates instead of pausing.
+    "#524 TS-134 TC-PIPE-23 even panel after quarantine": (
+        "command",
+        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
+        (
+            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel",
+            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete",
+            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
+        ),
+    ),
     "#155 check_traceability --contracts-only passes the real pair (TS-82)": (
         "command",
         "python .claude/skills/create-test-plan/scripts/check_traceability.py "
