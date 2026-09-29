@@ -1334,13 +1334,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
         "python -m pytest -q -p no:cacheprovider tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",
         ("tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",),
     ),
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # _synthesize hands SynthesisWorker the raw provider, so synthesis bypasses GovernedProvider (ADR-14).
-    "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",
-        ("tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",),
-    ),
+    # "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)" left with #596's fix.
     # "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)" left with #594's fix.
     # "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)" left with #595's fix.
     # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S2 says 'No parts have been uploaded' and S3 'Questions read back: 0' over a dropped table.

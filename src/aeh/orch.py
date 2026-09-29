@@ -6086,6 +6086,27 @@ class Orchestrator:
             panel_build_ref=_panel_build_ref_of(row),
         )
 
+    def governed_provider(self, run_id: str, provider: Any = None) -> GovernedProvider:
+        """The run's provider with the run's dispatch counters wrapped around it (#596).
+
+        For model calls a composition layer makes outside a dispatch pass, synthesis being
+        the one today: ADR-14 and CT-PIPE-06 put EVERY model call through the governed
+        provider, so the calls accrue to the same per-run counters a dispatch pass reads and
+        persists (`CT-PROV-11`). `provider` defaults to the one this orchestrator was bound
+        with. Raises `RunNotFoundError` for an unknown run.
+
+        Disclosed: the counters are the run's in-memory dispatch state, persisted by the next
+        metrics flush; the mid-run ceiling is a dispatch-time check (ADR-33) and is not
+        re-applied per call here.
+        """
+        _cohort, run_row = self._find_run(run_id)
+        inner = provider if provider is not None else self._provider
+        if inner is None:
+            raise ValueError(
+                f"governed_provider({run_id!r}) needs a provider: none was passed and this "
+                "orchestrator was built without one")
+        return GovernedProvider(inner, self._dispatch_state(run_row))
+
     def unit_status(self, work_id: str) -> str:
         """One unit's ledger status, or `""` if the ledger has no such unit.
 

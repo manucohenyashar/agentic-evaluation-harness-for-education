@@ -795,7 +795,9 @@ def _synthesize(store: Any, provider: Any, run_config: Any, orch: Any, handle: A
     missing recording costs one narrative and not the run's grades.
     """
     ref = synthesizer or _default_synthesizer(run_config)
-    worker = SynthesisWorker(store, provider, ref)
+    # ADR-14 / CT-PIPE-06 (#596): synthesis calls go through the run's governed provider, so
+    # they accrue to the run's counters like every stage worker's calls.
+    worker = SynthesisWorker(store, orch.governed_provider(handle.run_id, provider), ref)
     detail: list[str] = []
     done = failed = 0
     for submission_id in _submissions_of(orch, handle.run_id):
