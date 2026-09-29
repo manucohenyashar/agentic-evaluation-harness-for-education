@@ -1902,7 +1902,13 @@ class ConsoleApp:
         # presentation. A real store renders the absence sentence too until the console
         # reads `M-STATS`'s validation record: a kappa this module cannot verify is not
         # one it may print.
-        if self._blind_labels == 0 or getattr(self._store, "data_dir", None) is not None:
+        if getattr(self._store, "data_dir", None) is not None:
+            # FR-CONSOLE-24 (#529): a real store shows THIS administration's own validation
+            # record when one exists (its cohort, its package version), and the absence
+            # sentence only when none does or it holds no blind labels. Never another
+            # administration's figure (RISK-08).
+            agreement = self._rollup_agreement(run_id)
+        elif self._blind_labels == 0:
             agreement = render_agreement_block(no_new_evidence=True, population=run_id)
         else:
             agreement = render_agreement_block(
@@ -1930,6 +1936,26 @@ class ConsoleApp:
             + _section("provenance", _PROVENANCE_FOOTER)
             + _band_section(run_id)
         )
+
+    def _rollup_agreement(self, run_id: str) -> str:
+        """S12's agreement block on a real store (FR-CONSOLE-24, #529)."""
+        row = self._run_row(run_id)
+        record = None
+        if row is not None:
+            from aeh.pkg import promotion_record
+
+            try:
+                record = promotion_record(
+                    self._store, package_version_id=str(row["package_version_id"]),
+                    cohort_id=str(row["cohort_id"]))
+            except Exception:  # noqa: BLE001 — a read view renders the absence it can prove
+                record = None
+        if (record is None or not record.get("blind_count")
+                or record.get("agreement_kappa") is None):
+            return render_agreement_block(no_new_evidence=True, population=run_id)
+        return render_agreement_block(
+            figure={"kappa": record["agreement_kappa"], "n": record.get("n")},
+            population=run_id, package_version=str(row["package_version_id"]))
 
     def _render_rubric_findings(self, run_id: str, queries: list[str]) -> str:
         """S12's findings block (§3.19): the criteria the panel could not apply, read
