@@ -1386,6 +1386,24 @@ def _pseudonymize(text: str, name: Any, ref: Any) -> str:
     return text
 
 
+def _pseudonymized_spans(spans: tuple, name: Any, ref: Any) -> tuple:
+    """The same replacement over evidence spans (#593, NFR-PROV-08): a span is a verbatim
+    slice of the submission, so a roster name the student wrote travels in its `text` as
+    surely as in the transcript. Only `text` changes: the offsets keep indexing the stored
+    document, and the citation gate verifies a cited span of this form against it through
+    `_verifies_as_pseudonymized`. A span that carries no name is forwarded as the same
+    object."""
+    out = []
+    for span in spans:
+        text = span.get("text") if isinstance(span, dict) else None
+        if isinstance(text, str):
+            clean = _pseudonymize(text, name, ref)
+            if clean is not text:
+                span = {**span, "text": clean}
+        out.append(span)
+    return tuple(out)
+
+
 def _ordered_exemplars(
     exemplars: tuple[ExemplarView, ...], *, question_id: str, criterion_id: str
 ) -> tuple[ExemplarView, ...]:
@@ -1513,7 +1531,9 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
     pseudonymized submission text (§3.2's mechanism, and what the TC-JUDGE-20 scan
     verifies) rather than on the view's own slot at the pure door — the slot fills at
     the store door, where the lease's identity is resolved; and a unit that still
-    carries `student_name` has it replaced with the ref before the request exists.
+    carries `student_name` has it replaced with the ref before the request exists — in
+    the transcript and in every evidence span's text, the dependency parents' included
+    (#593).
     """
     work_id = _field_of(unit, "work_id")
     if not isinstance(work_id, str) or not work_id:
@@ -1572,6 +1592,14 @@ def assemble(unit: Any, *, store: Any = None) -> ScoringRequest:
         transcript = ""
 
     transcript = _pseudonymize(transcript, student_name, student_ref)
+    evidence = _pseudonymized_spans(evidence, student_name, student_ref)
+    dependency_evidence = tuple(
+        DependencyEvidence(
+            criterion_id=entry.criterion_id,
+            spans=_pseudonymized_spans(entry.spans, student_name, student_ref),
+        )
+        for entry in dependency_evidence
+    )
     return ScoringRequest(
         work_id=work_id,
         criterion=criterion,
@@ -1813,8 +1841,33 @@ def _verdict_of(text: str, request: ScoringRequest) -> _Verdict:
 # --- the citation-grounding gate (FR-JUDGE-17's third defence; FR-INTEG-01 composed) --------------
 
 
+def _verifies_as_pseudonymized(raw: bytes, span: Any, name: Any, ref: Any) -> bool:
+    """A cited span whose text is the document's own bytes with the unit's roster name replaced
+    by its `student_ref` (#593). Assembly rewrites a span's text and keeps its offsets, so a
+    judge or the engine cites the pseudonymized text at the stored offsets.
+
+    Exact: the stored slice at those offsets, with THIS unit's name replaced by the ref, must
+    equal the cited text byte for byte. With no name known (a request this worker did not
+    assemble) nothing is accepted here, and the citation is `verify_span`'s alone."""
+    if not (isinstance(name, str) and name and isinstance(ref, str) and ref):
+        return False
+    if isinstance(span, dict):
+        start, end, text = span.get("start"), span.get("end"), span.get("text")
+    else:
+        start, end, text = (getattr(span, k, None) for k in ("start", "end", "text"))
+    if not (isinstance(start, int) and isinstance(end, int) and isinstance(text, str)):
+        return False
+    if not 0 <= start <= end <= len(raw):
+        return False
+    try:
+        stored = raw[start:end].decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    return name in stored and _pseudonymize(stored, name, ref) == text
+
+
 def _refuse_unverified_citations(
-    cited: tuple, request: ScoringRequest, store: Any
+    cited: tuple, request: ScoringRequest, store: Any, roster_name: Any = None
 ) -> None:
     """Verify every cited span byte-exactly against the canonical document, and refuse
     the reply when one fails (`FR-JUDGE-17` acceptance (iv): a forged citation fails
@@ -1845,8 +1898,10 @@ def _refuse_unverified_citations(
             f"bytes — an unverifiable citation is refused, not accepted as evidence "
             f"(FR-INTEG-01 fail-closed, FR-JUDGE-17)"
         )
+    ref = request.submission.student_ref
     for index, span in enumerate(cited):
-        if not verify_span(raw, span):
+        if not verify_span(raw, span) and not _verifies_as_pseudonymized(
+                raw, span, roster_name, ref):
             raise MalformedResponseError(
                 f"judge reply cites span {index} {span!r} which fails byte-exact "
                 f"verification against the canonical document — the cited text is not "
@@ -2238,8 +2293,21 @@ class ScoringWorker:
         self._run_config = run_config
 
     def assemble(self, unit: Any) -> ScoringRequest:
-        """One unit in, one whitelist request out — pure, and exactly one parameter."""
-        return assemble(unit, store=self._store)
+        """One unit in, one whitelist request out, and exactly one parameter.
+
+        The request itself stays pure. Beside it, the worker remembers the unit's roster name
+        by `work_id` (#593): the request never carries the name, but the citation gate needs
+        it to verify a span whose text assembly pseudonymized (`_verifies_as_pseudonymized`).
+        """
+        request = assemble(unit, store=self._store)
+        name = _field_of(unit, "student_name")
+        if isinstance(name, str) and name:
+            self.__dict__.setdefault("_roster_names", {})[request.work_id] = name
+        return request
+
+    def _roster_name_of(self, request: ScoringRequest) -> Any:
+        """The roster name `assemble` saw for this request's unit, or None (#593)."""
+        return self.__dict__.get("_roster_names", {}).get(request.work_id)
 
     def dispatch(self, request: ScoringRequest, judge: Any) -> ScoringResult:
         """One verdict for one unit (FR-JUDGE-22/31). On the decision seat, with an engine
@@ -2322,7 +2390,8 @@ class ScoringWorker:
                 # MalformedResponseError like any other contract refusal, struck within
                 # the budget and never persisted (an obeying reply is routed out, not
                 # obeyed). Vacuous for an uncited reply.
-                _refuse_unverified_citations(verdict.cited_spans, request, self._store)
+                _refuse_unverified_citations(verdict.cited_spans, request, self._store,
+                                             self._roster_name_of(request))
             except (RateLimitedError, ProviderUnavailableError, BuildChangedError):
                 # `FR-JUDGE-19` / `CT-JUDGE-19`: the provider taxonomy is not a refusal of the
                 # reply — no strike, no FR-JUDGE-10 amended re-request, nothing persisted. It
@@ -2503,7 +2572,8 @@ class ScoringWorker:
             return "below_gate"
         try:
             # FR-JUDGE-30: cited spans must be the document's own bytes before the verdict exists.
-            _refuse_unverified_citations(outcome.result.cited_spans, request, self._store)
+            _refuse_unverified_citations(outcome.result.cited_spans, request, self._store,
+                                         self._roster_name_of(request))
         except MalformedResponseError:
             self._write_prescreen(request, engine, "below_gate", reason="citation_unverified",
                                   decision=decision, gate=outcome.gate, argmax_band=bands[top].band)

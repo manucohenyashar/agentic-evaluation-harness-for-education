@@ -272,6 +272,7 @@ No new UAT. UAT-09…12 are the teacher try-out on #157. Their precondition is t
 | ID | Req | Case | Expected |
 |---|---|---|---|
 | TC-REG-10 | T1 (test-support hygiene; guards CT-PIPE-05/seam 3 tests from cross-talk) | (a) Build each `tests/support` world (`SynthWorld`, `replay_world`, `jev_replay_world`) **without** `monkeypatch` inside a test, then assert that `os.environ` after the test equals `os.environ` before it for every `HARNESS_*` key. (b) An autouse session guard compares `HARNESS_*` before and after every test and fails the leaking test by name | (a) No key changed. (b) The guard is green over the full non-live tier, and TC-INGEST-02/25/28/39, ADV-07 and TC-ORCH-36 pass in full-suite order. The 3 `test_ct_ingest_v4_halting` cases pass 10 consecutive full gate runs |
+| TC-REG-11 | NFR-PROV-08, FR-JUDGE-17 (#593; design 1.9.1 §5.4 R21) | The stored document holds `Weight acts down. Signed, Zelda Quartermaine. Again, Zelda Quartermaine.`; the unit's roster name is `Zelda Quartermaine`, its ref `P-0001`. Cite one span over the whole document through `_refuse_unverified_citations`: (a) the pseudonymized text; (b) the document's own text; (c) two different refs; (d) another byte changed; (e) text shorter than the offsets hold; (f) the name `Zelda` only; (g) no name known. Plus: `ScoringWorker.assemble` remembers the unit's name by `work_id` | (a) and (b) verify. (c)–(g) raise `MalformedResponseError`. The worker returns the name for its own `work_id` and None for another |
 
 ### 6.11 Contract suites (delta)
 
