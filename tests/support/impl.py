@@ -1325,19 +1325,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # panel, and the quarantine count is the ledger's, so the three arms rejoined the gate.
     # "#454 TS-139 TC-REQ-126 promote's verdict under the run's key" left with #454's fix:
     # the verdict is filed under the run's key and validation_for returns it.
-    # #524 (reopened by TS-134): (a) the replacement unit is inserted but the running
-    # dispatcher never leases it and the run completes around it; (b) the refused path writes
-    # judge_count = 4, which the criterion_score CHECK refuses; (c) a missing verdict is read
-    # as a quarantine, so an even panel with none aggregates instead of pausing.
-    "#524 TS-134 TC-PIPE-23 even panel after quarantine": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
-        (
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_a_a_replacement_arm_restores_an_odd_panel",
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_b_no_budget_leaves_the_cell_ungradeable_and_the_run_complete",
-            "tests/integration/pipe/test_ts134_closeout_pipe.py::test_tc_pipe_23_c_an_even_panel_without_quarantine_pauses_the_run",
-        ),
-    ),
     # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues):
     # judge.assemble pseudonymizes the transcript but not the evidence spans the request
     # carries, and M-ORCH never fills a unit's student_name (no tier holds a roster name).
