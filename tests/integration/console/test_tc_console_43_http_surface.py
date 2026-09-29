@@ -45,6 +45,8 @@ thread is a process that will not exit, which on a teacher's machine is a consol
 "disappeared" and still holds the store open.
 
 **Isolation: rung 3** — a real socket, real HTTP, a real store.
+
+TC-CONSOLE-C25 (CT-CONSOLE-25, TS-96 #390) is this module's three-GET case over the real socket.
 """
 
 from __future__ import annotations

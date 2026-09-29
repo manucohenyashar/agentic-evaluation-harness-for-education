@@ -33,6 +33,8 @@ that the exception came out of `_refuse_unless_servable`, which `ConsoleServer._
 
 **Isolation: rung 2** — the real `ConsoleServer`, real `os.environ`, and a real socket on the
 two rows that bind.
+
+TC-CONSOLE-C27 (CT-CONSOLE-27, TS-96 #390) is this module's rows 2, 3 and 7 plus SEC-16 (test_sec_16_refusal_opens_no_socket.py).
 """
 
 from __future__ import annotations
