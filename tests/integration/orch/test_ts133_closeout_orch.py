@@ -15,8 +15,10 @@ Disclosed adaptations:
   which is the value every later claim reads. Extraction is not billed (the seam answers
   `None`), so only seat claims move the spend. Spend is compared as a Decimal (the ledger
   stores `0.008252000`).
-- **TC-ORCH-56.** The fixture panel widens 1 → 3, not 3 → 5, so the replacement is the fourth
-  arm rather than `escalation-arm-6`; the oracle is the same: a new identity, inserted once.
+- **TC-ORCH-57.** The stored `run_metrics.run_wall_clock_ms` is written by a DISPATCHING
+  orchestrator's flush (`progress` with a provider seam); the case measures the same figure
+  through the method that flush writes (`_run_wall_clock_ms`) on the injected clock, and adds the
+  plan's defaulted-clock arm as a row-set comparison.
 """
 
 from __future__ import annotations
@@ -120,12 +122,14 @@ def test_tc_orch_54_decision_spend_counts_against_the_mid_run_ceiling(tmp_path):
     assert len(spends) == 5 and spends[4] == Decimal("0.008252"), (
         f"the 5th seat claim was not refused: spends {spends}. It would reach 0.010315 > 0.0100")
     assert status == "paused" and "0.008252" in reason, (status, reason)
+    assert "1 unit(s) remaining" in reason, f"the pause does not name the remaining count: {reason}"
 
     off, off_status, _ = _drive_seat_claims(tmp_path / "off", engine_on=False)
     assert off[3] == Decimal("0.008"), f"engine-off spend after 4 claims is {off[3]}, not 0.008"
     assert off[4] == Decimal("0.010"), (
         f"the engine-off twin refused its 5th claim (spends {off}): with no decision part the "
         "5th claim reaches exactly the ceiling and is admitted (NFR-SYS-14)")
+    assert off_status == "paused", f"the engine-off twin at its ceiling is {off_status!r}, not paused"
 
 
 # --- TC-ORCH-55 -----------------------------------------------------------------------------
@@ -174,8 +178,9 @@ def test_tc_orch_55_a_deterministic_only_submission_is_listed(tmp_data_dir):
 
 
 def _widened_cell(store):
+    # A holistic criterion seats the full three-arm panel, which widens to five: the plan's cell.
     orch, run_id, _v = seed_run(store, submissions=("S1", "S2"), criteria=(
-        {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
+        {"criterion_id": "C1", "kind": "open", "scoring_model": "holistic"},))
     orch.enumerate_units(run_id)
     cohort = store.cohort(ORCH_COHORT_ID)
     with cohort.transaction() as tx:
@@ -200,12 +205,14 @@ def test_tc_orch_56_a_quarantined_arm_gets_one_replacement_and_never_two(tmp_dat
     try:
         orch, run_id, cohort = _widened_cell(store)
         panel = _arms(cohort, run_id)
-        assert len(panel) == 3, f"fixture: the widened panel is {panel}"
-        _quarantine(tmp_data_dir, run_id, panel[-1])
+        assert len(panel) == 5 and panel[-1] == "escalation-arm-5", f"fixture: the panel is {panel}"
+        _quarantine(tmp_data_dir, run_id, panel[-1])  # four terminal verdicts remain
         with cohort.transaction() as tx:
             first = orch.enqueue_replacement_arm(tx, (run_id, "S1", "C1"))
         assert first.decision == REPLACEMENT_INSERTED, first
-        assert first.arm not in panel, f"the replacement re-added an arm the cell carries: {first.arm}"
+        assert first.arm == "escalation-arm-6", (
+            f"the replacement is {first.arm!r}; the next arm the cell does not carry is "
+            "escalation-arm-6 (never re-adding escalation-arm-5)")
         with cohort.transaction() as tx:
             again = orch.enqueue_replacement_arm(tx, (run_id, "S1", "C1"))
         assert again.decision == REPLACEMENT_ALREADY_REQUESTED, again
@@ -230,6 +237,36 @@ def test_tc_orch_56_b_an_exhausted_budget_refuses_the_replacement(tmp_data_dir, 
 
 
 # --- TC-ORCH-57 -----------------------------------------------------------------------------
+
+
+def _pause_resume_rows(data_dir, orch_factory):
+    store = open_store(data_dir)
+    try:
+        _seeded, run_id, _v = seed_run(store, submissions=("S1",), criteria=(
+            {"criterion_id": "C1", "kind": "open", "scoring_model": "atomic"},))
+        orch = orch_factory(store)
+        orch.enumerate_units(run_id)
+        orch.start(run_id)
+        orch.pause(run_id, cause="operator")
+        orch.lease("w", "extract", 1)
+        orch.resume(run_id)
+        orch.lease("w", "extract", 1)
+        cohort = store.cohort(ORCH_COHORT_ID)
+        return (sorted((r["stage"], r["status"]) for r in cohort.query(
+                    "SELECT stage, status FROM work_unit WHERE run_id = :r", r=run_id)),
+                cohort.query("SELECT status FROM run WHERE run_id = :r", r=run_id)[0]["status"],
+                cohort.query("SELECT COUNT(*) AS n FROM run_control WHERE run_id = :r",
+                             r=run_id)[0]["n"])
+    finally:
+        store.close()
+
+
+def test_tc_orch_57_a_defaulted_wall_clock_changes_no_outcome(tmp_path):
+    fixed = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
+    injected = _pause_resume_rows(tmp_path / "injected",
+                                  lambda store: Orchestrator(store, wall_clock=lambda: fixed))
+    defaulted = _pause_resume_rows(tmp_path / "defaulted", lambda store: Orchestrator(store))
+    assert injected == defaulted, "injecting a wall clock changed an outcome (FR-ORCH-44: values aside)"
 
 
 def test_tc_orch_57_run_wall_clock_reads_the_injected_clock(tmp_data_dir):
