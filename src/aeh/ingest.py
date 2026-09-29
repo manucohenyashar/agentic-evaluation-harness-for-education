@@ -4829,12 +4829,25 @@ class Ingestor:
             component is not False for component in components.values()) else "mismatch"
         return signal, components
 
+    @staticmethod
+    def _question_inventory(regions: Sequence[Any]) -> set[str]:
+        """A paper's question inventory (FR-INGEST-38, FR-INGEST-26 amended): the
+        `element_kind`s of its regions, without the page-furniture sentinels (`text`,
+        `graphic`) and without free graphic kinds. A described graphic's kind counts only
+        when some non-graphic region carries the same id (a figure tagged to its question),
+        the same strictness the structural signal applies (#376 review)."""
+        answered = {row["element_kind"] for row in regions
+                    if row["region_kind"] != "described_graphic"
+                    and row["element_kind"] not in ("text", "graphic")}
+        return {row["element_kind"] for row in regions
+                if row["element_kind"] not in ("text", "graphic")
+                and (row["region_kind"] != "described_graphic"
+                     or row["element_kind"] in answered)}
+
     def _head_inventory(self, document_id: str) -> set[str]:
-        """A lineage head's question inventory: its regions' `element_kind` set without the
-        page-furniture sentinels (`text`, `graphic`) — FR-INGEST-38's comparison set."""
-        return {row["element_kind"] for row in self._handle.query(
-                    INGEST_STATEMENTS["select_regions"], document_id=document_id)
-                if row["element_kind"] not in ("text", "graphic")}
+        """A lineage head's question inventory — FR-INGEST-38's comparison set."""
+        return self._question_inventory(self._handle.query(
+            INGEST_STATEMENTS["select_regions"], document_id=document_id))
 
     @staticmethod
     def _assessment_heads(assessments: Sequence[Any]) -> list[Any]:
@@ -5065,8 +5078,7 @@ class Ingestor:
         # The same sentinel filter the structural signal applies: page furniture is
         # not question inventory, and counting it would inflate every candidate's
         # affinity by the same shared "text" token.
-        submitted_questions = {row["element_kind"] for row in regions
-                               if row["element_kind"] not in ("text", "graphic")}
+        submitted_questions = self._question_inventory(regions)
         candidates: list[dict] = []
         # Candidates are lineage HEADS: a corrected assessment is two rows and one
         # paper — ranking the stale pre-correction row alongside its own head would
@@ -5081,9 +5093,7 @@ class Ingestor:
             candidate_regions = self._handle.query(
                 INGEST_STATEMENTS["select_regions"],
                 document_id=row["document_id"])
-            candidate_questions = {region["element_kind"]
-                                   for region in candidate_regions
-                                   if region["element_kind"] not in ("text", "graphic")}
+            candidate_questions = self._question_inventory(candidate_regions)
             union = submitted_questions | candidate_questions
             inventory_affinity = (
                 len(submitted_questions & candidate_questions) / len(union)
