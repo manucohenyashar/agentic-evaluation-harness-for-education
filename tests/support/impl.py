@@ -1335,9 +1335,6 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # "unowned: the blind-flow plan names no removed table (TS-91 TC-CONSOLE-45)" left with #601's fix.
     # "unowned: a console review accept records a label (TS-91 TC-CONSOLE-44 row 8)" left with #598's fix.
-    # Found by TS-99, owned by NO issue yet (needs one from /plan-to-issues): M-PIPE's hooks
-    # cost 3.9 ms/unit at 10 submissions and 9.3 ms/unit at 40, against NFR-PIPE-02's 0.25 ms.
-    "unowned: composition adds at most 0.25 ms per unit (TS-99 PERF-11)": (
     # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
     # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
     # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
