@@ -795,16 +795,30 @@ def _synthesize(store: Any, provider: Any, run_config: Any, orch: Any, handle: A
     missing recording costs one narrative and not the run's grades.
     """
     ref = synthesizer or _default_synthesizer(run_config)
-    worker = SynthesisWorker(store, provider, ref)
+    # ADR-14 / CT-PIPE-06 (#596): synthesis calls go through the run's governed provider, so
+    # they accrue to the run's counters like every stage worker's calls, and each
+    # submission's measured cost is charged against the run's frozen ceiling. A caller with
+    # no provider keeps the old per-submission failure, so grading still runs (FR-PIPE-06).
+    governed = orch.governed_provider(handle.run_id, provider) if provider is not None else None
+    worker = SynthesisWorker(store, governed if governed is not None else provider, ref)
     detail: list[str] = []
     done = failed = 0
     for submission_id in _submissions_of(orch, handle.run_id):
+        stop = orch.post_dispatch_ceiling_reached(handle.run_id)
+        if stop is not None:
+            # No more spend: the remaining submissions get no narrative, and grading runs.
+            detail.append(f"synthesis stopped before {submission_id}: {stop}")
+            break
+        before = governed.spent() if governed is not None else None
         try:
             report = worker.synthesize_submission(handle.run_id, submission_id)
         except Exception as error:  # noqa: BLE001 - recorded, never fatal to grading
             failed += 1
             detail.append(f"{submission_id}: {type(error).__name__}: {error}")
             continue
+        finally:
+            if governed is not None:
+                orch.charge_post_dispatch(handle.run_id, governed.spent() - before)
         done += 1
         detail.append(
             f"{submission_id}: {getattr(report, 'narratives', 0)} narratives, "
@@ -1085,6 +1099,8 @@ def run_to_completion(
         try:
             stages.append(
                 _synthesize(store, provider, run_config, orch, handle, synthesizer))
+            # Synthesis ran after the last dispatch pass: persist what it accrued (#596).
+            orch.flush_metrics(run_id)
             grade_trace, grades_computed, grades_final = _grade(store, handle)
             stages.append(grade_trace)
         except Exception as error:  # noqa: BLE001 - recorded and paused, never swallowed

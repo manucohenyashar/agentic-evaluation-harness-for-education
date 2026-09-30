@@ -284,10 +284,9 @@ def test_tc_pipe_c06_rung_3_every_model_call_comes_from_a_stage_worker(tmp_path,
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: `_synthesize` hands `SynthesisWorker` the raw provider,
-    so synthesis calls bypass `GovernedProvider` (no accrual, no ceiling) — ADR-14 puts EVERY call
+    """Written ahead; green since #596. `_synthesize` used to hand `SynthesisWorker` the raw
+    provider, so synthesis calls bypassed `GovernedProvider` (no accrual, no ceiling) — ADR-14 puts EVERY call
     through a worker holding the governed provider (CT-PIPE-06)."""
     from collections import Counter
 

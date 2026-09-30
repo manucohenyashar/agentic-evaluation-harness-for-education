@@ -2681,6 +2681,11 @@ class GovernedProvider:
         _accrue_completion(self._state, answer)
         return answer
 
+    def spent(self) -> Decimal:
+        """The run's accrued actual cost so far, as this wrapper's counters hold it (#596)."""
+        with self._state["lock"]:
+            return Decimal(self._state["cost"])
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self._provider, name)
 
@@ -6085,6 +6090,78 @@ class Orchestrator:
             started_at=str(row["started_at"] or ""),
             panel_build_ref=_panel_build_ref_of(row),
         )
+
+    def governed_provider(self, run_id: str, provider: Any = None) -> GovernedProvider:
+        """The run's provider with the run's dispatch counters wrapped around it (#596).
+
+        For model calls a composition layer makes outside a dispatch pass, synthesis being
+        the one today: ADR-14 and CT-PIPE-06 put EVERY model call through the governed
+        provider, so the calls accrue to the same per-run counters a dispatch pass reads and
+        persists (`CT-PROV-11`). `provider` defaults to the one this orchestrator was bound
+        with. Raises `RunNotFoundError` for an unknown run.
+
+        The counters are the run's in-memory dispatch state: a caller outside a dispatch pass
+        persists them with `flush_metrics`. The frozen ceiling is a claim-time check (ADR-33)
+        and this wrapper does not re-apply it per call; a post-dispatch caller charges its
+        actual cost with `charge_post_dispatch` and asks `post_dispatch_ceiling_reached`
+        before each unit of its own work (synthesis: each submission). The check comes
+        before a submission, not before each call, so the submission that reaches the
+        ceiling can pass it by its own calls; the claim path, which knows its figure in
+        advance, never does.
+        """
+        _cohort, run_row = self._find_run(run_id)
+        inner = provider if provider is not None else self._provider
+        if inner is None:
+            raise ValueError(
+                f"governed_provider({run_id!r}) needs a provider: none was passed and this "
+                "orchestrator was built without one")
+        return GovernedProvider(inner, self._dispatch_state(run_row))
+
+    def flush_metrics(self, run_id: str) -> None:
+        """Persist the run's dispatch counters to `run_metrics` WITHOUT a dispatch pass (#596).
+
+        `progress()` flushes after every pass; model calls made after the last pass (synthesis)
+        would otherwise accrue into counters nothing persists. `progress()` itself is not the
+        flush for them: its claim walk serves whichever open run it reaches first. A run with
+        no dispatch state (no pass ever ran in this process) has nothing to flush.
+        """
+        cohort, run_row = self._find_run(run_id)
+        state = self._dispatch_states.get(run_id)
+        if state is None:
+            return
+        report = self._progress_report(cohort, run_row, run_id, state)
+        self._flush_run_metrics(cohort, run_id, state, report)
+
+    def charge_post_dispatch(self, run_id: str, cost: Decimal) -> None:
+        """Add a post-dispatch model call's actual cost to the run's ceiling spend (#596).
+
+        Synthesis runs after the last claim, so no claim-time figure ever charged it
+        (`FR-ORCH-15`, ADR-33); it is charged its measured cost instead. A run that froze no
+        ceiling accrues nothing, exactly as the claim path does.
+        """
+        cohort, run_row = self._find_run(run_id)
+        if self._run_ceiling(run_row) is None or not cost:
+            return
+        with cohort.transaction() as tx:
+            spend = Decimal(
+                tx.execute(ORCH_STATEMENTS["select_run"], run_id=run_id)[0]["cost_spend"] or "0")
+            tx.execute(ORCH_STATEMENTS["accrue_run_spend"], run_id=run_id,
+                       cost_spend=str(spend + Decimal(cost)))
+
+    def post_dispatch_ceiling_reached(self, run_id: str) -> str | None:
+        """Why a post-dispatch model call must not be made, or None (#596).
+
+        The claim path's strict reading: spend AT the ceiling stops further spend. Returns the
+        reason text for the caller's trace, naming the spend and the ceiling.
+        """
+        _cohort, run_row = self._find_run(run_id)
+        ceiling = self._run_ceiling(run_row)
+        if ceiling is None:
+            return None
+        spend = Decimal(_mapping_get(run_row, "cost_spend") or "0")
+        if spend >= ceiling:
+            return f"cost ceiling reached: spend {spend} of ceiling {ceiling}"
+        return None
 
     def unit_status(self, work_id: str) -> str:
         """One unit's ledger status, or `""` if the ledger has no such unit.
