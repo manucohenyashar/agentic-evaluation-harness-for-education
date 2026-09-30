@@ -1558,9 +1558,12 @@ class ConsoleApp:
         if not keys:
             return None
         try:
+            catalog = self._run_catalog(run_id)
+        except Exception:  # noqa: BLE001 — an unreadable package keeps the default scale, as before
+            catalog = None
+        try:
             return review_service_over(
-                self._store, cohort_ids=list(keys), run_id=run_id,
-                catalog=self._run_catalog(run_id),
+                self._store, cohort_ids=list(keys), run_id=run_id, catalog=catalog,
             )
         except Exception:  # noqa: BLE001 — a run the service cannot open renders as the double
             return None
