@@ -14,10 +14,13 @@ Disclosed:
 - **Baseline.** Instead of subtracting a `progress()`-only run (which scores nothing and so is not
   the same run), the hooks' own time is measured: it is exactly the time the composition adds.
 
-**Written ahead, owned by no issue yet:** measured on this box, the hooks cost 3.9 ms per unit at
+**Written ahead, owned by #597:** measured on this box before #597, the hooks cost 3.9 ms per unit at
 10 submissions (870 units) and 9.3 ms per unit at 40 (2,988 units): over the budget by 15-37x, and
 GROWING with cohort size, so the composition's per-unit cost is not constant (the hooks re-read the
 run's cells on every pass). At the plan's 23,000 units the gap would be wider still.
+#597's first change (no run-wide count reads on a pass with no ready cell) brought 10
+submissions to 3.8 ms per unit; the remainder is the readiness rescan per pass and the owning
+modules' per-cell work (integrity verify alone is about 1.7 ms per unit).
 """
 
 from __future__ import annotations

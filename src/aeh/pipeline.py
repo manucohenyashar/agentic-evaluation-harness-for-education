@@ -607,6 +607,10 @@ def _aggregate_hook(orch: Any, handle: Any, gate: Any, catalog: Any, view: Any,
     panel, and an even panel is never aggregated as one.
     """
     cells = orch.ready_cells(handle.run_id, "aggregate")
+    if not cells:
+        # Most passes have no cell ready: the run-wide count reads below are only needed for
+        # cells this pass aggregates (NFR-PIPE-02, #597).
+        return StageTrace("aggregate", units=0, done=0, detail=())
     counts = orch.cell_unit_counts(handle.run_id, STAGE_SCORE)
     # The ledger's own quarantine count (#524): a missing verdict is not a quarantine, and an
     # even panel with nothing quarantined is a defect that must pause (TC-PIPE-23(c)).

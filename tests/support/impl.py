@@ -1338,6 +1338,10 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # Found by TS-99, owned by NO issue yet (needs one from /plan-to-issues): M-PIPE's hooks
     # cost 3.9 ms/unit at 10 submissions and 9.3 ms/unit at 40, against NFR-PIPE-02's 0.25 ms.
     "unowned: composition adds at most 0.25 ms per unit (TS-99 PERF-11)": (
+    # #597 (design 1.9.1 §5.4 R30): M-PIPE's hooks cost 3.8 ms/unit at 10 submissions after
+    # #597's first change (5.3 before), against NFR-PIPE-02's 0.25 ms. The rest is readiness
+    # rescans per pass and the owners' per-cell work; #597 is needs-attention on the budget.
+    "#597 TS-99 PERF-11 composition adds at most 0.25 ms per unit": (
         "command",
         "python -m pytest -q -p no:cacheprovider tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",
         ("tests/perf/test_perf_11_composition_overhead.py::test_perf_11_composition_adds_at_most_a_quarter_millisecond_per_unit",),
