@@ -1711,7 +1711,8 @@ class ConsoleApp:
         if screen == "S2":
             return _page("New package upload", self._render_upload(queries, params))
         if screen == "S3":
-            return _page("Confirm the question inventory", self._render_inventory(queries))
+            return _page("Confirm the question inventory",
+                         self._render_inventory(queries, params))
         if screen == "S4":
             return _page("Supply multiple-choice answer keys", self._render_answer_keys(queries))
         if screen == "S5":
@@ -1758,12 +1759,83 @@ class ConsoleApp:
 
     # -- S3/S4/S5: setup -----------------------------------------------------------------------------
 
-    def _render_inventory(self, queries: list[str]) -> str:
-        rows = self._read_package(
-            "SELECT question_id, prompt_text FROM question ORDER BY question_id", queries
-        )
-        count = len(rows)
-        return _section(
+    def _inventory_target(self, params: dict[str, Any], queries: list[str]) -> Any:
+        """The package S3 confirms (#599): `package_id` names it, or a run id names the run's
+        own package and version. Returns `(catalog, package_id, version_or_None)`, or None when
+        nothing is addressed or the package's file does not exist (a render never creates
+        one)."""
+        data_dir = getattr(self._store, "data_dir", None)
+        if data_dir is None:
+            return None
+        package_id = params.get("package_id")
+        version = params.get("package_version_id")
+        run_id = params.get("run_id") or params.get("id")
+        if not package_id and run_id:
+            rows = self._read_cohort_files(
+                "SELECT package_id, package_version_id FROM run WHERE run_id = :run_id",
+                queries, run_id=str(run_id))
+            if rows:
+                package_id = _row_get(rows[-1], "package_id")
+                version = version or _row_get(rows[-1], "package_version_id")
+        if not package_id or not Path(data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+            return None
+        from aeh.pkg import PackageCatalog
+
+        catalog = PackageCatalog(self._store.package(str(package_id)), package_id=str(package_id))
+        return catalog, str(package_id), version
+
+    def _render_inventory(self, queries: list[str], params: dict[str, Any] | None = None) -> str:
+        target = self._inventory_target(params or {}, queries)
+        if target is None:
+            rows = self._read_package(
+                "SELECT question_id, prompt_text FROM question ORDER BY question_id", queries
+            )
+            count = len(rows)
+            editable = ""
+        else:
+            catalog, package_id, version = target
+            from aeh.pkg import QUESTION_TYPES
+
+            queries.append(f"PackageCatalog({package_id}).draft_version/proposal/questions")
+            try:
+                version = version or catalog.draft_version()
+                proposal = catalog.proposal(version) if version else None
+                confirmed = catalog.questions(version) if version else ()
+            except sqlite3.OperationalError as error:
+                # CT-CONSOLE-28: never a count over a table that could not be read.
+                if _is_schema_fault(error):
+                    raise ConsoleReadError(
+                        "PackageCatalog inventory read", f"package {package_id}", error
+                    ) from error
+                raise
+            entries: list[dict] = []
+            if proposal and proposal.get("confirmed_at") is None:
+                try:
+                    entries = list(json.loads(proposal.get("payload") or "{}").get("entries", ()))
+                except (TypeError, ValueError):
+                    entries = []
+            if entries:
+                # HLD §11.5: the proposal is shown as rows the teacher can correct before
+                # confirming; confirming is the control action, not this render.
+                count = len(entries)
+                editable = '<section data-role="proposed-inventory"><h2>Proposed questions</h2><ol>' + "".join(
+                    f'<li><label>{escape(str(e.get("question_id", "")))} '
+                    f'<input name="prompt_text:{escape(str(e.get("question_id", "")))}" '
+                    f'value="{escape(str(e.get("prompt_text", "")))}"></label> '
+                    f'<select name="question_type:{escape(str(e.get("question_id", "")))}">'
+                    + "".join(
+                        f'<option{" selected" if t == e.get("question_type") else ""}>{t}</option>'
+                        for t in QUESTION_TYPES)
+                    + "</select></li>"
+                    for e in entries
+                ) + "</ol></section>"
+            else:
+                count = len(confirmed)
+                editable = "".join(
+                    f"<p>{escape(str(q.get('question_id', '')))}: "
+                    f"{escape(str(q.get('prompt_text', '')))}</p>"
+                    for q in confirmed)
+        return editable + _section(
             "blocking",
             "This screen blocks run start until the question inventory is confirmed.",
             f"Questions read back from the package: {count}.",
@@ -1806,6 +1878,7 @@ class ConsoleApp:
         # listing) or from the standing names.
         files = params.get("files")
         cohort_id = params.get("cohort_id")
+        unread = False
         if (not files and cohort_id and getattr(self._store, "data_dir", None) is not None
                 and str(cohort_id) not in self._cohort_keys()):
             # An id naming no existing cohort file: nothing was uploaded to it, and reading it
@@ -1818,8 +1891,16 @@ class ConsoleApp:
 
             try:
                 files = uploaded_parts(self._store, str(cohort_id))
-            except Exception:  # noqa: BLE001 — a read view never invents a list
-                files = ()
+            except sqlite3.OperationalError as error:
+                # CT-CONSOLE-28 (#600): never an absence over a table that could not be read.
+                if _is_schema_fault(error):
+                    raise ConsoleReadError(
+                        "uploaded_parts", f"cohort {cohort_id}", error) from error
+                self._skipped_ledgers += 1
+                files, unread = (), True
+            except Exception:  # noqa: BLE001 — one unreadable ledger, counted and said
+                self._skipped_ledgers += 1
+                files, unread = (), True
         elif not files and getattr(self._store, "data_dir", None) is None:
             files = (
                 "scan-001.pdf",
@@ -1829,7 +1910,9 @@ class ConsoleApp:
         order = "".join(
             f"<li>Page {index + 1}: {escape(str(name))}</li>"
             for index, name in enumerate(files or ())
-        ) or "<li>No parts have been uploaded for this cohort yet.</li>"
+        ) or ("<li>The uploaded parts could not be read just now; nothing is shown rather "
+              "than a list that may be wrong.</li>" if unread
+              else "<li>No parts have been uploaded for this cohort yet.</li>")
         return (
             _section(
                 "upload-format",
@@ -1880,10 +1963,15 @@ class ConsoleApp:
         # The `run` table lives in the cohort tier (orch migration 7) — a durable-tier
         # read saw no rows at all, and a running run rendered as `pending`.
         rows = self._read_cohort_files(
-            "SELECT status FROM run WHERE run_id = :run_id", queries, run_id=run_id
+            "SELECT status, pause_reason FROM run WHERE run_id = :run_id", queries, run_id=run_id
         )
         stored = str(_row_get(rows[-1], "status")) if rows else None
         shown = self._run_status_from_ledger() or stored or "pending"
+        # CT-PIPE-04 (#602): a paused run says why. The reason is the stored row's, and it is
+        # shown only while the run the operator sees is paused.
+        reason = _row_get(rows[-1], "pause_reason") if rows else None
+        why = (_label_line("Pause reason", reason)
+               if shown == "paused" and reason else "")
         # Invariant 3 (`FR-CONSOLE-08`): progress renders at (stage, criterion, judge)
         # — the monitor draws exactly the rows the report carries, and derives no
         # per-student figure from them (`CT-CONSOLE-09`).
@@ -1897,6 +1985,7 @@ class ConsoleApp:
         ]
         return (
             _section("run-state", f"Run {run_id} status: {shown}.")
+            + why
             + _label_line("Poll interval", f"{CONSOLE_POLL_INTERVAL_MS} ms")
             + _section(
                 "progress",
@@ -4929,9 +5018,9 @@ def review_queue_header(page: Any) -> dict[str, int]:
 # the type; this is the console's transport face of it.
 
 
+# The draw itself is `ReviewService.blind_sample`'s session (#111): M-REVIEW hands the flow its
+# (submission, criterion) pairs, so the plan reads no draw table (#601; no tier declares one).
 _BLIND_FLOW_QUERIES: tuple[str, ...] = (
-    "SELECT submission_id, criterion_id FROM blind_sample "
-    "WHERE run_id = :run_id ORDER BY submission_id",
     "SELECT submission_id FROM submission WHERE submission_id = :submission_id",
     "SELECT criterion_id, kind FROM criterion WHERE criterion_id = :criterion_id",
     "SELECT band, descriptor FROM criterion_band ORDER BY band",
@@ -4965,9 +5054,10 @@ class BlindFlowView:
 
 
 def blind_flow(*, run_id: str, submission_ref: str) -> BlindFlowView:
-    """The blind flow for one unit, before submission: what it reads (the draw, the
-    unit's identity, the criterion, the rubric's band scale) and what it sends (the
-    same, serialized — no view model with more in it than the template uses).
+    """The blind flow for one unit, before submission: what it reads (the unit's
+    identity, the criterion, the rubric's band scale; the draw arrives from M-REVIEW's
+    `blind_sample` session, not from a table) and what it sends (the same, serialized —
+    no view model with more in it than the template uses).
 
     The flow's tables are the §3.15 pair plus the rubric's band-descriptor table; the
     plan never names a system-output table or column, so no rendering decision can

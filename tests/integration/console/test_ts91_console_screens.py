@@ -93,10 +93,9 @@ def test_tc_console_45_s9_header_is_build_queue_at_the_budget(tmp_data_dir):
         assert not hits, f"console.py still executes a removed query ({removed}): {hits}"
 
 
-@pytest.mark.writtenahead
 def test_tc_console_45_the_blind_flow_plan_names_no_removed_table():
-    """Written ahead, owned by no issue yet: `_BLIND_FLOW_QUERIES`, the declared blind-flow plan
-    (CT-CONSOLE-14's assertion surface), still reads `blind_sample`, a table FR-CONSOLE-35
+    """Written ahead; green since #601. `_BLIND_FLOW_QUERIES`, the declared blind-flow plan
+    (CT-CONSOLE-14's assertion surface), used to read `blind_sample`, a table FR-CONSOLE-35
     removed and no tier declares; M-REVIEW's `BlindSession` reads `submission` and `criterion`."""
     import ast
 
@@ -106,10 +105,9 @@ def test_tc_console_45_the_blind_flow_plan_names_no_removed_table():
     assert not hits, hits
 
 
-@pytest.mark.writtenahead
 def test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows(tmp_data_dir):
-    """Written ahead, owned by no issue yet: S3 reads its package tier through
-    `_tier("package")`, which is hard-coded to `pkg-mconsole`, so for every real package it says
+    """Written ahead; green since #599. S3 read its package tier through
+    `_tier("package")`, which is hard-coded to `pkg-mconsole`, so for every real package it said
     "Questions read back from the package: 0" and renders no editable field; the teacher cannot see
     or correct the proposal the screen exists to confirm (HLD §11.5)."""
     from tests.contract.setup._doubles import ingest_document, stage_chain
@@ -121,7 +119,7 @@ def test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows(tmp_da
         s3 = build_console(store=chain.store).render(SCREENS["S3"], package_id=chain.package_id).html
     finally:
         chain.store.close()
-    fields = re.findall(r"<(?:input|textarea|select)", s3)
+    fields = re.findall(r"<(?:input|textarea|select)\b", s3)
     assert fields, "S3 renders the proposed inventory with no editable field (HLD §11.5)"
     assert "Q1" in s3 and "Q4" in s3, "S3 does not list the proposed questions"
 
@@ -135,13 +133,8 @@ DROPS = {
 }
 
 
-_UNOWNED = pytest.mark.writtenahead  # the screen renders an absence over an unreadable table
-
-
-@pytest.mark.parametrize("screen", [
-    pytest.param("S2", marks=_UNOWNED),   # "No parts have been uploaded" over a dropped upload_part
-    pytest.param("S3", marks=_UNOWNED),   # S3 reads the hard-coded `pkg-mconsole` tier, never the real package
-    "S9", "S12"])
+# S2 (#600) and S3 (#599) were written ahead: each rendered an absence over an unreadable table.
+@pytest.mark.parametrize("screen", ["S2", "S3", "S9", "S12"])
 def test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero(tmp_data_dir, screen):
     run_id = _flagged_store(tmp_data_dir, n=3)
     tier, table = DROPS[screen]

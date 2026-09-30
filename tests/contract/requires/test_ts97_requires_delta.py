@@ -578,10 +578,9 @@ def test_tc_req_99_start_run_drives_on_a_server_thread_and_s7_shows_paused(tmp_p
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_req_99_s7_shows_why_the_run_paused(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: `console.py` never reads `pause_reason`, so the
-    operator sees a paused run with no reason (CT-PIPE-04's M-CONSOLE consumer)."""
+    """Written ahead; green since #602. `console.py` never read `pause_reason`, so the
+    operator saw a paused run with no reason (CT-PIPE-04's M-CONSOLE consumer)."""
     _drivers, status, s7 = _start_paused_run(tmp_path, monkeypatch)
     assert status[0] == "paused"
     assert "ProviderUnavailableError" in s7, "S7 shows no reason for the pause (CT-PIPE-04)"
