@@ -62,6 +62,10 @@ COMPOSITION_SURFACE = {
     # A judge strike is recorded through M-ORCH's own door (the unit's owner marks it, never
     # M-PIPE); `unit_status` is the read that tells a struck-out extraction from an empty one.
     "fail", "unit_status",
+    # #596 (design 1.9.1 §5.4 R22, CT-PIPE-06): synthesis runs after the last dispatch pass, so
+    # M-PIPE takes the run's governed provider, persists its counters, and charges and checks
+    # the frozen ceiling through M-ORCH's doors; still no SQL of its own (CT-PIPE-05).
+    "governed_provider", "flush_metrics", "charge_post_dispatch", "post_dispatch_ceiling_reached",
 }
 
 
@@ -578,10 +582,9 @@ def test_tc_req_99_start_run_drives_on_a_server_thread_and_s7_shows_paused(tmp_p
 
 
 @pytest.mark.integration
-@pytest.mark.writtenahead
 def test_tc_req_99_s7_shows_why_the_run_paused(tmp_path, monkeypatch):
-    """Written ahead, owned by no issue yet: `console.py` never reads `pause_reason`, so the
-    operator sees a paused run with no reason (CT-PIPE-04's M-CONSOLE consumer)."""
+    """Written ahead; green since #602. `console.py` never read `pause_reason`, so the
+    operator saw a paused run with no reason (CT-PIPE-04's M-CONSOLE consumer)."""
     _drivers, status, s7 = _start_paused_run(tmp_path, monkeypatch)
     assert status[0] == "paused"
     assert "ProviderUnavailableError" in s7, "S7 shows no reason for the pause (CT-PIPE-04)"
