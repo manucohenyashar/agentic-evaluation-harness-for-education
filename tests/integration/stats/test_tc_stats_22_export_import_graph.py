@@ -42,6 +42,7 @@ import pytest
 
 from tests.support.import_graph import FORBIDDEN_ROOTS, scan_module
 from tests.support.impl import STATS_MODULE, require
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -60,8 +61,7 @@ def _stats_source() -> tuple[str, str]:
     from aeh import stats as stats_module
 
     require(STATS_MODULE, "analytical_export", issue="#118")  # the member exists
-    source_path = Path(stats_module.__file__)
-    return source_path.read_text(encoding="utf-8"), source_path.name
+    return package_source(stats_module), "stats.py"
 
 
 def test_tc_stats_22_the_export_module_imports_no_egress_capable_root(

@@ -68,6 +68,7 @@ import aeh.synth  # noqa: F401
 from aeh.pkg import PackageCatalog
 from aeh.store import Statement, open_store
 from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_cohort, seed_package
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.integration
 
@@ -145,7 +146,7 @@ _SQL_PREDICATE = re.compile(r"kind\s*(?:=|==|!=|<>|\bIN\b)\s*\(?\s*['\"]mcq['\"]
 MODULE_SCOPE = "<module>"
 
 
-def _mcq_mentions(module_name: str) -> list[tuple[str, int]]:
+def _mcq_mentions(module_name: str, source_text: str | None = None) -> list[tuple[str, int]]:
     """Every site in `module_name` that routes on the literal `'mcq'`, in two spellings.
 
     Parsed rather than grepped: a comment or a docstring saying "the `kind='mcq'` reading is
@@ -161,8 +162,7 @@ def _mcq_mentions(module_name: str) -> list[tuple[str, int]]:
     characters `kind = 'mcq'` while describing why the test is forbidden, and reporting that
     as an offence would make the census unusable.
     """
-    source = pathlib.Path(aeh.orch.__file__).parent / module_name
-    tree = ast.parse(source.read_text(encoding="utf-8"))
+    tree = ast.parse(module_source(module_name) if source_text is None else source_text)
 
     #: node id -> enclosing function name, so a match anywhere reports where it lives.
     scope: dict[int, str] = {}
@@ -337,13 +337,7 @@ def test_tc_orch_48_the_scan_sees_each_shape_it_claims_to_see(
     The matching rule is exercised through `_mcq_mentions`, not re-implemented here: a control
     that reimplements the thing it controls stays green when the real function breaks.
     """
-    module = tmp_path / "probe_module.py"
-    module.write_text(body, encoding="utf-8")
-    monkeypatch.setattr(
-        pathlib.Path, "read_text", lambda self, **kw: body, raising=True
-    )
-
-    found = _mcq_mentions("probe_module.py")
+    found = _mcq_mentions("probe_module.py", source_text=body)
 
     assert [scope for scope, _line in found] == [expected_scope], (
         f"{label}: the census reported {found}, not one match in {expected_scope!r}. Every "

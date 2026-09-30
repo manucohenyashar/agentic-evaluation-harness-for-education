@@ -55,6 +55,7 @@ from aeh.ingest import (
 from aeh.prov import Completion, SamplingParams
 from aeh.store import open_store
 from tests.support.store_api import statement
+from tests.support.source_tree import aeh_module_sources, defined_in, module_source
 
 pytestmark = pytest.mark.integration
 
@@ -153,11 +154,10 @@ def test_tc_ingest_01_only_m_ingest_touches_pdfs_and_no_entry_point_takes_a_path
     `M-INGEST`."""
     root = pathlib.Path("src", "aeh")
     pdf_importers = []
-    for path in sorted(root.glob("*.py")):
-        text = path.read_text(encoding="utf-8")
+    for name, text in aeh_module_sources(root):
         for marker in PDF_LIBRARY_MARKERS:
-            if marker in text and path.name != "ingest.py":
-                pdf_importers.append(f"{path.name}: {marker}")
+            if marker in text and name != "ingest.py":
+                pdf_importers.append(f"{name}: {marker}")
     assert not pdf_importers, (
         f"TC-INGEST-01: PDF/image decoding exists outside M-INGEST: {pdf_importers}. "
         "The gateway is the only route from PDF to text (FR-INGEST-01, R38)."
@@ -171,7 +171,7 @@ def test_tc_ingest_01_only_m_ingest_touches_pdfs_and_no_entry_point_takes_a_path
         for name, obj in vars(module).items():
             if name.startswith("_") or not callable(obj) or inspect.isclass(obj):
                 continue
-            if getattr(obj, "__module__", "") != module.__name__:
+            if not defined_in(obj, module):
                 continue
             try:
                 parameters = inspect.signature(obj).parameters
@@ -238,7 +238,7 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
         "TC-INGEST-02: the rasterization DPI is not the pinned default."
     )
     # No per-kind alternative path: the pipeline never branches on kind.
-    module_source = pathlib.Path("src", "aeh", "ingest.py").read_text(encoding="utf-8")
+    ingest_source = module_source("ingest")
     # Branches on the ARTIFACT kinds specifically (the parser's region-kind locals
     # are a different variable entirely): only the two DECLARED post-transcription
     # gates may branch — the reference divergence halt (FR-INGEST-03) and, since
@@ -246,7 +246,7 @@ def test_tc_ingest_02_every_page_of_every_kind_gets_exactly_one_call(tmp_data_di
     # gates ON the one pipeline, not extraction paths. The demarcation exemption
     # is STRUCTURAL (review note): a branch is exempt only when its body calls
     # the demarcation transform, so no future dispatch can hide behind a comment.
-    lines = module_source.splitlines()
+    lines = ingest_source.splitlines()
 
     def _is_demarcation_gate(index: int) -> bool:
         for follower in lines[index + 1:]:

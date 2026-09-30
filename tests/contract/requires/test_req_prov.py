@@ -31,6 +31,7 @@ from aeh.prov import HttpResponse, LocalServerProvider, SamplingParams
 from aeh.store import open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 from tests.support.prov_contract import CountingClock, flat_ok
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -441,7 +442,7 @@ def test_tc_req_67_an_unavailable_off_panel_model_raises_rather_than_falling_bac
     # through M-PROV, which requires M-CALIB to dispatch its construction through `complete()`.
     import ast as _ast
 
-    tree = _ast.parse(inspect.getsource(calib))
+    tree = _ast.parse(package_source(calib))
     dispatches = [node for node in _ast.walk(tree)
                   if isinstance(node, _ast.Call) and isinstance(node.func, _ast.Attribute)
                   and node.func.attr == "complete"]
@@ -487,7 +488,7 @@ def test_tc_req_71_implementations_are_substitutable_hermetic_and_text_is_never_
                                   quantization="q4"), SamplingParams(temperature=0.0))
 
     text_equality = []
-    for node in ast.walk(ast.parse(inspect.getsource(conform))):
+    for node in ast.walk(ast.parse(package_source(conform))):
         if isinstance(node, ast.Compare) and any(isinstance(op, (ast.Eq, ast.NotEq)) for op in node.ops):
             operands = [node.left, *node.comparators]
             if any(isinstance(o, ast.Attribute) and o.attr == "text" for o in operands):

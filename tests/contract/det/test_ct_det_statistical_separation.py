@@ -50,6 +50,7 @@ pytestmark = pytest.mark.contract
 
 from tests.contract.det._doubles import ISSUE  # noqa: F401 — register citation
 from tests.support.det_vocabulary import open_det_store
+from tests.support.source_tree import aeh_module_paths
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = REPO_ROOT / "src" / "aeh"
@@ -168,7 +169,7 @@ def test_tc_det_c06_the_predicate_exists_in_exactly_one_place():
 
     pattern = re.compile(re.escape(PREDICATE))
     definitions = []
-    for path in sorted(SRC_ROOT.glob("*.py")):
+    for path in aeh_module_paths(SRC_ROOT):
         for lineno, line in enumerate(
             path.read_text(encoding="utf-8").splitlines(), start=1
         ):

@@ -74,6 +74,7 @@ from tests.contract.orch._doubles import install_audit
 from tests.support.extract_vocabulary import sampling_params, verdict_completion
 from tests.support.impl import JUDGE_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -270,7 +271,7 @@ def test_tc_judge_c12_no_write_path_to_the_forbidden_tables_statically():
     import aeh.judge
     import aeh.pkg
 
-    judge_text = Path(aeh.judge.__file__).read_text(encoding="utf-8")
+    judge_text = package_source(aeh.judge)
 
     # Positive controls: the scanner flags the defect and leaves reads alone.
     for forbidden in ("criterion_score", "evidence", "narrative", "band"):

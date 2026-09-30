@@ -56,6 +56,7 @@ from aeh.pkg import (
 )
 from aeh.store import open_store
 from tests.support.store_api import statement
+from tests.support.source_tree import aeh_module_paths
 
 pytestmark = pytest.mark.contract
 
@@ -233,7 +234,7 @@ def test_tc_pkg_c03_every_locked_field_refuses_naming_itself_and_the_list_is_one
     # the codebase — the realistic drift is a future module pasting its own copy.
     assert len(SCHEMA_LOCK_FIELDS) == 13
     copies = []
-    for path in sorted(pathlib.Path("src", "aeh").glob("*.py")):
+    for path in aeh_module_paths(pathlib.Path("src", "aeh")):
         text = path.read_text(encoding="utf-8")
         hits = text.count('("criterion", "max_points")')
         if hits:
@@ -349,7 +350,7 @@ def test_tc_pkg_c05_band_points_has_exactly_one_reading_module():
     assertion that lands with M-AGG (#57+); this artifact assertion is the part that
     holds today."""
     offenders = []
-    for path in sorted(pathlib.Path("src", "aeh").glob("*.py")):
+    for path in aeh_module_paths(pathlib.Path("src", "aeh")):
         if path.name == "pkg.py":
             continue
         text = path.read_text(encoding="utf-8")
@@ -720,7 +721,7 @@ def test_tc_pkg_c12_every_tier_p_write_passes_through_m_pkg(tmp_data_dir):
                                        "REPLACE INTO")
         for table in tier_p_tables)
     offenders = []
-    for path in sorted(pathlib.Path("src/aeh").glob("*.py")):
+    for path in aeh_module_paths(pathlib.Path("src/aeh")):
         if path.name in ("store.py", "pkg.py"):
             continue
         # String-constant granularity: a registered migration's SQL is a multi-line

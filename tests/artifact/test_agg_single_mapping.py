@@ -43,6 +43,7 @@ import ast
 import re
 
 from aeh.store import open_store
+from tests.support.source_tree import aeh_module_sources
 
 _ALLOWED_POINTS_TABLES = {("package", "band"), ("cohort", "criterion_score")}
 
@@ -104,10 +105,7 @@ def test_tc_agg_03_the_mapping_has_one_definition_and_no_per_judge_readers(repo_
     `src/aeh`: `points_for_band` is defined in exactly one module; no module outside
     `aeh.pkg` reads the band table's points directly; and no statement anywhere brings
     `points` together with the per-judge `verdict` table."""
-    sources = {
-        path.name: path.read_text(encoding="utf-8")
-        for path in sorted((repo_root / "src" / "aeh").glob("*.py"))
-    }
+    sources = dict(aeh_module_sources(repo_root / "src" / "aeh"))
 
     defining = [name for name, text in sources.items() if "def points_for_band" in text]
     assert defining == ["pkg.py"], (

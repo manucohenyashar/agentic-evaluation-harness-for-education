@@ -40,6 +40,7 @@ import pytest
 
 from aeh.store import Tx, open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -660,7 +661,7 @@ def test_tc_req_58_the_review_queue_reads_by_key_and_never_by_text_search():
     from aeh.store import SqliteStore, SqliteTierHandle
 
     # ast merges implicitly concatenated literals, so each SQL string is read whole.
-    sql = [" ".join(node.value.split()) for node in ast.walk(ast.parse(inspect.getsource(review)))
+    sql = [" ".join(node.value.split()) for node in ast.walk(ast.parse(package_source(review)))
            if isinstance(node, ast.Constant) and isinstance(node.value, str)
            and re.match(r"\s*(SELECT|INSERT|UPDATE|DELETE|WITH)\b", node.value, re.I)]
     search = [q for q in sql if re.search(r"\b(LIKE|GLOB|MATCH|REGEXP|fts\d)\b|instr\s*\(", q, re.I)]

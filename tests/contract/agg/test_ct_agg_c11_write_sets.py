@@ -49,6 +49,7 @@ from tests.support.agg_vocabulary import (
 )
 from tests.support.impl import AGG_MODULE, require
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.source_tree import module_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -94,8 +95,8 @@ def test_tc_agg_c11_the_write_sets_are_disjoint_in_both_directions_statically():
     import aeh
 
     src = Path(aeh.__file__).parent
-    agg_text = (src / "agg.py").read_text(encoding="utf-8")
-    synth_text = (src / "synth.py").read_text(encoding="utf-8")
+    agg_text = module_source("agg", src)
+    synth_text = module_source("synth", src)
 
     # Positive controls: the scanner flags the defect in each direction.
     assert _write_paths("INSERT INTO narrative (narrative_id) VALUES ('x')",

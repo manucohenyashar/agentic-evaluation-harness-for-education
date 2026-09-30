@@ -59,6 +59,7 @@ import pytest
 
 from tests.support.impl import INTEG_MODULE, require
 from tests.support.integ_vocabulary import Doc, Span
+from tests.support.source_tree import module_path
 
 
 
@@ -253,8 +254,8 @@ def test_tc_integ_01_verify_span_imports_no_provider_seam():
     applied to the seam instead of the write columns). The require above keeps the
     pre-landing failure on the designed blocker."""
     require(INTEG_MODULE, "verify_span", issue="#73")
-    module_path = Path(__file__).resolve().parents[3] / "src" / "aeh" / "integ.py"
-    tree = ast.parse(module_path.read_text(encoding="utf-8"))
+    integ_source = module_path("integ", Path(__file__).resolve().parents[3] / "src" / "aeh")
+    tree = ast.parse(integ_source.read_text(encoding="utf-8"))
 
     def imports_provider(node: ast.AST) -> bool:
         if isinstance(node, ast.Import):

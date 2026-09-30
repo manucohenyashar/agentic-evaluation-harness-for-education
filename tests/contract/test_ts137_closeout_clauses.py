@@ -39,6 +39,7 @@ from aeh.store import open_store
 from tests.support import broken_stats_fixtures as broken
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import package_source
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -68,7 +69,7 @@ def test_tc_stats_c25_the_disagreement_surface_and_its_minimum(monkeypatch):
         "store", "package_version_id"]
     four = stats.ValidationStats([_label(i, "C1") for i in range(4)]).criterion_disagreement_rate("C1")
     assert isinstance(four, pkg.NoValidationData) and four.reason == "below_min_n", four
-    assert "below_min_n" not in inspect.getsource(review), (
+    assert "below_min_n" not in package_source(review), (
         "the minimum moved into aeh.review (CT-STATS-25: M-STATS owns it)")
 
 

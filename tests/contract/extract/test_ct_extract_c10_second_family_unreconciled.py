@@ -74,6 +74,7 @@ from tests.contract.extract._doubles import (
     require_extract_surface,
     resolved_config,
 )
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -240,7 +241,7 @@ def test_tc_extract_c10_no_reconciliation_code_path_exists():
     module = require(EXTRACT_MODULE, issue="#69")
     require(EXTRACT_MODULE, SECOND_FAMILY_MODEL, issue="#69")
     require_extract_surface()
-    source = inspect.getsource(module)
+    source = package_source(module)
     matches = sorted({m.group(0).lower() for m in _RECONCILIATION_WORD.finditer(source)})
     assert matches == [], (
         f"TC-EXTRACT-C10: the extraction module carries reconciliation vocabulary "

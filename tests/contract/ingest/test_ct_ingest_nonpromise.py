@@ -60,6 +60,7 @@ from tests.contract.ingest._doubles import (
     model_ref,
     student_answer,
 )
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.contract
 
@@ -245,8 +246,7 @@ def test_tc_ingest_c20_no_golden_file_pins_the_transcript(repo_root):
         f"TC-INGEST-C20: statements read golden/baseline paths: {pinned} — "
         "the module consults a pin."
     )
-    module_text = (repo_root / "src" / "aeh" / "ingest.py").read_text(
-        encoding="utf-8").lower()
+    module_text = module_source("ingest", repo_root / "src" / "aeh").lower()
     assert "golden" not in module_text, (
         "TC-INGEST-C20: the module source mentions a golden — a pin mechanism "
         "appeared in the transcriber's own code."

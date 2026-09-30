@@ -53,6 +53,7 @@ from tests.support.profile_switching import (
     run_row,
     seed_switched_runs,
 )
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.integration
 
@@ -222,9 +223,7 @@ def test_tc_conf_21_console_rereads_the_environment_when_start_run_is_requested(
         # it is the child-process console the in-process server replaces. (This guard read the
         # packaged stylesheet until #358 shipped that file; a path that now exists cannot
         # discriminate.)
-        if "_CHILD_SCRIPT" in (REPO_ROOT / "src" / "aeh" / "console.py").read_text(
-            encoding="utf-8"
-        ):
+        if "_CHILD_SCRIPT" in module_source("console", REPO_ROOT / "src" / "aeh"):
             raise NotImplementedYet(
                 f"the console still serves through the child-process script — the in-process "
                 f"ThreadingHTTPServer is blocked on {CONSOLE_ISSUE}"

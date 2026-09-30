@@ -35,6 +35,7 @@ from tests.support.conf_builders import (
 )
 from tests.support.guards import open_audit, write_audit
 from tests.support.impl import CONF_MODULE, require
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.contract
 
@@ -618,8 +619,7 @@ def test_tc_conf_c13_the_module_emits_no_metric_of_its_own(repo_root):
     conf = require(CONF_MODULE, issue="#4")
     import ast
 
-    source_path = Path(conf.__file__)
-    tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
+    tree = ast.parse(package_source(conf))
 
     forbidden_modules = {
         "prometheus_client", "statsd", "datadog", "opentelemetry", "newrelic", "metrics",

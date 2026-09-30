@@ -52,6 +52,7 @@ import pytest
 from aeh.store import open_store
 from tests.contract.judge._drive import drive_judged_run, verdict_rows
 from tests.support.orch_run import ORCH_COHORT_ID
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract]
 
@@ -167,7 +168,7 @@ def test_tc_judge_c07_the_judge_module_carries_no_escalation_trigger():
     control proves it sees the shape it refuses."""
     import aeh.judge as judge_module
 
-    source = Path(judge_module_path(judge_module)).read_text(encoding="utf-8")
+    source = package_source(judge_module)
     hits = re.findall(_ESCALATION_CALL_SITES, source)
     assert hits == [], (
         f"`aeh.judge` carries escalation call site(s) {hits} — a consumer treating "
@@ -181,7 +182,3 @@ def test_tc_judge_c07_the_judge_module_carries_no_escalation_trigger():
         f"the escalation-call scanner returned {control_hits} on its own positive "
         "control — a scan that cannot fire is not a scan (CT-JUDGE-07)"
     )
-
-
-def judge_module_path(judge_module: Any) -> str:
-    return judge_module.__file__

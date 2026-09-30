@@ -767,7 +767,7 @@ def public_surface(owner: object) -> list[str]:
             continue
         attribute = getattr(owner, name, None)
         origin = getattr(attribute, "__module__", None)
-        if module_name and origin and origin != module_name:
+        if module_name and origin and not (origin == module_name or origin.startswith(module_name + ".")):
             continue
         names.append(name)
     return names

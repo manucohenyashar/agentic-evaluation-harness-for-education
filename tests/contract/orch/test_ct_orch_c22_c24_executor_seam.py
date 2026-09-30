@@ -52,6 +52,7 @@ import aeh.synth  # noqa: F401
 from aeh.orch import ORCH_STATEMENTS, Orchestrator, StageOutcome
 from aeh.store import Statement, open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_documents, seed_run
+from tests.support.source_tree import module_source
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -325,10 +326,7 @@ def _phase_write_sites(module_name: str, source_text: str | None = None) -> list
     failure names the statement rather than a line number that moves.
     """
     if source_text is None:
-        path = pathlib.Path(aeh.orch.__file__).parent / module_name
-        if not path.exists():
-            return []
-        source_text = path.read_text(encoding="utf-8")
+        source_text = module_source(module_name)
     tree = ast.parse(source_text)
 
     docstrings = {

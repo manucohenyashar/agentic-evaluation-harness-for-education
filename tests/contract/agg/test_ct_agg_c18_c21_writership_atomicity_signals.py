@@ -48,6 +48,7 @@ import aeh.synth  # noqa: F401
 from aeh.agg import AGG_CAP_TABLE, AggregationSignals, aggregation_signals
 from aeh.store import open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import REPO_ROOT, module_source
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -100,10 +101,7 @@ def _score_write_sites(module_name: str, source_text: str | None = None) -> list
     the statement rather than a line that moves.
     """
     if source_text is None:
-        path = pathlib.Path(aeh.agg.__file__).parent / module_name
-        if not path.exists():
-            return []
-        source_text = path.read_text(encoding="utf-8")
+        source_text = module_source(module_name)
     tree = ast.parse(source_text)
 
     docstrings = {
@@ -195,7 +193,7 @@ def test_tc_agg_c18_the_test_support_seeding_helpers_are_a_reported_residual():
     go, which is when the clause becomes assertable at full strength. Asserting zero now would
     put a permanently red case in the suite over scaffolding the plan itself sanctions.
     """
-    support = pathlib.Path(aeh.agg.__file__).parent.parent.parent / "tests" / "support"
+    support = REPO_ROOT / "tests" / "support"
     seeding = sorted(
         path.name for path in support.glob("*.py")
         if _score_write_sites(path.name, path.read_text(encoding="utf-8"))

@@ -25,6 +25,7 @@ from tests.support import broken_stats_fixtures as broken
 from tests.support import stats_vocabulary as vocab
 from tests.support.guards import recording_write_audit
 from tests.support.impl import PKG_MODULE, REVIEW_MODULE, STATS_MODULE, STORE_MODULE, require, require_path
+from tests.support.source_tree import module_path
 
 pytestmark = pytest.mark.contract
 
@@ -284,7 +285,7 @@ def test_tc_stats_c15_no_statement_in_the_source_writes_a_score_grade_or_package
     reason for existing. The rule is controlled in both directions in the vocabulary file.
     """
     source_path = require_path(
-        repo_root / "src" / "aeh" / "stats.py",
+        module_path("stats", repo_root / "src" / "aeh"),
         "the M-STATS implementation module",
         issue="#115",
     )

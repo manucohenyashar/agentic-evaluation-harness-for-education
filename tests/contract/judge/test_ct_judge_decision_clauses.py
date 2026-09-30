@@ -35,6 +35,7 @@ import pytest
 from aeh.judge import (DECISION_ENGINE_INVENTORY, REPLY_FIELDS, Accepted, BelowGate, decision_engine_metrics,
                        gate_decision)
 from tests.support.conf_builders import edge_panel
+from tests.support.source_tree import aeh_module_paths, module_source
 
 pytestmark = pytest.mark.contract
 SRC = Path(__file__).resolve().parents[3] / "src" / "aeh"
@@ -160,7 +161,7 @@ def test_tc_judge_c17_no_consumer_assumes_the_engine_is_deterministic(tmp_path) 
     from tests.support import pipe_world
 
     # Static: nothing outside M-PROV keys, caches or compares by the decision request hash.
-    for path in SRC.glob("*.py"):
+    for path in aeh_module_paths(SRC):
         if path.name != "prov.py":
             assert "decision_request_key" not in path.read_text(encoding="utf-8"), path.name
     # Set 2: the same recordings, with C1/S2's below-gate answer replaced by an accepted one.
@@ -392,8 +393,8 @@ def test_tc_judge_c29_one_decide_and_at_most_one_llm_call_per_seat(engine_on_run
 @pytest.mark.integration
 def test_tc_judge_c30_no_prompt_carries_the_inventory(engine_on_run) -> None:
     for module in ("extract.py", "synth.py", "ingest.py"):
-        assert "evidence_assessment" not in (SRC / module).read_text(encoding="utf-8"), module
-    judge_source = (SRC / "judge.py").read_text(encoding="utf-8")
+        assert "evidence_assessment" not in module_source(module, SRC), module
+    judge_source = module_source("judge", SRC)
     for fn in ("def prompt_fields", "def decision_fields"):
         body = judge_source[judge_source.index(fn):]
         body = body[:body.index("\ndef ", 1)]

@@ -57,6 +57,7 @@ from tests.contract.setup._doubles import (
     ingest_document,
     stage_chain,
 )
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.contract
 
@@ -90,7 +91,7 @@ def _pkg_declared_tables(repo_root) -> set[str]:
     source, so a table either module stops owning fails here too."""
     tables: set[str] = set()
     for module in ("store.py", "pkg.py"):
-        source = (repo_root / "src" / "aeh" / module).read_text(encoding="utf-8")
+        source = module_source(module, repo_root / "src" / "aeh")
         tables |= set(re.findall(
             r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_]+)", source))
     return tables
@@ -143,7 +144,7 @@ def test_tc_setup_c11_setup_owns_no_sql(repo_root):
     """The static half: `src/aeh/setup.py` contains no SQL write statement —
     the module has no language to write with, so every write necessarily goes
     through M-PKG's statements."""
-    source = (repo_root / "src" / "aeh" / "setup.py").read_text(encoding="utf-8")
+    source = module_source("setup", repo_root / "src" / "aeh")
     # Strip comments first: the docstrings TEACH about SQL and must not count.
     source_no_comments = re.sub(r"#.*", "", source)
     offenders = []
@@ -191,8 +192,7 @@ def test_tc_setup_c11_documents_are_read_through_m_ingest(tmp_data_dir, repo_roo
 
     # And the flow's reads of the package tier never touch an ingest-owned
     # table: the only document reads are M-INGEST's own.
-    ingest_source = (repo_root / "src" / "aeh" / "ingest.py").read_text(
-        encoding="utf-8")
+    ingest_source = module_source("ingest", repo_root / "src" / "aeh")
     ingest_tables = set(re.findall(
         r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([A-Za-z_]+)", ingest_source))
     offenders = sorted({re.search(r"(?:FROM|JOIN)\s+([A-Za-z_]+)", sql).group(1)

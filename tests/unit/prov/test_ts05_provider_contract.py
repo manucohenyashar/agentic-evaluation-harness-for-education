@@ -39,6 +39,7 @@ from aeh.prov import (
     TransportError,
     dispatch_with_retries,
 )
+from tests.support.source_tree import package_source
 
 # No tier marker: rung 0, pure — the file runs in every tier (§4.7's unit rows are unmarked).
 
@@ -225,7 +226,7 @@ def test_tc_prov_09_budget_exhaustion_raises_and_names_no_substitute(tmp_data_di
     # The artifact half: no substitution surface anywhere on the module.
     import inspect
 
-    source = inspect.getsource(prov_module)
+    source = package_source(prov_module)
     for forbidden in ("fallback_provider", "substitute_provider", "provider_fallback",
                       "FALLBACK", "secondary_provider"):
         assert forbidden not in source, (

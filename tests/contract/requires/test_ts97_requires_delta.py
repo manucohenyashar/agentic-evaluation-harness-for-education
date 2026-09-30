@@ -49,6 +49,7 @@ from aeh.grade import GradingService
 from aeh.orch import Orchestrator
 from aeh.prov import BuildChangedError, ProviderUnavailableError
 from tests.support import pipe_world
+from tests.support.source_tree import class_members, package_source, top_module
 
 REPO = Path(__file__).resolve().parents[3]
 S1_C1 = "I did not get to th"
@@ -85,7 +86,7 @@ def _rows(root: Path, sql: str, *params):
 def _caller_modules() -> list[str]:
     f, out = sys._getframe(2), []
     while f is not None:
-        out.append(f.f_globals.get("__name__", ""))
+        out.append(top_module(f.f_globals.get("__name__", "")))
         f = f.f_back
     return out
 
@@ -98,7 +99,7 @@ def test_tc_req_90_m_pipe_uses_only_the_composition_surface(tmp_path, monkeypatc
     used: set[str] = set()
     keys: list[tuple] = []
     bound: list[bool] = []
-    for name, member in list(vars(Orchestrator).items()):
+    for name, member in class_members(Orchestrator):
         if name.startswith("_") and name != "__init__" or not callable(member):
             continue
 
@@ -355,8 +356,8 @@ def test_tc_req_96_no_narrative_for_an_incomplete_submission_is_not_a_failure(tm
 # --- TC-REQ-100 / TC-REQ-102 ----------------------------------------------------------------
 
 
-def _resolve_calls_with_environ(path: Path) -> list[int]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+def _resolve_calls_with_environ(source: str) -> list[int]:
+    tree = ast.parse(source)
     bad = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and getattr(node.func, "id", getattr(node.func, "attr", "")) == "resolve_run_config":
@@ -376,7 +377,7 @@ def test_tc_req_100_the_console_composes_config_through_the_snapshot(monkeypatch
     composed = conf.effective_config({})
     assert calls, "effective_config did not read the environment through environment_snapshot"
     assert composed.get("HARNESS_PROFILE") == "edge-local"
-    assert _resolve_calls_with_environ(Path(console.__file__)) == []
+    assert _resolve_calls_with_environ(package_source(console)) == []
 
 
 @pytest.mark.integration
@@ -428,7 +429,7 @@ def test_tc_req_102_main_composes_config_through_the_snapshot(tmp_path, monkeypa
     code = pipeline.main(["recover", "--data-dir", str(data)])
     assert code == 0
     assert calls, "main's recover path never read the environment through environment_snapshot"
-    assert _resolve_calls_with_environ(Path(pipeline.__file__)) == []
+    assert _resolve_calls_with_environ(package_source(pipeline)) == []
 
 
 # --- TC-REQ-101 -----------------------------------------------------------------------------

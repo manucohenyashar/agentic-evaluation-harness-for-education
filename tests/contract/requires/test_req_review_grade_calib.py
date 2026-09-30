@@ -418,7 +418,7 @@ _RENDER_WITHOUT_CALIB = textwrap.dedent("""
             raise RuntimeError("M-CALIB disabled")
         for name in list(vars(aeh.calib)):
             value = getattr(aeh.calib, name)
-            if not name.startswith("_") and callable(value) and getattr(value, "__module__", "") == "aeh.calib":
+            if not name.startswith("_") and callable(value) and (getattr(value, "__module__", "") + ".").startswith("aeh.calib."):
                 setattr(aeh.calib, name, _broken)
     import aeh.agg, aeh.det, aeh.extract, aeh.grade, aeh.ingest, aeh.integ, aeh.judge, aeh.orch
     import aeh.pkg, aeh.review, aeh.synth

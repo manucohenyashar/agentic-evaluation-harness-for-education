@@ -42,6 +42,7 @@ import pathlib
 import re
 
 import pytest
+from tests.support.source_tree import aeh_module_paths
 
 pytestmark = pytest.mark.contract
 
@@ -83,7 +84,7 @@ def _literals(path: pathlib.Path) -> list[tuple[int, str]]:
 def _score_reads() -> list[tuple[str, int, str]]:
     """Every literal in `aeh/*.py` that reads `criterion_score`."""
     found: list[tuple[str, int, str]] = []
-    for path in sorted(SOURCE_DIR.glob("*.py")):
+    for path in aeh_module_paths(SOURCE_DIR):
         for line, text in _literals(path):
             if _READS.search(text):
                 found.append((path.name, line, " ".join(text.split())))

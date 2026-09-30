@@ -57,6 +57,7 @@ from tests.contract.extract._doubles import (
     require_extract_surface,
     resolved_config,
 )
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.contract
 
@@ -132,7 +133,7 @@ def test_tc_extract_c07_no_verification_vocabulary_in_the_modules_source(
     verification vocabulary, and the sweep is proven able to fire."""
     require(EXTRACT_MODULE, issue="#68")
     extract = require(EXTRACT_MODULE, issue="#68")
-    source = inspect.getsource(extract)
+    source = package_source(extract)
     matches = sorted({m.group(0).lower() for m in _VERIFICATION_WORD.finditer(source)})
     assert matches == [], (
         f"TC-EXTRACT-C07: the extraction module carries verification vocabulary "

@@ -27,6 +27,7 @@ from aeh.prov import (ChoiceQuestion, DecisionRequest, DecisionRequestRejectedEr
 from tests.support.clock import FrozenClock
 from tests.support.conf_builders import edge_cfg
 from tests.unit.prov.test_ts120_openjev_small import REF, WINDOW, FakeScorer, ShimTransport, shim
+from tests.support.source_tree import aeh_module_paths
 
 pytestmark = pytest.mark.contract
 ROOT = Path(__file__).resolve().parents[3]
@@ -94,7 +95,7 @@ def test_tc_prov_c27_a_small_engine_noul_confidence_is_its_value() -> None:
 
 
 def test_tc_prov_c28_torch_never_enters_the_harness() -> None:
-    for path in (ROOT / "src" / "aeh").glob("*.py"):
+    for path in aeh_module_paths(ROOT / "src" / "aeh"):
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"^\s*(from|import)\s+(tools|torch|transformers)\b", text, re.M), path.name
     code = "import sys; sys.path.insert(0, 'src'); import aeh, aeh.prov; print('torch' in sys.modules)"

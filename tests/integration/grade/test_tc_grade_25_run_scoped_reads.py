@@ -36,6 +36,7 @@ from tests.support.conf_builders import edge_cfg, edge_panel
 from tests.support.impl import GRADE_MODULE, NotImplementedYet, require
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
 from tests.support.run_scoped import run_scoped_migration
+from tests.support.source_tree import module_source
 
 pytestmark = pytest.mark.integration
 
@@ -137,7 +138,7 @@ def _unscoped_criterion_score_queries(source: str) -> list[str]:
 
 def test_tc_grade_25_static_every_criterion_score_query_in_grade_has_a_run_predicate():
     """`TC-GRADE-25`, static arm — no `criterion_score` read in `grade.py` without `run_id`."""
-    source = (REPO_ROOT / "src" / "aeh" / "grade.py").read_text(encoding="utf-8")
+    source = module_source("grade", REPO_ROOT / "src" / "aeh")
     offending = _unscoped_criterion_score_queries(source)
     assert source.count("criterion_score") > 0
     assert offending == [], (

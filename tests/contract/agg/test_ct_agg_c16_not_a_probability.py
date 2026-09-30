@@ -54,6 +54,7 @@ from tests.support.impl import (
     require,
 )
 from tests.support.orch_run import ORCH_COHORT_ID, seed_cohort
+from tests.support.source_tree import aeh_module_paths
 
 pytestmark = [pytest.mark.contract]
 
@@ -135,7 +136,7 @@ def test_tc_agg_c16_nothing_multiplies_two_confidences():
     )
 
     offenders: dict[str, list] = {}
-    for path in sorted(src.glob("*.py")):
+    for path in aeh_module_paths(src):
         if path.stem == _DEFINITION_MODULE:
             continue
         sites = _multiplied_confidences(ast.parse(path.read_text(encoding="utf-8")))

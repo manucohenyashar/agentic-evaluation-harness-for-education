@@ -45,6 +45,7 @@ from tests.support.integ_vocabulary import (
     document_id_for,
     seed_document,
 )
+from tests.support.source_tree import module_path
 
 
 
@@ -130,7 +131,7 @@ def _sql_write_columns(source: str) -> set[str]:
 
 def _module_path() -> Path:
     repo_root = Path(__file__).resolve().parents[2]
-    return repo_root / "src" / "aeh" / "integ.py"
+    return module_path("integ", repo_root / "src" / "aeh")
 
 
 # --- the static artifact assertions (TC-INTEG-03 steps 2-3, TC-INTEG-10) -------------------

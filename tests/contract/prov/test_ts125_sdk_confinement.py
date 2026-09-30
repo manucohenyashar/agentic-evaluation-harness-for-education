@@ -28,6 +28,7 @@ from aeh.conf import ModelRef
 from aeh.prov import DecisionRequest, HttpResponse, JevOpenRouterProvider, NoulQuestion, ScoreQuestion
 from tests.support.clock import FrozenClock
 from tests.support.guards import SocketGuard
+from tests.support.source_tree import aeh_module_paths, defined_in
 
 pytestmark = pytest.mark.contract
 ROOT = Path(__file__).resolve().parents[3]
@@ -78,7 +79,7 @@ def _sdk_imports() -> dict[str, list[tuple[int, bool]]]:
     """`{module file: [(line, at_module_level), ...]}` for every import of an SDK module in
     `src/aeh`. An import inside a function or method body is not at module level."""
     found: dict[str, list[tuple[int, bool]]] = {}
-    for path in sorted((ROOT / "src" / "aeh").glob("*.py")):
+    for path in aeh_module_paths(ROOT / "src" / "aeh"):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         functions = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
         inside = {id(child) for f in functions for child in ast.walk(f)}
@@ -134,7 +135,7 @@ def _assert_harness_typed(decision) -> None:  # noqa: ANN001
         if id(value) in seen:
             continue
         seen.add(id(value))
-        assert type(value).__module__ in allowed, f"{type(value).__module__}.{type(value).__name__} leaked"
+        assert type(value).__module__ in allowed or defined_in(type(value), "aeh.prov"), f"{type(value).__module__}.{type(value).__name__} leaked"
         if hasattr(value, "__dataclass_fields__"):
             pending.extend(getattr(value, name) for name in value.__dataclass_fields__)
         elif isinstance(value, dict) or type(value).__name__ == "mappingproxy":
@@ -304,7 +305,7 @@ def test_tc_prov_c29_the_sdk_never_crosses_the_module_boundary(caplog, monkeypat
         with pytest.raises(Exception) as caught:
             JevOpenRouterProvider(api_key="k", transport=failing, clock=FrozenClock(),
                                   ).decide(_noul_request(), JEV_REF)
-        assert type(caught.value).__module__ == "aeh.prov", type(caught.value)
+        assert defined_in(type(caught.value), "aeh.prov"), type(caught.value)
         assert not isinstance(caught.value, typesafe_sdk.TypeSafeError)
         assert _headers(failing.requests[0]).get("x-typesafe-sdk", "").startswith("typesafe-sdk/")
     records, _ = _sdk_calls_under_capture(caplog, monkeypatch)

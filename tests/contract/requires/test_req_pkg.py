@@ -34,6 +34,7 @@ import aeh.pkg as pkg
 from aeh.pkg import PackageCatalog
 from aeh.store import open_store
 from tests.support.orch_run import ORCH_COHORT_ID, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = [pytest.mark.contract, pytest.mark.integration]
 
@@ -403,7 +404,7 @@ def test_tc_req_09_setup_relies_on_the_catalogs_own_checks_and_a_rejected_write_
                      for b in catalog.bands("C01")]
     finally:
         store.close()
-    source = inspect.getsource(setup)
+    source = package_source(setup)
     second_copy = [token for token in ("BandSetError",) if token in source] + re.findall(
         r"ordinals?\s*!=\s*list\(range|%\s*2\s*!=\s*0|contiguous\(", source)
     assert after_reject == before, f"a refused band write left a row: {before} -> {after_reject}"

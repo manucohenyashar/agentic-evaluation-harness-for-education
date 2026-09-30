@@ -39,6 +39,7 @@ from aeh.store import COMPLETE_SCHEMA_VERSIONS, PurgePreconditionError, Tier, op
 from tests.support import broken_stats_fixtures as broken
 from tests.support.grade_vocabulary import write_criterion_scores
 from tests.support.orch_run import ORCH_COHORT_ID, orch_cfg, seed_run
+from tests.support.source_tree import package_source
 
 pytestmark = pytest.mark.integration
 
@@ -121,7 +122,7 @@ def test_tc_stats_37_disagreement_rate_counts_every_two_band_label(tmp_data_dir,
     assert (stored["C1"].n, stored["C1"].disagreements) == (6, 2), stored["C1"]
     assert stored["C1"].rate == pytest.approx(1 / 3), stored["C1"]
     assert isinstance(stored["C2"], NoValidationData) and stored["C2"].reason == "below_min_n", stored["C2"]
-    assert "system_band !=" not in inspect.getsource(review), (
+    assert "system_band !=" not in package_source(review), (
         "aeh.review derives a disagreement of its own (FR-REVIEW-18 amended: M-STATS alone)")
 
 

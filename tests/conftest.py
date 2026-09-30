@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from hypothesis import HealthCheck, settings
 
+from tests.support import package_patching
 from tests.support.clock import EPOCH, FrozenClock
 from tests.support.guards import SocketGuard
 from tests.support.impl import (
@@ -24,6 +25,9 @@ from tests.support.impl import (
     require,
 )
 from tests.support.store_spy import StoreSpy
+
+# Every `aeh` module is a package; a patch on the package must reach its files too.
+package_patching.install()
 
 # TC-STORE-25: the tier migration chains are concatenated at import time, so every test runs
 # with the full chain registered *before* any test module is collected — the convention the

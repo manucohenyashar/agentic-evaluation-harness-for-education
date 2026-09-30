@@ -37,6 +37,7 @@ from aeh.store import open_store
 from tests.support.console_vocabulary import CONTROL_SURFACE_ACTIONS
 from tests.support.console_world import OPEN_CRITERIA, IngestWorld, rows, seed_scored_run
 from tests.support.grade_vocabulary import write_criterion_scores
+from tests.support.source_tree import defined_in
 
 pytestmark = [pytest.mark.integration]
 
@@ -129,7 +130,7 @@ def test_tc_console_01_a_console_open_during_the_run_and_then_closed_leaves_the_
         if (
             isinstance(candidate, type)
             and callable(getattr(candidate, "complete", None))
-            and candidate.__module__ == prov.__name__
+            and defined_in(candidate, prov)
         ):
             monkeypatch.setattr(candidate, "complete", provider.complete, raising=False)
     renders: list[str] = []

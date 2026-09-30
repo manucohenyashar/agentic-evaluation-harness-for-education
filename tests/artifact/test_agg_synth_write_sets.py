@@ -37,6 +37,8 @@ from __future__ import annotations
 import ast
 import re
 
+from tests.support.source_tree import aeh_modules, read_files
+
 _NARRATIVE_WRITERS_ALLOWED = {"store.py", "synth.py"}
 _CRITERION_SCORE_WRITERS_ALLOWED = {"store.py", "det.py", "agg.py", "review.py"}
 
@@ -51,10 +53,10 @@ _WRITE_TO_CRITERION_SCORE = re.compile(
 )
 
 
-def _statement_literals(path) -> list[str]:
+def _statement_literals(files) -> list[str]:
     """Every string constant in the module — the SQL lives here, and scanning per
     literal keeps the predicates statement-scoped (the TC-AGG-03 convention)."""
-    parsed = ast.parse(path.read_text(encoding="utf-8"))
+    parsed = ast.parse(read_files(files))
     return [
         node.value
         for node in ast.walk(parsed)
@@ -68,10 +70,7 @@ def test_tc_agg_16_the_m_agg_and_m_synth_write_sets_are_disjoint(repo_root):
     write to `narrative`, none outside its set carries a write to `criterion_score`,
     and in particular `M-AGG` has no path to `narrative` while `M-SYNTH` has none to
     `criterion_score`."""
-    sources = {
-        str(path.relative_to(repo_root / "src" / "aeh")): path
-        for path in sorted((repo_root / "src" / "aeh").rglob("*.py"))
-    }
+    sources = dict(aeh_modules(repo_root / "src" / "aeh"))
 
     narrative_writers = {
         name

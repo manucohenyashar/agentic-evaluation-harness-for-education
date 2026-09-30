@@ -28,6 +28,7 @@ import pytest
 
 from tests.support.agg_vocabulary import AGG_BLOCKER, band, criterion, favourable_signals, panel
 from tests.support.impl import AGG_MODULE, require
+from tests.support.source_tree import aeh_module_paths, package_source
 
 
 def _four_band_criterion():
@@ -161,7 +162,7 @@ def test_tc_agg_01_step5_the_band_to_points_mapping_is_applied_in_exactly_one_pl
     the canonical mapping rather than reimplementing it, and the mapping is defined in
     exactly one module."""
     agg_module = require(AGG_MODULE, issue=AGG_BLOCKER)
-    agg_source = Path(agg_module.__file__).read_text(encoding="utf-8")
+    agg_source = package_source(agg_module)
 
     assert "points_for_band" in agg_source, (
         "M-AGG never references points_for_band — the aggregate must route through "
@@ -173,7 +174,7 @@ def test_tc_agg_01_step5_the_band_to_points_mapping_is_applied_in_exactly_one_pl
     tree = repo_root / "src" / "aeh"
     defining = [
         path.name
-        for path in sorted(tree.glob("*.py"))
+        for path in aeh_module_paths(tree)
         if "def points_for_band" in path.read_text(encoding="utf-8")
     ]
     assert defining == ["pkg.py"], (
