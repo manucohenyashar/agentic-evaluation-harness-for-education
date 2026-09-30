@@ -1761,9 +1761,9 @@ class ConsoleApp:
 
     def _inventory_target(self, params: dict[str, Any], queries: list[str]) -> Any:
         """The package S3 confirms (#599): `package_id` names it, or a run id names the run's
-        own package and version. Returns `(catalog, package_id, version_or_None)`, or None when
-        nothing is addressed or the package's file does not exist (a render never creates
-        one)."""
+        own package and version. Returns `(catalog, package_id, version_or_None)`; `(None,
+        package_id, None)` when a package is addressed but its file does not exist (a render
+        never creates one); or None when nothing is addressed."""
         data_dir = getattr(self._store, "data_dir", None)
         if data_dir is None:
             return None
@@ -1777,8 +1777,10 @@ class ConsoleApp:
             if rows:
                 package_id = _row_get(rows[-1], "package_id")
                 version = version or _row_get(rows[-1], "package_version_id")
-        if not package_id or not Path(data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+        if not package_id:
             return None
+        if not Path(data_dir, "packages", f"{package_id}.pkg.sqlite").exists():
+            return None, str(package_id), None
         from aeh.pkg import PackageCatalog
 
         catalog = PackageCatalog(self._store.package(str(package_id)), package_id=str(package_id))
@@ -1792,13 +1794,22 @@ class ConsoleApp:
             )
             count = len(rows)
             editable = ""
+        elif target[0] is None:
+            # Addressed, but not on this store: say so, never the pinned package's count.
+            return _section(
+                "blocking",
+                "This screen blocks run start until the question inventory is confirmed.",
+                f"No package {target[1]} exists on this store, so there is no inventory to "
+                "confirm.",
+            )
         else:
             catalog, package_id, version = target
             from aeh.pkg import QUESTION_TYPES
 
             queries.append(f"PackageCatalog({package_id}).draft_version/proposal/questions")
             try:
-                version = version or catalog.draft_version()
+                # The draft being set up; once published, the latest version's inventory.
+                version = version or catalog.draft_version() or catalog.latest_version()
                 proposal = catalog.proposal(version) if version else None
                 confirmed = catalog.questions(version) if version else ()
             except sqlite3.OperationalError as error:
@@ -1807,7 +1818,9 @@ class ConsoleApp:
                     raise ConsoleReadError(
                         "PackageCatalog inventory read", f"package {package_id}", error
                     ) from error
-                raise
+                return self._inventory_unread()
+            except Exception:  # noqa: BLE001 — one unreadable ledger, counted and said
+                return self._inventory_unread()
             entries: list[dict] = []
             if proposal and proposal.get("confirmed_at") is None:
                 try:
@@ -1840,6 +1853,17 @@ class ConsoleApp:
             "This screen blocks run start until the question inventory is confirmed.",
             f"Questions read back from the package: {count}.",
             "Confirming the inventory is a control action; nothing here scores anything.",
+        )
+
+    def _inventory_unread(self) -> str:
+        """S3 when the package could not be read just now (locked, busy): FR-CONSOLE-37 skips
+        and counts the ledger, and the screen shows no count rather than a wrong one."""
+        self._skipped_ledgers += 1
+        return _section(
+            "blocking",
+            "This screen blocks run start until the question inventory is confirmed.",
+            "The question inventory could not be read just now; no count is shown rather "
+            "than one that may be wrong.",
         )
 
     def _render_answer_keys(self, queries: list[str]) -> str:
