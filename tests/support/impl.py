@@ -1330,36 +1330,7 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)" left with #596's fix.
     # "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)" left with #594's fix.
     # "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)" left with #595's fix.
-    # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues):
-    # judge.assemble pseudonymizes the transcript but not the evidence spans the request
-    # carries, and M-ORCH never fills a unit's student_name (no tier holds a roster name).
-    "unowned: a unit's roster name reaches no request (TS-129 SEC-19)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",
-        ("tests/e2e/test_ts129_jev_open_arms.py::test_sec_19_a_units_roster_name_never_reaches_the_request",),
-    ),
     # "unowned: S7 shows the pause reason (TS-97 TC-REQ-99)" left with #602's fix.
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # _synthesize hands SynthesisWorker the raw provider, so synthesis bypasses GovernedProvider (ADR-14).
-    "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",
-        ("tests/contract/pipe/test_cs_pipe_clauses.py::test_tc_pipe_c06_rung_3_every_model_call_passes_the_governor",),
-    ),
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # evaluate_cohort runs outside run_to_completion's fault handling, so its exception escapes the driver.
-    "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",
-        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_02_variant_a_deterministic_fault_pauses_rather_than_escaping",),
-    ),
-    # Found by the TS-83/TS-93 review, owned by NO issue yet (needs one from /plan-to-issues):
-    # the aggregate stage's fault detail carries the exception only, never the cell.
-    "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",
-        ("tests/integration/pipe/test_ts83_composition.py::test_tc_pipe_13_the_fault_detail_names_the_cell",),
-    ),
     # "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)" left with #599/#600's fix.
     # "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)" left with #599's fix.
     # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): the console's review service binds no package catalog, so M-REVIEW refuses the run's own band names.

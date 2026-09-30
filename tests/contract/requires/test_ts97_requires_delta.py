@@ -62,6 +62,10 @@ COMPOSITION_SURFACE = {
     # A judge strike is recorded through M-ORCH's own door (the unit's owner marks it, never
     # M-PIPE); `unit_status` is the read that tells a struck-out extraction from an empty one.
     "fail", "unit_status",
+    # #596 (design 1.9.1 §5.4 R22, CT-PIPE-06): synthesis runs after the last dispatch pass, so
+    # M-PIPE takes the run's governed provider, persists its counters, and charges and checks
+    # the frozen ceiling through M-ORCH's doors; still no SQL of its own (CT-PIPE-05).
+    "governed_provider", "flush_metrics", "charge_post_dispatch", "post_dispatch_ceiling_reached",
 }
 
 
