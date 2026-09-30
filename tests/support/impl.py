@@ -1327,28 +1327,9 @@ WRITTEN_AHEAD_BLOCKERS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     # the verdict is filed under the run's key and validation_for returns it.
     # "unowned: a unit's roster name reaches no request (TS-129 SEC-19)" left with #593's
     # fix: assembly now replaces the name in every evidence span, not only the transcript.
-    # Found by TS-97 (#391), owned by NO issue yet (needs one from /plan-to-issues): M-CONSOLE
-    # never reads `run.pause_reason`, so S7 shows a paused run with no reason (CT-PIPE-04).
-    "unowned: S7 shows the pause reason (TS-97 TC-REQ-99)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",
-        ("tests/contract/requires/test_ts97_requires_delta.py::test_tc_req_99_s7_shows_why_the_run_paused",),
-    ),
     # "unowned: synthesis calls pass the governor (TS-93 TC-PIPE-C06)" left with #596's fix.
     # "unowned: a deterministic fault pauses the run (TS-83 TC-PIPE-02)" left with #594's fix.
     # "unowned: the aggregate fault detail names the cell (TS-83 TC-PIPE-13)" left with #595's fix.
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S2 says 'No parts have been uploaded' and S3 'Questions read back: 0' over a dropped table.
-    "unowned: S2 and S3 say they cannot read, never an absence (TS-96 TC-CONSOLE-C28)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]\" \"tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]\"",
-        ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S2]', 'tests/integration/console/test_ts91_console_screens.py::test_tc_console_47_a_c28_an_unreadable_view_never_renders_a_zero[S3]',),
-    ),
-    # Found by TS-91/TS-96, owned by NO issue yet (needs one from /plan-to-issues): S3 reads the hard-coded pkg-mconsole tier, so every real package shows 0 questions with nothing to edit.
-    "unowned: S3 shows the proposed inventory as editable rows (TS-91 TC-CONSOLE-45)": (
-        "command",
-        "python -m pytest -q -p no:cacheprovider tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows",
-        ('tests/integration/console/test_ts91_console_screens.py::test_tc_console_45_s3_renders_the_proposed_inventory_as_editable_rows',),
-    ),
     # Found by TS-129 (#540), owned by NO issue yet (needs one from /plan-to-issues):
     # judge.assemble pseudonymizes the transcript but not the evidence spans the request
     # carries, and M-ORCH never fills a unit's student_name (no tier holds a roster name).
